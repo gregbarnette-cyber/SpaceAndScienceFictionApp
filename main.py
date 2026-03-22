@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Space and Science Fiction App"""
 
+import math
 import os
 import sys
+
+import requests
 from astroquery.simbad import Simbad
 
 
@@ -103,7 +106,6 @@ def _safe_get(row, col_names, col):
     if col not in col_names:
         return None
     val = row[col]
-    # Astropy masked values
     try:
         if hasattr(val, "mask") and val.mask:
             return None
@@ -185,10 +187,272 @@ def _display_results(result, designations):
     print()
 
 
+# ─── NASA Exoplanet Archive Query ─────────────────────────────────────────────
+
+def query_exoplanets():
+    """Query NASA Exoplanet Archive (pscomppars) for a star's exoplanet data."""
+    os.system("cls" if os.name == "nt" else "clear")
+    designation = input(
+        "\nEnter star designation (e.g., 'Tau Ceti', 'HD 10700', 'HIP 8102'): "
+    ).strip()
+
+    if not designation:
+        print("No designation entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── SIMBAD lookup ─────────────────────────────────────────────────────────
+    print(f"\nQuerying SIMBAD for '{designation}'...\n")
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields("sptype", "plx", "flux(V)", "fe_h")
+
+    try:
+        simbad_result = custom_simbad.query_object(designation)
+        ids_result    = Simbad.query_objectids(designation)
+    except Exception as e:
+        print(f"Error querying SIMBAD: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if simbad_result is None:
+        print(f"No results found in SIMBAD for '{designation}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    designations = _parse_designations(simbad_result, ids_result)
+
+    # ── Choose archive query parameter ────────────────────────────────────────
+    archive_field, archive_value = _get_archive_query_params(designations)
+
+    if not archive_field:
+        print("No usable designation (HIP, HD, TIC, Gaia) found for NASA Exoplanet Archive.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── NASA Exoplanet Archive query ──────────────────────────────────────────
+    print(f"Querying NASA Exoplanet Archive using {archive_value}...\n")
+
+    try:
+        exo_rows = _query_exoplanet_archive(archive_field, archive_value)
+    except Exception as e:
+        print(f"Error querying NASA Exoplanet Archive: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if not exo_rows:
+        print(f"No exoplanet data found in NASA Exoplanet Archive for '{archive_value}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    os.system("cls" if os.name == "nt" else "clear")
+    _display_exoplanet_results(simbad_result, designations, exo_rows)
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def _get_archive_query_params(designations):
+    """Return (field_name, value) for NASA Exoplanet Archive. Priority: HIP > HD > TIC > Gaia."""
+    if designations.get("HIP"):
+        return "hip_name", designations["HIP"]
+    if designations.get("HD"):
+        return "hd_name", designations["HD"]
+    if designations.get("TIC"):
+        return "tic_id", designations["TIC"]
+    if designations.get("Gaia EDR3"):
+        return "gaia_id", designations["Gaia EDR3"]
+    return None, None
+
+
+def _query_exoplanet_archive(field, value):
+    """Query pscomppars via NASA Exoplanet Archive TAP; return list of row dicts."""
+    query = f"SELECT * FROM pscomppars WHERE {field}='{value}' ORDER BY pl_orbsmax"
+    resp  = requests.get(
+        "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
+        params={"query": query, "format": "json"},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _fval(v):
+    """Convert to float; return None if missing or NaN."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return None if math.isnan(f) else f
+    except (ValueError, TypeError):
+        return None
+
+
+def _fmt(v, decimals=3, default="N/A"):
+    """Format value to fixed-decimal string, or return default."""
+    f = _fval(v)
+    return f"{f:.{decimals}f}" if f is not None else default
+
+
+def _display_exoplanet_results(simbad_result, designations, exo_rows):
+    """Print formatted NASA Exoplanet Archive results."""
+
+    # ── SIMBAD star info (same format as Query Star Information) ──────────────
+    _display_results(simbad_result, designations)
+
+    # ── Title ─────────────────────────────────────────────────────────────────
+    title  = "# NASA Exoplanet Archive #"
+    border = "#" * len(title)
+    print(border)
+    print(title)
+    print(border)
+    print()
+
+    # ── Star Name line ─────────────────────────────────────────────────────────
+    main_id  = str(designations.get("MAIN_ID") or "").strip().lstrip("*").strip()
+    id_parts = [str(designations[k]) for k in ("HD", "HIP", "TIC", "Gaia EDR3")
+                if designations.get(k)]
+    star_line = (f"Star Name: {main_id} ({', '.join(id_parts)})"
+                 if id_parts else f"Star Name: {main_id}")
+    dashes = "-" * len(star_line)
+    print(dashes)
+    print(star_line)
+    print(dashes)
+    print()
+
+    # ── Star / Planet counts ──────────────────────────────────────────────────
+    first     = exo_rows[0]
+    n_stars   = int(_fval(first.get("sy_snum")) or 1)
+    n_planets = int(_fval(first.get("sy_pnum")) or len(exo_rows))
+    print(f"Star Properties: # of Stars: {n_stars} - # of Planets: {n_planets}")
+    print()
+
+    # ── Star Properties table ─────────────────────────────────────────────────
+    star_rows = []
+    for i, row in enumerate(exo_rows, 1):
+        sp_type = str(row.get("st_spectype") or "N/A")
+        magv    = _fmt(row.get("sy_vmag"), 5)
+
+        st_lum  = _fval(row.get("st_lum"))
+        st_rad  = _fval(row.get("st_rad"))
+        st_teff = _fval(row.get("st_teff"))
+
+        if st_rad is not None and st_teff is not None:
+            calc = (st_rad ** 2) * ((st_teff / 5778) ** 4)
+            lum  = (f"{st_lum:.5f} ({calc:.6f})"
+                    if st_lum is not None else f"({calc:.6f})")
+        else:
+            lum = f"{st_lum:.5f}" if st_lum is not None else "N/A"
+
+        temp    = _fmt(row.get("st_teff"), 0)
+        mass    = _fmt(row.get("st_mass"), 3)
+        radius  = _fmt(row.get("st_rad"),  2)
+        plx     = _fmt(row.get("sy_plx"),  3)
+        sy_dist = _fval(row.get("sy_dist"))
+        parsecs = f"{sy_dist:.5f}"       if sy_dist is not None else "N/A"
+        lys     = f"{sy_dist * 3.26156:.4f}" if sy_dist is not None else "N/A"
+        fe_h    = _fmt(row.get("st_met"), 2)
+        age     = _fmt(row.get("st_age"), 2)
+
+        star_rows.append([str(i), sp_type, magv, lum, temp, mass,
+                          radius, plx, parsecs, lys, fe_h, age])
+
+    _print_table(
+        headers1=["#", "Spectral",   "MagV",  "Luminosity", "Temp", "Mass",
+                  "Radius", "Parallax", "Parsecs", "LYs", "Fe/H", "Age"],
+        headers2=["",  "Type",       "",       "",           "",     "",
+                  "",       "",         "",        "",    "",      ""],
+        rows=star_rows,
+        aligns=["r", "l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r"],
+    )
+    print()
+
+    # ── Planet Properties table ───────────────────────────────────────────────
+    print("Planet Properties:")
+    print()
+
+    planet_rows = []
+    for i, row in enumerate(exo_rows, 1):
+        pl_name = str(row.get("pl_name") or "N/A")
+        mass_e  = _fmt(row.get("pl_bmasse"), 2)
+        mass_j  = _fmt(row.get("pl_bmassj"), 7)
+        rad_e   = _fmt(row.get("pl_rade"),   2)
+        rad_j   = _fmt(row.get("pl_radj"),   3)
+
+        orbper  = _fval(row.get("pl_orbper"))
+        orb_str = f"{orbper:.3f} days" if orbper is not None else "N/A"
+
+        sma = _fval(row.get("pl_orbsmax"))
+        ecc = _fval(row.get("pl_orbeccen"))
+
+        if sma is not None and ecc is not None:
+            ecc_au   = sma * ecc
+            peri     = sma - ecc_au
+            apo      = sma + ecc_au
+            dist_str = f"{peri:.3f} AU - {sma:.3f} AU - {apo:.3f} AU"
+            ecc_str  = f"{ecc:.2f} ({ecc_au:.3f} AU)"
+        elif sma is not None:
+            dist_str = f"N/A - {sma:.3f} AU - N/A"
+            ecc_str  = "N/A"
+        else:
+            dist_str = "N/A"
+            ecc_str  = "N/A"
+
+        eq_temp = _fmt(row.get("pl_eqt"),   0)
+        insol   = _fmt(row.get("pl_insol"),  2)
+        density = _fmt(row.get("pl_dens"),   2)
+
+        planet_rows.append([
+            str(i), pl_name, mass_e, mass_j, rad_e, rad_j,
+            orb_str, dist_str, ecc_str, eq_temp, insol, density,
+        ])
+
+    _print_table(
+        headers1=["#", "Planet Name", "Mass(E)", "Mass(J)", "Radius(E)",
+                  "Radius(J)", "Orbit", "Distance", "Eccentricity",
+                  "Temperature", "Insol Flux",    "Density"],
+        headers2=["",  "",           "",        "",        "",
+                  "",          "",      "",         "",
+                  "",           "(Earth Flux)", ""],
+        rows=planet_rows,
+        aligns=["r", "l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r"],
+    )
+    print()
+
+
+def _print_table(headers1, headers2, rows, aligns):
+    """Print a table with optional two-line headers and dynamic column widths."""
+    n = len(headers1)
+
+    # Calculate column widths from headers and all data rows
+    widths = [0] * n
+    for i in range(n):
+        widths[i] = max(len(str(headers1[i])), len(str(headers2[i])))
+    for row in rows:
+        for i in range(n):
+            widths[i] = max(widths[i], len(str(row[i])))
+
+    def fmt_cell(val, w, align):
+        s = str(val)
+        return s.rjust(w) if align == "r" else s.ljust(w)
+
+    def make_row(cells, row_aligns):
+        return " | ".join(fmt_cell(c, w, a)
+                          for c, w, a in zip(cells, widths, row_aligns))
+
+    def make_sep():
+        return "-+-".join("-" * w for w in widths)
+
+    print(make_row(headers1, aligns))
+    if any(headers2):
+        print(make_row(headers2, ["l"] * n))
+    print(make_sep())
+    for row in rows:
+        print(make_row(row, aligns))
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
-    "1": ("Query Star Information (SIMBAD)", query_star),
+    "1": ("Query Star Information (SIMBAD)",            query_star),
+    "2": ("Query Exoplanet Data (NASA Exoplanet Archive)", query_exoplanets),
 }
 
 
