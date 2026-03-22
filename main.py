@@ -130,6 +130,7 @@ def _display_results(result, designations):
     print("STAR DESIGNATIONS:")
     print(", ".join(desig_list) if desig_list else "N/A")
     print("=" * 110)
+    print()
 
     # ── Field extraction ──────────────────────────────────────────────────────
     ra  = str(_safe_get(row, col_names, "RA")  or "N/A")
