@@ -128,10 +128,12 @@ def _display_results(result, designations):
     ]
     desig_list = [str(designations[k]) for k in keys_order if designations[k]]
 
-    print("=" * 110)
+    desig_str = ", ".join(desig_list) if desig_list else "N/A"
+    sep_width = len(desig_str)
+    print("=" * sep_width)
     print("STAR DESIGNATIONS:")
-    print(", ".join(desig_list) if desig_list else "N/A")
-    print("=" * 110)
+    print(desig_str)
+    print("=" * sep_width)
     print()
 
     # ── Field extraction ──────────────────────────────────────────────────────
