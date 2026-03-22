@@ -10,6 +10,7 @@ from astroquery.simbad import Simbad
 
 def query_star():
     """Query SIMBAD astronomical database for star information."""
+    os.system("cls" if os.name == "nt" else "clear")
     designation = input(
         "\nEnter star designation (e.g., 'Vega', 'HD 209458', 'HIP 27989'): "
     ).strip()
