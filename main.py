@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Space and Science Fiction App"""
 
+import os
 import sys
 from astroquery.simbad import Simbad
 
@@ -190,7 +191,8 @@ MENU_OPTIONS = {
 
 def main_menu():
     while True:
-        print("\n" + "=" * 50)
+        os.system("cls" if os.name == "nt" else "clear")
+        print("=" * 50)
         print("   SPACE AND SCIENCE FICTION APP")
         print("=" * 50)
         for key, (label, _) in MENU_OPTIONS.items():
