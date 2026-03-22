@@ -21,7 +21,7 @@ def query_star():
     print(f"\nQuerying SIMBAD for '{designation}'...\n")
 
     custom_simbad = Simbad()
-    custom_simbad.add_votable_fields("sp_type", "plx", "flux(V)", "T_eff")
+    custom_simbad.add_votable_fields("sptype", "plx", "flux(V)", "fe_h")
 
     try:
         result = custom_simbad.query_object(designation)
@@ -153,7 +153,7 @@ def _display_results(result, designations):
     else:
         plx = parsecs = ly = "N/A"
 
-    temp_raw = _safe_get(row, col_names, "T_EFF")
+    temp_raw = _safe_get(row, col_names, "Fe_H_Teff")
     temp = f"{int(float(temp_raw))} K" if temp_raw is not None else "N/A"
 
     vmag_raw = _safe_get(row, col_names, "FLUX_V")
