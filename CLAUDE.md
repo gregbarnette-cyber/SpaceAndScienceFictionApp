@@ -33,7 +33,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 
 ## SIMBAD Query Feature
 
-- Uses `astroquery.simbad.Simbad` with votable fields: `sp_type`, `plx`, `flux(V)`, `T_eff`.
+- Uses `astroquery.simbad.Simbad` with votable fields: `sptype`, `plx`, `flux(V)`, `fe_h` (temperature in `Fe_H_Teff` column). Field names are specific to astroquery 0.4.x.
 - `query_star()` → `_parse_designations()` → `_display_results()`.
 - Parallax (mas) from `PLX_VALUE`; distance in parsecs = 1000 / plx; light years = parsecs × 3.26156; all rounded to 4 decimal places.
 - Designations are pulled from `Simbad.query_objectids()` and matched by prefix in `_parse_designations()`.
