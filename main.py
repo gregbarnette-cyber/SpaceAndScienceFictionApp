@@ -259,6 +259,7 @@ def query_exoplanets():
     os.system("cls" if os.name == "nt" else "clear")
     _display_exoplanet_results(simbad_result, designations, exo_rows)
     if hwo_rows:
+        input("\nPress Enter to Continue to HWO ExEP Precursor Science Stars Archive")
         _display_hwo_exep_results(designations, hwo_rows)
     input("\nPress Enter to Return to the Main Menu")
 
