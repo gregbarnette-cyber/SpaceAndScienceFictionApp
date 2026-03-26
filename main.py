@@ -26,7 +26,7 @@ def query_star():
     print(f"\nQuerying SIMBAD for '{designation}'...\n")
 
     custom_simbad = Simbad()
-    custom_simbad.add_votable_fields("sptype", "plx", "flux(V)", "fe_h")
+    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
 
     try:
         result = custom_simbad.query_object(designation)
@@ -55,8 +55,8 @@ def _parse_designations(result, ids_result):
     ]
     designations = {k: None for k in keys_order}
 
-    if result is not None and "MAIN_ID" in result.colnames:
-        designations["MAIN_ID"] = str(result["MAIN_ID"][0])
+    if result is not None and "main_id" in result.colnames:
+        designations["MAIN_ID"] = str(result["main_id"][0])
 
     if ids_result is None:
         return designations
@@ -92,7 +92,7 @@ def _parse_designations(result, ids_result):
     ]
 
     for row in ids_result:
-        id_str = str(row["ID"]).strip()
+        id_str = str(row["id"]).strip()
         for prefix, key in prefix_map:
             if id_str.startswith(prefix) and designations[key] is None:
                 designations[key] = id_str
@@ -139,13 +139,13 @@ def _display_results(result, designations):
     print()
 
     # ── Field extraction ──────────────────────────────────────────────────────
-    ra  = str(_safe_get(row, col_names, "RA")  or "N/A")
-    dec = str(_safe_get(row, col_names, "DEC") or "N/A")
+    ra  = str(_safe_get(row, col_names, "ra")  or "N/A")
+    dec = str(_safe_get(row, col_names, "dec") or "N/A")
 
-    sp_raw = _safe_get(row, col_names, "SP_TYPE")
+    sp_raw = _safe_get(row, col_names, "sp_type")
     sp_type = str(sp_raw) if sp_raw is not None else "N/A"
 
-    plx_raw = _safe_get(row, col_names, "PLX_VALUE")
+    plx_raw = _safe_get(row, col_names, "plx_value")
     if plx_raw is not None:
         try:
             plx_f   = float(plx_raw)
@@ -160,10 +160,10 @@ def _display_results(result, designations):
     else:
         plx = parsecs = ly = "N/A"
 
-    temp_raw = _safe_get(row, col_names, "Fe_H_Teff")
+    temp_raw = _safe_get(row, col_names, "mesfe_h.teff")
     temp = f"{int(float(temp_raw))} K" if temp_raw is not None else "N/A"
 
-    vmag_raw = _safe_get(row, col_names, "FLUX_V")
+    vmag_raw = _safe_get(row, col_names, "V")
     vmag = str(round(float(vmag_raw), 3)) if vmag_raw is not None else "N/A"
 
     # ── Table ─────────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ def query_exoplanets():
     # ── SIMBAD lookup ─────────────────────────────────────────────────────────
     print(f"\nQuerying SIMBAD for '{designation}'...\n")
     custom_simbad = Simbad()
-    custom_simbad.add_votable_fields("sptype", "plx", "flux(V)", "fe_h")
+    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
 
     try:
         simbad_result = custom_simbad.query_object(designation)
