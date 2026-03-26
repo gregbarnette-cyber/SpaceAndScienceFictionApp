@@ -261,11 +261,13 @@ def query_exoplanets():
     _display_exoplanet_results(simbad_result, designations, exo_rows)
     if hwo_rows:
         input("\nPress Enter to Continue to HWO ExEP Precursor Science Stars Archive")
+        print()
         _display_hwo_exep_results(designations, hwo_rows)
 
     exocat_row = _query_mission_exocat(designations)
     if exocat_row:
         input("\nPress Enter to Continue to Mission Exocat Archive")
+        print()
         _display_mission_exocat_results(designations, exocat_row)
 
     input("\nPress Enter to Return to the Main Menu")
