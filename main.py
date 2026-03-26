@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Space and Science Fiction App"""
 
+import csv
 import math
 import os
 import sys
@@ -261,6 +262,12 @@ def query_exoplanets():
     if hwo_rows:
         input("\nPress Enter to Continue to HWO ExEP Precursor Science Stars Archive")
         _display_hwo_exep_results(designations, hwo_rows)
+
+    exocat_row = _query_mission_exocat(designations)
+    if exocat_row:
+        input("\nPress Enter to Continue to Mission Exocat Archive")
+        _display_mission_exocat_results(designations, exocat_row)
+
     input("\nPress Enter to Return to the Main Menu")
 
 
@@ -639,6 +646,149 @@ def _display_hwo_exep_results(designations, hwo_rows):
 
     # ── Calculated Habitable Zone ──────────────────────────────────────────────
     _display_habitable_zone(hwo_rows)
+
+
+# ─── Mission Exocat Archive ───────────────────────────────────────────────────
+
+_MISSION_EXOCAT = None  # (rows, hip_index, hd_index, gj_index)
+
+
+def _load_mission_exocat():
+    """Load missionExocat.csv into memory and build lookup indices by HIP, HD, GJ."""
+    global _MISSION_EXOCAT
+    if _MISSION_EXOCAT is not None:
+        return _MISSION_EXOCAT
+
+    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "missionExocat.csv")
+    rows = []
+    hip_index = {}
+    hd_index  = {}
+    gj_index  = {}
+
+    try:
+        with open(filepath, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rows.append(row)
+                hip = row.get("hip_name", "").strip().upper()
+                hd  = row.get("hd_name",  "").strip().upper()
+                gj  = row.get("gj_name",  "").strip().upper()
+                if hip:
+                    hip_index[hip] = row
+                if hd:
+                    hd_index[hd] = row
+                if gj:
+                    gj_index[gj] = row
+    except Exception as e:
+        print(f"Warning: Could not load missionExocat.csv: {e}")
+        _MISSION_EXOCAT = ([], {}, {}, {})
+        return _MISSION_EXOCAT
+
+    _MISSION_EXOCAT = (rows, hip_index, hd_index, gj_index)
+    return _MISSION_EXOCAT
+
+
+def _query_mission_exocat(designations):
+    """Search Mission Exocat by HIP, HD, or GJ designation. Returns a row dict or None."""
+    _, hip_index, hd_index, gj_index = _load_mission_exocat()
+
+    hip = (designations.get("HIP") or "").strip().upper()
+    hd  = (designations.get("HD")  or "").strip().upper()
+    gj  = (designations.get("GJ")  or "").strip().upper()
+
+    if hip:
+        row = hip_index.get(hip)
+        if row:
+            return row
+    if hd:
+        row = hd_index.get(hd)
+        if row:
+            return row
+    if gj:
+        row = gj_index.get(gj)
+        if row:
+            return row
+    return None
+
+
+def _display_mission_exocat_results(designations, exocat_row):
+    """Print formatted Mission Exocat Archive results."""
+
+    # ── Title ─────────────────────────────────────────────────────────────────
+    title  = "# Mission Exocat Archive #"
+    border = "#" * len(title)
+    print(border)
+    print(title)
+    print(border)
+    print()
+
+    # ── Star Name line ─────────────────────────────────────────────────────────
+    star_name = str(exocat_row.get("star_name") or "").strip()
+    id_parts  = []
+    for csv_field in ("hd_name", "hip_name", "gj_name"):
+        val = str(exocat_row.get(csv_field) or "").strip()
+        if val:
+            id_parts.append(val)
+    star_line = (f"Star Name: {star_name} ({', '.join(id_parts)})"
+                 if id_parts else f"Star Name: {star_name}")
+    dashes = "-" * len(star_line)
+    print(dashes)
+    print(star_line)
+    print(dashes)
+    print()
+
+    # ── Planet count ──────────────────────────────────────────────────────────
+    ppnum = str(exocat_row.get("st_ppnum") or "").strip()
+    print(f"Star Properties: # of Planets: {ppnum if ppnum else 'N/A'}")
+    print()
+
+    # ── Star Properties table ─────────────────────────────────────────────────
+    sp_type = str(exocat_row.get("st_spttype") or "").strip() or "N/A"
+
+    st_teff = _fval(exocat_row.get("st_teff"))
+    st_rad  = _fval(exocat_row.get("st_rad"))
+    st_lbol = _fval(exocat_row.get("st_lbol"))
+
+    if st_rad is not None and st_teff is not None:
+        calc = (st_rad ** 2) * ((st_teff / 5778) ** 4)
+        lum  = (f"{st_lbol:.2f} ({calc:.6f})"
+                if st_lbol is not None else f"({calc:.6f})")
+    else:
+        lum = f"{st_lbol:.2f}" if st_lbol is not None else "N/A"
+
+    temp    = str(int(st_teff)) if st_teff is not None else ""
+    mass    = _fmt(exocat_row.get("st_mass"),   1, "")
+    radius  = _fmt(exocat_row.get("st_rad"),    2, "")
+
+    eeidau  = _fval(exocat_row.get("st_eeidau"))
+    eei_str = (f"{eeidau:.2f} ({eeidau * 8.3167:.4f} LM)"
+               if eeidau is not None else "N/A")
+
+    st_dist = _fval(exocat_row.get("st_dist"))
+    parsecs = f"{st_dist:.2f}"           if st_dist is not None else ""
+    lys     = f"{st_dist * 3.26156:.4f}" if st_dist is not None else ""
+
+    fe_h = _fmt(exocat_row.get("st_metfe"), 2, "")
+    age  = str(exocat_row.get("st_age") or "").strip()
+
+    _print_table(
+        headers1=["Spectral",  "Temp", "Mass", "Radius", "Luminosity", "EE Rad",    "Parsecs", "LYs", "Fe/H", "Age"],
+        headers2=["Type",      "",     "",     "",       "",           "Distance",  "",        "",    "",     ""],
+        rows=[[sp_type, temp, mass, radius, lum, eei_str, parsecs, lys, fe_h, age]],
+        aligns=["l", "r", "r", "r", "r", "l", "r", "r", "r", "r"],
+    )
+    print()
+
+    # ── Calculated Habitable Zone ──────────────────────────────────────────────
+    lbol_log10 = None
+    if st_rad is None and st_lbol is not None and st_lbol > 0:
+        lbol_log10 = math.log10(st_lbol)
+    hz_row = {
+        "st_teff": exocat_row.get("st_teff"),
+        "st_rad":  exocat_row.get("st_rad"),
+        "st_lum":  str(lbol_log10) if lbol_log10 is not None else None,
+    }
+    _display_habitable_zone([hz_row])
 
 
 def _print_table(headers1, headers2, rows, aligns):

@@ -42,6 +42,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 - Helper functions: `_fval()` converts to float/None, `_fmt()` formats to fixed decimals, `_print_table()` renders two-line-header tables with dynamic column widths.
 - After planet table, `_display_habitable_zone()` is called to render the habitable zone table.
 - After the habitable zone table, `_display_hwo_exep_results()` is called if the HWO ExEP query returned data (see below).
+- After the HWO section, `_query_mission_exocat()` is called and `_display_mission_exocat_results()` is shown if a match is found (see Mission Exocat Archive below).
 
 ## HWO ExEP Precursor Science Stars Archive
 
@@ -58,6 +59,21 @@ The main menu loop calls whichever function the user picks, then returns to the 
   - EEID distance formatted as `{au:.3f} AU ({au × 8.3167:.4f} LM)`.
 - Star Name line uses HD, HIP, HR, GJ designations (vs. HD, HIP, TIC, Gaia EDR3 in the NASA section).
 - After the EEI table, `_display_habitable_zone(hwo_rows)` renders a Calculated HZ using the HWO archive's stellar data.
+
+## Mission Exocat Archive
+
+- Displayed automatically after the HWO ExEP section (or after the NASA HZ if HWO was skipped), before the "Press Enter to Return to the Main Menu" prompt in `query_exoplanets()`. Not a menu option.
+- Data source: `missionExocat.csv` in the project directory, loaded once at first use into a module-level cache (`_MISSION_EXOCAT`).
+- Helper: `_load_mission_exocat()` reads the CSV and builds HIP/HD/GJ lookup indices (case-insensitive); `_query_mission_exocat(designations)` searches by HIP → HD → GJ priority; `_display_mission_exocat_results()` renders the output.
+- Designation priority: HIP → HD → GJ (CSV fields: `hip_name`, `hd_name`, `gj_name`).
+- If no match is found, the section is silently skipped.
+- Star Name line uses `star_name` from the CSV plus `hd_name`, `hip_name`, `gj_name` in that order.
+- **Star Properties line**: `# of Planets` from `st_ppnum`.
+- **Star Properties table** columns: Spectral Type (`st_spttype`), Temp (`st_teff`), Mass (`st_mass`, 1 decimal), Radius (`st_rad`, 2 decimal), Luminosity (`st_lbol` / calculated), EE Rad Distance (`st_eeidau`), Parsecs (`st_dist`, 2 decimal), LYs (parsecs × 3.26156, 4 decimal), Fe/H (`st_metfe`, 2 decimal), Age (`st_age`, raw CSV value).
+  - Luminosity: calculated as `(st_rad²) × (st_teff/5778)⁴` when both fields are present; displayed as `{st_lbol:.2f} ({calculated:.6f})`; falls back to `{st_lbol:.2f}` alone if radius/teff unavailable.
+  - EE Rad Distance formatted as `{au:.2f} ({au × 8.3167:.4f} LM)`.
+  - Note: `st_lbol` is direct luminosity in solar units (not log₁₀), unlike `st_lum` in the NASA/HWO archives.
+- After the Star Properties table, `_display_habitable_zone()` renders a Calculated HZ. A synthetic row is passed with `st_teff` and `st_rad` from the CSV; if `st_rad` is absent, `st_lum` is set to `log₁₀(st_lbol)` as fallback.
 
 ## Calculated Habitable Zone
 
