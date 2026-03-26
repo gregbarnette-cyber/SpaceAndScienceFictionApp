@@ -244,8 +244,22 @@ def query_exoplanets():
         input("\nPress Enter to Return to the Main Menu")
         return
 
+    # ── HWO ExEP query (optional) ──────────────────────────────────────────────
+    hwo_rows = None
+    hwo_field, hwo_value = _get_hwo_query_params(designations)
+    if hwo_field:
+        print(f"Querying HWO ExEP Precursor Science Stars Archive using {hwo_value}...")
+        try:
+            hwo_result = _query_hwo_exep_archive(hwo_field, hwo_value)
+            if hwo_result:
+                hwo_rows = hwo_result
+        except Exception as e:
+            print(f"Warning: Could not query HWO ExEP archive: {e}")
+
     os.system("cls" if os.name == "nt" else "clear")
     _display_exoplanet_results(simbad_result, designations, exo_rows)
+    if hwo_rows:
+        _display_hwo_exep_results(designations, hwo_rows)
     input("\nPress Enter to Return to the Main Menu")
 
 
@@ -265,6 +279,33 @@ def _get_archive_query_params(designations):
 def _query_exoplanet_archive(field, value):
     """Query pscomppars via NASA Exoplanet Archive TAP; return list of row dicts."""
     query = f"SELECT * FROM pscomppars WHERE {field}='{value}' ORDER BY pl_orbsmax"
+    resp  = requests.get(
+        "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
+        params={"query": query, "format": "json"},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _get_hwo_query_params(designations):
+    """Return (field_name, value) for HWO ExEP archive. Priority: HIP > HD > TIC > HR > GJ."""
+    if designations.get("HIP"):
+        return "hip_name", designations["HIP"]
+    if designations.get("HD"):
+        return "hd_name", designations["HD"]
+    if designations.get("TIC"):
+        return "tic_id", designations["TIC"]
+    if designations.get("HR"):
+        return "hr_name", designations["HR"]
+    if designations.get("GJ"):
+        return "gj_name", designations["GJ"]
+    return None, None
+
+
+def _query_hwo_exep_archive(field, value):
+    """Query di_stars_exep via NASA Exoplanet Archive TAP; return list of row dicts."""
+    query = f"SELECT * FROM di_stars_exep WHERE {field}='{value}' ORDER BY sy_dist"
     resp  = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
         params={"query": query, "format": "json"},
@@ -485,6 +526,118 @@ def _display_habitable_zone(exo_rows):
     for name, val in formatted:
         print(f"{(' ' + name).ljust(zone_w)} | {val}")
     print()
+
+
+def _display_hwo_exep_results(designations, hwo_rows):
+    """Print formatted HWO ExEP Precursor Science Stars Archive results."""
+
+    # ── Title ─────────────────────────────────────────────────────────────────
+    title  = "# HWO ExEP Precursor Science Stars Archive #"
+    border = "#" * len(title)
+    print(border)
+    print(title)
+    print(border)
+    print()
+
+    # ── Star Name line ─────────────────────────────────────────────────────────
+    main_id  = str(designations.get("MAIN_ID") or "").strip().lstrip("*").strip()
+    id_parts = [str(designations[k]) for k in ("HD", "HIP", "HR", "GJ")
+                if designations.get(k)]
+    star_line = (f"Star Name: {main_id} ({', '.join(id_parts)})"
+                 if id_parts else f"Star Name: {main_id}")
+    dashes = "-" * len(star_line)
+    print(dashes)
+    print(star_line)
+    print(dashes)
+    print()
+
+    # ── Star Properties table ──────────────────────────────────────────────────
+    print("Star Properties:")
+    print()
+
+    star_rows = []
+    for row in hwo_rows:
+        sp_type = str(row.get("st_spectype") or "N/A")
+
+        st_lum  = _fval(row.get("st_lum"))
+        st_rad  = _fval(row.get("st_rad"))
+        st_teff = _fval(row.get("st_teff"))
+
+        if st_rad is not None and st_teff is not None:
+            calc = (st_rad ** 2) * ((st_teff / 5778) ** 4)
+            lum  = (f"{st_lum:.4f} ({calc:.6f})"
+                    if st_lum is not None else f"({calc:.6f})")
+        else:
+            lum = f"{st_lum:.4f}" if st_lum is not None else "N/A"
+
+        temp    = _fmt(row.get("st_teff"), 0)
+        mass    = _fmt(row.get("st_mass"), 2)
+        radius  = _fmt(row.get("st_rad"),  3)
+        plx     = _fmt(row.get("sy_plx"),  2)
+        sy_dist = _fval(row.get("sy_dist"))
+        parsecs = f"{sy_dist:.4f}"               if sy_dist is not None else "N/A"
+        lys     = f"{sy_dist * 3.26156:.4f}"     if sy_dist is not None else "N/A"
+        fe_h    = _fmt(row.get("st_met"), 2)
+
+        star_rows.append([sp_type, lum, temp, mass, radius, plx, parsecs, lys, fe_h])
+
+    _print_table(
+        headers1=["Spectral",  "Luminosity", "Temp", "Mass", "Radius", "Parallax", "Parsecs", "LYs", "Fe/H"],
+        headers2=["Type",      "",           "",     "",     "",       "",         "",        "",    ""],
+        rows=star_rows,
+        aligns=["l", "r", "r", "r", "r", "r", "r", "r", "r"],
+    )
+    print()
+    print()
+
+    # ── System\EEI Properties table ───────────────────────────────────────────
+    print("System\\EEI Properties:")
+    print()
+
+    AU_TO_LM = 8.3167
+    eei_rows = []
+    for row in hwo_rows:
+        planets_flag = _fval(row.get("sy_planets_flag"))
+        if planets_flag is None:
+            planets = "None"
+        elif planets_flag == 1.0:
+            planets = "Y"
+        else:
+            planets = "N"
+
+        pnum_f = _fval(row.get("sy_pnum"))
+        pnum   = str(int(pnum_f)) if pnum_f is not None else "N/A"
+
+        disk_flag = _fval(row.get("sy_disksflag"))
+        if disk_flag is None:
+            disk = "None"
+        elif disk_flag == 1.0:
+            disk = "Y"
+        else:
+            disk = "N"
+
+        eei_sep = _fval(row.get("st_eei_orbsep"))
+        eei_str = (f"{eei_sep:.3f} AU ({eei_sep * AU_TO_LM:.4f} LM)"
+                   if eei_sep is not None else "N/A")
+
+        bratio   = _fval(row.get("st_etwin_bratio"))
+        bratio_str = f"{bratio:.2e}" if bratio is not None else "N/A"
+
+        orbper   = _fval(row.get("st_eei_orbper"))
+        orbper_str = f"{orbper:.1f} days" if orbper is not None else "N/A"
+
+        eei_rows.append([planets, pnum, disk, eei_str, bratio_str, orbper_str])
+
+    _print_table(
+        headers1=["Planets", "# of Planets", "Disk", "Earth Equivalent",          "Earth Equivalent",    "Orbital Period"],
+        headers2=["",        "",             "",     "Insolation Distance (au)",   "Planet-Star Ratio",   "at EEID (days)"],
+        rows=eei_rows,
+        aligns=["l", "r", "l", "l", "r", "r"],
+    )
+    print()
+
+    # ── Calculated Habitable Zone ──────────────────────────────────────────────
+    _display_habitable_zone(hwo_rows)
 
 
 def _print_table(headers1, headers2, rows, aligns):

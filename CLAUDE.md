@@ -41,10 +41,27 @@ The main menu loop calls whichever function the user picks, then returns to the 
 - Distance (planet): periastron `pl_orbsmax - (pl_orbsmax × pl_orbeccen)`, semi-major axis, apastron.
 - Helper functions: `_fval()` converts to float/None, `_fmt()` formats to fixed decimals, `_print_table()` renders two-line-header tables with dynamic column widths.
 - After planet table, `_display_habitable_zone()` is called to render the habitable zone table.
+- After the habitable zone table, `_display_hwo_exep_results()` is called if the HWO ExEP query returned data (see below).
+
+## HWO ExEP Precursor Science Stars Archive
+
+- Queried automatically at the end of `query_exoplanets()`, after the NASA HZ table, only when NASA exoplanet data was found.
+- Uses the same TAP endpoint against the `di_stars_exep` table.
+- Designation priority: HIP → HD → TIC → HR → GJ (fields: `hip_name`, `hd_name`, `tic_id`, `hr_name`, `gj_name`).
+- Results sorted ascending by `sy_dist` (distance in parsecs).
+- If no HWO data is found for the star, the section is silently skipped.
+- Helper: `_get_hwo_query_params()` selects the designation; `_query_hwo_exep_archive()` runs the TAP query; `_display_hwo_exep_results()` renders the output.
+- **Star Properties table** columns: Spectral Type (`st_spectype`), Luminosity (`st_lum` / calculated), Temp (`st_teff`), Mass (`st_mass`), Radius (`st_rad`), Parallax (`sy_plx`), Parsecs (`sy_dist`), LYs (parsecs × 3.26156), Fe/H (`st_met`).
+  - Luminosity: calculated as `(st_rad²) × (st_teff/5778)⁴` when both fields are numbers; displayed as `{st_lum:.4f} ({calculated:.6f})`; falls back to `st_lum` alone if radius/teff unavailable.
+- **System\EEI Properties table** columns: Planets (`sy_planets_flag` → Y/N/None), # of Planets (`sy_pnum`), Disk (`sy_disksflag` → Y/N/None), Earth Equivalent Insolation Distance (`st_eei_orbsep` in AU and LM), Earth Equivalent Planet-Star Ratio (`st_etwin_bratio` in scientific notation), Orbital Period at EEID (`st_eei_orbper` in days).
+  - Flag fields: `1` → `Y`, `0` → `N`, null → `None`.
+  - EEID distance formatted as `{au:.3f} AU ({au × 8.3167:.4f} LM)`.
+- Star Name line uses HD, HIP, HR, GJ designations (vs. HD, HIP, TIC, Gaia EDR3 in the NASA section).
+- After the EEI table, `_display_habitable_zone(hwo_rows)` renders a Calculated HZ using the HWO archive's stellar data.
 
 ## Calculated Habitable Zone
 
-- Rendered by `_display_habitable_zone(exo_rows)` after the Planet Properties table in `query_exoplanets()`.
+- Rendered by `_display_habitable_zone(rows)` after the Planet Properties table in `query_exoplanets()`, and again after the HWO EEI table using HWO stellar data.
 - Luminosity source: prefers `(st_rad²) × (st_teff/5778)⁴`; falls back to `10 ** st_lum` (archive log₁₀ value) if radius unavailable. Skipped entirely if neither teff nor luminosity is available.
 - Uses Kopparapu et al. polynomial coefficients (seffsun, a, b, c, d arrays) with `tstar = teff - 5780`.
 - Six zone boundaries computed: Recent Venus, Runaway Greenhouse, Runaway Greenhouse (5 Earth mass), Runaway Greenhouse (0.1 Earth mass), Maximum Greenhouse, Early Mars.
