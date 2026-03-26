@@ -40,6 +40,16 @@ The main menu loop calls whichever function the user picks, then returns to the 
 - Luminosity: calculated as `(st_rad²) × (st_teff/5778)⁴`; displayed as `{st_lum} ({calculated})` when both `st_rad` and `st_teff` are available, otherwise falls back to `st_lum`.
 - Distance (planet): periastron `pl_orbsmax - (pl_orbsmax × pl_orbeccen)`, semi-major axis, apastron.
 - Helper functions: `_fval()` converts to float/None, `_fmt()` formats to fixed decimals, `_print_table()` renders two-line-header tables with dynamic column widths.
+- After planet table, `_display_habitable_zone()` is called to render the habitable zone table.
+
+## Calculated Habitable Zone
+
+- Rendered by `_display_habitable_zone(exo_rows)` after the Planet Properties table in `query_exoplanets()`.
+- Luminosity source: prefers `(st_rad²) × (st_teff/5778)⁴`; falls back to `10 ** st_lum` (archive log₁₀ value) if radius unavailable. Skipped entirely if neither teff nor luminosity is available.
+- Uses Kopparapu et al. polynomial coefficients (seffsun, a, b, c, d arrays) with `tstar = teff - 5780`.
+- Six zone boundaries computed: Recent Venus, Runaway Greenhouse, Runaway Greenhouse (5 Earth mass), Runaway Greenhouse (0.1 Earth mass), Maximum Greenhouse, Early Mars.
+- Output columns: zone name and distance in AU with light-minutes `(AU × 8.3167 LM)`.
+- Table format: plain text with `ljust` padding; column widths derived from longest label/value.
 
 ## SIMBAD Query Feature
 

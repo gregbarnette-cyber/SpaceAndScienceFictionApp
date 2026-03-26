@@ -416,6 +416,76 @@ def _display_exoplanet_results(simbad_result, designations, exo_rows):
     )
     print()
 
+    _display_habitable_zone(exo_rows)
+
+
+def _display_habitable_zone(exo_rows):
+    """Calculate and display the habitable zone boundaries for the star system."""
+    row = exo_rows[0]
+
+    teff   = _fval(row.get("st_teff"))
+    st_lum = _fval(row.get("st_lum"))
+    st_rad = _fval(row.get("st_rad"))
+
+    # Luminosity in solar units: prefer calculated from radius/teff, fall back to archive log10 value
+    if st_rad is not None and teff is not None:
+        slum = (st_rad ** 2) * ((teff / 5778) ** 4)
+    elif st_lum is not None:
+        slum = 10 ** st_lum
+    else:
+        slum = None
+
+    if teff is None or slum is None:
+        return
+
+    seff    = [0.0] * 6
+    seffsun = [1.776, 1.107, 0.356, 0.320, 1.188, 0.99]
+    a = [2.136e-4, 1.332e-4, 6.171e-5, 5.547e-5, 1.433e-4, 1.209e-4]
+    b = [2.533e-8, 1.580e-8, 1.698e-9, 1.526e-9, 1.707e-8, 1.404e-8]
+    c = [-1.332e-11, -8.308e-12, -3.198e-12, -2.874e-12, -8.968e-12, -7.418e-12]
+    d = [-3.097e-15, -1.931e-15, -5.575e-16, -5.011e-16, -2.084e-15, -1.713e-15]
+
+    tstar = teff - 5780.0
+    for i in range(len(a)):
+        seff[i] = seffsun[i] + a[i]*tstar + b[i]*tstar**2 + c[i]*tstar**3 + d[i]*tstar**4
+
+    recentVenus       = (slum / seff[0]) ** 0.5
+    runawayGreenhouse = (slum / seff[1]) ** 0.5
+    maxGreenhouse     = (slum / seff[2]) ** 0.5
+    earlyMars         = (slum / seff[3]) ** 0.5
+    fivemeRunaway     = (slum / seff[4]) ** 0.5
+    tenthmeRunaway    = (slum / seff[5]) ** 0.5
+
+    AU_TO_LM = 8.3167
+
+    zones = [
+        ("Optimistic Inner HZ (Recent Venus)",                           recentVenus),
+        ("Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass)",    fivemeRunaway),
+        ("Conservative Inner HZ (Runaway Greenhouse)",                   runawayGreenhouse),
+        ("Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass)",  tenthmeRunaway),
+        ("Conservative Outer HZ (Maximum Greenhouse)",                   maxGreenhouse),
+        ("Optimistic Outer HZ (Early Mars)",                             earlyMars),
+    ]
+
+    formatted = [(name, f"{au:.3f} ({au * AU_TO_LM:.3f} LM)") for name, au in zones]
+
+    zone_w = max(len(f" {name}") for name, _ in formatted)
+    zone_w = max(zone_w, len(" Zone"))
+    au_w   = max(len(val) for _, val in formatted)
+    au_w   = max(au_w, len("AU"))
+
+    title = "Calculated Habitable Zone"
+    print("-" * len(title))
+    print(title)
+    print("-" * len(title))
+    print()
+
+    print(f"{' Zone'.ljust(zone_w)} | {'AU'.ljust(au_w)}")
+    print("-" * zone_w + "-+-" + "-" * au_w)
+    for name, val in formatted:
+        print(f"{(' ' + name).ljust(zone_w)} | {val}")
+    print()
+
 
 def _print_table(headers1, headers2, rows, aligns):
     """Print a table with optional two-line headers and dynamic column widths."""
