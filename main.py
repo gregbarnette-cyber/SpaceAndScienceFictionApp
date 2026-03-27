@@ -4,6 +4,7 @@
 import csv
 import math
 import os
+import re
 import sys
 
 import requests
@@ -824,11 +825,181 @@ def _print_table(headers1, headers2, rows, aligns):
         print(make_row(row, aligns))
 
 
+# ─── Star System Regions ──────────────────────────────────────────────────────
+
+def query_star_system_regions():
+    """Display galactic region context for a star using SIMBAD data."""
+    os.system("cls" if os.name == "nt" else "clear")
+    designation = input(
+        "\nEnter star designation (e.g., 'Vega', 'HD 209458', 'HIP 27989'): "
+    ).strip()
+
+    if not designation:
+        print("No designation entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print(f"\nQuerying SIMBAD for '{designation}'...\n")
+
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
+
+    try:
+        result = custom_simbad.query_object(designation)
+        ids_result = Simbad.query_objectids(designation)
+
+        if result is None:
+            print(f"No results found for '{designation}'.")
+            input("\nPress Enter to Return to the Main Menu")
+            return
+
+        designations = _parse_designations(result, ids_result)
+        _display_results(result, designations)
+
+        sp_raw  = _safe_get(result[0], result.colnames, "sp_type")
+        sp_type = str(sp_raw).strip() if sp_raw is not None else ""
+
+        letter, _ = _parse_spectral_class(sp_type)
+        if not letter:
+            print(f"Spectral type '{sp_type or 'N/A'}' is not a main-sequence class (O B A F G K M) — cannot determine star system region.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
+
+        ms_row, key_used = _lookup_spectral_type(sp_type)
+        boloLum = float(ms_row["Bolo. Corr. (BC)"]) if ms_row else None
+        print(f"Spectral Type: {key_used}")
+        print(f"Bolometric Correction (BC): {boloLum}")
+
+        temp_raw = _safe_get(result[0], result.colnames, "mesfe_h.teff")
+        try:
+            temp = float(temp_raw)
+        except (TypeError, ValueError):
+            temp = None
+
+        if temp is None:
+            print("Temperature is not available for this star — cannot determine star system region.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
+
+        vmag_raw = _safe_get(result[0], result.colnames, "V")
+        try:
+            vmag = float(vmag_raw)
+        except (TypeError, ValueError):
+            vmag = None
+
+        if vmag is None:
+            print("Apparent Magnitude (V) is not available for this star — cannot determine star system region.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
+
+        plx_raw = _safe_get(result[0], result.colnames, "plx_value")
+        try:
+            plx = float(plx_raw)
+        except (TypeError, ValueError):
+            plx = None
+
+    except Exception as e:
+        print(f"Error querying SIMBAD: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+# ─── Main-Sequence Star Properties ────────────────────────────────────────────
+
+_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")
+_MAIN_SEQUENCE_DATA = None
+
+
+def _load_main_sequence_data():
+    """Load propertiesOfMainSequenceStars.csv into a per-class lookup structure."""
+    global _MAIN_SEQUENCE_DATA
+    if _MAIN_SEQUENCE_DATA is not None:
+        return _MAIN_SEQUENCE_DATA
+
+    filepath = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "propertiesOfMainSequenceStars.csv",
+    )
+    data = {}
+
+    try:
+        with open(filepath, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                sc = row.get("Spectral Class", "").strip()
+                m = _SP_PATTERN.match(sc)
+                if not m:
+                    continue
+                letter  = m.group(1)
+                subtype = float(m.group(2))
+                data.setdefault(letter, []).append((subtype, row))
+        for letter in data:
+            data[letter].sort(key=lambda t: t[0])
+    except Exception as e:
+        print(f"Warning: Could not load propertiesOfMainSequenceStars.csv: {e}")
+        data = {}
+
+    _MAIN_SEQUENCE_DATA = data
+    return _MAIN_SEQUENCE_DATA
+
+
+def _parse_spectral_class(sp_str):
+    """Extract primary class letter and numeric subtype from a SIMBAD spectral string.
+
+    Returns (letter, subtype_float) or (None, None) if no OBAFGKM class found.
+    Uses search so prefixes like 'sd' in 'sdG5' are skipped transparently.
+    """
+    if not sp_str or sp_str in ("N/A", "None", ""):
+        return None, None
+    m = _SP_PATTERN.search(sp_str)
+    if not m:
+        return None, None
+    return m.group(1), float(m.group(2))
+
+
+def _lookup_spectral_type(sp_str):
+    """Return (row_dict, key_used_str) for the nearest floor entry in the CSV.
+
+    Floor rule: largest available subtype number <= requested subtype.
+    Falls back to smallest available if requested is below all entries (e.g. O2 with only O5).
+    Returns (None, None) if class letter not found in data.
+    """
+    letter, subtype = _parse_spectral_class(sp_str)
+    if letter is None:
+        return None, None
+
+    data = _load_main_sequence_data()
+    entries = data.get(letter)
+    if not entries:
+        return None, None
+
+    best_row = None
+    best_key = None
+    for entry_subtype, row in entries:
+        if entry_subtype <= subtype:
+            best_row = row
+            best_key = row.get("Spectral Class", "").strip()
+        else:
+            break
+
+    if best_row is None:
+        best_row = entries[0][1]
+        best_key = best_row.get("Spectral Class", "").strip()
+
+    return best_row, best_key
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
     "1": ("Query Star Information (SIMBAD)",            query_star),
     "2": ("Query Exoplanet Data (NASA Exoplanet Archive)", query_exoplanets),
+    "3": ("Star System Regions",                        query_star_system_regions),
 }
 
 

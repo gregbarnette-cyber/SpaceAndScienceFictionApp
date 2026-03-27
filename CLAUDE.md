@@ -84,6 +84,21 @@ The main menu loop calls whichever function the user picks, then returns to the 
 - Output columns: zone name and distance in AU with light-minutes `(AU × 8.3167 LM)`.
 - Table format: plain text with `ljust` padding; column widths derived from longest label/value.
 
+## Star System Regions Feature
+
+- Menu option 3: `query_star_system_regions()` — runs the same SIMBAD lookup as `query_star()`, then validates the star's data for suitability before proceeding to region calculations.
+- **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
+- **CSV lookup:** `_load_main_sequence_data()` loads `propertiesOfMainSequenceStars.csv` (lazy, cached in `_MAIN_SEQUENCE_DATA`) into `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype.
+  - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
+  - `_parse_spectral_class(sp_str)` uses `_SP_PATTERN.search()` to extract `(letter, subtype_float)`.
+  - `_lookup_spectral_type(sp_str)` applies a **floor rule**: finds the largest available subtype number ≤ the requested subtype (e.g. G1 → G0, G6 → G5). Falls back to the smallest available entry if the requested subtype is below all entries (e.g. O2 → O5).
+- **Values extracted for future formula use** (not all printed):
+  - `boloLum` — `Bolo. Corr. (BC)` from the matched CSV row (float)
+  - `temp` — temperature in K from SIMBAD `mesfe_h.teff`; if missing/non-numeric → message + early return
+  - `vmag` — apparent magnitude from SIMBAD `V`; if missing/non-numeric → message + early return
+  - `plx` — parallax in mas from SIMBAD `plx_value`; extracted silently, may be `None`
+- **Displayed:** `Spectral Type: <key_used>` and `Bolometric Correction (BC): <boloLum>` are printed after the standard SIMBAD star table.
+
 ## SIMBAD Query Feature
 
 - Uses `astroquery.simbad.Simbad` with votable fields: `sp_type`, `plx_value`, `V`, `mesfe_h` (temperature in `mesfe_h.teff` column). Updated for astroquery ≥ 0.4.8 — prior names (`sptype`, `plx`, `flux(V)`, `fe_h`) are deprecated.
