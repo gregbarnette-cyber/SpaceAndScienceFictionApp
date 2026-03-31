@@ -92,12 +92,21 @@ The main menu loop calls whichever function the user picks, then returns to the 
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
   - `_parse_spectral_class(sp_str)` uses `_SP_PATTERN.search()` to extract `(letter, subtype_float)`.
   - `_lookup_spectral_type(sp_str)` applies a **floor rule**: finds the largest available subtype number ≤ the requested subtype (e.g. G1 → G0, G6 → G5). Falls back to the smallest available entry if the requested subtype is below all entries (e.g. O2 → O5).
-- **Values extracted for future formula use** (not all printed):
+- **Values extracted and validated** (all required; each triggers message + early return if missing):
   - `boloLum` — `Bolo. Corr. (BC)` from the matched CSV row (float)
-  - `temp` — temperature in K from SIMBAD `mesfe_h.teff`; if missing/non-numeric → message + early return
-  - `vmag` — apparent magnitude from SIMBAD `V`; if missing/non-numeric → message + early return
-  - `plx` — parallax in mas from SIMBAD `plx_value`; extracted silently, may be `None`
-- **Displayed:** `Spectral Type: <key_used>` and `Bolometric Correction (BC): <boloLum>` are printed after the standard SIMBAD star table.
+  - `temp` — temperature in K from SIMBAD `mesfe_h.teff`
+  - `vmag` — apparent magnitude from SIMBAD `V`
+  - `plx` — parallax in mas from SIMBAD `plx_value`; also rejected if `<= 0`
+- **Constants defined for later sections:** `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`
+- **Star System Properties table** — rendered by `_display_star_system_properties()` after all validations pass:
+  - `parsecs = 1000.0 / plx`
+  - `absMagnitude = vmag + 5 - (5 × log10(parsecs))`
+  - `bcAbsMagnitude = absMagnitude + boloLum`
+  - `bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)`
+  - `stellarMass = bcLuminosity ** 0.2632` (intermediate, not displayed)
+  - `luminosityFromMass = stellarMass ** 3.5`
+  - Table rows (label | value): Apparent Magnitude (3dp), Absolute Magnitude (3dp), Bolometric Absolute Magnitude (3dp), Bolometric Luminosity (6dp), Luminosity from Mass (5dp), BC (1dp), Star Temperature K (integer)
+  - Column widths computed dynamically; labels left-justified, values right-justified, separated by ` | `
 
 ## SIMBAD Query Feature
 

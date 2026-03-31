@@ -827,6 +827,32 @@ def _print_table(headers1, headers2, rows, aligns):
 
 # ─── Star System Regions ──────────────────────────────────────────────────────
 
+def _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp):
+    """Print the Star System Properties table."""
+    rows = [
+        ("Apparent Magnitude",            f"{vmag:.3f}"),
+        ("Absolute Magnitude",            f"{absMagnitude:.3f}"),
+        ("Bolometric Absolute Magnitude", f"{bcAbsMagnitude:.3f}"),
+        ("Bolometric Luminosity",         f"{bcLuminosity:.6f}"),
+        ("Luminosity from Mass",          f"{luminosityFromMass:.5f}"),
+        ("BC (Bolometric Correction)",    f"{boloLum:.1f}"),
+        ("Star Temperature (K)",          f"{int(round(temp))}"),
+    ]
+
+    label_width = max(len(label) for label, _ in rows)
+    value_width = max(len(value) for _, value in rows)
+
+    title = "Star System Properties"
+    dashes = "-" * len(title)
+    print(dashes)
+    print(title)
+    print(dashes)
+    print()
+    for label, value in rows:
+        print(f" {label.ljust(label_width)} | {value.rjust(value_width)}")
+    print()
+
+
 def query_star_system_regions():
     """Display galactic region context for a star using SIMBAD data."""
     os.system("cls" if os.name == "nt" else "clear")
@@ -868,8 +894,6 @@ def query_star_system_regions():
 
         ms_row, key_used = _lookup_spectral_type(sp_type)
         boloLum = float(ms_row["Bolo. Corr. (BC)"]) if ms_row else None
-        print(f"Spectral Type: {key_used}")
-        print(f"Bolometric Correction (BC): {boloLum}")
 
         temp_raw = _safe_get(result[0], result.colnames, "mesfe_h.teff")
         try:
@@ -898,13 +922,32 @@ def query_star_system_regions():
         plx_raw = _safe_get(result[0], result.colnames, "plx_value")
         try:
             plx = float(plx_raw)
+            if plx <= 0:
+                plx = None
         except (TypeError, ValueError):
             plx = None
+
+        if plx is None:
+            print("Parallax is not available for this star — cannot determine star system region.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
 
     except Exception as e:
         print(f"Error querying SIMBAD: {e}")
         input("\nPress Enter to Return to the Main Menu")
         return
+
+    sunlightIntensity = 1.0
+    bondAlbedo = 0.3
+    parsecs = 1000.0 / plx
+    absMagnitude = vmag + 5 - (5 * math.log10(parsecs))
+    bcAbsMagnitude = absMagnitude + boloLum
+    bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)
+    stellarMass = bcLuminosity ** 0.2632
+    luminosityFromMass = stellarMass ** 3.5
+
+    _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
 
     input("\nPress Enter to Return to the Main Menu")
 
