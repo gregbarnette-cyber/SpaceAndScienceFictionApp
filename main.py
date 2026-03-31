@@ -827,6 +827,28 @@ def _print_table(headers1, headers2, rows, aligns):
 
 # ─── Star System Regions ──────────────────────────────────────────────────────
 
+def _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan):
+    """Print the Stellar Properties table."""
+    title = "Stellar Properties"
+    dashes = "-" * len(title)
+    print(dashes)
+    print(title)
+    print(dashes)
+    print()
+    headers1 = ["Stellar Mass", "Stellar Radius", "Stellar Diameter (Sol)", "Stellar Diameter (KM)", "Main Sequence Life Span"]
+    headers2 = ["", "", "", "", ""]
+    rows = [[
+        f"{stellarMass:.4f}",
+        f"{stellarRadius:.5f}",
+        f"{stellarDiameterSol:.4f}",
+        f"{stellarDiameterKM:.5e}",
+        f"{mainSeqLifeSpan:.5e}",
+    ]]
+    aligns = ["r", "r", "r", "r", "r"]
+    _print_table(headers1, headers2, rows, aligns)
+    print()
+
+
 def _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp):
     """Print the Star System Properties table."""
     rows = [
@@ -946,8 +968,13 @@ def query_star_system_regions():
     bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)
     stellarMass = bcLuminosity ** 0.2632
     luminosityFromMass = stellarMass ** 3.5
+    stellarRadius = stellarMass ** 0.57 if stellarMass >= 1 else stellarMass ** 0.8
+    stellarDiameterSol = ((5780**2) / (temp**2)) * math.sqrt(bcLuminosity)
+    stellarDiameterKM = stellarDiameterSol * 1391600
+    mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
 
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
+    _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
 
     input("\nPress Enter to Return to the Main Menu")
 

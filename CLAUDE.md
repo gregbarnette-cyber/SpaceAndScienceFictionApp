@@ -107,6 +107,12 @@ The main menu loop calls whichever function the user picks, then returns to the 
   - `luminosityFromMass = stellarMass ** 3.5`
   - Table rows (label | value): Apparent Magnitude (3dp), Absolute Magnitude (3dp), Bolometric Absolute Magnitude (3dp), Bolometric Luminosity (6dp), Luminosity from Mass (5dp), BC (1dp), Star Temperature K (integer)
   - Column widths computed dynamically; labels left-justified, values right-justified, separated by ` | `
+- **Stellar Properties table** — rendered by `_display_stellar_properties()` after the Star System Properties table; uses `_print_table()` (single header row, all columns right-aligned):
+  - `stellarRadius = stellarMass ** 0.57` if `stellarMass >= 1`, else `stellarMass ** 0.8`
+  - `stellarDiameterSol = ((5780²) / (temp²)) × √bcLuminosity`
+  - `stellarDiameterKM = stellarDiameterSol × 1391600`
+  - `mainSeqLifeSpan = 10¹⁰ × (1 / stellarMass) ** 2.5`
+  - Columns: Stellar Mass (4dp), Stellar Radius (5dp), Stellar Diameter Sol (4dp), Stellar Diameter KM (5e), Main Sequence Life Span (5e)
 
 ## SIMBAD Query Feature
 
