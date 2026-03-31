@@ -827,6 +827,154 @@ def _print_table(headers1, headers2, rows, aligns):
 
 # ─── Star System Regions ──────────────────────────────────────────────────────
 
+def _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter):
+    """Print the Solar System Alternate Habitable Zone Regions table."""
+    title = "Solar System Alternate Habitable Zone Regions"
+    dashes = "-" * len(title)
+    print(dashes)
+    print(title)
+    print(dashes)
+    print()
+
+    def au_fmt(val):
+        return f"{val:.4f} ({val * 8.3167:.3f} LM)"
+
+    headers1 = [" Region", "AU"]
+    headers2 = ["", ""]
+    rows = [
+        [" Fluorosilicone-Fluorosilicone Inner Limit", au_fmt(ffInner)],
+        [" Fluorocarbon-Sulfur Inner Limit",           au_fmt(fsInner)],
+        [" Fluorosilicone-Fluorosilicone Outer Limit", au_fmt(ffOuter)],
+        [" Fluorocarbon-Sulfur Outer Limit",           au_fmt(fsOuter)],
+        [" Protein-Water Inner Limit",                 au_fmt(prwInner)],
+        [" Protein-Water Outer Limit",                 au_fmt(prwOuter)],
+        [" Protein-Ammonia Inner Limit",               au_fmt(praInner)],
+        [" Protein-Ammonia Outer Limit",               au_fmt(praOuter)],
+        [" Polylipid-Methane Inner Limit",             au_fmt(pmInner)],
+        [" Polylipid-Methane Outer Limit",             au_fmt(pmOuter)],
+        [" Polylipid-Hydrogen Inner Limit",            au_fmt(phInner)],
+        [" Polylipid-Hydrogen Outer Limit",            au_fmt(phOuter)],
+    ]
+    aligns = ["l", "l"]
+    _print_table(headers1, headers2, rows, aligns)
+    print()
+
+
+def _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius):
+    """Print the Calculated Habitable Zone table using Kopparapu et al. coefficients."""
+    title = "Calculated Habitable Zone"
+    dashes = "-" * len(title)
+    print(dashes)
+    print(title)
+    print(dashes)
+    print()
+
+    seffsun = [1.776, 1.107, 0.356, 0.320, 1.188, 0.99]
+    a = [2.136e-4, 1.332e-4, 6.171e-5, 5.547e-5, 1.433e-4, 1.209e-4]
+    b = [2.533e-8, 1.580e-8, 1.698e-9, 1.526e-9, 1.707e-8, 1.404e-8]
+    c = [-1.332e-11, -8.308e-12, -3.198e-12, -2.874e-12, -8.968e-12, -7.418e-12]
+    d = [-3.097e-15, -1.931e-15, -5.575e-16, -5.011e-16, -2.084e-15, -1.713e-15]
+
+    tstar = temp - 5780.0
+    seff = [seffsun[i] + a[i]*tstar + b[i]*tstar**2 + c[i]*tstar**3 + d[i]*tstar**4 for i in range(6)]
+
+    def au_fmt(lum, i):
+        au = math.sqrt(lum / seff[i])
+        return f"{au:.3f} ({au * 8.3167:.3f} LM)"
+
+    zone_indices = [
+        ("Optimistic Inner HZ (Recent Venus)",                           0),
+        ("Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass)",    4),
+        ("Conservative Inner HZ (Runaway Greenhouse)",                   1),
+        ("Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass)",  5),
+        ("Conservative Outer HZ (Maximum Greenhouse)",                   2),
+        ("Optimistic Outer HZ (Early Mars)",                             3),
+    ]
+
+    headers1 = [" Zone", "Bolometric Luminosity (AU)", "Luminosity from Mass (AU)", "Calculated Luminosity (AU)"]
+    headers2 = ["", "", "", ""]
+    rows = [
+        [f" {name}", au_fmt(bcLuminosity, i), au_fmt(luminosityFromMass, i), au_fmt(calculatedLuminosity, i)]
+        for name, i in zone_indices
+    ]
+    aligns = ["l", "l", "l", "l"]
+    _print_table(headers1, headers2, rows, aligns)
+    print()
+
+
+def _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun):
+    """Print the Earth Equivalent Orbit Properties table."""
+    title = "Earth Equivalent Orbit Properties"
+    dashes = "-" * len(title)
+    print(dashes)
+    print(title)
+    print(dashes)
+    print()
+    headers1 = ["Distance (AU)", "Distance (KM)", "Year", "Temp (K)", "Temp (C)", "Temp (F)", "Size"]
+    headers2 = ["", "", "", "", "", "", "of Sun"]
+    rows = [[
+        f"{distAU:.4f}",
+        f"{distKM:.5e}",
+        f"{planetaryYear:.4f}",
+        f"{planetaryTemperature:.2f}",
+        f"{planetaryTemperatureC:.2f}",
+        f"{planetaryTemperatureF:.2f}",
+        sizeOfSun,
+    ]]
+    aligns = ["r", "r", "r", "r", "r", "r", "r"]
+    _print_table(headers1, headers2, rows, aligns)
+    print()
+
+
+def _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol):
+    """Print the Solar System Regions table."""
+    title = "Solar System Regions"
+    dashes = "-" * len(title)
+    print(dashes)
+    print(title)
+    print(dashes)
+    print()
+
+    def au_fmt(val):
+        return f"{val:.4f} ({val * 8.3167:.3f} LM)"
+
+    headers1 = [" Region", "AU"]
+    headers2 = ["", ""]
+    rows = [
+        [" System Inner Limit (Gravity)",             au_fmt(sysilGrav)],
+        [" System Inner Limit (Sunlight)",            au_fmt(sysilSunlight)],
+        [" Circumstellar Habitable Zone Inner Limit", au_fmt(hzil)],
+        [" Circumstellar Habitable Zone Outer Limit", au_fmt(hzol)],
+        [" Snow Line",                                au_fmt(snowLine)],
+        [" Liquid Hydrogen (LH2) Line",               au_fmt(lh2Line)],
+        [" System Outer Limit",                       au_fmt(sysol)],
+    ]
+    aligns = ["l", "l"]
+    _print_table(headers1, headers2, rows, aligns)
+    print()
+
+
+def _display_star_distance(parallax, trigParallax, parsecs, lightYears):
+    """Print the Star Distance table."""
+    title = "Star Distance"
+    dashes = "-" * len(title)
+    print(dashes)
+    print(title)
+    print(dashes)
+    print()
+    headers1 = ["Parallax", "Trig Parallax", "Parsecs", "Light Years"]
+    headers2 = ["", "", "", ""]
+    rows = [[
+        f"{parallax:.2f}",
+        f"{trigParallax:.4f}",
+        f"{parsecs:.4f}",
+        f"{lightYears:.4f}",
+    ]]
+    aligns = ["r", "r", "r", "r"]
+    _print_table(headers1, headers2, rows, aligns)
+    print()
+
+
 def _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan):
     """Print the Stellar Properties table."""
     title = "Stellar Properties"
@@ -972,9 +1120,44 @@ def query_star_system_regions():
     stellarDiameterSol = ((5780**2) / (temp**2)) * math.sqrt(bcLuminosity)
     stellarDiameterKM = stellarDiameterSol * 1391600
     mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
+    trigParallax = plx / 1000
+    lightYears = 3.2616 / trigParallax
+    distAU = math.sqrt(bcLuminosity / sunlightIntensity)
+    distKM = distAU * 149000000
+    planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
+    planetaryTemperature = 374 * 1.1 * (1 - bondAlbedo) * (sunlightIntensity ** 0.25)
+    planetaryTemperatureC = planetaryTemperature - 273.15
+    planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
+    starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
+    sizeOfSun = f"{starAngularDiameter:.2f}\N{DEGREE SIGN}"
+    sysilGrav = 0.2 * stellarMass
+    sysilSunlight = math.sqrt(bcLuminosity / 16)
+    hzil = math.sqrt(bcLuminosity / 1.1)
+    hzol = math.sqrt(bcLuminosity / 0.53)
+    snowLine = math.sqrt(bcLuminosity / 0.04)
+    lh2Line = math.sqrt(bcLuminosity / 0.0025)
+    sysol = 40 * stellarMass
+    calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
+    ffInner  = math.sqrt(bcLuminosity / 52)
+    ffOuter  = math.sqrt(bcLuminosity / 29.9)
+    fsInner  = math.sqrt(bcLuminosity / 38.7)
+    fsOuter  = math.sqrt(bcLuminosity / 3.2)
+    prwInner = math.sqrt(bcLuminosity / 2.8)
+    prwOuter = math.sqrt(bcLuminosity / 0.8)
+    praInner = math.sqrt(bcLuminosity / 0.48)
+    praOuter = math.sqrt(bcLuminosity / 0.21)
+    pmInner  = math.sqrt(bcLuminosity / 0.023)
+    pmOuter  = math.sqrt(bcLuminosity / 0.0094)
+    phInner  = math.sqrt(bcLuminosity / 0.0025)
+    phOuter  = math.sqrt(bcLuminosity / 0.000024)
 
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
     _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
+    _display_star_distance(plx, trigParallax, parsecs, lightYears)
+    _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun)
+    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol)
+    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter)
+    _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius)
 
     input("\nPress Enter to Return to the Main Menu")
 
