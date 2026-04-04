@@ -1265,12 +1265,77 @@ def _lookup_spectral_type(sp_str):
     return None, None
 
 
+# ─── NASA Exoplanet Archive: Planetary Systems Composite ─────────────────────
+
+def query_planetary_systems_composite():
+    """Query NASA Exoplanet Archive (pscomppars) and display SIMBAD info, star/planet
+    properties, and the calculated habitable zone — without HWO or Mission Exocat."""
+    os.system("cls" if os.name == "nt" else "clear")
+    designation = input(
+        "\nEnter star designation (e.g., 'Tau Ceti', 'HD 10700', 'HIP 8102'): "
+    ).strip()
+
+    if not designation:
+        print("No designation entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── SIMBAD lookup ─────────────────────────────────────────────────────────
+    print(f"\nQuerying SIMBAD for '{designation}'...\n")
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
+
+    try:
+        simbad_result = custom_simbad.query_object(designation)
+        ids_result    = Simbad.query_objectids(designation)
+    except Exception as e:
+        print(f"Error querying SIMBAD: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if simbad_result is None:
+        print(f"No results found in SIMBAD for '{designation}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    designations = _parse_designations(simbad_result, ids_result)
+
+    # ── Choose archive query parameter ────────────────────────────────────────
+    archive_field, archive_value = _get_archive_query_params(designations)
+
+    if not archive_field:
+        print("No usable designation (HIP, HD, TIC, Gaia) found for NASA Exoplanet Archive.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── NASA Exoplanet Archive query ──────────────────────────────────────────
+    print(f"Querying NASA Exoplanet Archive using {archive_value}...\n")
+
+    try:
+        exo_rows = _query_exoplanet_archive(archive_field, archive_value)
+    except Exception as e:
+        print(f"Error querying NASA Exoplanet Archive: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if not exo_rows:
+        print(f"No exoplanet data found in NASA Exoplanet Archive for '{archive_value}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    os.system("cls" if os.name == "nt" else "clear")
+    _display_exoplanet_results(simbad_result, designations, exo_rows)
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
     "1": ("Query Star Information (SIMBAD)",            query_star),
     "2": ("Query Exoplanet Data (NASA Exoplanet Archive)", query_exoplanets),
     "3": ("Star System Regions",                        query_star_system_regions),
+    "4": ("NASA Exoplanet Archive: Planetary Systems Composite", query_planetary_systems_composite),
 }
 
 

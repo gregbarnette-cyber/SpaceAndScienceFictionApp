@@ -84,6 +84,14 @@ The main menu loop calls whichever function the user picks, then returns to the 
 - Output columns: zone name and distance in AU with light-minutes `(AU × 8.3167 LM)`.
 - Table format: plain text with `ljust` padding; column widths derived from longest label/value.
 
+## NASA Exoplanet Archive: Planetary Systems Composite Feature
+
+- Menu option 4: `query_planetary_systems_composite()` — runs the same SIMBAD lookup as `query_exoplanets()`, then queries NASA Exoplanet Archive (`pscomppars`) and displays results. Does **not** query HWO ExEP or Mission Exocat archives.
+- Reuses `_get_archive_query_params()`, `_query_exoplanet_archive()`, and `_display_exoplanet_results()` from the NASA Exoplanet Archive Query feature.
+- `_display_exoplanet_results()` renders: SIMBAD star designations + info table, Star Name line, Star Properties table, Planet Properties table, and Calculated Habitable Zone (`_display_habitable_zone()`).
+- Designation priority for archive query: HIP → HD → TIC → Gaia EDR3 (same as option 2).
+- After the Calculated Habitable Zone, returns directly to the main menu prompt.
+
 ## Star System Regions Feature
 
 - Menu option 3: `query_star_system_regions()` — runs the same SIMBAD lookup as `query_star()`, then validates the star's data for suitability before proceeding to region calculations.
