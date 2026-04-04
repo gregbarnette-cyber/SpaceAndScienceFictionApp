@@ -1329,13 +1329,130 @@ def query_planetary_systems_composite():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── NASA Exoplanet Archive: HWO ExEP Precursor Science Stars ────────────────
+
+def query_hwo_exep():
+    """Query HWO ExEP Precursor Science Stars Archive and display SIMBAD info,
+    star/EEI properties, and the calculated habitable zone."""
+    os.system("cls" if os.name == "nt" else "clear")
+    designation = input(
+        "\nEnter star designation (e.g., 'Tau Ceti', 'HD 10700', 'HIP 8102'): "
+    ).strip()
+
+    if not designation:
+        print("No designation entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── SIMBAD lookup ─────────────────────────────────────────────────────────
+    print(f"\nQuerying SIMBAD for '{designation}'...\n")
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
+
+    try:
+        simbad_result = custom_simbad.query_object(designation)
+        ids_result    = Simbad.query_objectids(designation)
+    except Exception as e:
+        print(f"Error querying SIMBAD: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if simbad_result is None:
+        print(f"No results found in SIMBAD for '{designation}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    designations = _parse_designations(simbad_result, ids_result)
+
+    # ── Choose HWO archive query parameter ────────────────────────────────────
+    hwo_field, hwo_value = _get_hwo_query_params(designations)
+
+    if not hwo_field:
+        print("No usable designation (HIP, HD, TIC, HR, GJ) found for HWO ExEP archive.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── HWO ExEP archive query ────────────────────────────────────────────────
+    print(f"Querying HWO ExEP Precursor Science Stars Archive using {hwo_value}...\n")
+
+    try:
+        hwo_rows = _query_hwo_exep_archive(hwo_field, hwo_value)
+    except Exception as e:
+        print(f"Error querying HWO ExEP archive: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if not hwo_rows:
+        print(f"No data found in HWO ExEP archive for '{hwo_value}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    os.system("cls" if os.name == "nt" else "clear")
+    _display_results(simbad_result, designations)
+    _display_hwo_exep_results(designations, hwo_rows)
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+# ─── NASA Exoplanet Archive: Mission Exocat Stars ────────────────────────────
+
+def query_mission_exocat_stars():
+    """Query Mission Exocat archive and display SIMBAD info, star properties,
+    and the calculated habitable zone."""
+    os.system("cls" if os.name == "nt" else "clear")
+    designation = input(
+        "\nEnter star designation (e.g., 'Tau Ceti', 'HD 10700', 'HIP 8102'): "
+    ).strip()
+
+    if not designation:
+        print("No designation entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── SIMBAD lookup ─────────────────────────────────────────────────────────
+    print(f"\nQuerying SIMBAD for '{designation}'...\n")
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
+
+    try:
+        simbad_result = custom_simbad.query_object(designation)
+        ids_result    = Simbad.query_objectids(designation)
+    except Exception as e:
+        print(f"Error querying SIMBAD: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if simbad_result is None:
+        print(f"No results found in SIMBAD for '{designation}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    designations = _parse_designations(simbad_result, ids_result)
+
+    # ── Mission Exocat lookup ─────────────────────────────────────────────────
+    exocat_row = _query_mission_exocat(designations)
+
+    if not exocat_row:
+        print(f"No data found in Mission Exocat archive for '{designation}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    os.system("cls" if os.name == "nt" else "clear")
+    _display_results(simbad_result, designations)
+    _display_mission_exocat_results(designations, exocat_row)
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
-    "1": ("Query Star Information (SIMBAD)",            query_star),
-    "2": ("Query Exoplanet Data (NASA Exoplanet Archive)", query_exoplanets),
-    "3": ("Star System Regions",                        query_star_system_regions),
-    "4": ("NASA Exoplanet Archive: Planetary Systems Composite", query_planetary_systems_composite),
+    "1": ("Query Star Information (SIMBAD)",                        query_star),
+    "2": ("NASA Exoplanet Archive: All Tables",                     query_exoplanets),
+    "3": ("NASA Exoplanet Archive: Planetary Systems Composite",    query_planetary_systems_composite),
+    "4": ("NASA Exoplanet Archive: HWO ExEP Precursor Science Stars", query_hwo_exep),
+    "5": ("NASA Exoplanet Archive: Mission Exocat Stars",           query_mission_exocat_stars),
+    "6": ("Star System Regions",                                    query_star_system_regions),
 }
 
 

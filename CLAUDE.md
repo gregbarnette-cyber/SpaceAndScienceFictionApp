@@ -31,9 +31,20 @@ The main menu loop calls whichever function the user picks, then returns to the 
 2. Register it in `MENU_OPTIONS` with the next available key and a short label.
 3. End the function with the "Press Enter to Return to the Main Menu" prompt.
 
-## NASA Exoplanet Archive Query Feature
+## Menu Options
 
-- Menu option 2: `query_exoplanets()` — runs the same SIMBAD lookup first to resolve designations, then queries NASA Exoplanet Archive.
+```
+1. Query Star Information (SIMBAD)
+2. NASA Exoplanet Archive: All Tables
+3. NASA Exoplanet Archive: Planetary Systems Composite
+4. NASA Exoplanet Archive: HWO ExEP Precursor Science Stars
+5. NASA Exoplanet Archive: Mission Exocat Stars
+6. Star System Regions
+```
+
+## NASA Exoplanet Archive: All Tables Feature
+
+- Menu option 2: `query_exoplanets()` — runs the same SIMBAD lookup first to resolve designations, then queries all three NASA Exoplanet Archive sources in sequence.
 - Archive query uses TAP endpoint `https://exoplanetarchive.ipac.caltech.edu/TAP/sync` against the `pscomppars` table.
 - Designation priority for archive query: HIP → HD → TIC → Gaia EDR3 (fields: `hip_name`, `hd_name`, `tic_id`, `gaia_id`).
 - Results sorted ascending by `pl_orbsmax` (semi-major axis in AU).
@@ -44,57 +55,73 @@ The main menu loop calls whichever function the user picks, then returns to the 
 - After the habitable zone table, `_display_hwo_exep_results()` is called if the HWO ExEP query returned data (see below).
 - After the HWO section, `_query_mission_exocat()` is called and `_display_mission_exocat_results()` is shown if a match is found (see Mission Exocat Archive below).
 
-## HWO ExEP Precursor Science Stars Archive
+## NASA Exoplanet Archive: Planetary Systems Composite Feature
 
-- Queried automatically at the end of `query_exoplanets()`, after the NASA HZ table, only when NASA exoplanet data was found.
-- Uses the same TAP endpoint against the `di_stars_exep` table.
+- Menu option 3: `query_planetary_systems_composite()` — runs the same SIMBAD lookup as `query_exoplanets()`, then queries NASA Exoplanet Archive (`pscomppars`) and displays results. Does **not** query HWO ExEP or Mission Exocat archives.
+- Reuses `_get_archive_query_params()`, `_query_exoplanet_archive()`, and `_display_exoplanet_results()` from the All Tables feature.
+- `_display_exoplanet_results()` renders: SIMBAD star designations + info table, Star Name line, Star Properties table, Planet Properties table, and Calculated Habitable Zone (`_display_habitable_zone()`).
+- Designation priority for archive query: HIP → HD → TIC → Gaia EDR3 (same as option 2).
+- After the Calculated Habitable Zone, returns directly to the main menu prompt.
+
+## NASA Exoplanet Archive: HWO ExEP Precursor Science Stars Feature
+
+- Menu option 4: `query_hwo_exep()` — runs the same SIMBAD lookup, then queries the HWO ExEP archive only. Does **not** query pscomppars or Mission Exocat.
 - Designation priority: HIP → HD → TIC → HR → GJ (fields: `hip_name`, `hd_name`, `tic_id`, `hr_name`, `gj_name`).
+- Helper: `_get_hwo_query_params()` selects the designation; `_query_hwo_exep_archive()` runs the TAP query against `di_stars_exep`; `_display_hwo_exep_results()` renders the output.
+- Renders: SIMBAD star designations + info table, then `_display_hwo_exep_results()` which includes:
+  - Star Name line (HD, HIP, HR, GJ designations)
+  - **Star Properties table** columns: Spectral Type (`st_spectype`), Luminosity (`st_lum` / calculated), Temp (`st_teff`), Mass (`st_mass`), Radius (`st_rad`), Parallax (`sy_plx`), Parsecs (`sy_dist`), LYs (parsecs × 3.26156), Fe/H (`st_met`).
+    - Luminosity: calculated as `(st_rad²) × (st_teff/5778)⁴` when both fields are numbers; displayed as `{st_lum:.4f} ({calculated:.6f})`; falls back to `st_lum` alone if radius/teff unavailable.
+  - **System\EEI Properties table** columns: Planets (`sy_planets_flag` → Y/N/None), # of Planets (`sy_pnum`), Disk (`sy_disksflag` → Y/N/None), Earth Equivalent Insolation Distance (`st_eei_orbsep` in AU and LM), Earth Equivalent Planet-Star Ratio (`st_etwin_bratio` in scientific notation), Orbital Period at EEID (`st_eei_orbper` in days).
+    - Flag fields: `1` → `Y`, `0` → `N`, null → `None`.
+    - EEID distance formatted as `{au:.3f} AU ({au × 8.3167:.4f} LM)`.
+  - **Calculated Habitable Zone** via `_display_habitable_zone(hwo_rows)`.
 - Results sorted ascending by `sy_dist` (distance in parsecs).
-- If no HWO data is found for the star, the section is silently skipped.
-- Helper: `_get_hwo_query_params()` selects the designation; `_query_hwo_exep_archive()` runs the TAP query; `_display_hwo_exep_results()` renders the output.
-- **Star Properties table** columns: Spectral Type (`st_spectype`), Luminosity (`st_lum` / calculated), Temp (`st_teff`), Mass (`st_mass`), Radius (`st_rad`), Parallax (`sy_plx`), Parsecs (`sy_dist`), LYs (parsecs × 3.26156), Fe/H (`st_met`).
-  - Luminosity: calculated as `(st_rad²) × (st_teff/5778)⁴` when both fields are numbers; displayed as `{st_lum:.4f} ({calculated:.6f})`; falls back to `st_lum` alone if radius/teff unavailable.
-- **System\EEI Properties table** columns: Planets (`sy_planets_flag` → Y/N/None), # of Planets (`sy_pnum`), Disk (`sy_disksflag` → Y/N/None), Earth Equivalent Insolation Distance (`st_eei_orbsep` in AU and LM), Earth Equivalent Planet-Star Ratio (`st_etwin_bratio` in scientific notation), Orbital Period at EEID (`st_eei_orbper` in days).
-  - Flag fields: `1` → `Y`, `0` → `N`, null → `None`.
-  - EEID distance formatted as `{au:.3f} AU ({au × 8.3167:.4f} LM)`.
-- Star Name line uses HD, HIP, HR, GJ designations (vs. HD, HIP, TIC, Gaia EDR3 in the NASA section).
-- After the EEI table, `_display_habitable_zone(hwo_rows)` renders a Calculated HZ using the HWO archive's stellar data.
+- If no HWO data is found, prints a message and returns to menu.
 
-## Mission Exocat Archive
+## NASA Exoplanet Archive: Mission Exocat Stars Feature
 
-- Displayed automatically after the HWO ExEP section (or after the NASA HZ if HWO was skipped), before the "Press Enter to Return to the Main Menu" prompt in `query_exoplanets()`. Not a menu option.
+- Menu option 5: `query_mission_exocat_stars()` — runs the same SIMBAD lookup, then queries Mission Exocat only. Does **not** query pscomppars or HWO ExEP.
 - Data source: `missionExocat.csv` in the project directory, loaded once at first use into a module-level cache (`_MISSION_EXOCAT`).
 - Helper: `_load_mission_exocat()` reads the CSV and builds HIP/HD/GJ lookup indices (case-insensitive); `_query_mission_exocat(designations)` searches by HIP → HD → GJ priority; `_display_mission_exocat_results()` renders the output.
-- Designation priority: HIP → HD → GJ (CSV fields: `hip_name`, `hd_name`, `gj_name`).
-- If no match is found, the section is silently skipped.
-- Star Name line uses `star_name` from the CSV plus `hd_name`, `hip_name`, `gj_name` in that order.
-- **Star Properties line**: `# of Planets` from `st_ppnum`.
-- **Star Properties table** columns: Spectral Type (`st_spttype`), Temp (`st_teff`), Mass (`st_mass`, 1 decimal), Radius (`st_rad`, 2 decimal), Luminosity (`st_lbol` / calculated), EE Rad Distance (`st_eeidau`), Parsecs (`st_dist`, 2 decimal), LYs (parsecs × 3.26156, 4 decimal), Fe/H (`st_metfe`, 2 decimal), Age (`st_age`, raw CSV value).
-  - Luminosity: calculated as `(st_rad²) × (st_teff/5778)⁴` when both fields are present; displayed as `{st_lbol:.2f} ({calculated:.6f})`; falls back to `{st_lbol:.2f}` alone if radius/teff unavailable.
-  - EE Rad Distance formatted as `{au:.2f} ({au × 8.3167:.4f} LM)`.
-  - Note: `st_lbol` is direct luminosity in solar units (not log₁₀), unlike `st_lum` in the NASA/HWO archives.
-- After the Star Properties table, `_display_habitable_zone()` renders a Calculated HZ. A synthetic row is passed with `st_teff` and `st_rad` from the CSV; if `st_rad` is absent, `st_lum` is set to `log₁₀(st_lbol)` as fallback.
+- Renders: SIMBAD star designations + info table, then `_display_mission_exocat_results()` which includes:
+  - Star Name line (`star_name` from CSV plus `hd_name`, `hip_name`, `gj_name`)
+  - **Star Properties line**: `# of Planets` from `st_ppnum`.
+  - **Star Properties table** columns: Spectral Type (`st_spttype`), Temp (`st_teff`), Mass (`st_mass`, 1 decimal), Radius (`st_rad`, 2 decimal), Luminosity (`st_lbol` / calculated), EE Rad Distance (`st_eeidau`), Parsecs (`st_dist`, 2 decimal), LYs (parsecs × 3.26156, 4 decimal), Fe/H (`st_metfe`, 2 decimal), Age (`st_age`, raw CSV value).
+    - Luminosity: calculated as `(st_rad²) × (st_teff/5778)⁴` when both fields are present; displayed as `{st_lbol:.2f} ({calculated:.6f})`; falls back to `{st_lbol:.2f}` alone if radius/teff unavailable.
+    - EE Rad Distance formatted as `{au:.2f} ({au × 8.3167:.4f} LM)`.
+    - Note: `st_lbol` is direct luminosity in solar units (not log₁₀), unlike `st_lum` in the NASA/HWO archives.
+  - **Calculated Habitable Zone** via `_display_habitable_zone()`. A synthetic row is passed with `st_teff` and `st_rad` from the CSV; if `st_rad` is absent, `st_lum` is set to `log₁₀(st_lbol)` as fallback.
+- If no match is found, prints a message and returns to menu.
+
+## HWO ExEP Archive (shared helpers)
+
+- Used by options 2 and 4. TAP endpoint `https://exoplanetarchive.ipac.caltech.edu/TAP/sync` against `di_stars_exep`.
+- `_get_hwo_query_params()` selects designation (HIP → HD → TIC → HR → GJ).
+- `_query_hwo_exep_archive()` runs the query sorted ascending by `sy_dist`.
+- `_display_hwo_exep_results()` renders Star Name, Star Properties, System\EEI Properties, and Calculated HZ.
+- In option 2, if no HWO data is found for the star, the section is silently skipped.
+
+## Mission Exocat Archive (shared helpers)
+
+- Used by options 2 and 5. Data source: `missionExocat.csv`.
+- `_load_mission_exocat()` builds HIP/HD/GJ lookup indices (case-insensitive).
+- `_query_mission_exocat(designations)` searches by HIP → HD → GJ priority; returns a row dict or None.
+- `_display_mission_exocat_results()` renders Star Name, Star Properties, and Calculated HZ.
+- In option 2, displayed after HWO ExEP section (or after NASA HZ if HWO was skipped). If no match, silently skipped.
 
 ## Calculated Habitable Zone
 
-- Rendered by `_display_habitable_zone(rows)` after the Planet Properties table in `query_exoplanets()`, and again after the HWO EEI table using HWO stellar data.
+- Rendered by `_display_habitable_zone(rows)` after planet/star property tables in multiple features.
 - Luminosity source: prefers `(st_rad²) × (st_teff/5778)⁴`; falls back to `10 ** st_lum` (archive log₁₀ value) if radius unavailable. Skipped entirely if neither teff nor luminosity is available.
 - Uses Kopparapu et al. polynomial coefficients (seffsun, a, b, c, d arrays) with `tstar = teff - 5780`.
 - Six zone boundaries computed: Recent Venus, Runaway Greenhouse, Runaway Greenhouse (5 Earth mass), Runaway Greenhouse (0.1 Earth mass), Maximum Greenhouse, Early Mars.
 - Output columns: zone name and distance in AU with light-minutes `(AU × 8.3167 LM)`.
 - Table format: plain text with `ljust` padding; column widths derived from longest label/value.
 
-## NASA Exoplanet Archive: Planetary Systems Composite Feature
-
-- Menu option 4: `query_planetary_systems_composite()` — runs the same SIMBAD lookup as `query_exoplanets()`, then queries NASA Exoplanet Archive (`pscomppars`) and displays results. Does **not** query HWO ExEP or Mission Exocat archives.
-- Reuses `_get_archive_query_params()`, `_query_exoplanet_archive()`, and `_display_exoplanet_results()` from the NASA Exoplanet Archive Query feature.
-- `_display_exoplanet_results()` renders: SIMBAD star designations + info table, Star Name line, Star Properties table, Planet Properties table, and Calculated Habitable Zone (`_display_habitable_zone()`).
-- Designation priority for archive query: HIP → HD → TIC → Gaia EDR3 (same as option 2).
-- After the Calculated Habitable Zone, returns directly to the main menu prompt.
-
 ## Star System Regions Feature
 
-- Menu option 3: `query_star_system_regions()` — runs the same SIMBAD lookup as `query_star()`, then validates the star's data for suitability before proceeding to region calculations.
+- Menu option 6: `query_star_system_regions()` — runs the same SIMBAD lookup as `query_star()`, then validates the star's data for suitability before proceeding to region calculations.
 - **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
 - **CSV lookup:** `_load_main_sequence_data()` loads `propertiesOfMainSequenceStars.csv` (lazy, cached in `_MAIN_SEQUENCE_DATA`) into `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype.
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
