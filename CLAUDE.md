@@ -40,6 +40,8 @@ The main menu loop calls whichever function the user picks, then returns to the 
 4. NASA Exoplanet Archive: HWO ExEP Precursor Science Stars
 5. NASA Exoplanet Archive: Mission Exocat Stars
 6. Star System Regions
+7. Star System Regions (Semi-Manual)
+8. Star System Regions (Manual)
 ```
 
 ## NASA Exoplanet Archive: All Tables Feature
@@ -121,7 +123,11 @@ The main menu loop calls whichever function the user picks, then returns to the 
 
 ## Star System Regions Feature
 
-- Menu option 6: `query_star_system_regions()` — runs the same SIMBAD lookup as `query_star()`, then validates the star's data for suitability before proceeding to region calculations.
+All three Star System Regions variants (options 6, 7, 8) produce identical output tables. They differ only in how their input values are obtained.
+
+### Option 6: Star System Regions — `query_star_system_regions()`
+
+- Menu option 6: fully automated — SIMBAD lookup + BC CSV lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
 - **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
 - **CSV lookup:** `_load_main_sequence_data()` loads `propertiesOfMainSequenceStars.csv` (lazy, cached in `_MAIN_SEQUENCE_DATA`) into `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype.
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
@@ -132,7 +138,30 @@ The main menu loop calls whichever function the user picks, then returns to the 
   - `temp` — temperature in K from SIMBAD `mesfe_h.teff`
   - `vmag` — apparent magnitude from SIMBAD `V`
   - `plx` — parallax in mas from SIMBAD `plx_value`; also rejected if `<= 0`
-- **Constants defined for later sections:** `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`
+- **Constants:** `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`
+
+### Option 7: Star System Regions (Semi-Manual) — `query_star_system_regions_semi_manual()`
+
+- Menu option 7: same SIMBAD lookup, checks, and BC CSV lookup as option 6, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
+- Prompts (loop until valid float entered):
+  - `Enter Sunlight Intensity (Terra = 1.0):` — blank defaults to `1.0`
+  - `Enter Bond Albedo (Terra = 0.3, Venus = 0.9):` — blank defaults to `0.3`
+
+### Option 8: Star System Regions (Manual) — `query_star_system_regions_manual()`
+
+- Menu option 8: no SIMBAD lookup, no checks, no CSV lookup. All six input values are entered manually.
+- Prompts (loop until valid float entered, no defaults):
+  - `Apparent Magnitude (V)`
+  - `Parallax (mas)` — rejected if `<= 0`
+  - `Bolometric Correction (BC)`
+  - `Star Effective Temperature (K)`
+  - `Sunlight Intensity (Terra = 1.0)`
+  - `Bond Albedo (Terra = 0.3, Venus = 0.9)`
+- Uses a shared `prompt_float(label)` helper defined inside the function.
+
+### Shared calculations and output tables (all three options)
+
+- **Constants defined for later sections:** `sunlightIntensity` and `bondAlbedo` (source varies by option)
 - **Star System Properties table** — rendered by `_display_star_system_properties()` after all validations pass:
   - `parsecs = 1000.0 / plx`
   - `absMagnitude = vmag + 5 - (5 × log10(parsecs))`

@@ -1444,6 +1444,239 @@ def query_mission_exocat_stars():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Star System Regions (Semi-Manual) ───────────────────────────────────────
+
+def query_star_system_regions_semi_manual():
+    """Display star system regions with manually entered Sunlight Intensity and Bond Albedo."""
+    os.system("cls" if os.name == "nt" else "clear")
+    designation = input(
+        "\nEnter star designation (e.g., 'Vega', 'HD 209458', 'HIP 27989'): "
+    ).strip()
+
+    if not designation:
+        print("No designation entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print(f"\nQuerying SIMBAD for '{designation}'...\n")
+
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
+
+    try:
+        result = custom_simbad.query_object(designation)
+        ids_result = Simbad.query_objectids(designation)
+
+        if result is None:
+            print(f"No results found for '{designation}'.")
+            input("\nPress Enter to Return to the Main Menu")
+            return
+
+        designations = _parse_designations(result, ids_result)
+        _display_results(result, designations)
+
+        sp_raw  = _safe_get(result[0], result.colnames, "sp_type")
+        sp_type = str(sp_raw).strip() if sp_raw is not None else ""
+
+        letter, _ = _parse_spectral_class(sp_type)
+        if not letter:
+            print(f"Spectral type '{sp_type or 'N/A'}' is not a main-sequence class (O B A F G K M) — cannot determine star system region.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
+
+        ms_row, key_used = _lookup_spectral_type(sp_type)
+        boloLum = float(ms_row["Bolo. Corr. (BC)"]) if ms_row else None
+
+        temp_raw = _safe_get(result[0], result.colnames, "mesfe_h.teff")
+        try:
+            temp = float(temp_raw)
+        except (TypeError, ValueError):
+            temp = None
+
+        if temp is None:
+            print("Temperature is not available for this star — cannot determine star system region.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
+
+        vmag_raw = _safe_get(result[0], result.colnames, "V")
+        try:
+            vmag = float(vmag_raw)
+        except (TypeError, ValueError):
+            vmag = None
+
+        if vmag is None:
+            print("Apparent Magnitude (V) is not available for this star — cannot determine star system region.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
+
+        plx_raw = _safe_get(result[0], result.colnames, "plx_value")
+        try:
+            plx = float(plx_raw)
+            if plx <= 0:
+                plx = None
+        except (TypeError, ValueError):
+            plx = None
+
+        if plx is None:
+            print("Parallax is not available for this star — cannot determine star system region.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
+
+    except Exception as e:
+        print(f"Error querying SIMBAD: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── Manual entry of Sunlight Intensity and Bond Albedo ────────────────────
+    while True:
+        try:
+            sunlightIntensity = float(input("Enter Sunlight Intensity (Terra = 1.0): ").strip() or "1.0")
+            break
+        except ValueError:
+            print("Invalid value. Please enter a number.")
+
+    while True:
+        try:
+            bondAlbedo = float(input("Enter Bond Albedo (Terra = 0.3, Venus = 0.9): ").strip() or "0.3")
+            break
+        except ValueError:
+            print("Invalid value. Please enter a number.")
+
+    parsecs = 1000.0 / plx
+    absMagnitude = vmag + 5 - (5 * math.log10(parsecs))
+    bcAbsMagnitude = absMagnitude + boloLum
+    bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)
+    stellarMass = bcLuminosity ** 0.2632
+    luminosityFromMass = stellarMass ** 3.5
+    stellarRadius = stellarMass ** 0.57 if stellarMass >= 1 else stellarMass ** 0.8
+    stellarDiameterSol = ((5780**2) / (temp**2)) * math.sqrt(bcLuminosity)
+    stellarDiameterKM = stellarDiameterSol * 1391600
+    mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
+    trigParallax = plx / 1000
+    lightYears = 3.2616 / trigParallax
+    distAU = math.sqrt(bcLuminosity / sunlightIntensity)
+    distKM = distAU * 149000000
+    planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
+    planetaryTemperature = 374 * 1.1 * (1 - bondAlbedo) * (sunlightIntensity ** 0.25)
+    planetaryTemperatureC = planetaryTemperature - 273.15
+    planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
+    starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
+    sizeOfSun = f"{starAngularDiameter:.2f}\N{DEGREE SIGN}"
+    sysilGrav = 0.2 * stellarMass
+    sysilSunlight = math.sqrt(bcLuminosity / 16)
+    hzil = math.sqrt(bcLuminosity / 1.1)
+    hzol = math.sqrt(bcLuminosity / 0.53)
+    snowLine = math.sqrt(bcLuminosity / 0.04)
+    lh2Line = math.sqrt(bcLuminosity / 0.0025)
+    sysol = 40 * stellarMass
+    calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
+    ffInner  = math.sqrt(bcLuminosity / 52)
+    ffOuter  = math.sqrt(bcLuminosity / 29.9)
+    fsInner  = math.sqrt(bcLuminosity / 38.7)
+    fsOuter  = math.sqrt(bcLuminosity / 3.2)
+    prwInner = math.sqrt(bcLuminosity / 2.8)
+    prwOuter = math.sqrt(bcLuminosity / 0.8)
+    praInner = math.sqrt(bcLuminosity / 0.48)
+    praOuter = math.sqrt(bcLuminosity / 0.21)
+    pmInner  = math.sqrt(bcLuminosity / 0.023)
+    pmOuter  = math.sqrt(bcLuminosity / 0.0094)
+    phInner  = math.sqrt(bcLuminosity / 0.0025)
+    phOuter  = math.sqrt(bcLuminosity / 0.000024)
+
+    _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
+    _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
+    _display_star_distance(plx, trigParallax, parsecs, lightYears)
+    _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun)
+    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol)
+    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter)
+    _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius)
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+# ─── Star System Regions (Manual) ────────────────────────────────────────────
+
+def query_star_system_regions_manual():
+    """Display star system regions with all values entered manually — no SIMBAD lookup."""
+    os.system("cls" if os.name == "nt" else "clear")
+    print("\nEnter star data manually:\n")
+
+    def prompt_float(label):
+        while True:
+            try:
+                return float(input(f"{label}: ").strip())
+            except ValueError:
+                print("Invalid value. Please enter a number.")
+
+    vmag             = prompt_float("Apparent Magnitude (V)")
+    plx              = prompt_float("Parallax (mas)")
+    boloLum          = prompt_float("Bolometric Correction (BC)")
+    temp             = prompt_float("Star Effective Temperature (K)")
+    sunlightIntensity = prompt_float("Sunlight Intensity (Terra = 1.0)")
+    bondAlbedo       = prompt_float("Bond Albedo (Terra = 0.3, Venus = 0.9)")
+
+    if plx <= 0:
+        print("Parallax must be greater than zero.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    parsecs = 1000.0 / plx
+    absMagnitude = vmag + 5 - (5 * math.log10(parsecs))
+    bcAbsMagnitude = absMagnitude + boloLum
+    bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)
+    stellarMass = bcLuminosity ** 0.2632
+    luminosityFromMass = stellarMass ** 3.5
+    stellarRadius = stellarMass ** 0.57 if stellarMass >= 1 else stellarMass ** 0.8
+    stellarDiameterSol = ((5780**2) / (temp**2)) * math.sqrt(bcLuminosity)
+    stellarDiameterKM = stellarDiameterSol * 1391600
+    mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
+    trigParallax = plx / 1000
+    lightYears = 3.2616 / trigParallax
+    distAU = math.sqrt(bcLuminosity / sunlightIntensity)
+    distKM = distAU * 149000000
+    planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
+    planetaryTemperature = 374 * 1.1 * (1 - bondAlbedo) * (sunlightIntensity ** 0.25)
+    planetaryTemperatureC = planetaryTemperature - 273.15
+    planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
+    starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
+    sizeOfSun = f"{starAngularDiameter:.2f}\N{DEGREE SIGN}"
+    sysilGrav = 0.2 * stellarMass
+    sysilSunlight = math.sqrt(bcLuminosity / 16)
+    hzil = math.sqrt(bcLuminosity / 1.1)
+    hzol = math.sqrt(bcLuminosity / 0.53)
+    snowLine = math.sqrt(bcLuminosity / 0.04)
+    lh2Line = math.sqrt(bcLuminosity / 0.0025)
+    sysol = 40 * stellarMass
+    calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
+    ffInner  = math.sqrt(bcLuminosity / 52)
+    ffOuter  = math.sqrt(bcLuminosity / 29.9)
+    fsInner  = math.sqrt(bcLuminosity / 38.7)
+    fsOuter  = math.sqrt(bcLuminosity / 3.2)
+    prwInner = math.sqrt(bcLuminosity / 2.8)
+    prwOuter = math.sqrt(bcLuminosity / 0.8)
+    praInner = math.sqrt(bcLuminosity / 0.48)
+    praOuter = math.sqrt(bcLuminosity / 0.21)
+    pmInner  = math.sqrt(bcLuminosity / 0.023)
+    pmOuter  = math.sqrt(bcLuminosity / 0.0094)
+    phInner  = math.sqrt(bcLuminosity / 0.0025)
+    phOuter  = math.sqrt(bcLuminosity / 0.000024)
+
+    print()
+    _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
+    _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
+    _display_star_distance(plx, trigParallax, parsecs, lightYears)
+    _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun)
+    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol)
+    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter)
+    _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius)
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -1453,6 +1686,8 @@ MENU_OPTIONS = {
     "4": ("NASA Exoplanet Archive: HWO ExEP Precursor Science Stars", query_hwo_exep),
     "5": ("NASA Exoplanet Archive: Mission Exocat Stars",           query_mission_exocat_stars),
     "6": ("Star System Regions",                                    query_star_system_regions),
+    "7": ("Star System Regions (Semi-Manual)",                      query_star_system_regions_semi_manual),
+    "8": ("Star System Regions (Manual)",                           query_star_system_regions_manual),
 }
 
 
