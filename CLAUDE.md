@@ -91,7 +91,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 - **CSV lookup:** `_load_main_sequence_data()` loads `propertiesOfMainSequenceStars.csv` (lazy, cached in `_MAIN_SEQUENCE_DATA`) into `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype.
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
   - `_parse_spectral_class(sp_str)` uses `_SP_PATTERN.search()` to extract `(letter, subtype_float)`.
-  - `_lookup_spectral_type(sp_str)` applies a **floor rule**: finds the largest available subtype number ≤ the requested subtype (e.g. G1 → G0, G6 → G5). Falls back to the smallest available entry if the requested subtype is below all entries (e.g. O2 → O5).
+  - `_lookup_spectral_type(sp_str)` applies a **ceiling rule**: finds the smallest available subtype number ≥ the requested subtype (e.g. G1 → G2, G6 → G8, A4 → A5). If all entries in the class are cooler than requested (subtype exceeds all), advances to the next cooler letter class's hottest entry (e.g. F9 → G0). `_LETTER_SEQUENCE = ["O","B","A","F","G","K","M"]` defines the cross-letter fallthrough order.
 - **Values extracted and validated** (all required; each triggers message + early return if missing):
   - `boloLum` — `Bolo. Corr. (BC)` from the matched CSV row (float)
   - `temp` — temperature in K from SIMBAD `mesfe_h.teff`

@@ -1215,11 +1215,17 @@ def _parse_spectral_class(sp_str):
     return m.group(1), float(m.group(2))
 
 
-def _lookup_spectral_type(sp_str):
-    """Return (row_dict, key_used_str) for the nearest floor entry in the CSV.
+_LETTER_SEQUENCE = ["O", "B", "A", "F", "G", "K", "M"]
 
-    Floor rule: largest available subtype number <= requested subtype.
-    Falls back to smallest available if requested is below all entries (e.g. O2 with only O5).
+
+def _lookup_spectral_type(sp_str):
+    """Return (row_dict, key_used_str) for the nearest ceiling entry in the CSV.
+
+    Ceiling rule: smallest available subtype number >= requested subtype.
+    Within-class fallthrough: if all entries are cooler than requested (e.g. F9
+    with entries only up to F7), advance to the next cooler letter class and
+    return its hottest (lowest subtype) entry (e.g. G0).
+    Falls back to the last entry in the final available class if no next class exists.
     Returns (None, None) if class letter not found in data.
     """
     letter, subtype = _parse_spectral_class(sp_str)
@@ -1227,24 +1233,36 @@ def _lookup_spectral_type(sp_str):
         return None, None
 
     data = _load_main_sequence_data()
-    entries = data.get(letter)
-    if not entries:
+
+    # Walk the letter sequence starting at the requested letter.
+    try:
+        start_idx = _LETTER_SEQUENCE.index(letter)
+    except ValueError:
         return None, None
 
-    best_row = None
-    best_key = None
-    for entry_subtype, row in entries:
-        if entry_subtype <= subtype:
-            best_row = row
-            best_key = row.get("Spectral Class", "").strip()
+    for idx in range(start_idx, len(_LETTER_SEQUENCE)):
+        current_letter = _LETTER_SEQUENCE[idx]
+        entries = data.get(current_letter)
+        if not entries:
+            continue
+
+        if idx == start_idx:
+            # Ceiling search within the requested letter.
+            for entry_subtype, row in entries:
+                if entry_subtype >= subtype:
+                    return row, row.get("Spectral Class", "").strip()
+            # All entries were below the requested subtype — fall through to next letter.
         else:
-            break
+            # Next cooler letter: return its hottest (smallest subtype) entry.
+            row = entries[0][1]
+            return row, row.get("Spectral Class", "").strip()
 
-    if best_row is None:
-        best_row = entries[0][1]
-        best_key = best_row.get("Spectral Class", "").strip()
-
-    return best_row, best_key
+    # No match found at all — return last entry of the starting letter as fallback.
+    entries = data.get(letter)
+    if entries:
+        row = entries[-1][1]
+        return row, row.get("Spectral Class", "").strip()
+    return None, None
 
 
 # ─── Main Menu ────────────────────────────────────────────────────────────────
