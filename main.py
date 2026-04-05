@@ -1677,6 +1677,44 @@ def query_star_system_regions_manual():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Habitable Worlds Catalog ─────────────────────────────────────────────────
+
+def query_habitable_worlds_catalog():
+    """Query the Habitable Worlds Catalog for a star."""
+    os.system("cls" if os.name == "nt" else "clear")
+    designation = input(
+        "\nEnter star designation (e.g., 'Tau Ceti', 'HD 10700', 'HIP 8102'): "
+    ).strip()
+
+    if not designation:
+        print("No designation entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── SIMBAD lookup ─────────────────────────────────────────────────────────
+    print(f"\nQuerying SIMBAD for '{designation}'...\n")
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
+
+    try:
+        simbad_result = custom_simbad.query_object(designation)
+        ids_result    = Simbad.query_objectids(designation)
+    except Exception as e:
+        print(f"Error querying SIMBAD: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if simbad_result is None:
+        print(f"No results found in SIMBAD for '{designation}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    designations = _parse_designations(simbad_result, ids_result)
+    _display_results(simbad_result, designations)
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -1688,6 +1726,7 @@ MENU_OPTIONS = {
     "6": ("Star System Regions",                                    query_star_system_regions),
     "7": ("Star System Regions (Semi-Manual)",                      query_star_system_regions_semi_manual),
     "8": ("Star System Regions (Manual)",                           query_star_system_regions_manual),
+    "9": ("Habitable Worlds Catalog",                               query_habitable_worlds_catalog),
 }
 
 
