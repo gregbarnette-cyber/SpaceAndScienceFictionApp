@@ -2846,6 +2846,21 @@ def query_star_systems_csv():
     queries = [
         "plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'",
         "plx > 20.99 & plx < 26 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'",
+        "plx > 17.99 & plx < 21 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')",
+        "plx > 16.49 & plx < 18 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')",
+        "plx > 15.49 & plx < 16.5 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')",
+        "plx > 14.49 & plx < 15.5 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')",
+        "plx > 13.99 & plx < 14.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 13.49 & plx < 14 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 12.99 & plx < 13.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 12.49 & plx < 13 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 11.99 & plx < 12.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 11.49 & plx < 12 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 11.09 & plx < 11.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 10.79 & plx < 11.1 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 10.49 & plx < 10.8 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 10.29 & plx < 10.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
+        "plx > 9.99 & plx < 10.3 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
     ]
 
     all_new_rows = []
@@ -2883,8 +2898,8 @@ MENU_OPTIONS = {
     "3": ("NASA Exoplanet Archive: Planetary Systems Composite",    query_planetary_systems_composite),
     "4": ("NASA Exoplanet Archive: HWO ExEP Precursor Science Stars", query_hwo_exep),
     "5": ("NASA Exoplanet Archive: Mission Exocat Stars",           query_mission_exocat_stars),
-    "6": ("Star System Regions",                                    query_star_system_regions),
-    "7": ("Star System Regions (Semi-Manual)",                      query_star_system_regions_semi_manual),
+    "6": ("Star System Regions (SIMBAD)",                           query_star_system_regions),
+    "7": ("Star System Regions (Semi-SIMBAD)",                      query_star_system_regions_semi_manual),
     "8": ("Star System Regions (Manual)",                           query_star_system_regions_manual),
     "9": ("Habitable Worlds Catalog",                               query_habitable_worlds_catalog),
     "10": ("Open Exoplanet Catalogue",                              query_open_exoplanet_catalogue),

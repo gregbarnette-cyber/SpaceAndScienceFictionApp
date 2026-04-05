@@ -41,8 +41,8 @@ The main menu loop calls whichever function the user picks, then returns to the 
 3. NASA Exoplanet Archive: Planetary Systems Composite
 4. NASA Exoplanet Archive: HWO ExEP Precursor Science Stars
 5. NASA Exoplanet Archive: Mission Exocat Stars
-6. Star System Regions
-7. Star System Regions (Semi-Manual)
+6. Star System Regions (SIMBAD)
+7. Star System Regions (Semi-SIMBAD)
 8. Star System Regions (Manual)
 9. Habitable Worlds Catalog
 10. Open Exoplanet Catalogue
@@ -133,7 +133,7 @@ Q. Quit
 
 All three Star System Regions variants (options 6, 7, 8) produce identical output tables. They differ only in how their input values are obtained.
 
-### Option 6: Star System Regions — `query_star_system_regions()`
+### Option 6: Star System Regions (SIMBAD) — `query_star_system_regions()`
 
 - Menu option 6: fully automated — SIMBAD lookup + BC CSV lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
 - **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
@@ -148,7 +148,7 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
   - `plx` — parallax in mas from SIMBAD `plx_value`; also rejected if `<= 0`
 - **Constants:** `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`
 
-### Option 7: Star System Regions (Semi-Manual) — `query_star_system_regions_semi_manual()`
+### Option 7: Star System Regions (Semi-SIMBAD) — `query_star_system_regions_semi_manual()`
 
 - Menu option 7: same SIMBAD lookup, checks, and BC CSV lookup as option 6, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
 - Prompts (loop until valid float entered):
@@ -279,10 +279,25 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
 
 ## Star Systems CSV Query Feature
 
-- Menu option 12: `query_star_systems_csv()` — runs two SIMBAD criteria queries in sequence and writes results to `starSystems.csv`.
+- Menu option 12: `query_star_systems_csv()` — runs 17 SIMBAD criteria queries in sequence and writes results to `starSystems.csv`.
 - Uses `query_criteria()` (deprecated but still functional) with `add_votable_fields("sp_type", "plx_value", "V", "mesfe_h", "ids")`. The deprecation warning is suppressed via `warnings.catch_warnings()`. `query_tap` ADQL was investigated but rejected: SIMBAD TAP does not support table-qualified column names (`basic.col`), `maintype` does not exist in the TAP schema, and the `mes_fe_h` JOIN causes syntax errors.
 - **Query 1**: `"plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"` — stars closer than ~38.5 ly.
 - **Query 2**: `"plx > 20.99 & plx < 26 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"` — stars ~38.5–47.6 ly range.
+- **Query 3**: `"plx > 17.99 & plx < 21 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')"` — stars ~47.6–55.6 ly range.
+- **Query 4**: `"plx > 16.49 & plx < 18 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')"` — stars ~55.6–60.6 ly range.
+- **Query 5**: `"plx > 15.49 & plx < 16.5 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')"` — stars ~60.6–64.6 ly range.
+- **Query 6**: `"plx > 14.49 & plx < 15.5 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')"` — stars ~64.6–69.0 ly range.
+- **Query 7**: `"plx > 13.99 & plx < 14.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~69.0–71.5 ly range.
+- **Query 8**: `"plx > 13.49 & plx < 14 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~71.5–74.1 ly range.
+- **Query 9**: `"plx > 12.99 & plx < 13.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~74.1–77.0 ly range.
+- **Query 10**: `"plx > 12.49 & plx < 13 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~77.0–80.1 ly range.
+- **Query 11**: `"plx > 11.99 & plx < 12.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~80.1–83.4 ly range.
+- **Query 12**: `"plx > 11.49 & plx < 12 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~83.4–87.0 ly range.
+- **Query 13**: `"plx > 11.09 & plx < 11.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~87.0–90.2 ly range.
+- **Query 14**: `"plx > 10.79 & plx < 11.1 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~90.2–92.8 ly range.
+- **Query 15**: `"plx > 10.49 & plx < 10.8 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~92.8–95.3 ly range.
+- **Query 16**: `"plx > 10.29 & plx < 10.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~95.3–97.2 ly range.
+- **Query 17**: `"plx > 9.99 & plx < 10.3 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~97.2–100.1 ly range.
 - Each query returns many raw rows (one per teff measurement per star); deduplicates to unique stars in Python. Per-star deduplication keeps the first non-null `mesfe_h.teff` seen.
 - **Discard rule**: rows where `main_id` starts with `"PLX "` AND `Star Designations` is empty AND `Spectral Type` is empty are silently dropped.
 - **CSV columns**: `Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Temperature, Apparent Magnitude, RA, DEC` (matches `templateStarSystems.csv`).
