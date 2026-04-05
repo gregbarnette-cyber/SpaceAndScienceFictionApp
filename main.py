@@ -2,6 +2,7 @@
 """Space and Science Fiction App"""
 
 import csv
+from datetime import datetime
 import math
 import os
 import re
@@ -2833,6 +2834,14 @@ def query_star_systems_csv():
         "Parsecs", "Light Years", "Temperature", "Apparent Magnitude", "RA", "DEC",
     ]
 
+    # Rename existing CSV to backup before overwriting
+    if os.path.exists(csv_path):
+        date_stamp = datetime.now().strftime("%Y%m%d")
+        backup_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"starSystemsBackup-{date_stamp}.csv")
+        os.rename(csv_path, backup_path)
+        print(f"  Backed up existing CSV to: starSystemsBackup-{date_stamp}.csv")
+        print()
+
     # Load existing CSV so both queries can dedup against it
     existing_rows = []
     if os.path.exists(csv_path):
@@ -2893,19 +2902,23 @@ def query_star_systems_csv():
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
-    "1": ("SIMBAD Lookup Query",                                     query_star),
-    "2": ("NASA Exoplanet Archive: All Tables",                     query_exoplanets),
-    "3": ("NASA Exoplanet Archive: Planetary Systems Composite",    query_planetary_systems_composite),
-    "4": ("NASA Exoplanet Archive: HWO ExEP Precursor Science Stars", query_hwo_exep),
-    "5": ("NASA Exoplanet Archive: Mission Exocat Stars",           query_mission_exocat_stars),
-    "6": ("Star System Regions (SIMBAD)",                           query_star_system_regions),
-    "7": ("Star System Regions (Semi-SIMBAD)",                      query_star_system_regions_semi_manual),
-    "8": ("Star System Regions (Manual)",                           query_star_system_regions_manual),
-    "9": ("Habitable Worlds Catalog",                               query_habitable_worlds_catalog),
-    "10": ("Open Exoplanet Catalogue",                              query_open_exoplanet_catalogue),
-    "11": ("Exoplanet EU Encyclopaedia",                            query_exoplanet_eu),
-    "12": ("Star Systems CSV Query",                               query_star_systems_csv),
+    "1":  ("SIMBAD Lookup Query",                                     query_star),
+    "2":  ("NASA Exoplanet Archive: All Tables",                      query_exoplanets),
+    "3":  ("NASA Exoplanet Archive: Planetary Systems Composite",     query_planetary_systems_composite),
+    "4":  ("NASA Exoplanet Archive: HWO ExEP Precursor Science Stars", query_hwo_exep),
+    "5":  ("NASA Exoplanet Archive: Mission Exocat Stars",            query_mission_exocat_stars),
+    "6":  ("Habitable Worlds Catalog",                                query_habitable_worlds_catalog),
+    "7":  ("Open Exoplanet Catalogue",                                query_open_exoplanet_catalogue),
+    "8":  ("Exoplanet EU Encyclopaedia",                              query_exoplanet_eu),
+    "10": ("Star System Regions (SIMBAD)",                            query_star_system_regions),
+    "11": ("Star System Regions (Semi-SIMBAD)",                       query_star_system_regions_semi_manual),
+    "12": ("Star System Regions (Manual)",                            query_star_system_regions_manual),
+    "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
+
+_STAR_DB_KEYS = {"1", "2", "3", "4", "5", "6", "7", "8"}
+_STAR_REGIONS_KEYS = {"10", "11", "12"}
+_UTILITY_KEYS = {"50"}
 
 
 def main_menu():
@@ -2916,9 +2929,19 @@ def main_menu():
         print("=" * 50)
         print("  Star Databases")
         print("-" * 50)
-        for key, (label, _) in MENU_OPTIONS.items():
+        for key in sorted(_STAR_DB_KEYS, key=int):
+            label = MENU_OPTIONS[key][0]
             print(f"  {key}. {label}")
         print("-" * 50)
+        print("  Star System Regions")
+        print("-" * 50)
+        for key in sorted(_STAR_REGIONS_KEYS, key=int):
+            label = MENU_OPTIONS[key][0]
+            print(f"  {key}. {label}")
+        print("-" * 50)
+        for key in sorted(_UTILITY_KEYS, key=int):
+            label = MENU_OPTIONS[key][0]
+            print(f"  {key}. {label}")
         print("  Q. Quit")
         print("=" * 50)
 

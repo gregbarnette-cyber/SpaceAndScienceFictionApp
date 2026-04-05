@@ -41,14 +41,17 @@ The main menu loop calls whichever function the user picks, then returns to the 
 3. NASA Exoplanet Archive: Planetary Systems Composite
 4. NASA Exoplanet Archive: HWO ExEP Precursor Science Stars
 5. NASA Exoplanet Archive: Mission Exocat Stars
-6. Star System Regions (SIMBAD)
-7. Star System Regions (Semi-SIMBAD)
-8. Star System Regions (Manual)
-9. Habitable Worlds Catalog
-10. Open Exoplanet Catalogue
-11. Exoplanet EU Encyclopaedia
-12. Star Systems CSV Query
+6. Habitable Worlds Catalog
+7. Open Exoplanet Catalogue
+8. Exoplanet EU Encyclopaedia
 --------------------------------------------------
+  Star System Regions
+--------------------------------------------------
+10. Star System Regions (SIMBAD)
+11. Star System Regions (Semi-SIMBAD)
+12. Star System Regions (Manual)
+--------------------------------------------------
+50. Star Systems CSV Query
 Q. Quit
 ```
 
@@ -131,11 +134,11 @@ Q. Quit
 
 ## Star System Regions Feature
 
-All three Star System Regions variants (options 6, 7, 8) produce identical output tables. They differ only in how their input values are obtained.
+All three Star System Regions variants (options 10, 11, 12) produce identical output tables. They differ only in how their input values are obtained.
 
-### Option 6: Star System Regions (SIMBAD) — `query_star_system_regions()`
+### Option 10: Star System Regions (SIMBAD) — `query_star_system_regions()`
 
-- Menu option 6: fully automated — SIMBAD lookup + BC CSV lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
+- Menu option 10: fully automated — SIMBAD lookup + BC CSV lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
 - **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
 - **CSV lookup:** `_load_main_sequence_data()` loads `propertiesOfMainSequenceStars.csv` (lazy, cached in `_MAIN_SEQUENCE_DATA`) into `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype.
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
@@ -148,16 +151,16 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
   - `plx` — parallax in mas from SIMBAD `plx_value`; also rejected if `<= 0`
 - **Constants:** `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`
 
-### Option 7: Star System Regions (Semi-SIMBAD) — `query_star_system_regions_semi_manual()`
+### Option 11: Star System Regions (Semi-SIMBAD) — `query_star_system_regions_semi_manual()`
 
-- Menu option 7: same SIMBAD lookup, checks, and BC CSV lookup as option 6, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
+- Menu option 11: same SIMBAD lookup, checks, and BC CSV lookup as option 10, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
 - Prompts (loop until valid float entered):
   - `Enter Sunlight Intensity (Terra = 1.0):` — blank defaults to `1.0`
   - `Enter Bond Albedo (Terra = 0.3, Venus = 0.9):` — blank defaults to `0.3`
 
-### Option 8: Star System Regions (Manual) — `query_star_system_regions_manual()`
+### Option 12: Star System Regions (Manual) — `query_star_system_regions_manual()`
 
-- Menu option 8: no SIMBAD lookup, no checks, no CSV lookup. All six input values are entered manually.
+- Menu option 12: no SIMBAD lookup, no checks, no CSV lookup. All six input values are entered manually.
 - Prompts (loop until valid float entered, no defaults):
   - `Apparent Magnitude (V)`
   - `Parallax (mas)` — rejected if `<= 0`
@@ -215,7 +218,7 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
 
 ## Habitable Worlds Catalog Feature
 
-- Menu option 9: `query_habitable_worlds_catalog()` — runs the same SIMBAD lookup, then queries `hwc.csv` only.
+- Menu option 6: `query_habitable_worlds_catalog()` — runs the same SIMBAD lookup, then queries `hwc.csv` only.
 - Data source: `hwc.csv` in the project directory, loaded once at first use into a module-level cache (`_HWC_DATA`).
 - Helper: `_load_hwc()` reads the CSV and builds HIP/HD/S_NAME lookup indices (each maps uppercased key → list of planet row dicts); `_query_hwc(designations)` searches by HIP → HD → NAME priority; strips `"NAME "` prefix from the NAME designation before lookup.
 - Planet rows sorted ascending by `P_SEMI_MAJOR_AXIS` before display.
@@ -229,7 +232,7 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
 
 ## Open Exoplanet Catalogue Feature
 
-- Menu option 10: `query_open_exoplanet_catalogue()` — runs the same SIMBAD lookup, then queries the Open Exoplanet Catalogue (OEC) only.
+- Menu option 7: `query_open_exoplanet_catalogue()` — runs the same SIMBAD lookup, then queries the Open Exoplanet Catalogue (OEC) only.
 - Data source: downloaded once per session via `astroquery.open_exoplanet_catalogue.get_catalogue()` which fetches a gzip'd XML file from GitHub. Cached in module-level `_OEC_DATA = (root_element, name_index)`.
 - `_load_oec()` calls `get_catalogue()`, calls `.getroot()` on the returned `ElementTree`, then builds a case-insensitive `{name_lower: system_element}` index by iterating all `<name>` elements across the entire tree.
 - `_get_oec_candidates(designations)` builds an ordered candidate list from the designations dict (HIP → HD → GJ → HR → WASP → HAT_P → Kepler → TOI → K2 → CoRoT → COCONUTS → KOI → TIC → 2MASS → NAME → MAIN_ID) with normalizations:
@@ -251,7 +254,7 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
 
 ## Exoplanet EU Encyclopaedia Feature
 
-- Menu option 11: `query_exoplanet_eu()` — runs the same SIMBAD lookup, then queries the Exoplanet Encyclopaedia (exoplanet.eu) only.
+- Menu option 8: `query_exoplanet_eu()` — runs the same SIMBAD lookup, then queries the Exoplanet Encyclopaedia (exoplanet.eu) only.
 - Data source: downloaded once per session via `requests.get("https://exoplanet.eu/catalog/csv/")` — a 79-column CSV with ~8,174 planet rows. Cached in module-level `_EU_DATA = (rows_list, star_name_index)`.
 - `_load_eu()` fetches the CSV, parses with `csv.DictReader`, and builds a case-insensitive `{star_name_lower: [row, ...]}` index.
 - `_get_eu_candidates(designations)` builds an ordered candidate list from the designations dict (HD → GJ → HR → WASP → HAT_P → Kepler → TOI → K2 → CoRoT → COCONUTS → KOI → TIC → HIP → 2MASS → NAME → MAIN_ID) with normalizations:
@@ -279,7 +282,7 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
 
 ## Star Systems CSV Query Feature
 
-- Menu option 12: `query_star_systems_csv()` — runs 17 SIMBAD criteria queries in sequence and writes results to `starSystems.csv`.
+- Menu option 50: `query_star_systems_csv()` — runs 17 SIMBAD criteria queries in sequence and writes results to `starSystems.csv`.
 - Uses `query_criteria()` (deprecated but still functional) with `add_votable_fields("sp_type", "plx_value", "V", "mesfe_h", "ids")`. The deprecation warning is suppressed via `warnings.catch_warnings()`. `query_tap` ADQL was investigated but rejected: SIMBAD TAP does not support table-qualified column names (`basic.col`), `maintype` does not exist in the TAP schema, and the `mes_fe_h` JOIN causes syntax errors.
 - **Query 1**: `"plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"` — stars closer than ~38.5 ly.
 - **Query 2**: `"plx > 20.99 & plx < 26 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"` — stars ~38.5–47.6 ly range.
@@ -304,8 +307,9 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
   - Star Name: `main_id`; Star Designations: comma-separated catalog IDs (GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS) parsed from pipe-separated `ids.ids` string via `_parse_designations_from_ids()`.
   - Parallax: 4dp; Parsecs = 1000/plx (3dp); Light Years = parsecs × 3.26156 (3dp); Temperature: integer K; Apparent Magnitude: 3dp.
   - RA: converted from decimal degrees to sexagesimal `HH MM SS.SSSS` (divide by 15 to get hours). DEC: converted to `±DD MM SS.SSS`. Conversion is pure Python math, no extra libraries.
-- **Deduplication**: the existing CSV is loaded once before any query runs; `existing_ids` is passed as a live set to `_run_simbad_csv_query()` and updated in-place as rows are accepted — so query 2 automatically skips stars already claimed by query 1 or the existing CSV. No separate cross-query dedup pass needed.
-- **Sort**: all new rows from both queries are sorted together ascending by Light Years before writing.
+- **Backup**: if `starSystems.csv` already exists at startup, it is renamed to `starSystemsBackup-YYYYMMDD.csv` (e.g. `starSystemsBackup-20260405.csv`) before any queries run. The function then starts fresh with an empty dataset.
+- **Deduplication**: `existing_ids` is passed as a live set to `_run_simbad_csv_query()` and updated in-place as rows are accepted — so each query automatically skips stars already captured by earlier queries. No separate cross-query dedup pass needed.
+- **Sort**: all new rows from all queries are sorted together ascending by Light Years before writing.
 - Helper `_run_simbad_csv_query(simbad, criteria, query_num, existing_ids)` encapsulates per-query fetch, row processing, discard logic, and teff deduplication; returns `(new_rows, discarded)`.
 - Helper `_parse_designations_from_ids(ids_string)` and module-level `_CSV_PREFIX_MAP` / `_CSV_DESIG_KEYS` are defined before `MENU_OPTIONS`.
 - More queries (different parallax ranges or criteria) can be added to the `queries` list in `query_star_systems_csv()`; each will merge into the same `starSystems.csv` with the same deduplication logic.
