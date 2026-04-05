@@ -43,6 +43,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 7. Star System Regions (Semi-Manual)
 8. Star System Regions (Manual)
 9. Habitable Worlds Catalog
+10. Open Exoplanet Catalogue
 ```
 
 ## NASA Exoplanet Archive: All Tables Feature
@@ -219,6 +220,28 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
   - **Planet Habitability Properties table** — one row per planet: Planet Type (`P_TYPE`), EFF Dist (`P_DISTANCE_EFF`, 5dp), Periastron (`P_PERIASTRON`, 5dp), Apastron (`P_APASTRON`, 5dp), Temp Type (`P_TYPE_TEMP`), Hill Sphere (`P_HILL_SPHERE`, 8dp), Habitable? (`P_HABITABLE`: `1`→`Yes`, `0`→`No`), ESI (`P_ESI`, 6dp), In HZ Con (`P_HABZONE_CON`: `1`→`Yes`, `0`→`No`), In HZ Opt (`P_HABZONE_OPT`: `1`→`Yes`, `0`→`No`).
   - **Planet Temperature Properties table** — one row per planet: Flux Min (`P_FLUX_MIN`, 5dp), Flux (`P_FLUX`, 5dp), Flux Max (`P_FLUX_MAX`, 5dp), EQ Min (`P_TEMP_EQUIL_MIN`, 3dp), EQ (`P_TEMP_EQUIL`, 3dp), EQ Max (`P_TEMP_EQUIL_MAX`, 3dp), Surf Min (`P_TEMP_SURF_MIN`, 3dp), Surf (`P_TEMP_SURF`, 3dp), Surf Max (`P_TEMP_SURF_MAX`, 3dp).
 - If no match is found, prints a message and returns to menu.
+
+## Open Exoplanet Catalogue Feature
+
+- Menu option 10: `query_open_exoplanet_catalogue()` — runs the same SIMBAD lookup, then queries the Open Exoplanet Catalogue (OEC) only.
+- Data source: downloaded once per session via `astroquery.open_exoplanet_catalogue.get_catalogue()` which fetches a gzip'd XML file from GitHub. Cached in module-level `_OEC_DATA = (root_element, name_index)`.
+- `_load_oec()` calls `get_catalogue()`, calls `.getroot()` on the returned `ElementTree`, then builds a case-insensitive `{name_lower: system_element}` index by iterating all `<name>` elements across the entire tree.
+- `_get_oec_candidates(designations)` builds an ordered candidate list from the designations dict (HIP → HD → GJ → HR → WASP → HAT_P → Kepler → TOI → K2 → CoRoT → COCONUTS → KOI → TIC → 2MASS → NAME → MAIN_ID) with normalizations:
+  - `K2 N` → `K2-N`, `Kepler N` → `Kepler-N` (SIMBAD uses spaces, OEC uses dashes)
+  - `WASP-94A` → `WASP-94 A` (SIMBAD omits space before component letter, OEC includes it)
+  - `2MASS J...` → `2MASS ...` (SIMBAD includes leading `J`, OEC omits it)
+  - NAME: strips `"NAME "` prefix; MAIN_ID: strips `"* "`, `"V* "`, `"NAME "` prefixes
+  - Gaia EDR3 excluded (OEC uses Gaia DR2 IDs — incompatible)
+- `_query_oec(designations)` returns `(system_elem, star_elem)` or `(None, None)`.
+- `_find_star_in_system(system_elem, matched_name_lower)` locates the specific `<star>` within the matched system using `iter('star')` (descends into `<binary>` nesting automatically); falls back to first star with planets if name was system-level.
+- Renders: SIMBAD star designations + info table, then `_display_oec_results()` which includes:
+  - Star Name line (primary OEC name + up to 3 alternates from star `<name>` elements)
+  - **Star Properties table** columns: Spectral Type (`spectraltype`), MagV (3dp), Temp (int K), Mass (3dp Msun), Radius (3dp Rsun), Fe/H (3dp), Age (2dp Gyr), Parsecs (4dp, from `system/distance`), LYs (parsecs × 3.26156, 4dp).
+  - **Planet Properties table** — one row per planet sorted ascending by `semimajoraxis` (N/A last): `#`, Planet Name, Mass(J) (4dp), Mass(E) (2dp, ×317.8), Rad(J) (4dp), Rad(E) (2dp, ×11.2), Period (3dp days), Distance as `peri - SMA - apo AU` (if eccentricity missing: `N/A - SMA - N/A AU`), Eccentricity (3dp), Temp (int K), Method, Year, Status.
+    - Status abbreviation map: "Confirmed planets"→"Confirmed", "Controversial"→"Controversial", "Retracted planet candidate"→"Retracted", "Solar System"→"Solar Sys", "Kepler Objects of Interest"→"KOI", "Planets in binary systems, S-type"→"Binary S".
+  - **Calculated Habitable Zone** via `_display_habitable_zone()` using a synthetic row with `st_teff` and `st_rad` from OEC star fields.
+- If `star_elem` is None (system-level planets, no host star), prints a note and skips star/planet tables.
+- If no match found, prints a message and returns to menu.
 
 ## SIMBAD Query Feature
 

@@ -1989,6 +1989,348 @@ def query_habitable_worlds_catalog():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Open Exoplanet Catalogue ─────────────────────────────────────────────────
+
+import astroquery.open_exoplanet_catalogue as _oec_mod
+
+_OEC_DATA = None  # (root_element, {lowercase_name: system_element})
+
+_OEC_STATUS_MAP = {
+    "Confirmed planets":                       "Confirmed",
+    "Controversial":                           "Controversial",
+    "Retracted planet candidate":              "Retracted",
+    "Solar System":                            "Solar Sys",
+    "Kepler Objects of Interest":              "KOI",
+    "Planets in binary systems, S-type":       "Binary S",
+}
+
+
+def _load_oec():
+    """Download and parse OEC XML; build case-insensitive name→system index. Cached."""
+    global _OEC_DATA
+    if _OEC_DATA is not None:
+        return _OEC_DATA
+
+    tree = _oec_mod.get_catalogue()
+    root = tree.getroot() if hasattr(tree, "getroot") else tree
+
+    # Build index: lowercase name text → system element
+    index = {}
+    for system in root:
+        for elem in system.iter("name"):
+            if elem.text:
+                key = elem.text.strip().lower()
+                if key not in index:
+                    index[key] = system
+
+    _OEC_DATA = (root, index)
+    return _OEC_DATA
+
+
+def _get_oec_candidates(designations):
+    """Return ordered list of candidate name strings to try against the OEC index."""
+    candidates = []
+
+    for key in ("HIP", "HD", "GJ", "HR", "WASP", "HAT_P", "Kepler", "TOI",
+                "K2", "CoRoT", "COCONUTS", "KOI", "TIC", "2MASS"):
+        val = designations.get(key)
+        if val:
+            s = str(val).strip()
+            # Normalize space-separated mission IDs to dash form (OEC convention)
+            s = re.sub(r"(?i)^(k2)\s+(\d)", r"K2-\2", s)
+            s = re.sub(r"(?i)^(kepler)\s+(\d)", r"Kepler-\2", s)
+            s = re.sub(r"(?i)^(hat-p)\s+(\d)", r"HAT-P-\2", s)
+            # WASP-94A → WASP-94 A  (SIMBAD omits space before component letter)
+            s = re.sub(r"(?i)^(WASP-\d+)([AB])$", r"\1 \2", s)
+            # 2MASS J20550794-3408079 → 2MASS 20550794-3408079  (strip leading J)
+            s = re.sub(r"(?i)^(2MASS\s+)J(\d)", r"\g<1>\2", s)
+            candidates.append(s)
+
+    # NAME designation: strip "NAME " prefix
+    name_val = str(designations.get("NAME") or "").strip()
+    if name_val.upper().startswith("NAME "):
+        candidates.append(name_val[5:].strip())
+    elif name_val:
+        candidates.append(name_val)
+
+    # MAIN_ID: strip leading "* ", "V* ", "NAME " SIMBAD prefixes
+    main_id = str(designations.get("MAIN_ID") or "").strip()
+    for prefix in ("NAME ", "V* ", "* "):
+        if main_id.upper().startswith(prefix.upper()):
+            main_id = main_id[len(prefix):].strip()
+            break
+    if main_id:
+        candidates.append(main_id)
+
+    return candidates
+
+
+def _find_star_in_system(system_elem, matched_name_lower):
+    """Return the <star> element containing matched_name; fallback to first star with planets."""
+    for star in system_elem.iter("star"):
+        for n in star.findall("name"):
+            if n.text and n.text.strip().lower() == matched_name_lower:
+                return star
+    # Name was at system/binary level — return first star that has at least one planet
+    for star in system_elem.iter("star"):
+        if star.find("planet") is not None:
+            return star
+    # Last resort: any star
+    return next(system_elem.iter("star"), None)
+
+
+def _query_oec(designations):
+    """Search OEC for designations; return (system_elem, star_elem) or (None, None)."""
+    _, index = _load_oec()
+    candidates = _get_oec_candidates(designations)
+
+    for name in candidates:
+        key = name.lower()
+        if key in index:
+            system_elem = index[key]
+            star_elem = _find_star_in_system(system_elem, key)
+            return system_elem, star_elem
+
+    return None, None
+
+
+def _oec_val(elem, tag):
+    """Return stripped text of first matching child tag, or None."""
+    if elem is None:
+        return None
+    text = elem.findtext(tag)
+    return text.strip() if text and text.strip() else None
+
+
+def _display_oec_star_properties(system_elem, star_elem):
+    """Print Star Properties table for the OEC star."""
+    spec   = _oec_val(star_elem, "spectraltype") or "N/A"
+    magv   = _oec_val(star_elem, "magV")
+    temp   = _oec_val(star_elem, "temperature")
+    mass   = _oec_val(star_elem, "mass")
+    radius = _oec_val(star_elem, "radius")
+    met    = _oec_val(star_elem, "metallicity")
+    age    = _oec_val(star_elem, "age")
+    dist   = _oec_val(system_elem, "distance")
+
+    def _fmt_f(v, dp):
+        try:
+            return f"{float(v):.{dp}f}"
+        except (TypeError, ValueError):
+            return "N/A"
+
+    def _fmt_i(v):
+        try:
+            return str(int(float(v)))
+        except (TypeError, ValueError):
+            return "N/A"
+
+    parsecs_str = _fmt_f(dist, 4)
+    ly_str = "N/A"
+    if dist:
+        try:
+            ly_str = f"{float(dist) * 3.26156:.4f}"
+        except (TypeError, ValueError):
+            pass
+
+    _print_table(
+        headers1=["Spectral", "MagV",       "Temp",      "Mass",      "Radius",    "Fe/H",      "Age",       "Parsecs",    "LYs"],
+        headers2=["Type",     "",            "",          "",          "",          "",          "",          "",           ""],
+        rows=[[
+            spec,
+            _fmt_f(magv, 3),
+            _fmt_i(temp),
+            _fmt_f(mass, 3),
+            _fmt_f(radius, 3),
+            _fmt_f(met, 3),
+            _fmt_f(age, 2),
+            parsecs_str,
+            ly_str,
+        ]],
+        aligns=["l", "r", "r", "r", "r", "r", "r", "r", "r"],
+    )
+    print()
+
+
+def _display_oec_planet_properties(star_elem):
+    """Print Planet Properties table; sorted by semimajoraxis ascending (N/A last)."""
+
+    def _fv(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    def _fmt_f(v, dp):
+        f = _fv(v)
+        return f"{f:.{dp}f}" if f is not None else "N/A"
+
+    def _fmt_i(v):
+        f = _fv(v)
+        return str(int(f)) if f is not None else "N/A"
+
+    planets = list(star_elem.iter("planet"))
+
+    def sort_key(p):
+        sma = _fv(p.findtext("semimajoraxis"))
+        return (0, sma) if sma is not None else (1, 0)
+
+    planets.sort(key=sort_key)
+
+    planet_rows = []
+    for idx, planet in enumerate(planets, 1):
+        name_elem = planet.find("name")
+        pname = name_elem.text.strip() if name_elem is not None and name_elem.text else "N/A"
+
+        mass_j   = _fv(planet.findtext("mass"))
+        mass_e   = f"{mass_j * 317.8:.2f}" if mass_j is not None else "N/A"
+        mass_j_s = f"{mass_j:.4f}" if mass_j is not None else "N/A"
+
+        rad_j    = _fv(planet.findtext("radius"))
+        rad_e    = f"{rad_j * 11.2:.2f}" if rad_j is not None else "N/A"
+        rad_j_s  = f"{rad_j:.4f}" if rad_j is not None else "N/A"
+
+        period   = _fmt_f(planet.findtext("period"), 3)
+        temp_s   = _fmt_i(planet.findtext("temperature"))
+
+        sma_v    = _fv(planet.findtext("semimajoraxis"))
+        ecc_v    = _fv(planet.findtext("eccentricity"))
+        ecc_s    = f"{ecc_v:.3f}" if ecc_v is not None else "N/A"
+
+        if sma_v is not None:
+            sma_s = f"{sma_v:.3f}"
+            if ecc_v is not None:
+                peri = f"{sma_v * (1 - ecc_v):.3f}"
+                apo  = f"{sma_v * (1 + ecc_v):.3f}"
+                dist_s = f"{peri} - {sma_s} - {apo} AU"
+            else:
+                dist_s = f"N/A - {sma_s} - N/A AU"
+        else:
+            dist_s = "N/A"
+
+        method   = planet.findtext("discoverymethod") or "N/A"
+        year     = planet.findtext("discoveryyear") or "N/A"
+
+        status_raw = planet.findtext("list") or ""
+        status = _OEC_STATUS_MAP.get(status_raw, status_raw[:12] if status_raw else "N/A")
+
+        planet_rows.append([
+            str(idx), pname, mass_j_s, mass_e, rad_j_s, rad_e,
+            period, dist_s, ecc_s, temp_s, method, year, status,
+        ])
+
+    _print_table(
+        headers1=["#", "Planet Name", "Mass(J)",  "Mass(E)", "Rad(J)",  "Rad(E)", "Period",    "Distance (Peri - SMA - Apo)", "Eccentricity", "Temp", "Method", "Year", "Status"],
+        headers2=["",  "",            "",          "",        "",        "",       "(days)",    "",                           "",             "",    "",       "",    ""],
+        rows=planet_rows,
+        aligns=["r", "l", "r", "r", "r", "r", "r", "r", "r", "r", "l", "r", "l"],
+    )
+    print()
+
+
+def _display_oec_results(designations, system_elem, star_elem):
+    """Render all OEC result tables."""
+
+    # ── Title ─────────────────────────────────────────────────────────────────
+    title  = "# Open Exoplanet Catalogue #"
+    border = "#" * len(title)
+    print(border)
+    print(title)
+    print(border)
+    print()
+
+    # ── Star Name line ────────────────────────────────────────────────────────
+    if star_elem is not None:
+        names = [n.text.strip() for n in star_elem.findall("name") if n.text and n.text.strip()]
+    else:
+        names = [n.text.strip() for n in system_elem.findall("name") if n.text and n.text.strip()]
+
+    primary   = names[0] if names else "Unknown"
+    alternates = names[1:4]
+    star_line  = (f"Star Name: {primary}  ({', '.join(alternates)})"
+                  if alternates else f"Star Name: {primary}")
+    sep = "-" * len(star_line)
+    print(sep)
+    print(star_line)
+    print(sep)
+    print()
+
+    if star_elem is None:
+        print("Note: No individual host star element found for this object in OEC.")
+        return
+
+    # ── Star Properties ───────────────────────────────────────────────────────
+    _display_oec_star_properties(system_elem, star_elem)
+
+    # ── Planet Properties ─────────────────────────────────────────────────────
+    planets = list(star_elem.iter("planet"))
+    if planets:
+        _display_oec_planet_properties(star_elem)
+    else:
+        print("No planets found for this star in the Open Exoplanet Catalogue.")
+        print()
+
+    # ── Calculated Habitable Zone ─────────────────────────────────────────────
+    teff_s = _oec_val(star_elem, "temperature")
+    rad_s  = _oec_val(star_elem, "radius")
+    hz_row = {"st_teff": teff_s, "st_rad": rad_s, "st_lum": None}
+    _display_habitable_zone([hz_row])
+
+
+def query_open_exoplanet_catalogue():
+    """Query the Open Exoplanet Catalogue for a star's exoplanet data."""
+    os.system("cls" if os.name == "nt" else "clear")
+    designation = input(
+        "\nEnter star designation (e.g., 'tau Ceti', 'HD 209458', 'WASP-12'): "
+    ).strip()
+
+    if not designation:
+        print("No designation entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── SIMBAD lookup ─────────────────────────────────────────────────────────
+    print(f"\nQuerying SIMBAD for '{designation}'...\n")
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
+
+    try:
+        simbad_result = custom_simbad.query_object(designation)
+        ids_result    = Simbad.query_objectids(designation)
+    except Exception as e:
+        print(f"Error querying SIMBAD: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if simbad_result is None:
+        print(f"No results found in SIMBAD for '{designation}'.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    designations = _parse_designations(simbad_result, ids_result)
+
+    # ── Load and query OEC ────────────────────────────────────────────────────
+    print("Loading Open Exoplanet Catalogue...")
+    try:
+        system_elem, star_elem = _query_oec(designations)
+    except Exception as e:
+        print(f"Error loading Open Exoplanet Catalogue: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if system_elem is None:
+        print("No data found in the Open Exoplanet Catalogue for this star.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── Display ───────────────────────────────────────────────────────────────
+    os.system("cls" if os.name == "nt" else "clear")
+    _display_results(simbad_result, designations)
+    _display_oec_results(designations, system_elem, star_elem)
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -2001,6 +2343,7 @@ MENU_OPTIONS = {
     "7": ("Star System Regions (Semi-Manual)",                      query_star_system_regions_semi_manual),
     "8": ("Star System Regions (Manual)",                           query_star_system_regions_manual),
     "9": ("Habitable Worlds Catalog",                               query_habitable_worlds_catalog),
+    "10": ("Open Exoplanet Catalogue",                              query_open_exoplanet_catalogue),
 }
 
 
