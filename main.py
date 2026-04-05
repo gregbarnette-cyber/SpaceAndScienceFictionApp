@@ -1832,7 +1832,7 @@ def _display_hwc_planet_properties(planet_rows):
             return v.strip()
 
     headers1 = [" Planet", "Mass (E)", "Radius (E)", "Orbit", "Semi-Major", "Eccentricity",
-                "Temp (Meas)", "Density", "Potential", "Gravity"]
+                "Density", "Potential", "Gravity", "Escape"]
     headers2 = ["", "", "", "", "Axis", "", "", "", "", ""]
     rows = []
     for r in planet_rows:
