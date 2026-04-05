@@ -2701,39 +2701,31 @@ def _parse_designations_from_ids(ids_string):
     return ", ".join(parts)
 
 
-def query_star_systems_csv():
-    """Query SIMBAD by criteria and write results to starSystems.csv."""
-    import warnings
-    os.system("cls" if os.name == "nt" else "clear")
-    print("=" * 60)
-    print("   STAR SYSTEMS CSV QUERY")
-    print("=" * 60)
-    print("\nQuerying SIMBAD (this may take up to 8 minutes)...\n")
+def _run_simbad_csv_query(simbad, criteria, query_num, existing_ids):
+    """Run one SIMBAD criteria query and return (new_rows, discarded) deduped against existing_ids.
 
-    simbad = Simbad()
-    simbad.TIMEOUT = 480
-    simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h", "ids")
+    existing_ids is a set of Star Name strings already committed; updated in-place as new rows
+    are accepted so that a second call automatically skips duplicates from the first query.
+    """
+    import warnings
+    print(f"Query {query_num}: {criteria}")
+    print(f"  Querying SIMBAD (this may take up to 8 minutes)...")
 
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            result = simbad.query_criteria(
-                "plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"
-            )
+            result = simbad.query_criteria(criteria)
     except Exception as e:
-        print(f"Error querying SIMBAD: {e}")
-        input("\nPress Enter to Return to the Main Menu")
-        return
+        print(f"  Error querying SIMBAD: {e}")
+        return [], 0
 
     if result is None or len(result) == 0:
-        print("No results returned from SIMBAD.")
-        input("\nPress Enter to Return to the Main Menu")
-        return
+        print(f"  No results returned.")
+        return [], 0
 
-    print(f"Retrieved {len(result)} rows from SIMBAD. Processing...\n")
+    print(f"  Retrieved {len(result)} rows. Processing...")
 
-    # Deduplicate by main_id, keeping first non-null teff seen per star
-    seen_main_ids = {}   # main_id -> index in new_rows
+    seen_main_ids = {}   # main_id -> index in new_rows (within this query's batch)
     new_rows = []
     discarded = 0
 
@@ -2758,10 +2750,14 @@ def query_star_systems_csv():
         except (TypeError, ValueError):
             temp = ""
 
-        # If already seen this star, just try to fill in a missing teff
+        # If already seen this star within this batch, just try to fill in a missing teff
         if main_id in seen_main_ids:
             if temp and not new_rows[seen_main_ids[main_id]]["Temperature"]:
                 new_rows[seen_main_ids[main_id]]["Temperature"] = temp
+            continue
+
+        # Skip stars already present from a prior query or the existing CSV
+        if main_id in existing_ids:
             continue
 
         # Parallax / distance
@@ -2801,6 +2797,7 @@ def query_star_systems_csv():
             dec = ""
 
         seen_main_ids[main_id] = len(new_rows)
+        existing_ids.add(main_id)
         new_rows.append({
             "Star Name":          main_id,
             "Star Designations":  desig_str,
@@ -2814,7 +2811,21 @@ def query_star_systems_csv():
             "DEC":                dec,
         })
 
-    new_rows.sort(key=lambda r: float(r["Light Years"]) if r["Light Years"] else float("inf"))
+    print(f"  Discarded (PLX/no-desig/no-sptype): {discarded}  |  New unique rows: {len(new_rows)}")
+    return new_rows, discarded
+
+
+def query_star_systems_csv():
+    """Query SIMBAD by criteria and write results to starSystems.csv."""
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   STAR SYSTEMS CSV QUERY")
+    print("=" * 60)
+    print()
+
+    simbad = Simbad()
+    simbad.TIMEOUT = 480
+    simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h", "ids")
 
     csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "starSystems.csv")
     fieldnames = [
@@ -2822,7 +2833,7 @@ def query_star_systems_csv():
         "Parsecs", "Light Years", "Temperature", "Apparent Magnitude", "RA", "DEC",
     ]
 
-    # Merge with existing CSV if present
+    # Load existing CSV so both queries can dedup against it
     existing_rows = []
     if os.path.exists(csv_path):
         with open(csv_path, newline="", encoding="utf-8") as f:
@@ -2830,15 +2841,25 @@ def query_star_systems_csv():
             for r in reader:
                 existing_rows.append(r)
 
-    # Build merged list: existing first, then new (dedup by Star Name)
     existing_ids = {r["Star Name"] for r in existing_rows}
-    duplicates_skipped = 0
-    for r in new_rows:
-        if r["Star Name"] in existing_ids:
-            duplicates_skipped += 1
-        else:
-            existing_rows.append(r)
-            existing_ids.add(r["Star Name"])
+
+    queries = [
+        "plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'",
+        "plx > 20.99 & plx < 26 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'",
+    ]
+
+    all_new_rows = []
+    total_discarded = 0
+
+    for i, criteria in enumerate(queries, start=1):
+        new_rows, discarded = _run_simbad_csv_query(simbad, criteria, i, existing_ids)
+        all_new_rows.extend(new_rows)
+        total_discarded += discarded
+        print()
+
+    all_new_rows.sort(key=lambda r: float(r["Light Years"]) if r["Light Years"] else float("inf"))
+
+    existing_rows.extend(all_new_rows)
 
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -2846,10 +2867,9 @@ def query_star_systems_csv():
         writer.writerows(existing_rows)
 
     print(f"Done.")
-    print(f"  Rows discarded (PLX/no-desig/no-sptype): {discarded}")
-    print(f"  Rows merged as duplicates:               {duplicates_skipped}")
-    print(f"  New rows written:                        {len(new_rows) - duplicates_skipped}")
-    print(f"  Total rows in starSystems.csv:           {len(existing_rows)}")
+    print(f"  Total rows discarded (PLX/no-desig/no-sptype): {total_discarded}")
+    print(f"  Total new rows written:                        {len(all_new_rows)}")
+    print(f"  Total rows in starSystems.csv:                 {len(existing_rows)}")
     print(f"\nOutput: {csv_path}")
 
     input("\nPress Enter to Return to the Main Menu")
