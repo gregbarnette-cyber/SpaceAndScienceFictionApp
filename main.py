@@ -2668,8 +2668,11 @@ def main_menu():
         print("=" * 50)
         print("   SPACE AND SCIENCE FICTION APP")
         print("=" * 50)
+        print("  Star Databases")
+        print("-" * 50)
         for key, (label, _) in MENU_OPTIONS.items():
             print(f"  {key}. {label}")
+        print("-" * 50)
         print("  Q. Quit")
         print("=" * 50)
 

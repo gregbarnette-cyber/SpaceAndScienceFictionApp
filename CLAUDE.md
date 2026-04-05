@@ -34,6 +34,8 @@ The main menu loop calls whichever function the user picks, then returns to the 
 ## Menu Options
 
 ```
+  Star Databases
+--------------------------------------------------
 1. SIMBAD Lookup Query
 2. NASA Exoplanet Archive: All Tables
 3. NASA Exoplanet Archive: Planetary Systems Composite
@@ -45,6 +47,8 @@ The main menu loop calls whichever function the user picks, then returns to the 
 9. Habitable Worlds Catalog
 10. Open Exoplanet Catalogue
 11. Exoplanet EU Encyclopaedia
+--------------------------------------------------
+Q. Quit
 ```
 
 ## NASA Exoplanet Archive: All Tables Feature
