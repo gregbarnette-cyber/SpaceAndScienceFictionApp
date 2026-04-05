@@ -1,3 +1,4 @@
 astroquery
 astropy
 requests
+pyExoplaneteu
