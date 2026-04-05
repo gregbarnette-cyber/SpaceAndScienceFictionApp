@@ -47,6 +47,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 9. Habitable Worlds Catalog
 10. Open Exoplanet Catalogue
 11. Exoplanet EU Encyclopaedia
+12. Star Systems CSV Query
 --------------------------------------------------
 Q. Quit
 ```
@@ -275,3 +276,19 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
 - Designations are pulled from `Simbad.query_objectids()`; the result column is `id` (lowercase).
 - Parallax (mas) from `plx_value`; distance in parsecs = 1000 / plx; light years = parsecs × 3.26156; all rounded to 4 decimal places.
 - Missing/masked SIMBAD fields are handled by `_safe_get()` and shown as `N/A`.
+
+## Star Systems CSV Query Feature
+
+- Menu option 12: `query_star_systems_csv()` — queries SIMBAD via ADQL TAP for all stars with parallax > 25.99 mas, writes results to `starSystems.csv`.
+- Uses `query_criteria()` (deprecated but still functional) with `add_votable_fields("sp_type", "plx_value", "V", "mesfe_h", "ids")`. The deprecation warning is suppressed via `warnings.catch_warnings()`. `query_tap` ADQL was investigated but rejected: SIMBAD TAP does not support table-qualified column names (`basic.col`), `maintype` does not exist in the TAP schema, and the `mes_fe_h` JOIN causes syntax errors.
+- Criteria string: `"plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"` — uses the legacy sim-script syntax which supports `maintype`.
+- Returns ~83,000 raw rows (one per teff measurement per star); deduplicates to ~19,000 unique stars in Python. Per-star deduplication keeps the first non-null `mesfe_h.teff` seen.
+- **Discard rule**: rows where `main_id` starts with `"PLX "` AND `Star Designations` is empty AND `Spectral Type` is empty are silently dropped.
+- **CSV columns**: `Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Temperature, Apparent Magnitude, RA, DEC` (matches `templateStarSystems.csv`).
+  - Star Name: `main_id`; Star Designations: comma-separated catalog IDs (GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS) parsed from pipe-separated `ids.ids` string via `_parse_designations_from_ids()`.
+  - Parallax: 4dp; Parsecs = 1000/plx (3dp); Light Years = parsecs × 3.26156 (3dp); Temperature: integer K; Apparent Magnitude: 3dp.
+  - RA: converted from decimal degrees to sexagesimal `HH MM SS.SSSS` (divide by 15 to get hours). DEC: converted to `±DD MM SS.SSS`. Conversion is pure Python math, no extra libraries.
+- **Deduplication**: when `starSystems.csv` already exists, new rows are merged in and duplicates (by exact `Star Name` match) are skipped. Multiple queries can be run and merged into the same file without duplicating rows.
+- **Sort**: after deduplication, new rows are sorted ascending by Light Years before writing.
+- Helper `_parse_designations_from_ids(ids_string)` and module-level `_CSV_PREFIX_MAP` / `_CSV_DESIG_KEYS` are defined before `MENU_OPTIONS`.
+- More queries (different parallax ranges or criteria) will be added later; each will merge into the same `starSystems.csv` with the same deduplication logic.

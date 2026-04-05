@@ -2645,6 +2645,216 @@ def query_exoplanet_eu():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Star Systems CSV Query ───────────────────────────────────────────────────
+
+_CSV_PREFIX_MAP = [
+    ("NAME ",       "NAME"),
+    ("GJ ",         "GJ"),
+    ("HD ",         "HD"),
+    ("HIP ",        "HIP"),
+    ("HR ",         "HR"),
+    ("Wolf ",       "Wolf"),
+    ("LHS ",        "LHS"),
+    ("BD+",         "BD"),
+    ("BD-",         "BD"),
+    ("BD ",         "BD"),
+    ("K2 ",         "K2"),
+    ("Kepler-",     "Kepler"),
+    ("Kepler ",     "Kepler"),
+    ("KOI-",        "KOI"),
+    ("KOI ",        "KOI"),
+    ("TOI-",        "TOI"),
+    ("TOI ",        "TOI"),
+    ("CoRoT-",      "CoRoT"),
+    ("CoRoT ",      "CoRoT"),
+    ("COCONUTS-",   "COCONUTS"),
+    ("HAT-P-",      "HAT_P"),
+    ("WASP-",       "WASP"),
+    ("TIC ",        "TIC"),
+    ("Gaia EDR3 ",  "Gaia EDR3"),
+    ("2MASS J",     "2MASS"),
+    ("2MASS ",      "2MASS"),
+]
+
+_CSV_DESIG_KEYS = [
+    "NAME", "GJ", "HD", "HIP", "HR", "Wolf", "LHS", "BD",
+    "K2", "Kepler", "KOI", "TOI", "CoRoT", "COCONUTS", "HAT_P", "WASP",
+    "TIC", "Gaia EDR3", "2MASS",
+]
+
+
+def _parse_designations_from_ids(ids_string):
+    """Parse a pipe-separated SIMBAD ids string into a comma-separated designation string.
+
+    Returns a string of found designations (excluding MAIN_ID), or an empty string.
+    """
+    desig = {k: None for k in _CSV_DESIG_KEYS}
+    if not ids_string:
+        return ""
+    for id_str in ids_string.split("|"):
+        id_str = id_str.strip()
+        for prefix, key in _CSV_PREFIX_MAP:
+            if id_str.startswith(prefix) and desig[key] is None:
+                desig[key] = id_str
+                break
+    parts = [desig[k] for k in _CSV_DESIG_KEYS if desig[k] is not None]
+    return ", ".join(parts)
+
+
+def query_star_systems_csv():
+    """Query SIMBAD by criteria and write results to starSystems.csv."""
+    import warnings
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   STAR SYSTEMS CSV QUERY")
+    print("=" * 60)
+    print("\nQuerying SIMBAD (this may take up to 8 minutes)...\n")
+
+    simbad = Simbad()
+    simbad.TIMEOUT = 480
+    simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h", "ids")
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = simbad.query_criteria(
+                "plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"
+            )
+    except Exception as e:
+        print(f"Error querying SIMBAD: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if result is None or len(result) == 0:
+        print("No results returned from SIMBAD.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print(f"Retrieved {len(result)} rows from SIMBAD. Processing...\n")
+
+    # Deduplicate by main_id, keeping first non-null teff seen per star
+    seen_main_ids = {}   # main_id -> index in new_rows
+    new_rows = []
+    discarded = 0
+
+    for row in result:
+        main_id = str(row["main_id"]).strip() if row["main_id"] is not None else ""
+        ids_str = str(row["ids"]).strip() if row["ids"] is not None else ""
+        sp_type = str(row["sp_type"]).strip() if row["sp_type"] is not None else ""
+        if sp_type.lower() in ("", "none", "--"):
+            sp_type = ""
+
+        desig_str = _parse_designations_from_ids(ids_str)
+
+        # Discard rule: PLX-prefixed main_id with no other designations and no sp_type
+        if main_id.startswith("PLX ") and desig_str == "" and sp_type == "":
+            discarded += 1
+            continue
+
+        # Temperature
+        try:
+            teff_raw = row["mesfe_h.teff"]
+            temp = str(int(float(teff_raw))) if teff_raw is not None and str(teff_raw).strip() not in ("", "--") else ""
+        except (TypeError, ValueError):
+            temp = ""
+
+        # If already seen this star, just try to fill in a missing teff
+        if main_id in seen_main_ids:
+            if temp and not new_rows[seen_main_ids[main_id]]["Temperature"]:
+                new_rows[seen_main_ids[main_id]]["Temperature"] = temp
+            continue
+
+        # Parallax / distance
+        try:
+            plx_f = float(row["plx_value"])
+            plx = f"{plx_f:.4f}"
+            parsecs = f"{1000.0 / plx_f:.3f}" if plx_f > 0 else ""
+            ly = f"{1000.0 / plx_f * 3.26156:.3f}" if plx_f > 0 else ""
+        except (TypeError, ValueError, ZeroDivisionError):
+            plx = parsecs = ly = ""
+
+        # Apparent magnitude
+        try:
+            vmag_f = float(row["V"])
+            vmag = f"{vmag_f:.3f}"
+        except (TypeError, ValueError):
+            vmag = ""
+
+        try:
+            ra_deg = float(row["ra"])
+            ra_h = int(ra_deg / 15)
+            ra_m = int((ra_deg / 15 - ra_h) * 60)
+            ra_s = ((ra_deg / 15 - ra_h) * 60 - ra_m) * 60
+            ra = f"{ra_h:02d} {ra_m:02d} {ra_s:07.4f}"
+        except (TypeError, ValueError):
+            ra = ""
+
+        try:
+            dec_deg = float(row["dec"])
+            dec_sign = "-" if dec_deg < 0 else "+"
+            dec_abs = abs(dec_deg)
+            dec_d = int(dec_abs)
+            dec_m = int((dec_abs - dec_d) * 60)
+            dec_s = ((dec_abs - dec_d) * 60 - dec_m) * 60
+            dec = f"{dec_sign}{dec_d:02d} {dec_m:02d} {dec_s:06.3f}"
+        except (TypeError, ValueError):
+            dec = ""
+
+        seen_main_ids[main_id] = len(new_rows)
+        new_rows.append({
+            "Star Name":          main_id,
+            "Star Designations":  desig_str,
+            "Spectral Type":      sp_type,
+            "Parallax":           plx,
+            "Parsecs":            parsecs,
+            "Light Years":        ly,
+            "Temperature":        temp,
+            "Apparent Magnitude": vmag,
+            "RA":                 ra,
+            "DEC":                dec,
+        })
+
+    new_rows.sort(key=lambda r: float(r["Light Years"]) if r["Light Years"] else float("inf"))
+
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "starSystems.csv")
+    fieldnames = [
+        "Star Name", "Star Designations", "Spectral Type", "Parallax",
+        "Parsecs", "Light Years", "Temperature", "Apparent Magnitude", "RA", "DEC",
+    ]
+
+    # Merge with existing CSV if present
+    existing_rows = []
+    if os.path.exists(csv_path):
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                existing_rows.append(r)
+
+    # Build merged list: existing first, then new (dedup by Star Name)
+    existing_ids = {r["Star Name"] for r in existing_rows}
+    duplicates_skipped = 0
+    for r in new_rows:
+        if r["Star Name"] in existing_ids:
+            duplicates_skipped += 1
+        else:
+            existing_rows.append(r)
+            existing_ids.add(r["Star Name"])
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(existing_rows)
+
+    print(f"Done.")
+    print(f"  Rows discarded (PLX/no-desig/no-sptype): {discarded}")
+    print(f"  Rows merged as duplicates:               {duplicates_skipped}")
+    print(f"  New rows written:                        {len(new_rows) - duplicates_skipped}")
+    print(f"  Total rows in starSystems.csv:           {len(existing_rows)}")
+    print(f"\nOutput: {csv_path}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -2659,6 +2869,7 @@ MENU_OPTIONS = {
     "9": ("Habitable Worlds Catalog",                               query_habitable_worlds_catalog),
     "10": ("Open Exoplanet Catalogue",                              query_open_exoplanet_catalogue),
     "11": ("Exoplanet EU Encyclopaedia",                            query_exoplanet_eu),
+    "12": ("Star Systems CSV Query",                               query_star_systems_csv),
 }
 
 
