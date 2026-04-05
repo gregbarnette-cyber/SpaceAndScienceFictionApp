@@ -654,6 +654,7 @@ def _display_hwo_exep_results(designations, hwo_rows):
 # ─── Mission Exocat Archive ───────────────────────────────────────────────────
 
 _MISSION_EXOCAT = None  # (rows, hip_index, hd_index, gj_index)
+_HWC_DATA       = None  # (hip_index, hd_index, name_index)  — each maps key → [row, ...]
 
 
 def _load_mission_exocat():
@@ -1679,6 +1680,257 @@ def query_star_system_regions_manual():
 
 # ─── Habitable Worlds Catalog ─────────────────────────────────────────────────
 
+def _load_hwc():
+    """Load hwc.csv into memory and build lookup indices by HIP, HD, and S_NAME.
+    Each index maps a normalised uppercase key → list of planet row dicts."""
+    global _HWC_DATA
+    if _HWC_DATA is not None:
+        return _HWC_DATA
+
+    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hwc.csv")
+    hip_index  = {}
+    hd_index   = {}
+    name_index = {}
+
+    def _add(index, key, row):
+        key = key.strip().upper()
+        if key:
+            index.setdefault(key, []).append(row)
+
+    try:
+        with open(filepath, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                _add(hip_index,  row.get("S_NAME_HIP", ""), row)
+                _add(hd_index,   row.get("S_NAME_HD",  ""), row)
+                _add(name_index, row.get("S_NAME",      ""), row)
+    except Exception as e:
+        print(f"Warning: Could not load hwc.csv: {e}")
+        _HWC_DATA = ({}, {}, {})
+        return _HWC_DATA
+
+    _HWC_DATA = (hip_index, hd_index, name_index)
+    return _HWC_DATA
+
+
+def _query_hwc(designations):
+    """Search HWC by HIP → HD → S_NAME. Returns a list of planet row dicts or None."""
+    hip_index, hd_index, name_index = _load_hwc()
+
+    # designations store full strings like "HIP 8102", "HD 10700"; HWC uses same format
+    hip  = (designations.get("HIP")  or "").strip().upper()
+    hd   = (designations.get("HD")   or "").strip().upper()
+    # designations["NAME"] is stored as "NAME Tau Ceti"; strip the prefix
+    raw_name = (designations.get("NAME") or "").strip()
+    name = raw_name[5:].strip().upper() if raw_name.upper().startswith("NAME ") else raw_name.upper()
+
+    for key, index in [(hip, hip_index), (hd, hd_index), (name, name_index)]:
+        if key:
+            rows = index.get(key)
+            if rows:
+                return rows
+    return None
+
+
+def _display_hwc_star_properties(row):
+    """Print the Star Properties table from a HWC row."""
+    title = "Star Properties"
+    print("-" * len(title))
+    print(title)
+    print("-" * len(title))
+    print()
+
+    def _f(key, decimals=None):
+        v = row.get(key, "")
+        if v == "":
+            return ""
+        try:
+            f = float(v)
+            return f"{f:.{decimals}f}" if decimals is not None else str(f)
+        except ValueError:
+            return v.strip()
+
+    ly = ""
+    try:
+        ly = f"{float(row['S_DISTANCE']) * 3.26156:.4f}"
+    except (ValueError, KeyError):
+        pass
+
+    temp_raw = row.get("S_TEMPERATURE", "")
+    temp = ""
+    try:
+        temp = str(int(float(temp_raw)))
+    except (ValueError, TypeError):
+        pass
+
+    headers1 = [" Star", "HD", "HIP", "Spectral", "MagV", "L", "Temp", "Mass", "Radius", "RA", "DEC", "Parsecs", "LY", "Fe/H", "Age"]
+    headers2 = ["", "", "", "Type", "", "", "", "", "", "", "", "", "", "", ""]
+    data_row = [
+        row.get("S_NAME", "").strip(),
+        row.get("S_NAME_HD", "").strip(),
+        row.get("S_NAME_HIP", "").strip(),
+        row.get("S_TYPE", "").strip(),
+        _f("S_MAG", 5),
+        _f("S_LUMINOSITY", 5),
+        temp,
+        _f("S_MASS", 2),
+        _f("S_RADIUS", 2),
+        _f("S_RA", 4),
+        _f("S_DEC", 4),
+        _f("S_DISTANCE", 5),
+        ly,
+        _f("S_METALLICITY", 2),
+        _f("S_AGE", 2),
+    ]
+    aligns = ["l", "l", "l", "l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r"]
+    _print_table(headers1, headers2, [data_row], aligns)
+    print()
+
+
+def _display_hwc_star_habitability(row):
+    """Print the Star Habitability Properties table from a HWC row."""
+    title = "Star Habitability Properties"
+    print("-" * len(title))
+    print(title)
+    print("-" * len(title))
+    print()
+
+    def _f(key):
+        v = row.get(key, "")
+        try:
+            return f"{float(v):.6f}"
+        except (ValueError, TypeError):
+            return v.strip()
+
+    headers1 = ["Inner Opt HZ", "Inner Con HZ", "Outer Con HZ", "Outer Opt HZ",
+                "Inner Con 5 Me HZ", "Outer Con 5 Me HZ", "Tidal Lock", "Abiogenesis", "Snow Line"]
+    headers2 = [""] * 9
+    data_row = [
+        _f("S_HZ_OPT_MIN"), _f("S_HZ_CON_MIN"), _f("S_HZ_CON_MAX"), _f("S_HZ_OPT_MAX"),
+        _f("S_HZ_CON1_MIN"), _f("S_HZ_CON1_MAX"),
+        _f("S_TIDAL_LOCK"), _f("S_ABIO_ZONE"), _f("S_SNOW_LINE"),
+    ]
+    aligns = ["r"] * 9
+    _print_table(headers1, headers2, [data_row], aligns)
+    print()
+
+
+def _display_hwc_planet_properties(planet_rows):
+    """Print the Planet Properties table from a list of HWC planet rows."""
+    title = "Planet Properties"
+    print("-" * len(title))
+    print(title)
+    print("-" * len(title))
+    print()
+
+    def _f(row, key, decimals):
+        v = row.get(key, "")
+        try:
+            return f"{float(v):.{decimals}f}"
+        except (ValueError, TypeError):
+            return v.strip()
+
+    headers1 = [" Planet", "Mass (E)", "Radius (E)", "Orbit", "Semi-Major", "Eccentricity",
+                "Temp (Meas)", "Density", "Potential", "Gravity"]
+    headers2 = ["", "", "", "", "Axis", "", "", "", "", ""]
+    rows = []
+    for r in planet_rows:
+        rows.append([
+            r.get("P_NAME", "").strip(),
+            _f(r, "P_MASS", 2),
+            _f(r, "P_RADIUS", 2),
+            _f(r, "P_PERIOD", 2),
+            _f(r, "P_SEMI_MAJOR_AXIS", 3),
+            _f(r, "P_ECCENTRICITY", 2),
+            _f(r, "P_DENSITY", 4),
+            _f(r, "P_POTENTIAL", 5),
+            _f(r, "P_GRAVITY", 5),
+            _f(r, "P_ESCAPE", 5),
+        ])
+    aligns = ["l", "r", "r", "r", "r", "r", "r", "r", "r", "r"]
+    _print_table(headers1, headers2, rows, aligns)
+    print()
+
+
+def _display_hwc_planet_habitability(planet_rows):
+    """Print the Planet Habitability Properties table from a list of HWC planet rows."""
+    title = "Planet Habitability Properties"
+    print("-" * len(title))
+    print(title)
+    print("-" * len(title))
+    print()
+
+    def _f(row, key, decimals):
+        v = row.get(key, "")
+        try:
+            return f"{float(v):.{decimals}f}"
+        except (ValueError, TypeError):
+            return v.strip()
+
+    def _flag(row, key):
+        v = row.get(key, "").strip()
+        if v == "1":
+            return "Yes"
+        if v == "0":
+            return "No"
+        return ""
+
+    headers1 = [" Planet", "EFF", "Periastron", "Apastron", "Temp", "Hill", "Habitable?", "ESI", "In HZ Con", "In HZ Opt"]
+    headers2 = [" Type", "Dist", "", "", "Type", "Sphere", "", "", "", ""]
+    rows = []
+    for r in planet_rows:
+        rows.append([
+            r.get("P_TYPE", "").strip(),
+            _f(r, "P_DISTANCE_EFF", 5),
+            _f(r, "P_PERIASTRON", 5),
+            _f(r, "P_APASTRON", 5),
+            r.get("P_TYPE_TEMP", "").strip(),
+            _f(r, "P_HILL_SPHERE", 8),
+            _flag(r, "P_HABITABLE"),
+            _f(r, "P_ESI", 6),
+            _flag(r, "P_HABZONE_CON"),
+            _flag(r, "P_HABZONE_OPT"),
+        ])
+    aligns = ["l", "r", "r", "r", "l", "r", "l", "r", "l", "l"]
+    _print_table(headers1, headers2, rows, aligns)
+    print()
+
+
+def _display_hwc_planet_temperature(planet_rows):
+    """Print the Planet Temperature Properties table from a list of HWC planet rows."""
+    title = "Planet Temperature Properties"
+    print("-" * len(title))
+    print(title)
+    print("-" * len(title))
+    print()
+
+    def _f(row, key, decimals):
+        v = row.get(key, "")
+        try:
+            return f"{float(v):.{decimals}f}"
+        except (ValueError, TypeError):
+            return v.strip()
+
+    headers1 = ["Flux Min", "Flux", "Flux Max", "EQ Min", "EQ", "EQ Max", "Surf Min", "Surf", "Surf Max"]
+    headers2 = [""] * 9
+    rows = []
+    for r in planet_rows:
+        rows.append([
+            _f(r, "P_FLUX_MIN", 5),
+            _f(r, "P_FLUX", 5),
+            _f(r, "P_FLUX_MAX", 5),
+            _f(r, "P_TEMP_EQUIL_MIN", 3),
+            _f(r, "P_TEMP_EQUIL", 3),
+            _f(r, "P_TEMP_EQUIL_MAX", 3),
+            _f(r, "P_TEMP_SURF_MIN", 3),
+            _f(r, "P_TEMP_SURF", 3),
+            _f(r, "P_TEMP_SURF_MAX", 3),
+        ])
+    aligns = ["r"] * 9
+    _print_table(headers1, headers2, rows, aligns)
+    print()
+
+
 def query_habitable_worlds_catalog():
     """Query the Habitable Worlds Catalog for a star."""
     os.system("cls" if os.name == "nt" else "clear")
@@ -1712,13 +1964,35 @@ def query_habitable_worlds_catalog():
     designations = _parse_designations(simbad_result, ids_result)
     _display_results(simbad_result, designations)
 
+    # ── Habitable Worlds Catalog lookup ───────────────────────────────────────
+    hwc_rows = _query_hwc(designations)
+
+    if not hwc_rows:
+        print("No data found in the Habitable Worlds Catalog for this star.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # Sort planets by semi-major axis ascending
+    def _sma(r):
+        try:
+            return float(r.get("P_SEMI_MAJOR_AXIS", "0") or "0")
+        except ValueError:
+            return 0.0
+    hwc_rows.sort(key=_sma)
+
+    _display_hwc_star_properties(hwc_rows[0])
+    _display_hwc_star_habitability(hwc_rows[0])
+    _display_hwc_planet_properties(hwc_rows)
+    _display_hwc_planet_habitability(hwc_rows)
+    _display_hwc_planet_temperature(hwc_rows)
+
     input("\nPress Enter to Return to the Main Menu")
 
 
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
-    "1": ("Query Star Information (SIMBAD)",                        query_star),
+    "1": ("SIMBAD Lookup Query",                                     query_star),
     "2": ("NASA Exoplanet Archive: All Tables",                     query_exoplanets),
     "3": ("NASA Exoplanet Archive: Planetary Systems Composite",    query_planetary_systems_composite),
     "4": ("NASA Exoplanet Archive: HWO ExEP Precursor Science Stars", query_hwo_exep),

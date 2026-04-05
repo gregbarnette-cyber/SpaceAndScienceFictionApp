@@ -18,7 +18,7 @@ python main.py
 
 ```
 MENU_OPTIONS = {
-    "1": ("Query Star Information (SIMBAD)", query_star),
+    "1": ("SIMBAD Lookup Query", query_star),
     # add new features here
 }
 ```
@@ -34,7 +34,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 ## Menu Options
 
 ```
-1. Query Star Information (SIMBAD)
+1. SIMBAD Lookup Query
 2. NASA Exoplanet Archive: All Tables
 3. NASA Exoplanet Archive: Planetary Systems Composite
 4. NASA Exoplanet Archive: HWO ExEP Precursor Science Stars
@@ -42,6 +42,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 6. Star System Regions
 7. Star System Regions (Semi-Manual)
 8. Star System Regions (Manual)
+9. Habitable Worlds Catalog
 ```
 
 ## NASA Exoplanet Archive: All Tables Feature
@@ -204,6 +205,20 @@ All three Star System Regions variants (options 6, 7, 8) produce identical outpu
   - Uses same Kopparapu et al. coefficients and `tstar = temp - 5780` as `_display_habitable_zone()` (line 474)
   - Three columns: Bolometric Luminosity (`bcLuminosity`), Luminosity from Mass (`luminosityFromMass`), Calculated Luminosity
   - Six zones in order: Optimistic Inner HZ (Recent Venus), Conservative Inner HZ (RG 5 Earth Mass), Conservative Inner HZ (Runaway Greenhouse), Conservative Inner HZ (RG 0.1 Earth Mass), Conservative Outer HZ (Maximum Greenhouse), Optimistic Outer HZ (Early Mars)
+
+## Habitable Worlds Catalog Feature
+
+- Menu option 9: `query_habitable_worlds_catalog()` — runs the same SIMBAD lookup, then queries `hwc.csv` only.
+- Data source: `hwc.csv` in the project directory, loaded once at first use into a module-level cache (`_HWC_DATA`).
+- Helper: `_load_hwc()` reads the CSV and builds HIP/HD/S_NAME lookup indices (each maps uppercased key → list of planet row dicts); `_query_hwc(designations)` searches by HIP → HD → NAME priority; strips `"NAME "` prefix from the NAME designation before lookup.
+- Planet rows sorted ascending by `P_SEMI_MAJOR_AXIS` before display.
+- Renders four tables via `_print_table()`:
+  - **Star Properties table** — one row from star-level fields: Star (`S_NAME`), HD (`S_NAME_HD`), HIP (`S_NAME_HIP`), Spectral Type (`S_TYPE`), MagV (`S_MAG`, 5dp), L (`S_LUMINOSITY`, 5dp), Temp (`S_TEMPERATURE`, integer), Mass (`S_MASS`, 2dp), Radius (`S_RADIUS`, 2dp), RA (`S_RA`, 4dp), DEC (`S_DEC`, 4dp), Parsecs (`S_DISTANCE`, 5dp), LY (`S_DISTANCE × 3.26156`, 4dp), Fe/H (`S_METALLICITY`, 3dp), Age (`S_AGE`, 2dp).
+  - **Star Habitability Properties table** — one row: Inner Opt HZ (`S_HZ_OPT_MIN`), Inner Con HZ (`S_HZ_CON_MIN`), Outer Con HZ (`S_HZ_CON_MAX`), Outer Opt HZ (`S_HZ_OPT_MAX`), Inner Con 5 Me HZ (`S_HZ_CON1_MIN`), Outer Con 5 Me HZ (`S_HZ_CON1_MAX`), Tidal Lock (`S_TIDAL_LOCK`), Abiogenesis (`S_ABIO_ZONE`), Snow Line (`S_SNOW_LINE`); all 6dp.
+  - **Planet Properties table** — one row per planet: Planet (`P_NAME`), Mass E (`P_MASS`, 2dp), Radius E (`P_RADIUS`, 2dp), Orbit (`P_PERIOD`, 2dp), Semi-Major Axis (`P_SEMI_MAJOR_AXIS`, 4dp), Eccentricity (`P_ECCENTRICITY`, 2dp), Temp Meas (`P_DENSITY`, 4dp), Density (`P_POTENTIAL`, 5dp), Potential (`P_GRAVITY`, 5dp), Gravity (`P_ESCAPE`, 5dp).
+  - **Planet Habitability Properties table** — one row per planet: Planet Type (`P_TYPE`), EFF Dist (`P_DISTANCE_EFF`, 5dp), Periastron (`P_PERIASTRON`, 5dp), Apastron (`P_APASTRON`, 5dp), Temp Type (`P_TYPE_TEMP`), Hill Sphere (`P_HILL_SPHERE`, 8dp), Habitable? (`P_HABITABLE`: `1`→`Yes`, `0`→`No`), ESI (`P_ESI`, 6dp), In HZ Con (`P_HABZONE_CON`: `1`→`Yes`, `0`→`No`), In HZ Opt (`P_HABZONE_OPT`: `1`→`Yes`, `0`→`No`).
+  - **Planet Temperature Properties table** — one row per planet: Flux Min (`P_FLUX_MIN`, 5dp), Flux (`P_FLUX`, 5dp), Flux Max (`P_FLUX_MAX`, 5dp), EQ Min (`P_TEMP_EQUIL_MIN`, 3dp), EQ (`P_TEMP_EQUIL`, 3dp), EQ Max (`P_TEMP_EQUIL_MAX`, 3dp), Surf Min (`P_TEMP_SURF_MIN`, 3dp), Surf (`P_TEMP_SURF`, 3dp), Surf Max (`P_TEMP_SURF_MAX`, 3dp).
+- If no match is found, prints a message and returns to menu.
 
 ## SIMBAD Query Feature
 
