@@ -2755,17 +2755,8 @@ def _run_simbad_csv_query(simbad, criteria, query_num, existing_ids):
             discarded += 1
             continue
 
-        # Temperature
-        try:
-            teff_raw = row["mesfe_h.teff"]
-            temp = str(int(float(teff_raw))) if teff_raw is not None and str(teff_raw).strip() not in ("", "--") else ""
-        except (TypeError, ValueError):
-            temp = ""
-
-        # If already seen this star within this batch, just try to fill in a missing teff
+        # If already seen this star within this batch, skip
         if main_id in seen_main_ids:
-            if temp and not new_rows[seen_main_ids[main_id]]["Temperature"]:
-                new_rows[seen_main_ids[main_id]]["Temperature"] = temp
             continue
 
         # Skip stars already present from a prior query or the existing CSV
@@ -2817,7 +2808,6 @@ def _run_simbad_csv_query(simbad, criteria, query_num, existing_ids):
             "Parallax":           plx,
             "Parsecs":            parsecs,
             "Light Years":        ly,
-            "Temperature":        temp,
             "Apparent Magnitude": vmag,
             "RA":                 ra,
             "DEC":                dec,
@@ -2837,12 +2827,12 @@ def query_star_systems_csv():
 
     simbad = Simbad()
     simbad.TIMEOUT = 480
-    simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h", "ids")
+    simbad.add_votable_fields("sp_type", "plx_value", "V", "ids")
 
     csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "starSystems.csv")
     fieldnames = [
         "Star Name", "Star Designations", "Spectral Type", "Parallax",
-        "Parsecs", "Light Years", "Temperature", "Apparent Magnitude", "RA", "DEC",
+        "Parsecs", "Light Years", "Apparent Magnitude", "RA", "DEC",
     ]
 
     # Rename existing CSV to backup before overwriting
