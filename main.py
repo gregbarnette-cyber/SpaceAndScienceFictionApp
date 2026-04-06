@@ -2066,22 +2066,25 @@ def _get_oec_candidates(designations):
     return candidates
 
 
-def _find_star_in_system(system_elem, matched_name_lower):
-    """Return the <star> element containing matched_name; fallback to first star with planets."""
-    for star in system_elem.iter("star"):
-        for n in star.findall("name"):
-            if n.text and n.text.strip().lower() == matched_name_lower:
-                return star
-    # Name was at system/binary level — return first star that has at least one planet
-    for star in system_elem.iter("star"):
-        if star.find("planet") is not None:
-            return star
-    # Last resort: any star
-    return next(system_elem.iter("star"), None)
+def _find_stars_in_system(system_elem, matched_name_lower):
+    """Return list of <star> elements for matched_name.
+
+    If the system has multiple stars with planets (e.g. WASP-94, Alpha Centauri),
+    returns all of them regardless of which star the query matched — so the user
+    always sees the full binary picture.
+    If only one star has planets, returns [that_star].
+    Last resort: all stars.
+    """
+    stars_with_planets = [s for s in system_elem.iter("star") if s.find("planet") is not None]
+    if stars_with_planets:
+        return stars_with_planets
+
+    # Last resort: all stars
+    return list(system_elem.iter("star"))
 
 
 def _query_oec(designations):
-    """Search OEC for designations; return (system_elem, star_elem) or (None, None)."""
+    """Search OEC for designations; return (system_elem, star_elems_list) or (None, [])."""
     _, index = _load_oec()
     candidates = _get_oec_candidates(designations)
 
@@ -2089,10 +2092,10 @@ def _query_oec(designations):
         key = name.lower()
         if key in index:
             system_elem = index[key]
-            star_elem = _find_star_in_system(system_elem, key)
-            return system_elem, star_elem
+            star_elems = _find_stars_in_system(system_elem, key)
+            return system_elem, star_elems
 
-    return None, None
+    return None, []
 
 
 def _oec_val(elem, tag):
@@ -2229,8 +2232,8 @@ def _display_oec_planet_properties(star_elem):
     print()
 
 
-def _display_oec_results(designations, system_elem, star_elem):
-    """Render all OEC result tables."""
+def _display_oec_results(designations, system_elem, star_elems):
+    """Render all OEC result tables. star_elems is a list of <star> elements."""
 
     # ── Title ─────────────────────────────────────────────────────────────────
     title  = "# Open Exoplanet Catalogue #"
@@ -2240,42 +2243,50 @@ def _display_oec_results(designations, system_elem, star_elem):
     print(border)
     print()
 
-    # ── Star Name line ────────────────────────────────────────────────────────
-    if star_elem is not None:
-        names = [n.text.strip() for n in star_elem.findall("name") if n.text and n.text.strip()]
-    else:
+    if not star_elems:
+        # No individual star found — show system name only
         names = [n.text.strip() for n in system_elem.findall("name") if n.text and n.text.strip()]
-
-    primary   = names[0] if names else "Unknown"
-    alternates = names[1:4]
-    star_line  = (f"Star Name: {primary}  ({', '.join(alternates)})"
-                  if alternates else f"Star Name: {primary}")
-    sep = "-" * len(star_line)
-    print(sep)
-    print(star_line)
-    print(sep)
-    print()
-
-    if star_elem is None:
+        primary = names[0] if names else "Unknown"
+        alternates = names[1:4]
+        star_line = (f"Star Name: {primary}  ({', '.join(alternates)})"
+                     if alternates else f"Star Name: {primary}")
+        sep = "-" * len(star_line)
+        print(sep)
+        print(star_line)
+        print(sep)
+        print()
         print("Note: No individual host star element found for this object in OEC.")
         return
 
-    # ── Star Properties ───────────────────────────────────────────────────────
-    _display_oec_star_properties(system_elem, star_elem)
-
-    # ── Planet Properties ─────────────────────────────────────────────────────
-    planets = list(star_elem.iter("planet"))
-    if planets:
-        _display_oec_planet_properties(star_elem)
-    else:
-        print("No planets found for this star in the Open Exoplanet Catalogue.")
+    for star_elem in star_elems:
+        # ── Star Name line ────────────────────────────────────────────────────
+        names = [n.text.strip() for n in star_elem.findall("name") if n.text and n.text.strip()]
+        primary    = names[0] if names else "Unknown"
+        alternates = names[1:4]
+        star_line  = (f"Star Name: {primary}  ({', '.join(alternates)})"
+                      if alternates else f"Star Name: {primary}")
+        sep = "-" * len(star_line)
+        print(sep)
+        print(star_line)
+        print(sep)
         print()
 
-    # ── Calculated Habitable Zone ─────────────────────────────────────────────
-    teff_s = _oec_val(star_elem, "temperature")
-    rad_s  = _oec_val(star_elem, "radius")
-    hz_row = {"st_teff": teff_s, "st_rad": rad_s, "st_lum": None}
-    _display_habitable_zone([hz_row])
+        # ── Star Properties ───────────────────────────────────────────────────
+        _display_oec_star_properties(system_elem, star_elem)
+
+        # ── Planet Properties ─────────────────────────────────────────────────
+        planets = list(star_elem.iter("planet"))
+        if planets:
+            _display_oec_planet_properties(star_elem)
+        else:
+            print("No planets found for this star in the Open Exoplanet Catalogue.")
+            print()
+
+        # ── Calculated Habitable Zone ─────────────────────────────────────────
+        teff_s = _oec_val(star_elem, "temperature")
+        rad_s  = _oec_val(star_elem, "radius")
+        hz_row = {"st_teff": teff_s, "st_rad": rad_s, "st_lum": None}
+        _display_habitable_zone([hz_row])
 
 
 def query_open_exoplanet_catalogue():
@@ -2313,7 +2324,7 @@ def query_open_exoplanet_catalogue():
     # ── Load and query OEC ────────────────────────────────────────────────────
     print("Loading Open Exoplanet Catalogue...")
     try:
-        system_elem, star_elem = _query_oec(designations)
+        system_elem, star_elems = _query_oec(designations)
     except Exception as e:
         print(f"Error loading Open Exoplanet Catalogue: {e}")
         input("\nPress Enter to Return to the Main Menu")
@@ -2327,7 +2338,7 @@ def query_open_exoplanet_catalogue():
     # ── Display ───────────────────────────────────────────────────────────────
     os.system("cls" if os.name == "nt" else "clear")
     _display_results(simbad_result, designations)
-    _display_oec_results(designations, system_elem, star_elem)
+    _display_oec_results(designations, system_elem, star_elems)
 
     input("\nPress Enter to Return to the Main Menu")
 

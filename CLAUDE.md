@@ -241,15 +241,18 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
   - `2MASS J...` → `2MASS ...` (SIMBAD includes leading `J`, OEC omits it)
   - NAME: strips `"NAME "` prefix; MAIN_ID: strips `"* "`, `"V* "`, `"NAME "` prefixes
   - Gaia EDR3 excluded (OEC uses Gaia DR2 IDs — incompatible)
-- `_query_oec(designations)` returns `(system_elem, star_elem)` or `(None, None)`.
-- `_find_star_in_system(system_elem, matched_name_lower)` locates the specific `<star>` within the matched system using `iter('star')` (descends into `<binary>` nesting automatically); falls back to first star with planets if name was system-level.
-- Renders: SIMBAD star designations + info table, then `_display_oec_results()` which includes:
+- `_query_oec(designations)` returns `(system_elem, star_elems_list)` or `(None, [])`.
+- `_find_stars_in_system(system_elem, matched_name_lower)` returns a **list** of `<star>` elements:
+  - Always returns **all stars with planets** in the system, regardless of which star the query matched. This ensures binary systems like WASP-94 (A and B each with a planet) and Alpha Centauri (Proxima + Alpha Cen B) always show all planet-bearing stars.
+  - If no stars have planets, falls back to all stars in the system.
+- OEC XML structure: `<system>` may contain `<binary>` elements (nested arbitrarily), which contain `<star>` elements. `system.iter('star')` descends into all nesting automatically.
+- Renders: SIMBAD star designations + info table, then `_display_oec_results()` which **iterates over each star** in `star_elems` and for each prints:
   - Star Name line (primary OEC name + up to 3 alternates from star `<name>` elements)
   - **Star Properties table** columns: Spectral Type (`spectraltype`), MagV (3dp), Temp (int K), Mass (3dp Msun), Radius (3dp Rsun), Fe/H (3dp), Age (2dp Gyr), Parsecs (4dp, from `system/distance`), LYs (parsecs × 3.26156, 4dp).
   - **Planet Properties table** — one row per planet sorted ascending by `semimajoraxis` (N/A last): `#`, Planet Name, Mass(J) (4dp), Mass(E) (2dp, ×317.8), Rad(J) (4dp), Rad(E) (2dp, ×11.2), Period (3dp days), Distance as `peri - SMA - apo AU` (if eccentricity missing: `N/A - SMA - N/A AU`), Eccentricity (3dp), Temp (int K), Method, Year, Status.
     - Status abbreviation map: "Confirmed planets"→"Confirmed", "Controversial"→"Controversial", "Retracted planet candidate"→"Retracted", "Solar System"→"Solar Sys", "Kepler Objects of Interest"→"KOI", "Planets in binary systems, S-type"→"Binary S".
   - **Calculated Habitable Zone** via `_display_habitable_zone()` using a synthetic row with `st_teff` and `st_rad` from OEC star fields.
-- If `star_elem` is None (system-level planets, no host star), prints a note and skips star/planet tables.
+- If `star_elems` is empty (system-level planets, no host star), prints a note and skips star/planet tables.
 - If no match found, prints a message and returns to menu.
 
 ## Exoplanet EU Encyclopaedia Feature
