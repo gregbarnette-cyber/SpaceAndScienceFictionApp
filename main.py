@@ -2900,6 +2900,360 @@ def query_star_systems_csv():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Calculators ──────────────────────────────────────────────────────────────
+
+def _lookup_star_for_distance(designation):
+    """Query SIMBAD for RA, DEC, parallax, and designations.
+    Returns (name, ra_deg, dec_deg, ly, desig_str) or None on failure.
+    desig_str contains NAME/HD/HR/GJ/Wolf designations (comma-separated).
+    """
+    norm = designation.strip().lower()
+    if norm in ("sun", "sol"):
+        return (designation.strip(), 0.0, 0.0, 0.0, "")
+
+    print(f"\nQuerying SIMBAD for '{designation}'...")
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields("plx_value")
+
+    try:
+        result     = custom_simbad.query_object(designation)
+        ids_result = Simbad.query_objectids(designation)
+    except Exception as e:
+        print(f"  Error querying SIMBAD: {e}")
+        return None
+
+    if result is None:
+        print(f"  No results found for '{designation}'.")
+        return None
+
+    row = result[0]
+    col_names = result.colnames
+
+    ra_raw  = _safe_get(row, col_names, "ra")
+    dec_raw = _safe_get(row, col_names, "dec")
+    plx_raw = _safe_get(row, col_names, "plx_value")
+
+    try:
+        ra_deg  = float(ra_raw)
+        dec_deg = float(dec_raw)
+    except (TypeError, ValueError):
+        print(f"  Could not read RA/DEC for '{designation}'.")
+        return None
+
+    try:
+        plx_f = float(plx_raw)
+        if plx_f <= 0:
+            raise ValueError("non-positive parallax")
+        ly = 1000.0 / plx_f * 3.26156
+    except (TypeError, ValueError, ZeroDivisionError):
+        print(f"  Could not read valid parallax for '{designation}'.")
+        return None
+
+    name = str(_safe_get(row, col_names, "main_id") or designation)
+
+    # Build short designation string: NAME, HD, HR, GJ, Wolf only
+    desig_parts = []
+    desig_found = {k: None for k in ("NAME", "HD", "HR", "GJ", "Wolf")}
+    desig_prefix_map = [
+        ("NAME ",  "NAME"),
+        ("HD ",    "HD"),
+        ("HR ",    "HR"),
+        ("GJ ",    "GJ"),
+        ("Wolf ",  "Wolf"),
+    ]
+    if ids_result is not None:
+        for id_row in ids_result:
+            id_str = str(id_row["id"]).strip()
+            for prefix, key in desig_prefix_map:
+                if id_str.startswith(prefix) and desig_found[key] is None:
+                    desig_found[key] = id_str
+                    break
+    for key in ("NAME", "HD", "HR", "GJ", "Wolf"):
+        if desig_found[key]:
+            desig_parts.append(desig_found[key])
+    desig_str = ", ".join(desig_parts)
+
+    return (name, ra_deg, dec_deg, ly, desig_str)
+
+
+def query_distance_between_stars():
+    """Compute the 3D distance in light years between two star systems using SIMBAD."""
+    import math
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 50)
+    print("   DISTANCE BETWEEN 2 STARS")
+    print("=" * 50)
+    print()
+
+    name1 = input("Enter Star Name 1: ").strip()
+    if not name1:
+        print("No star name entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    name2 = input("Enter Star Name 2: ").strip()
+    if not name2:
+        print("No star name entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    s1 = _lookup_star_for_distance(name1)
+    s2 = _lookup_star_for_distance(name2)
+
+    if s1 is None or s2 is None:
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    label1, ra1_deg, dec1_deg, ly1, desig1 = s1
+    label2, ra2_deg, dec2_deg, ly2, desig2 = s2
+
+    # Convert to radians
+    ra1_r  = math.radians(ra1_deg)
+    dec1_r = math.radians(dec1_deg)
+    ra2_r  = math.radians(ra2_deg)
+    dec2_r = math.radians(dec2_deg)
+
+    # Cartesian coordinates (light years)
+    x1 = ly1 * math.cos(dec1_r) * math.cos(ra1_r)
+    y1 = ly1 * math.cos(dec1_r) * math.sin(ra1_r)
+    z1 = ly1 * math.sin(dec1_r)
+
+    x2 = ly2 * math.cos(dec2_r) * math.cos(ra2_r)
+    y2 = ly2 * math.cos(dec2_r) * math.sin(ra2_r)
+    z2 = ly2 * math.sin(dec2_r)
+
+    distance_ly = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+    # Format RA/DEC as sexagesimal for display
+    def fmt_ra(deg):
+        h = int(deg / 15)
+        m = int((deg / 15 - h) * 60)
+        s = ((deg / 15 - h) * 60 - m) * 60
+        return f"{h:02d} {m:02d} {s:07.4f}"
+
+    def fmt_dec(deg):
+        sign = "-" if deg < 0 else "+"
+        a = abs(deg)
+        d = int(a); m = int((a - d) * 60)
+        s = ((a - d) * 60 - m) * 60
+        return f"{sign}{d:02d} {m:02d} {s:06.3f}"
+
+    print()
+    _print_table(
+        ["Star", "Star Designations", "RA", "DEC", "Light Years"],
+        ["",     "",                  "",   "",    ""],
+        [
+            [label1, desig1, fmt_ra(ra1_deg), fmt_dec(dec1_deg), f"{ly1:.4f}"],
+            [label2, desig2, fmt_ra(ra2_deg), fmt_dec(dec2_deg), f"{ly2:.4f}"],
+        ],
+        ["l", "l", "r", "r", "r"],
+    )
+    print()
+    print(f"  Distance Between {label1} and {label2}:")
+    print(f"  {distance_ly:.4f} Light Years")
+    if distance_ly < 0.5:
+        distance_au = distance_ly * 63241.077
+        print(f"  {distance_au:.2f} AU")
+    print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def query_stars_within_distance():
+    """List all stars in starSystems.csv within a given distance of Sol."""
+    import csv
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 50)
+    print("   STARS WITHIN A CERTAIN DISTANCE OF SOL")
+    print("=" * 50)
+    print()
+
+    # Prompt for distance limit
+    while True:
+        raw = input("Enter distance limit in Light Years: ").strip()
+        if not raw:
+            print("No distance entered.")
+            input("\nPress Enter to Return to the Main Menu")
+            return
+        try:
+            limit_ly = float(raw)
+            if limit_ly <= 0:
+                print("  Distance must be greater than 0.")
+                continue
+            break
+        except ValueError:
+            print("  Please enter a valid number.")
+
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "starSystems.csv")
+    if not os.path.exists(csv_path):
+        print("\n  starSystems.csv not found. Run option 50 first to generate it.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    matches = []
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    ly = float(row["Light Years"])
+                except (ValueError, KeyError):
+                    continue
+                if ly <= limit_ly:
+                    matches.append({
+                        "Star Name":        row.get("Star Name", ""),
+                        "Star Designations": row.get("Star Designations", ""),
+                        "Spectral Type":    row.get("Spectral Type", ""),
+                        "Light Years":      ly,
+                    })
+    except Exception as e:
+        print(f"\n  Error reading starSystems.csv: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    matches.sort(key=lambda r: r["Light Years"])
+
+    print()
+    if not matches:
+        print(f"  No stars found within {limit_ly} light years.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print(f"  Stars within {limit_ly} light years of Sol: {len(matches)}")
+    print()
+
+    _print_table(
+        ["Star Name", "Star Designations", "Spectral Type", "Distance (LY)"],
+        ["",          "",                  "",              ""],
+        [[r["Star Name"], r["Star Designations"], r["Spectral Type"], f"{r['Light Years']:.3f}"]
+         for r in matches],
+        ["l", "l", "l", "r"],
+    )
+    print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def query_stars_within_distance_of_star():
+    """List all stars in starSystems.csv within a given distance of a queried star."""
+    import csv, math
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 50)
+    print("   STARS WITHIN A CERTAIN DISTANCE OF A STAR")
+    print("=" * 50)
+    print()
+
+    star_name = input("Enter Star System Name: ").strip()
+    if not star_name:
+        print("No star name entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    while True:
+        raw = input("Enter distance limit in Light Years: ").strip()
+        if not raw:
+            print("No distance entered.")
+            input("\nPress Enter to Return to the Main Menu")
+            return
+        try:
+            limit_ly = float(raw)
+            if limit_ly <= 0:
+                print("  Distance must be greater than 0.")
+                continue
+            break
+        except ValueError:
+            print("  Please enter a valid number.")
+
+    # Look up the target star via SIMBAD (reuses existing helper)
+    s = _lookup_star_for_distance(star_name)
+    if s is None:
+        input("\nPress Enter to Return to the Main Menu")
+        return
+    center_label, center_ra_deg, center_dec_deg, center_ly, _ = s
+
+    # Convert center star to Cartesian (ly)
+    def to_cartesian(ra_deg, dec_deg, ly):
+        ra_r  = math.radians(ra_deg)
+        dec_r = math.radians(dec_deg)
+        return (
+            ly * math.cos(dec_r) * math.cos(ra_r),
+            ly * math.cos(dec_r) * math.sin(ra_r),
+            ly * math.sin(dec_r),
+        )
+
+    # Parse sexagesimal RA "HH MM SS.SSSS" → decimal degrees
+    def parse_ra(s):
+        parts = s.strip().split()
+        h, m, sec = float(parts[0]), float(parts[1]), float(parts[2])
+        return (h + m / 60 + sec / 3600) * 15
+
+    # Parse sexagesimal DEC "±DD MM SS.SSS" → decimal degrees
+    def parse_dec(s):
+        s = s.strip()
+        sign = -1 if s.startswith("-") else 1
+        parts = s.lstrip("+-").split()
+        d, m, sec = float(parts[0]), float(parts[1]), float(parts[2])
+        return sign * (d + m / 60 + sec / 3600)
+
+    cx, cy, cz = to_cartesian(center_ra_deg, center_dec_deg, center_ly)
+
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "starSystems.csv")
+    if not os.path.exists(csv_path):
+        print("\n  starSystems.csv not found. Run option 50 first to generate it.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    matches = []
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    plx = float(row["Parallax"])
+                    if plx <= 0:
+                        continue
+                    ly = 1000.0 / plx * 3.26156
+                    ra_deg  = parse_ra(row["RA"])
+                    dec_deg = parse_dec(row["DEC"])
+                except (ValueError, KeyError):
+                    continue
+                x, y, z = to_cartesian(ra_deg, dec_deg, ly)
+                dist = math.sqrt((x - cx)**2 + (y - cy)**2 + (z - cz)**2)
+                if 0.001 < dist <= limit_ly:
+                    matches.append({
+                        "Star Name":         row.get("Star Name", ""),
+                        "Star Designations": row.get("Star Designations", ""),
+                        "Spectral Type":     row.get("Spectral Type", ""),
+                        "Distance":          dist,
+                    })
+    except Exception as e:
+        print(f"\n  Error reading starSystems.csv: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    matches.sort(key=lambda r: r["Distance"])
+
+    print()
+    if not matches:
+        print(f"  No stars found within {limit_ly} light years of {center_label}.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print(f"  Stars within {limit_ly} light years of {center_label}: {len(matches)}")
+    print()
+
+    _print_table(
+        ["Star Name", "Star Designations", "Spectral Type", "Distance (LY)"],
+        ["",          "",                  "",              ""],
+        [[r["Star Name"], r["Star Designations"], r["Spectral Type"], f"{r['Distance']:.3f}"]
+         for r in matches],
+        ["l", "l", "l", "r"],
+    )
+    print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -2911,14 +3265,18 @@ MENU_OPTIONS = {
     "6":  ("Habitable Worlds Catalog",                                query_habitable_worlds_catalog),
     "7":  ("Open Exoplanet Catalogue",                                query_open_exoplanet_catalogue),
     "8":  ("Exoplanet EU Encyclopaedia",                              query_exoplanet_eu),
-    "10": ("Star System Regions (SIMBAD)",                            query_star_system_regions),
-    "11": ("Star System Regions (Semi-SIMBAD)",                       query_star_system_regions_semi_manual),
-    "12": ("Star System Regions (Manual)",                            query_star_system_regions_manual),
+    "9":  ("Star System Regions (SIMBAD)",                            query_star_system_regions),
+    "10": ("Star System Regions (Semi-SIMBAD)",                       query_star_system_regions_semi_manual),
+    "11": ("Star System Regions (Manual)",                            query_star_system_regions_manual),
+    "12": ("Distance Between 2 Stars",                               query_distance_between_stars),
+    "13": ("Stars within a Certain Distance of Sol",                 query_stars_within_distance),
+    "14": ("Stars within a Certain Distance of a Star",             query_stars_within_distance_of_star),
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
 _STAR_DB_KEYS = {"1", "2", "3", "4", "5", "6", "7", "8"}
-_STAR_REGIONS_KEYS = {"10", "11", "12"}
+_STAR_REGIONS_KEYS = {"9", "10", "11"}
+_CALCULATORS_KEYS = {"12", "13", "14"}
 _UTILITY_KEYS = {"50"}
 
 
@@ -2937,6 +3295,12 @@ def main_menu():
         print("  Star System Regions")
         print("-" * 50)
         for key in sorted(_STAR_REGIONS_KEYS, key=int):
+            label = MENU_OPTIONS[key][0]
+            print(f"  {key}. {label}")
+        print("-" * 50)
+        print("  Calculators")
+        print("-" * 50)
+        for key in sorted(_CALCULATORS_KEYS, key=int):
             label = MENU_OPTIONS[key][0]
             print(f"  {key}. {label}")
         print("-" * 50)

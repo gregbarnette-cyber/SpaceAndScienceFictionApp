@@ -47,9 +47,15 @@ The main menu loop calls whichever function the user picks, then returns to the 
 --------------------------------------------------
   Star System Regions
 --------------------------------------------------
-10. Star System Regions (SIMBAD)
-11. Star System Regions (Semi-SIMBAD)
-12. Star System Regions (Manual)
+9.  Star System Regions (SIMBAD)
+10. Star System Regions (Semi-SIMBAD)
+11. Star System Regions (Manual)
+--------------------------------------------------
+  Calculators
+--------------------------------------------------
+12. Distance Between 2 Stars
+13. Stars within a Certain Distance of Sol
+14. Stars within a Certain Distance of a Star
 --------------------------------------------------
 50. Star Systems CSV Query
 Q. Quit
@@ -316,3 +322,32 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 - Helper `_run_simbad_csv_query(simbad, criteria, query_num, existing_ids)` encapsulates per-query fetch, row processing, discard logic, and deduplication; returns `(new_rows, discarded)`.
 - Helper `_parse_designations_from_ids(ids_string)` and module-level `_CSV_PREFIX_MAP` / `_CSV_DESIG_KEYS` are defined before `MENU_OPTIONS`.
 - More queries (different parallax ranges or criteria) can be added to the `queries` list in `query_star_systems_csv()`; each will merge into the same `starSystems.csv` with the same deduplication logic.
+
+## Distance Between 2 Stars Feature
+
+- Menu option 12: `query_distance_between_stars()` — computes the 3D Euclidean distance in light years between two star systems.
+- Helper `_lookup_star_for_distance(designation)` handles SIMBAD lookup for a single star; returns `(name, ra_deg, dec_deg, ly, desig_str)` or `None` on failure.
+  - Special case: if designation is `"sun"` or `"sol"` (case-insensitive), returns `(designation, 0.0, 0.0, 0.0, "")` with no SIMBAD query.
+  - Queries SIMBAD with `add_votable_fields("plx_value")` and also calls `Simbad.query_objectids()` to build a short designation string (NAME, HD, HR, GJ, Wolf only).
+  - Computes `ly = 1000 / plx_mas × 3.26156`.
+- Math: converts each star's RA/DEC (decimal degrees from SIMBAD) + distance (ly) to 3D Cartesian coordinates; distance = `sqrt((x2-x1)² + (y2-y1)² + (z2-z1)²)`.
+- Output table columns: Star | Star Designations | RA (HMS) | DEC (±DMS) | Light Years.
+- After the table, prints `Distance Between <star1> and <star2>: X.XXXX Light Years`. If distance < 0.5 ly, also prints the distance in AU (`ly × 63241.077`).
+
+## Stars within a Certain Distance of Sol Feature
+
+- Menu option 13: `query_stars_within_distance()` — lists all stars in `starSystems.csv` within a user-supplied light year limit of Sol.
+- Reads `starSystems.csv` directly; uses the `Light Years` column for distance comparison. No SIMBAD query.
+- Prompts for a distance limit (float, must be > 0). Prints error if `starSystems.csv` not found (directs user to run option 50).
+- Results sorted ascending by Light Years. Displays count of matches above the table.
+- Output table columns: Star Name | Star Designations | Spectral Type | Distance (LY) (4dp).
+
+## Stars within a Certain Distance of a Star Feature
+
+- Menu option 14: `query_stars_within_distance_of_star()` — lists all stars in `starSystems.csv` within a user-supplied light year limit of a queried star.
+- Prompts for Star System Name and distance limit (float, must be > 0).
+- Queries SIMBAD for the center star via `_lookup_star_for_distance()`.
+- Reads `starSystems.csv`; for each row parses `Parallax` → ly, `RA` (sexagesimal HMS) → decimal degrees, `DEC` (sexagesimal ±DMS) → decimal degrees, then converts to 3D Cartesian coordinates and computes Euclidean distance from the center star.
+- Skips any row with computed distance < 0.001 ly (eliminates the center star itself and floating-point near-zero matches).
+- Results sorted ascending by distance. Displays count of matches above the table.
+- Output table columns: Star Name | Star Designations | Spectral Type | Distance (LY) (3dp).
