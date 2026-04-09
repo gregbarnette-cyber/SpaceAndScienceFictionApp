@@ -4469,6 +4469,176 @@ def moon_orbital_distance_x_hours():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Rotating Habitat Equations ───────────────────────────────────────────────
+
+def centrifugal_gravity_acceleration():
+    """Centrifugal artificial gravity acceleration at Point X.
+      a = omega^2 * r
+      where omega (rad/s) = rpm * 2*pi / 60
+    """
+    import math
+
+    while True:
+        raw = input("Enter Rotation Rate (rpm): ").strip()
+        try:
+            rpm = float(raw)
+            if rpm <= 0:
+                print("Rotation rate must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter Distance (m) from Point X to Center of Rotation: ").strip()
+        try:
+            r = float(raw)
+            if r <= 0:
+                print("Distance must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    omega = rpm * 2.0 * math.pi / 60.0
+    a     = omega ** 2 * r
+
+    col0 = "Rotation Rate (rpm)"
+    col1 = "Distance from Center (m)"
+    col2 = "Centrifugal Gravity (m/s^2)"
+
+    v0 = f"{rpm:.4f}"
+    v1 = f"{r:.4f}"
+    v2 = f"{a:.2f}"
+
+    w0 = max(len(col0), len(v0))
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+
+    sep     = "  "
+    header  = col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2)
+    row     = v0.ljust(w0)   + sep + v1.ljust(w1)   + sep + v2.ljust(w2)
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def centrifugal_gravity_distance():
+    """Distance from Point X to the center of rotation.
+      r = a / omega^2
+      where omega (rad/s) = rpm * 2*pi / 60
+    """
+    import math
+
+    while True:
+        raw = input("Enter Rotation Rate (rpm): ").strip()
+        try:
+            rpm = float(raw)
+            if rpm <= 0:
+                print("Rotation rate must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter Centrifugal Artificial Gravity Acceleration (m/s^2) at Point X: ").strip()
+        try:
+            a = float(raw)
+            if a <= 0:
+                print("Acceleration must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    omega = rpm * 2.0 * math.pi / 60.0
+    r     = a / omega ** 2
+
+    col0 = "Rotation Rate (rpm)"
+    col1 = "Centrifugal Gravity (m/s^2)"
+    col2 = "Distance from Center (m)"
+
+    v0 = f"{rpm:.4f}"
+    v1 = f"{a:.4f}"
+    v2 = f"{r:.2f}"
+
+    w0 = max(len(col0), len(v0))
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+
+    sep     = "  "
+    header  = col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2)
+    row     = v0.ljust(w0)   + sep + v1.ljust(w1)   + sep + v2.ljust(w2)
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def centrifugal_gravity_rpm():
+    """Rotation rate (rpm) at Point X given gravity and distance.
+      omega = sqrt(a / r)
+      rpm = omega * 60 / (2*pi)
+    """
+    import math
+
+    while True:
+        raw = input("Enter Centrifugal Artificial Gravity Acceleration (m/s^2) at Point X: ").strip()
+        try:
+            a = float(raw)
+            if a <= 0:
+                print("Acceleration must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter Distance (m) from Point X to Center of Rotation: ").strip()
+        try:
+            r = float(raw)
+            if r <= 0:
+                print("Distance must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    omega = math.sqrt(a / r)
+    rpm   = omega * 60.0 / (2.0 * math.pi)
+
+    col0 = "Centrifugal Gravity (m/s^2)"
+    col1 = "Distance from Center (m)"
+    col2 = "Rotation Rate (rpm)"
+
+    v0 = f"{a:.4f}"
+    v1 = f"{r:.4f}"
+    v2 = f"{rpm:.2f}"
+
+    w0 = max(len(col0), len(v0))
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+
+    sep     = "  "
+    header  = col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2)
+    row     = v0.ljust(w0)   + sep + v1.ljust(w1)   + sep + v2.ljust(w2)
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -4501,12 +4671,16 @@ MENU_OPTIONS = {
     "27": ("Planetary Orbit Periastron & Apastron Distance Calculator", planetary_orbit_periastron_apastron),
     "28": ("Orbital Distance of an Earth-sized Moon with a 24 hour day", moon_orbital_distance_24h),
     "29": ("Orbital Distance of an Earth-sized Moon with a X hour day",  moon_orbital_distance_x_hours),
+    "30": ("Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)", centrifugal_gravity_acceleration),
+    "31": ("Distance from Point X to the Center of Rotation (m)",           centrifugal_gravity_distance),
+    "32": ("Rotation Rate at Point X (rpm)",                                centrifugal_gravity_rpm),
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
 _STAR_DB_KEYS = {"1", "2", "3", "4", "5", "6", "7", "8"}
 _STAR_REGIONS_KEYS = {"9", "10", "11"}
 _PLANETARY_EQ_KEYS = {"27", "28", "29"}
+_ROTATING_HABITAT_KEYS = {"30", "31", "32"}
 _CALCULATORS_KEYS = {"12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26"}
 _UTILITY_KEYS = {"50"}
 
@@ -4542,6 +4716,12 @@ def main_menu():
         print("  Planetary Equations")
         print("-" * 50)
         for key in sorted(_PLANETARY_EQ_KEYS, key=int):
+            label = MENU_OPTIONS[key][0]
+            print(f"  {key}. {label}")
+        print("-" * 50)
+        print("  Rotating Habitat Equations")
+        print("-" * 50)
+        for key in sorted(_ROTATING_HABITAT_KEYS, key=int):
             label = MENU_OPTIONS[key][0]
             print(f"  {key}. {label}")
         print("-" * 50)
