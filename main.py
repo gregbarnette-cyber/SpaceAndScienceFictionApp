@@ -5404,6 +5404,7 @@ def honorverse_effective_speed():
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
+    # --- Star Databases (left column) ---
     "1":  ("SIMBAD Lookup Query",                                     query_star),
     "2":  ("NASA Exoplanet Archive: All Tables",                      query_exoplanets),
     "3":  ("NASA Exoplanet Archive: Planetary Systems Composite",     query_planetary_systems_composite),
@@ -5412,53 +5413,59 @@ MENU_OPTIONS = {
     "6":  ("Habitable Worlds Catalog",                                query_habitable_worlds_catalog),
     "7":  ("Open Exoplanet Catalogue",                                query_open_exoplanet_catalogue),
     "8":  ("Exoplanet EU Encyclopaedia",                              query_exoplanet_eu),
+    # --- Star System Regions (left column) ---
     "9":  ("Star System Regions (SIMBAD)",                            query_star_system_regions),
     "10": ("Star System Regions (Semi-SIMBAD)",                       query_star_system_regions_semi_manual),
     "11": ("Star System Regions (Manual)",                            query_star_system_regions_manual),
-    "12": ("Distance Between 2 Stars",                               query_distance_between_stars),
-    "13": ("Stars within a Certain Distance of Sol",                 query_stars_within_distance),
-    "14": ("Stars within a Certain Distance of a Star",             query_stars_within_distance_of_star),
-    "15": ("Light Years per Hour to X Times the Speed of Light",    ly_per_hour_to_speed_of_light),
-    "16": ("X Times the Speed of Light to Light Years per Hour",    speed_of_light_to_ly_per_hour),
-    "17": ("Distance Traveled at a certain ly/hr within a certain time", distance_traveled_ly_per_hour),
-    "18": ("Distance Traveled at a certain X times the speed of light within a certain time", distance_traveled_times_c),
-    "19": ("Time to Travel # of Light Years at X LY/HR",            time_to_travel_ly_at_ly_per_hour),
-    "20": ("Time to Travel # of Light Years at X Times the Speed of Light", time_to_travel_ly_at_times_c),
-    "21": ("Travel Time Between 2 Stars (LYs/HR)",                    travel_time_between_stars_ly_hr),
-    "22": ("Travel Time Between 2 Stars (X Times the Speed of Light)", travel_time_between_stars_times_c),
-    "23": ("Distance Traveled at an Acceleration Within a Certain Time", distance_traveled_at_acceleration),
-    "24": ("Travel Time Between 2 System Objs (Generic, Distance in AUs)", travel_time_between_system_objects),
-    "25": ("Travel Time Between 2 System Objs (Generic, Distance in LMs)", travel_time_between_system_objects_lm),
-    "26": ("Travel Time Between 2 System Objs (Planet/Moon/Asteroid)", travel_time_between_solar_system_objects),
-    "27": ("Planetary Orbit Periastron & Apastron Distance Calculator", planetary_orbit_periastron_apastron),
-    "28": ("Orbital Distance of an Earth-sized Moon with a 24 hour day", moon_orbital_distance_24h),
-    "29": ("Orbital Distance of an Earth-sized Moon with a X hour day",  moon_orbital_distance_x_hours),
-    "30": ("Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)", centrifugal_gravity_acceleration),
-    "31": ("Distance from Point X to the Center of Rotation (m)",           centrifugal_gravity_distance),
-    "32": ("Rotation Rate at Point X (rpm)",                                centrifugal_gravity_rpm),
-    "33": ("Habitable Zone Calculator",                                      habitable_zone_calculator),
-    "34": ("Habitable Zone Calculator w/SMA",                               habitable_zone_calculator_sma),
-    "35": ("Star Luminosity",                                                star_luminosity_calculator),
-    "36": ("Solar System Planet/Dwarf Planets/Asteroids Data Table",         solar_system_data_tables),
-    "37": ("Main Sequence Star Properties",                                  main_sequence_star_properties),
-    "38": ("Sol Solar System Regions",                                       sol_solar_system_regions),
-    "39": ("Honorverse Hyper Limits by Spectral Class Table",               honorverse_hyper_limits),
-    "40": ("Honorverse Acceleration by Mass Table",                         honorverse_acceleration_by_mass),
-    "41": ("Honorverse Effective Speed by Hyper Band Table",                honorverse_effective_speed),
+    # --- Science (left column) ---
+    "12": ("Solar System Planet/Dwarf Planets/Asteroids Data Table",  solar_system_data_tables),
+    "13": ("Main Sequence Star Properties",                           main_sequence_star_properties),
+    "14": ("Sol Solar System Regions",                                sol_solar_system_regions),
+    # --- Science Fiction (left column) ---
+    "15": ("Honorverse Hyper Limits by Spectral Class Table",         honorverse_hyper_limits),
+    "16": ("Honorverse Acceleration by Mass Table",                   honorverse_acceleration_by_mass),
+    "17": ("Honorverse Effective Speed by Hyper Band Table",          honorverse_effective_speed),
+    # --- Calculators (right column) ---
+    "18": ("Distance Between 2 Stars",                                query_distance_between_stars),
+    "19": ("Stars within a Certain Distance of Sol",                  query_stars_within_distance),
+    "20": ("Stars within a Certain Distance of a Star",               query_stars_within_distance_of_star),
+    "21": ("Light Years per Hour to X Times the Speed of Light",      ly_per_hour_to_speed_of_light),
+    "22": ("X Times the Speed of Light to Light Years per Hour",      speed_of_light_to_ly_per_hour),
+    "23": ("Distance Traveled at a certain ly/hr within a certain time", distance_traveled_ly_per_hour),
+    "24": ("Distance Traveled at a certain X times the speed of light within a certain time", distance_traveled_times_c),
+    "25": ("Time to Travel # of Light Years at X LY/HR",              time_to_travel_ly_at_ly_per_hour),
+    "26": ("Time to Travel # of Light Years at X Times the Speed of Light", time_to_travel_ly_at_times_c),
+    "27": ("Travel Time Between 2 Stars (LYs/HR)",                    travel_time_between_stars_ly_hr),
+    "28": ("Travel Time Between 2 Stars (X Times the Speed of Light)", travel_time_between_stars_times_c),
+    "29": ("Distance Traveled at an Acceleration Within a Certain Time", distance_traveled_at_acceleration),
+    "30": ("Travel Time Between 2 System Objs (Generic, Distance in AUs)", travel_time_between_system_objects),
+    "31": ("Travel Time Between 2 System Objs (Generic, Distance in LMs)", travel_time_between_system_objects_lm),
+    "32": ("Travel Time Between 2 System Objs (Planet/Moon/Asteroid)", travel_time_between_solar_system_objects),
+    # --- Planetary Equations (right column) ---
+    "33": ("Planetary Orbit Periastron & Apastron Distance Calculator", planetary_orbit_periastron_apastron),
+    "34": ("Orbital Distance of an Earth-sized Moon with a 24 hour day", moon_orbital_distance_24h),
+    "35": ("Orbital Distance of an Earth-sized Moon with a X hour day",  moon_orbital_distance_x_hours),
+    # --- Rotating Habitat Equations (right column) ---
+    "36": ("Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)", centrifugal_gravity_acceleration),
+    "37": ("Distance from Point X to the Center of Rotation (m)",            centrifugal_gravity_distance),
+    "38": ("Rotation Rate at Point X (rpm)",                                 centrifugal_gravity_rpm),
+    # --- Misc. Equations (right column) ---
+    "39": ("Habitable Zone Calculator",                                      habitable_zone_calculator),
+    "40": ("Habitable Zone Calculator w/SMA",                               habitable_zone_calculator_sma),
+    "41": ("Star Luminosity",                                                star_luminosity_calculator),
+    # --- Utilities ---
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
-_STAR_DB_KEYS = {"1", "2", "3", "4", "5", "6", "7", "8"}
-_STAR_REGIONS_KEYS = {"9", "10", "11"}
-_ROTATING_HABITAT_KEYS = {"30", "31", "32"}
-_CALCULATORS_KEYS = {
-    "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26",
-    "27", "28", "29",
-    "33", "34", "35",
-}
-_SCIENCE_KEYS = {"36", "37", "38"}
-_SCIFI_KEYS = {"39", "40", "41"}
-_UTILITY_KEYS = {"50"}
+_STAR_DB_KEYS          = {"1", "2", "3", "4", "5", "6", "7", "8"}
+_STAR_REGIONS_KEYS     = {"9", "10", "11"}
+_SCIENCE_KEYS          = {"12", "13", "14"}
+_SCIFI_KEYS            = {"15", "16", "17"}
+_CALCULATORS_KEYS      = {"18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32"}
+_PLANETARY_KEYS        = {"33", "34", "35"}
+_ROTATING_HABITAT_KEYS = {"36", "37", "38"}
+_MISC_EQUATIONS_KEYS   = {"39", "40", "41"}
+_UTILITY_KEYS          = {"50"}
 
 
 def _print_two_column_section(keys):
@@ -5473,48 +5480,57 @@ def _print_two_column_section(keys):
             print(left)
 
 
+def _build_column(heading, keys, subs):
+    """Build a list of display strings for one column.
+    subs is a list of (sub_heading, sub_keys) or (sub_heading, sub_keys, extra_lines) tuples.
+    extra_lines is an optional list of raw strings appended after the sub-section items.
+    """
+    items = [f"{k}. {MENU_OPTIONS[k][0]}" for k in sorted(keys, key=int)]
+    for sub in (subs or []):
+        sub_heading, sub_keys = sub[0], sub[1]
+        extra_lines = sub[2] if len(sub) > 2 else []
+        sub_items = [f"{k}. {MENU_OPTIONS[k][0]}" for k in sorted(sub_keys, key=int)]
+        items += ["", sub_heading, "-" * len(sub_heading)] + sub_items + list(extra_lines)
+    return items
+
+
+def _print_two_sections_side_by_side(left_heading, left_keys, right_heading, right_keys,
+                                      gap=4, left_subs=None, right_subs=None):
+    """Print two named sections as adjacent columns, each with its own heading.
+    left_subs / right_subs are lists of (sub_heading, sub_keys) tuples.
+    """
+    left_extended  = _build_column(left_heading,  left_keys,  left_subs)
+    right_extended = _build_column(right_heading, right_keys, right_subs)
+
+    left_col_w  = max(len(left_heading),  max((len(l) for l in left_extended),  default=0))
+    right_col_w = max(len(right_heading), max((len(l) for l in right_extended), default=0))
+    spacer = " " * gap
+    print(f"  {left_heading:<{left_col_w}}{spacer}{right_heading}")
+    print(f"  {'-' * left_col_w}{spacer}{'-' * right_col_w}")
+    rows = max(len(left_extended), len(right_extended))
+    for i in range(rows):
+        left_cell  = left_extended[i]  if i < len(left_extended)  else ""
+        right_cell = right_extended[i] if i < len(right_extended) else ""
+        print(f"  {left_cell:<{left_col_w}}{spacer}{right_cell}")
+
+
 def main_menu():
     while True:
         os.system("cls" if os.name == "nt" else "clear")
         print("=" * 50)
         print("   SPACE AND SCIENCE FICTION APP")
         print("=" * 50)
-        print("  Star Databases")
-        print("-" * 50)
-        _print_two_column_section(_STAR_DB_KEYS)
-        print("-" * 50)
-        print("  Star System Regions")
-        print("-" * 50)
-        for key in sorted(_STAR_REGIONS_KEYS, key=int):
-            label = MENU_OPTIONS[key][0]
-            print(f"  {key}. {label}")
-        print("-" * 50)
-        print("  Rotating Habitat Equations")
-        print("-" * 50)
-        for key in sorted(_ROTATING_HABITAT_KEYS, key=int):
-            label = MENU_OPTIONS[key][0]
-            print(f"  {key}. {label}")
-        print("-" * 50)
-        print("  Calculators")
-        print("-" * 50)
-        _print_two_column_section(_CALCULATORS_KEYS)
-        print("-" * 50)
-        print("  Science")
-        print("-" * 50)
-        for key in sorted(_SCIENCE_KEYS, key=int):
-            label = MENU_OPTIONS[key][0]
-            print(f"  {key}. {label}")
-        print("-" * 50)
-        print("  Science Fiction")
-        print("-" * 50)
-        for key in sorted(_SCIFI_KEYS, key=int):
-            label = MENU_OPTIONS[key][0]
-            print(f"  {key}. {label}")
-        print("-" * 50)
-        for key in sorted(_UTILITY_KEYS, key=int):
-            label = MENU_OPTIONS[key][0]
-            print(f"  {key}. {label}")
-        print("  Q. Quit")
+        _print_two_sections_side_by_side(
+            "Star Databases", _STAR_DB_KEYS,
+            "Calculators", _CALCULATORS_KEYS,
+            left_subs=[("Star System Regions", _STAR_REGIONS_KEYS),
+                       ("Science", _SCIENCE_KEYS),
+                       ("Science Fiction", _SCIFI_KEYS),
+                       ("Utilities", _UTILITY_KEYS, ["Q. Quit"])],
+            right_subs=[("Planetary Equations", _PLANETARY_KEYS),
+                        ("Rotating Habitat Equations", _ROTATING_HABITAT_KEYS),
+                        ("Misc. Equations", _MISC_EQUATIONS_KEYS)],
+        )
         print("=" * 50)
 
         choice = input("Select an option: ").strip().upper()

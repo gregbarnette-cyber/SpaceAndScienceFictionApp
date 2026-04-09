@@ -34,43 +34,41 @@ The main menu loop calls whichever function the user picks, then returns to the 
 ## Menu Options
 
 ```
-  Star Databases
---------------------------------------------------
-1. SIMBAD Lookup Query
-2. NASA Exoplanet Archive: All Tables
-3. NASA Exoplanet Archive: Planetary Systems Composite
-4. NASA Exoplanet Archive: HWO ExEP Precursor Science Stars
-5. NASA Exoplanet Archive: Mission Exocat Stars
-6. Habitable Worlds Catalog
-7. Open Exoplanet Catalogue
-8. Exoplanet EU Encyclopaedia
---------------------------------------------------
-  Star System Regions
---------------------------------------------------
-9.  Star System Regions (SIMBAD)
-10. Star System Regions (Semi-SIMBAD)
-11. Star System Regions (Manual)
---------------------------------------------------
-  Calculators
---------------------------------------------------
-12. Distance Between 2 Stars
-13. Stars within a Certain Distance of Sol
-14. Stars within a Certain Distance of a Star
-15. Light Years per Hour to X Times the Speed of Light
-16. X Times the Speed of Light to Light Years per Hour
-17. Distance Traveled at a certain ly/hr within a certain time
-18. Distance Traveled at a certain X times the speed of light within a certain time
-19. Time to Travel # of Light Years at X LY/HR
-20. Time to Travel # of Light Years at X Times the Speed of Light
-21. Travel Time Between 2 Stars (LYs/HR)
-22. Travel Time Between 2 Stars (X Times the Speed of Light)
-23. Distance Traveled at an Acceleration Within a Certain Time
-24. Travel Time Between 2 System Objs (Generic, Distance in AUs)
-25. Travel Time Between 2 System Objs (Generic, Distance in LMs)
-26. Travel Time Between 2 System Objs (Planet/Moon/Asteroid)
---------------------------------------------------
-50. Star Systems CSV Query
-Q. Quit
+  Star Databases                                    Calculators
+  --------------                                    -----------
+1. SIMBAD Lookup Query                              18. Distance Between 2 Stars
+2. NASA Exoplanet Archive: All Tables               19. Stars within a Certain Distance of Sol
+3. NASA Exoplanet Archive: Planetary Systems        20. Stars within a Certain Distance of a Star
+4. NASA Exoplanet Archive: HWO ExEP Stars           21. Light Years per Hour to X Times the Speed of Light
+5. NASA Exoplanet Archive: Mission Exocat Stars     22. X Times the Speed of Light to Light Years per Hour
+6. Habitable Worlds Catalog                         23. Distance Traveled at a certain ly/hr within a certain time
+7. Open Exoplanet Catalogue                         24. Distance Traveled at a certain X times the speed of light
+8. Exoplanet EU Encyclopaedia                       25. Time to Travel # of Light Years at X LY/HR
+                                                    26. Time to Travel # of Light Years at X Times the Speed of Light
+  Star System Regions                               27. Travel Time Between 2 Stars (LYs/HR)
+  ------------------                                28. Travel Time Between 2 Stars (X Times the Speed of Light)
+9.  Star System Regions (SIMBAD)                    29. Distance Traveled at an Acceleration Within a Certain Time
+10. Star System Regions (Semi-SIMBAD)               30. Travel Time Between 2 System Objs (Generic, Distance in AUs)
+11. Star System Regions (Manual)                    31. Travel Time Between 2 System Objs (Generic, Distance in LMs)
+                                                    32. Travel Time Between 2 System Objs (Planet/Moon/Asteroid)
+  Science
+  -------                                           Planetary Equations
+12. Solar System Planet/Dwarf Planets/Asteroids     -------------------
+13. Main Sequence Star Properties                   33. Planetary Orbit Periastron & Apastron Distance Calculator
+14. Sol Solar System Regions                        34. Orbital Distance of an Earth-sized Moon with a 24 hour day
+                                                    35. Orbital Distance of an Earth-sized Moon with a X hour day
+  Science Fiction
+  ---------------                                   Rotating Habitat Equations
+15. Honorverse Hyper Limits by Spectral Class       --------------------------
+16. Honorverse Acceleration by Mass Table           36. Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)
+17. Honorverse Effective Speed by Hyper Band        37. Distance from Point X to the Center of Rotation (m)
+                                                    38. Rotation Rate at Point X (rpm)
+  Utilities
+  ---------                                         Misc. Equations
+50. Star Systems CSV Query                          ---------------
+Q.  Quit                                            39. Habitable Zone Calculator
+                                                    40. Habitable Zone Calculator w/SMA
+                                                    41. Star Luminosity
 ```
 
 ## NASA Exoplanet Archive: All Tables Feature
@@ -152,11 +150,11 @@ Q. Quit
 
 ## Star System Regions Feature
 
-All three Star System Regions variants (options 10, 11, 12) produce identical output tables. They differ only in how their input values are obtained.
+All three Star System Regions variants (options 9, 10, 11) produce identical output tables. They differ only in how their input values are obtained.
 
-### Option 10: Star System Regions (SIMBAD) — `query_star_system_regions()`
+### Option 9: Star System Regions (SIMBAD) — `query_star_system_regions()`
 
-- Menu option 10: fully automated — SIMBAD lookup + BC CSV lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
+- Menu option 9: fully automated — SIMBAD lookup + BC CSV lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
 - **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
 - **CSV lookup:** `_load_main_sequence_data()` loads `propertiesOfMainSequenceStars.csv` (lazy, cached in `_MAIN_SEQUENCE_DATA`) into `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype.
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
@@ -169,16 +167,16 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
   - `plx` — parallax in mas from SIMBAD `plx_value`; also rejected if `<= 0`
 - **Constants:** `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`
 
-### Option 11: Star System Regions (Semi-SIMBAD) — `query_star_system_regions_semi_manual()`
+### Option 10: Star System Regions (Semi-SIMBAD) — `query_star_system_regions_semi_manual()`
 
-- Menu option 11: same SIMBAD lookup, checks, and BC CSV lookup as option 10, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
+- Menu option 10: same SIMBAD lookup, checks, and BC CSV lookup as option 9, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
 - Prompts (loop until valid float entered):
   - `Enter Sunlight Intensity (Terra = 1.0):` — blank defaults to `1.0`
   - `Enter Bond Albedo (Terra = 0.3, Venus = 0.9):` — blank defaults to `0.3`
 
-### Option 12: Star System Regions (Manual) — `query_star_system_regions_manual()`
+### Option 11: Star System Regions (Manual) — `query_star_system_regions_manual()`
 
-- Menu option 12: no SIMBAD lookup, no checks, no CSV lookup. All six input values are entered manually.
+- Menu option 11: no SIMBAD lookup, no checks, no CSV lookup. All six input values are entered manually.
 - Prompts (loop until valid float entered, no defaults):
   - `Apparent Magnitude (V)`
   - `Parallax (mas)` — rejected if `<= 0`
@@ -337,7 +335,7 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 
 ## Distance Between 2 Stars Feature
 
-- Menu option 12: `query_distance_between_stars()` — computes the 3D Euclidean distance in light years between two star systems.
+- Menu option 18: `query_distance_between_stars()` — computes the 3D Euclidean distance in light years between two star systems.
 - Helper `_lookup_star_for_distance(designation)` handles SIMBAD lookup for a single star; returns `(name, ra_deg, dec_deg, ly, desig_str)` or `None` on failure.
   - Special case: if designation is `"sun"` or `"sol"` (case-insensitive), returns `(designation, 0.0, 0.0, 0.0, "")` with no SIMBAD query.
   - Queries SIMBAD with `add_votable_fields("plx_value")` and also calls `Simbad.query_objectids()` to build a short designation string (NAME, HD, HR, GJ, Wolf only).
@@ -348,7 +346,7 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 
 ## Stars within a Certain Distance of Sol Feature
 
-- Menu option 13: `query_stars_within_distance()` — lists all stars in `starSystems.csv` within a user-supplied light year limit of Sol.
+- Menu option 19: `query_stars_within_distance()` — lists all stars in `starSystems.csv` within a user-supplied light year limit of Sol.
 - Reads `starSystems.csv` directly; uses the `Light Years` column for distance comparison. No SIMBAD query.
 - Prompts for a distance limit (float, must be > 0). Prints error if `starSystems.csv` not found (directs user to run option 50).
 - Results sorted ascending by Light Years. Displays count of matches above the table.
@@ -356,7 +354,7 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 
 ## Stars within a Certain Distance of a Star Feature
 
-- Menu option 14: `query_stars_within_distance_of_star()` — lists all stars in `starSystems.csv` within a user-supplied light year limit of a queried star.
+- Menu option 20: `query_stars_within_distance_of_star()` — lists all stars in `starSystems.csv` within a user-supplied light year limit of a queried star.
 - Prompts for Star System Name and distance limit (float, must be > 0).
 - Queries SIMBAD for the center star via `_lookup_star_for_distance()`.
 - Reads `starSystems.csv`; for each row parses `Parallax` → ly, `RA` (sexagesimal HMS) → decimal degrees, `DEC` (sexagesimal ±DMS) → decimal degrees, then converts to 3D Cartesian coordinates and computes Euclidean distance from the center star.
@@ -369,24 +367,24 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 ### Shared velocity conversion constant
 - `8765.8128` = hours in a Julian year (365.25 × 24). Used to convert between ly/hr and multiples of c: `times_c = ly_hr × 8765.8128`.
 
-### Option 15: Light Years per Hour to X Times the Speed of Light — `ly_per_hour_to_speed_of_light()`
+### Option 21: Light Years per Hour to X Times the Speed of Light — `ly_per_hour_to_speed_of_light()`
 - Prompts: `Enter velocity in light years per hour`
 - Converts ly/hr → X times c: `times_c = ly_hr × 8765.8128`
 - Output: single line showing both values.
 
-### Option 16: X Times the Speed of Light to Light Years per Hour — `speed_of_light_to_ly_per_hour()`
+### Option 22: X Times the Speed of Light to Light Years per Hour — `speed_of_light_to_ly_per_hour()`
 - Prompts: `Enter velocity in X times the speed of light`
 - Converts X times c → ly/hr: `ly_hr = times_c / 8765.8128`
 - Output: single line showing both values.
 
 ## Distance Traveled Features
 
-### Option 17: Distance Traveled at a certain ly/hr within a certain time — `distance_traveled_ly_per_hour()`
+### Option 23: Distance Traveled at a certain ly/hr within a certain time — `distance_traveled_ly_per_hour()`
 - Prompts: `Enter travel time in hours`, `Enter the velocity in light years per hour`
 - Calculates: `distance = ly_hr × hours`
 - Output: single line showing velocity, time, and distance in light years.
 
-### Option 18: Distance Traveled at a certain X times the speed of light within a certain time — `distance_traveled_times_c()`
+### Option 24: Distance Traveled at a certain X times the speed of light within a certain time — `distance_traveled_times_c()`
 - Prompts: `Enter travel time in hours`, `Enter the velocity X times the speed of light`
 - Converts to ly/hr first: `ly_hr = times_c / 8765.8128`, then `distance = ly_hr × hours`
 - Output: single line showing velocity (×c), time, and distance in light years.
@@ -399,12 +397,12 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 - Uses Julian year: `HOURS_PER_YEAR = 365.25 × 24 = 8765.82`, `HOURS_PER_MONTH = HOURS_PER_YEAR / 12`.
 - Returns a comma-separated string, e.g. `"5 Months, 24 Days, 11 Hours, 30 Minutes"`.
 
-### Option 19: Time to Travel # of Light Years at X LY/HR — `time_to_travel_ly_at_ly_per_hour()`
+### Option 25: Time to Travel # of Light Years at X LY/HR — `time_to_travel_ly_at_ly_per_hour()`
 - Prompts: `Enter number of light years`, `Enter velocity in light years per hour` (must be > 0)
 - Calculates: `total_hours = distance_ly / ly_hr`, `times_c = ly_hr × 8765.8128`
 - Output table columns: Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
 
-### Option 20: Time to Travel # of Light Years at X Times the Speed of Light — `time_to_travel_ly_at_times_c()`
+### Option 26: Time to Travel # of Light Years at X Times the Speed of Light — `time_to_travel_ly_at_times_c()`
 - Prompts: `Enter number of light years`, `Enter velocity in X times the speed of light` (must be > 0)
 - Calculates: `ly_hr = times_c / 8765.8128`, `total_hours = distance_ly / ly_hr`
 - Output table columns: Distance (LYs) | X Times Speed of Light | LY/HR | Travel Time (Hours) | Travel Time
@@ -412,24 +410,24 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 ## Travel Time Between 2 Stars Features
 
 ### Shared helper: `_travel_time_between_stars(velocity_label, velocity_prompt, use_times_c)`
-- Used by options 21 and 22. `use_times_c=False` → velocity input is ly/hr; `use_times_c=True` → velocity input is X times c.
+- Used by options 27 and 28. `use_times_c=False` → velocity input is ly/hr; `use_times_c=True` → velocity input is X times c.
 - Prompts: `Enter origin star`, `Enter destination star`, then the velocity prompt.
 - Looks up both stars via `_lookup_star_for_distance()` (Sun/Sol → `(0.0, 0.0, 0.0)` with no SIMBAD query).
-- Computes 3D Euclidean distance in ly using same Cartesian math as option 12.
+- Computes 3D Euclidean distance in ly using same Cartesian math as option 18.
 - Converts velocity: if `use_times_c`, derives `ly_hr = times_c / 8765.8128`; else derives `times_c = ly_hr × 8765.8128`.
 - `total_hours = distance_ly / ly_hr`; travel time formatted via `_format_travel_time()`.
-- Output table columns (option 21): Origin | Destination | Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
-- Output table columns (option 22): Origin | Destination | Distance (LYs) | X Times Speed of Light | LY/HR | Travel Time (Hours) | Travel Time
+- Output table columns (option 27): Origin | Destination | Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
+- Output table columns (option 28): Origin | Destination | Distance (LYs) | X Times Speed of Light | LY/HR | Travel Time (Hours) | Travel Time
 
-### Option 21: Travel Time Between 2 Stars (LYs/HR) — `travel_time_between_stars_ly_hr()`
+### Option 27: Travel Time Between 2 Stars (LYs/HR) — `travel_time_between_stars_ly_hr()`
 - Calls `_travel_time_between_stars(..., use_times_c=False)`.
 
-### Option 22: Travel Time Between 2 Stars (X Times the Speed of Light) — `travel_time_between_stars_times_c()`
+### Option 28: Travel Time Between 2 Stars (X Times the Speed of Light) — `travel_time_between_stars_times_c()`
 - Calls `_travel_time_between_stars(..., use_times_c=True)`.
 
 ## Brachistochrone Calculator Features
 
-### Physical constants (used by options 23–25)
+### Physical constants (used by options 29–31)
 - `G_MS2 = 9.80665` m/s² (1 g)
 - `C_MS = 299,792,458` m/s (speed of light)
 - `V_CAP_MS = 0.003 × C_MS` (0.3% of c = 899,377.374 m/s)
@@ -437,7 +435,7 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 - `M_PER_LM = C_MS × 60` m (metres per light-minute)
 - All kinematics are non-relativistic (appropriate at v ≤ 0.3% c).
 
-### Three acceleration profiles (used by options 23–25)
+### Three acceleration profiles (used by options 29–31)
 - **Profile 1 — Continuous to Halfway Point**: accelerate for t/2, flip and decelerate for t/2.
   - Given time: `d = 2 × (½ × a × (t/2)²) = ¼ × a × t²`
   - Given distance: `t = 2 × √(d/a)`
@@ -449,33 +447,135 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
   - Given distance: if `a×t_cap² ≥ d`, cap not reached → use Profile 1 formula. Else: `t = 2×t_cap + (d - a×t_cap²) / V_CAP`
   - When cap not reached, label appended with `"(cap not reached)"`.
 
-### Option 23: Distance Traveled at an Acceleration Within a Certain Time — `distance_traveled_at_acceleration()`
+### Option 29: Distance Traveled at an Acceleration Within a Certain Time — `distance_traveled_at_acceleration()`
 - Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Travel Time in Hours` (> 0)
 - Computes distance (metres → AU and LM) for each profile given the travel time.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Travel Time (Hours) | Travel Time | Distance (AU) | Distance (LM)
 - Row order: Profile 1, Profile 2, Profile 3.
 
-### Option 24: Travel Time Between 2 System Objs (Generic, Distance in AUs) — `travel_time_between_system_objects()`
+### Option 30: Travel Time Between 2 System Objs (Generic, Distance in AUs) — `travel_time_between_system_objects()`
 - Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Distance in AUs` (> 0)
 - Converts AU → metres, then solves for travel time for each profile.
 - Also computes `distance_lm = d_m / M_PER_LM` for display.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
 - Row order: Profile 1, Profile 2, Profile 3.
 
-### Option 25: Travel Time Between 2 System Objs (Generic, Distance in LMs) — `travel_time_between_system_objects_lm()`
+### Option 31: Travel Time Between 2 System Objs (Generic, Distance in LMs) — `travel_time_between_system_objects_lm()`
 - Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Distance in Light Minutes` (> 0)
-- Converts LM → metres, then solves for travel time for each profile. Same formulas as option 24.
+- Converts LM → metres, then solves for travel time for each profile. Same formulas as option 30.
 - Also computes `distance_au = d_m / M_PER_AU` for display.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
 - Row order: Profile 1, Profile 2, Profile 3.
 
-### Option 26: Travel Time Between 2 System Objs (Planet/Moon/Asteroid) — `travel_time_between_solar_system_objects()`
+### Option 32: Travel Time Between 2 System Objs (Planet/Moon/Asteroid) — `travel_time_between_solar_system_objects()`
 - Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Max Velocity for Accelerate-to-Max-Velocity Profile (% of c, Default 0.3)` (blank → 0.3).
 - Uses `astroquery.jplhorizons.Horizons` to fetch current heliocentric state vectors (x, y, z in AU) for both objects via `_get_heliocentric_vectors()`. Distance computed as 3D Euclidean: `sqrt((dx-ox)²+(dy-oy)²+(dz-oz)²)`.
 - **Object name resolution**: `_resolve_horizons_id(name)` checks `_HORIZONS_ID_MAP` (normalized lowercase) first, then the last token of the input (handles "Jupiter's moon Io" → "io"), then falls through to pass the raw string to Horizons (handles numeric IDs like "433", asteroid designations like "1998 QE2").
 - `_HORIZONS_ID_MAP`: module-level dict mapping ~100 common names to Horizons numeric IDs (8 planets, Sun, all major moons, dwarf planets, common asteroids/comets).
 - Profile 3 velocity cap is user-configurable: `V_CAP_MS = (v_cap_pct / 100.0) × C_MS`. Label reads `"Accel to {v_cap_pct}% c, Coast, Then Decelerate"`.
-- Same brachistochrone physics as options 24/25; Profile 1: `t = 2·√(d/a)`, Profile 2: `t = √(16d/(3a))`, Profile 3: `t = 2·t_cap + (d - a·t_cap²)/V_CAP` (falls back to Profile 1 if cap not reached).
+- Same brachistochrone physics as options 30/31; Profile 1: `t = 2·√(d/a)`, Profile 2: `t = √(16d/(3a))`, Profile 3: `t = 2·t_cap + (d - a·t_cap²)/V_CAP` (falls back to Profile 1 if cap not reached).
 - Error handling: ambiguous Horizons name prints the disambiguation table from the exception message + tip to use numeric ID; other errors print the exception; both return early. Same-object detection: distance < 1e-9 AU triggers error and early return.
 - Output table columns: Acceleration Profile | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
 - Row order: Profile 1, Profile 2, Profile 3. Origin/Destination columns show user's raw input strings.
+
+## Planetary Equations
+
+### Option 33: Planetary Orbit Periastron & Apastron Distance Calculator — `planetary_orbit_periastron_apastron()`
+- Prompts: `Enter the Planetary Semi-Major Axis (AU)` (> 0), `Enter the Planetary Orbit Eccentricity` (0 ≤ e < 1).
+- Calculates:
+  - `periastron = sma × (1 - e)`
+  - `apastron = sma × (1 + e)`
+  - `ecc_au = sma × e`
+- Output table columns: Periastron (AU) | Semi-Major Axis (AU) | Apastron (AU) | Eccentricity | Eccentricity (AU); all 6dp.
+
+### Option 34: Orbital Distance of an Earth-sized Moon with a 24 hour day — `moon_orbital_distance_24h()`
+- Prompts: `Enter Planetary Mass in Earth Masses` (> 0).
+- Uses Kepler's third law: `r = (G × M_planet × T² / (4π²))^(1/3)` where `T = 86400 s`, `EARTH_MASS_KG = 5.972e24`, `G = 6.674e-11`.
+- Converts result to km.
+- Output table columns: Planetary Mass (Earth Masses) (4dp) | Day Length (Hours) (fixed "24.0000") | Orbital Distance (km) (4dp).
+
+### Option 35: Orbital Distance of an Earth-sized Moon with a X hour day — `moon_orbital_distance_x_hours()`
+- Prompts: `Enter Planetary Mass in Earth Masses` (> 0), `Enter Day in Hours` (> 0).
+- Same Kepler's third law as option 34 but `T = day_hours × 3600 s`.
+- Output table columns: Planetary Mass (Earth Masses) (4dp) | Day Length (Hours) (4dp) | Orbital Distance (km) (4dp).
+
+## Rotating Habitat Equations
+
+### Option 36: Centrifugal Artificial Gravity Acceleration at Point X (m/s^2) — `centrifugal_gravity_acceleration()`
+- Prompts: `Enter Rotation Rate (rpm)` (> 0), `Enter Distance (m) from Point X to Center of Rotation` (> 0).
+- Calculates: `omega = rpm × 2π / 60`, `a = omega² × r`.
+- Output table columns: Rotation Rate (rpm) (4dp) | Distance from Center (m) (4dp) | Centrifugal Gravity (m/s^2) (2dp).
+
+### Option 37: Distance from Point X to the Center of Rotation (m) — `centrifugal_gravity_distance()`
+- Prompts: `Enter Rotation Rate (rpm)` (> 0), `Enter Centrifugal Artificial Gravity Acceleration (m/s^2) at Point X` (> 0).
+- Calculates: `omega = rpm × 2π / 60`, `r = a / omega²`.
+- Output table columns: Rotation Rate (rpm) (4dp) | Centrifugal Gravity (m/s^2) (4dp) | Distance from Center (m) (2dp).
+
+### Option 38: Rotation Rate at Point X (rpm) — `centrifugal_gravity_rpm()`
+- Prompts: `Enter Centrifugal Artificial Gravity Acceleration (m/s^2) at Point X` (> 0), `Enter Distance (m) from Point X to Center of Rotation` (> 0).
+- Calculates: `omega = sqrt(a / r)`, `rpm = omega × 60 / (2π)`.
+- Output table columns: Centrifugal Gravity (m/s^2) (4dp) | Distance from Center (m) (4dp) | Rotation Rate (rpm) (2dp).
+
+## Misc. Equations
+
+### Shared helper: `_kopparapu_seff(teff, zone)`
+- Returns Kopparapu et al. 2014 Seff boundary for six zone keys: `rv`, `rg5`, `rg01`, `rg`, `mg`, `em`.
+- Formula: `Seff = SeffSUN + a×tS + b×tS² + c×tS³ + d×tS⁴` where `tS = teff - 5780`.
+- Used by both `habitable_zone_calculator()` and `habitable_zone_calculator_sma()`.
+
+### Option 39: Habitable Zone Calculator — `habitable_zone_calculator()`
+- Prompts: `Enter the Star's Temperature (K)` (> 0), `Enter the Star's Luminosity (Lsun)` (> 0).
+- Computes HZ boundary distances: `au = sqrt(luminosity / Seff)` for each of the six Kopparapu zones.
+- Output: "Calculated Habitable Zone" table with Zone | AU columns; AU formatted as `{au:.3f} ({au × 8.3167:.3f} LM)`.
+- Zone order: Optimistic Inner HZ (Recent Venus), Conservative Inner HZ (RG 5 Earth Mass), Conservative Inner HZ (Runaway Greenhouse), Conservative Inner HZ (RG 0.1 Earth Mass), Conservative Outer HZ (Maximum Greenhouse), Optimistic Outer HZ (Early Mars).
+
+### Option 40: Habitable Zone Calculator w/SMA — `habitable_zone_calculator_sma()`
+- Prompts: `Enter the Star's Temperature (K)` (> 0), `Enter the Star's Luminosity (Lsun)` (> 0), `Enter the Object's Semi-Major Axis (AU)` (> 0).
+- Computes planet's Seff: `planet_seff = (1 / sma)² × luminosity`.
+- Output: "Calculated Habitable Zone" table with Zone | AU | LM | Seff columns; object's Seff printed above the table (8dp).
+- After table, prints HZ membership verdict based on Seff boundaries:
+  - `< seff_em` → "NOT in HZ (Beyond Early Mars)"
+  - `≤ seff_mg` → "Optimistic HZ (Between Maximum Greenhouse and Early Mars)"
+  - `≤ seff_rg` → "Conservative HZ (Between Runaway Greenhouse and Maximum Greenhouse)"
+  - `≤ seff_rv` → "Optimistic HZ (Between Recent Venus and Runaway Greenhouse)"
+  - `> seff_rv` → "NOT in HZ (Interior to Recent Venus)"
+
+### Option 41: Star Luminosity — `star_luminosity_calculator()`
+- Prompts: `Enter the Star's Radius (R☉)` (> 0), `Enter the Star's Temperature (K)` (> 0).
+- Calculates: `luminosity = radius² × (temp / 5778)⁴`.
+- Output table columns: Radius (R☉) (4dp) | Temperature (K) (4dp) | Luminosity (Lsun) (6dp).
+
+## Science Features
+
+### Option 12: Solar System Planet/Dwarf Planets/Asteroids — `solar_system_data_tables()`
+- Displays four sequential data tables from CSV files in the project directory.
+- **Solar System Planets Data** — from `planetInfo.csv`; columns: Planet Name, Mass (J), Diameter (J), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity, Moons. AU values formatted as `{v:g} ({v × 8.3167:.3f} LM)`.
+- **Moon Data tables** — from `moonInfo.csv`; grouped by planet in order: Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto; columns: Satellite Name, Diameter (km), Mass (kg), Perigee (km), Apogee (km), SemiMajor Axis (km), Eccentricity, Period (days), Gravity (m/s^2), Escape Velocity (km/s).
+- **Solar System Dwarf Planets Data** — from `dwarfPlanetInfo.csv`; same columns as planets table but header row says "Dwarf Planet Name" and Mass is in Earth masses.
+- **Solar System Major Asteroids Data** — from `asteroidsInfo.csv`; sorted ascending by Semimajor Axis; columns: Asteroid Name, Diameter (KM), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity.
+
+### Option 13: Main Sequence Star Properties — `main_sequence_star_properties()`
+- Reads `propertiesOfMainSequenceStars.csv` and displays all rows in a single table.
+- Columns: Spectral Class, B-V, Teff (K), Abs Mag Vis, Abs Mag Bol, BC, Lum, R, M, p (g/cm3), Lifetime (years).
+
+### Option 14: Sol Solar System Regions — `sol_solar_system_regions()`
+- Displays all Star System Regions output tables for the Sun using hardcoded solar constants: `vmag = -26.74`, `boloLum = -0.07`, `temp = 5778 K`, `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`.
+- Parallax back-computed from absolute magnitude: `plx = 1000 / (10^((vmag - absMag + 5) / 5))` ≈ 206265 mas.
+- Calls the same shared display helpers as options 9–11: `_display_star_system_properties()`, `_display_stellar_properties()`, `_display_star_distance()`, `_display_earth_equivalent_orbit()`, `_display_solar_system_regions()`, `_display_alternate_hz_regions()`, `_display_calculated_hz()`.
+
+## Science Fiction Features
+
+### Option 15: Honorverse Hyper Limits by Spectral Class — `honorverse_hyper_limits()`
+- Reads `spTypeHyperLM.csv` (no header; columns: Spectral Class, Light Minutes).
+- Converts LM → AU: `au = lm / 8.3167`.
+- Output table columns: Spectral Class | Light Minutes (2dp) | AUs (4dp).
+
+### Option 16: Honorverse Acceleration by Mass Table — `honorverse_acceleration_by_mass()`
+- Hardcoded table of ship mass ranges and acceleration values (no external data file).
+- Output table columns: Ship Mass (tons) | Warship (Normal Space) | Merchantship (Normal Space) | Warship (Hyper Space) | Merchantship (Hyper Space).
+- Six rows covering mass ranges from FG/DD (< 80,000 tons) through SD (7,000,000–8,499,999 tons).
+
+### Option 17: Honorverse Effective Speed by Hyper Band — `honorverse_effective_speed()`
+- Hardcoded data; displays two tables.
+- **Table 1 "Effective Speed by Hyper Band"**: Alpha–Iota bands; columns: Band | Translation Bleed-Off | Velocity Multiplier | Warship (xC) | Merchantship (xC). Speeds shown as `{xc} ({xc / 8765.8128:.5f} ly/hr)`. Iota merchantship speed shown as "Currently Unattainable". Footnote about merchantmen not normally using Epsilon–Iota bands.
+- **Table 2 "Effective Speed by Hyper Band (Expanded)"**: Alpha–Omega bands (24 total); columns: Band | Warship (xC) | Merchantship (xC). Same speed format as Table 1.
