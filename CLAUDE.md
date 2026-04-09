@@ -67,6 +67,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 23. Distance Traveled at an Acceleration Within a Certain Time
 24. Travel Time Between 2 System Objs (Generic, Distance in AUs)
 25. Travel Time Between 2 System Objs (Generic, Distance in LMs)
+26. Travel Time Between 2 System Objs (Planet/Moon/Asteroid)
 --------------------------------------------------
 50. Star Systems CSV Query
 Q. Quit
@@ -467,3 +468,14 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 - Also computes `distance_au = d_m / M_PER_AU` for display.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
 - Row order: Profile 1, Profile 2, Profile 3.
+
+### Option 26: Travel Time Between 2 System Objs (Planet/Moon/Asteroid) — `travel_time_between_solar_system_objects()`
+- Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Max Velocity for Accelerate-to-Max-Velocity Profile (% of c, Default 0.3)` (blank → 0.3).
+- Uses `astroquery.jplhorizons.Horizons` to fetch current heliocentric state vectors (x, y, z in AU) for both objects via `_get_heliocentric_vectors()`. Distance computed as 3D Euclidean: `sqrt((dx-ox)²+(dy-oy)²+(dz-oz)²)`.
+- **Object name resolution**: `_resolve_horizons_id(name)` checks `_HORIZONS_ID_MAP` (normalized lowercase) first, then the last token of the input (handles "Jupiter's moon Io" → "io"), then falls through to pass the raw string to Horizons (handles numeric IDs like "433", asteroid designations like "1998 QE2").
+- `_HORIZONS_ID_MAP`: module-level dict mapping ~100 common names to Horizons numeric IDs (8 planets, Sun, all major moons, dwarf planets, common asteroids/comets).
+- Profile 3 velocity cap is user-configurable: `V_CAP_MS = (v_cap_pct / 100.0) × C_MS`. Label reads `"Accel to {v_cap_pct}% c, Coast, Then Decelerate"`.
+- Same brachistochrone physics as options 24/25; Profile 1: `t = 2·√(d/a)`, Profile 2: `t = √(16d/(3a))`, Profile 3: `t = 2·t_cap + (d - a·t_cap²)/V_CAP` (falls back to Profile 1 if cap not reached).
+- Error handling: ambiguous Horizons name prints the disambiguation table from the exception message + tip to use numeric ID; other errors print the exception; both return early. Same-object detection: distance < 1e-9 AU triggers error and early return.
+- Output table columns: Acceleration Profile | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
+- Row order: Profile 1, Profile 2, Profile 3. Origin/Destination columns show user's raw input strings.

@@ -10,6 +10,8 @@ import sys
 
 import requests
 from astroquery.simbad import Simbad
+from astroquery.jplhorizons import Horizons
+import astropy.time
 
 
 # ─── SIMBAD Star Query ────────────────────────────────────────────────────────
@@ -3947,6 +3949,349 @@ def travel_time_between_system_objects_lm():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── JPL Horizons Solar System Object Lookup ──────────────────────────────────
+
+_HORIZONS_ID_MAP = {
+    # Sun
+    "sun":       "10",
+    # Planets
+    "mercury":   "199",
+    "venus":     "299",
+    "earth":     "399",
+    "mars":      "499",
+    "jupiter":   "599",
+    "saturn":    "699",
+    "uranus":    "799",
+    "neptune":   "899",
+    # Dwarf planets / TNOs
+    "pluto":     "999",
+    "ceres":     "1",
+    "vesta":     "4",
+    "pallas":    "2",
+    "juno":      "3",
+    "eris":      "136199",
+    "makemake":  "136472",
+    "haumea":    "136108",
+    "sedna":     "90377",
+    # Earth's Moon
+    "moon":      "301",
+    "luna":      "301",
+    # Mars moons
+    "phobos":    "401",
+    "deimos":    "402",
+    # Jupiter moons
+    "io":        "501",
+    "europa":    "502",
+    "ganymede":  "503",
+    "callisto":  "504",
+    "amalthea":  "505",
+    "himalia":   "506",
+    "elara":     "507",
+    "pasiphae":  "508",
+    "sinope":    "509",
+    "lysithea":  "510",
+    "carme":     "511",
+    "ananke":    "512",
+    "leda":      "513",
+    "thebe":     "514",
+    "adrastea":  "515",
+    "metis":     "516",
+    # Saturn moons
+    "mimas":     "601",
+    "enceladus": "602",
+    "tethys":    "603",
+    "dione":     "604",
+    "rhea":      "605",
+    "titan":     "606",
+    "hyperion":  "607",
+    "iapetus":   "608",
+    "phoebe":    "609",
+    "janus":     "610",
+    "epimetheus":"611",
+    "helene":    "612",
+    "telesto":   "613",
+    "calypso":   "614",
+    "atlas":     "615",
+    "prometheus":"616",
+    "pandora":   "617",
+    "pan":       "618",
+    # Uranus moons
+    "ariel":     "701",
+    "umbriel":   "702",
+    "miranda":   "703",
+    "titania":   "704",
+    "oberon":    "705",
+    "caliban":   "706",
+    "sycorax":   "707",
+    "puck":      "708",
+    "portia":    "709",
+    "juliet":    "710",
+    "belinda":   "711",
+    "cressida":  "712",
+    "desdemona": "713",
+    "rosalind":  "714",
+    "bianca":    "715",
+    "cordelia":  "716",
+    "ophelia":   "717",
+    # Neptune moons
+    "triton":    "801",
+    "nereid":    "802",
+    "proteus":   "808",
+    "larissa":   "807",
+    "galatea":   "806",
+    "despina":   "805",
+    "thalassa":  "804",
+    "naiad":     "803",
+    # Pluto moons
+    "charon":    "901",
+    "nix":       "902",
+    "hydra":     "903",
+    "kerberos":  "904",
+    "styx":      "905",
+    # Common asteroids (numbered)
+    "eros":      "433",
+    "ida":       "243",
+    "gaspra":    "951",
+    "mathilde":  "253",
+    "itokawa":   "25143",
+    "ryugu":     "162173",
+    "bennu":     "101955",
+    "apophis":   "99942",
+    "lutetia":   "21",
+    "steins":    "2867",
+    "churyumov": "67P",
+    # Common comets
+    "halley":    "1P",
+    "encke":     "2P",
+    "hale-bopp": "C/1995 O1",
+    "tempel 1":  "9P",
+    "wild 2":    "81P",
+}
+
+
+def _resolve_horizons_id(name):
+    """Return a Horizons-compatible ID for the given body name.
+
+    Checks _HORIZONS_ID_MAP first (normalized lowercase).  If not found,
+    also tries just the last token of the input (handles phrases like
+    "Jupiter's moon Io" → check "io").  Falls through to the raw user
+    string for asteroid numbers, designations, etc.
+    """
+    normalized = name.strip().lower()
+    if normalized in _HORIZONS_ID_MAP:
+        return _HORIZONS_ID_MAP[normalized]
+    tokens = normalized.split()
+    if tokens and tokens[-1] in _HORIZONS_ID_MAP:
+        return _HORIZONS_ID_MAP[tokens[-1]]
+    # Fall through: pass raw string to Horizons (handles "433", "1998 QE2", etc.)
+    return name.strip()
+
+
+def _get_heliocentric_vectors(horizons_id, body_name):
+    """Query JPL Horizons for current heliocentric x,y,z position in AU.
+
+    Returns (x, y, z) as floats.  Raises on lookup failure (ambiguous name,
+    not found, network error).  body_name is used only in calling code for
+    error messages.
+    """
+    epoch = astropy.time.Time.now().jd
+    obj = Horizons(id=horizons_id, location='@sun', epochs=epoch)
+    vec = obj.vectors()
+    return float(vec['x'][0]), float(vec['y'][0]), float(vec['z'][0])
+
+
+def travel_time_between_solar_system_objects():
+    """Brachistochrone travel time using live JPL Horizons positions.
+
+    Queries current heliocentric state vectors for origin and destination,
+    computes the 3D Euclidean distance in AU, then applies three
+    brachistochrone acceleration profiles.  Profile 3 velocity cap is
+    user-configurable (default 0.3% of c).
+    """
+    import math
+
+    # ── Input: Origin ────────────────────────────────────────────────────────
+    origin_name = input("Enter Origin Planet/Satellite/Asteroid: ").strip()
+    if not origin_name:
+        print("No origin entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── Input: Destination ───────────────────────────────────────────────────
+    dest_name = input("Enter Destination Planet/Satellite/Asteroid: ").strip()
+    if not dest_name:
+        print("No destination entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── Input: Acceleration ──────────────────────────────────────────────────
+    while True:
+        raw = input("Enter Acceleration in # of G's: ").strip()
+        try:
+            g_count = float(raw)
+            if g_count <= 0:
+                print("Acceleration must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    # ── Input: Max Velocity Cap ──────────────────────────────────────────────
+    raw = input(
+        "Enter Max Velocity for Accelerate-to-Max-Velocity Profile "
+        "(% of c, Default 0.3): "
+    ).strip()
+    if raw == "":
+        v_cap_pct = 0.3
+    else:
+        try:
+            v_cap_pct = float(raw)
+            if v_cap_pct <= 0:
+                print("Max velocity must be greater than zero. Using default 0.3%.")
+                v_cap_pct = 0.3
+        except ValueError:
+            print("Invalid input. Using default 0.3%.")
+            v_cap_pct = 0.3
+
+    # ── Resolve Horizons IDs ──────────────────────────────────────────────────
+    origin_id = _resolve_horizons_id(origin_name)
+    dest_id   = _resolve_horizons_id(dest_name)
+
+    # ── Fetch heliocentric positions ──────────────────────────────────────────
+    print(f"\nQuerying JPL Horizons for '{origin_name}'...")
+    try:
+        ox, oy, oz = _get_heliocentric_vectors(origin_id, origin_name)
+    except Exception as e:
+        err = str(e)
+        if "Multiple major-bodies" in err or "ambiguous" in err.lower():
+            print(f"\nAmbiguous body name '{origin_name}'. JPL Horizons returned:")
+            print(err)
+            print("\nTip: Use a more specific name or numeric ID (e.g., '499' for Mars).")
+        else:
+            print(f"\nCould not retrieve position for '{origin_name}': {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print(f"Querying JPL Horizons for '{dest_name}'...")
+    try:
+        dx, dy, dz = _get_heliocentric_vectors(dest_id, dest_name)
+    except Exception as e:
+        err = str(e)
+        if "Multiple major-bodies" in err or "ambiguous" in err.lower():
+            print(f"\nAmbiguous body name '{dest_name}'. JPL Horizons returned:")
+            print(err)
+            print("\nTip: Use a more specific name or numeric ID (e.g., '501' for Io).")
+        else:
+            print(f"\nCould not retrieve position for '{dest_name}': {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── Compute 3D distance in AU ─────────────────────────────────────────────
+    distance_au = math.sqrt(
+        (dx - ox) ** 2 + (dy - oy) ** 2 + (dz - oz) ** 2
+    )
+
+    if distance_au < 1e-9:
+        print(
+            f"\nOrigin and destination appear to be the same object "
+            f"(distance ≈ 0 AU). Please enter two different objects."
+        )
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── Physical constants ────────────────────────────────────────────────────
+    G_MS2    = 9.80665
+    C_MS     = 299_792_458.0
+    M_PER_AU = 149_597_870_700.0
+    M_PER_LM = C_MS * 60.0
+
+    a_ms2       = g_count * G_MS2
+    d_m         = distance_au * M_PER_AU
+    distance_lm = d_m / M_PER_LM
+    V_CAP_MS    = (v_cap_pct / 100.0) * C_MS
+
+    # ── Profile 1: Continuous to Halfway Point ───────────────────────────────
+    # d = ¼·a·t²  →  t = 2·√(d/a)
+    t1_sec   = 2.0 * math.sqrt(d_m / a_ms2)
+    t1_hours = t1_sec / 3600.0
+    label1   = "Continuous to Halfway Point"
+
+    # ── Profile 2: Half Continuous Accel Time, Coast, Then Decelerate ────────
+    # d = 3·a·t²/16  →  t = √(16d / (3a))
+    t2_sec   = math.sqrt((16.0 * d_m) / (3.0 * a_ms2))
+    t2_hours = t2_sec / 3600.0
+    label2   = "Half Continuous Accel Time, Coast, Then Decelerate"
+
+    # ── Profile 3: Accelerate to V_CAP, Coast, Then Decelerate ───────────────
+    # t_cap = v_cap / a;  d_both_cap = a·t_cap²  (combined accel + decel dist)
+    # If d_both_cap >= d: cap never reached → use Profile 1 kinematics.
+    t_cap      = V_CAP_MS / a_ms2
+    d_both_cap = a_ms2 * t_cap ** 2
+
+    if d_both_cap >= d_m:
+        t3_sec   = t1_sec
+        t3_hours = t1_hours
+        label3   = f"Accel to {v_cap_pct}% c, Coast, Then Decelerate (cap not reached)"
+    else:
+        d_coast3 = d_m - d_both_cap
+        t_coast3 = d_coast3 / V_CAP_MS
+        t3_sec   = 2.0 * t_cap + t_coast3
+        t3_hours = t3_sec / 3600.0
+        label3   = f"Accel to {v_cap_pct}% c, Coast, Then Decelerate"
+
+    # ── Build and print table ─────────────────────────────────────────────────
+    col0 = "Acceleration Profile"
+    col1 = "Origin"
+    col2 = "Destination"
+    col3 = "Acceleration (G's)"
+    col4 = "Distance (AU)"
+    col5 = "Distance (LM)"
+    col6 = "Travel Time (Hours)"
+    col7 = "Travel Time"
+
+    g_str  = f"{g_count:.4f}"
+    au_str = f"{distance_au:.4f}"
+    lm_str = f"{distance_lm:.4f}"
+
+    rows = [
+        (label1, origin_name, dest_name, g_str, au_str, lm_str,
+         f"{t1_hours:.6f}", _format_travel_time(t1_hours)),
+        (label2, origin_name, dest_name, g_str, au_str, lm_str,
+         f"{t2_hours:.6f}", _format_travel_time(t2_hours)),
+        (label3, origin_name, dest_name, g_str, au_str, lm_str,
+         f"{t3_hours:.6f}", _format_travel_time(t3_hours)),
+    ]
+
+    w0 = max(len(col0), *(len(r[0]) for r in rows))
+    w1 = max(len(col1), *(len(r[1]) for r in rows))
+    w2 = max(len(col2), *(len(r[2]) for r in rows))
+    w3 = max(len(col3), *(len(r[3]) for r in rows))
+    w4 = max(len(col4), *(len(r[4]) for r in rows))
+    w5 = max(len(col5), *(len(r[5]) for r in rows))
+    w6 = max(len(col6), *(len(r[6]) for r in rows))
+    w7 = max(len(col7), *(len(r[7]) for r in rows))
+
+    sep = "  "
+    header = (
+        col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
+        col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5) + sep +
+        col6.ljust(w6) + sep + col7.ljust(w7)
+    )
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    for r in rows:
+        row_str = (
+            r[0].ljust(w0) + sep + r[1].ljust(w1) + sep + r[2].ljust(w2) + sep +
+            r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5) + sep +
+            r[6].ljust(w6) + sep + r[7].ljust(w7)
+        )
+        print(f"  {row_str}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -3975,12 +4320,13 @@ MENU_OPTIONS = {
     "23": ("Distance Traveled at an Acceleration Within a Certain Time", distance_traveled_at_acceleration),
     "24": ("Travel Time Between 2 System Objs (Generic, Distance in AUs)", travel_time_between_system_objects),
     "25": ("Travel Time Between 2 System Objs (Generic, Distance in LMs)", travel_time_between_system_objects_lm),
+    "26": ("Travel Time Between 2 System Objs (Planet/Moon/Asteroid)", travel_time_between_solar_system_objects),
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
 _STAR_DB_KEYS = {"1", "2", "3", "4", "5", "6", "7", "8"}
 _STAR_REGIONS_KEYS = {"9", "10", "11"}
-_CALCULATORS_KEYS = {"12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25"}
+_CALCULATORS_KEYS = {"12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26"}
 _UTILITY_KEYS = {"50"}
 
 
