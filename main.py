@@ -4887,6 +4887,329 @@ def star_luminosity_calculator():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Science Menu ─────────────────────────────────────────────────────────────
+
+def solar_system_data_tables():
+    """Display data tables for Solar System planets, moons, dwarf planets, and asteroids."""
+    os.system("cls" if os.name == "nt" else "clear")
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    def _read_csv(filename):
+        path = os.path.join(base_dir, filename)
+        try:
+            with open(path, newline="", encoding="utf-8") as f:
+                return list(csv.DictReader(f))
+        except Exception as e:
+            print(f"Warning: Could not load {filename}: {e}")
+            return []
+
+    def _au_lm(val_str):
+        """Format an AU value as 'X (Y LM)', stripping trailing zeros."""
+        try:
+            v = float(val_str)
+        except (ValueError, TypeError):
+            return str(val_str)
+        au_s = f"{v:g}"
+        lm_s = f"{v * 8.3167:.3f}"
+        return f"{au_s} ({lm_s} LM)"
+
+    # ── Planets ───────────────────────────────────────────────────────────────
+    planets = _read_csv("planetInfo.csv")
+    if planets:
+        title = "Solar System Planets Data"
+        print(f"\n{'-' * len(title)}")
+        print(title)
+        print(f"{'-' * len(title)}")
+        print()
+
+        p_rows = []
+        for p in planets:
+            name      = p.get("Planet", "")
+            mass      = p.get("Mass", "")
+            diameter  = p.get("Diameter", "")
+            period    = p.get("Period", "")
+            peri_raw  = p.get("Periastron", "")
+            sma_raw   = p.get("Semimajor Axis", "")
+            apo_raw   = p.get("Apastron", "")
+            ecc       = p.get("Eccentricity", "")
+            moons     = p.get("Moons", "")
+            p_rows.append([
+                name, mass, diameter, period,
+                _au_lm(peri_raw), _au_lm(sma_raw), _au_lm(apo_raw),
+                ecc, moons,
+            ])
+
+        _print_table(
+            headers1=[" Planet Name", "  Mass (J)", "  Diameter (J)", "Period",
+                      "Periastron (AU)", "Semimajor", "Apastron (AU)",
+                      "  Eccentricity", "  Moons"],
+            headers2=["",             "",           "",              "",
+                      "",              "Axis (AU)", "",
+                      "",              ""],
+            rows=p_rows,
+            aligns=["l", "r", "r", "l", "l", "l", "l", "r", "r"],
+        )
+        print()
+
+    # ── Moons grouped by planet ───────────────────────────────────────────────
+    moons_data = _read_csv("moonInfo.csv")
+    planet_order = ["Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
+
+    def _moon_title(planet):
+        if planet == "Earth":
+            return "Earth Moon Data"
+        elif planet in ("Neptune", "Pluto"):
+            return f"{planet} Moon Data"
+        else:
+            return f"{planet} Moons Data"
+
+    for planet in planet_order:
+        planet_moons = [m for m in moons_data if m.get("Planet Name", "").strip() == planet]
+        if not planet_moons:
+            continue
+        title = _moon_title(planet)
+        print(f"{'-' * len(title)}")
+        print(title)
+        print(f"{'-' * len(title)}")
+        print()
+
+        m_rows = []
+        for m in planet_moons:
+            m_rows.append([
+                m.get("Satellite Name", ""),
+                m.get("Diameter (km)", ""),
+                m.get("Mass (kg)", ""),
+                m.get("Perigee (km)", ""),
+                m.get("Apogee (km)", ""),
+                m.get("SemiMajor Axis (km)", ""),
+                m.get("Eccentricity", ""),
+                m.get("Period (days)", ""),
+                m.get("Gravity (m/s^2)", ""),
+                m.get("Escape Velocity (km/s)", ""),
+            ])
+
+        _print_table(
+            headers1=[" Satellite", "  Diameter (km)", "Mass (kg)",
+                      "  Perigee (km)", "  Apogee (km)", "  SemiMajor",
+                      "  Eccentricity", "  Period", "  Gravity", "           Escape"],
+            headers2=[" Name",     "",                "",
+                      "",           "",              "  Axis (km)",
+                      "",           "  (days)",      "  (m/s^2)", "  Velocity (km/s)"],
+            rows=m_rows,
+            aligns=["l", "r", "l", "r", "r", "r", "r", "r", "r", "r"],
+        )
+        print()
+
+    # ── Dwarf Planets ─────────────────────────────────────────────────────────
+    dwarfs = _read_csv("dwarfPlanetInfo.csv")
+    if dwarfs:
+        title = "Solar System Dwarf Planets Data"
+        print(f"{'-' * len(title)}")
+        print(title)
+        print(f"{'-' * len(title)}")
+        print()
+
+        d_rows = []
+        for d in dwarfs:
+            name     = d.get("Name", "")
+            mass     = d.get("Mass", "")
+            diameter = d.get("Diameter", "")
+            period   = d.get("Period", "")
+            peri_raw = d.get("Periastron", "")
+            sma_raw  = d.get("Semimajor Axis", "")
+            apo_raw  = d.get("Apastron", "")
+            ecc      = d.get("Eccentricity", "")
+            moons    = d.get("Moons", "")
+            d_rows.append([
+                name, mass, diameter, period,
+                _au_lm(peri_raw), _au_lm(sma_raw), _au_lm(apo_raw),
+                ecc, moons,
+            ])
+
+        _print_table(
+            headers1=[" Dwarf", "  Mass (E)", "Diameter", "Period",
+                      "Periastron (AU)", "Semimajor", "Apastron (AU)",
+                      "  Eccentricity", "  Moons"],
+            headers2=[" Planet Name", "", "", "",
+                      "",             "Axis (AU)", "",
+                      "",              ""],
+            rows=d_rows,
+            aligns=["l", "r", "l", "l", "l", "l", "l", "r", "r"],
+        )
+        print()
+
+    # ── Asteroids ─────────────────────────────────────────────────────────────
+    asteroids = _read_csv("asteroidsInfo.csv")
+    if asteroids:
+        # Sort by Semimajor Axis ascending
+        def _sma_key(row):
+            try:
+                return float(row.get("Semimajor Axis", "0") or "0")
+            except ValueError:
+                return 0.0
+        asteroids.sort(key=_sma_key)
+
+        title = "Solar System Major Asteroids Data"
+        print(f"{'-' * len(title)}")
+        print(title)
+        print(f"{'-' * len(title)}")
+        print()
+
+        a_rows = []
+        for a in asteroids:
+            name     = a.get("Name", "")
+            diameter = a.get("Diameter", "")
+            period   = a.get("Period", "")
+            peri_raw = a.get("Periastron", "")
+            sma_raw  = a.get("Semimajor Axis", "")
+            apo_raw  = a.get("Apastron", "")
+            ecc      = a.get("Eccentricity", "")
+            a_rows.append([
+                name, diameter, period,
+                _au_lm(peri_raw), _au_lm(sma_raw), _au_lm(apo_raw),
+                ecc,
+            ])
+
+        _print_table(
+            headers1=[" Asteroid Name", "Diameter (KM)", "Period",
+                      "Periastron (AU)", "Semimajor", "Apastron (AU)",
+                      "  Eccentricity"],
+            headers2=["",              "",             "",
+                      "",              "Axis (AU)",   "",
+                      ""],
+            rows=a_rows,
+            aligns=["l", "l", "l", "l", "l", "l", "r"],
+        )
+        print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def main_sequence_star_properties():
+    """Display the Main Sequence Star Properties table from propertiesOfMainSequenceStars.csv."""
+    os.system("cls" if os.name == "nt" else "clear")
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, "propertiesOfMainSequenceStars.csv")
+
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    except Exception as e:
+        print(f"Error loading propertiesOfMainSequenceStars.csv: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    if not rows:
+        print("No data found in propertiesOfMainSequenceStars.csv.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    title = "Main Sequence Star Properties"
+    print(f"\n{'-' * len(title)}")
+    print(title)
+    print(f"{'-' * len(title)}")
+    print()
+
+    # Columns from CSV (in display order)
+    col_keys = [
+        "Spectral Class", "B-V", "Teeff(K)", "AbsMag Vis.", "AbsMag Bol.",
+        "Bolo. Corr. (BC)", "Lum", "R", "M", "p (g/cm3)", "Lifetime (years)",
+    ]
+    headers = [
+        "Spectral Class", "B-V", "Teff (K)", "Abs Mag Vis", "Abs Mag Bol",
+        "BC", "Lum", "R", "M", "p (g/cm3)", "Lifetime (years)",
+    ]
+
+    table_rows = []
+    for row in rows:
+        table_rows.append([row.get(k, "") for k in col_keys])
+
+    _print_table(
+        headers1=headers,
+        headers2=[""] * len(headers),
+        rows=table_rows,
+        aligns=["l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "l"],
+    )
+    print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def sol_solar_system_regions():
+    """Display Star System Regions for Sol using hardcoded solar constants."""
+    os.system("cls" if os.name == "nt" else "clear")
+    print()
+
+    # Solar constants
+    # Apparent magnitude of Sun as seen from Earth
+    vmag              = -26.74
+    # Parallax: 1 AU = 1 parsec reference; Sun is at ~1/206265 parsecs, parallax = 206265 mas
+    # but for the distance formula we want parsecs = 1000/plx, so plx = 1000/parsecs.
+    # The Sun is trivially 0 parsecs away, so we use a conventional reference.
+    # Standard approach: use absMagnitude directly (4.83) and back-solve vmag/plx.
+    # Since absMagnitude = vmag + 5 - 5*log10(parsecs), and absMag_sun = 4.83, vmag_sun = -26.74,
+    # parsecs = 10^((vmag - absMag + 5) / 5) = 10^((-26.74 - 4.83 + 5)/5) = 10^(-26.57/5)
+    # = 10^(-5.314) ≈ 4.85e-6 parsecs, plx = 1000/parsecs ≈ 206265 mas (correct: 1 arcsec = Sun's parallax)
+    plx               = 1000.0 / (10 ** ((-26.74 - 4.83 + 5.0) / 5.0))
+    boloLum           = -0.07       # Bolometric correction for G2V Sun
+    temp              = 5778.0      # Effective temperature (K)
+    sunlightIntensity = 1.0         # Terra = 1.0
+    bondAlbedo        = 0.3         # Terra = 0.3
+
+    parsecs          = 1000.0 / plx
+    absMagnitude     = vmag + 5 - (5 * math.log10(parsecs))
+    bcAbsMagnitude   = absMagnitude + boloLum
+    bcLuminosity     = 2.52 ** (4.85 - bcAbsMagnitude)
+    stellarMass      = bcLuminosity ** 0.2632
+    luminosityFromMass = stellarMass ** 3.5
+    stellarRadius    = stellarMass ** 0.57 if stellarMass >= 1 else stellarMass ** 0.8
+    stellarDiameterSol = ((5780 ** 2) / (temp ** 2)) * math.sqrt(bcLuminosity)
+    stellarDiameterKM  = stellarDiameterSol * 1391600
+    mainSeqLifeSpan  = (10 ** 10) * ((1 / stellarMass) ** 2.5)
+    trigParallax     = plx / 1000
+    lightYears       = 3.2616 / trigParallax
+    distAU           = math.sqrt(bcLuminosity / sunlightIntensity)
+    distKM           = distAU * 149000000
+    planetaryYear    = math.sqrt((distAU ** 3) / stellarMass)
+    planetaryTemperature  = 374 * 1.1 * (1 - bondAlbedo) * (sunlightIntensity ** 0.25)
+    planetaryTemperatureC = planetaryTemperature - 273.15
+    planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
+    starAngularDiameter   = 57.3 ** (stellarDiameterKM / distKM)
+    sizeOfSun        = f"{starAngularDiameter:.2f}\N{DEGREE SIGN}"
+    sysilGrav        = 0.2 * stellarMass
+    sysilSunlight    = math.sqrt(bcLuminosity / 16)
+    hzil             = math.sqrt(bcLuminosity / 1.1)
+    hzol             = math.sqrt(bcLuminosity / 0.53)
+    snowLine         = math.sqrt(bcLuminosity / 0.04)
+    lh2Line          = math.sqrt(bcLuminosity / 0.0025)
+    sysol            = 40 * stellarMass
+    calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
+    ffInner  = math.sqrt(bcLuminosity / 52)
+    ffOuter  = math.sqrt(bcLuminosity / 29.9)
+    fsInner  = math.sqrt(bcLuminosity / 38.7)
+    fsOuter  = math.sqrt(bcLuminosity / 3.2)
+    prwInner = math.sqrt(bcLuminosity / 2.8)
+    prwOuter = math.sqrt(bcLuminosity / 0.8)
+    praInner = math.sqrt(bcLuminosity / 0.48)
+    praOuter = math.sqrt(bcLuminosity / 0.21)
+    pmInner  = math.sqrt(bcLuminosity / 0.023)
+    pmOuter  = math.sqrt(bcLuminosity / 0.0094)
+    phInner  = math.sqrt(bcLuminosity / 0.0025)
+    phOuter  = math.sqrt(bcLuminosity / 0.000024)
+
+    _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
+    _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
+    _display_star_distance(plx, trigParallax, parsecs, lightYears)
+    _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun)
+    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol)
+    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter)
+    _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius)
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -4925,15 +5248,21 @@ MENU_OPTIONS = {
     "33": ("Habitable Zone Calculator",                                      habitable_zone_calculator),
     "34": ("Habitable Zone Calculator w/SMA",                               habitable_zone_calculator_sma),
     "35": ("Star Luminosity",                                                star_luminosity_calculator),
+    "36": ("Solar System Planet/Dwarf Planets/Asteroids Data Table",         solar_system_data_tables),
+    "37": ("Main Sequence Star Properties",                                  main_sequence_star_properties),
+    "38": ("Sol Solar System Regions",                                       sol_solar_system_regions),
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
 _STAR_DB_KEYS = {"1", "2", "3", "4", "5", "6", "7", "8"}
 _STAR_REGIONS_KEYS = {"9", "10", "11"}
-_PLANETARY_EQ_KEYS = {"27", "28", "29"}
 _ROTATING_HABITAT_KEYS = {"30", "31", "32"}
-_MISC_EQ_KEYS = {"33", "34", "35"}
-_CALCULATORS_KEYS = {"12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26"}
+_CALCULATORS_KEYS = {
+    "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26",
+    "27", "28", "29",
+    "33", "34", "35",
+}
+_SCIENCE_KEYS = {"36", "37", "38"}
 _UTILITY_KEYS = {"50"}
 
 
@@ -4965,27 +5294,21 @@ def main_menu():
             label = MENU_OPTIONS[key][0]
             print(f"  {key}. {label}")
         print("-" * 50)
-        print("  Planetary Equations")
-        print("-" * 50)
-        for key in sorted(_PLANETARY_EQ_KEYS, key=int):
-            label = MENU_OPTIONS[key][0]
-            print(f"  {key}. {label}")
-        print("-" * 50)
         print("  Rotating Habitat Equations")
         print("-" * 50)
         for key in sorted(_ROTATING_HABITAT_KEYS, key=int):
             label = MENU_OPTIONS[key][0]
             print(f"  {key}. {label}")
         print("-" * 50)
-        print("  Misc. Equations")
-        print("-" * 50)
-        for key in sorted(_MISC_EQ_KEYS, key=int):
-            label = MENU_OPTIONS[key][0]
-            print(f"  {key}. {label}")
-        print("-" * 50)
         print("  Calculators")
         print("-" * 50)
         _print_two_column_section(_CALCULATORS_KEYS)
+        print("-" * 50)
+        print("  Science")
+        print("-" * 50)
+        for key in sorted(_SCIENCE_KEYS, key=int):
+            label = MENU_OPTIONS[key][0]
+            print(f"  {key}. {label}")
         print("-" * 50)
         for key in sorted(_UTILITY_KEYS, key=int):
             label = MENU_OPTIONS[key][0]
