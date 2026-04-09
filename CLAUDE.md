@@ -30,6 +30,10 @@ The main menu loop calls whichever function the user picks, then returns to the 
 1. Write the feature as a top-level function.
 2. Register it in `MENU_OPTIONS` with the next available key and a short label.
 3. End the function with the "Press Enter to Return to the Main Menu" prompt.
+4. Screen clearing rules:
+   - If the function has **no user inputs** (pure data display): call `os.system("cls" if os.name == "nt" else "clear")` at the very start of the function, before any output.
+   - If the function **collects user inputs first**: call `os.system("cls" if os.name == "nt" else "clear")` after all inputs are collected and before the first output `print()`.
+   - The main menu loop clears the screen at the top of each iteration, so functions do **not** need to clear after the "Press Enter" prompt.
 
 ## Menu Options
 

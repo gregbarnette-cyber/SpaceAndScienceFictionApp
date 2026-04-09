@@ -39,11 +39,13 @@ Options 18–32. Distance, velocity, travel time, and brachistochrone features. 
 ### Option 21: Light Years per Hour to X Times the Speed of Light — `ly_per_hour_to_speed_of_light()`
 - Prompts: `Enter velocity in light years per hour`
 - Converts ly/hr → X times c: `times_c = ly_hr × 8765.8128`
+- Screen cleared after input, before output.
 - Output: single line showing both values.
 
 ### Option 22: X Times the Speed of Light to Light Years per Hour — `speed_of_light_to_ly_per_hour()`
 - Prompts: `Enter velocity in X times the speed of light`
 - Converts X times c → ly/hr: `ly_hr = times_c / 8765.8128`
+- Screen cleared after input, before output.
 - Output: single line showing both values.
 
 ## Distance Traveled Features
@@ -51,11 +53,13 @@ Options 18–32. Distance, velocity, travel time, and brachistochrone features. 
 ### Option 23: Distance Traveled at a certain ly/hr within a certain time — `distance_traveled_ly_per_hour()`
 - Prompts: `Enter travel time in hours`, `Enter the velocity in light years per hour`
 - Calculates: `distance = ly_hr × hours`
+- Screen cleared after all inputs, before output.
 - Output: single line showing velocity, time, and distance in light years.
 
 ### Option 24: Distance Traveled at a certain X times the speed of light within a certain time — `distance_traveled_times_c()`
 - Prompts: `Enter travel time in hours`, `Enter the velocity X times the speed of light`
 - Converts to ly/hr first: `ly_hr = times_c / 8765.8128`, then `distance = ly_hr × hours`
+- Screen cleared after all inputs, before output.
 - Output: single line showing velocity (×c), time, and distance in light years.
 
 ## Travel Time Features (Given Distance in Light Years)
@@ -69,11 +73,13 @@ Options 18–32. Distance, velocity, travel time, and brachistochrone features. 
 ### Option 25: Time to Travel # of Light Years at X LY/HR — `time_to_travel_ly_at_ly_per_hour()`
 - Prompts: `Enter number of light years`, `Enter velocity in light years per hour` (must be > 0)
 - Calculates: `total_hours = distance_ly / ly_hr`, `times_c = ly_hr × 8765.8128`
+- Screen cleared after all inputs, before output.
 - Output table columns: Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
 
 ### Option 26: Time to Travel # of Light Years at X Times the Speed of Light — `time_to_travel_ly_at_times_c()`
 - Prompts: `Enter number of light years`, `Enter velocity in X times the speed of light` (must be > 0)
 - Calculates: `ly_hr = times_c / 8765.8128`, `total_hours = distance_ly / ly_hr`
+- Screen cleared after all inputs, before output.
 - Output table columns: Distance (LYs) | X Times Speed of Light | LY/HR | Travel Time (Hours) | Travel Time
 
 ## Travel Time Between 2 Stars Features
@@ -85,6 +91,7 @@ Options 18–32. Distance, velocity, travel time, and brachistochrone features. 
 - Computes 3D Euclidean distance in ly using same Cartesian math as option 18.
 - Converts velocity: if `use_times_c`, derives `ly_hr = times_c / 8765.8128`; else derives `times_c = ly_hr × 8765.8128`.
 - `total_hours = distance_ly / ly_hr`; travel time formatted via `_format_travel_time()`.
+- Screen cleared after all inputs and star lookups succeed, before table output. Early-return error paths (empty name, lookup failure) do not clear.
 - Output table columns (option 27): Origin | Destination | Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
 - Output table columns (option 28): Origin | Destination | Distance (LYs) | X Times Speed of Light | LY/HR | Travel Time (Hours) | Travel Time
 
@@ -117,6 +124,7 @@ Options 30–32 are given a distance and solve for travel time.
 - Profile 1 for this option differs from options 30–32: **Continuous Acceleration for Entire Time** — `d = ½ × a × t²` (no flip/decelerate).
 - Profile 2: same as options 30–32 — accel t/4, coast t/2, decel t/4; `d = 3×a×t²/16`.
 - Profile 3: accel to V_CAP then coast for remaining time — no decel (decel happens at destination outside the time window). `d = ½×a×t_cap² + V_CAP×(t - t_cap)`. Cap-not-reached condition: `t_cap ≥ t` (one phase only, not two); fallback is `d = ½ × a × t²`.
+- Screen cleared after all inputs, before output.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Travel Time (Hours) | Travel Time | Distance (AU) | Distance (LM)
 - Row order: Profile 1, Profile 2, Profile 3.
 
@@ -124,6 +132,7 @@ Options 30–32 are given a distance and solve for travel time.
 - Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Distance in AUs` (> 0)
 - Converts AU → metres, then solves for travel time for each profile.
 - Also computes `distance_lm = d_m / M_PER_LM` for display.
+- Screen cleared after all inputs, before output.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
 - Row order: Profile 1, Profile 2, Profile 3.
 
@@ -131,11 +140,13 @@ Options 30–32 are given a distance and solve for travel time.
 - Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Distance in Light Minutes` (> 0)
 - Converts LM → metres, then solves for travel time for each profile. Same formulas as option 30.
 - Also computes `distance_au = d_m / M_PER_AU` for display.
+- Screen cleared after all inputs, before output.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
 - Row order: Profile 1, Profile 2, Profile 3.
 
 ### Option 32: Travel Time Between 2 System Objs (Planet/Moon/Asteroid) — `travel_time_between_solar_system_objects()`
 - Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Max Velocity for Accelerate-to-Max-Velocity Profile (% of c, Default 0.3)` (blank → 0.3).
+- Screen cleared after all user inputs and before JPL Horizons queries begin (the "Querying JPL Horizons..." status messages appear on the cleared screen).
 - Uses `astroquery.jplhorizons.Horizons` to fetch current heliocentric state vectors (x, y, z in AU) for both objects via `_get_heliocentric_vectors()`. Distance computed as 3D Euclidean: `sqrt((dx-ox)²+(dy-oy)²+(dz-oz)²)`.
 - **Object name resolution**: `_resolve_horizons_id(name)` checks `_HORIZONS_ID_MAP` (normalized lowercase) first, then the last token of the input (handles "Jupiter's moon Io" → "io"), then falls through to pass the raw string to Horizons (handles numeric IDs like "433", asteroid designations like "1998 QE2").
 - `_HORIZONS_ID_MAP`: module-level dict mapping ~100 common names to Horizons numeric IDs (8 planets, Sun, all major moons, dwarf planets, common asteroids/comets).

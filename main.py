@@ -3267,6 +3267,7 @@ def ly_per_hour_to_speed_of_light():
     # 1 light year per hour = 8765.8128 times the speed of light
     # (hours in a year = 365.25 * 24 = 8765.8128)
     times_c = ly_hr * 8765.8128
+    os.system("cls" if os.name == "nt" else "clear")
     print(f"\n  {ly_hr} ly/hr = {times_c:.6f}x the speed of light")
     input("\nPress Enter to Return to the Main Menu")
 
@@ -3280,6 +3281,7 @@ def speed_of_light_to_ly_per_hour():
         except ValueError:
             print("Invalid input. Please enter a number.")
     ly_hr = times_c / 8765.8128
+    os.system("cls" if os.name == "nt" else "clear")
     print(f"\n  {times_c}x the speed of light = {ly_hr:.6f} ly/hr")
     input("\nPress Enter to Return to the Main Menu")
 
@@ -3300,6 +3302,7 @@ def distance_traveled_ly_per_hour():
         except ValueError:
             print("Invalid input. Please enter a number.")
     distance = ly_hr * hours
+    os.system("cls" if os.name == "nt" else "clear")
     print(f"\n  Traveling at {ly_hr} ly/hr for {hours} hours covers {distance:.6f} light years")
     input("\nPress Enter to Return to the Main Menu")
 
@@ -3321,6 +3324,7 @@ def distance_traveled_times_c():
             print("Invalid input. Please enter a number.")
     ly_hr = times_c / 8765.8128
     distance = ly_hr * hours
+    os.system("cls" if os.name == "nt" else "clear")
     print(f"\n  Traveling at {times_c}x the speed of light for {hours} hours covers {distance:.6f} light years")
     input("\nPress Enter to Return to the Main Menu")
 
@@ -3394,6 +3398,8 @@ def time_to_travel_ly_at_ly_per_hour():
     times_c     = ly_hr * 8765.8128
     travel_time = _format_travel_time(total_hours)
 
+    os.system("cls" if os.name == "nt" else "clear")
+
     # Build table rows
     col1 = "Distance (LYs)"
     col2 = "LY/HR"
@@ -3449,6 +3455,8 @@ def time_to_travel_ly_at_times_c():
     ly_hr       = times_c / 8765.8128
     total_hours = distance_ly / ly_hr
     travel_time = _format_travel_time(total_hours)
+
+    os.system("cls" if os.name == "nt" else "clear")
 
     col1 = "Distance (LYs)"
     col2 = "X Times Speed of Light"
@@ -3543,6 +3551,8 @@ def _travel_time_between_stars(velocity_label, velocity_prompt, use_times_c):
 
     total_hours = distance_ly / ly_hr
     travel_time = _format_travel_time(total_hours)
+
+    os.system("cls" if os.name == "nt" else "clear")
 
     col0 = "Origin"
     col1 = "Destination"
@@ -3678,6 +3688,8 @@ def distance_traveled_at_acceleration():
     def to_au(m): return m / M_PER_AU
     def to_lm(m): return m / M_PER_LM
 
+    os.system("cls" if os.name == "nt" else "clear")
+
     # ── Build table ─────────────────────────────────────────────────────────
     col0 = "Acceleration Profile"
     col1 = "Acceleration (G's)"
@@ -3762,6 +3774,8 @@ def travel_time_between_system_objects():
     a_ms2    = g_count * G_MS2
     d_m      = distance_au * M_PER_AU
     distance_lm = d_m / M_PER_LM
+
+    os.system("cls" if os.name == "nt" else "clear")
 
     # ── Profile 1: Continuous to Halfway Point ───────────────────────────────
     # d = ¼·a·t²  →  t = 2·√(d/a)
@@ -3881,6 +3895,8 @@ def travel_time_between_system_objects_lm():
     a_ms2       = g_count * G_MS2
     d_m         = distance_lm * M_PER_LM
     distance_au = d_m / M_PER_AU
+
+    os.system("cls" if os.name == "nt" else "clear")
 
     # ── Profile 1: Continuous to Halfway Point ───────────────────────────────
     t1_sec   = 2.0 * math.sqrt(d_m / a_ms2)
@@ -4151,6 +4167,8 @@ def travel_time_between_solar_system_objects():
             print("Invalid input. Using default 0.3%.")
             v_cap_pct = 0.3
 
+    os.system("cls" if os.name == "nt" else "clear")
+
     # ── Resolve Horizons IDs ──────────────────────────────────────────────────
     origin_id = _resolve_horizons_id(origin_name)
     dest_id   = _resolve_horizons_id(dest_name)
@@ -4324,6 +4342,8 @@ def planetary_orbit_periastron_apastron():
     apastron      = sma * (1.0 + ecc)
     ecc_au        = sma * ecc
 
+    os.system("cls" if os.name == "nt" else "clear")
+
     col0 = "Periastron (AU)"
     col1 = "Semi-Major Axis (AU)"
     col2 = "Apastron (AU)"
@@ -4381,6 +4401,8 @@ def moon_orbital_distance_24h():
     M_kg      = mass_earth * EARTH_MASS_KG
     r_m       = (G * M_kg * T_SEC**2 / (4.0 * math.pi**2)) ** (1.0 / 3.0)
     r_km      = r_m / 1000.0
+
+    os.system("cls" if os.name == "nt" else "clear")
 
     col0 = "Planetary Mass (Earth Masses)"
     col1 = "Day Length (Hours)"
@@ -4443,6 +4465,8 @@ def moon_orbital_distance_x_hours():
     r_m       = (G * M_kg * T_sec**2 / (4.0 * math.pi**2)) ** (1.0 / 3.0)
     r_km      = r_m / 1000.0
 
+    os.system("cls" if os.name == "nt" else "clear")
+
     col0 = "Planetary Mass (Earth Masses)"
     col1 = "Day Length (Hours)"
     col2 = "Orbital Distance (km)"
@@ -4501,6 +4525,8 @@ def centrifugal_gravity_acceleration():
     omega = rpm * 2.0 * math.pi / 60.0
     a     = omega ** 2 * r
 
+    os.system("cls" if os.name == "nt" else "clear")
+
     col0 = "Rotation Rate (rpm)"
     col1 = "Distance from Center (m)"
     col2 = "Centrifugal Gravity (m/s^2)"
@@ -4557,6 +4583,8 @@ def centrifugal_gravity_distance():
     omega = rpm * 2.0 * math.pi / 60.0
     r     = a / omega ** 2
 
+    os.system("cls" if os.name == "nt" else "clear")
+
     col0 = "Rotation Rate (rpm)"
     col1 = "Centrifugal Gravity (m/s^2)"
     col2 = "Distance from Center (m)"
@@ -4612,6 +4640,8 @@ def centrifugal_gravity_rpm():
 
     omega = math.sqrt(a / r)
     rpm   = omega * 60.0 / (2.0 * math.pi)
+
+    os.system("cls" if os.name == "nt" else "clear")
 
     col0 = "Centrifugal Gravity (m/s^2)"
     col1 = "Distance from Center (m)"
@@ -4694,6 +4724,8 @@ def habitable_zone_calculator():
         ("Optimistic Outer HZ (Early Mars)",                            "em"),
     ]
 
+    os.system("cls" if os.name == "nt" else "clear")
+
     results = []
     for name, key in zones:
         seff = _kopparapu_seff(teff, key)
@@ -4762,6 +4794,8 @@ def habitable_zone_calculator_sma():
 
     AU_TO_LM = 8.3167
     planet_seff = ((1.0 / sma) ** 2) * slum
+
+    os.system("cls" if os.name == "nt" else "clear")
 
     zone_defs = [
         ("Optimistic Inner HZ (Recent Venus)",                          "rv"),
@@ -4860,6 +4894,8 @@ def star_luminosity_calculator():
             print("Invalid input. Please enter a number.")
 
     luminosity = (radius ** 2) * ((temp / 5778.0) ** 4)
+
+    os.system("cls" if os.name == "nt" else "clear")
 
     col0 = "Radius (R\u2609)"
     col1 = "Temperature (K)"
