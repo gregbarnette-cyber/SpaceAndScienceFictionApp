@@ -4292,6 +4292,183 @@ def travel_time_between_solar_system_objects():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Planetary Equations ──────────────────────────────────────────────────────
+
+def planetary_orbit_periastron_apastron():
+    """Calculate periastron and apastron from semi-major axis and eccentricity.
+      Periastron = SMA × (1 - e)
+      Apastron   = SMA × (1 + e)
+      Eccentricity (AU) = SMA × e
+    """
+    while True:
+        raw = input("Enter the Planetary Semi-Major Axis (AU): ").strip()
+        try:
+            sma = float(raw)
+            if sma <= 0:
+                print("Semi-major axis must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter the Planetary Orbit Eccentricity: ").strip()
+        try:
+            ecc = float(raw)
+            if ecc < 0 or ecc >= 1:
+                print("Eccentricity must be between 0 (inclusive) and 1 (exclusive).")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    periastron    = sma * (1.0 - ecc)
+    apastron      = sma * (1.0 + ecc)
+    ecc_au        = sma * ecc
+
+    col0 = "Periastron (AU)"
+    col1 = "Semi-Major Axis (AU)"
+    col2 = "Apastron (AU)"
+    col3 = "Eccentricity"
+    col4 = "Eccentricity (AU)"
+
+    v0 = f"{periastron:.6f}"
+    v1 = f"{sma:.6f}"
+    v2 = f"{apastron:.6f}"
+    v3 = f"{ecc:.6f}"
+    v4 = f"{ecc_au:.6f}"
+
+    w0 = max(len(col0), len(v0))
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+    w3 = max(len(col3), len(v3))
+    w4 = max(len(col4), len(v4))
+
+    sep    = "  "
+    header = (col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
+              col3.ljust(w3) + sep + col4.ljust(w4))
+    row    = (v0.ljust(w0)   + sep + v1.ljust(w1)   + sep + v2.ljust(w2)   + sep +
+              v3.ljust(w3)   + sep + v4.ljust(w4))
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def moon_orbital_distance_24h():
+    """Orbital distance of an Earth-sized moon with a 24-hour day.
+      Uses Kepler's third law: r = (G * M_planet * T^2 / (4*pi^2))^(1/3)
+      where T = 24 hours = 86400 seconds, M_planet in kg = Earth_mass * planet_mass_in_earth_masses.
+    """
+    import math
+
+    EARTH_MASS_KG = 5.972e24   # kg
+    G             = 6.674e-11  # m^3 kg^-1 s^-2
+    T_SEC         = 86400.0    # 24 hours in seconds
+
+    while True:
+        raw = input("Enter Planetary Mass in Earth Masses: ").strip()
+        try:
+            mass_earth = float(raw)
+            if mass_earth <= 0:
+                print("Mass must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    M_kg      = mass_earth * EARTH_MASS_KG
+    r_m       = (G * M_kg * T_SEC**2 / (4.0 * math.pi**2)) ** (1.0 / 3.0)
+    r_km      = r_m / 1000.0
+
+    col0 = "Planetary Mass (Earth Masses)"
+    col1 = "Day Length (Hours)"
+    col2 = "Orbital Distance (km)"
+
+    v0 = f"{mass_earth:.4f}"
+    v1 = "24.0000"
+    v2 = f"{r_km:.4f}"
+
+    w0 = max(len(col0), len(v0))
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+
+    sep     = "  "
+    header  = col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2)
+    row     = v0.ljust(w0)   + sep + v1.ljust(w1)   + sep + v2.ljust(w2)
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def moon_orbital_distance_x_hours():
+    """Orbital distance of an Earth-sized moon with a user-specified day length.
+      Uses Kepler's third law: r = (G * M_planet * T^2 / (4*pi^2))^(1/3)
+      where T = day_hours * 3600 seconds, M_planet in kg = Earth_mass * planet_mass_in_earth_masses.
+    """
+    import math
+
+    EARTH_MASS_KG = 5.972e24   # kg
+    G             = 6.674e-11  # m^3 kg^-1 s^-2
+
+    while True:
+        raw = input("Enter Planetary Mass in Earth Masses: ").strip()
+        try:
+            mass_earth = float(raw)
+            if mass_earth <= 0:
+                print("Mass must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter Day in Hours: ").strip()
+        try:
+            day_hours = float(raw)
+            if day_hours <= 0:
+                print("Day length must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    T_sec     = day_hours * 3600.0
+    M_kg      = mass_earth * EARTH_MASS_KG
+    r_m       = (G * M_kg * T_sec**2 / (4.0 * math.pi**2)) ** (1.0 / 3.0)
+    r_km      = r_m / 1000.0
+
+    col0 = "Planetary Mass (Earth Masses)"
+    col1 = "Day Length (Hours)"
+    col2 = "Orbital Distance (km)"
+
+    v0 = f"{mass_earth:.4f}"
+    v1 = f"{day_hours:.4f}"
+    v2 = f"{r_km:.4f}"
+
+    w0 = max(len(col0), len(v0))
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+
+    sep     = "  "
+    header  = col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2)
+    row     = v0.ljust(w0)   + sep + v1.ljust(w1)   + sep + v2.ljust(w2)
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -4321,13 +4498,29 @@ MENU_OPTIONS = {
     "24": ("Travel Time Between 2 System Objs (Generic, Distance in AUs)", travel_time_between_system_objects),
     "25": ("Travel Time Between 2 System Objs (Generic, Distance in LMs)", travel_time_between_system_objects_lm),
     "26": ("Travel Time Between 2 System Objs (Planet/Moon/Asteroid)", travel_time_between_solar_system_objects),
+    "27": ("Planetary Orbit Periastron & Apastron Distance Calculator", planetary_orbit_periastron_apastron),
+    "28": ("Orbital Distance of an Earth-sized Moon with a 24 hour day", moon_orbital_distance_24h),
+    "29": ("Orbital Distance of an Earth-sized Moon with a X hour day",  moon_orbital_distance_x_hours),
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
 _STAR_DB_KEYS = {"1", "2", "3", "4", "5", "6", "7", "8"}
 _STAR_REGIONS_KEYS = {"9", "10", "11"}
+_PLANETARY_EQ_KEYS = {"27", "28", "29"}
 _CALCULATORS_KEYS = {"12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26"}
 _UTILITY_KEYS = {"50"}
+
+
+def _print_two_column_section(keys):
+    sorted_keys = sorted(keys, key=int)
+    labels = [f"{k}. {MENU_OPTIONS[k][0]}" for k in sorted_keys]
+    col_width = max(len(l) for l in labels)
+    for i in range(0, len(labels), 2):
+        left = f"  {labels[i]:<{col_width}}"
+        if i + 1 < len(labels):
+            print(left + f"    {labels[i+1]}")
+        else:
+            print(left)
 
 
 def main_menu():
@@ -4338,9 +4531,7 @@ def main_menu():
         print("=" * 50)
         print("  Star Databases")
         print("-" * 50)
-        for key in sorted(_STAR_DB_KEYS, key=int):
-            label = MENU_OPTIONS[key][0]
-            print(f"  {key}. {label}")
+        _print_two_column_section(_STAR_DB_KEYS)
         print("-" * 50)
         print("  Star System Regions")
         print("-" * 50)
@@ -4348,11 +4539,15 @@ def main_menu():
             label = MENU_OPTIONS[key][0]
             print(f"  {key}. {label}")
         print("-" * 50)
-        print("  Calculators")
+        print("  Planetary Equations")
         print("-" * 50)
-        for key in sorted(_CALCULATORS_KEYS, key=int):
+        for key in sorted(_PLANETARY_EQ_KEYS, key=int):
             label = MENU_OPTIONS[key][0]
             print(f"  {key}. {label}")
+        print("-" * 50)
+        print("  Calculators")
+        print("-" * 50)
+        _print_two_column_section(_CALCULATORS_KEYS)
         print("-" * 50)
         for key in sorted(_UTILITY_KEYS, key=int):
             label = MENU_OPTIONS[key][0]
