@@ -5210,6 +5210,197 @@ def sol_solar_system_regions():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Science Fiction Menu ─────────────────────────────────────────────────────
+
+def honorverse_hyper_limits():
+    """Display Honorverse Hyper Limits by Spectral Class from spTypeHyperLM.csv."""
+    os.system("cls" if os.name == "nt" else "clear")
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, "spTypeHyperLM.csv")
+
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            raw = list(csv.reader(f))
+    except Exception as e:
+        print(f"Error loading spTypeHyperLM.csv: {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # CSV has no header; columns are: Spectral Class, Light Minutes
+    LM_PER_AU = 8.3167
+    table_rows = []
+    for line in raw:
+        if len(line) < 2:
+            continue
+        sp_class = line[0].strip().strip('"')
+        try:
+            lm = float(line[1])
+        except ValueError:
+            continue
+        au = lm / LM_PER_AU
+        table_rows.append([sp_class, f"{lm:.2f}", f"{au:.4f}"])
+
+    title = "Honorverse Hyper Limits by Spectral Class"
+    print(f"\n{'-' * len(title)}")
+    print(title)
+    print(f"{'-' * len(title)}")
+    print()
+
+    _print_table(
+        headers1=["Spectral Class", "Light Minutes", "AUs"],
+        headers2=["", "", ""],
+        rows=table_rows,
+        aligns=["l", "r", "r"],
+    )
+    print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def honorverse_acceleration_by_mass():
+    """Display Honorverse Acceleration by Mass table."""
+    os.system("cls" if os.name == "nt" else "clear")
+
+    rows = [
+        ["0-79,999 (FG/DD)",           "550 g", "253 g", "5280 g", "2429 g"],
+        ["80-499,999 (CL/CA)",          "520 g", "240 g", "5018 g", "2308 g"],
+        ["500,000-1,499,999 (BC)",      "500 g", "230 g", "4825 g", "2215 g"],
+        ["1,500,000-4,999,999 (BB)",    "470 g", "215 g", "4536 g", "2085 g"],
+        ["5,000,000-6,999,999 (DN)",    "450 g", "207 g", "4345 g", "1990 g"],
+        ["7,000,000-8,499,999 (SD)",    "420 g", "190 g", "4053 g", "1860 g"],
+    ]
+
+    title = "Acceleration by Mass"
+    print(f"\n{'-' * len(title)}")
+    print(title)
+    print(f"{'-' * len(title)}")
+    print()
+
+    _print_table(
+        headers1=["Ship Mass (tons)", "Warship", "Merchantship", "Warship", "Merchantship"],
+        headers2=["",                 "(Normal Space)", "(Normal Space)", "(Hyper Space)", "(Hyper Space)"],
+        rows=rows,
+        aligns=["l", "r", "r", "r", "r"],
+    )
+    print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def honorverse_effective_speed():
+    """Display Honorverse Effective Speed by Hyper Band tables."""
+    os.system("cls" if os.name == "nt" else "clear")
+
+    _HOURS_PER_YEAR = 8765.8128  # times_c = ly_hr * 8765.8128  →  ly_hr = xc / 8765.8128
+
+    def _xc_to_ly_hr(xc):
+        return xc / _HOURS_PER_YEAR
+
+    def _speed_str(xc, suffix=""):
+        if xc == 0:
+            return "Currently Unattainable"
+        ly_hr = _xc_to_ly_hr(xc)
+        s = f"{xc} ({ly_hr:.5f} ly/hr)"
+        if suffix.strip():
+            s += suffix
+        return s
+
+    # ── Table 1: Hyper bands Alpha–Iota (known physics) ──────────────────────
+    band_data = [
+        ("Alpha",   "92%", 62,   37.2,  31.0,  ""),
+        ("Beta",    "85%", 767,  460.2, 383.5, ""),
+        ("Gamma",   "78%", 1473, 883.8, 736.5, ""),
+        ("Delta",   "72%", 2178, 1306.8,1089.0,""),
+        ("Epsilon", "66%", 2884, 1730.4,1442.0," *"),
+        ("Zeta",    "61%", 3589, 2153.4,1794.5," *"),
+        ("Eta",     "56%", 4294, 2576.4,2147.0," *"),
+        ("Theta",   "52%", 5000, 3000.0,2500.0," *"),
+        ("Iota",    "48%", 6000, 0,     0,     "*"),
+    ]
+
+    rows1 = []
+    for band, bleed, mult, war_xc, mer_xc, note in band_data:
+        rows1.append([
+            band,
+            bleed,
+            str(mult),
+            _speed_str(war_xc),
+            _speed_str(mer_xc, note),
+        ])
+
+    title1 = "Effective Speed by Hyper Band"
+    print(f"\n{'-' * len(title1)}")
+    print(title1)
+    print(f"{'-' * len(title1)}")
+    print()
+
+    _print_table(
+        headers1=["Band", "Translation", "Velocity",   "Warship (xC)",   "Merchantship (xC)"],
+        headers2=["",     "Bleed-Off",   "Multiplier", "",               ""],
+        rows=rows1,
+        aligns=["l", "r", "r", "l", "l"],
+    )
+    print()
+    print("* Merchantmen do not normally use these bands. This represents the maximum theoretical speed for them if they did.")
+    print("  Q-ships and merchant cruisers with reworked drives and compensators sometimes can reach these bands.")
+
+    # ── Table 2: Expanded bands Alpha–Omega ──────────────────────────────────
+    cal_data = [
+        ("Alpha",   37.2,   31.0,   ""),
+        ("Beta",    460.2,  383.5,  ""),
+        ("Gamma",   883.8,  736.5,  ""),
+        ("Delta",   1306.8, 1089.0, ""),
+        ("Epsilon", 1730.4, 1442.0, " *"),
+        ("Zeta",    2153.4, 1794.5, " *"),
+        ("Eta",     2576.4, 2147.0, " *"),
+        ("Theta",   3000.0, 2500.0, " *"),
+        ("Iota",    3423.0, 2852.5, " *"),
+        ("Kappa",   3846.6, 3205.5, " *"),
+        ("Lambda",  4269.6, 3558.0, " *"),
+        ("Mu",      4693.2, 3911.0, " *"),
+        ("Nu",      5116.2, 4263.5, " *"),
+        ("Xi",      5539.2, 4616.0, " *"),
+        ("Omicron", 5962.8, 4969.0, " *"),
+        ("Pi",      6385.8, 5321.2, " *"),
+        ("Rho",     6809.4, 5674.2, " *"),
+        ("Sigma",   7232.4, 6026.7, " *"),
+        ("Tau",     7656.0, 6379.7, " *"),
+        ("Upsilon", 8079.0, 6732.2, " *"),
+        ("Phi",     8502.0, 7084.7, " *"),
+        ("Chi",     8925.6, 7437.7, " *"),
+        ("Psi",     9348.6, 7790.2, " *"),
+        ("Omega",   9772.2, 8143.2, " *"),
+    ]
+
+    rows2 = []
+    for band, war_xc, mer_xc, note in cal_data:
+        rows2.append([
+            band,
+            _speed_str(war_xc),
+            _speed_str(mer_xc, note),
+        ])
+
+    title2 = "Effective Speed by Hyper Band (Expanded)"
+    print(f"\n{'-' * len(title2)}")
+    print(title2)
+    print(f"{'-' * len(title2)}")
+    print()
+
+    _print_table(
+        headers1=["Band", "Warship (xC)", "Merchantship (xC)"],
+        headers2=["",     "",             ""],
+        rows=rows2,
+        aligns=["l", "l", "l"],
+    )
+    print()
+    print("* Merchantmen do not normally use these bands. This represents the maximum theoretical speed for them if they did.")
+    print("  Q-ships and merchant cruisers with reworked drives and compensators sometimes can reach these bands.")
+    print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -5251,6 +5442,9 @@ MENU_OPTIONS = {
     "36": ("Solar System Planet/Dwarf Planets/Asteroids Data Table",         solar_system_data_tables),
     "37": ("Main Sequence Star Properties",                                  main_sequence_star_properties),
     "38": ("Sol Solar System Regions",                                       sol_solar_system_regions),
+    "39": ("Honorverse Hyper Limits by Spectral Class Table",               honorverse_hyper_limits),
+    "40": ("Honorverse Acceleration by Mass Table",                         honorverse_acceleration_by_mass),
+    "41": ("Honorverse Effective Speed by Hyper Band Table",                honorverse_effective_speed),
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
@@ -5263,6 +5457,7 @@ _CALCULATORS_KEYS = {
     "33", "34", "35",
 }
 _SCIENCE_KEYS = {"36", "37", "38"}
+_SCIFI_KEYS = {"39", "40", "41"}
 _UTILITY_KEYS = {"50"}
 
 
@@ -5307,6 +5502,12 @@ def main_menu():
         print("  Science")
         print("-" * 50)
         for key in sorted(_SCIENCE_KEYS, key=int):
+            label = MENU_OPTIONS[key][0]
+            print(f"  {key}. {label}")
+        print("-" * 50)
+        print("  Science Fiction")
+        print("-" * 50)
+        for key in sorted(_SCIFI_KEYS, key=int):
             label = MENU_OPTIONS[key][0]
             print(f"  {key}. {label}")
         print("-" * 50)
