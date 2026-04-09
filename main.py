@@ -3599,8 +3599,8 @@ def travel_time_between_stars_times_c():
 
 
 def distance_traveled_at_acceleration():
-    """Brachistochrone distance for three profiles (non-relativistic, v <= 0.3% c):
-      1. Continuous to halfway point: accel t/2, flip, decel t/2.
+    """Distance traveled for three profiles (non-relativistic, v <= 0.3% c):
+      1. Continuous acceleration for entire time: d = ½·a·t²
       2. Half continuous accel time, coast, then decel:
            accel t/4, coast t/2, decel t/4.
       3. Accelerate to 0.3% c, coast, then decel:
@@ -3639,11 +3639,10 @@ def distance_traveled_at_acceleration():
     a_ms2 = g_count * G_MS2       # acceleration in m/s²
     t_sec = travel_hours * 3600.0  # total travel time in seconds
 
-    # ── Profile 1: Continuous to Halfway Point (accel t/2, flip & decel t/2) ──
-    # d = 2 × (½ × a × (t/2)²)  =  ¼ × a × t²
-    t_half = t_sec / 2.0
-    d1_m   = 2.0 * (0.5 * a_ms2 * t_half ** 2)
-    label1 = "Continuous to Halfway Point"
+    # ── Profile 1: Continuous Acceleration for Entire Time ──────────────────────
+    # d = ½ × a × t²
+    d1_m   = 0.5 * a_ms2 * t_sec ** 2
+    label1 = "Continuous Acceleration for Entire Time"
 
     # ── Profile 2: Half Continuous Accel Time, Coast, Then Decelerate ─────────
     # Accel for t/4, coast for t/2, decel for t/4.
@@ -3658,21 +3657,20 @@ def distance_traveled_at_acceleration():
     label2   = "Half Continuous Accel Time, Coast, Then Decelerate"
 
     # ── Profile 3: Accelerate to 0.3% c, Coast, Then Decelerate ──────────────
-    # Accel to v_cap, coast the middle, decel from v_cap.
+    # Accel to v_cap, coast for remaining time. Deceleration happens at the
+    # destination outside the given time window, so distance = accel + coast only.
     # Time to reach cap: t_cap = v_cap / a
-    # Need 2×t_cap <= t_sec for there to be a coast phase.
     t_cap = V_CAP_MS / a_ms2
-    if 2.0 * t_cap >= t_sec:
-        # Not enough time to reach the cap and also decelerate — treat as
-        # profile 1 kinematics (accel t/2, decel t/2) since the cap is irrelevant.
-        d3_m   = d1_m
+    if t_cap >= t_sec:
+        # Not enough time to reach the cap — pure acceleration for entire time.
+        # d = ½ × a × t²
+        d3_m   = 0.5 * a_ms2 * t_sec ** 2
         label3 = "Accel to 0.3% c, Coast, Then Decelerate (cap not reached)"
     else:
-        d_accel3 = 0.5 * a_ms2 * t_cap ** 2      # distance accelerating
-        d_decel3 = d_accel3                        # symmetric decel
-        t_coast3 = t_sec - 2.0 * t_cap
+        d_accel3 = 0.5 * a_ms2 * t_cap ** 2      # distance during acceleration
+        t_coast3 = t_sec - t_cap                  # coast for all remaining time
         d_coast3 = V_CAP_MS * t_coast3
-        d3_m     = d_accel3 + d_coast3 + d_decel3
+        d3_m     = d_accel3 + d_coast3
         label3   = "Accel to 0.3% c, Coast, Then Decelerate"
 
     travel_time_str = _format_travel_time(travel_hours)

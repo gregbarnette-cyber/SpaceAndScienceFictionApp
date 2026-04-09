@@ -427,7 +427,7 @@ All three Star System Regions variants (options 9, 10, 11) produce identical out
 
 ## Brachistochrone Calculator Features
 
-### Physical constants (used by options 29–31)
+### Physical constants (used by options 29–32)
 - `G_MS2 = 9.80665` m/s² (1 g)
 - `C_MS = 299,792,458` m/s (speed of light)
 - `V_CAP_MS = 0.003 × C_MS` (0.3% of c = 899,377.374 m/s)
@@ -435,21 +435,19 @@ All three Star System Regions variants (options 9, 10, 11) produce identical out
 - `M_PER_LM = C_MS × 60` m (metres per light-minute)
 - All kinematics are non-relativistic (appropriate at v ≤ 0.3% c).
 
-### Three acceleration profiles (used by options 29–31)
-- **Profile 1 — Continuous to Halfway Point**: accelerate for t/2, flip and decelerate for t/2.
-  - Given time: `d = 2 × (½ × a × (t/2)²) = ¼ × a × t²`
-  - Given distance: `t = 2 × √(d/a)`
-- **Profile 2 — Half Continuous Accel Time, Coast, Then Decelerate**: accelerate t/4, coast t/2, decelerate t/4. Peak velocity = `a × (t/4)`.
-  - Given time: `d = 2×(½×a×(t/4)²) + a×(t/4)×(t/2) = 3×a×t²/16`
-  - Given distance: `t = √(16d / (3a))`
-- **Profile 3 — Accel to 0.3% c, Coast, Then Decelerate**: `t_cap = V_CAP / a` (time to reach cap).
-  - Given time: if `2×t_cap ≥ t`, cap not reached → use Profile 1 math. Else: `d = ½×a×t_cap² + V_CAP×(t - 2×t_cap) + ½×a×t_cap²`
-  - Given distance: if `a×t_cap² ≥ d`, cap not reached → use Profile 1 formula. Else: `t = 2×t_cap + (d - a×t_cap²) / V_CAP`
+### Three acceleration profiles (used by options 30–32)
+Options 30–32 are given a distance and solve for travel time.
+- **Profile 1 — Continuous to Halfway Point**: accelerate for t/2, flip and decelerate for t/2. `t = 2 × √(d/a)`
+- **Profile 2 — Half Continuous Accel Time, Coast, Then Decelerate**: accelerate t/4, coast t/2, decelerate t/4. `t = √(16d / (3a))`
+- **Profile 3 — Accel to 0.3% c, Coast, Then Decelerate**: `t_cap = V_CAP / a`. If `a×t_cap² ≥ d`, cap not reached → use Profile 1 formula. Else: `t = 2×t_cap + (d - a×t_cap²) / V_CAP`.
   - When cap not reached, label appended with `"(cap not reached)"`.
 
 ### Option 29: Distance Traveled at an Acceleration Within a Certain Time — `distance_traveled_at_acceleration()`
 - Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Travel Time in Hours` (> 0)
 - Computes distance (metres → AU and LM) for each profile given the travel time.
+- Profile 1 for this option differs from options 30–32: **Continuous Acceleration for Entire Time** — `d = ½ × a × t²` (no flip/decelerate).
+- Profile 2: same as options 30–32 — accel t/4, coast t/2, decel t/4; `d = 3×a×t²/16`.
+- Profile 3: accel to V_CAP then coast for remaining time — no decel (decel happens at destination outside the time window). `d = ½×a×t_cap² + V_CAP×(t - t_cap)`. Cap-not-reached condition: `t_cap ≥ t` (one phase only, not two); fallback is `d = ½ × a × t²`.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Travel Time (Hours) | Travel Time | Distance (AU) | Distance (LM)
 - Row order: Profile 1, Profile 2, Profile 3.
 
