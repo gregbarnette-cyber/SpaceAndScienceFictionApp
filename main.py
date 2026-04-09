@@ -3254,6 +3254,699 @@ def query_stars_within_distance_of_star():
     input("\nPress Enter to Return to the Main Menu")
 
 
+def ly_per_hour_to_speed_of_light():
+    while True:
+        raw = input("Enter velocity in light years per hour: ").strip()
+        try:
+            ly_hr = float(raw)
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+    # 1 light year per hour = 8765.8128 times the speed of light
+    # (hours in a year = 365.25 * 24 = 8765.8128)
+    times_c = ly_hr * 8765.8128
+    print(f"\n  {ly_hr} ly/hr = {times_c:.6f}x the speed of light")
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def speed_of_light_to_ly_per_hour():
+    while True:
+        raw = input("Enter velocity in X times the speed of light: ").strip()
+        try:
+            times_c = float(raw)
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+    ly_hr = times_c / 8765.8128
+    print(f"\n  {times_c}x the speed of light = {ly_hr:.6f} ly/hr")
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def distance_traveled_ly_per_hour():
+    while True:
+        raw = input("Enter travel time in hours: ").strip()
+        try:
+            hours = float(raw)
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+    while True:
+        raw = input("Enter the velocity in light years per hour: ").strip()
+        try:
+            ly_hr = float(raw)
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+    distance = ly_hr * hours
+    print(f"\n  Traveling at {ly_hr} ly/hr for {hours} hours covers {distance:.6f} light years")
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def distance_traveled_times_c():
+    while True:
+        raw = input("Enter travel time in hours: ").strip()
+        try:
+            hours = float(raw)
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+    while True:
+        raw = input("Enter the velocity X times the speed of light: ").strip()
+        try:
+            times_c = float(raw)
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+    ly_hr = times_c / 8765.8128
+    distance = ly_hr * hours
+    print(f"\n  Traveling at {times_c}x the speed of light for {hours} hours covers {distance:.6f} light years")
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def _format_travel_time(total_hours):
+    """Break total_hours into years, months, days, hours, minutes, seconds.
+    Only includes units that are >= 1 (or seconds if < 1 minute)."""
+    HOURS_PER_YEAR  = 365.25 * 24          # 8765.82
+    HOURS_PER_MONTH = HOURS_PER_YEAR / 12  # ~730.485
+    HOURS_PER_DAY   = 24.0
+    HOURS_PER_MIN   = 1 / 60.0
+    HOURS_PER_SEC   = 1 / 3600.0
+
+    remaining = total_hours
+
+    years = int(remaining / HOURS_PER_YEAR)
+    remaining -= years * HOURS_PER_YEAR
+
+    months = int(remaining / HOURS_PER_MONTH)
+    remaining -= months * HOURS_PER_MONTH
+
+    days = int(remaining / HOURS_PER_DAY)
+    remaining -= days * HOURS_PER_DAY
+
+    hours = int(remaining)
+    remaining -= hours
+
+    minutes = int(remaining * 60)
+    remaining -= minutes / 60
+
+    seconds = remaining * 3600
+
+    parts = []
+    if years:
+        parts.append(f"{years} Year{'s' if years != 1 else ''}")
+    if months:
+        parts.append(f"{months} Month{'s' if months != 1 else ''}")
+    if days:
+        parts.append(f"{days} Day{'s' if days != 1 else ''}")
+    if hours:
+        parts.append(f"{hours} Hour{'s' if hours != 1 else ''}")
+    if minutes:
+        parts.append(f"{minutes} Minute{'s' if minutes != 1 else ''}")
+    # Always show seconds if nothing larger applies, or if < 1 minute total
+    if seconds >= 0.005 and (not parts or total_hours < HOURS_PER_MIN):
+        parts.append(f"{seconds:.2f} Second{'s' if seconds != 1.0 else ''}")
+
+    return ", ".join(parts) if parts else "0 Seconds"
+
+
+def time_to_travel_ly_at_ly_per_hour():
+    while True:
+        raw = input("Enter number of light years: ").strip()
+        try:
+            distance_ly = float(raw)
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+    while True:
+        raw = input("Enter velocity in light years per hour: ").strip()
+        try:
+            ly_hr = float(raw)
+            if ly_hr <= 0:
+                print("Velocity must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    total_hours = distance_ly / ly_hr
+    times_c     = ly_hr * 8765.8128
+    travel_time = _format_travel_time(total_hours)
+
+    # Build table rows
+    col1 = "Distance (LYs)"
+    col2 = "LY/HR"
+    col3 = "X Times Speed of Light"
+    col4 = "Travel Time (Hours)"
+    col5 = "Travel Time"
+
+    v1 = f"{distance_ly:.6f}"
+    v2 = f"{ly_hr:.6f}"
+    v3 = f"{times_c:.6f}"
+    v4 = f"{total_hours:.6f}"
+    v5 = travel_time
+
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+    w3 = max(len(col3), len(v3))
+    w4 = max(len(col4), len(v4))
+    w5 = max(len(col5), len(v5))
+
+    sep = "  "
+    header = (col1.ljust(w1) + sep + col2.ljust(w2) + sep +
+              col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5))
+    row    = (v1.ljust(w1)   + sep + v2.ljust(w2)   + sep +
+              v3.ljust(w3)   + sep + v4.ljust(w4)   + sep + v5.ljust(w5))
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def time_to_travel_ly_at_times_c():
+    while True:
+        raw = input("Enter number of light years: ").strip()
+        try:
+            distance_ly = float(raw)
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+    while True:
+        raw = input("Enter velocity in X times the speed of light: ").strip()
+        try:
+            times_c = float(raw)
+            if times_c <= 0:
+                print("Velocity must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    ly_hr       = times_c / 8765.8128
+    total_hours = distance_ly / ly_hr
+    travel_time = _format_travel_time(total_hours)
+
+    col1 = "Distance (LYs)"
+    col2 = "X Times Speed of Light"
+    col3 = "LY/HR"
+    col4 = "Travel Time (Hours)"
+    col5 = "Travel Time"
+
+    v1 = f"{distance_ly:.6f}"
+    v2 = f"{times_c:.6f}"
+    v3 = f"{ly_hr:.6f}"
+    v4 = f"{total_hours:.6f}"
+    v5 = travel_time
+
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+    w3 = max(len(col3), len(v3))
+    w4 = max(len(col4), len(v4))
+    w5 = max(len(col5), len(v5))
+
+    sep = "  "
+    header = (col1.ljust(w1) + sep + col2.ljust(w2) + sep +
+              col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5))
+    row    = (v1.ljust(w1)   + sep + v2.ljust(w2)   + sep +
+              v3.ljust(w3)   + sep + v4.ljust(w4)   + sep + v5.ljust(w5))
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def _travel_time_between_stars(velocity_label, velocity_prompt, use_times_c):
+    """Shared logic for functions 21 and 22.
+    use_times_c=False  → velocity input is ly/hr, col order: dist, ly/hr, xc
+    use_times_c=True   → velocity input is X times c,  col order: dist, xc, ly/hr
+    """
+    import math
+
+    origin_name = input("Enter origin star: ").strip()
+    if not origin_name:
+        print("No star name entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    dest_name = input("Enter destination star: ").strip()
+    if not dest_name:
+        print("No star name entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    while True:
+        raw = input(velocity_prompt).strip()
+        try:
+            velocity = float(raw)
+            if velocity <= 0:
+                print("Velocity must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    s1 = _lookup_star_for_distance(origin_name)
+    s2 = _lookup_star_for_distance(dest_name)
+
+    if s1 is None or s2 is None:
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    label1, ra1_deg, dec1_deg, ly1, _ = s1
+    label2, ra2_deg, dec2_deg, ly2, _ = s2
+
+    ra1_r  = math.radians(ra1_deg);  dec1_r = math.radians(dec1_deg)
+    ra2_r  = math.radians(ra2_deg);  dec2_r = math.radians(dec2_deg)
+
+    x1 = ly1 * math.cos(dec1_r) * math.cos(ra1_r)
+    y1 = ly1 * math.cos(dec1_r) * math.sin(ra1_r)
+    z1 = ly1 * math.sin(dec1_r)
+    x2 = ly2 * math.cos(dec2_r) * math.cos(ra2_r)
+    y2 = ly2 * math.cos(dec2_r) * math.sin(ra2_r)
+    z2 = ly2 * math.sin(dec2_r)
+
+    distance_ly = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+    if use_times_c:
+        times_c = velocity
+        ly_hr   = times_c / 8765.8128
+    else:
+        ly_hr   = velocity
+        times_c = ly_hr * 8765.8128
+
+    total_hours = distance_ly / ly_hr
+    travel_time = _format_travel_time(total_hours)
+
+    col0 = "Origin"
+    col1 = "Destination"
+    col2 = "Distance (LYs)"
+    col3 = "X Times Speed of Light" if use_times_c else "LY/HR"
+    col4 = "LY/HR"                  if use_times_c else "X Times Speed of Light"
+    col5 = "Travel Time (Hours)"
+    col6 = "Travel Time"
+
+    v0 = label1
+    v1 = label2
+    v2 = f"{distance_ly:.6f}"
+    v3 = f"{times_c:.6f}"          if use_times_c else f"{ly_hr:.6f}"
+    v4 = f"{ly_hr:.6f}"            if use_times_c else f"{times_c:.6f}"
+    v5 = f"{total_hours:.6f}"
+    v6 = travel_time
+
+    w0 = max(len(col0), len(v0))
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+    w3 = max(len(col3), len(v3))
+    w4 = max(len(col4), len(v4))
+    w5 = max(len(col5), len(v5))
+    w6 = max(len(col6), len(v6))
+
+    sep = "  "
+    header = (col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
+              col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5) + sep + col6.ljust(w6))
+    row    = (v0.ljust(w0)   + sep + v1.ljust(w1)   + sep + v2.ljust(w2)   + sep +
+              v3.ljust(w3)   + sep + v4.ljust(w4)   + sep + v5.ljust(w5)   + sep + v6.ljust(w6))
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def travel_time_between_stars_ly_hr():
+    _travel_time_between_stars(
+        velocity_label="ly/hr",
+        velocity_prompt="Enter velocity in light years per hour: ",
+        use_times_c=False,
+    )
+
+
+def travel_time_between_stars_times_c():
+    _travel_time_between_stars(
+        velocity_label="x c",
+        velocity_prompt="Enter velocity in X times the speed of light: ",
+        use_times_c=True,
+    )
+
+
+def distance_traveled_at_acceleration():
+    """Brachistochrone distance for three profiles (non-relativistic, v <= 0.3% c):
+      1. Continuous to halfway point: accel t/2, flip, decel t/2.
+      2. Half continuous accel time, coast, then decel:
+           accel t/4, coast t/2, decel t/4.
+      3. Accelerate to 0.3% c, coast, then decel:
+           accel to v_cap, coast, decel from v_cap.
+    """
+
+    while True:
+        raw = input("Enter Acceleration in # of g's: ").strip()
+        try:
+            g_count = float(raw)
+            if g_count <= 0:
+                print("Acceleration must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter Travel Time in Hours: ").strip()
+        try:
+            travel_hours = float(raw)
+            if travel_hours <= 0:
+                print("Travel time must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    # Physical constants
+    G_MS2    = 9.80665            # 1 g in m/s²
+    C_MS     = 299_792_458.0      # speed of light in m/s
+    V_CAP_MS = 0.003 * C_MS      # 0.3% of c in m/s
+    M_PER_AU = 149_597_870_700.0  # metres per AU
+    M_PER_LM = C_MS * 60.0       # metres per light-minute
+
+    a_ms2 = g_count * G_MS2       # acceleration in m/s²
+    t_sec = travel_hours * 3600.0  # total travel time in seconds
+
+    # ── Profile 1: Continuous to Halfway Point (accel t/2, flip & decel t/2) ──
+    # d = 2 × (½ × a × (t/2)²)  =  ¼ × a × t²
+    t_half = t_sec / 2.0
+    d1_m   = 2.0 * (0.5 * a_ms2 * t_half ** 2)
+    label1 = "Continuous to Halfway Point"
+
+    # ── Profile 2: Half Continuous Accel Time, Coast, Then Decelerate ─────────
+    # Accel for t/4, coast for t/2, decel for t/4.
+    # Peak velocity reached: v_peak = a × (t/4)
+    t_accel2 = t_sec / 4.0
+    v_peak2  = a_ms2 * t_accel2
+    t_coast2 = t_sec / 2.0
+    d_accel2 = 0.5 * a_ms2 * t_accel2 ** 2
+    d_coast2 = v_peak2 * t_coast2
+    d_decel2 = d_accel2  # symmetric deceleration covers same distance
+    d2_m     = d_accel2 + d_coast2 + d_decel2
+    label2   = "Half Continuous Accel Time, Coast, Then Decelerate"
+
+    # ── Profile 3: Accelerate to 0.3% c, Coast, Then Decelerate ──────────────
+    # Accel to v_cap, coast the middle, decel from v_cap.
+    # Time to reach cap: t_cap = v_cap / a
+    # Need 2×t_cap <= t_sec for there to be a coast phase.
+    t_cap = V_CAP_MS / a_ms2
+    if 2.0 * t_cap >= t_sec:
+        # Not enough time to reach the cap and also decelerate — treat as
+        # profile 1 kinematics (accel t/2, decel t/2) since the cap is irrelevant.
+        d3_m   = d1_m
+        label3 = "Accel to 0.3% c, Coast, Then Decelerate (cap not reached)"
+    else:
+        d_accel3 = 0.5 * a_ms2 * t_cap ** 2      # distance accelerating
+        d_decel3 = d_accel3                        # symmetric decel
+        t_coast3 = t_sec - 2.0 * t_cap
+        d_coast3 = V_CAP_MS * t_coast3
+        d3_m     = d_accel3 + d_coast3 + d_decel3
+        label3   = "Accel to 0.3% c, Coast, Then Decelerate"
+
+    travel_time_str = _format_travel_time(travel_hours)
+
+    def to_au(m): return m / M_PER_AU
+    def to_lm(m): return m / M_PER_LM
+
+    # ── Build table ─────────────────────────────────────────────────────────
+    col0 = "Acceleration Profile"
+    col1 = "Acceleration (G's)"
+    col2 = "Travel Time (Hours)"
+    col3 = "Travel Time"
+    col4 = "Distance (AU)"
+    col5 = "Distance (LM)"
+
+    g_str = f"{g_count:.4f}"
+    h_str = f"{travel_hours:.6f}"
+
+    rows = [
+        (label1, g_str, h_str, travel_time_str, f"{to_au(d1_m):.4f}", f"{to_lm(d1_m):.4f}"),
+        (label2, g_str, h_str, travel_time_str, f"{to_au(d2_m):.4f}", f"{to_lm(d2_m):.4f}"),
+        (label3, g_str, h_str, travel_time_str, f"{to_au(d3_m):.4f}", f"{to_lm(d3_m):.4f}"),
+    ]
+
+    w0 = max(len(col0), *(len(r[0]) for r in rows))
+    w1 = max(len(col1), *(len(r[1]) for r in rows))
+    w2 = max(len(col2), *(len(r[2]) for r in rows))
+    w3 = max(len(col3), *(len(r[3]) for r in rows))
+    w4 = max(len(col4), *(len(r[4]) for r in rows))
+    w5 = max(len(col5), *(len(r[5]) for r in rows))
+
+    sep = "  "
+    header  = (col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
+               col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5))
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    for r in rows:
+        row_str = (r[0].ljust(w0) + sep + r[1].ljust(w1) + sep + r[2].ljust(w2) + sep +
+                   r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5))
+        print(f"  {row_str}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def travel_time_between_system_objects():
+    """Brachistochrone travel time for three profiles given distance in AU.
+      1. Continuous to halfway point: accel t/2, flip, decel t/2.
+           d = ¼·a·t²  →  t = 2·√(d/a)
+      2. Half continuous accel time, coast, then decelerate:
+           accel t/4, coast t/2, decel t/4.
+           d = 3·a·t²/16  →  t = √(16d / (3a))
+      3. Accelerate to 0.3% c, coast, then decelerate.
+           If accel+decel distance (= a·t_cap²) >= d: use profile 1 formula.
+           Else: t = 2·t_cap + (d - a·t_cap²) / v_cap
+    """
+    import math
+
+    while True:
+        raw = input("Enter Acceleration in # of g's: ").strip()
+        try:
+            g_count = float(raw)
+            if g_count <= 0:
+                print("Acceleration must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter Distance in AUs: ").strip()
+        try:
+            distance_au = float(raw)
+            if distance_au <= 0:
+                print("Distance must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    # Physical constants
+    G_MS2    = 9.80665            # 1 g in m/s²
+    C_MS     = 299_792_458.0      # speed of light in m/s
+    V_CAP_MS = 0.003 * C_MS      # 0.3% of c in m/s
+    M_PER_AU = 149_597_870_700.0  # metres per AU
+    M_PER_LM = C_MS * 60.0       # metres per light-minute
+
+    a_ms2    = g_count * G_MS2
+    d_m      = distance_au * M_PER_AU
+    distance_lm = d_m / M_PER_LM
+
+    # ── Profile 1: Continuous to Halfway Point ───────────────────────────────
+    # d = ¼·a·t²  →  t = 2·√(d/a)
+    t1_sec   = 2.0 * math.sqrt(d_m / a_ms2)
+    t1_hours = t1_sec / 3600.0
+    label1   = "Continuous to Halfway Point"
+
+    # ── Profile 2: Half Continuous Accel Time, Coast, Then Decelerate ────────
+    # accel t/4, coast t/2, decel t/4
+    # d = 3·a·t²/16  →  t = √(16d / (3a))
+    t2_sec   = math.sqrt((16.0 * d_m) / (3.0 * a_ms2))
+    t2_hours = t2_sec / 3600.0
+    label2   = "Half Continuous Accel Time, Coast, Then Decelerate"
+
+    # ── Profile 3: Accelerate to 0.3% c, Coast, Then Decelerate ─────────────
+    # t_cap = v_cap / a  (time to reach 0.3% c)
+    # d_accel = ½·a·t_cap²,  d_decel = d_accel
+    # combined accel+decel distance = a·t_cap²
+    # If that >= d, the cap is never reached within the trip → use profile 1.
+    t_cap       = V_CAP_MS / a_ms2
+    d_accel_cap = 0.5 * a_ms2 * t_cap ** 2   # one-way accel distance to cap
+    d_both_cap  = 2.0 * d_accel_cap           # accel + decel combined
+
+    if d_both_cap >= d_m:
+        t3_sec   = t1_sec
+        t3_hours = t1_hours
+        label3   = "Accel to 0.3% c, Coast, Then Decelerate (cap not reached)"
+    else:
+        d_coast3 = d_m - d_both_cap
+        t_coast3 = d_coast3 / V_CAP_MS
+        t3_sec   = 2.0 * t_cap + t_coast3
+        t3_hours = t3_sec / 3600.0
+        label3   = "Accel to 0.3% c, Coast, Then Decelerate"
+
+    # ── Build table ──────────────────────────────────────────────────────────
+    col0 = "Acceleration Profile"
+    col1 = "Acceleration (G's)"
+    col2 = "Distance (AU)"
+    col3 = "Distance (LM)"
+    col4 = "Travel Time (Hours)"
+    col5 = "Travel Time"
+
+    g_str  = f"{g_count:.4f}"
+    au_str = f"{distance_au:.4f}"
+    lm_str = f"{distance_lm:.4f}"
+
+    rows = [
+        (label1, g_str, au_str, lm_str, f"{t1_hours:.6f}", _format_travel_time(t1_hours)),
+        (label2, g_str, au_str, lm_str, f"{t2_hours:.6f}", _format_travel_time(t2_hours)),
+        (label3, g_str, au_str, lm_str, f"{t3_hours:.6f}", _format_travel_time(t3_hours)),
+    ]
+
+    w0 = max(len(col0), *(len(r[0]) for r in rows))
+    w1 = max(len(col1), *(len(r[1]) for r in rows))
+    w2 = max(len(col2), *(len(r[2]) for r in rows))
+    w3 = max(len(col3), *(len(r[3]) for r in rows))
+    w4 = max(len(col4), *(len(r[4]) for r in rows))
+    w5 = max(len(col5), *(len(r[5]) for r in rows))
+
+    sep = "  "
+    header  = (col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
+               col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5))
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    for r in rows:
+        row_str = (r[0].ljust(w0) + sep + r[1].ljust(w1) + sep + r[2].ljust(w2) + sep +
+                   r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5))
+        print(f"  {row_str}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def travel_time_between_system_objects_lm():
+    """Brachistochrone travel time for three profiles given distance in light minutes.
+      1. Continuous to halfway point: accel t/2, flip, decel t/2.
+           d = ¼·a·t²  →  t = 2·√(d/a)
+      2. Half continuous accel time, coast, then decelerate:
+           accel t/4, coast t/2, decel t/4.
+           d = 3·a·t²/16  →  t = √(16d / (3a))
+      3. Accelerate to 0.3% c, coast, then decelerate.
+           If accel+decel distance (= a·t_cap²) >= d: use profile 1 formula.
+           Else: t = 2·t_cap + (d - a·t_cap²) / v_cap
+    """
+    import math
+
+    while True:
+        raw = input("Enter Acceleration in # of g's: ").strip()
+        try:
+            g_count = float(raw)
+            if g_count <= 0:
+                print("Acceleration must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter Distance in Light Minutes: ").strip()
+        try:
+            distance_lm = float(raw)
+            if distance_lm <= 0:
+                print("Distance must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    # Physical constants
+    G_MS2    = 9.80665            # 1 g in m/s²
+    C_MS     = 299_792_458.0      # speed of light in m/s
+    V_CAP_MS = 0.003 * C_MS      # 0.3% of c in m/s
+    M_PER_AU = 149_597_870_700.0  # metres per AU
+    M_PER_LM = C_MS * 60.0       # metres per light-minute
+
+    a_ms2       = g_count * G_MS2
+    d_m         = distance_lm * M_PER_LM
+    distance_au = d_m / M_PER_AU
+
+    # ── Profile 1: Continuous to Halfway Point ───────────────────────────────
+    t1_sec   = 2.0 * math.sqrt(d_m / a_ms2)
+    t1_hours = t1_sec / 3600.0
+    label1   = "Continuous to Halfway Point"
+
+    # ── Profile 2: Half Continuous Accel Time, Coast, Then Decelerate ────────
+    t2_sec   = math.sqrt((16.0 * d_m) / (3.0 * a_ms2))
+    t2_hours = t2_sec / 3600.0
+    label2   = "Half Continuous Accel Time, Coast, Then Decelerate"
+
+    # ── Profile 3: Accelerate to 0.3% c, Coast, Then Decelerate ─────────────
+    t_cap       = V_CAP_MS / a_ms2
+    d_both_cap  = 2.0 * (0.5 * a_ms2 * t_cap ** 2)
+
+    if d_both_cap >= d_m:
+        t3_sec   = t1_sec
+        t3_hours = t1_hours
+        label3   = "Accel to 0.3% c, Coast, Then Decelerate (cap not reached)"
+    else:
+        d_coast3 = d_m - d_both_cap
+        t_coast3 = d_coast3 / V_CAP_MS
+        t3_sec   = 2.0 * t_cap + t_coast3
+        t3_hours = t3_sec / 3600.0
+        label3   = "Accel to 0.3% c, Coast, Then Decelerate"
+
+    # ── Build table ──────────────────────────────────────────────────────────
+    col0 = "Acceleration Profile"
+    col1 = "Acceleration (G's)"
+    col2 = "Distance (AU)"
+    col3 = "Distance (LM)"
+    col4 = "Travel Time (Hours)"
+    col5 = "Travel Time"
+
+    g_str  = f"{g_count:.4f}"
+    au_str = f"{distance_au:.4f}"
+    lm_str = f"{distance_lm:.4f}"
+
+    rows = [
+        (label1, g_str, au_str, lm_str, f"{t1_hours:.6f}", _format_travel_time(t1_hours)),
+        (label2, g_str, au_str, lm_str, f"{t2_hours:.6f}", _format_travel_time(t2_hours)),
+        (label3, g_str, au_str, lm_str, f"{t3_hours:.6f}", _format_travel_time(t3_hours)),
+    ]
+
+    w0 = max(len(col0), *(len(r[0]) for r in rows))
+    w1 = max(len(col1), *(len(r[1]) for r in rows))
+    w2 = max(len(col2), *(len(r[2]) for r in rows))
+    w3 = max(len(col3), *(len(r[3]) for r in rows))
+    w4 = max(len(col4), *(len(r[4]) for r in rows))
+    w5 = max(len(col5), *(len(r[5]) for r in rows))
+
+    sep = "  "
+    header  = (col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
+               col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5))
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    for r in rows:
+        row_str = (r[0].ljust(w0) + sep + r[1].ljust(w1) + sep + r[2].ljust(w2) + sep +
+                   r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5))
+        print(f"  {row_str}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -3271,12 +3964,23 @@ MENU_OPTIONS = {
     "12": ("Distance Between 2 Stars",                               query_distance_between_stars),
     "13": ("Stars within a Certain Distance of Sol",                 query_stars_within_distance),
     "14": ("Stars within a Certain Distance of a Star",             query_stars_within_distance_of_star),
+    "15": ("Light Years per Hour to X Times the Speed of Light",    ly_per_hour_to_speed_of_light),
+    "16": ("X Times the Speed of Light to Light Years per Hour",    speed_of_light_to_ly_per_hour),
+    "17": ("Distance Traveled at a certain ly/hr within a certain time", distance_traveled_ly_per_hour),
+    "18": ("Distance Traveled at a certain X times the speed of light within a certain time", distance_traveled_times_c),
+    "19": ("Time to Travel # of Light Years at X LY/HR",            time_to_travel_ly_at_ly_per_hour),
+    "20": ("Time to Travel # of Light Years at X Times the Speed of Light", time_to_travel_ly_at_times_c),
+    "21": ("Travel Time Between 2 Stars (LYs/HR)",                    travel_time_between_stars_ly_hr),
+    "22": ("Travel Time Between 2 Stars (X Times the Speed of Light)", travel_time_between_stars_times_c),
+    "23": ("Distance Traveled at an Acceleration Within a Certain Time", distance_traveled_at_acceleration),
+    "24": ("Travel Time Between 2 System Objs (Generic, Distance in AUs)", travel_time_between_system_objects),
+    "25": ("Travel Time Between 2 System Objs (Generic, Distance in LMs)", travel_time_between_system_objects_lm),
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
 _STAR_DB_KEYS = {"1", "2", "3", "4", "5", "6", "7", "8"}
 _STAR_REGIONS_KEYS = {"9", "10", "11"}
-_CALCULATORS_KEYS = {"12", "13", "14"}
+_CALCULATORS_KEYS = {"12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25"}
 _UTILITY_KEYS = {"50"}
 
 

@@ -56,6 +56,17 @@ The main menu loop calls whichever function the user picks, then returns to the 
 12. Distance Between 2 Stars
 13. Stars within a Certain Distance of Sol
 14. Stars within a Certain Distance of a Star
+15. Light Years per Hour to X Times the Speed of Light
+16. X Times the Speed of Light to Light Years per Hour
+17. Distance Traveled at a certain ly/hr within a certain time
+18. Distance Traveled at a certain X times the speed of light within a certain time
+19. Time to Travel # of Light Years at X LY/HR
+20. Time to Travel # of Light Years at X Times the Speed of Light
+21. Travel Time Between 2 Stars (LYs/HR)
+22. Travel Time Between 2 Stars (X Times the Speed of Light)
+23. Distance Traveled at an Acceleration Within a Certain Time
+24. Travel Time Between 2 System Objs (Generic, Distance in AUs)
+25. Travel Time Between 2 System Objs (Generic, Distance in LMs)
 --------------------------------------------------
 50. Star Systems CSV Query
 Q. Quit
@@ -351,3 +362,108 @@ All three Star System Regions variants (options 10, 11, 12) produce identical ou
 - Skips any row with computed distance < 0.001 ly (eliminates the center star itself and floating-point near-zero matches).
 - Results sorted ascending by distance. Displays count of matches above the table.
 - Output table columns: Star Name | Star Designations | Spectral Type | Distance (LY) (3dp).
+
+## Speed / Velocity Converter Features
+
+### Shared velocity conversion constant
+- `8765.8128` = hours in a Julian year (365.25 × 24). Used to convert between ly/hr and multiples of c: `times_c = ly_hr × 8765.8128`.
+
+### Option 15: Light Years per Hour to X Times the Speed of Light — `ly_per_hour_to_speed_of_light()`
+- Prompts: `Enter velocity in light years per hour`
+- Converts ly/hr → X times c: `times_c = ly_hr × 8765.8128`
+- Output: single line showing both values.
+
+### Option 16: X Times the Speed of Light to Light Years per Hour — `speed_of_light_to_ly_per_hour()`
+- Prompts: `Enter velocity in X times the speed of light`
+- Converts X times c → ly/hr: `ly_hr = times_c / 8765.8128`
+- Output: single line showing both values.
+
+## Distance Traveled Features
+
+### Option 17: Distance Traveled at a certain ly/hr within a certain time — `distance_traveled_ly_per_hour()`
+- Prompts: `Enter travel time in hours`, `Enter the velocity in light years per hour`
+- Calculates: `distance = ly_hr × hours`
+- Output: single line showing velocity, time, and distance in light years.
+
+### Option 18: Distance Traveled at a certain X times the speed of light within a certain time — `distance_traveled_times_c()`
+- Prompts: `Enter travel time in hours`, `Enter the velocity X times the speed of light`
+- Converts to ly/hr first: `ly_hr = times_c / 8765.8128`, then `distance = ly_hr × hours`
+- Output: single line showing velocity (×c), time, and distance in light years.
+
+## Travel Time Features (Given Distance in Light Years)
+
+### Shared helper: `_format_travel_time(total_hours)`
+- Breaks total hours into Years, Months, Days, Hours, Minutes, Seconds.
+- Only includes units that are ≥ 1 (seconds shown if < 1 minute total, or if remaining seconds ≥ 0.005).
+- Uses Julian year: `HOURS_PER_YEAR = 365.25 × 24 = 8765.82`, `HOURS_PER_MONTH = HOURS_PER_YEAR / 12`.
+- Returns a comma-separated string, e.g. `"5 Months, 24 Days, 11 Hours, 30 Minutes"`.
+
+### Option 19: Time to Travel # of Light Years at X LY/HR — `time_to_travel_ly_at_ly_per_hour()`
+- Prompts: `Enter number of light years`, `Enter velocity in light years per hour` (must be > 0)
+- Calculates: `total_hours = distance_ly / ly_hr`, `times_c = ly_hr × 8765.8128`
+- Output table columns: Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
+
+### Option 20: Time to Travel # of Light Years at X Times the Speed of Light — `time_to_travel_ly_at_times_c()`
+- Prompts: `Enter number of light years`, `Enter velocity in X times the speed of light` (must be > 0)
+- Calculates: `ly_hr = times_c / 8765.8128`, `total_hours = distance_ly / ly_hr`
+- Output table columns: Distance (LYs) | X Times Speed of Light | LY/HR | Travel Time (Hours) | Travel Time
+
+## Travel Time Between 2 Stars Features
+
+### Shared helper: `_travel_time_between_stars(velocity_label, velocity_prompt, use_times_c)`
+- Used by options 21 and 22. `use_times_c=False` → velocity input is ly/hr; `use_times_c=True` → velocity input is X times c.
+- Prompts: `Enter origin star`, `Enter destination star`, then the velocity prompt.
+- Looks up both stars via `_lookup_star_for_distance()` (Sun/Sol → `(0.0, 0.0, 0.0)` with no SIMBAD query).
+- Computes 3D Euclidean distance in ly using same Cartesian math as option 12.
+- Converts velocity: if `use_times_c`, derives `ly_hr = times_c / 8765.8128`; else derives `times_c = ly_hr × 8765.8128`.
+- `total_hours = distance_ly / ly_hr`; travel time formatted via `_format_travel_time()`.
+- Output table columns (option 21): Origin | Destination | Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
+- Output table columns (option 22): Origin | Destination | Distance (LYs) | X Times Speed of Light | LY/HR | Travel Time (Hours) | Travel Time
+
+### Option 21: Travel Time Between 2 Stars (LYs/HR) — `travel_time_between_stars_ly_hr()`
+- Calls `_travel_time_between_stars(..., use_times_c=False)`.
+
+### Option 22: Travel Time Between 2 Stars (X Times the Speed of Light) — `travel_time_between_stars_times_c()`
+- Calls `_travel_time_between_stars(..., use_times_c=True)`.
+
+## Brachistochrone Calculator Features
+
+### Physical constants (used by options 23–25)
+- `G_MS2 = 9.80665` m/s² (1 g)
+- `C_MS = 299,792,458` m/s (speed of light)
+- `V_CAP_MS = 0.003 × C_MS` (0.3% of c = 899,377.374 m/s)
+- `M_PER_AU = 149,597,870,700` m
+- `M_PER_LM = C_MS × 60` m (metres per light-minute)
+- All kinematics are non-relativistic (appropriate at v ≤ 0.3% c).
+
+### Three acceleration profiles (used by options 23–25)
+- **Profile 1 — Continuous to Halfway Point**: accelerate for t/2, flip and decelerate for t/2.
+  - Given time: `d = 2 × (½ × a × (t/2)²) = ¼ × a × t²`
+  - Given distance: `t = 2 × √(d/a)`
+- **Profile 2 — Half Continuous Accel Time, Coast, Then Decelerate**: accelerate t/4, coast t/2, decelerate t/4. Peak velocity = `a × (t/4)`.
+  - Given time: `d = 2×(½×a×(t/4)²) + a×(t/4)×(t/2) = 3×a×t²/16`
+  - Given distance: `t = √(16d / (3a))`
+- **Profile 3 — Accel to 0.3% c, Coast, Then Decelerate**: `t_cap = V_CAP / a` (time to reach cap).
+  - Given time: if `2×t_cap ≥ t`, cap not reached → use Profile 1 math. Else: `d = ½×a×t_cap² + V_CAP×(t - 2×t_cap) + ½×a×t_cap²`
+  - Given distance: if `a×t_cap² ≥ d`, cap not reached → use Profile 1 formula. Else: `t = 2×t_cap + (d - a×t_cap²) / V_CAP`
+  - When cap not reached, label appended with `"(cap not reached)"`.
+
+### Option 23: Distance Traveled at an Acceleration Within a Certain Time — `distance_traveled_at_acceleration()`
+- Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Travel Time in Hours` (> 0)
+- Computes distance (metres → AU and LM) for each profile given the travel time.
+- Output table columns: Acceleration Profile | Acceleration (G's) | Travel Time (Hours) | Travel Time | Distance (AU) | Distance (LM)
+- Row order: Profile 1, Profile 2, Profile 3.
+
+### Option 24: Travel Time Between 2 System Objs (Generic, Distance in AUs) — `travel_time_between_system_objects()`
+- Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Distance in AUs` (> 0)
+- Converts AU → metres, then solves for travel time for each profile.
+- Also computes `distance_lm = d_m / M_PER_LM` for display.
+- Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
+- Row order: Profile 1, Profile 2, Profile 3.
+
+### Option 25: Travel Time Between 2 System Objs (Generic, Distance in LMs) — `travel_time_between_system_objects_lm()`
+- Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Distance in Light Minutes` (> 0)
+- Converts LM → metres, then solves for travel time for each profile. Same formulas as option 24.
+- Also computes `distance_au = d_m / M_PER_AU` for display.
+- Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
+- Row order: Profile 1, Profile 2, Profile 3.
