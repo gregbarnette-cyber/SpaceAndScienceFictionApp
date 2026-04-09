@@ -4639,6 +4639,254 @@ def centrifugal_gravity_rpm():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Misc. Equations ──────────────────────────────────────────────────────────
+
+def _kopparapu_seff(teff, zone):
+    """Return Seff boundary (Kopparapu et al. 2014) for the given zone key."""
+    tS = teff - 5780.0
+    params = {
+        "rv":   (1.776,  2.136e-4,  2.533e-8,  -1.332e-11, -3.097e-15),
+        "rg5":  (1.188,  1.433e-4,  1.707e-8,  -8.968e-12, -2.084e-15),
+        "rg01": (0.99,   1.209e-4,  1.404e-8,  -7.418e-12, -1.713e-15),
+        "rg":   (1.107,  1.332e-4,  1.580e-8,  -8.308e-12, -1.931e-15),
+        "mg":   (0.356,  6.171e-5,  1.698e-9,  -3.198e-12, -5.575e-16),
+        "em":   (0.320,  5.547e-5,  1.526e-9,  -2.874e-12, -5.011e-16),
+    }
+    SeffSUN, a, b, c, d = params[zone]
+    return SeffSUN + a*tS + b*tS**2 + c*tS**3 + d*tS**4
+
+
+def habitable_zone_calculator():
+    """Habitable Zone Calculator — user supplies temperature (K) and luminosity (Lsun).
+      Uses Kopparapu et al. 2014 coefficients via _kopparapu_seff().
+      HZ distance (AU) = sqrt(luminosity / Seff)
+    """
+    import math
+
+    while True:
+        raw = input("Enter the Star's Temperature (K): ").strip()
+        try:
+            teff = float(raw)
+            if teff <= 0:
+                print("Temperature must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter the Star's Luminosity (Lsun): ").strip()
+        try:
+            slum = float(raw)
+            if slum <= 0:
+                print("Luminosity must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    AU_TO_LM = 8.3167
+
+    zones = [
+        ("Optimistic Inner HZ (Recent Venus)",                          "rv"),
+        ("Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass)",   "rg5"),
+        ("Conservative Inner HZ (Runaway Greenhouse)",                  "rg"),
+        ("Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass)", "rg01"),
+        ("Conservative Outer HZ (Maximum Greenhouse)",                  "mg"),
+        ("Optimistic Outer HZ (Early Mars)",                            "em"),
+    ]
+
+    results = []
+    for name, key in zones:
+        seff = _kopparapu_seff(teff, key)
+        au   = math.sqrt(slum / seff)
+        results.append((name, f"{au:.3f} ({au * AU_TO_LM:.3f} LM)"))
+
+    zone_w = max(len(f" {name}") for name, _ in results)
+    zone_w = max(zone_w, len(" Zone"))
+    au_w   = max(len(val) for _, val in results)
+    au_w   = max(au_w, len("AU"))
+
+    title = "Calculated Habitable Zone"
+    print(f"\n{'-' * len(title)}")
+    print(title)
+    print(f"{'-' * len(title)}")
+    print()
+    print(f"{' Zone'.ljust(zone_w)} | {'AU'.ljust(au_w)}")
+    print("-" * zone_w + "-+-" + "-" * au_w)
+    for name, val in results:
+        print(f"{(' ' + name).ljust(zone_w)} | {val}")
+    print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def habitable_zone_calculator_sma():
+    """Habitable Zone Calculator with SMA — adds Seff column and HZ verdict.
+      Seff at planet = (1/SMA)^2 * luminosity  (flux relative to Earth)
+      HZ distance (AU) = sqrt(luminosity / Seff_boundary)
+      Output: combined table with Zone | AU | LM | Seff, then verdict.
+    """
+    import math
+
+    while True:
+        raw = input("Enter the Star's Temperature (K): ").strip()
+        try:
+            teff = float(raw)
+            if teff <= 0:
+                print("Temperature must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter the Star's Luminosity (Lsun): ").strip()
+        try:
+            slum = float(raw)
+            if slum <= 0:
+                print("Luminosity must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter the Object's Semi-Major Axis (AU): ").strip()
+        try:
+            sma = float(raw)
+            if sma <= 0:
+                print("Semi-major axis must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    AU_TO_LM = 8.3167
+    planet_seff = ((1.0 / sma) ** 2) * slum
+
+    zone_defs = [
+        ("Optimistic Inner HZ (Recent Venus)",                          "rv"),
+        ("Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass)",   "rg5"),
+        ("Conservative Inner HZ (Runaway Greenhouse)",                  "rg"),
+        ("Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass)", "rg01"),
+        ("Conservative Outer HZ (Maximum Greenhouse)",                  "mg"),
+        ("Optimistic Outer HZ (Early Mars)",                            "em"),
+    ]
+
+    rows = []
+    seff_boundaries = {}
+    for name, key in zone_defs:
+        seff = _kopparapu_seff(teff, key)
+        seff_boundaries[key] = seff
+        au   = math.sqrt(slum / seff)
+        au_str   = f"{au:.3f}"
+        lm_str   = f"{au * AU_TO_LM:.3f} LM"
+        seff_str = f"{seff:.8f}"
+        rows.append((name, au_str, lm_str, seff_str))
+
+    col0 = " Zone"
+    col1 = "AU"
+    col2 = "LM"
+    col3 = "Seff"
+
+    w0 = max(len(col0), *(len(r[0]) + 1 for r in rows))  # +1 for leading space
+    w1 = max(len(col1), *(len(r[1]) for r in rows))
+    w2 = max(len(col2), *(len(r[2]) for r in rows))
+    w3 = max(len(col3), *(len(r[3]) for r in rows))
+
+    sep = " | "
+    header  = col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep + col3.ljust(w3)
+    divider = "-" * w0 + "-+-" + "-" * w1 + "-+-" + "-" * w2 + "-+-" + "-" * w3
+
+    title = "Calculated Habitable Zone"
+    print(f"\n{'-' * len(title)}")
+    print(title)
+    print(f"{'-' * len(title)}")
+    print()
+    print(f"  Object's Seff: {planet_seff:.8f}")
+    print()
+    print(header)
+    print(divider)
+    for name, au_str, lm_str, seff_str in rows:
+        print(f"{(' ' + name).ljust(w0)}{sep}{au_str.ljust(w1)}{sep}{lm_str.ljust(w2)}{sep}{seff_str.ljust(w3)}")
+    print()
+
+    # HZ membership verdict using rg (inner conservative) and em (outer conservative/optimistic)
+    seff_rv = seff_boundaries["rv"]
+    seff_rg = seff_boundaries["rg"]
+    seff_mg = seff_boundaries["mg"]
+    seff_em = seff_boundaries["em"]
+
+    if planet_seff < seff_em:
+        verdict = "This object is NOT in the Habitable Zone (Beyond Early Mars)"
+    elif planet_seff <= seff_mg:
+        verdict = "This object is in the Optimistic Habitable Zone (Between Maximum Greenhouse and Early Mars)"
+    elif planet_seff <= seff_rg:
+        verdict = "This object is in the Conservative Habitable Zone (Between Runaway Greenhouse and Maximum Greenhouse)"
+    elif planet_seff <= seff_rv:
+        verdict = "This object is in the Optimistic Habitable Zone (Between Recent Venus and Runaway Greenhouse)"
+    else:
+        verdict = "This object is NOT in the Habitable Zone (Interior to Recent Venus)"
+
+    print(verdict)
+    print()
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def star_luminosity_calculator():
+    """Star Luminosity Calculator.
+      luminosity = (radius / 1)^2 * (temperature / 5778)^4
+    """
+    while True:
+        raw = input("Enter the Star's Radius (R\u2609): ").strip()
+        try:
+            radius = float(raw)
+            if radius <= 0:
+                print("Radius must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    while True:
+        raw = input("Enter the Star's Temperature (K): ").strip()
+        try:
+            temp = float(raw)
+            if temp <= 0:
+                print("Temperature must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    luminosity = (radius ** 2) * ((temp / 5778.0) ** 4)
+
+    col0 = "Radius (R\u2609)"
+    col1 = "Temperature (K)"
+    col2 = "Luminosity (Lsun)"
+
+    v0 = f"{radius:.4f}"
+    v1 = f"{temp:.4f}"
+    v2 = f"{luminosity:.6f}"
+
+    w0 = max(len(col0), len(v0))
+    w1 = max(len(col1), len(v1))
+    w2 = max(len(col2), len(v2))
+
+    sep     = "  "
+    header  = col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2)
+    row     = v0.ljust(w0)   + sep + v1.ljust(w1)   + sep + v2.ljust(w2)
+    divider = "-" * len(header)
+
+    print(f"\n  {header}")
+    print(f"  {divider}")
+    print(f"  {row}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Main Menu ────────────────────────────────────────────────────────────────
 
 MENU_OPTIONS = {
@@ -4674,6 +4922,9 @@ MENU_OPTIONS = {
     "30": ("Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)", centrifugal_gravity_acceleration),
     "31": ("Distance from Point X to the Center of Rotation (m)",           centrifugal_gravity_distance),
     "32": ("Rotation Rate at Point X (rpm)",                                centrifugal_gravity_rpm),
+    "33": ("Habitable Zone Calculator",                                      habitable_zone_calculator),
+    "34": ("Habitable Zone Calculator w/SMA",                               habitable_zone_calculator_sma),
+    "35": ("Star Luminosity",                                                star_luminosity_calculator),
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
@@ -4681,6 +4932,7 @@ _STAR_DB_KEYS = {"1", "2", "3", "4", "5", "6", "7", "8"}
 _STAR_REGIONS_KEYS = {"9", "10", "11"}
 _PLANETARY_EQ_KEYS = {"27", "28", "29"}
 _ROTATING_HABITAT_KEYS = {"30", "31", "32"}
+_MISC_EQ_KEYS = {"33", "34", "35"}
 _CALCULATORS_KEYS = {"12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26"}
 _UTILITY_KEYS = {"50"}
 
@@ -4722,6 +4974,12 @@ def main_menu():
         print("  Rotating Habitat Equations")
         print("-" * 50)
         for key in sorted(_ROTATING_HABITAT_KEYS, key=int):
+            label = MENU_OPTIONS[key][0]
+            print(f"  {key}. {label}")
+        print("-" * 50)
+        print("  Misc. Equations")
+        print("-" * 50)
+        for key in sorted(_MISC_EQ_KEYS, key=int):
             label = MENU_OPTIONS[key][0]
             print(f"  {key}. {label}")
         print("-" * 50)
