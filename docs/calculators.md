@@ -1,6 +1,6 @@
 # Calculator Feature Documentation
 
-Options 18–32. Distance, velocity, travel time, and brachistochrone features. These change together when travel/distance calculation logic is revised.
+Options 18–33. Distance, velocity, travel time, and brachistochrone features. These change together when travel/distance calculation logic is revised.
 
 ## Distance Between 2 Stars Feature
 
@@ -155,3 +155,20 @@ Options 30–32 are given a distance and solve for travel time.
 - Error handling: ambiguous Horizons name prints the disambiguation table from the exception message + tip to use numeric ID; other errors print the exception; both return early. Same-object detection: distance < 1e-9 AU triggers error and early return.
 - Output table columns: Acceleration Profile | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
 - Row order: Profile 1, Profile 2, Profile 3. Origin/Destination columns show user's raw input strings.
+
+### Option 33: Travel Time Between 2 System Objs (Custom Thrust Duration) — `travel_time_custom_thrust_duration()`
+- Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Acceleration/Deceleration Duration` (> 0), `Enter Unit (H=Hours, D=Days, W=Weeks) [D]` (default Days), `Enter Max Velocity for Coast Phase (% of c, Default 0.3)` (blank → 0.3).
+- Screen cleared after all user inputs and before JPL Horizons queries begin.
+- Uses `_resolve_horizons_id()` and `_HORIZONS_ID_MAP` (same as option 32).
+- **Iterative destination position estimation**: unlike option 32 which uses a single snapshot, this function queries the destination's position at the estimated arrival time and iterates until the travel time converges (change < 60 seconds, max 10 iterations). Origin position is fixed at departure time (now). Uses `_get_heliocentric_vectors()` with `epoch_jd` parameter.
+- **Acceleration profile**: Accelerate for the user-specified burn duration, coast at the reached velocity, then decelerate for the same duration. If max velocity is reached before the burn ends, effective burn time is shortened to `v_max / a`.
+- **Physics**:
+  - `t_accel_eff = min(burn_seconds, V_CAP_MS / a_ms2)`
+  - `v_coast = a_ms2 × t_accel_eff`
+  - `d_accel = 0.5 × a_ms2 × t_accel_eff²`; `d_decel = d_accel`
+  - `d_coast = d_total - 2 × d_accel`; `t_coast = d_coast / v_coast`
+  - `t_total = 2 × t_accel_eff + t_coast`
+- **Fallback**: if `2 × d_accel ≥ d_total` (distance too short for requested burn), falls back to midpoint profile: `t = 2·√(d/a)`, with an explanatory note in the output.
+- **Time to Reach Max Velocity**: displayed if `burn_seconds > V_CAP_MS / a_ms2`; otherwise shows `N/A`.
+- Output: vertical key-value layout showing Origin, Destination, Distance (AU/LM), Acceleration (G's/m/s²), Requested vs Effective Burn Duration, Max Velocity Cap, Time to Reach Max Velocity, Coast Velocity (m/s and % c), Acceleration/Coast/Deceleration Time and Distance, Total Travel Time. Includes a note about iterative convergence.
+- Same error handling as option 32: ambiguous Horizons name, lookup failure, same-object detection (distance < 1e-9 AU).

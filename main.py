@@ -4101,15 +4101,19 @@ def _resolve_horizons_id(name):
     return name.strip()
 
 
-def _get_heliocentric_vectors(horizons_id, body_name):
-    """Query JPL Horizons for current heliocentric x,y,z position in AU.
+def _get_heliocentric_vectors(horizons_id, body_name, epoch_jd=None):
+    """Query JPL Horizons for heliocentric x,y,z position in AU.
 
     Returns (x, y, z) as floats.  Raises on lookup failure (ambiguous name,
     not found, network error).  body_name is used only in calling code for
     error messages.
+
+    If *epoch_jd* is None the current time is used; otherwise pass a Julian
+    Date float to query a specific epoch.
     """
-    epoch = astropy.time.Time.now().jd
-    obj = Horizons(id=horizons_id, location='@sun', epochs=epoch)
+    if epoch_jd is None:
+        epoch_jd = astropy.time.Time.now().jd
+    obj = Horizons(id=horizons_id, location='@sun', epochs=epoch_jd)
     vec = obj.vectors()
     return float(vec['x'][0]), float(vec['y'][0]), float(vec['z'][0])
 
@@ -4304,6 +4308,273 @@ def travel_time_between_solar_system_objects():
             r[6].ljust(w6) + sep + r[7].ljust(w7)
         )
         print(f"  {row_str}")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def travel_time_custom_thrust_duration():
+    """Travel time between two solar-system bodies with user-defined thrust
+    duration.  The ship accelerates for a specified time, coasts at the
+    reached velocity, then decelerates for the same time.  Destination
+    position is iteratively estimated at the arrival epoch via JPL Horizons
+    to account for orbital motion during transit.
+    """
+    import math
+
+    # ── Input: Origin ────────────────────────────────────────────────────────
+    origin_name = input("Enter Origin Planet/Satellite/Asteroid: ").strip()
+    if not origin_name:
+        print("No origin entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── Input: Destination ───────────────────────────────────────────────────
+    dest_name = input("Enter Destination Planet/Satellite/Asteroid: ").strip()
+    if not dest_name:
+        print("No destination entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── Input: Acceleration ──────────────────────────────────────────────────
+    while True:
+        raw = input("Enter Acceleration in # of G's: ").strip()
+        try:
+            g_count = float(raw)
+            if g_count <= 0:
+                print("Acceleration must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    # ── Input: Burn Duration ─────────────────────────────────────────────────
+    while True:
+        raw = input("Enter Acceleration/Deceleration Duration: ").strip()
+        try:
+            burn_value = float(raw)
+            if burn_value <= 0:
+                print("Duration must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    unit_raw = input("Enter Unit (H=Hours, D=Days, W=Weeks) [D]: ").strip().upper()
+    if unit_raw in ("", "D"):
+        burn_seconds = burn_value * 86400.0
+        burn_unit_label = "Days"
+    elif unit_raw == "H":
+        burn_seconds = burn_value * 3600.0
+        burn_unit_label = "Hours"
+    elif unit_raw == "W":
+        burn_seconds = burn_value * 604800.0
+        burn_unit_label = "Weeks"
+    else:
+        print("Unrecognized unit. Using Days.")
+        burn_seconds = burn_value * 86400.0
+        burn_unit_label = "Days"
+
+    # ── Input: Max Velocity Cap ──────────────────────────────────────────────
+    raw = input(
+        "Enter Max Velocity for Coast Phase "
+        "(% of c, Default 0.3): "
+    ).strip()
+    if raw == "":
+        v_cap_pct = 0.3
+    else:
+        try:
+            v_cap_pct = float(raw)
+            if v_cap_pct <= 0:
+                print("Max velocity must be greater than zero. Using default 0.3%.")
+                v_cap_pct = 0.3
+        except ValueError:
+            print("Invalid input. Using default 0.3%.")
+            v_cap_pct = 0.3
+
+    os.system("cls" if os.name == "nt" else "clear")
+
+    # ── Resolve Horizons IDs ─────────────────────────────────────────────────
+    origin_id = _resolve_horizons_id(origin_name)
+    dest_id   = _resolve_horizons_id(dest_name)
+
+    # ── Physical constants ───────────────────────────────────────────────────
+    G_MS2    = 9.80665
+    C_MS     = 299_792_458.0
+    M_PER_AU = 149_597_870_700.0
+    M_PER_LM = C_MS * 60.0
+
+    a_ms2    = g_count * G_MS2
+    V_CAP_MS = (v_cap_pct / 100.0) * C_MS
+
+    # ── Fetch origin position (fixed at departure time T0) ───────────────────
+    t0_jd = astropy.time.Time.now().jd
+
+    print(f"\nQuerying JPL Horizons for '{origin_name}'...")
+    try:
+        ox, oy, oz = _get_heliocentric_vectors(origin_id, origin_name, t0_jd)
+    except Exception as e:
+        err = str(e)
+        if "Multiple major-bodies" in err or "ambiguous" in err.lower():
+            print(f"\nAmbiguous body name '{origin_name}'. JPL Horizons returned:")
+            print(err)
+            print("\nTip: Use a more specific name or numeric ID (e.g., '499' for Mars).")
+        else:
+            print(f"\nCould not retrieve position for '{origin_name}': {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    # ── Helper: compute travel time for a given distance ─────────────────────
+    def _compute_travel(d_m):
+        """Return (t_total_sec, t_accel_eff, t_coast_sec, v_coast, vmax_reached,
+        d_accel, d_coast, fallback) for the ACD profile."""
+        t_to_vmax   = V_CAP_MS / a_ms2
+        t_accel_eff = min(burn_seconds, t_to_vmax)
+        v_coast     = a_ms2 * t_accel_eff
+        d_accel     = 0.5 * a_ms2 * t_accel_eff ** 2
+        d_decel     = d_accel
+
+        if 2.0 * d_accel >= d_m:
+            # Distance too short — fall back to midpoint profile
+            t_half  = math.sqrt(d_m / a_ms2)
+            t_total = 2.0 * t_half
+            v_peak  = a_ms2 * t_half
+            return (t_total, t_half, 0.0, v_peak, False, d_m / 2.0, 0.0, True)
+
+        d_coast_m = d_m - 2.0 * d_accel
+        t_coast   = d_coast_m / v_coast
+        t_total   = 2.0 * t_accel_eff + t_coast
+        vmax_reached = burn_seconds > t_to_vmax
+        return (t_total, t_accel_eff, t_coast, v_coast, vmax_reached,
+                d_accel, d_coast_m, False)
+
+    # ── Iterative destination position estimation ────────────────────────────
+    MAX_ITER = 10
+    CONVERGE_SEC = 60.0  # convergence threshold: 1 minute
+
+    print(f"Querying JPL Horizons for '{dest_name}' (iteration 1)...")
+    try:
+        dx, dy, dz = _get_heliocentric_vectors(dest_id, dest_name, t0_jd)
+    except Exception as e:
+        err = str(e)
+        if "Multiple major-bodies" in err or "ambiguous" in err.lower():
+            print(f"\nAmbiguous body name '{dest_name}'. JPL Horizons returned:")
+            print(err)
+            print("\nTip: Use a more specific name or numeric ID (e.g., '501' for Io).")
+        else:
+            print(f"\nCould not retrieve position for '{dest_name}': {e}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    distance_au = math.sqrt((dx - ox)**2 + (dy - oy)**2 + (dz - oz)**2)
+    if distance_au < 1e-9:
+        print(
+            f"\nOrigin and destination appear to be the same object "
+            f"(distance ≈ 0 AU). Please enter two different objects."
+        )
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    d_m = distance_au * M_PER_AU
+    result = _compute_travel(d_m)
+    prev_t_total = result[0]
+    iterations_done = 1
+
+    for iteration in range(2, MAX_ITER + 1):
+        # Estimate arrival epoch
+        arrival_jd = t0_jd + prev_t_total / 86400.0
+        print(f"Querying JPL Horizons for '{dest_name}' (iteration {iteration})...")
+        try:
+            dx, dy, dz = _get_heliocentric_vectors(dest_id, dest_name, arrival_jd)
+        except Exception as e:
+            print(f"\nCould not retrieve future position for '{dest_name}': {e}")
+            print("Using last converged estimate.")
+            break
+
+        distance_au = math.sqrt((dx - ox)**2 + (dy - oy)**2 + (dz - oz)**2)
+        if distance_au < 1e-9:
+            print("\nOrigin and destination converge to the same position at estimated arrival.")
+            print("Using last converged estimate.")
+            break
+
+        d_m = distance_au * M_PER_AU
+        result = _compute_travel(d_m)
+        iterations_done = iteration
+
+        if abs(result[0] - prev_t_total) < CONVERGE_SEC:
+            break
+        prev_t_total = result[0]
+
+    # ── Unpack final result ──────────────────────────────────────────────────
+    (t_total_sec, t_accel_eff, t_coast_sec, v_coast_ms, vmax_reached,
+     d_accel_m, d_coast_m, fallback) = result
+
+    distance_lm = d_m / M_PER_LM
+    t_total_hours = t_total_sec / 3600.0
+    t_accel_hours = t_accel_eff / 3600.0
+    t_coast_hours = t_coast_sec / 3600.0
+    d_accel_au = d_accel_m / M_PER_AU
+    d_accel_lm = d_accel_m / M_PER_LM
+    d_coast_au = d_coast_m / M_PER_AU
+    d_coast_lm = d_coast_m / M_PER_LM
+    v_coast_pct_c = (v_coast_ms / C_MS) * 100.0
+    t_to_vmax_sec = V_CAP_MS / a_ms2
+
+    # ── Display ──────────────────────────────────────────────────────────────
+    print(f"\n  Interplanetary Travel Time (Custom Thrust Duration)")
+    print(f"  {'=' * 56}")
+    print(f"  Origin:                        {origin_name}")
+    print(f"  Destination:                   {dest_name}")
+    print(f"  Distance:                      {distance_au:.4f} AU ({distance_lm:.4f} LM)")
+
+    print()
+    print(f"  Acceleration:                  {g_count:.4f} G's ({a_ms2:.4f} m/s^2)")
+    print(f"  Requested Burn Duration:       {burn_value:.4f} {burn_unit_label}")
+
+    if fallback:
+        eff_burn_hours = t_accel_eff / 3600.0
+        print(f"  Effective Burn Duration:       {eff_burn_hours:.4f} Hours (midpoint reached)")
+    else:
+        eff_burn_value = t_accel_eff / {
+            "Hours": 3600.0, "Days": 86400.0, "Weeks": 604800.0
+        }[burn_unit_label]
+        print(f"  Effective Burn Duration:       {eff_burn_value:.4f} {burn_unit_label}")
+
+    print(f"  Max Velocity Cap:              {v_cap_pct}% c ({V_CAP_MS:,.2f} m/s)")
+
+    if vmax_reached:
+        t_to_vmax_fmt = _format_travel_time(t_to_vmax_sec / 3600.0)
+        print(f"  Time to Reach Max Velocity:    {t_to_vmax_fmt}")
+    else:
+        print(f"  Time to Reach Max Velocity:    N/A")
+
+    print(f"  Coast Velocity:                {v_coast_ms:,.2f} m/s ({v_coast_pct_c:.4f}% c)")
+
+    if fallback:
+        print()
+        print(f"  Note: Distance is too short for the requested burn duration.")
+        print(f"  Ship reaches midpoint before burn completes.")
+        print(f"  Using continuous accel-to-midpoint profile.")
+        print()
+        print(f"  Acceleration Time:             {_format_travel_time(t_accel_hours)}")
+        print(f"  Acceleration Distance:         {d_accel_au:.4f} AU ({d_accel_lm:.4f} LM)")
+        print(f"  Coast Time:                    N/A")
+        print(f"  Coast Distance:                N/A")
+        print(f"  Deceleration Time:             {_format_travel_time(t_accel_hours)}")
+        print(f"  Deceleration Distance:         {d_accel_au:.4f} AU ({d_accel_lm:.4f} LM)")
+    else:
+        print()
+        print(f"  Acceleration Time:             {_format_travel_time(t_accel_hours)}")
+        print(f"  Acceleration Distance:         {d_accel_au:.4f} AU ({d_accel_lm:.4f} LM)")
+        print(f"  Coast Time:                    {_format_travel_time(t_coast_hours)}")
+        print(f"  Coast Distance:                {d_coast_au:.4f} AU ({d_coast_lm:.4f} LM)")
+        print(f"  Deceleration Time:             {_format_travel_time(t_accel_hours)}")
+        print(f"  Deceleration Distance:         {d_accel_au:.4f} AU ({d_accel_lm:.4f} LM)")
+
+    print()
+    print(f"  Total Travel Time:             {_format_travel_time(t_total_hours)}  ({t_total_hours:.2f} Hours)")
+    print()
+    print(f"  Note: Destination position estimated at arrival time via")
+    print(f"  iterative JPL Horizons queries ({iterations_done} iteration{'s' if iterations_done != 1 else ''} converged).")
 
     input("\nPress Enter to Return to the Main Menu")
 
@@ -5475,18 +5746,19 @@ MENU_OPTIONS = {
     "30": ("Travel Time Between 2 System Objs (Generic, Distance in AUs)", travel_time_between_system_objects),
     "31": ("Travel Time Between 2 System Objs (Generic, Distance in LMs)", travel_time_between_system_objects_lm),
     "32": ("Travel Time Between 2 System Objs (Planet/Moon/Asteroid)", travel_time_between_solar_system_objects),
+    "33": ("Travel Time Between 2 System Objs (Custom Thrust Duration)", travel_time_custom_thrust_duration),
     # --- Planetary Equations (right column) ---
-    "33": ("Planetary Orbit Periastron & Apastron Distance Calculator", planetary_orbit_periastron_apastron),
-    "34": ("Orbital Distance of an Earth-sized Moon with a 24 hour day", moon_orbital_distance_24h),
-    "35": ("Orbital Distance of an Earth-sized Moon with a X hour day",  moon_orbital_distance_x_hours),
+    "34": ("Planetary Orbit Periastron & Apastron Distance Calculator", planetary_orbit_periastron_apastron),
+    "35": ("Orbital Distance of an Earth-sized Moon with a 24 hour day", moon_orbital_distance_24h),
+    "36": ("Orbital Distance of an Earth-sized Moon with a X hour day",  moon_orbital_distance_x_hours),
     # --- Rotating Habitat Equations (right column) ---
-    "36": ("Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)", centrifugal_gravity_acceleration),
-    "37": ("Distance from Point X to the Center of Rotation (m)",            centrifugal_gravity_distance),
-    "38": ("Rotation Rate at Point X (rpm)",                                 centrifugal_gravity_rpm),
+    "37": ("Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)", centrifugal_gravity_acceleration),
+    "38": ("Distance from Point X to the Center of Rotation (m)",            centrifugal_gravity_distance),
+    "39": ("Rotation Rate at Point X (rpm)",                                 centrifugal_gravity_rpm),
     # --- Misc. Equations (right column) ---
-    "39": ("Habitable Zone Calculator",                                      habitable_zone_calculator),
-    "40": ("Habitable Zone Calculator w/SMA",                               habitable_zone_calculator_sma),
-    "41": ("Star Luminosity",                                                star_luminosity_calculator),
+    "40": ("Habitable Zone Calculator",                                      habitable_zone_calculator),
+    "41": ("Habitable Zone Calculator w/SMA",                               habitable_zone_calculator_sma),
+    "42": ("Star Luminosity",                                                star_luminosity_calculator),
     # --- Utilities ---
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
@@ -5495,10 +5767,10 @@ _STAR_DB_KEYS          = {"1", "2", "3", "4", "5", "6", "7", "8"}
 _STAR_REGIONS_KEYS     = {"9", "10", "11"}
 _SCIENCE_KEYS          = {"12", "13", "14"}
 _SCIFI_KEYS            = {"15", "16", "17"}
-_CALCULATORS_KEYS      = {"18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32"}
-_PLANETARY_KEYS        = {"33", "34", "35"}
-_ROTATING_HABITAT_KEYS = {"36", "37", "38"}
-_MISC_EQUATIONS_KEYS   = {"39", "40", "41"}
+_CALCULATORS_KEYS      = {"18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33"}
+_PLANETARY_KEYS        = {"34", "35", "36"}
+_ROTATING_HABITAT_KEYS = {"37", "38", "39"}
+_MISC_EQUATIONS_KEYS   = {"40", "41", "42"}
 _UTILITY_KEYS          = {"50"}
 
 

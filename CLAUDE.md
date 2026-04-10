@@ -55,24 +55,25 @@ The main menu loop calls whichever function the user picks, then returns to the 
 10. Star System Regions (Semi-SIMBAD)               30. Travel Time Between 2 System Objs (Generic, Distance in AUs)
 11. Star System Regions (Manual)                    31. Travel Time Between 2 System Objs (Generic, Distance in LMs)
                                                     32. Travel Time Between 2 System Objs (Planet/Moon/Asteroid)
-  Science
-  -------                                           Planetary Equations
-12. Solar System Planet/Dwarf Planets/Asteroids     -------------------
-13. Main Sequence Star Properties                   33. Planetary Orbit Periastron & Apastron Distance Calculator
-14. Sol Solar System Regions                        34. Orbital Distance of an Earth-sized Moon with a 24 hour day
-                                                    35. Orbital Distance of an Earth-sized Moon with a X hour day
-  Science Fiction
-  ---------------                                   Rotating Habitat Equations
-15. Honorverse Hyper Limits by Spectral Class       --------------------------
-16. Honorverse Acceleration by Mass Table           36. Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)
-17. Honorverse Effective Speed by Hyper Band        37. Distance from Point X to the Center of Rotation (m)
-                                                    38. Rotation Rate at Point X (rpm)
-  Utilities
-  ---------                                         Misc. Equations
-50. Star Systems CSV Query                          ---------------
-Q.  Quit                                            39. Habitable Zone Calculator
-                                                    40. Habitable Zone Calculator w/SMA
-                                                    41. Star Luminosity
+  Science                                           33. Travel Time Between 2 System Objs (Custom Thrust Duration)
+  -------
+12. Solar System Planet/Dwarf Planets/Asteroids     Planetary Equations
+13. Main Sequence Star Properties                   -------------------
+14. Sol Solar System Regions                        34. Planetary Orbit Periastron & Apastron Distance Calculator
+                                                    35. Orbital Distance of an Earth-sized Moon with a 24 hour day
+  Science Fiction                                   36. Orbital Distance of an Earth-sized Moon with a X hour day
+  ---------------
+15. Honorverse Hyper Limits by Spectral Class       Rotating Habitat Equations
+16. Honorverse Acceleration by Mass Table           --------------------------
+17. Honorverse Effective Speed by Hyper Band        37. Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)
+                                                    38. Distance from Point X to the Center of Rotation (m)
+  Utilities                                         39. Rotation Rate at Point X (rpm)
+  ---------
+50. Star Systems CSV Query                          Misc. Equations
+Q.  Quit                                            ---------------
+                                                    40. Habitable Zone Calculator
+                                                    41. Habitable Zone Calculator w/SMA
+                                                    42. Star Luminosity
 ```
 
 @docs/star-databases.md
