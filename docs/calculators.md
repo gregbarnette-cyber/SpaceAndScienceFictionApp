@@ -106,16 +106,16 @@ Options 18–33. Distance, velocity, travel time, and brachistochrone features. 
 ### Physical constants (used by options 29–32)
 - `G_MS2 = 9.80665` m/s² (1 g)
 - `C_MS = 299,792,458` m/s (speed of light)
-- `V_CAP_MS = 0.003 × C_MS` (0.3% of c = 899,377.374 m/s)
+- `V_CAP_MS = 0.03 × C_MS` (3% of c = 8,993,773.74 m/s)
 - `M_PER_AU = 149,597,870,700` m
 - `M_PER_LM = C_MS × 60` m (metres per light-minute)
-- All kinematics are non-relativistic (appropriate at v ≤ 0.3% c).
+- All kinematics are non-relativistic (appropriate at v ≤ 3% c).
 
 ### Three acceleration profiles (used by options 30–32)
 Options 30–32 are given a distance and solve for travel time.
 - **Profile 1 — Continuous to Halfway Point**: accelerate for t/2, flip and decelerate for t/2. `t = 2 × √(d/a)`
 - **Profile 2 — Half Continuous Accel Time, Coast, Then Decelerate**: accelerate t/4, coast t/2, decelerate t/4. `t = √(16d / (3a))`
-- **Profile 3 — Accel to 0.3% c, Coast, Then Decelerate**: `t_cap = V_CAP / a`. If `a×t_cap² ≥ d`, cap not reached → use Profile 1 formula. Else: `t = 2×t_cap + (d - a×t_cap²) / V_CAP`.
+- **Profile 3 — Accel to 3% c, Coast, Then Decelerate**: `t_cap = V_CAP / a`. If `a×t_cap² ≥ d`, cap not reached → use Profile 1 formula. Else: `t = 2×t_cap + (d - a×t_cap²) / V_CAP`.
   - When cap not reached, label appended with `"(cap not reached)"`.
 
 ### Option 29: Distance Traveled at an Acceleration Within a Certain Time — `distance_traveled_at_acceleration()`
@@ -123,9 +123,10 @@ Options 30–32 are given a distance and solve for travel time.
 - Computes distance (metres → AU and LM) for each profile given the travel time.
 - Profile 1 for this option differs from options 30–32: **Continuous Acceleration for Entire Time** — `d = ½ × a × t²` (no flip/decelerate).
 - Profile 2: same as options 30–32 — accel t/4, coast t/2, decel t/4; `d = 3×a×t²/16`.
-- Profile 3: accel to V_CAP then coast for remaining time — no decel (decel happens at destination outside the time window). `d = ½×a×t_cap² + V_CAP×(t - t_cap)`. Cap-not-reached condition: `t_cap ≥ t` (one phase only, not two); fallback is `d = ½ × a × t²`.
+- Profile 3: accel to 3% c (V_CAP) then coast for remaining time — no decel (decel happens at destination outside the time window). `d = ½×a×t_cap² + V_CAP×(t - t_cap)`. Cap-not-reached condition: `t_cap ≥ t` (one phase only, not two); fallback is `d = ½ × a × t²`.
 - Screen cleared after all inputs, before output.
-- Output table columns: Acceleration Profile | Acceleration (G's) | Travel Time (Hours) | Travel Time | Distance (AU) | Distance (LM)
+- Output table columns: Acceleration Profile | Acceleration (G's) | Travel Time (Hours) | Travel Time | Distance (AU) | Distance (LM) | Max Vel
+  - Max Vel: "N/A" for Profiles 1 and 2 (no velocity cap); "Y" or "N" for Profile 3 indicating whether the 3% c cap was reached.
 - Row order: Profile 1, Profile 2, Profile 3.
 
 ### Option 30: Travel Time Between 2 System Objs (Generic, Distance in AUs) — `travel_time_between_system_objects()`
@@ -133,7 +134,8 @@ Options 30–32 are given a distance and solve for travel time.
 - Converts AU → metres, then solves for travel time for each profile.
 - Also computes `distance_lm = d_m / M_PER_LM` for display.
 - Screen cleared after all inputs, before output.
-- Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
+- Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time | Max Vel
+  - Max Vel: "N/A" for Profiles 1 and 2; "Y" or "N" for Profile 3.
 - Row order: Profile 1, Profile 2, Profile 3.
 
 ### Option 31: Travel Time Between 2 System Objs (Generic, Distance in LMs) — `travel_time_between_system_objects_lm()`
@@ -141,11 +143,12 @@ Options 30–32 are given a distance and solve for travel time.
 - Converts LM → metres, then solves for travel time for each profile. Same formulas as option 30.
 - Also computes `distance_au = d_m / M_PER_AU` for display.
 - Screen cleared after all inputs, before output.
-- Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
+- Output table columns: Acceleration Profile | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time | Max Vel
+  - Max Vel: "N/A" for Profiles 1 and 2; "Y" or "N" for Profile 3.
 - Row order: Profile 1, Profile 2, Profile 3.
 
 ### Option 32: Travel Time Between 2 System Objs (Planet/Moon/Asteroid) — `travel_time_between_solar_system_objects()`
-- Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Max Velocity for Accelerate-to-Max-Velocity Profile (% of c, Default 0.3)` (blank → 0.3).
+- Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Max Velocity for Accelerate-to-Max-Velocity Profile (% of c, Default 3)` (blank → 3.0).
 - Screen cleared after all user inputs and before JPL Horizons queries begin (the "Querying JPL Horizons..." status messages appear on the cleared screen).
 - Uses `astroquery.jplhorizons.Horizons` to fetch current heliocentric state vectors (x, y, z in AU) for both objects via `_get_heliocentric_vectors()`. Distance computed as 3D Euclidean: `sqrt((dx-ox)²+(dy-oy)²+(dz-oz)²)`.
 - **Object name resolution**: `_resolve_horizons_id(name)` checks `_HORIZONS_ID_MAP` (normalized lowercase) first, then the last token of the input (handles "Jupiter's moon Io" → "io"), then falls through to pass the raw string to Horizons (handles numeric IDs like "433", asteroid designations like "1998 QE2").
@@ -153,11 +156,12 @@ Options 30–32 are given a distance and solve for travel time.
 - Profile 3 velocity cap is user-configurable: `V_CAP_MS = (v_cap_pct / 100.0) × C_MS`. Label reads `"Accel to {v_cap_pct}% c, Coast, Then Decelerate"`.
 - Same brachistochrone physics as options 30/31; Profile 1: `t = 2·√(d/a)`, Profile 2: `t = √(16d/(3a))`, Profile 3: `t = 2·t_cap + (d - a·t_cap²)/V_CAP` (falls back to Profile 1 if cap not reached).
 - Error handling: ambiguous Horizons name prints the disambiguation table from the exception message + tip to use numeric ID; other errors print the exception; both return early. Same-object detection: distance < 1e-9 AU triggers error and early return.
-- Output table columns: Acceleration Profile | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time
+- Output table columns: Acceleration Profile | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time | Max Vel
+  - Max Vel: "N/A" for Profiles 1 and 2; "Y" or "N" for Profile 3.
 - Row order: Profile 1, Profile 2, Profile 3. Origin/Destination columns show user's raw input strings.
 
 ### Option 33: Travel Time Between 2 System Objs (Custom Thrust Duration) — `travel_time_custom_thrust_duration()`
-- Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Acceleration/Deceleration Duration` (> 0), `Enter Unit (H=Hours, D=Days, W=Weeks) [D]` (default Days), `Enter Max Velocity for Coast Phase (% of c, Default 0.3)` (blank → 0.3).
+- Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Acceleration/Deceleration Duration` (> 0), `Enter Unit (H=Hours, D=Days, W=Weeks) [D]` (default Days), `Enter Max Velocity for Coast Phase (% of c, Default 3)` (blank → 3.0).
 - Screen cleared after all user inputs and before JPL Horizons queries begin.
 - Uses `_resolve_horizons_id()` and `_HORIZONS_ID_MAP` (same as option 32).
 - **Iterative destination position estimation**: unlike option 32 which uses a single snapshot, this function queries the destination's position at the estimated arrival time and iterates until the travel time converges (change < 60 seconds, max 10 iterations). Origin position is fixed at departure time (now). Uses `_get_heliocentric_vectors()` with `epoch_jd` parameter.
@@ -170,5 +174,5 @@ Options 30–32 are given a distance and solve for travel time.
   - `t_total = 2 × t_accel_eff + t_coast`
 - **Fallback**: if `2 × d_accel ≥ d_total` (distance too short for requested burn), falls back to midpoint profile: `t = 2·√(d/a)`, with an explanatory note in the output.
 - **Time to Reach Max Velocity**: displayed if `burn_seconds > V_CAP_MS / a_ms2`; otherwise shows `N/A`.
-- Output: vertical key-value layout showing Origin, Destination, Distance (AU/LM), Acceleration (G's/m/s²), Requested vs Effective Burn Duration, Max Velocity Cap, Time to Reach Max Velocity, Coast Velocity (m/s and % c), Acceleration/Coast/Deceleration Time and Distance, Total Travel Time. Includes a note about iterative convergence.
+- Output: vertical key-value layout showing Origin, Destination, Distance (AU/LM), Acceleration (G's/m/s²), Requested vs Effective Burn Duration, Max Velocity Cap, Max Velocity Reached (Y/N), Time to Reach Max Velocity, Coast Velocity (m/s and % c), Acceleration/Coast/Deceleration Time and Distance, Total Travel Time. Includes a note about iterative convergence.
 - Same error handling as option 32: ambiguous Horizons name, lookup failure, same-object detection (distance < 1e-9 AU).

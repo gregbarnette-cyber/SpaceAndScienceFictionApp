@@ -3609,11 +3609,11 @@ def travel_time_between_stars_times_c():
 
 
 def distance_traveled_at_acceleration():
-    """Distance traveled for three profiles (non-relativistic, v <= 0.3% c):
+    """Distance traveled for three profiles (non-relativistic, v <= 3% c):
       1. Continuous acceleration for entire time: d = ½·a·t²
       2. Half continuous accel time, coast, then decel:
            accel t/4, coast t/2, decel t/4.
-      3. Accelerate to 0.3% c, coast, then decel:
+      3. Accelerate to 3% c, coast, then decel:
            accel to v_cap, coast, decel from v_cap.
     """
 
@@ -3642,7 +3642,7 @@ def distance_traveled_at_acceleration():
     # Physical constants
     G_MS2    = 9.80665            # 1 g in m/s²
     C_MS     = 299_792_458.0      # speed of light in m/s
-    V_CAP_MS = 0.003 * C_MS      # 0.3% of c in m/s
+    V_CAP_MS = 0.03 * C_MS       # 3% of c in m/s
     M_PER_AU = 149_597_870_700.0  # metres per AU
     M_PER_LM = C_MS * 60.0       # metres per light-minute
 
@@ -3666,7 +3666,7 @@ def distance_traveled_at_acceleration():
     d2_m     = d_accel2 + d_coast2 + d_decel2
     label2   = "Half Continuous Accel Time, Coast, Then Decelerate"
 
-    # ── Profile 3: Accelerate to 0.3% c, Coast, Then Decelerate ──────────────
+    # ── Profile 3: Accelerate to 3% c, Coast, Then Decelerate ──────────────
     # Accel to v_cap, coast for remaining time. Deceleration happens at the
     # destination outside the given time window, so distance = accel + coast only.
     # Time to reach cap: t_cap = v_cap / a
@@ -3674,14 +3674,16 @@ def distance_traveled_at_acceleration():
     if t_cap >= t_sec:
         # Not enough time to reach the cap — pure acceleration for entire time.
         # d = ½ × a × t²
-        d3_m   = 0.5 * a_ms2 * t_sec ** 2
-        label3 = "Accel to 0.3% c, Coast, Then Decelerate (cap not reached)"
+        d3_m       = 0.5 * a_ms2 * t_sec ** 2
+        label3     = "Accel to 3% c, Coast, Then Decelerate (cap not reached)"
+        cap3_reached = False
     else:
         d_accel3 = 0.5 * a_ms2 * t_cap ** 2      # distance during acceleration
         t_coast3 = t_sec - t_cap                  # coast for all remaining time
         d_coast3 = V_CAP_MS * t_coast3
-        d3_m     = d_accel3 + d_coast3
-        label3   = "Accel to 0.3% c, Coast, Then Decelerate"
+        d3_m       = d_accel3 + d_coast3
+        label3     = "Accel to 3% c, Coast, Then Decelerate"
+        cap3_reached = True
 
     travel_time_str = _format_travel_time(travel_hours)
 
@@ -3697,14 +3699,15 @@ def distance_traveled_at_acceleration():
     col3 = "Travel Time"
     col4 = "Distance (AU)"
     col5 = "Distance (LM)"
+    col6 = "Max Vel"
 
     g_str = f"{g_count:.4f}"
     h_str = f"{travel_hours:.6f}"
 
     rows = [
-        (label1, g_str, h_str, travel_time_str, f"{to_au(d1_m):.4f}", f"{to_lm(d1_m):.4f}"),
-        (label2, g_str, h_str, travel_time_str, f"{to_au(d2_m):.4f}", f"{to_lm(d2_m):.4f}"),
-        (label3, g_str, h_str, travel_time_str, f"{to_au(d3_m):.4f}", f"{to_lm(d3_m):.4f}"),
+        (label1, g_str, h_str, travel_time_str, f"{to_au(d1_m):.4f}", f"{to_lm(d1_m):.4f}", "N/A"),
+        (label2, g_str, h_str, travel_time_str, f"{to_au(d2_m):.4f}", f"{to_lm(d2_m):.4f}", "N/A"),
+        (label3, g_str, h_str, travel_time_str, f"{to_au(d3_m):.4f}", f"{to_lm(d3_m):.4f}", "Y" if cap3_reached else "N"),
     ]
 
     w0 = max(len(col0), *(len(r[0]) for r in rows))
@@ -3713,17 +3716,20 @@ def distance_traveled_at_acceleration():
     w3 = max(len(col3), *(len(r[3]) for r in rows))
     w4 = max(len(col4), *(len(r[4]) for r in rows))
     w5 = max(len(col5), *(len(r[5]) for r in rows))
+    w6 = max(len(col6), *(len(r[6]) for r in rows))
 
     sep = "  "
     header  = (col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
-               col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5))
+               col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5) + sep +
+               col6.ljust(w6))
     divider = "-" * len(header)
 
     print(f"\n  {header}")
     print(f"  {divider}")
     for r in rows:
         row_str = (r[0].ljust(w0) + sep + r[1].ljust(w1) + sep + r[2].ljust(w2) + sep +
-                   r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5))
+                   r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5) + sep +
+                   r[6].ljust(w6))
         print(f"  {row_str}")
 
     input("\nPress Enter to Return to the Main Menu")
@@ -3736,7 +3742,7 @@ def travel_time_between_system_objects():
       2. Half continuous accel time, coast, then decelerate:
            accel t/4, coast t/2, decel t/4.
            d = 3·a·t²/16  →  t = √(16d / (3a))
-      3. Accelerate to 0.3% c, coast, then decelerate.
+      3. Accelerate to 3% c, coast, then decelerate.
            If accel+decel distance (= a·t_cap²) >= d: use profile 1 formula.
            Else: t = 2·t_cap + (d - a·t_cap²) / v_cap
     """
@@ -3767,7 +3773,7 @@ def travel_time_between_system_objects():
     # Physical constants
     G_MS2    = 9.80665            # 1 g in m/s²
     C_MS     = 299_792_458.0      # speed of light in m/s
-    V_CAP_MS = 0.003 * C_MS      # 0.3% of c in m/s
+    V_CAP_MS = 0.03 * C_MS       # 3% of c in m/s
     M_PER_AU = 149_597_870_700.0  # metres per AU
     M_PER_LM = C_MS * 60.0       # metres per light-minute
 
@@ -3790,8 +3796,8 @@ def travel_time_between_system_objects():
     t2_hours = t2_sec / 3600.0
     label2   = "Half Continuous Accel Time, Coast, Then Decelerate"
 
-    # ── Profile 3: Accelerate to 0.3% c, Coast, Then Decelerate ─────────────
-    # t_cap = v_cap / a  (time to reach 0.3% c)
+    # ── Profile 3: Accelerate to 3% c, Coast, Then Decelerate ─────────────
+    # t_cap = v_cap / a  (time to reach 3% c)
     # d_accel = ½·a·t_cap²,  d_decel = d_accel
     # combined accel+decel distance = a·t_cap²
     # If that >= d, the cap is never reached within the trip → use profile 1.
@@ -3800,15 +3806,17 @@ def travel_time_between_system_objects():
     d_both_cap  = 2.0 * d_accel_cap           # accel + decel combined
 
     if d_both_cap >= d_m:
-        t3_sec   = t1_sec
-        t3_hours = t1_hours
-        label3   = "Accel to 0.3% c, Coast, Then Decelerate (cap not reached)"
+        t3_sec       = t1_sec
+        t3_hours     = t1_hours
+        label3       = "Accel to 3% c, Coast, Then Decelerate (cap not reached)"
+        cap3_reached = False
     else:
         d_coast3 = d_m - d_both_cap
         t_coast3 = d_coast3 / V_CAP_MS
-        t3_sec   = 2.0 * t_cap + t_coast3
-        t3_hours = t3_sec / 3600.0
-        label3   = "Accel to 0.3% c, Coast, Then Decelerate"
+        t3_sec       = 2.0 * t_cap + t_coast3
+        t3_hours     = t3_sec / 3600.0
+        label3       = "Accel to 3% c, Coast, Then Decelerate"
+        cap3_reached = True
 
     # ── Build table ──────────────────────────────────────────────────────────
     col0 = "Acceleration Profile"
@@ -3817,15 +3825,16 @@ def travel_time_between_system_objects():
     col3 = "Distance (LM)"
     col4 = "Travel Time (Hours)"
     col5 = "Travel Time"
+    col6 = "Max Vel"
 
     g_str  = f"{g_count:.4f}"
     au_str = f"{distance_au:.4f}"
     lm_str = f"{distance_lm:.4f}"
 
     rows = [
-        (label1, g_str, au_str, lm_str, f"{t1_hours:.6f}", _format_travel_time(t1_hours)),
-        (label2, g_str, au_str, lm_str, f"{t2_hours:.6f}", _format_travel_time(t2_hours)),
-        (label3, g_str, au_str, lm_str, f"{t3_hours:.6f}", _format_travel_time(t3_hours)),
+        (label1, g_str, au_str, lm_str, f"{t1_hours:.6f}", _format_travel_time(t1_hours), "N/A"),
+        (label2, g_str, au_str, lm_str, f"{t2_hours:.6f}", _format_travel_time(t2_hours), "N/A"),
+        (label3, g_str, au_str, lm_str, f"{t3_hours:.6f}", _format_travel_time(t3_hours), "Y" if cap3_reached else "N"),
     ]
 
     w0 = max(len(col0), *(len(r[0]) for r in rows))
@@ -3834,17 +3843,20 @@ def travel_time_between_system_objects():
     w3 = max(len(col3), *(len(r[3]) for r in rows))
     w4 = max(len(col4), *(len(r[4]) for r in rows))
     w5 = max(len(col5), *(len(r[5]) for r in rows))
+    w6 = max(len(col6), *(len(r[6]) for r in rows))
 
     sep = "  "
     header  = (col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
-               col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5))
+               col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5) + sep +
+               col6.ljust(w6))
     divider = "-" * len(header)
 
     print(f"\n  {header}")
     print(f"  {divider}")
     for r in rows:
         row_str = (r[0].ljust(w0) + sep + r[1].ljust(w1) + sep + r[2].ljust(w2) + sep +
-                   r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5))
+                   r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5) + sep +
+                   r[6].ljust(w6))
         print(f"  {row_str}")
 
     input("\nPress Enter to Return to the Main Menu")
@@ -3857,7 +3869,7 @@ def travel_time_between_system_objects_lm():
       2. Half continuous accel time, coast, then decelerate:
            accel t/4, coast t/2, decel t/4.
            d = 3·a·t²/16  →  t = √(16d / (3a))
-      3. Accelerate to 0.3% c, coast, then decelerate.
+      3. Accelerate to 3% c, coast, then decelerate.
            If accel+decel distance (= a·t_cap²) >= d: use profile 1 formula.
            Else: t = 2·t_cap + (d - a·t_cap²) / v_cap
     """
@@ -3888,7 +3900,7 @@ def travel_time_between_system_objects_lm():
     # Physical constants
     G_MS2    = 9.80665            # 1 g in m/s²
     C_MS     = 299_792_458.0      # speed of light in m/s
-    V_CAP_MS = 0.003 * C_MS      # 0.3% of c in m/s
+    V_CAP_MS = 0.03 * C_MS       # 3% of c in m/s
     M_PER_AU = 149_597_870_700.0  # metres per AU
     M_PER_LM = C_MS * 60.0       # metres per light-minute
 
@@ -3908,20 +3920,22 @@ def travel_time_between_system_objects_lm():
     t2_hours = t2_sec / 3600.0
     label2   = "Half Continuous Accel Time, Coast, Then Decelerate"
 
-    # ── Profile 3: Accelerate to 0.3% c, Coast, Then Decelerate ─────────────
+    # ── Profile 3: Accelerate to 3% c, Coast, Then Decelerate ─────────────
     t_cap       = V_CAP_MS / a_ms2
     d_both_cap  = 2.0 * (0.5 * a_ms2 * t_cap ** 2)
 
     if d_both_cap >= d_m:
-        t3_sec   = t1_sec
-        t3_hours = t1_hours
-        label3   = "Accel to 0.3% c, Coast, Then Decelerate (cap not reached)"
+        t3_sec       = t1_sec
+        t3_hours     = t1_hours
+        label3       = "Accel to 3% c, Coast, Then Decelerate (cap not reached)"
+        cap3_reached = False
     else:
         d_coast3 = d_m - d_both_cap
         t_coast3 = d_coast3 / V_CAP_MS
-        t3_sec   = 2.0 * t_cap + t_coast3
-        t3_hours = t3_sec / 3600.0
-        label3   = "Accel to 0.3% c, Coast, Then Decelerate"
+        t3_sec       = 2.0 * t_cap + t_coast3
+        t3_hours     = t3_sec / 3600.0
+        label3       = "Accel to 3% c, Coast, Then Decelerate"
+        cap3_reached = True
 
     # ── Build table ──────────────────────────────────────────────────────────
     col0 = "Acceleration Profile"
@@ -3930,15 +3944,16 @@ def travel_time_between_system_objects_lm():
     col3 = "Distance (LM)"
     col4 = "Travel Time (Hours)"
     col5 = "Travel Time"
+    col6 = "Max Vel"
 
     g_str  = f"{g_count:.4f}"
     au_str = f"{distance_au:.4f}"
     lm_str = f"{distance_lm:.4f}"
 
     rows = [
-        (label1, g_str, au_str, lm_str, f"{t1_hours:.6f}", _format_travel_time(t1_hours)),
-        (label2, g_str, au_str, lm_str, f"{t2_hours:.6f}", _format_travel_time(t2_hours)),
-        (label3, g_str, au_str, lm_str, f"{t3_hours:.6f}", _format_travel_time(t3_hours)),
+        (label1, g_str, au_str, lm_str, f"{t1_hours:.6f}", _format_travel_time(t1_hours), "N/A"),
+        (label2, g_str, au_str, lm_str, f"{t2_hours:.6f}", _format_travel_time(t2_hours), "N/A"),
+        (label3, g_str, au_str, lm_str, f"{t3_hours:.6f}", _format_travel_time(t3_hours), "Y" if cap3_reached else "N"),
     ]
 
     w0 = max(len(col0), *(len(r[0]) for r in rows))
@@ -3947,17 +3962,20 @@ def travel_time_between_system_objects_lm():
     w3 = max(len(col3), *(len(r[3]) for r in rows))
     w4 = max(len(col4), *(len(r[4]) for r in rows))
     w5 = max(len(col5), *(len(r[5]) for r in rows))
+    w6 = max(len(col6), *(len(r[6]) for r in rows))
 
     sep = "  "
     header  = (col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
-               col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5))
+               col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5) + sep +
+               col6.ljust(w6))
     divider = "-" * len(header)
 
     print(f"\n  {header}")
     print(f"  {divider}")
     for r in rows:
         row_str = (r[0].ljust(w0) + sep + r[1].ljust(w1) + sep + r[2].ljust(w2) + sep +
-                   r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5))
+                   r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5) + sep +
+                   r[6].ljust(w6))
         print(f"  {row_str}")
 
     input("\nPress Enter to Return to the Main Menu")
@@ -4157,19 +4175,19 @@ def travel_time_between_solar_system_objects():
     # ── Input: Max Velocity Cap ──────────────────────────────────────────────
     raw = input(
         "Enter Max Velocity for Accelerate-to-Max-Velocity Profile "
-        "(% of c, Default 0.3): "
+        "(% of c, Default 3): "
     ).strip()
     if raw == "":
-        v_cap_pct = 0.3
+        v_cap_pct = 3.0
     else:
         try:
             v_cap_pct = float(raw)
             if v_cap_pct <= 0:
-                print("Max velocity must be greater than zero. Using default 0.3%.")
-                v_cap_pct = 0.3
+                print("Max velocity must be greater than zero. Using default 3%.")
+                v_cap_pct = 3.0
         except ValueError:
-            print("Invalid input. Using default 0.3%.")
-            v_cap_pct = 0.3
+            print("Invalid input. Using default 3%.")
+            v_cap_pct = 3.0
 
     os.system("cls" if os.name == "nt" else "clear")
 
@@ -4249,15 +4267,17 @@ def travel_time_between_solar_system_objects():
     d_both_cap = a_ms2 * t_cap ** 2
 
     if d_both_cap >= d_m:
-        t3_sec   = t1_sec
-        t3_hours = t1_hours
-        label3   = f"Accel to {v_cap_pct}% c, Coast, Then Decelerate (cap not reached)"
+        t3_sec       = t1_sec
+        t3_hours     = t1_hours
+        label3       = f"Accel to {v_cap_pct}% c, Coast, Then Decelerate (cap not reached)"
+        cap3_reached = False
     else:
         d_coast3 = d_m - d_both_cap
         t_coast3 = d_coast3 / V_CAP_MS
-        t3_sec   = 2.0 * t_cap + t_coast3
-        t3_hours = t3_sec / 3600.0
-        label3   = f"Accel to {v_cap_pct}% c, Coast, Then Decelerate"
+        t3_sec       = 2.0 * t_cap + t_coast3
+        t3_hours     = t3_sec / 3600.0
+        label3       = f"Accel to {v_cap_pct}% c, Coast, Then Decelerate"
+        cap3_reached = True
 
     # ── Build and print table ─────────────────────────────────────────────────
     col0 = "Acceleration Profile"
@@ -4268,6 +4288,7 @@ def travel_time_between_solar_system_objects():
     col5 = "Distance (LM)"
     col6 = "Travel Time (Hours)"
     col7 = "Travel Time"
+    col8 = "Max Vel"
 
     g_str  = f"{g_count:.4f}"
     au_str = f"{distance_au:.4f}"
@@ -4275,11 +4296,11 @@ def travel_time_between_solar_system_objects():
 
     rows = [
         (label1, origin_name, dest_name, g_str, au_str, lm_str,
-         f"{t1_hours:.6f}", _format_travel_time(t1_hours)),
+         f"{t1_hours:.6f}", _format_travel_time(t1_hours), "N/A"),
         (label2, origin_name, dest_name, g_str, au_str, lm_str,
-         f"{t2_hours:.6f}", _format_travel_time(t2_hours)),
+         f"{t2_hours:.6f}", _format_travel_time(t2_hours), "N/A"),
         (label3, origin_name, dest_name, g_str, au_str, lm_str,
-         f"{t3_hours:.6f}", _format_travel_time(t3_hours)),
+         f"{t3_hours:.6f}", _format_travel_time(t3_hours), "Y" if cap3_reached else "N"),
     ]
 
     w0 = max(len(col0), *(len(r[0]) for r in rows))
@@ -4290,12 +4311,13 @@ def travel_time_between_solar_system_objects():
     w5 = max(len(col5), *(len(r[5]) for r in rows))
     w6 = max(len(col6), *(len(r[6]) for r in rows))
     w7 = max(len(col7), *(len(r[7]) for r in rows))
+    w8 = max(len(col8), *(len(r[8]) for r in rows))
 
     sep = "  "
     header = (
         col0.ljust(w0) + sep + col1.ljust(w1) + sep + col2.ljust(w2) + sep +
         col3.ljust(w3) + sep + col4.ljust(w4) + sep + col5.ljust(w5) + sep +
-        col6.ljust(w6) + sep + col7.ljust(w7)
+        col6.ljust(w6) + sep + col7.ljust(w7) + sep + col8.ljust(w8)
     )
     divider = "-" * len(header)
 
@@ -4305,7 +4327,7 @@ def travel_time_between_solar_system_objects():
         row_str = (
             r[0].ljust(w0) + sep + r[1].ljust(w1) + sep + r[2].ljust(w2) + sep +
             r[3].ljust(w3) + sep + r[4].ljust(w4) + sep + r[5].ljust(w5) + sep +
-            r[6].ljust(w6) + sep + r[7].ljust(w7)
+            r[6].ljust(w6) + sep + r[7].ljust(w7) + sep + r[8].ljust(w8)
         )
         print(f"  {row_str}")
 
@@ -4377,19 +4399,19 @@ def travel_time_custom_thrust_duration():
     # ── Input: Max Velocity Cap ──────────────────────────────────────────────
     raw = input(
         "Enter Max Velocity for Coast Phase "
-        "(% of c, Default 0.3): "
+        "(% of c, Default 3): "
     ).strip()
     if raw == "":
-        v_cap_pct = 0.3
+        v_cap_pct = 3.0
     else:
         try:
             v_cap_pct = float(raw)
             if v_cap_pct <= 0:
-                print("Max velocity must be greater than zero. Using default 0.3%.")
-                v_cap_pct = 0.3
+                print("Max velocity must be greater than zero. Using default 3%.")
+                v_cap_pct = 3.0
         except ValueError:
-            print("Invalid input. Using default 0.3%.")
-            v_cap_pct = 0.3
+            print("Invalid input. Using default 3%.")
+            v_cap_pct = 3.0
 
     os.system("cls" if os.name == "nt" else "clear")
 
@@ -4540,6 +4562,7 @@ def travel_time_custom_thrust_duration():
         print(f"  Effective Burn Duration:       {eff_burn_value:.4f} {burn_unit_label}")
 
     print(f"  Max Velocity Cap:              {v_cap_pct}% c ({V_CAP_MS:,.2f} m/s)")
+    print(f"  Max Velocity Reached:          {'Y' if vmax_reached else 'N'}")
 
     if vmax_reached:
         t_to_vmax_fmt = _format_travel_time(t_to_vmax_sec / 3600.0)
