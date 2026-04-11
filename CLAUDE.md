@@ -8,13 +8,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the app
+# Run the CLI app
 python main.py
+
+# Run the GUI app
+python gui_main.py
 ```
 
 ## Architecture
 
-`main.py` is the single entry point. All features live as functions in this file (for now) and are registered in the `MENU_OPTIONS` dict at the bottom, which drives the main menu loop.
+The project has two entry points that share all computation through the `core/` package:
+
+- **`main.py`** — CLI. All features are top-level functions registered in `MENU_OPTIONS`.
+- **`gui_main.py`** — PySide6 GUI. Navigation tree on the left, panel stack on the right.
+- **`core/`** — Pure computation layer (no I/O, no Qt). Called by both CLI and GUI.
+- **`gui/`** — Qt presentation layer: `app.py` (MainWindow), `nav.py` (navigation tree), `panels/` (one class per feature).
+
+See `@docs/gui-architecture.md` for the full GUI structure, panel class → option mapping, and phase completion status.
+
+### CLI Architecture
+
+`main.py` is the single entry point for the CLI. All features live as functions in this file (for now) and are registered in the `MENU_OPTIONS` dict at the bottom, which drives the main menu loop.
 
 ```
 MENU_OPTIONS = {
@@ -81,3 +95,4 @@ Q.  Quit                                            ---------------
 @docs/science-and-scifi.md
 @docs/calculators.md
 @docs/equations.md
+@docs/gui-architecture.md

@@ -13,6 +13,10 @@ from astroquery.simbad import Simbad
 from astroquery.jplhorizons import Horizons
 import astropy.time
 
+import core.calculators
+import core.equations
+import core.science
+
 
 # ─── SIMBAD Star Query ────────────────────────────────────────────────────────
 
@@ -3264,9 +3268,8 @@ def ly_per_hour_to_speed_of_light():
             break
         except ValueError:
             print("Invalid input. Please enter a number.")
-    # 1 light year per hour = 8765.8128 times the speed of light
-    # (hours in a year = 365.25 * 24 = 8765.8128)
-    times_c = ly_hr * 8765.8128
+    result = core.calculators.compute_ly_hr_to_times_c(ly_hr)
+    times_c = result["times_c"]
     os.system("cls" if os.name == "nt" else "clear")
     print(f"\n  {ly_hr} ly/hr = {times_c:.6f}x the speed of light")
     input("\nPress Enter to Return to the Main Menu")
@@ -5187,7 +5190,8 @@ def star_luminosity_calculator():
         except ValueError:
             print("Invalid input. Please enter a number.")
 
-    luminosity = (radius ** 2) * ((temp / 5778.0) ** 4)
+    result = core.equations.compute_star_luminosity(radius, temp)
+    luminosity = result["luminosity"]
 
     os.system("cls" if os.name == "nt" else "clear")
 
@@ -5418,16 +5422,7 @@ def main_sequence_star_properties():
     """Display the Main Sequence Star Properties table from propertiesOfMainSequenceStars.csv."""
     os.system("cls" if os.name == "nt" else "clear")
 
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base_dir, "propertiesOfMainSequenceStars.csv")
-
-    try:
-        with open(path, newline="", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
-    except Exception as e:
-        print(f"Error loading propertiesOfMainSequenceStars.csv: {e}")
-        input("\nPress Enter to Return to the Main Menu")
-        return
+    rows = core.science.compute_main_sequence_table()
 
     if not rows:
         print("No data found in propertiesOfMainSequenceStars.csv.")
