@@ -14,10 +14,10 @@ from gui.panels.rotating_habitat    import GravityAccelPanel, GravityDistancePan
 from gui.panels.habitable_zone_calc import HabZonePanel, HabZoneSmaPanel
 from gui.panels.luminosity          import LuminosityPanel
 
-# ── Phase C will add ──────────────────────────────────────────────────────────
-#   from gui.panels.simbad         import SimbadPanel
-#   from gui.panels.star_regions   import StarRegionsPanel
-#   from gui.panels.distance_stars import DistanceStarsPanel
+# ── Phase C panels ────────────────────────────────────────────────────────────
+from gui.panels.simbad         import SimbadPanel
+from gui.panels.star_regions   import StarRegionsPanel
+from gui.panels.distance_stars import DistanceStarsPanel
 
 # ── Phase D will add remaining panels.
 # ── Phase E will add visualization panels.

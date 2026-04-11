@@ -45,10 +45,10 @@ gui/                 # Qt presentation layer
                           #   GravityRpmPanel (39)
     habitable_zone_calc.py # HabZonePanel (40), HabZoneSmaPanel (41)
     luminosity.py         # LuminosityPanel (42)
-    # Phase C panels (SIMBAD / network — added in Phase C):
-    # simbad.py            SimbadPanel (1)
-    # star_regions.py      StarRegionsPanel (9, 10, 11)
-    # distance_stars.py    DistanceStarsPanel (18, 19, 20)
+    # Phase C panels (SIMBAD / network):
+    simbad.py            # SimbadPanel (1)
+    star_regions.py      # StarRegionsPanel (9, 10, 11)
+    distance_stars.py    # DistanceStarsPanel (18, 19, 20)
   visualizations/         # Phase E
 ```
 
@@ -74,7 +74,7 @@ This makes core functions testable in isolation and callable from both the CLI a
 
 `NAVIGATION` is a list of `(category, [(label, panel_class_name), ...])` tuples. At click time, `_on_item_clicked` resolves the class name via `getattr(gui.panels, name)`. Entries whose class hasn't been created yet are silently ignored — this lets phases be added incrementally without breaking existing nav items.
 
-**Every nav entry maps to its own independent panel class.** Multiple entries never share the same class (tabs-within-a-panel were intentionally avoided so each feature opens cleanly on its own).
+Most nav entries map to their own independent panel class. Phase C panels (`StarRegionsPanel`, `DistanceStarsPanel`) are exceptions — they use `QTabWidget` internally to host multiple related features (opts 9/10/11 and opts 18/19/20 respectively). Clicking any of their nav entries opens the same panel; the user switches between features via tabs.
 
 ### Panel Base Class (`gui/panels/base.py`)
 
@@ -117,9 +117,25 @@ Phase C adds `Worker(QObject)` and `run_in_background()` to support network call
 | `HabZonePanel` | 40 | `panels/habitable_zone_calc.py` |
 | `HabZoneSmaPanel` | 41 | `panels/habitable_zone_calc.py` |
 | `LuminosityPanel` | 42 | `panels/luminosity.py` |
-| `SimbadPanel` *(Phase C)* | 1 | `panels/simbad.py` |
-| `StarRegionsPanel` *(Phase C)* | 9, 10, 11 | `panels/star_regions.py` |
-| `DistanceStarsPanel` *(Phase C)* | 18, 19, 20 | `panels/distance_stars.py` |
+| `SimbadPanel` | 1 | `panels/simbad.py` |
+| `StarRegionsPanel` | 9, 10, 11 | `panels/star_regions.py` |
+| `DistanceStarsPanel` | 18, 19, 20 | `panels/distance_stars.py` |
+
+## Tab-Based Panel Layout Notes
+
+### DistanceStarsPanel (`panels/distance_stars.py`)
+
+Three tabs sharing one `DistanceStarsPanel` instance:
+
+- **Between 2 Stars (opt 18)** — two `QLineEdit` inputs in a `QFormLayout`, Calculate button below the form in the main `QVBoxLayout`, 2-row result table + distance label in a `_result_area` sub-layout.
+- **Within Distance of Sol (opt 19)** — one `QLineEdit` input in a `QFormLayout`; Search button added as the last row of the `QFormLayout` (no label) so it sits flush below the input. Result count label + table in `_result_area`, which has stretch factor 1 so the table expands to fill available height.
+- **Within Distance of Star (opt 20)** — same layout pattern as opt 19: two `QLineEdit` inputs in a `QFormLayout`, Search button as last form row, expanding result table.
+
+The expanding-table pattern (result layout with stretch=1, table view with `Expanding` size policy) is used in opts 19 and 20 because they can return many rows. Opt 18 returns exactly 2 rows so no expansion is needed.
+
+### StarRegionsPanel (`panels/star_regions.py`)
+
+Three tabs for opts 9 (Auto/SIMBAD), 10 (Semi-Manual), and 11 (Manual). All tabs produce identical output tables; they differ only in how input values are collected (fully automated vs. partially prompted vs. fully manual).
 
 ## Phase Completion Status
 
@@ -127,7 +143,7 @@ Phase C adds `Worker(QObject)` and `run_in_background()` to support network call
 |---|---|---|
 | A | Complete | Project skeleton, core stubs, GUI shell, nav tree |
 | B | Complete | Static display + pure-math calculators (opts 12–17, 21–26, 34–42) |
-| C | Pending | SIMBAD-based features + QThread threading pattern (opts 1, 9–11, 18–20) |
+| C | Complete | SIMBAD-based features + QThread threading pattern (opts 1, 9–11, 18–20) |
 | D | Pending | Multi-source features, JPL Horizons, option 50 (opts 2–8, 27–33, 50) |
 | E | Pending | Visualizations: star map, orbital diagram, HZ diagram |
 | F | Pending | SQLite migration — replaces all CSV files with `data/space_app.db` |

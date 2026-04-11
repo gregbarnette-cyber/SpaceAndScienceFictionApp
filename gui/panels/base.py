@@ -5,7 +5,35 @@ from PySide6.QtWidgets import (
     QTableView, QTextEdit, QLabel,
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, QThread, Signal
+
+
+class Worker(QObject):
+    """Run a callable in a QThread and deliver the result via Qt signals.
+
+    Usage:
+        worker = Worker(fn, *args, **kwargs)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(callback)   # receives result dict
+        worker.error.connect(err_callback)  # receives error str
+    """
+
+    finished = Signal(object)   # emits the return value of fn(*args, **kwargs)
+    error    = Signal(str)      # emits the exception message on failure
+
+    def __init__(self, fn, *args, **kwargs):
+        super().__init__()
+        self._fn     = fn
+        self._args   = args
+        self._kwargs = kwargs
+
+    def run(self):
+        try:
+            result = self._fn(*self._args, **self._kwargs)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class ResultPanel(QWidget):
@@ -89,3 +117,50 @@ class ResultPanel(QWidget):
     def set_status(self, msg: str):
         """Update the main window status bar."""
         self.window.statusBar().showMessage(msg)
+
+    # ── Background threading (Phase C+) ──────────────────────────────────────
+
+    def run_in_background(self, fn, *args, on_result=None, **kwargs):
+        """Execute fn(*args, **kwargs) in a QThread.
+
+        Disables run_btn (if present), shows "Working…" in the status bar,
+        then delivers the result to on_result (or self.render) on the main
+        thread when the worker finishes.
+
+        Stores self._thread and self._worker to prevent premature GC.
+        """
+        self.set_status("Working…")
+        if hasattr(self, "run_btn"):
+            self.run_btn.setEnabled(False)
+
+        self._thread = QThread()
+        self._worker = Worker(fn, *args, **kwargs)
+        self._worker.moveToThread(self._thread)
+
+        callback = on_result if on_result is not None else self.render
+
+        self._thread.started.connect(self._worker.run)
+        # QueuedConnection ensures callback and error handler are always
+        # delivered on the main thread, even if the worker signal fires
+        # from the worker thread (PySide6 can use DirectConnection for
+        # plain Python callables with AutoConnection, which would crash
+        # because Qt widgets must only be touched from the main thread).
+        self._worker.finished.connect(callback,          Qt.ConnectionType.QueuedConnection)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.error.connect(self._on_error,       Qt.ConnectionType.QueuedConnection)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.finished.connect(self._on_thread_done)
+
+        self._thread.start()
+
+    def _on_error(self, msg: str):
+        self.set_status(f"Error: {msg}")
+        self.show_error(msg)
+        if hasattr(self, "run_btn"):
+            self.run_btn.setEnabled(True)
+
+    def _on_thread_done(self):
+        self.set_status("Done")
+        if hasattr(self, "run_btn"):
+            self.run_btn.setEnabled(True)
