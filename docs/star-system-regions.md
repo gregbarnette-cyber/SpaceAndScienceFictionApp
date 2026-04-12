@@ -1,14 +1,14 @@
 # Star System Regions Feature Documentation
 
-Options 9–11. All three variants produce identical output tables and share the same six rendering helpers. They change together when physics formulas or table layouts are revised.
+Options 8–10. All three variants produce identical output tables and share the same six rendering helpers. They change together when physics formulas or table layouts are revised.
 
 ## Star System Regions Feature
 
-All three Star System Regions variants (options 9, 10, 11) produce identical output tables. They differ only in how their input values are obtained.
+All three Star System Regions variants (options 8, 9, 10) produce identical output tables. They differ only in how their input values are obtained.
 
-### Option 9: Star System Regions (SIMBAD) — `query_star_system_regions()`
+### Option 8: Star System Regions (SIMBAD) — `query_star_system_regions()`
 
-- Menu option 9: fully automated — SIMBAD lookup + BC CSV lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
+- Menu option 8: fully automated — SIMBAD lookup + BC CSV lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
 - **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
 - **CSV lookup:** `_load_main_sequence_data()` loads `propertiesOfMainSequenceStars.csv` (lazy, cached in `_MAIN_SEQUENCE_DATA`) into `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype.
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
@@ -21,16 +21,16 @@ All three Star System Regions variants (options 9, 10, 11) produce identical out
   - `plx` — parallax in mas from SIMBAD `plx_value`; also rejected if `<= 0`
 - **Constants:** `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`
 
-### Option 10: Star System Regions (Semi-SIMBAD) — `query_star_system_regions_semi_manual()`
+### Option 9: Star System Regions (Semi-SIMBAD) — `query_star_system_regions_semi_manual()`
 
-- Menu option 10: same SIMBAD lookup, checks, and BC CSV lookup as option 9, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
+- Menu option 9: same SIMBAD lookup, checks, and BC CSV lookup as option 8, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
 - Prompts (loop until valid float entered):
   - `Enter Sunlight Intensity (Terra = 1.0):` — blank defaults to `1.0`
   - `Enter Bond Albedo (Terra = 0.3, Venus = 0.9):` — blank defaults to `0.3`
 
-### Option 11: Star System Regions (Manual) — `query_star_system_regions_manual()`
+### Option 10: Star System Regions (Manual) — `query_star_system_regions_manual()`
 
-- Menu option 11: no SIMBAD lookup, no checks, no CSV lookup. All six input values are entered manually.
+- Menu option 10: no SIMBAD lookup, no checks, no CSV lookup. All six input values are entered manually.
 - Prompts (loop until valid float entered, no defaults):
   - `Apparent Magnitude (V)`
   - `Parallax (mas)` — rejected if `<= 0`

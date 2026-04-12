@@ -1,161 +1,106 @@
 # gui/panels/travel_time.py — Options 25 (time at ly/hr) and 26 (time at ×c).
+# Each option has its own standalone panel.
 
-from PySide6.QtWidgets import (
-    QTabWidget, QWidget, QVBoxLayout, QFormLayout, QPushButton, QLineEdit,
-)
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFormLayout, QPushButton, QLineEdit
 
 from gui.panels.base import ResultPanel
 import core.calculators
 
 
-class _TravelTimeTab(QWidget):
-    """Two inputs, Calculate button, result table."""
+class _TravelTimeBase(ResultPanel):
+    """Base for two-input travel-time panels that render a single result row."""
 
-    def __init__(self, fields: list, compute_fn, headers: list, row_fn):
-        """
-        fields:     [(label, placeholder), ...]
-        compute_fn: callable(*floats) → result dict
-        headers:    column header strings
-        row_fn:     callable(result dict) → list of cell strings
-        """
-        super().__init__()
-        self._compute_fn = compute_fn
-        self._headers = headers
-        self._row_fn = row_fn
+    _fields  = []    # [(label, placeholder), ...]
+    _headers = []
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-
+    def build_inputs(self):
         form = QFormLayout()
         self._inputs = []
-        for label, ph in fields:
+        for label, ph in self._fields:
             inp = QLineEdit()
             inp.setPlaceholderText(ph)
             form.addRow(label, inp)
             self._inputs.append(inp)
-        layout.addLayout(form)
-
-        self._btn = QPushButton("Calculate")
-        self._btn.clicked.connect(self._calculate)
-        layout.addWidget(self._btn)
-
-        self._result_area = QVBoxLayout()
-        layout.addLayout(self._result_area)
-        layout.addStretch()
-
+        self.run_btn = QPushButton("Calculate")
+        self.run_btn.clicked.connect(self._calculate)
+        form.addRow("", self.run_btn)
+        self._layout.addLayout(form)
+        self._input_count = self._layout.count()
         for inp in self._inputs:
-            inp.returnPressed.connect(self._btn.click)
+            inp.returnPressed.connect(self._calculate)
 
-        self._table_widget = None
+    def build_results_area(self):
+        pass   # results rendered dynamically via clear_results / add_result_widget
 
     def _calculate(self):
         vals = []
         for inp in self._inputs:
-            raw = inp.text().strip()
             try:
-                v = float(raw)
+                v = float(inp.text().strip())
+                if v <= 0:
+                    raise ValueError
             except ValueError:
-                self._show_error("Invalid input — please enter a number in each field.")
+                self.clear_results()
+                from PySide6.QtWidgets import QLabel
+                lbl = QLabel("All values must be positive numbers.")
+                lbl.setStyleSheet("color: red;")
+                self.add_result_widget(lbl)
                 return
-        # second pass after validation
-        vals = []
-        for inp in self._inputs:
-            vals.append(float(inp.text().strip()))
+            vals.append(v)
 
         try:
-            result = self._compute_fn(*vals)
+            result = self._compute(*vals)
         except Exception as e:
-            self._show_error(f"Error: {e}")
+            self.clear_results()
+            from PySide6.QtWidgets import QLabel
+            lbl = QLabel(f"Error: {e}")
+            lbl.setStyleSheet("color: red;")
+            self.add_result_widget(lbl)
             return
 
-        if self._table_widget:
-            self._result_area.removeWidget(self._table_widget)
-            self._table_widget.deleteLater()
-            self._table_widget = None
+        self.clear_results()
+        table = self.make_table(self._headers, [self._row(result)])
+        table.setSortingEnabled(False)
+        self.add_result_widget(table)
 
-        from gui.panels.base import ResultPanel
-        from PySide6.QtWidgets import QTableView
-        from PySide6.QtGui import QStandardItemModel, QStandardItem
+    def _compute(self, *vals):
+        raise NotImplementedError
 
-        row_data = self._row_fn(result)
-        model = QStandardItemModel(1, len(self._headers))
-        model.setHorizontalHeaderLabels(self._headers)
-        for c, val in enumerate(row_data):
-            item = QStandardItem(str(val))
-            item.setEditable(False)
-            model.setItem(0, c, item)
-
-        view = QTableView()
-        view.setModel(model)
-        view.setSortingEnabled(False)
-        view.horizontalHeader().setStretchLastSection(True)
-        view.resizeColumnsToContents()
-        view.setMaximumHeight(80)
-
-        self._table_widget = view
-        self._result_area.addWidget(view)
-
-    def _show_error(self, msg: str):
-        from PySide6.QtWidgets import QLabel
-        if self._table_widget:
-            self._result_area.removeWidget(self._table_widget)
-            self._table_widget.deleteLater()
-            self._table_widget = None
-        lbl = QLabel(msg)
-        lbl.setStyleSheet("color: red;")
-        self._result_area.addWidget(lbl)
-        self._table_widget = lbl
+    def _row(self, result):
+        raise NotImplementedError
 
 
-class TravelTimePanel(ResultPanel):
-    """Travel time given a distance in light years: options 25 and 26."""
+class TravelTimeLyHrPanel(_TravelTimeBase):
+    """Time to travel N light years at X ly/hr  (option 25)."""
 
-    def build_inputs(self):
-        self._input_count = 0
+    _fields = [
+        ("Distance (light years):", "e.g. 4.37"),
+        ("Velocity (ly/hr):",       "e.g. 0.001"),
+    ]
+    _headers = ["Distance (LYs)", "LY/HR", "X Times Speed of Light",
+                "Travel Time (Hours)", "Travel Time"]
 
-    def build_results_area(self):
-        tabs = QTabWidget()
-        self._layout.addWidget(tabs)
+    def _compute(self, dist, vel):
+        return core.calculators.compute_travel_time_ly_hr(dist, vel)
 
-        # Option 25: distance + ly/hr
-        tab25 = _TravelTimeTab(
-            fields=[
-                ("Distance (light years):", "e.g. 4.37"),
-                ("Velocity (ly/hr):",       "e.g. 0.001"),
-            ],
-            compute_fn=lambda d, v: core.calculators.compute_travel_time_ly_hr(d, v),
-            headers=[
-                "Distance (LYs)", "LY/HR", "X Times Speed of Light",
-                "Travel Time (Hours)", "Travel Time",
-            ],
-            row_fn=lambda r: [
-                f"{r['distance_ly']:.6f}",
-                f"{r['ly_hr']:.6f}",
-                f"{r['times_c']:.6f}",
-                f"{r['total_hours']:.6f}",
-                r["travel_time_str"],
-            ],
-        )
-        tabs.addTab(tab25, "At LY/HR  (opt 25)")
+    def _row(self, r):
+        return [f"{r['distance_ly']:.6f}", f"{r['ly_hr']:.6f}",
+                f"{r['times_c']:.6f}", f"{r['total_hours']:.6f}", r["travel_time_str"]]
 
-        # Option 26: distance + ×c
-        tab26 = _TravelTimeTab(
-            fields=[
-                ("Distance (light years):", "e.g. 4.37"),
-                ("Velocity (×c):",          "e.g. 8.77"),
-            ],
-            compute_fn=lambda d, v: core.calculators.compute_travel_time_times_c(d, v),
-            headers=[
-                "Distance (LYs)", "X Times Speed of Light", "LY/HR",
-                "Travel Time (Hours)", "Travel Time",
-            ],
-            row_fn=lambda r: [
-                f"{r['distance_ly']:.6f}",
-                f"{r['times_c']:.6f}",
-                f"{r['ly_hr']:.6f}",
-                f"{r['total_hours']:.6f}",
-                r["travel_time_str"],
-            ],
-        )
-        tabs.addTab(tab26, "At ×c  (opt 26)")
+
+class TravelTimeTimesCPanel(_TravelTimeBase):
+    """Time to travel N light years at X×c  (option 26)."""
+
+    _fields = [
+        ("Distance (light years):", "e.g. 4.37"),
+        ("Velocity (×c):",          "e.g. 8.77"),
+    ]
+    _headers = ["Distance (LYs)", "X Times Speed of Light", "LY/HR",
+                "Travel Time (Hours)", "Travel Time"]
+
+    def _compute(self, dist, vel):
+        return core.calculators.compute_travel_time_times_c(dist, vel)
+
+    def _row(self, r):
+        return [f"{r['distance_ly']:.6f}", f"{r['times_c']:.6f}",
+                f"{r['ly_hr']:.6f}", f"{r['total_hours']:.6f}", r["travel_time_str"]]

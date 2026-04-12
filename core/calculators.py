@@ -387,6 +387,485 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
     }
 
 
+# ── Physical constants for brachistochrone calculations ───────────────────────
+_G_MS2     = 9.80665              # 1 g in m/s²
+_C_MS      = 299_792_458.0        # speed of light in m/s
+_M_PER_AU  = 149_597_870_700.0    # metres per AU
+_M_PER_LM  = _C_MS * 60.0        # metres per light-minute
+
+# ── Horizons ID map (options 32, 33) ──────────────────────────────────────────
+_HORIZONS_ID_MAP = {
+    "sun": "10",
+    "mercury": "199", "venus": "299", "earth": "399", "mars": "499",
+    "jupiter": "599", "saturn": "699", "uranus": "799", "neptune": "899",
+    "pluto": "999", "ceres": "1", "vesta": "4", "pallas": "2", "juno": "3",
+    "eris": "136199", "makemake": "136472", "haumea": "136108", "sedna": "90377",
+    "moon": "301", "luna": "301",
+    "phobos": "401", "deimos": "402",
+    "io": "501", "europa": "502", "ganymede": "503", "callisto": "504",
+    "amalthea": "505", "himalia": "506", "elara": "507", "pasiphae": "508",
+    "sinope": "509", "lysithea": "510", "carme": "511", "ananke": "512",
+    "leda": "513", "thebe": "514", "adrastea": "515", "metis": "516",
+    "mimas": "601", "enceladus": "602", "tethys": "603", "dione": "604",
+    "rhea": "605", "titan": "606", "hyperion": "607", "iapetus": "608",
+    "phoebe": "609", "janus": "610", "epimetheus": "611", "helene": "612",
+    "telesto": "613", "calypso": "614", "atlas": "615", "prometheus": "616",
+    "pandora": "617", "pan": "618",
+    "ariel": "701", "umbriel": "702", "miranda": "703", "titania": "704",
+    "oberon": "705", "caliban": "706", "sycorax": "707", "puck": "708",
+    "portia": "709", "juliet": "710", "belinda": "711", "cressida": "712",
+    "desdemona": "713", "rosalind": "714", "bianca": "715", "cordelia": "716",
+    "ophelia": "717",
+    "triton": "801", "nereid": "802", "proteus": "808", "larissa": "807",
+    "galatea": "806", "despina": "805", "thalassa": "804", "naiad": "803",
+    "charon": "901", "nix": "902", "hydra": "903", "kerberos": "904", "styx": "905",
+    "eros": "433", "ida": "243", "gaspra": "951", "mathilde": "253",
+    "itokawa": "25143", "ryugu": "162173", "bennu": "101955", "apophis": "99942",
+    "lutetia": "21", "steins": "2867", "churyumov": "67P",
+    "halley": "1P", "encke": "2P", "hale-bopp": "C/1995 O1",
+    "tempel 1": "9P", "wild 2": "81P",
+}
+
+
+def _resolve_horizons_id(name: str) -> str:
+    """Map a body name to a JPL Horizons-compatible ID."""
+    normalized = name.strip().lower()
+    if normalized in _HORIZONS_ID_MAP:
+        return _HORIZONS_ID_MAP[normalized]
+    tokens = normalized.split()
+    if tokens and tokens[-1] in _HORIZONS_ID_MAP:
+        return _HORIZONS_ID_MAP[tokens[-1]]
+    return name.strip()
+
+
+def _get_heliocentric_vectors(horizons_id: str, epoch_jd=None):
+    """Query JPL Horizons for heliocentric x,y,z in AU.
+
+    Returns (x, y, z) floats. Raises on failure.
+    """
+    import astropy.time
+    from astroquery.jplhorizons import Horizons
+    if epoch_jd is None:
+        epoch_jd = astropy.time.Time.now().jd
+    obj = Horizons(id=horizons_id, location="@sun", epochs=epoch_jd)
+    vec = obj.vectors()
+    return float(vec["x"][0]), float(vec["y"][0]), float(vec["z"][0])
+
+
+def _brachistochrone_profiles(d_m: float, a_ms2: float, v_cap_pct: float = 3.0) -> list:
+    """Compute three brachistochrone profiles for a given distance in metres.
+
+    Returns list of 3 dicts:
+        label, hours, travel_time_str, max_vel  ('N/A', 'Y', or 'N')
+    """
+    V_CAP_MS = (v_cap_pct / 100.0) * _C_MS
+
+    # Profile 1: Continuous to Halfway — t = 2·√(d/a)
+    t1_sec   = 2.0 * math.sqrt(d_m / a_ms2)
+    t1_hours = t1_sec / 3600.0
+
+    # Profile 2: Half accel time, coast, decel — t = √(16d/(3a))
+    t2_sec   = math.sqrt((16.0 * d_m) / (3.0 * a_ms2))
+    t2_hours = t2_sec / 3600.0
+
+    # Profile 3: Accel to v_cap, coast, decel
+    t_cap      = V_CAP_MS / a_ms2
+    d_both_cap = a_ms2 * t_cap ** 2
+    if d_both_cap >= d_m:
+        t3_sec       = t1_sec
+        t3_hours     = t1_hours
+        label3       = f"Accel to {v_cap_pct}% c, Coast, Then Decelerate (cap not reached)"
+        cap3_reached = False
+    else:
+        d_coast3 = d_m - d_both_cap
+        t_coast3 = d_coast3 / V_CAP_MS
+        t3_sec       = 2.0 * t_cap + t_coast3
+        t3_hours     = t3_sec / 3600.0
+        label3       = f"Accel to {v_cap_pct}% c, Coast, Then Decelerate"
+        cap3_reached = True
+
+    return [
+        {
+            "label": "Continuous to Halfway Point",
+            "hours": t1_hours,
+            "travel_time_str": format_travel_time(t1_hours),
+            "max_vel": "N/A",
+        },
+        {
+            "label": "Half Continuous Accel Time, Coast, Then Decelerate",
+            "hours": t2_hours,
+            "travel_time_str": format_travel_time(t2_hours),
+            "max_vel": "N/A",
+        },
+        {
+            "label": label3,
+            "hours": t3_hours,
+            "travel_time_str": format_travel_time(t3_hours),
+            "max_vel": "Y" if cap3_reached else "N",
+        },
+    ]
+
+
+def compute_travel_time_between_stars(
+        origin: str, destination: str,
+        ly_hr: float = None, times_c: float = None) -> dict:
+    """Compute travel time between two star systems.
+
+    Supply exactly one of ly_hr or times_c.
+
+    Returns:
+        {origin_info, dest_info, distance_ly, ly_hr, times_c,
+         total_hours, travel_time_str}
+        or {"error": str}
+    """
+    if ly_hr is None and times_c is None:
+        return {"error": "Must supply ly_hr or times_c."}
+    if ly_hr is not None and times_c is not None:
+        return {"error": "Supply only one of ly_hr or times_c."}
+
+    s1 = compute_lookup_star_for_distance(origin)
+    if "error" in s1:
+        return s1
+    s2 = compute_lookup_star_for_distance(destination)
+    if "error" in s2:
+        return s2
+
+    x1, y1, z1 = _to_cartesian(s1["ra_deg"], s1["dec_deg"], s1["ly"])
+    x2, y2, z2 = _to_cartesian(s2["ra_deg"], s2["dec_deg"], s2["ly"])
+    distance_ly = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+    if ly_hr is not None:
+        v_ly_hr  = ly_hr
+        v_times_c = ly_hr * HOURS_PER_JULIAN_YEAR
+    else:
+        v_times_c = times_c
+        v_ly_hr   = times_c / HOURS_PER_JULIAN_YEAR
+
+    total_hours = distance_ly / v_ly_hr
+
+    for s in (s1, s2):
+        s["ra_hms"]  = _fmt_ra(s["ra_deg"])
+        s["dec_dms"] = _fmt_dec(s["dec_deg"])
+
+    return {
+        "origin_info":     s1,
+        "dest_info":       s2,
+        "distance_ly":     distance_ly,
+        "ly_hr":           v_ly_hr,
+        "times_c":         v_times_c,
+        "total_hours":     total_hours,
+        "travel_time_str": format_travel_time(total_hours),
+    }
+
+
+def compute_distance_at_acceleration(accel_g: float, hours: float) -> dict:
+    """Distance traveled for three profiles given acceleration and travel time.
+
+    Profile 1: Continuous acceleration for entire time (d = ½·a·t²).
+    Profile 2: Accel t/4, coast t/2, decel t/4 (d = 3a·t²/16).
+    Profile 3: Accel to v_cap, coast remaining time (no decel in window).
+
+    Returns:
+        {accel_g, hours, travel_time_str,
+         profiles: [list of 3 dicts with label, distance_au, distance_lm, max_vel]}
+    """
+    a_ms2 = accel_g * _G_MS2
+    t_sec = hours * 3600.0
+    V_CAP_MS = 0.03 * _C_MS
+
+    # Profile 1
+    d1_m = 0.5 * a_ms2 * t_sec ** 2
+
+    # Profile 2
+    t_accel2 = t_sec / 4.0
+    v_peak2  = a_ms2 * t_accel2
+    d2_m     = 0.5 * a_ms2 * t_accel2**2 + v_peak2 * (t_sec / 2.0) + 0.5 * a_ms2 * t_accel2**2
+
+    # Profile 3
+    t_cap = V_CAP_MS / a_ms2
+    if t_cap >= t_sec:
+        d3_m         = 0.5 * a_ms2 * t_sec ** 2
+        label3       = "Accel to 3% c, Coast, Then Decelerate (cap not reached)"
+        cap3_reached = False
+    else:
+        d_accel3 = 0.5 * a_ms2 * t_cap ** 2
+        t_coast3 = t_sec - t_cap
+        d3_m         = d_accel3 + V_CAP_MS * t_coast3
+        label3       = "Accel to 3% c, Coast, Then Decelerate"
+        cap3_reached = True
+
+    return {
+        "accel_g":         accel_g,
+        "hours":           hours,
+        "travel_time_str": format_travel_time(hours),
+        "profiles": [
+            {
+                "label":       "Continuous Acceleration for Entire Time",
+                "distance_au": d1_m / _M_PER_AU,
+                "distance_lm": d1_m / _M_PER_LM,
+                "max_vel":     "N/A",
+            },
+            {
+                "label":       "Half Continuous Accel Time, Coast, Then Decelerate",
+                "distance_au": d2_m / _M_PER_AU,
+                "distance_lm": d2_m / _M_PER_LM,
+                "max_vel":     "N/A",
+            },
+            {
+                "label":       label3,
+                "distance_au": d3_m / _M_PER_AU,
+                "distance_lm": d3_m / _M_PER_LM,
+                "max_vel":     "Y" if cap3_reached else "N",
+            },
+        ],
+    }
+
+
+def compute_travel_time_system_au(accel_g: float, distance_au: float) -> dict:
+    """Brachistochrone travel time for three profiles given distance in AU.
+
+    Returns:
+        {accel_g, distance_au, distance_lm, profiles: [...]}
+    """
+    a_ms2      = accel_g * _G_MS2
+    d_m        = distance_au * _M_PER_AU
+    distance_lm = d_m / _M_PER_LM
+    profiles   = _brachistochrone_profiles(d_m, a_ms2)
+    return {
+        "accel_g":     accel_g,
+        "distance_au": distance_au,
+        "distance_lm": distance_lm,
+        "profiles":    profiles,
+    }
+
+
+def compute_travel_time_system_lm(accel_g: float, distance_lm: float) -> dict:
+    """Brachistochrone travel time for three profiles given distance in light minutes.
+
+    Returns:
+        {accel_g, distance_au, distance_lm, profiles: [...]}
+    """
+    a_ms2      = accel_g * _G_MS2
+    d_m        = distance_lm * _M_PER_LM
+    distance_au = d_m / _M_PER_AU
+    profiles   = _brachistochrone_profiles(d_m, a_ms2)
+    return {
+        "accel_g":     accel_g,
+        "distance_au": distance_au,
+        "distance_lm": distance_lm,
+        "profiles":    profiles,
+    }
+
+
+def compute_travel_time_solar_objects(
+        origin: str, destination: str,
+        accel_g: float, v_cap_pct: float = 3.0,
+        progress_callback=None) -> dict:
+    """Brachistochrone travel time between two solar system objects via JPL Horizons.
+
+    Returns:
+        {origin, destination, accel_g, distance_au, distance_lm,
+         v_cap_pct, profiles: [...]}
+        or {"error": str, "disambiguation": str (optional)}
+    """
+    origin_id = _resolve_horizons_id(origin)
+    dest_id   = _resolve_horizons_id(destination)
+
+    if progress_callback:
+        progress_callback(f"Querying JPL Horizons for '{origin}'…")
+    try:
+        ox, oy, oz = _get_heliocentric_vectors(origin_id)
+    except Exception as e:
+        err = str(e)
+        if "Multiple major-bodies" in err or "ambiguous" in err.lower():
+            return {"error": f"Ambiguous body name '{origin}'.\nTip: Use a more specific name or numeric ID (e.g. '499' for Mars).\n\n{err}"}
+        return {"error": f"Could not retrieve position for '{origin}': {err}"}
+
+    if progress_callback:
+        progress_callback(f"Querying JPL Horizons for '{destination}'…")
+    try:
+        dx, dy, dz = _get_heliocentric_vectors(dest_id)
+    except Exception as e:
+        err = str(e)
+        if "Multiple major-bodies" in err or "ambiguous" in err.lower():
+            return {"error": f"Ambiguous body name '{destination}'.\nTip: Use a more specific name or numeric ID (e.g. '501' for Io).\n\n{err}"}
+        return {"error": f"Could not retrieve position for '{destination}': {err}"}
+
+    distance_au = math.sqrt((dx - ox)**2 + (dy - oy)**2 + (dz - oz)**2)
+    if distance_au < 1e-9:
+        return {"error": "Origin and destination appear to be the same object (distance ≈ 0 AU)."}
+
+    a_ms2      = accel_g * _G_MS2
+    d_m        = distance_au * _M_PER_AU
+    distance_lm = d_m / _M_PER_LM
+    profiles   = _brachistochrone_profiles(d_m, a_ms2, v_cap_pct)
+
+    return {
+        "origin":      origin,
+        "destination": destination,
+        "accel_g":     accel_g,
+        "distance_au": distance_au,
+        "distance_lm": distance_lm,
+        "v_cap_pct":   v_cap_pct,
+        "profiles":    profiles,
+    }
+
+
+def compute_travel_time_custom_thrust(
+        origin: str, destination: str,
+        accel_g: float, burn_duration_s: float,
+        v_cap_pct: float = 3.0,
+        burn_value: float = None, burn_unit_label: str = "Days",
+        progress_callback=None) -> dict:
+    """Travel time between two solar system objects with custom thrust duration.
+
+    The ship accelerates for burn_duration_s seconds, coasts, then decelerates
+    for the same duration. Destination position is iteratively estimated.
+
+    Returns:
+        {origin, destination, distance_au, distance_lm, accel_g, a_ms2,
+         burn_value, burn_unit_label, burn_seconds, eff_burn_s,
+         v_cap_pct, v_cap_ms, vmax_reached, t_to_vmax_str,
+         v_coast_ms, v_coast_pct_c, fallback,
+         t_accel_hours, t_coast_hours, d_accel_au, d_accel_lm,
+         d_coast_au, d_coast_lm, t_total_hours, travel_time_str,
+         iterations_done}
+        or {"error": str}
+    """
+    import astropy.time
+
+    origin_id = _resolve_horizons_id(origin)
+    dest_id   = _resolve_horizons_id(destination)
+
+    a_ms2    = accel_g * _G_MS2
+    V_CAP_MS = (v_cap_pct / 100.0) * _C_MS
+
+    if progress_callback:
+        progress_callback(f"Querying JPL Horizons for '{origin}'…")
+    t0_jd = astropy.time.Time.now().jd
+    try:
+        ox, oy, oz = _get_heliocentric_vectors(origin_id, t0_jd)
+    except Exception as e:
+        err = str(e)
+        if "Multiple major-bodies" in err or "ambiguous" in err.lower():
+            return {"error": f"Ambiguous body name '{origin}'.\nTip: Use a numeric ID (e.g. '499' for Mars).\n\n{err}"}
+        return {"error": f"Could not retrieve position for '{origin}': {err}"}
+
+    def _compute_travel(d_m):
+        t_to_vmax   = V_CAP_MS / a_ms2
+        t_accel_eff = min(burn_duration_s, t_to_vmax)
+        v_coast     = a_ms2 * t_accel_eff
+        d_accel     = 0.5 * a_ms2 * t_accel_eff ** 2
+        if 2.0 * d_accel >= d_m:
+            t_half  = math.sqrt(d_m / a_ms2)
+            t_total = 2.0 * t_half
+            v_peak  = a_ms2 * t_half
+            return (t_total, t_half, 0.0, v_peak, False, d_m / 2.0, 0.0, True)
+        d_coast_m = d_m - 2.0 * d_accel
+        t_coast   = d_coast_m / v_coast
+        t_total   = 2.0 * t_accel_eff + t_coast
+        vmax_reached = burn_duration_s > t_to_vmax
+        return (t_total, t_accel_eff, t_coast, v_coast, vmax_reached,
+                d_accel, d_coast_m, False)
+
+    MAX_ITER = 10
+    CONVERGE_SEC = 60.0
+
+    if progress_callback:
+        progress_callback(f"Querying JPL Horizons for '{destination}' (iteration 1)…")
+    try:
+        dx, dy, dz = _get_heliocentric_vectors(dest_id, t0_jd)
+    except Exception as e:
+        err = str(e)
+        if "Multiple major-bodies" in err or "ambiguous" in err.lower():
+            return {"error": f"Ambiguous body name '{destination}'.\nTip: Use a numeric ID.\n\n{err}"}
+        return {"error": f"Could not retrieve position for '{destination}': {err}"}
+
+    distance_au = math.sqrt((dx - ox)**2 + (dy - oy)**2 + (dz - oz)**2)
+    if distance_au < 1e-9:
+        return {"error": "Origin and destination appear to be the same object (distance ≈ 0 AU)."}
+
+    d_m = distance_au * _M_PER_AU
+    res = _compute_travel(d_m)
+    prev_t_total = res[0]
+    iterations_done = 1
+
+    for iteration in range(2, MAX_ITER + 1):
+        arrival_jd = t0_jd + prev_t_total / 86400.0
+        if progress_callback:
+            progress_callback(f"Querying JPL Horizons for '{destination}' (iteration {iteration})…")
+        try:
+            dx, dy, dz = _get_heliocentric_vectors(dest_id, arrival_jd)
+        except Exception:
+            break
+        new_dist = math.sqrt((dx - ox)**2 + (dy - oy)**2 + (dz - oz)**2)
+        if new_dist < 1e-9:
+            break
+        d_m = new_dist * _M_PER_AU
+        distance_au = new_dist
+        res = _compute_travel(d_m)
+        iterations_done = iteration
+        if abs(res[0] - prev_t_total) < CONVERGE_SEC:
+            break
+        prev_t_total = res[0]
+
+    (t_total_sec, t_accel_eff, t_coast_sec, v_coast_ms, vmax_reached,
+     d_accel_m, d_coast_m, fallback) = res
+
+    distance_lm   = d_m / _M_PER_LM
+    t_total_hours = t_total_sec / 3600.0
+    t_accel_hours = t_accel_eff / 3600.0
+    t_coast_hours = t_coast_sec / 3600.0
+    d_accel_au    = d_accel_m / _M_PER_AU
+    d_accel_lm    = d_accel_m / _M_PER_LM
+    d_coast_au    = d_coast_m / _M_PER_AU
+    d_coast_lm    = d_coast_m / _M_PER_LM
+    v_coast_pct_c = (v_coast_ms / _C_MS) * 100.0
+    t_to_vmax_sec = V_CAP_MS / a_ms2
+
+    if vmax_reached:
+        t_to_vmax_str = format_travel_time(t_to_vmax_sec / 3600.0)
+    else:
+        t_to_vmax_str = "N/A"
+
+    if fallback:
+        eff_burn_hours = t_accel_eff / 3600.0
+        eff_burn_str   = f"{eff_burn_hours:.4f} Hours (midpoint reached)"
+    else:
+        unit_seconds = {"Hours": 3600.0, "Days": 86400.0, "Weeks": 604800.0}
+        eff_val = t_accel_eff / unit_seconds.get(burn_unit_label, 86400.0)
+        eff_burn_str = f"{eff_val:.4f} {burn_unit_label}"
+
+    return {
+        "origin":           origin,
+        "destination":      destination,
+        "distance_au":      distance_au,
+        "distance_lm":      distance_lm,
+        "accel_g":          accel_g,
+        "a_ms2":            a_ms2,
+        "burn_value":       burn_value,
+        "burn_unit_label":  burn_unit_label,
+        "burn_seconds":     burn_duration_s,
+        "eff_burn_str":     eff_burn_str,
+        "v_cap_pct":        v_cap_pct,
+        "v_cap_ms":         V_CAP_MS,
+        "vmax_reached":     vmax_reached,
+        "t_to_vmax_str":    t_to_vmax_str,
+        "v_coast_ms":       v_coast_ms,
+        "v_coast_pct_c":    v_coast_pct_c,
+        "fallback":         fallback,
+        "t_accel_hours":    t_accel_hours,
+        "t_coast_hours":    t_coast_hours,
+        "d_accel_au":       d_accel_au,
+        "d_accel_lm":       d_accel_lm,
+        "d_coast_au":       d_coast_au,
+        "d_coast_lm":       d_coast_lm,
+        "t_total_hours":    t_total_hours,
+        "travel_time_str":  format_travel_time(t_total_hours),
+        "iterations_done":  iterations_done,
+    }
+
+
 def compute_travel_time_times_c(distance_ly: float, times_c: float) -> dict:
     """Time to travel a given number of light years at a given multiple of c.
 

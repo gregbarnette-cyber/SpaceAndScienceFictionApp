@@ -54,40 +54,40 @@ The main menu loop calls whichever function the user picks, then returns to the 
 ```
   Star Databases                                    Calculators
   --------------                                    -----------
-1. SIMBAD Lookup Query                              18. Distance Between 2 Stars
-2. NASA Exoplanet Archive: All Tables               19. Stars within a Certain Distance of Sol
-3. NASA Exoplanet Archive: Planetary Systems        20. Stars within a Certain Distance of a Star
-4. NASA Exoplanet Archive: HWO ExEP Stars           21. Light Years per Hour to X Times the Speed of Light
-5. NASA Exoplanet Archive: Mission Exocat Stars     22. X Times the Speed of Light to Light Years per Hour
-6. Habitable Worlds Catalog                         23. Distance Traveled at a certain ly/hr within a certain time
-7. Open Exoplanet Catalogue                         24. Distance Traveled at a certain X times the speed of light
-8. Exoplanet EU Encyclopaedia                       25. Time to Travel # of Light Years at X LY/HR
-                                                    26. Time to Travel # of Light Years at X Times the Speed of Light
-  Star System Regions                               27. Travel Time Between 2 Stars (LYs/HR)
-  ------------------                                28. Travel Time Between 2 Stars (X Times the Speed of Light)
-9.  Star System Regions (SIMBAD)                    29. Distance Traveled at an Acceleration Within a Certain Time
-10. Star System Regions (Semi-SIMBAD)               30. Travel Time Between 2 System Objs (Generic, Distance in AUs)
-11. Star System Regions (Manual)                    31. Travel Time Between 2 System Objs (Generic, Distance in LMs)
-                                                    32. Travel Time Between 2 System Objs (Planet/Moon/Asteroid)
-  Science                                           33. Travel Time Between 2 System Objs (Custom Thrust Duration)
-  -------
-12. Solar System Planet/Dwarf Planets/Asteroids     Planetary Equations
-13. Main Sequence Star Properties                   -------------------
-14. Sol Solar System Regions                        34. Planetary Orbit Periastron & Apastron Distance Calculator
-                                                    35. Orbital Distance of an Earth-sized Moon with a 24 hour day
-  Science Fiction                                   36. Orbital Distance of an Earth-sized Moon with a X hour day
-  ---------------
-15. Honorverse Hyper Limits by Spectral Class       Rotating Habitat Equations
-16. Honorverse Acceleration by Mass Table           --------------------------
-17. Honorverse Effective Speed by Hyper Band        37. Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)
-                                                    38. Distance from Point X to the Center of Rotation (m)
-  Utilities                                         39. Rotation Rate at Point X (rpm)
-  ---------
-50. Star Systems CSV Query                          Misc. Equations
-Q.  Quit                                            ---------------
-                                                    40. Habitable Zone Calculator
-                                                    41. Habitable Zone Calculator w/SMA
-                                                    42. Star Luminosity
+1. SIMBAD Lookup Query                              17. Distance Between 2 Stars
+2. NASA Exoplanet Archive: All Tables               18. Stars within a Certain Distance of Sol
+3. NASA Exoplanet Archive: Planetary Systems        19. Stars within a Certain Distance of a Star
+4. NASA Exoplanet Archive: HWO ExEP Stars           20. Light Years per Hour to X Times the Speed of Light
+5. NASA Exoplanet Archive: Mission Exocat Stars     21. X Times the Speed of Light to Light Years per Hour
+6. Habitable Worlds Catalog                         22. Distance Traveled at a certain ly/hr within a certain time
+7. Open Exoplanet Catalogue                         23. Distance Traveled at a certain X times the speed of light
+                                                    24. Time to Travel # of Light Years at X LY/HR
+  Star System Regions                               25. Time to Travel # of Light Years at X Times the Speed of Light
+  ------------------                                26. Travel Time Between 2 Stars (LYs/HR)
+8.  Star System Regions (SIMBAD)                    27. Travel Time Between 2 Stars (X Times the Speed of Light)
+9.  Star System Regions (Semi-SIMBAD)               28. Distance Traveled at an Acceleration Within a Certain Time
+10. Star System Regions (Manual)                    29. Travel Time Between 2 System Objs (Generic, Distance in AUs)
+                                                    30. Travel Time Between 2 System Objs (Generic, Distance in LMs)
+  Science                                           31. Travel Time Between 2 System Objs (Planet/Moon/Asteroid)
+  -------                                           32. Travel Time Between 2 System Objs (Custom Thrust Duration)
+11. Solar System Planet/Dwarf Planets/Asteroids
+12. Main Sequence Star Properties                   Planetary Equations
+13. Sol Solar System Regions                        -------------------
+                                                    33. Planetary Orbit Periastron & Apastron Distance Calculator
+  Science Fiction                                   34. Orbital Distance of an Earth-sized Moon with a 24 hour day
+  ---------------                                   35. Orbital Distance of an Earth-sized Moon with a X hour day
+14. Honorverse Hyper Limits by Spectral Class
+15. Honorverse Acceleration by Mass Table           Rotating Habitat Equations
+16. Honorverse Effective Speed by Hyper Band        --------------------------
+                                                    36. Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)
+  Utilities                                         37. Distance from Point X to the Center of Rotation (m)
+  ---------                                         38. Rotation Rate at Point X (rpm)
+50. Star Systems CSV Query
+Q.  Quit                                            Misc. Equations
+                                                    ---------------
+                                                    39. Habitable Zone Calculator
+                                                    40. Habitable Zone Calculator w/SMA
+                                                    41. Star Luminosity
 ```
 
 @docs/star-databases.md

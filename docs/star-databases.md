@@ -1,6 +1,6 @@
 # Star Databases Feature Documentation
 
-Options 1–8 and 50. All sections here involve querying external star/exoplanet data sources. They change together when APIs or data schemas update.
+Options 1–7 and 50. All sections here involve querying external star/exoplanet data sources. They change together when APIs or data schemas update.
 
 ## SIMBAD Query Feature
 
@@ -126,25 +126,6 @@ Options 1–8 and 50. All sections here involve querying external star/exoplanet
   - **Calculated Habitable Zone** via `_display_habitable_zone()` using a synthetic row with `st_teff` and `st_rad` from OEC star fields.
 - If `star_elems` is empty (system-level planets, no host star), prints a note and skips star/planet tables.
 - If no match found, prints a message and returns to menu.
-
-## Exoplanet EU Encyclopaedia Feature
-
-- Menu option 8: `query_exoplanet_eu()` — runs the same SIMBAD lookup, then queries the Exoplanet Encyclopaedia (exoplanet.eu) only.
-- Data source: downloaded once per session via `requests.get("https://exoplanet.eu/catalog/csv/")` — a 79-column CSV with ~8,174 planet rows. Cached in module-level `_EU_DATA = (rows_list, star_name_index)`.
-- `_load_eu()` fetches the CSV, parses with `csv.DictReader`, and builds a case-insensitive `{star_name_lower: [row, ...]}` index.
-- `_get_eu_candidates(designations)` builds an ordered candidate list from the designations dict (HD → GJ → HR → WASP → HAT_P → Kepler → TOI → K2 → CoRoT → COCONUTS → KOI → TIC → HIP → 2MASS → NAME → MAIN_ID) with normalizations:
-  - Same Kepler/K2/WASP/HAT-P normalizations as OEC
-  - For WASP-N, HAT-P-N, HD N: also tries `"<name> A"` as a fallback (exoplanet.eu often appends " A" to single-star systems)
-  - NAME strips `"NAME "` prefix; MAIN_ID strips `"* "`, `"V* "`, `"NAME "` prefixes (enabling e.g. `"* tau Cet"` → `"tau Cet"` to match `star_name = "tau Cet"`)
-- `_query_eu(designations)` returns a list of planet row dicts (all planets for matched star, sorted by `semi_major_axis` ascending) or `None`.
-- `_eu_val(row, col)` returns stripped non-empty string or None; treats `"nan"` as None.
-- Renders: SIMBAD star designations + info table, then `_display_eu_results()` which includes:
-  - Star Name line (`star_name` from EU data + HD/HIP/HR/GJ from designations dict)
-  - **Star Properties table** columns: Spectral Type (`star_sp_type`), MagV (3dp, `mag_v`), Temp (int K, `star_teff`), Mass (3dp Msun, `star_mass`), Radius (3dp Rsun, `star_radius`), Fe/H (3dp, `star_metallicity`), Age (2dp Gyr, `star_age`), Parsecs (4dp, `star_distance`), LYs (parsecs × 3.26156, 4dp).
-  - **Planet Properties table** — one row per planet sorted by `semi_major_axis`: `#`, Planet Name (`name`), Mass(J) (4dp), Mass(E) (2dp, ×317.8), Rad(J) (4dp), Rad(E) (2dp, ×11.2), Period (3dp days, `orbital_period`), Distance as peri-SMA-apo AU (if ecc missing: `N/A - SMA - N/A AU`), Eccentricity (3dp), Temp (int K, `temp_calculated`), Method (`detection_type`), Year (`discovered`), Status (`planet_status`).
-  - **Calculated Habitable Zone** via `_display_habitable_zone()` using `star_teff` and `star_radius` from the first planet row.
-- If no match found, prints a message and returns to menu.
-- Note: `pyExoplaneteu` is listed in `requirements.txt` but not used directly (the library has a CSV format compatibility bug); the feature fetches the CSV directly via `requests`.
 
 ## Star Systems CSV Query Feature
 

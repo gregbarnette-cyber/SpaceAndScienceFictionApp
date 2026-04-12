@@ -25,7 +25,8 @@ class MainWindow(QMainWindow):
 
         # ── Navigation tree ───────────────────────────────────────────────────
         self.nav_tree = QTreeWidget()
-        self.nav_tree.setFixedWidth(220)
+        self.nav_tree.setMinimumWidth(280)
+        self.nav_tree.setMaximumWidth(480)
         self.nav_tree.setHeaderHidden(True)
 
         # ── Content stack ─────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.stack)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
+        splitter.setSizes([300, 800])
         self.setCentralWidget(splitter)
 
         # ── Populate nav tree ─────────────────────────────────────────────────

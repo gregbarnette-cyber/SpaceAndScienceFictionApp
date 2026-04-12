@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QTableView, QTextEdit, QLabel,
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
-from PySide6.QtCore import Qt, QObject, QThread, Signal
+from PySide6.QtCore import Qt, QObject, QThread, Signal, QTimer
 
 
 class Worker(QObject):
@@ -17,10 +17,12 @@ class Worker(QObject):
         thread.started.connect(worker.run)
         worker.finished.connect(callback)   # receives result dict
         worker.error.connect(err_callback)  # receives error str
+        worker.progress.connect(status_cb)  # receives intermediate status strings
     """
 
     finished = Signal(object)   # emits the return value of fn(*args, **kwargs)
     error    = Signal(str)      # emits the exception message on failure
+    progress = Signal(str)      # emits intermediate status messages
 
     def __init__(self, fn, *args, **kwargs):
         super().__init__()
@@ -31,9 +33,12 @@ class Worker(QObject):
     def run(self):
         try:
             result = self._fn(*self._args, **self._kwargs)
-            self.finished.emit(result)
         except Exception as e:
-            self.error.emit(str(e))
+            # Route exceptions through finished so tab-based panels can display
+            # the error inside their own result area instead of triggering
+            # _on_error → clear_results() which would destroy the tabs widget.
+            result = {"error": f"{type(e).__name__}: {e}"}
+        self.finished.emit(result)
 
 
 class ResultPanel(QWidget):
@@ -42,12 +47,22 @@ class ResultPanel(QWidget):
     Subclasses build their input form in build_inputs() and implement
     calculate() which calls a core function and passes the result to render().
 
+    Class-level thread registry keeps QThread wrappers alive until the OS
+    thread has fully exited — prevents "QThread destroyed while running" GC
+    errors that occur when CPython's refcount immediately destroys a wrapper
+    while Qt's internal running-flag is still true.
+
     Layout:
         - build_inputs() places widgets above the results area (form rows,
           calculate button, etc.)
         - build_results_area() creates a QTextEdit in the lower portion
           (panels that prefer QTableView override or supplement this)
     """
+
+    # Class-level registry: keeps thread wrappers alive across all instances.
+    # Entries are removed 500 ms after thread.finished, giving the OS thread
+    # time to fully exit before Python GC can call QThread::~QThread().
+    _live_threads: list = []
 
     def __init__(self, window):
         super().__init__()
@@ -120,39 +135,66 @@ class ResultPanel(QWidget):
 
     # ── Background threading (Phase C+) ──────────────────────────────────────
 
-    def run_in_background(self, fn, *args, on_result=None, **kwargs):
+    def run_in_background(self, fn, *args, on_result=None, on_progress=None, **kwargs):
         """Execute fn(*args, **kwargs) in a QThread.
 
         Disables run_btn (if present), shows "Working…" in the status bar,
         then delivers the result to on_result (or self.render) on the main
         thread when the worker finishes.
 
-        Stores self._thread and self._worker to prevent premature GC.
+        on_progress: optional callable(str) for intermediate status updates.
+          If None, progress messages are shown in the status bar.
+
+        Active threads are kept in self._bg_threads to prevent premature GC.
+        Chained calls (e.g. SIMBAD → database) each create their own thread;
+        using a list ensures the first thread is not destroyed while it is
+        still winding down when the second call overwrites self._thread.
         """
         self.set_status("Working…")
         if hasattr(self, "run_btn"):
             self.run_btn.setEnabled(False)
 
-        self._thread = QThread()
-        self._worker = Worker(fn, *args, **kwargs)
-        self._worker.moveToThread(self._thread)
+        thread = QThread()
+        worker = Worker(fn, *args, **kwargs)
+        worker.moveToThread(thread)
 
-        callback = on_result if on_result is not None else self.render
+        # Class-level registry keeps BOTH thread and worker alive until the OS
+        # thread has fully exited.  Storing only thread is insufficient: if
+        # self._worker is overwritten before the thread finishes (e.g. chained
+        # SIMBAD → catalog calls), the worker's Python ref-count drops to zero
+        # and CPython destroys it.  Destroying the worker disconnects its
+        # finished signal, so thread.quit() is never called and the callback
+        # is never delivered — the thread idles forever and prints
+        # "QThread: Destroyed while thread is still running" on app exit.
+        pair = (thread, worker)
+        ResultPanel._live_threads.append(pair)
 
-        self._thread.started.connect(self._worker.run)
+        # Keep per-instance references for callers that inspect them.
+        self._thread = thread
+        self._worker = worker
+
+        callback    = on_result   if on_result   is not None else self.render
+        progress_cb = on_progress if on_progress is not None else self.set_status
+
+        thread.started.connect(worker.run)
         # QueuedConnection ensures callback and error handler are always
-        # delivered on the main thread, even if the worker signal fires
-        # from the worker thread (PySide6 can use DirectConnection for
-        # plain Python callables with AutoConnection, which would crash
-        # because Qt widgets must only be touched from the main thread).
-        self._worker.finished.connect(callback,          Qt.ConnectionType.QueuedConnection)
-        self._worker.finished.connect(self._thread.quit)
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._worker.error.connect(self._on_error,       Qt.ConnectionType.QueuedConnection)
-        self._thread.finished.connect(self._thread.deleteLater)
-        self._thread.finished.connect(self._on_thread_done)
+        # delivered on the main thread.
+        worker.finished.connect(callback,       Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(self._on_error,    Qt.ConnectionType.QueuedConnection)
+        worker.progress.connect(progress_cb,    Qt.ConnectionType.QueuedConnection)
+        thread.finished.connect(self._on_thread_done)
+        # Remove pair from registry after a 500 ms grace period; by then the
+        # OS thread is guaranteed to have fully exited on all platforms.
+        thread.finished.connect(
+            lambda p=pair: QTimer.singleShot(
+                500,
+                lambda: (ResultPanel._live_threads.remove(p)
+                         if p in ResultPanel._live_threads else None)
+            )
+        )
 
-        self._thread.start()
+        thread.start()
 
     def _on_error(self, msg: str):
         self.set_status(f"Error: {msg}")

@@ -2349,320 +2349,6 @@ def query_open_exoplanet_catalogue():
     input("\nPress Enter to Return to the Main Menu")
 
 
-# ─── Exoplanet EU Encyclopaedia ───────────────────────────────────────────────
-
-import csv as _csv
-import io as _io
-import math as _math
-
-_EU_DATA = None  # (rows_list, {star_name_lower: [row, ...]})
-_EU_CSV_URL = "https://exoplanet.eu/catalog/csv/"
-
-
-def _load_eu():
-    """Download exoplanet.eu CSV and build star_name index. Cached per session."""
-    global _EU_DATA
-    if _EU_DATA is not None:
-        return _EU_DATA
-
-    resp = requests.get(_EU_CSV_URL, timeout=30)
-    resp.raise_for_status()
-    reader = _csv.DictReader(_io.StringIO(resp.text))
-    rows = list(reader)
-
-    # Build case-insensitive star_name index
-    index = {}
-    for row in rows:
-        key = row.get("star_name", "").strip().lower()
-        if key:
-            index.setdefault(key, []).append(row)
-
-    _EU_DATA = (rows, index)
-    return _EU_DATA
-
-
-def _get_eu_candidates(designations):
-    """Return ordered list of star name candidates to try against the exoplanet.eu index."""
-    candidates = []
-
-    for key in ("HD", "GJ", "HR", "WASP", "HAT_P", "Kepler", "TOI",
-                "K2", "CoRoT", "COCONUTS", "KOI", "TIC", "HIP", "2MASS"):
-        val = designations.get(key)
-        if val:
-            s = str(val).strip()
-            # Normalize space-separated mission IDs to dash form
-            s = re.sub(r"(?i)^(k2)\s+(\d)", r"K2-\2", s)
-            s = re.sub(r"(?i)^(kepler)\s+(\d)", r"Kepler-\2", s)
-            s = re.sub(r"(?i)^(hat-p)\s+(\d)", r"HAT-P-\2", s)
-            # WASP-94A → WASP-94 A
-            s = re.sub(r"(?i)^(WASP-\d+)([AB])$", r"\1 \2", s)
-            candidates.append(s)
-            # exoplanet.eu often appends " A" to single-star WASP systems
-            # e.g. SIMBAD "WASP-12" → try "WASP-12 A" as well
-            if re.match(r"(?i)^WASP-\d+$", s):
-                candidates.append(s + " A")
-            if re.match(r"(?i)^HAT-P-\d+$", s):
-                candidates.append(s + " A")
-            if re.match(r"(?i)^HD \d+$", s):
-                candidates.append(s + " A")
-
-    # NAME designation: strip "NAME " prefix
-    name_val = str(designations.get("NAME") or "").strip()
-    if name_val.upper().startswith("NAME "):
-        candidates.append(name_val[5:].strip())
-    elif name_val:
-        candidates.append(name_val)
-
-    # MAIN_ID: strip leading "* ", "V* ", "NAME " SIMBAD prefixes
-    main_id = str(designations.get("MAIN_ID") or "").strip()
-    for prefix in ("NAME ", "V* ", "* "):
-        if main_id.upper().startswith(prefix.upper()):
-            main_id = main_id[len(prefix):].strip()
-            break
-    if main_id:
-        candidates.append(main_id)
-
-    return candidates
-
-
-def _query_eu(designations):
-    """Search exoplanet.eu for designations; return sorted list of planet rows or None."""
-    _, index = _load_eu()
-    candidates = _get_eu_candidates(designations)
-
-    for name in candidates:
-        key = name.lower()
-        if key in index:
-            rows = index[key]
-            # Sort by semi_major_axis ascending (N/A last)
-            def sort_key(r):
-                try:
-                    return (0, float(r.get("semi_major_axis", "") or ""))
-                except (ValueError, TypeError):
-                    return (1, 0)
-            return sorted(rows, key=sort_key)
-
-    return None
-
-
-def _eu_val(row, col):
-    """Return stripped non-empty string value from row, or None if missing/NaN."""
-    v = row.get(col, "")
-    if v is None:
-        return None
-    s = str(v).strip()
-    if not s or s.lower() == "nan":
-        return None
-    return s
-
-
-def _display_eu_star_properties(rows):
-    """Print Star Properties table using the first matching planet row for star fields."""
-    row = rows[0]
-
-    def _fmt_f(col, dp):
-        v = _eu_val(row, col)
-        try:
-            return f"{float(v):.{dp}f}"
-        except (TypeError, ValueError):
-            return "N/A"
-
-    def _fmt_i(col):
-        v = _eu_val(row, col)
-        try:
-            return str(int(float(v)))
-        except (TypeError, ValueError):
-            return "N/A"
-
-    dist = _eu_val(row, "star_distance")
-    parsecs_str = _fmt_f("star_distance", 4)
-    ly_str = "N/A"
-    if dist:
-        try:
-            ly_str = f"{float(dist) * 3.26156:.4f}"
-        except (TypeError, ValueError):
-            pass
-
-    _print_table(
-        headers1=["Spectral", "MagV",           "Temp",       "Mass",        "Radius",       "Fe/H",           "Age",         "Parsecs",     "LYs"],
-        headers2=["Type",     "",               "",           "",            "",             "",               "",            "",            ""],
-        rows=[[
-            _eu_val(row, "star_sp_type") or "N/A",
-            _fmt_f("mag_v", 3),
-            _fmt_i("star_teff"),
-            _fmt_f("star_mass", 3),
-            _fmt_f("star_radius", 3),
-            _fmt_f("star_metallicity", 3),
-            _fmt_f("star_age", 2),
-            parsecs_str,
-            ly_str,
-        ]],
-        aligns=["l", "r", "r", "r", "r", "r", "r", "r", "r"],
-    )
-    print()
-
-
-def _display_eu_planet_properties(rows):
-    """Print Planet Properties table; one row per planet."""
-
-    def _fv(v):
-        try:
-            f = float(v)
-            return None if _math.isnan(f) else f
-        except (TypeError, ValueError):
-            return None
-
-    def _fmt_f(v, dp):
-        f = _fv(v)
-        return f"{f:.{dp}f}" if f is not None else "N/A"
-
-    def _fmt_i(v):
-        f = _fv(v)
-        return str(int(f)) if f is not None else "N/A"
-
-    planet_rows = []
-    for idx, row in enumerate(rows, 1):
-        pname   = _eu_val(row, "name") or "N/A"
-        mass_j  = _fv(_eu_val(row, "mass"))
-        mass_j_s = f"{mass_j:.4f}" if mass_j is not None else "N/A"
-        mass_e   = f"{mass_j * 317.8:.2f}" if mass_j is not None else "N/A"
-
-        rad_j   = _fv(_eu_val(row, "radius"))
-        rad_j_s  = f"{rad_j:.4f}" if rad_j is not None else "N/A"
-        rad_e    = f"{rad_j * 11.2:.2f}" if rad_j is not None else "N/A"
-
-        period  = _fmt_f(_eu_val(row, "orbital_period"), 3)
-        temp_s  = _fmt_i(_eu_val(row, "temp_calculated"))
-
-        sma_v   = _fv(_eu_val(row, "semi_major_axis"))
-        ecc_v   = _fv(_eu_val(row, "eccentricity"))
-        ecc_s   = f"{ecc_v:.3f}" if ecc_v is not None else "N/A"
-
-        if sma_v is not None:
-            sma_s = f"{sma_v:.3f}"
-            if ecc_v is not None:
-                peri = f"{sma_v * (1 - ecc_v):.3f}"
-                apo  = f"{sma_v * (1 + ecc_v):.3f}"
-                dist_s = f"{peri} - {sma_s} - {apo} AU"
-            else:
-                dist_s = f"N/A - {sma_s} - N/A AU"
-        else:
-            dist_s = "N/A"
-
-        method  = _eu_val(row, "detection_type") or "N/A"
-        year    = _eu_val(row, "discovered") or "N/A"
-        status  = _eu_val(row, "planet_status") or "N/A"
-
-        planet_rows.append([
-            str(idx), pname, mass_j_s, mass_e, rad_j_s, rad_e,
-            period, dist_s, ecc_s, temp_s, method, year, status,
-        ])
-
-    _print_table(
-        headers1=["#", "Planet Name", "Mass(J)",  "Mass(E)", "Rad(J)",  "Rad(E)", "Period",   "Distance (Peri - SMA - Apo)", "Eccentricity", "Temp", "Method",     "Year", "Status"],
-        headers2=["",  "",            "",          "",        "",        "",       "(days)",   "",                           "",             "",    "",           "",    ""],
-        rows=planet_rows,
-        aligns=["r", "l", "r", "r", "r", "r", "r", "r", "r", "r", "l", "r", "l"],
-    )
-    print()
-
-
-def _display_eu_results(designations, rows):
-    """Render all Exoplanet EU result tables."""
-
-    # ── Title ─────────────────────────────────────────────────────────────────
-    title  = "# Exoplanet EU Encyclopaedia #"
-    border = "#" * len(title)
-    print(border)
-    print(title)
-    print(border)
-    print()
-
-    # ── Star Name line ─────────────────────────────────────────────────────────
-    eu_star = rows[0].get("star_name", "").strip()
-    id_parts = [str(designations[k]) for k in ("HD", "HIP", "HR", "GJ")
-                if designations.get(k)]
-    if id_parts:
-        star_line = f"Star Name: {eu_star}  ({', '.join(id_parts)})"
-    else:
-        main_id = str(designations.get("MAIN_ID") or "").strip().lstrip("*").strip()
-        star_line = f"Star Name: {eu_star}  ({main_id})" if main_id and main_id != eu_star else f"Star Name: {eu_star}"
-    sep = "-" * len(star_line)
-    print(sep)
-    print(star_line)
-    print(sep)
-    print()
-
-    # ── Star Properties ───────────────────────────────────────────────────────
-    _display_eu_star_properties(rows)
-
-    # ── Planet Properties ─────────────────────────────────────────────────────
-    _display_eu_planet_properties(rows)
-
-    # ── Calculated Habitable Zone ─────────────────────────────────────────────
-    row = rows[0]
-    hz_row = {
-        "st_teff": _eu_val(row, "star_teff"),
-        "st_rad":  _eu_val(row, "star_radius"),
-        "st_lum":  None,
-    }
-    _display_habitable_zone([hz_row])
-
-
-def query_exoplanet_eu():
-    """Query the Exoplanet EU Encyclopaedia for a star's exoplanet data."""
-    os.system("cls" if os.name == "nt" else "clear")
-    designation = input(
-        "\nEnter star designation (e.g., 'tau Ceti', 'HD 209458', 'WASP-12'): "
-    ).strip()
-
-    if not designation:
-        print("No designation entered.")
-        input("\nPress Enter to Return to the Main Menu")
-        return
-
-    # ── SIMBAD lookup ─────────────────────────────────────────────────────────
-    print(f"\nQuerying SIMBAD for '{designation}'...\n")
-    custom_simbad = Simbad()
-    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
-
-    try:
-        simbad_result = custom_simbad.query_object(designation)
-        ids_result    = Simbad.query_objectids(designation)
-    except Exception as e:
-        print(f"Error querying SIMBAD: {e}")
-        input("\nPress Enter to Return to the Main Menu")
-        return
-
-    if simbad_result is None:
-        print(f"No results found in SIMBAD for '{designation}'.")
-        input("\nPress Enter to Return to the Main Menu")
-        return
-
-    designations = _parse_designations(simbad_result, ids_result)
-
-    # ── Load and query Exoplanet EU ───────────────────────────────────────────
-    print("Loading Exoplanet EU Encyclopaedia...")
-    try:
-        eu_rows = _query_eu(designations)
-    except Exception as e:
-        print(f"Error loading Exoplanet EU Encyclopaedia: {e}")
-        input("\nPress Enter to Return to the Main Menu")
-        return
-
-    if eu_rows is None:
-        print("No data found in the Exoplanet EU Encyclopaedia for this star.")
-        input("\nPress Enter to Return to the Main Menu")
-        return
-
-    # ── Display ───────────────────────────────────────────────────────────────
-    os.system("cls" if os.name == "nt" else "clear")
-    _display_results(simbad_result, designations)
-    _display_eu_results(designations, eu_rows)
-
-    input("\nPress Enter to Return to the Main Menu")
-
-
 # ─── Star Systems CSV Query ───────────────────────────────────────────────────
 
 _CSV_PREFIX_MAP = [
@@ -5735,60 +5421,59 @@ MENU_OPTIONS = {
     "5":  ("NASA Exoplanet Archive: Mission Exocat Stars",            query_mission_exocat_stars),
     "6":  ("Habitable Worlds Catalog",                                query_habitable_worlds_catalog),
     "7":  ("Open Exoplanet Catalogue",                                query_open_exoplanet_catalogue),
-    "8":  ("Exoplanet EU Encyclopaedia",                              query_exoplanet_eu),
     # --- Star System Regions (left column) ---
-    "9":  ("Star System Regions (SIMBAD)",                            query_star_system_regions),
-    "10": ("Star System Regions (Semi-SIMBAD)",                       query_star_system_regions_semi_manual),
-    "11": ("Star System Regions (Manual)",                            query_star_system_regions_manual),
+    "8":  ("Star System Regions (SIMBAD)",                            query_star_system_regions),
+    "9":  ("Star System Regions (Semi-SIMBAD)",                       query_star_system_regions_semi_manual),
+    "10": ("Star System Regions (Manual)",                            query_star_system_regions_manual),
     # --- Science (left column) ---
-    "12": ("Solar System Planet/Dwarf Planets/Asteroids Data Table",  solar_system_data_tables),
-    "13": ("Main Sequence Star Properties",                           main_sequence_star_properties),
-    "14": ("Sol Solar System Regions",                                sol_solar_system_regions),
+    "11": ("Solar System Planet/Dwarf Planets/Asteroids Data Table",  solar_system_data_tables),
+    "12": ("Main Sequence Star Properties",                           main_sequence_star_properties),
+    "13": ("Sol Solar System Regions",                                sol_solar_system_regions),
     # --- Science Fiction (left column) ---
-    "15": ("Honorverse Hyper Limits by Spectral Class Table",         honorverse_hyper_limits),
-    "16": ("Honorverse Acceleration by Mass Table",                   honorverse_acceleration_by_mass),
-    "17": ("Honorverse Effective Speed by Hyper Band Table",          honorverse_effective_speed),
+    "14": ("Honorverse Hyper Limits by Spectral Class Table",         honorverse_hyper_limits),
+    "15": ("Honorverse Acceleration by Mass Table",                   honorverse_acceleration_by_mass),
+    "16": ("Honorverse Effective Speed by Hyper Band Table",          honorverse_effective_speed),
     # --- Calculators (right column) ---
-    "18": ("Distance Between 2 Stars",                                query_distance_between_stars),
-    "19": ("Stars within a Certain Distance of Sol",                  query_stars_within_distance),
-    "20": ("Stars within a Certain Distance of a Star",               query_stars_within_distance_of_star),
-    "21": ("Light Years per Hour to X Times the Speed of Light",      ly_per_hour_to_speed_of_light),
-    "22": ("X Times the Speed of Light to Light Years per Hour",      speed_of_light_to_ly_per_hour),
-    "23": ("Distance Traveled at a certain ly/hr within a certain time", distance_traveled_ly_per_hour),
-    "24": ("Distance Traveled at a certain X times the speed of light within a certain time", distance_traveled_times_c),
-    "25": ("Time to Travel # of Light Years at X LY/HR",              time_to_travel_ly_at_ly_per_hour),
-    "26": ("Time to Travel # of Light Years at X Times the Speed of Light", time_to_travel_ly_at_times_c),
-    "27": ("Travel Time Between 2 Stars (LYs/HR)",                    travel_time_between_stars_ly_hr),
-    "28": ("Travel Time Between 2 Stars (X Times the Speed of Light)", travel_time_between_stars_times_c),
-    "29": ("Distance Traveled at an Acceleration Within a Certain Time", distance_traveled_at_acceleration),
-    "30": ("Travel Time Between 2 System Objs (Generic, Distance in AUs)", travel_time_between_system_objects),
-    "31": ("Travel Time Between 2 System Objs (Generic, Distance in LMs)", travel_time_between_system_objects_lm),
-    "32": ("Travel Time Between 2 System Objs (Planet/Moon/Asteroid)", travel_time_between_solar_system_objects),
-    "33": ("Travel Time Between 2 System Objs (Custom Thrust Duration)", travel_time_custom_thrust_duration),
+    "17": ("Distance Between 2 Stars",                                query_distance_between_stars),
+    "18": ("Stars within a Certain Distance of Sol",                  query_stars_within_distance),
+    "19": ("Stars within a Certain Distance of a Star",               query_stars_within_distance_of_star),
+    "20": ("Light Years per Hour to X Times the Speed of Light",      ly_per_hour_to_speed_of_light),
+    "21": ("X Times the Speed of Light to Light Years per Hour",      speed_of_light_to_ly_per_hour),
+    "22": ("Distance Traveled at a certain ly/hr within a certain time", distance_traveled_ly_per_hour),
+    "23": ("Distance Traveled at a certain X times the speed of light within a certain time", distance_traveled_times_c),
+    "24": ("Time to Travel # of Light Years at X LY/HR",              time_to_travel_ly_at_ly_per_hour),
+    "25": ("Time to Travel # of Light Years at X Times the Speed of Light", time_to_travel_ly_at_times_c),
+    "26": ("Travel Time Between 2 Stars (LYs/HR)",                    travel_time_between_stars_ly_hr),
+    "27": ("Travel Time Between 2 Stars (X Times the Speed of Light)", travel_time_between_stars_times_c),
+    "28": ("Distance Traveled at an Acceleration Within a Certain Time", distance_traveled_at_acceleration),
+    "29": ("Travel Time Between 2 System Objs (Generic, Distance in AUs)", travel_time_between_system_objects),
+    "30": ("Travel Time Between 2 System Objs (Generic, Distance in LMs)", travel_time_between_system_objects_lm),
+    "31": ("Travel Time Between 2 System Objs (Planet/Moon/Asteroid)", travel_time_between_solar_system_objects),
+    "32": ("Travel Time Between 2 System Objs (Custom Thrust Duration)", travel_time_custom_thrust_duration),
     # --- Planetary Equations (right column) ---
-    "34": ("Planetary Orbit Periastron & Apastron Distance Calculator", planetary_orbit_periastron_apastron),
-    "35": ("Orbital Distance of an Earth-sized Moon with a 24 hour day", moon_orbital_distance_24h),
-    "36": ("Orbital Distance of an Earth-sized Moon with a X hour day",  moon_orbital_distance_x_hours),
+    "33": ("Planetary Orbit Periastron & Apastron Distance Calculator", planetary_orbit_periastron_apastron),
+    "34": ("Orbital Distance of an Earth-sized Moon with a 24 hour day", moon_orbital_distance_24h),
+    "35": ("Orbital Distance of an Earth-sized Moon with a X hour day",  moon_orbital_distance_x_hours),
     # --- Rotating Habitat Equations (right column) ---
-    "37": ("Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)", centrifugal_gravity_acceleration),
-    "38": ("Distance from Point X to the Center of Rotation (m)",            centrifugal_gravity_distance),
-    "39": ("Rotation Rate at Point X (rpm)",                                 centrifugal_gravity_rpm),
+    "36": ("Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)", centrifugal_gravity_acceleration),
+    "37": ("Distance from Point X to the Center of Rotation (m)",            centrifugal_gravity_distance),
+    "38": ("Rotation Rate at Point X (rpm)",                                 centrifugal_gravity_rpm),
     # --- Misc. Equations (right column) ---
-    "40": ("Habitable Zone Calculator",                                      habitable_zone_calculator),
-    "41": ("Habitable Zone Calculator w/SMA",                               habitable_zone_calculator_sma),
-    "42": ("Star Luminosity",                                                star_luminosity_calculator),
+    "39": ("Habitable Zone Calculator",                                      habitable_zone_calculator),
+    "40": ("Habitable Zone Calculator w/SMA",                               habitable_zone_calculator_sma),
+    "41": ("Star Luminosity",                                                star_luminosity_calculator),
     # --- Utilities ---
     "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
 }
 
-_STAR_DB_KEYS          = {"1", "2", "3", "4", "5", "6", "7", "8"}
-_STAR_REGIONS_KEYS     = {"9", "10", "11"}
-_SCIENCE_KEYS          = {"12", "13", "14"}
-_SCIFI_KEYS            = {"15", "16", "17"}
-_CALCULATORS_KEYS      = {"18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33"}
-_PLANETARY_KEYS        = {"34", "35", "36"}
-_ROTATING_HABITAT_KEYS = {"37", "38", "39"}
-_MISC_EQUATIONS_KEYS   = {"40", "41", "42"}
+_STAR_DB_KEYS          = {"1", "2", "3", "4", "5", "6", "7"}
+_STAR_REGIONS_KEYS     = {"8", "9", "10"}
+_SCIENCE_KEYS          = {"11", "12", "13"}
+_SCIFI_KEYS            = {"14", "15", "16"}
+_CALCULATORS_KEYS      = {"17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32"}
+_PLANETARY_KEYS        = {"33", "34", "35"}
+_ROTATING_HABITAT_KEYS = {"36", "37", "38"}
+_MISC_EQUATIONS_KEYS   = {"39", "40", "41"}
 _UTILITY_KEYS          = {"50"}
 
 
