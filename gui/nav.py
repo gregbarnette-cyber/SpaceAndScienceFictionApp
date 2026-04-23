@@ -61,11 +61,6 @@ NAVIGATION = [
         ("Habitable Zone Calculator w/SMA", "HabZoneSmaPanel"),
         ("Star Luminosity",                 "LuminosityPanel"),
     ]),
-    ("Visualizations", [
-        ("Star Map",               "StarMapPanel"),
-        ("Planetary System Orbits","SystemOrbitsPanel"),
-        ("Habitable Zone Diagram", "HabZoneDiagramPanel"),
-    ]),
     ("Utilities", [
         ("Star Systems Database Query", "CsvUtilityPanel"),
     ]),

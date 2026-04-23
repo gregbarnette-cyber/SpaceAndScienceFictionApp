@@ -16,6 +16,10 @@ from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel
 import core.databases
+import core.viz
+from gui.visualizations.plot_helpers import (
+    mpl_available, make_hz_canvas, make_orbits_canvas,
+)
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -390,6 +394,100 @@ class NasaAllTablesPanel(_StarSearchPanel):
 
 # ── Option 3: Planetary Systems Composite ────────────────────────────────────
 
+# ── Viz helpers shared by opts 3, 4, 5 ───────────────────────────────────────
+
+def _make_hz_tab(panel, rows_or_row):
+    """Return a QWidget with an embedded HZ diagram, or None if data is missing."""
+    if not mpl_available():
+        return None
+    if isinstance(rows_or_row, list):
+        row = rows_or_row[0] if rows_or_row else {}
+    else:
+        row = rows_or_row or {}
+    teff   = _fval(row.get("st_teff") or row.get("st_teff"))
+    st_rad = _fval(row.get("st_rad"))
+    st_lum = _fval(row.get("st_lum"))
+    if teff is None:
+        return None
+    if st_rad is not None:
+        lum = st_rad ** 2 * (teff / 5778.0) ** 4
+    elif st_lum is not None:
+        lum = 10 ** st_lum
+    else:
+        return None
+    hz_data = core.viz.prepare_hz_diagram(teff, lum)
+    if "error" in hz_data:
+        return None
+    eeid_au = _fval(row.get("st_eei_orbsep"))
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
+    canvas, toolbar = make_hz_canvas(
+        panel, hz_data["zones"], hz_data["max_au"],
+        title=f"Habitable Zone  (T={teff:.0f} K, L={lum:.4f} L☉)",
+        eeid_au=eeid_au,
+    )
+    lay.addWidget(toolbar)
+    lay.addWidget(canvas)
+    return w
+
+
+def _make_hz_tab_exocat(panel, row):
+    """HZ tab for Mission Exocat rows (uses st_teff / st_rad; eeid from st_eeidau)."""
+    if not mpl_available() or not row:
+        return None
+    teff   = _fval(row.get("st_teff"))
+    st_rad = _fval(row.get("st_rad"))
+    st_lbol= _fval(row.get("st_lbol"))
+    if teff is None:
+        return None
+    if st_rad is not None:
+        lum = st_rad ** 2 * (teff / 5778.0) ** 4
+    elif st_lbol is not None:
+        lum = st_lbol
+    else:
+        return None
+    hz_data = core.viz.prepare_hz_diagram(teff, lum)
+    if "error" in hz_data:
+        return None
+    eeid_au = _fval(row.get("st_eeidau"))
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
+    canvas, toolbar = make_hz_canvas(
+        panel, hz_data["zones"], hz_data["max_au"],
+        title=f"Habitable Zone  (T={teff:.0f} K, L={lum:.4f} L☉)",
+        eeid_au=eeid_au,
+    )
+    lay.addWidget(toolbar)
+    lay.addWidget(canvas)
+    return w
+
+
+def _make_orbits_tab(panel, planets, star_name=""):
+    """Return a QWidget with an embedded orbital diagram, or None if insufficient data."""
+    if not mpl_available():
+        return None
+    orbit_data = core.viz.prepare_system_orbits(planets)
+    if "error" in orbit_data:
+        return None
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
+    canvas, toolbar = make_orbits_canvas(
+        panel,
+        orbit_data["orbits"],
+        orbit_data["hz_zones"],
+        orbit_data["max_au"],
+        star_name=star_name,
+    )
+    lay.addWidget(toolbar)
+    lay.addWidget(canvas)
+    return w
+
+
+# ── Option 3: Planetary Systems Composite ────────────────────────────────────
+
 class NasaPlanetarySystemsPanel(_StarSearchPanel):
     """Option 3 — NASA Exoplanet Archive: Planetary Systems."""
 
@@ -414,8 +512,30 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
         planets = result["planets"]
 
         _add_simbad_banner(self._result_area, simbad)
-        _add_nasa_tables(self, self._result_area, simbad, planets)
-        _add_hz_table(self, self._result_area, planets)
+
+        tabs = QTabWidget()
+        tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        # Data tab
+        data_w = QWidget()
+        data_l = QVBoxLayout(data_w)
+        data_l.setAlignment(Qt.AlignmentFlag.AlignTop)
+        _add_nasa_tables(self, data_l, simbad, planets)
+        _add_hz_table(self, data_l, planets)
+        tabs.addTab(data_w, "Data")
+
+        # Orbital Diagram tab
+        star_name = str(planets[0].get("hostname") or "") if planets else ""
+        orb_w = _make_orbits_tab(self, planets, star_name)
+        if orb_w:
+            tabs.addTab(orb_w, "Orbital Diagram")
+
+        # HZ Diagram tab
+        hz_w = _make_hz_tab(self, planets)
+        if hz_w:
+            tabs.addTab(hz_w, "HZ Diagram")
+
+        self._result_area.addWidget(tabs)
 
 
 # ── Option 4: HWO ExEP ────────────────────────────────────────────────────────
@@ -444,8 +564,22 @@ class NasaHwoExepPanel(_StarSearchPanel):
         hwo    = result["hwo"]
 
         _add_simbad_banner(self._result_area, simbad)
-        _add_hwo_tables(self, self._result_area, hwo)
-        _add_hz_table(self, self._result_area, hwo)
+
+        tabs = QTabWidget()
+        tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        data_w = QWidget()
+        data_l = QVBoxLayout(data_w)
+        data_l.setAlignment(Qt.AlignmentFlag.AlignTop)
+        _add_hwo_tables(self, data_l, hwo)
+        _add_hz_table(self, data_l, hwo)
+        tabs.addTab(data_w, "Data")
+
+        hz_w = _make_hz_tab(self, hwo)
+        if hz_w:
+            tabs.addTab(hz_w, "HZ Diagram")
+
+        self._result_area.addWidget(tabs)
 
 
 # ── Option 5: Mission Exocat ──────────────────────────────────────────────────
@@ -473,4 +607,18 @@ class NasaMissionExocatPanel(_StarSearchPanel):
         exocat = result["exocat"]
 
         _add_simbad_banner(self._result_area, simbad)
-        _add_exocat_tables(self, self._result_area, exocat)
+
+        tabs = QTabWidget()
+        tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        data_w = QWidget()
+        data_l = QVBoxLayout(data_w)
+        data_l.setAlignment(Qt.AlignmentFlag.AlignTop)
+        _add_exocat_tables(self, data_l, exocat)
+        tabs.addTab(data_w, "Data")
+
+        hz_w = _make_hz_tab_exocat(self, exocat)
+        if hz_w:
+            tabs.addTab(hz_w, "HZ Diagram")
+
+        self._result_area.addWidget(tabs)

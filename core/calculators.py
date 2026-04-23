@@ -299,6 +299,16 @@ def compute_stars_within_distance_of_sol(limit_ly: float) -> dict:
     if not os.path.exists(csv_path):
         return {"error": "starSystems.csv not found — run option 50 first to generate it."}
 
+    def _parse_ra(s):
+        p = s.strip().split()
+        return (float(p[0]) + float(p[1]) / 60 + float(p[2]) / 3600) * 15
+
+    def _parse_dec(s):
+        s = s.strip()
+        sign = -1 if s.startswith("-") else 1
+        p = s.lstrip("+-").split()
+        return sign * (float(p[0]) + float(p[1]) / 60 + float(p[2]) / 3600)
+
     matches = []
     try:
         with open(csv_path, newline="", encoding="utf-8") as f:
@@ -308,11 +318,18 @@ def compute_stars_within_distance_of_sol(limit_ly: float) -> dict:
                 except (ValueError, KeyError):
                     continue
                 if ly <= limit_ly:
+                    try:
+                        ra_deg  = _parse_ra(row.get("RA", ""))
+                        dec_deg = _parse_dec(row.get("DEC", ""))
+                        x, y, z = _to_cartesian(ra_deg, dec_deg, ly)
+                    except Exception:
+                        x = y = z = None
                     matches.append({
                         "Star Name":         row.get("Star Name", ""),
                         "Star Designations": row.get("Star Designations", ""),
                         "Spectral Type":     row.get("Spectral Type", ""),
                         "Light Years":       ly,
+                        "x": x, "y": y, "z": z,
                     })
     except Exception as e:
         return {"error": f"Error reading starSystems.csv: {e}"}
@@ -374,16 +391,20 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
                         "Star Designations": row.get("Star Designations", ""),
                         "Spectral Type":     row.get("Spectral Type", ""),
                         "Distance":          dist,
+                        "x": x, "y": y, "z": z,
                     })
     except Exception as e:
         return {"error": f"Error reading starSystems.csv: {e}"}
 
     matches.sort(key=lambda r: r["Distance"])
     return {
-        "center":   s["name"],
-        "limit_ly": limit_ly,
-        "count":    len(matches),
-        "stars":    matches,
+        "center":         s["name"],
+        "center_x":       cx,
+        "center_y":       cy,
+        "center_z":       cz,
+        "limit_ly":       limit_ly,
+        "count":          len(matches),
+        "stars":          matches,
     }
 
 

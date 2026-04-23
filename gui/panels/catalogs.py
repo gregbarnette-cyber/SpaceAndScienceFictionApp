@@ -14,6 +14,10 @@ from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel
 import core.databases
+import core.viz
+from gui.visualizations.plot_helpers import (
+    mpl_available, make_hz_canvas, make_orbits_canvas,
+)
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -254,6 +258,63 @@ class HwcPanel(_StarSearchPanel):
 
         _add_hz(self, self._result_area,
                 star_row.get("S_TEMPERATURE"), None, star_row.get("S_RADIUS"))
+
+        if not mpl_available():
+            return
+
+        # ── Orbital Diagram tab ───────────────────────────────────────────────
+        hwc_planets = []
+        for p in planet_rows:
+            hwc_planets.append({
+                "pl_name":    p.get("P_NAME", ""),
+                "pl_orbsmax": p.get("P_SEMI_MAJOR_AXIS"),
+                "pl_orbeccen":p.get("P_ECCENTRICITY"),
+                "st_teff":    star_row.get("S_TEMPERATURE"),
+                "st_rad":     star_row.get("S_RADIUS"),
+            })
+
+        orbit_data = core.viz.prepare_system_orbits(hwc_planets) if hwc_planets else {}
+        hz_data_viz = core.viz.prepare_hz_diagram(
+            _fval(star_row.get("S_TEMPERATURE")) or 0,
+            _fval(star_row.get("S_LUMINOSITY"))  or 0,
+        ) if _fval(star_row.get("S_TEMPERATURE")) else {}
+
+        if "orbits" in orbit_data or "zones" in hz_data_viz:
+            self._result_area.addWidget(QLabel("<b>Visualizations</b>"))
+            viz_tabs = __import__("PySide6.QtWidgets", fromlist=["QTabWidget"]).QTabWidget()
+
+            if "orbits" in orbit_data:
+                orb_w = QWidget()
+                orb_l = QVBoxLayout(orb_w)
+                orb_l.setContentsMargins(4, 4, 4, 4)
+                canvas, toolbar = make_orbits_canvas(
+                    self,
+                    orbit_data["orbits"],
+                    orbit_data.get("hz_zones", []),
+                    orbit_data["max_au"],
+                    star_name=str(star_row.get("S_NAME", "")),
+                )
+                orb_l.addWidget(toolbar)
+                orb_l.addWidget(canvas)
+                viz_tabs.addTab(orb_w, "Orbital Diagram")
+
+            if "zones" in hz_data_viz:
+                hz_w = QWidget()
+                hz_l = QVBoxLayout(hz_w)
+                hz_l.setContentsMargins(4, 4, 4, 4)
+                teff_v = _fval(star_row.get("S_TEMPERATURE")) or 0
+                lum_v  = _fval(star_row.get("S_LUMINOSITY"))  or 0
+                canvas, toolbar = make_hz_canvas(
+                    self,
+                    hz_data_viz["zones"],
+                    hz_data_viz["max_au"],
+                    title=f"Habitable Zone  (T={teff_v:.0f} K, L={lum_v:.4f} L☉)",
+                )
+                hz_l.addWidget(toolbar)
+                hz_l.addWidget(canvas)
+                viz_tabs.addTab(hz_w, "HZ Diagram")
+
+            self._result_area.addWidget(viz_tabs)
 
 
 # ── Option 7: Open Exoplanet Catalogue ───────────────────────────────────────

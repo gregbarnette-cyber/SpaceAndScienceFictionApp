@@ -35,4 +35,23 @@ from gui.panels.brachistochrone  import (BrachistochroneAccelPanel,
 from gui.panels.system_travel    import SystemTravelSolarPanel, SystemTravelThrustPanel
 from gui.panels.csv_utility      import CsvUtilityPanel
 
-# ── Phase E will add visualization panels.
+# ── Phase E panels (lazy-loaded to break circular import) ─────────────────────
+# gui/visualizations/*.py imports gui.panels.base, so direct imports here would
+# create a circular dependency.  __getattr__ defers the import until first use,
+# at which point gui.panels is already fully initialised.
+
+_VIZ_PANEL_MODULES = {
+    "StarMapPanel":        "gui.visualizations.star_map",
+    "SystemOrbitsPanel":   "gui.visualizations.system_orbits",
+    "HabZoneDiagramPanel": "gui.visualizations.hz_diagram",
+}
+
+
+def __getattr__(name: str):
+    if name in _VIZ_PANEL_MODULES:
+        import importlib
+        mod = importlib.import_module(_VIZ_PANEL_MODULES[name])
+        cls = getattr(mod, name)
+        globals()[name] = cls   # cache so future accesses bypass __getattr__
+        return cls
+    raise AttributeError(f"module 'gui.panels' has no attribute {name!r}")

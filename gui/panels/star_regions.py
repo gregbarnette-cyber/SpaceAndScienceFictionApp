@@ -16,7 +16,11 @@ from PySide6.QtGui import QStandardItemModel, QStandardItem
 from gui.panels.base import ResultPanel
 import core.databases
 import core.regions
+import core.viz
 from core.equations import _kopparapu_seff
+from gui.visualizations.plot_helpers import (
+    mpl_available, make_hz_canvas, make_system_regions_canvas,
+)
 
 
 # ── Single-step background functions (SIMBAD + regions in one thread) ─────────
@@ -201,6 +205,36 @@ def _build_region_tabs(d: dict) -> QTabWidget:
         ),
         "Calculated HZ",
     )
+
+    # ── Visualization tabs (require matplotlib) ───────────────────────────────
+    if mpl_available():
+        # HZ Diagram: use calculatedLuminosity + temp, mark Earth Equiv. Orbit
+        hz_data = core.viz.prepare_hz_diagram(d["temp"], d["calculatedLuminosity"])
+        if "zones" in hz_data:
+            hz_w = QWidget()
+            hz_l = QVBoxLayout(hz_w)
+            hz_l.setContentsMargins(4, 4, 4, 4)
+            canvas, toolbar = make_hz_canvas(
+                None,
+                hz_data["zones"],
+                hz_data["max_au"],
+                title=f"Habitable Zone  (T={d['temp']:.0f} K,  L={d['calculatedLuminosity']:.4f} L☉)",
+                eeid_au=d.get("distAU"),
+            )
+            hz_l.addWidget(toolbar)
+            hz_l.addWidget(canvas)
+            tabs.addTab(hz_w, "HZ Diagram")
+
+        # System Regions Diagram: log-scale radial ruler
+        regions_data = core.viz.prepare_system_regions_diagram(d)
+        sr_canvas, sr_toolbar = make_system_regions_canvas(None, regions_data)
+        if sr_canvas is not None:
+            sr_w = QWidget()
+            sr_l = QVBoxLayout(sr_w)
+            sr_l.setContentsMargins(4, 4, 4, 4)
+            sr_l.addWidget(sr_toolbar)
+            sr_l.addWidget(sr_canvas)
+            tabs.addTab(sr_w, "System Regions Diagram")
 
     return tabs
 

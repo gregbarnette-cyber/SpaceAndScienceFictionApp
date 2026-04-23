@@ -22,14 +22,14 @@ core/                # Pure computation layer — no I/O, no Qt
   regions.py         # Star system region calculations
   science.py         # Solar system data, main sequence, Honorverse tables
   shared.py          # Shared helpers (format_travel_time, etc.)
+  viz.py             # Visualization data-prep (Phase E): star map, orbits, HZ, regions
   db.py              # SQLite connection (Phase F)
-  viz.py             # Visualization helpers (Phase E)
 
 gui/                 # Qt presentation layer
   app.py             # MainWindow: QSplitter with nav tree + QStackedWidget
   nav.py             # NAVIGATION list + populate_nav(); maps labels → panel class names
   panels/
-    __init__.py      # Exports all panel classes by name (used by nav.py)
+    __init__.py      # Exports all panel classes by name; lazy __getattr__ for viz panels
     base.py          # ResultPanel base class; Worker + run_in_background (Phase C+)
     # Phase B panels (no network calls):
     science_tables.py     # SolarSystemPanel (11), MainSequencePanel (12)
@@ -51,7 +51,22 @@ gui/                 # Qt presentation layer
                          #   StarRegionsManualPanel (10)
     distance_stars.py    # DistanceBetweenStarsPanel (17), StarsWithinDistanceSolPanel (18),
                          #   StarsWithinDistanceStarPanel (19)
-  visualizations/         # Phase E
+    # Phase D panels (multi-source / JPL Horizons):
+    nasa_exoplanet.py    # NasaPlanetarySystemsPanel (3), NasaHwoExepPanel (4),
+                         #   NasaMissionExocatPanel (5)
+    catalogs.py          # HwcPanel (6)
+    travel_time_stars.py # TravelTimeStarsLyHrPanel (26), TravelTimeStarsTimesCPanel (27)
+    brachistochrone.py   # BrachistochroneAccelPanel (28), BrachistochroneAuPanel (29),
+                         #   BrachistochroneLmPanel (30)
+    system_travel.py     # SystemTravelSolarPanel (31), SystemTravelThrustPanel (32)
+    csv_utility.py       # CsvUtilityPanel (50)
+  visualizations/        # Phase E: shared rendering helpers + standalone panel stubs
+    __init__.py
+    plot_helpers.py      # mpl_available(), make_hz_canvas(), make_orbits_canvas(),
+                         #   make_star_map_canvas(), make_system_regions_canvas()
+    hz_diagram.py        # HabZoneDiagramPanel — standalone stub (not in nav)
+    star_map.py          # StarMapPanel — standalone stub (not in nav)
+    system_orbits.py     # SystemOrbitsPanel — standalone stub (not in nav)
 ```
 
 ## Core Layer Design
@@ -105,6 +120,26 @@ Phase C adds `Worker(QObject)` and `run_in_background()` to support network call
 
 **Reset safety**: `_on_error` and `_on_thread_done` wrap `run_btn.setEnabled()` in `try/except RuntimeError` because a background thread can complete after a `reset()` has deleted the old button widget.
 
+### Lazy import in `gui/panels/__init__.py`
+
+`__init__.py` uses a module-level `__getattr__` to lazily import the three visualization panel classes (`StarMapPanel`, `SystemOrbitsPanel`, `HabZoneDiagramPanel`). This avoids a circular import: those panels inherit from `ResultPanel` in `gui.panels.base`, which is part of the `gui.panels` package — importing them at module load time would re-enter `gui.panels.__init__` before it had finished initializing.
+
+```python
+_VIZ_PANEL_MODULES = {
+    "StarMapPanel":        "gui.visualizations.star_map",
+    "SystemOrbitsPanel":   "gui.visualizations.system_orbits",
+    "HabZoneDiagramPanel": "gui.visualizations.hz_diagram",
+}
+def __getattr__(name: str):
+    if name in _VIZ_PANEL_MODULES:
+        import importlib
+        mod = importlib.import_module(_VIZ_PANEL_MODULES[name])
+        cls = getattr(mod, name)
+        globals()[name] = cls   # cache so subsequent getattr hits globals() directly
+        return cls
+    raise AttributeError(f"module 'gui.panels' has no attribute {name!r}")
+```
+
 ## Panel Class → Option Mapping
 
 | Panel Class | Option(s) | File |
@@ -152,6 +187,8 @@ Phase C adds `Worker(QObject)` and `run_in_background()` to support network call
 
 > **Note**: `NasaAllTablesPanel` (opt 2) and `OecPanel` (opt 7) are implemented in `nasa_exoplanet.py` and `catalogs.py` respectively, but are **not exported** from `panels/__init__.py` and do not appear in the GUI nav. Both options remain fully functional in the CLI.
 
+> **Note**: `StarMapPanel`, `SystemOrbitsPanel`, and `HabZoneDiagramPanel` live in `gui/visualizations/` and are exported via the lazy `__getattr__` in `panels/__init__.py`. They are **not in the nav tree** — visualizations appear as embedded tabs inside the relevant option panels rather than as standalone nav entries.
+
 ## Star Regions Panel Layout Notes
 
 ### Star Regions Panels (`panels/star_regions.py`)
@@ -162,7 +199,54 @@ Three independent panels for opts 8 (Auto/SIMBAD), 9 (Semi-Manual), and 10 (Manu
 - **Semi-Manual (opt 9)** — star name + sunlight intensity + bond albedo inputs. Same combined background worker.
 - **Manual (opt 10)** — six `QLineEdit` fields (vmag, parallax, BC, teff, sunlight, albedo); pure math, no network call.
 
-All three share `_build_region_tabs(d)` which produces a nested `QTabWidget` with seven result tabs: Star System Properties, Stellar Properties, Star Distance, Earth Equiv. Orbit, System Regions, Alternate HZ Regions, Calculated HZ.
+All three share `_build_region_tabs(d)` which produces a nested `QTabWidget` with seven always-present result tabs plus two conditional diagram tabs (when matplotlib is available):
+
+Always present (7 tabs): Star System Properties, Stellar Properties, Star Distance, Earth Equiv. Orbit, System Regions, Alternate HZ Regions, Calculated HZ.
+
+Conditional (2 tabs, when `mpl_available()`):
+- **HZ Diagram** — concentric ring diagram using `d["calculatedLuminosity"]` and `d["temp"]`; marks `d["distAU"]` as the Earth Equivalent Insolation Distance (EEID).
+- **System Regions Diagram** — log-scale horizontal ruler showing all seven system boundary distances; HZ bands highlighted as coloured bars. Built from `core.viz.prepare_system_regions_diagram(d)` → `make_system_regions_canvas()`.
+
+## Phase E Visualization Integration
+
+Phase E adds matplotlib-based visualizations embedded as extra tabs inside existing option panels. No new top-level nav entries were created — all diagrams appear alongside their data tables.
+
+### Shared rendering layer (`gui/visualizations/plot_helpers.py`)
+
+`mpl_available()` returns `True` when `matplotlib` and `PySide6` are both importable. All viz-tab code is guarded by this check so the app works without matplotlib installed.
+
+| Helper | Panels that use it | Output |
+|---|---|---|
+| `make_hz_canvas(parent, zones, max_au, title, eeid_au)` | NASA opts 3–5, HWC (6), Star Regions 8–10 | Concentric ring HZ diagram; optional EEID dashed circle |
+| `make_orbits_canvas(parent, orbits, hz_zones, max_au, star_name, eeid_au)` | NASA opts 3, 6 | Keplerian orbital ellipses with HZ annulus overlay |
+| `make_star_map_canvas(parent, stars, title, xk, yk, xlabel, ylabel)` | Stars Within Distance 18, 19 | 2D scatter, spectral-class colours, hover annotation |
+| `make_system_regions_canvas(parent, data)` | Star Regions 8–10 | Log-scale horizontal ruler with boundary lines and HZ bands |
+
+All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures use a dark theme (`facecolor="#03030f"`).
+
+### Panels with embedded viz tabs
+
+| Panel | Extra tab(s) added |
+|---|---|
+| `NasaPlanetarySystemsPanel` (3) | "Orbital Diagram" (orbits + HZ overlay), "HZ Diagram" |
+| `NasaHwoExepPanel` (4) | "HZ Diagram" (with EEID from `st_eei_orbsep`) |
+| `NasaMissionExocatPanel` (5) | "HZ Diagram" (with EEID from `st_eeidau`; lum = `st_lbol` direct Lsun) |
+| `HwcPanel` (6) | "Orbital Diagram", "HZ Diagram" (lum = `S_LUMINOSITY` direct Lsun) |
+| `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram" |
+| `StarRegionsSemiManualPanel` (9) | "HZ Diagram", "System Regions Diagram" |
+| `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram" |
+| `StarsWithinDistanceSolPanel` (18) | "Map X–Y (top-down)", "Map X–Z (edge-on)" |
+| `StarsWithinDistanceStarPanel` (19) | "Map X–Y (top-down)", "Map X–Z (edge-on)" |
+
+### `core/viz.py` public API
+
+| Function | Description |
+|---|---|
+| `prepare_star_map(csv_path=None)` | Reads `starSystems.csv`; returns `{"stars": list, "count": int}` or `{"error": str}`. Sol prepended at origin. Each star dict: `name, desig, sp_type, color, ly, x, y, z`. |
+| `prepare_system_orbits(planets)` | Takes NASA-archive planet list (dicts with `pl_orbsmax`, `pl_orbeccen`, `pl_name`, `st_teff`, `st_rad`). Returns `{"orbits", "hz_zones", "max_au", "star_name"}` or `{"error": str}`. |
+| `prepare_hz_diagram(teff, luminosity)` | Returns `{"zones": list, "max_au": float}` or `{"error": str}`. Each zone dict: `key, label, outer (AU), color`. |
+| `prepare_star_map_from_result(result)` | Converts `compute_stars_within_distance_of_sol/star` result dict to star-map format. Center star placed at origin; surrounding stars' coordinates shifted accordingly. |
+| `prepare_system_regions_diagram(d)` | Extracts seven labelled boundary AU values + Kopparapu HZ zones + EEID from a star-regions result dict. Returns `{"regions", "hz_zones", "eeid_au", "max_au"}`. |
 
 ## Phase Completion Status
 
@@ -172,5 +256,5 @@ All three share `_build_region_tabs(d)` which produces a nested `QTabWidget` wit
 | B | Complete | Static display + pure-math calculators (opts 11–16, 20–25, 33–41) |
 | C | Complete | SIMBAD-based features + QThread threading pattern (opts 1, 8–10, 17–19) |
 | D | Complete | Multi-source features, JPL Horizons, option 50 (opts 3–6, 26–32, 50); opts 2 and 7 implemented but not in GUI nav |
-| E | Pending | Visualizations: star map, orbital diagram, HZ diagram |
+| E | Complete | Visualizations embedded in existing panels: star map (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10) |
 | F | Pending | SQLite migration — replaces all CSV files with `data/space_app.db` |

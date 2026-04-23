@@ -3,11 +3,14 @@
 
 from PySide6.QtWidgets import (
     QFormLayout, QLineEdit, QPushButton, QLabel, QSizePolicy,
+    QTabWidget, QWidget, QVBoxLayout,
 )
 from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel
 import core.calculators
+import core.viz
+from gui.visualizations.plot_helpers import mpl_available, make_star_map_canvas
 
 
 # ── Option 17: Distance Between 2 Stars ──────────────────────────────────────
@@ -147,9 +150,40 @@ class StarsWithinDistanceSolPanel(ResultPanel):
              r["Spectral Type"], f"{r['Light Years']:.4f}"]
             for r in result["stars"]
         ]
-        view = self.make_table(headers, rows)
-        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.add_result_widget(view)
+
+        if mpl_available():
+            tabs = QTabWidget()
+
+            tbl_w = QWidget()
+            tbl_l = QVBoxLayout(tbl_w)
+            view = self.make_table(headers, rows)
+            view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            tbl_l.addWidget(view)
+            tabs.addTab(tbl_w, "Table")
+
+            map_data = core.viz.prepare_star_map_from_result(result)
+            if "stars" in map_data and map_data["stars"]:
+                for proj, xk, yk, xl, yl in [
+                    ("X–Y (top-down)", "x", "y", "X (ly)", "Y (ly)"),
+                    ("X–Z (edge-on)",  "x", "z", "X (ly)", "Z (ly)"),
+                ]:
+                    map_w = QWidget()
+                    map_l = QVBoxLayout(map_w)
+                    map_l.setContentsMargins(4, 4, 4, 4)
+                    canvas, toolbar = make_star_map_canvas(
+                        self, map_data["stars"],
+                        title=f"Stars within {limit} ly of Sol  ({count} stars)",
+                        xk=xk, yk=yk, xlabel=xl, ylabel=yl,
+                    )
+                    map_l.addWidget(toolbar)
+                    map_l.addWidget(canvas)
+                    tabs.addTab(map_w, f"Map {proj}")
+
+            self.add_result_widget(tabs)
+        else:
+            view = self.make_table(headers, rows)
+            view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.add_result_widget(view)
 
 
 # ── Option 19: Stars Within Distance of a Star ───────────────────────────────
@@ -225,6 +259,37 @@ class StarsWithinDistanceStarPanel(ResultPanel):
              r["Spectral Type"], f"{r['Distance']:.3f}"]
             for r in result["stars"]
         ]
-        view = self.make_table(headers, rows)
-        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.add_result_widget(view)
+
+        if mpl_available():
+            tabs = QTabWidget()
+
+            tbl_w = QWidget()
+            tbl_l = QVBoxLayout(tbl_w)
+            view = self.make_table(headers, rows)
+            view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            tbl_l.addWidget(view)
+            tabs.addTab(tbl_w, "Table")
+
+            map_data = core.viz.prepare_star_map_from_result(result)
+            if "stars" in map_data and map_data["stars"]:
+                for proj, xk, yk, xl, yl in [
+                    ("X–Y (top-down)", "x", "y", "X (ly)", "Y (ly)"),
+                    ("X–Z (edge-on)",  "x", "z", "X (ly)", "Z (ly)"),
+                ]:
+                    map_w = QWidget()
+                    map_l = QVBoxLayout(map_w)
+                    map_l.setContentsMargins(4, 4, 4, 4)
+                    canvas, toolbar = make_star_map_canvas(
+                        self, map_data["stars"],
+                        title=f"Stars within {limit} ly of {center}  ({count} stars)",
+                        xk=xk, yk=yk, xlabel=xl, ylabel=yl,
+                    )
+                    map_l.addWidget(toolbar)
+                    map_l.addWidget(canvas)
+                    tabs.addTab(map_w, f"Map {proj}")
+
+            self.add_result_widget(tabs)
+        else:
+            view = self.make_table(headers, rows)
+            view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.add_result_widget(view)
