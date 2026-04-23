@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QFormLayout, QPushButton,
-    QTableView, QTextEdit, QLabel,
+    QTableView, QTextEdit, QLabel, QSizePolicy,
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtCore import Qt, QObject, QThread, Signal, QTimer
@@ -67,11 +67,29 @@ class ResultPanel(QWidget):
     def __init__(self, window):
         super().__init__()
         self.window = window
-        self._layout = QVBoxLayout(self)
+        self._outer_layout = QVBoxLayout(self)
+        self._outer_layout.setContentsMargins(0, 0, 0, 0)
+        self._outer_layout.setSpacing(0)
+        self._init_container()
+
+    def _init_container(self):
+        """(Re)create the inner container and populate it via build_inputs/build_results_area."""
+        self._container = QWidget()
+        self._layout = QVBoxLayout(self._container)
         self._layout.setContentsMargins(8, 8, 8, 8)
         self._layout.setSpacing(6)
+        self._outer_layout.addWidget(self._container)
         self.build_inputs()
         self.build_results_area()
+        # Constrain all input buttons to their natural text width.
+        for btn in self._container.findChildren(QPushButton):
+            btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    def reset(self):
+        """Reset panel to its initial load state by rebuilding all content."""
+        self._outer_layout.removeWidget(self._container)
+        self._container.deleteLater()
+        self._init_container()
 
     # ── Override points ───────────────────────────────────────────────────────
 
@@ -200,9 +218,15 @@ class ResultPanel(QWidget):
         self.set_status(f"Error: {msg}")
         self.show_error(msg)
         if hasattr(self, "run_btn"):
-            self.run_btn.setEnabled(True)
+            try:
+                self.run_btn.setEnabled(True)
+            except RuntimeError:
+                pass  # button was deleted by a reset() while the thread was running
 
     def _on_thread_done(self):
         self.set_status("Done")
         if hasattr(self, "run_btn"):
-            self.run_btn.setEnabled(True)
+            try:
+                self.run_btn.setEnabled(True)
+            except RuntimeError:
+                pass  # button was deleted by a reset() while the thread was running

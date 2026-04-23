@@ -1,4 +1,4 @@
-# gui/panels/distance_stars.py — Options 18, 19, 20: star distance and proximity.
+# gui/panels/distance_stars.py — Options 17, 18, 19: star distance and proximity.
 # Each option has its own standalone panel.
 
 from PySide6.QtWidgets import (
@@ -10,10 +10,10 @@ from gui.panels.base import ResultPanel
 import core.calculators
 
 
-# ── Option 18: Distance Between 2 Stars ──────────────────────────────────────
+# ── Option 17: Distance Between 2 Stars ──────────────────────────────────────
 
 class DistanceBetweenStarsPanel(ResultPanel):
-    """Two star name inputs → distance in light years  (option 18)."""
+    """Two star name inputs → distance in light years  (option 17)."""
 
     def build_inputs(self):
         form = QFormLayout()
@@ -82,10 +82,10 @@ class DistanceBetweenStarsPanel(ResultPanel):
         self.add_result_widget(lbl)
 
 
-# ── Option 19: Stars Within Distance of Sol ───────────────────────────────────
+# ── Option 18: Stars Within Distance of Sol ───────────────────────────────────
 
 class StarsWithinDistanceSolPanel(ResultPanel):
-    """Distance limit → stars in starSystems.csv within that range of Sol  (option 19)."""
+    """Distance limit → stars in starSystems.csv within that range of Sol  (option 18)."""
 
     def build_inputs(self):
         form = QFormLayout()
@@ -152,10 +152,10 @@ class StarsWithinDistanceSolPanel(ResultPanel):
         self.add_result_widget(view)
 
 
-# ── Option 20: Stars Within Distance of a Star ───────────────────────────────
+# ── Option 19: Stars Within Distance of a Star ───────────────────────────────
 
 class StarsWithinDistanceStarPanel(ResultPanel):
-    """Star name + distance limit → stars within range  (option 20)."""
+    """Star name + distance limit → stars within range  (option 19)."""
 
     def build_inputs(self):
         form = QFormLayout()

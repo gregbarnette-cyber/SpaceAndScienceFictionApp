@@ -8,17 +8,15 @@ from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 NAVIGATION = [
     ("Star Databases", [
         ("SIMBAD Lookup",              "SimbadPanel"),
-        ("NASA Exoplanet: All Tables",        "NasaAllTablesPanel"),
         ("NASA Exoplanet: Planetary Systems", "NasaPlanetarySystemsPanel"),
         ("NASA Exoplanet: HWO ExEP",          "NasaHwoExepPanel"),
         ("NASA Exoplanet: Mission Exocat",    "NasaMissionExocatPanel"),
         ("Habitable Worlds Catalog",          "HwcPanel"),
-        ("Open Exoplanet Catalogue",          "OecPanel"),
     ]),
     ("Star System Regions", [
-        ("Auto (SIMBAD)",  "StarRegionsPanel"),
-        ("Semi-Manual",    "StarRegionsPanel"),
-        ("Manual",         "StarRegionsPanel"),
+        ("Auto (SIMBAD)",  "StarRegionsAutoPanel"),
+        ("Semi-Manual",    "StarRegionsSemiManualPanel"),
+        ("Manual",         "StarRegionsManualPanel"),
     ]),
     ("Science", [
         ("Solar System Bodies",  "SolarSystemPanel"),

@@ -16,15 +16,17 @@ from gui.panels.luminosity          import LuminosityPanel
 
 # ── Phase C panels ────────────────────────────────────────────────────────────
 from gui.panels.simbad         import SimbadPanel
-from gui.panels.star_regions   import StarRegionsPanel
+from gui.panels.star_regions   import (StarRegionsAutoPanel,
+                                       StarRegionsSemiManualPanel,
+                                       StarRegionsManualPanel)
 from gui.panels.distance_stars import (DistanceBetweenStarsPanel,
                                        StarsWithinDistanceSolPanel,
                                        StarsWithinDistanceStarPanel)
 
 # ── Phase D panels ────────────────────────────────────────────────────────────
-from gui.panels.nasa_exoplanet   import (NasaAllTablesPanel, NasaPlanetarySystemsPanel,
+from gui.panels.nasa_exoplanet   import (NasaPlanetarySystemsPanel,
                                          NasaHwoExepPanel, NasaMissionExocatPanel)
-from gui.panels.catalogs         import HwcPanel, OecPanel
+from gui.panels.catalogs         import HwcPanel
 from gui.panels.travel_time_stars import (TravelTimeStarsLyHrPanel,
                                           TravelTimeStarsTimesCPanel)
 from gui.panels.brachistochrone  import (BrachistochroneAccelPanel,

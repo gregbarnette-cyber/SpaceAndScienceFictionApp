@@ -1,20 +1,17 @@
-# gui/panels/star_regions.py — Options 9, 10, 11: Star System Regions.
+# gui/panels/star_regions.py — Options 8, 9, 10: Star System Regions.
 #
-# A single StarRegionsPanel contains three top-level tabs:
-#   "Auto (SIMBAD)"  — option 9:  star name only; sunlight=1.0, albedo=0.3 hardcoded
-#   "Semi-Manual"    — option 10: star name + user-supplied sunlight/albedo
-#   "Manual"         — option 11: all six inputs manually; no SIMBAD
-#
-# Results for each tab are shown in a nested QTabWidget with one tab per
-# region table, mirroring the seven CLI tables.
+# Three independent panels:
+#   StarRegionsAutoPanel       — option 8:  star name only; sunlight=1.0, albedo=0.3 hardcoded
+#   StarRegionsSemiManualPanel — option 9:  star name + user-supplied sunlight/albedo
+#   StarRegionsManualPanel     — option 10: all six inputs manually; no SIMBAD
 
 import math
 
 from PySide6.QtWidgets import (
     QTabWidget, QWidget, QVBoxLayout, QFormLayout,
-    QLineEdit, QPushButton, QLabel,
+    QLineEdit, QPushButton, QLabel, QTableView,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from gui.panels.base import ResultPanel
 import core.databases
@@ -23,12 +20,8 @@ from core.equations import _kopparapu_seff
 
 
 # ── Single-step background functions (SIMBAD + regions in one thread) ─────────
-# Combining both operations into one worker avoids chaining run_in_background
-# calls, which would destroy the first thread's Python reference while it is
-# still running, causing a Qt crash.
 
 def _compute_auto_regions(name: str) -> dict:
-    """SIMBAD lookup + region computation in one background thread (option 9)."""
     simbad = core.databases.compute_simbad_lookup(name)
     if "error" in simbad:
         return simbad
@@ -36,7 +29,6 @@ def _compute_auto_regions(name: str) -> dict:
 
 
 def _compute_semi_manual_regions(name: str, sunlight: float, albedo: float) -> dict:
-    """SIMBAD lookup + region computation with custom inputs (option 10)."""
     simbad = core.databases.compute_simbad_lookup(name)
     if "error" in simbad:
         return simbad
@@ -53,33 +45,30 @@ def _au_lm3(val: float) -> str:
     return f"{val:.3f} ({val * 8.3167:.3f} LM)"
 
 
+# ── Shared table builder ───────────────────────────────────────────────────────
+
+def _tbl(headers, rows) -> QTableView:
+    model = QStandardItemModel(len(rows), len(headers))
+    model.setHorizontalHeaderLabels(headers)
+    for r, row in enumerate(rows):
+        for c, val in enumerate(row):
+            item = QStandardItem(str(val) if val is not None else "N/A")
+            item.setEditable(False)
+            model.setItem(r, c, item)
+    view = QTableView()
+    view.setModel(model)
+    view.setSortingEnabled(False)
+    view.horizontalHeader().setStretchLastSection(True)
+    view.resizeColumnsToContents()
+    return view
+
+
 # ── Shared results renderer ───────────────────────────────────────────────────
 
 def _build_region_tabs(d: dict) -> QTabWidget:
-    """Build a QTabWidget from a compute_star_system_regions() result dict."""
-
+    """Build a QTabWidget of result tables from a compute_star_system_regions() result dict."""
     tabs = QTabWidget()
 
-    # ── Tab 1: Star System Properties ─────────────────────────────────────────
-    from gui.panels.base import ResultPanel as RP
-    def _tbl(headers, rows):
-        from PySide6.QtWidgets import QTableView
-        from PySide6.QtGui import QStandardItemModel, QStandardItem
-        model = QStandardItemModel(len(rows), len(headers))
-        model.setHorizontalHeaderLabels(headers)
-        for r, row in enumerate(rows):
-            for c, val in enumerate(row):
-                item = QStandardItem(str(val) if val is not None else "N/A")
-                item.setEditable(False)
-                model.setItem(r, c, item)
-        view = QTableView()
-        view.setModel(model)
-        view.setSortingEnabled(False)
-        view.horizontalHeader().setStretchLastSection(True)
-        view.resizeColumnsToContents()
-        return view
-
-    # Tab 1: Star System Properties
     tabs.addTab(
         _tbl(
             ["Property", "Value"],
@@ -96,7 +85,6 @@ def _build_region_tabs(d: dict) -> QTabWidget:
         "Star System Properties",
     )
 
-    # Tab 2: Stellar Properties
     tabs.addTab(
         _tbl(
             ["Stellar Mass", "Stellar Radius", "Stellar Diameter (Sol)",
@@ -112,7 +100,6 @@ def _build_region_tabs(d: dict) -> QTabWidget:
         "Stellar Properties",
     )
 
-    # Tab 3: Star Distance
     tabs.addTab(
         _tbl(
             ["Parallax", "Trig Parallax", "Parsecs", "Light Years"],
@@ -126,7 +113,6 @@ def _build_region_tabs(d: dict) -> QTabWidget:
         "Star Distance",
     )
 
-    # Tab 4: Earth Equivalent Orbit
     tabs.addTab(
         _tbl(
             ["Distance (AU)", "Distance (KM)", "Year",
@@ -144,7 +130,6 @@ def _build_region_tabs(d: dict) -> QTabWidget:
         "Earth Equiv. Orbit",
     )
 
-    # Tab 5: Solar System Regions
     tabs.addTab(
         _tbl(
             ["Region", "AU"],
@@ -161,7 +146,6 @@ def _build_region_tabs(d: dict) -> QTabWidget:
         "System Regions",
     )
 
-    # Tab 6: Alternate HZ Regions
     tabs.addTab(
         _tbl(
             ["Region", "AU"],
@@ -183,7 +167,6 @@ def _build_region_tabs(d: dict) -> QTabWidget:
         "Alternate HZ Regions",
     )
 
-    # Tab 7: Calculated HZ (three luminosity columns)
     _KEY_MAP = {
         "Recent Venus":    "rv",
         "5 Earth Mass":    "rg5",
@@ -222,17 +205,39 @@ def _build_region_tabs(d: dict) -> QTabWidget:
     return tabs
 
 
-# ── Individual input-tab widgets ──────────────────────────────────────────────
+# ── Shared result-area helpers ────────────────────────────────────────────────
 
-class _AutoTab(QWidget):
-    """Option 9: SIMBAD-only with hardcoded sunlight=1.0, albedo=0.3."""
+def _clear_layout(layout):
+    while layout.count():
+        item = layout.takeAt(0)
+        w = item.widget()
+        if w:
+            w.deleteLater()
 
-    def __init__(self, parent_panel: "StarRegionsPanel"):
-        super().__init__()
-        self._panel = parent_panel
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
 
+def _render_result(result: dict, result_area: QVBoxLayout, show_designations: bool = True):
+    _clear_layout(result_area)
+    if "error" in result:
+        lbl = QLabel(result["error"])
+        lbl.setStyleSheet("color: red;")
+        lbl.setWordWrap(True)
+        result_area.addWidget(lbl)
+        return
+    if show_designations:
+        simbad = result.get("simbad", {})
+        desig_str = simbad.get("desig_str", "N/A")
+        banner = QLabel(f"<b>STAR DESIGNATIONS:</b><br>{desig_str}")
+        banner.setWordWrap(True)
+        result_area.addWidget(banner)
+    result_area.addWidget(_build_region_tabs(result))
+
+
+# ── Option 8: Auto (SIMBAD) ───────────────────────────────────────────────────
+
+class StarRegionsAutoPanel(ResultPanel):
+    """Star System Regions — Auto (SIMBAD) [option 8]."""
+
+    def build_inputs(self):
         form = QFormLayout()
         self._name = QLineEdit()
         self._name.setPlaceholderText("e.g. Vega, Alpha Centauri, HIP 27989")
@@ -241,56 +246,34 @@ class _AutoTab(QWidget):
         self._btn = QPushButton("Search")
         self._btn.clicked.connect(self._search)
         form.addRow("", self._btn)
-        layout.addLayout(form)
+        self._layout.addLayout(form)
 
         self._result_area = QVBoxLayout()
-        layout.addLayout(self._result_area)
-        layout.addStretch()
+        self._layout.addLayout(self._result_area)
+        self._layout.addStretch()
 
-    def _clear_results(self):
-        while self._result_area.count():
-            item = self._result_area.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
+    def build_results_area(self):
+        pass
 
     def _search(self):
         name = self._name.text().strip()
         if not name:
             return
-        self._clear_results()
-        # Single worker: SIMBAD lookup + region computation in one thread.
-        # Chaining two run_in_background calls would destroy the first thread's
-        # Python reference while it is still running, crashing Qt.
-        self._panel.run_in_background(_compute_auto_regions, name, on_result=self._render)
+        _clear_layout(self._result_area)
+        self.run_in_background(_compute_auto_regions, name, on_result=self._render)
 
     def _render(self, result: dict):
-        self._clear_results()
-        if "error" in result:
-            lbl = QLabel(result["error"])
-            lbl.setStyleSheet("color: red;")
-            lbl.setWordWrap(True)
-            self._result_area.addWidget(lbl)
-            return
-
-        simbad = result.get("simbad", {})
-        desig_str = simbad.get("desig_str", "N/A")
-        banner = QLabel(f"<b>STAR DESIGNATIONS:</b><br>{desig_str}")
-        banner.setWordWrap(True)
-        self._result_area.addWidget(banner)
-        self._result_area.addWidget(_build_region_tabs(result))
+        _render_result(result, self._result_area, show_designations=True)
 
 
-class _SemiManualTab(QWidget):
-    """Option 10: SIMBAD lookup + user-supplied sunlight intensity and bond albedo."""
+# ── Option 9: Semi-Manual ─────────────────────────────────────────────────────
 
-    def __init__(self, parent_panel: "StarRegionsPanel"):
-        super().__init__()
-        self._panel = parent_panel
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+class StarRegionsSemiManualPanel(ResultPanel):
+    """Star System Regions — Semi-Manual [option 9]."""
 
+    def build_inputs(self):
         form = QFormLayout()
+
         self._name = QLineEdit()
         self._name.setPlaceholderText("e.g. Vega, Alpha Centauri, HIP 27989")
         form.addRow("Star Name / Designation:", self._name)
@@ -306,21 +289,17 @@ class _SemiManualTab(QWidget):
         self._btn = QPushButton("Search")
         self._btn.clicked.connect(self._search)
         form.addRow("", self._btn)
-        layout.addLayout(form)
+        self._layout.addLayout(form)
 
         self._result_area = QVBoxLayout()
-        layout.addLayout(self._result_area)
-        layout.addStretch()
+        self._layout.addLayout(self._result_area)
+        self._layout.addStretch()
 
-    def _clear_results(self):
-        while self._result_area.count():
-            item = self._result_area.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
+    def build_results_area(self):
+        pass
 
     def _show_err(self, msg):
-        self._clear_results()
+        _clear_layout(self._result_area)
         lbl = QLabel(msg)
         lbl.setStyleSheet("color: red;")
         self._result_area.addWidget(lbl)
@@ -329,7 +308,6 @@ class _SemiManualTab(QWidget):
         name = self._name.text().strip()
         if not name:
             return
-
         try:
             sunlight = float(self._sunlight.text().strip() or "1.0")
         except ValueError:
@@ -340,37 +318,22 @@ class _SemiManualTab(QWidget):
         except ValueError:
             self._show_err("Bond Albedo must be a number.")
             return
-
-        self._clear_results()
-        # Single worker: avoids chained run_in_background (see _AutoTab comment).
-        self._panel.run_in_background(
+        _clear_layout(self._result_area)
+        self.run_in_background(
             _compute_semi_manual_regions, name, sunlight, albedo,
             on_result=self._render,
         )
 
     def _render(self, result: dict):
-        self._clear_results()
-        if "error" in result:
-            self._show_err(result["error"])
-            return
-
-        simbad = result.get("simbad", {})
-        desig_str = simbad.get("desig_str", "N/A")
-        banner = QLabel(f"<b>STAR DESIGNATIONS:</b><br>{desig_str}")
-        banner.setWordWrap(True)
-        self._result_area.addWidget(banner)
-        self._result_area.addWidget(_build_region_tabs(result))
+        _render_result(result, self._result_area, show_designations=True)
 
 
-class _ManualTab(QWidget):
-    """Option 11: all six inputs manual; pure math, no SIMBAD."""
+# ── Option 10: Manual ─────────────────────────────────────────────────────────
 
-    def __init__(self, parent_panel: "StarRegionsPanel"):
-        super().__init__()
-        self._panel = parent_panel
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+class StarRegionsManualPanel(ResultPanel):
+    """Star System Regions — Manual [option 10]."""
 
+    def build_inputs(self):
         form = QFormLayout()
 
         def _field(placeholder):
@@ -385,31 +348,27 @@ class _ManualTab(QWidget):
         self._sunlight = _field("e.g. 1.0")
         self._albedo   = _field("e.g. 0.3")
 
-        form.addRow("Apparent Magnitude (V):",              self._vmag)
-        form.addRow("Parallax (mas):",                      self._plx)
-        form.addRow("Bolometric Correction (BC):",          self._bc)
-        form.addRow("Star Effective Temperature (K):",      self._teff)
-        form.addRow("Sunlight Intensity (Terra = 1.0):",    self._sunlight)
+        form.addRow("Apparent Magnitude (V):",               self._vmag)
+        form.addRow("Parallax (mas):",                       self._plx)
+        form.addRow("Bolometric Correction (BC):",           self._bc)
+        form.addRow("Star Effective Temperature (K):",       self._teff)
+        form.addRow("Sunlight Intensity (Terra = 1.0):",     self._sunlight)
         form.addRow("Bond Albedo (Terra = 0.3, Venus = 0.9):", self._albedo)
-        layout.addLayout(form)
+        self._layout.addLayout(form)
 
         self._btn = QPushButton("Calculate")
         self._btn.clicked.connect(self._calculate)
-        layout.addWidget(self._btn)
+        self._layout.addWidget(self._btn)
 
         self._result_area = QVBoxLayout()
-        layout.addLayout(self._result_area)
-        layout.addStretch()
+        self._layout.addLayout(self._result_area)
+        self._layout.addStretch()
 
-    def _clear_results(self):
-        while self._result_area.count():
-            item = self._result_area.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
+    def build_results_area(self):
+        pass
 
     def _show_err(self, msg):
-        self._clear_results()
+        _clear_layout(self._result_area)
         lbl = QLabel(msg)
         lbl.setStyleSheet("color: red;")
         self._result_area.addWidget(lbl)
@@ -448,26 +407,4 @@ class _ManualTab(QWidget):
             sunlight_intensity=values["Sunlight Intensity"],
             bond_albedo=values["Bond Albedo"],
         )
-
-        self._clear_results()
-        if "error" in result:
-            self._show_err(result["error"])
-            return
-
-        self._result_area.addWidget(_build_region_tabs(result))
-
-
-# ── Main panel ────────────────────────────────────────────────────────────────
-
-class StarRegionsPanel(ResultPanel):
-    """Star System Regions panel (options 9, 10, 11) — three input tabs."""
-
-    def build_inputs(self):
-        self._input_count = 0
-
-    def build_results_area(self):
-        outer = QTabWidget()
-        outer.addTab(_AutoTab(self),       "Auto (SIMBAD)  [opt 9]")
-        outer.addTab(_SemiManualTab(self), "Semi-Manual  [opt 10]")
-        outer.addTab(_ManualTab(self),     "Manual  [opt 11]")
-        self._layout.addWidget(outer)
+        _render_result(result, self._result_area, show_designations=False)

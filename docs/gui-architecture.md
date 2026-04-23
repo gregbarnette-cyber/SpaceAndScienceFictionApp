@@ -36,9 +36,9 @@ gui/                 # Qt presentation layer
     sol_regions.py        # SolRegionsPanel (13)
     honorverse.py         # HonorverseHyperPanel (14), HonorverseAccelPanel (15),
                           #   HonorverseSpeedPanel (16)
-    velocity.py           # VelocityPanel (20, 21)
-    distance.py           # DistancePanel (22, 23)
-    travel_time.py        # TravelTimePanel (24, 25)
+    velocity.py           # VelocityLyHrPanel (20), VelocityTimesCPanel (21)
+    distance.py           # DistanceLyHrPanel (22), DistanceTimesCPanel (23)
+    travel_time.py        # TravelTimeLyHrPanel (24), TravelTimeTimesCPanel (25)
     orbit_calc.py         # OrbitPeriastronPanel (33), MoonDistance24Panel (34),
                           #   MoonDistanceXPanel (35)
     rotating_habitat.py   # GravityAccelPanel (36), GravityDistancePanel (37),
@@ -47,8 +47,10 @@ gui/                 # Qt presentation layer
     luminosity.py         # LuminosityPanel (41)
     # Phase C panels (SIMBAD / network):
     simbad.py            # SimbadPanel (1)
-    star_regions.py      # StarRegionsPanel (8, 9, 10)
-    distance_stars.py    # DistanceStarsPanel (17, 18, 19)
+    star_regions.py      # StarRegionsAutoPanel (8), StarRegionsSemiManualPanel (9),
+                         #   StarRegionsManualPanel (10)
+    distance_stars.py    # DistanceBetweenStarsPanel (17), StarsWithinDistanceSolPanel (18),
+                         #   StarsWithinDistanceStarPanel (19)
   visualizations/         # Phase E
 ```
 
@@ -69,24 +71,30 @@ This makes core functions testable in isolation and callable from both the CLI a
 - Left pane: `QTreeWidget` navigation (220 px fixed)
 - Right pane: `QStackedWidget` holding panel instances
 - Panels are created **lazily** on first click and cached — `show_panel(panel_class)` handles creation and display
+- Navigating to a **different** panel calls `panel.reset()` first, returning it to its initial blank state. Clicking the currently-visible nav entry does nothing.
 
 ### Navigation (`gui/nav.py`)
 
 `NAVIGATION` is a list of `(category, [(label, panel_class_name), ...])` tuples. At click time, `_on_item_clicked` resolves the class name via `getattr(gui.panels, name)`. Entries whose class hasn't been created yet are silently ignored — this lets phases be added incrementally without breaking existing nav items.
 
-Most nav entries map to their own independent panel class. Phase C panels (`StarRegionsPanel`, `DistanceStarsPanel`) are exceptions — they use `QTabWidget` internally to host multiple related features (opts 8/9/10 and opts 17/18/19 respectively). Clicking any of their nav entries opens the same panel; the user switches between features via tabs.
+Every nav entry maps to its own independent panel class. There are no shared tab-widget panels.
 
 ### Panel Base Class (`gui/panels/base.py`)
 
 ```
 ResultPanel (QWidget)
-  __init__         calls build_inputs() then build_results_area()
-  build_inputs()   override: add form widgets above results
-  build_results_area()  override: add result display widgets
+  __init__             creates outer layout, calls _init_container()
+  _init_container()    creates _container widget + self._layout, calls build_inputs()
+                       then build_results_area(), then sets QPushButton children
+                       to Fixed size policy (natural text width, not full screen width)
+  reset()              removes old _container (deleteLater), calls _init_container()
+                       — used by show_panel() when switching to a different panel
+  build_inputs()       override: add form widgets above results
+  build_results_area() override: add result display widgets (default: QTextEdit)
   make_table(headers, rows) → QTableView
-  clear_results()  remove all widgets below the input section
-  show_error(msg)  display red error label
-  set_status(msg)  update MainWindow status bar
+  clear_results()      remove all widgets below the input section (_input_count)
+  show_error(msg)      display red error label
+  set_status(msg)      update MainWindow status bar
   # Phase C additions:
   run_in_background(fn, *args, on_result=None)
   _on_error(msg)
@@ -94,6 +102,8 @@ ResultPanel (QWidget)
 ```
 
 Phase C adds `Worker(QObject)` and `run_in_background()` to support network calls without freezing the UI. The pattern established in Phase C is reused by all subsequent network-bound panels (Phase D).
+
+**Reset safety**: `_on_error` and `_on_thread_done` wrap `run_btn.setEnabled()` in `try/except RuntimeError` because a background thread can complete after a `reset()` has deleted the old button widget.
 
 ## Panel Class → Option Mapping
 
@@ -121,16 +131,16 @@ Phase C adds `Worker(QObject)` and `run_in_background()` to support network call
 | `HabZoneSmaPanel` | 40 | `panels/habitable_zone_calc.py` |
 | `LuminosityPanel` | 41 | `panels/luminosity.py` |
 | `SimbadPanel` | 1 | `panels/simbad.py` |
-| `StarRegionsPanel` | 8, 9, 10 | `panels/star_regions.py` |
+| `StarRegionsAutoPanel` | 8 | `panels/star_regions.py` |
+| `StarRegionsSemiManualPanel` | 9 | `panels/star_regions.py` |
+| `StarRegionsManualPanel` | 10 | `panels/star_regions.py` |
 | `DistanceBetweenStarsPanel` | 17 | `panels/distance_stars.py` |
 | `StarsWithinDistanceSolPanel` | 18 | `panels/distance_stars.py` |
 | `StarsWithinDistanceStarPanel` | 19 | `panels/distance_stars.py` |
-| `NasaAllTablesPanel` | 2 | `panels/nasa_exoplanet.py` |
 | `NasaPlanetarySystemsPanel` | 3 | `panels/nasa_exoplanet.py` |
 | `NasaHwoExepPanel` | 4 | `panels/nasa_exoplanet.py` |
 | `NasaMissionExocatPanel` | 5 | `panels/nasa_exoplanet.py` |
 | `HwcPanel` | 6 | `panels/catalogs.py` |
-| `OecPanel` | 7 | `panels/catalogs.py` |
 | `TravelTimeStarsLyHrPanel` | 26 | `panels/travel_time_stars.py` |
 | `TravelTimeStarsTimesCPanel` | 27 | `panels/travel_time_stars.py` |
 | `BrachistochroneAccelPanel` | 28 | `panels/brachistochrone.py` |
@@ -140,21 +150,19 @@ Phase C adds `Worker(QObject)` and `run_in_background()` to support network call
 | `SystemTravelThrustPanel` | 32 | `panels/system_travel.py` |
 | `CsvUtilityPanel` | 50 | `panels/csv_utility.py` |
 
-## Tab-Based Panel Layout Notes
+> **Note**: `NasaAllTablesPanel` (opt 2) and `OecPanel` (opt 7) are implemented in `nasa_exoplanet.py` and `catalogs.py` respectively, but are **not exported** from `panels/__init__.py` and do not appear in the GUI nav. Both options remain fully functional in the CLI.
 
-### DistanceStarsPanel (`panels/distance_stars.py`)
+## Star Regions Panel Layout Notes
 
-Three tabs sharing one `DistanceStarsPanel` instance:
+### Star Regions Panels (`panels/star_regions.py`)
 
-- **Between 2 Stars (opt 17)** — two `QLineEdit` inputs in a `QFormLayout`, Calculate button below the form in the main `QVBoxLayout`, 2-row result table + distance label in a `_result_area` sub-layout.
-- **Within Distance of Sol (opt 18)** — one `QLineEdit` input in a `QFormLayout`; Search button added as the last row of the `QFormLayout` (no label) so it sits flush below the input. Result count label + table in `_result_area`, which has stretch factor 1 so the table expands to fill available height.
-- **Within Distance of Star (opt 19)** — same layout pattern as opt 18: two `QLineEdit` inputs in a `QFormLayout`, Search button as last form row, expanding result table.
+Three independent panels for opts 8 (Auto/SIMBAD), 9 (Semi-Manual), and 10 (Manual). All produce the same result tab set (`_build_region_tabs`); they differ only in how input values are collected (fully automated vs. partially prompted vs. fully manual).
 
-The expanding-table pattern (result layout with stretch=1, table view with `Expanding` size policy) is used in opts 18 and 19 because they can return many rows. Opt 17 returns exactly 2 rows so no expansion is needed.
+- **Auto (opt 8)** — one `QLineEdit` for star name; hardcoded `sunlight=1.0`, `albedo=0.3`. Single background worker combines SIMBAD lookup + region computation.
+- **Semi-Manual (opt 9)** — star name + sunlight intensity + bond albedo inputs. Same combined background worker.
+- **Manual (opt 10)** — six `QLineEdit` fields (vmag, parallax, BC, teff, sunlight, albedo); pure math, no network call.
 
-### StarRegionsPanel (`panels/star_regions.py`)
-
-Three tabs for opts 8 (Auto/SIMBAD), 9 (Semi-Manual), and 10 (Manual). All tabs produce identical output tables; they differ only in how input values are collected (fully automated vs. partially prompted vs. fully manual).
+All three share `_build_region_tabs(d)` which produces a nested `QTabWidget` with seven result tabs: Star System Properties, Stellar Properties, Star Distance, Earth Equiv. Orbit, System Regions, Alternate HZ Regions, Calculated HZ.
 
 ## Phase Completion Status
 
@@ -163,6 +171,6 @@ Three tabs for opts 8 (Auto/SIMBAD), 9 (Semi-Manual), and 10 (Manual). All tabs 
 | A | Complete | Project skeleton, core stubs, GUI shell, nav tree |
 | B | Complete | Static display + pure-math calculators (opts 11–16, 20–25, 33–41) |
 | C | Complete | SIMBAD-based features + QThread threading pattern (opts 1, 8–10, 17–19) |
-| D | Complete | Multi-source features, JPL Horizons, option 50 (opts 2–7, 26–32, 50) |
+| D | Complete | Multi-source features, JPL Horizons, option 50 (opts 3–6, 26–32, 50); opts 2 and 7 implemented but not in GUI nav |
 | E | Pending | Visualizations: star map, orbital diagram, HZ diagram |
 | F | Pending | SQLite migration — replaces all CSV files with `data/space_app.db` |

@@ -51,12 +51,15 @@ class MainWindow(QMainWindow):
     # ── Public API ────────────────────────────────────────────────────────────
 
     def show_panel(self, panel_class) -> None:
-        """Create (if needed) and display the panel for panel_class."""
+        """Create (if needed), reset, and display the panel for panel_class."""
         if panel_class not in self._panels:
             panel = panel_class(self)
             self._panels[panel_class] = panel
             self.stack.addWidget(panel)
-        self.stack.setCurrentWidget(self._panels[panel_class])
+        panel = self._panels[panel_class]
+        if self.stack.currentWidget() is not panel:
+            panel.reset()
+        self.stack.setCurrentWidget(panel)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
