@@ -324,6 +324,33 @@ def prepare_system_regions_diagram(d: dict) -> dict:
     }
 
 
+def prepare_alt_hz_diagram(d: dict) -> dict:
+    """Extract alternate biochemistry HZ zone data from a star-regions result dict.
+
+    Returns {"zones": list, "max_au": float} or {"error": str}.
+    Each zone dict: label, inner_au, outer_au, color.  Ordered hot (close) → cold (far).
+    """
+    try:
+        zones = [
+            {"label": "Fluorosilicone-Fluorosilicone",
+             "inner_au": d["ffInner"], "outer_au": d["ffOuter"], "color": "#FF3300"},
+            {"label": "Fluorocarbon-Sulfur",
+             "inner_au": d["fsInner"], "outer_au": d["fsOuter"], "color": "#FF8800"},
+            {"label": "Protein-Water",
+             "inner_au": d["prwInner"], "outer_au": d["prwOuter"], "color": "#33AA55"},
+            {"label": "Protein-Ammonia",
+             "inner_au": d["praInner"], "outer_au": d["praOuter"], "color": "#4488CC"},
+            {"label": "Polylipid-Methane",
+             "inner_au": d["pmInner"], "outer_au": d["pmOuter"], "color": "#8833EE"},
+            {"label": "Polylipid-Hydrogen",
+             "inner_au": d["phInner"], "outer_au": d["phOuter"], "color": "#223366"},
+        ]
+    except KeyError as e:
+        return {"error": f"Missing field: {e}"}
+    max_au = max(z["outer_au"] for z in zones)
+    return {"zones": zones, "max_au": max_au}
+
+
 def prepare_hz_diagram(teff: float, luminosity: float) -> dict:
     """Compute HZ ring data for a star with given temperature and luminosity.
 

@@ -9,7 +9,7 @@ import math
 
 from PySide6.QtWidgets import (
     QTabWidget, QWidget, QVBoxLayout, QFormLayout,
-    QLineEdit, QPushButton, QLabel, QTableView,
+    QLineEdit, QPushButton, QLabel, QTableView, QSizePolicy,
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
@@ -19,7 +19,7 @@ import core.regions
 import core.viz
 from core.equations import _kopparapu_seff
 from gui.visualizations.plot_helpers import (
-    mpl_available, make_hz_canvas, make_system_regions_canvas,
+    mpl_available, make_hz_canvas, make_system_regions_canvas, make_alt_hz_canvas,
 )
 
 
@@ -64,6 +64,7 @@ def _tbl(headers, rows) -> QTableView:
     view.setSortingEnabled(False)
     view.horizontalHeader().setStretchLastSection(True)
     view.resizeColumnsToContents()
+    view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     return view
 
 
@@ -72,6 +73,7 @@ def _tbl(headers, rows) -> QTableView:
 def _build_region_tabs(d: dict) -> QTabWidget:
     """Build a QTabWidget of result tables from a compute_star_system_regions() result dict."""
     tabs = QTabWidget()
+    tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     tabs.addTab(
         _tbl(
@@ -208,33 +210,52 @@ def _build_region_tabs(d: dict) -> QTabWidget:
 
     # ── Visualization tabs (require matplotlib) ───────────────────────────────
     if mpl_available():
-        # HZ Diagram: use calculatedLuminosity + temp, mark Earth Equiv. Orbit
-        hz_data = core.viz.prepare_hz_diagram(d["temp"], d["calculatedLuminosity"])
-        if "zones" in hz_data:
-            hz_w = QWidget()
-            hz_l = QVBoxLayout(hz_w)
-            hz_l.setContentsMargins(4, 4, 4, 4)
-            canvas, toolbar = make_hz_canvas(
-                None,
-                hz_data["zones"],
-                hz_data["max_au"],
-                title=f"Habitable Zone  (T={d['temp']:.0f} K,  L={d['calculatedLuminosity']:.4f} L☉)",
-                eeid_au=d.get("distAU"),
-            )
-            hz_l.addWidget(toolbar)
-            hz_l.addWidget(canvas)
-            tabs.addTab(hz_w, "HZ Diagram")
+        try:
+            # HZ Diagram: use calculatedLuminosity + temp, mark Earth Equiv. Orbit
+            hz_data = core.viz.prepare_hz_diagram(d["temp"], d["calculatedLuminosity"])
+            if "zones" in hz_data:
+                hz_w = QWidget()
+                hz_l = QVBoxLayout(hz_w)
+                hz_l.setContentsMargins(4, 4, 4, 4)
+                canvas, toolbar = make_hz_canvas(
+                    None,
+                    hz_data["zones"],
+                    hz_data["max_au"],
+                    title=f"Habitable Zone  (T={d['temp']:.0f} K,  L={d['calculatedLuminosity']:.4f} L☉)",
+                    eeid_au=d.get("distAU"),
+                )
+                hz_l.addWidget(toolbar)
+                hz_l.addWidget(canvas)
+                tabs.addTab(hz_w, "HZ Diagram")
 
-        # System Regions Diagram: log-scale radial ruler
-        regions_data = core.viz.prepare_system_regions_diagram(d)
-        sr_canvas, sr_toolbar = make_system_regions_canvas(None, regions_data)
-        if sr_canvas is not None:
-            sr_w = QWidget()
-            sr_l = QVBoxLayout(sr_w)
-            sr_l.setContentsMargins(4, 4, 4, 4)
-            sr_l.addWidget(sr_toolbar)
-            sr_l.addWidget(sr_canvas)
-            tabs.addTab(sr_w, "System Regions Diagram")
+            # System Regions Diagram: concentric ring diagram (√AU scale)
+            regions_data = core.viz.prepare_system_regions_diagram(d)
+            sr_canvas, sr_toolbar = make_system_regions_canvas(None, regions_data)
+            if sr_canvas is not None:
+                sr_w = QWidget()
+                sr_l = QVBoxLayout(sr_w)
+                sr_l.setContentsMargins(4, 4, 4, 4)
+                sr_l.addWidget(sr_toolbar)
+                sr_l.addWidget(sr_canvas)
+                tabs.addTab(sr_w, "System Regions Diagram")
+
+            # Alternate HZ Diagram: concentric ring diagram (⁴√AU scale)
+            alt_data = core.viz.prepare_alt_hz_diagram(d)
+            if "zones" in alt_data:
+                alt_canvas, alt_toolbar = make_alt_hz_canvas(
+                    None,
+                    alt_data["zones"],
+                    alt_data["max_au"],
+                    eeid_au=d.get("distAU"),
+                )
+                alt_w = QWidget()
+                alt_l = QVBoxLayout(alt_w)
+                alt_l.setContentsMargins(4, 4, 4, 4)
+                alt_l.addWidget(alt_toolbar)
+                alt_l.addWidget(alt_canvas)
+                tabs.addTab(alt_w, "Alternate HZ Diagram")
+        except Exception:
+            pass
 
     return tabs
 
@@ -263,7 +284,8 @@ def _render_result(result: dict, result_area: QVBoxLayout, show_designations: bo
         banner = QLabel(f"<b>STAR DESIGNATIONS:</b><br>{desig_str}")
         banner.setWordWrap(True)
         result_area.addWidget(banner)
-    result_area.addWidget(_build_region_tabs(result))
+    tabs = _build_region_tabs(result)
+    result_area.addWidget(tabs, 1)
 
 
 # ── Option 8: Auto (SIMBAD) ───────────────────────────────────────────────────
@@ -283,8 +305,7 @@ class StarRegionsAutoPanel(ResultPanel):
         self._layout.addLayout(form)
 
         self._result_area = QVBoxLayout()
-        self._layout.addLayout(self._result_area)
-        self._layout.addStretch()
+        self._layout.addLayout(self._result_area, 1)
 
     def build_results_area(self):
         pass
@@ -326,8 +347,7 @@ class StarRegionsSemiManualPanel(ResultPanel):
         self._layout.addLayout(form)
 
         self._result_area = QVBoxLayout()
-        self._layout.addLayout(self._result_area)
-        self._layout.addStretch()
+        self._layout.addLayout(self._result_area, 1)
 
     def build_results_area(self):
         pass
@@ -395,8 +415,7 @@ class StarRegionsManualPanel(ResultPanel):
         self._layout.addWidget(self._btn)
 
         self._result_area = QVBoxLayout()
-        self._layout.addLayout(self._result_area)
-        self._layout.addStretch()
+        self._layout.addLayout(self._result_area, 1)
 
     def build_results_area(self):
         pass
