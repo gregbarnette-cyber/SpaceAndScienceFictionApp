@@ -64,6 +64,15 @@ class DistanceBetweenStarsPanel(ResultPanel):
         s1 = result["star1_info"]
         s2 = result["star2_info"]
 
+        dist_ly = result["distance_ly"]
+        dist_au = result.get("distance_au")
+        dist_text = f"<b>Distance:</b> {dist_ly:.4f} Light Years"
+        if dist_au is not None:
+            dist_text += f"  /  {dist_au:.2f} AU"
+        lbl = QLabel(dist_text)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.add_result_widget(lbl)
+
         headers = ["Star", "Star Designations", "RA", "DEC", "Light Years"]
         rows = [
             [s1["name"], s1["desig_str"],
@@ -74,15 +83,6 @@ class DistanceBetweenStarsPanel(ResultPanel):
         table = self.make_table(headers, rows)
         table.setSortingEnabled(False)
         self.add_result_widget(table)
-
-        dist_ly = result["distance_ly"]
-        dist_au = result.get("distance_au")
-        dist_text = f"<b>Distance:</b> {dist_ly:.4f} Light Years"
-        if dist_au is not None:
-            dist_text += f"  /  {dist_au:.2f} AU"
-        lbl = QLabel(dist_text)
-        lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.add_result_widget(lbl)
 
 
 # ── Option 18: Stars Within Distance of Sol ───────────────────────────────────

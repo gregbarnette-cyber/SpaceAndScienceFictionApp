@@ -580,7 +580,7 @@ def make_system_regions_canvas(parent, data: dict):
         ang = math.radians(20 + i * 50)
         lx  = r * math.cos(ang) * 1.08
         ly  = r * math.sin(ang) * 1.08
-        ax.text(lx, ly, f"{r_dict['au']:.2f} AU",
+        ax.text(lx, ly, f"{r_dict['label']}\n{r_dict['au']:.2f} AU",
                 color=r_dict["color"], fontsize=6, ha="center", va="center",
                 alpha=0.9, zorder=6)
 
@@ -607,7 +607,7 @@ def make_system_regions_canvas(parent, data: dict):
         handles.append(mpatches.Patch(
             facecolor=fill, edgecolor=r_dict["color"],
             linewidth=0.7, alpha=0.85,
-            label=f"{zname}  (< {r_dict['au']:.2f} AU)",
+            label=f"{r_dict['label']}  ·  {zname}  ({r_dict['au']:.2f} AU)",
         ))
     if eeid_au and 0 < eeid_au < sysol_au:
         handles.append(mpatches.Patch(
