@@ -82,7 +82,9 @@ The main menu loop calls whichever function the user picks, then returns to the 
                                                     36. Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)
   Utilities                                         37. Distance from Point X to the Center of Rotation (m)
   ---------                                         38. Rotation Rate at Point X (rpm)
-50. Star Systems CSV Query
+50. Star Systems DB Query
+51. Export Star Systems to CSV
+52. Import HWC Data
 Q.  Quit                                            Misc. Equations
                                                     ---------------
                                                     39. Habitable Zone Calculator

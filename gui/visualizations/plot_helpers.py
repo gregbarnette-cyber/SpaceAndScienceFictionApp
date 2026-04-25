@@ -466,7 +466,8 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
 
 def make_star_map_canvas(parent, stars: list, title: str = "",
                          xk: str = "x", yk: str = "y",
-                         xlabel: str = "X (ly)", ylabel: str = "Y (ly)"):
+                         xlabel: str = "X (ly)", ylabel: str = "Y (ly)",
+                         bg: str = _SPACE_BG):
     """2D scatter star map.
 
     stars: list of dicts {name, color, ly, x, y, z}.
@@ -479,9 +480,9 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
     names  = [s["name"]  for s in stars]
     sizes  = [60 if i == 0 else 12 for i in range(len(stars))]
 
-    fig = Figure(figsize=(6, 6), facecolor=_SPACE_BG)
+    fig = Figure(figsize=(6, 6), facecolor=bg)
     canvas = FigureCanvas(fig)
-    ax = fig.add_subplot(111, facecolor=_SPACE_BG)
+    ax = fig.add_subplot(111, facecolor=bg)
 
     sc = ax.scatter(xs, ys, c=colors, s=sizes, linewidths=0, alpha=0.85,
                     picker=True, pickradius=4, zorder=3)
@@ -573,6 +574,132 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
     return canvas, toolbar
+
+
+# ── Star Map 3D ────────────────────────────────────────────────────────────────
+
+def make_star_map_3d_canvas(parent, stars: list, title: str = "",
+                            bg: str = _SPACE_BG):
+    """3D scatter star map with drag-to-rotate.
+
+    stars: list of dicts {name, color, ly, x, y, z}.
+    First star is treated as the origin/center (highlighted with a star marker).
+    Returns (canvas, toolbar, ax) — caller uses ax to bind viewpoint preset buttons.
+    """
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers 3d projection
+
+    xs     = [s["x"]     for s in stars]
+    ys     = [s["y"]     for s in stars]
+    zs     = [s["z"]     for s in stars]
+    colors = [s["color"] for s in stars]
+    names  = [s["name"]  for s in stars]
+    sizes  = [80 if i == 0 else 12 for i in range(len(stars))]
+
+    fig = Figure(figsize=(6, 6), facecolor=bg)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_facecolor(bg)
+    fig.patch.set_facecolor(bg)
+
+    sc = ax.scatter(xs, ys, zs, c=colors, s=sizes, alpha=0.85,
+                    depthshade=True, picker=True, pickradius=5, zorder=3)
+
+    # Highlight center star with a star marker
+    ax.scatter([xs[0]], [ys[0]], [zs[0]], c=[colors[0]], s=100,
+               marker="*", zorder=5, edgecolors="#333333", linewidths=0.5,
+               depthshade=False)
+
+    ax.set_xlabel("X (ly)", color=_LABEL_CLR, fontsize=9)
+    ax.set_ylabel("Y (ly)", color=_LABEL_CLR, fontsize=9)
+    ax.set_zlabel("Z (ly)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(axis="x", colors=_LABEL_CLR, labelsize=7)
+    ax.tick_params(axis="y", colors=_LABEL_CLR, labelsize=7)
+    ax.tick_params(axis="z", colors=_LABEL_CLR, labelsize=7)
+    ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=8)
+
+    for axis in [ax.xaxis, ax.yaxis, ax.zaxis]:
+        axis.pane.fill = False
+        axis.pane.set_edgecolor(_GRID_CLR)
+    ax.grid(True, color=_GRID_CLR, linewidth=0.4, linestyle=":")
+    ax.view_init(elev=30, azim=-60)
+
+    # Spectral class legend
+    seen = {}
+    for s in stars:
+        cls = (s["sp_type"][0].upper() if s.get("sp_type") else "?")
+        if cls not in seen:
+            seen[cls] = s["color"]
+    handles = [mpatches.Patch(color=c, label=f"Class {k}")
+               for k, c in sorted(seen.items()) if k != "?"]
+    if handles:
+        ax.legend(handles=handles, loc="upper left", fontsize=7,
+                  framealpha=0.85, labelcolor="#333333",
+                  facecolor="#ffffff", edgecolor="#aaaaaa")
+
+    # Hover tooltip — fixed top-left (3D data coords unreliable for annotation xy)
+    hover_text = ax.text2D(0.02, 0.97, "", transform=ax.transAxes,
+                           fontsize=8, color=_LABEL_CLR, va="top",
+                           bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0",
+                                     ec="#2266cc", lw=0.8, alpha=0.9),
+                           visible=False, zorder=10)
+
+    def _on_motion(event):
+        if event.inaxes != ax:
+            if hover_text.get_visible():
+                hover_text.set_visible(False)
+                canvas.draw_idle()
+            return
+        cont, ind = sc.contains(event)
+        if cont:
+            idx    = ind["ind"][0]
+            ly_val = stars[idx].get("ly", 0)
+            hover_text.set_text(f"{names[idx]}\n{ly_val:.2f} ly")
+            hover_text.set_visible(True)
+        else:
+            if hover_text.get_visible():
+                hover_text.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+
+    # Click info box — fixed bottom-left corner
+    info_text = ax.text2D(0.02, 0.02, "", transform=ax.transAxes,
+                          fontsize=8, color=_LABEL_CLR,
+                          bbox=dict(boxstyle="round,pad=0.4", fc=bg,
+                                    ec=_GRID_CLR, lw=0.8, alpha=0.9),
+                          visible=False, zorder=10)
+
+    def _on_click(event):
+        if event.inaxes is not ax or event.xdata is None:
+            if info_text.get_visible():
+                info_text.set_visible(False)
+                canvas.draw_idle()
+            return
+        cont, ind = sc.contains(event)
+        if cont:
+            idx   = ind["ind"][0]
+            s     = stars[idx]
+            desig = (s.get("desig") or "").strip()
+            sp    = (s.get("sp_type") or "").strip()
+            dist  = s.get("ly", s.get("Distance", 0.0))
+            lines = [names[idx]]
+            if desig:
+                lines.append(f"  Designations : {desig}")
+            if sp:
+                lines.append(f"  Spectral Type: {sp}")
+            if dist:
+                lines.append(f"  Distance     : {dist:.4f} ly")
+            info_text.set_text("\n".join(lines))
+            info_text.set_visible(True)
+        elif info_text.get_visible():
+            info_text.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("button_press_event", _on_click)
+
+    fig.tight_layout(pad=1.0)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar, ax
 
 
 # ── System Regions Diagram ─────────────────────────────────────────────────────

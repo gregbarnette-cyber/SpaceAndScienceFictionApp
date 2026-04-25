@@ -62,12 +62,13 @@ gui/                 # Qt presentation layer
     brachistochrone.py   # BrachistochroneAccelPanel (28), BrachistochroneAuPanel (29),
                          #   BrachistochroneLmPanel (30)
     system_travel.py     # SystemTravelSolarPanel (31), SystemTravelThrustPanel (32)
-    csv_utility.py       # CsvUtilityPanel (50)
+    csv_utility.py       # CsvUtilityPanel (50), ExportStarSystemsPanel (51),
+                         #   ImportHwcPanel (52)
   visualizations/        # Phase E: shared rendering helpers + standalone panel stubs
     __init__.py
     plot_helpers.py      # mpl_available(), make_hz_canvas(), make_orbits_canvas(),
-                         #   make_star_map_canvas(), make_system_regions_canvas(),
-                         #   make_alt_hz_canvas()
+                         #   make_star_map_canvas(bg=), make_star_map_3d_canvas(bg=),
+                         #   make_system_regions_canvas(), make_alt_hz_canvas()
     hz_diagram.py        # HabZoneDiagramPanel — standalone stub (not in nav)
     star_map.py          # StarMapPanel — standalone stub (not in nav)
     system_orbits.py     # SystemOrbitsPanel — standalone stub (not in nav)
@@ -229,6 +230,8 @@ def __getattr__(name: str):
 | `SystemTravelSolarPanel` | 31 | `panels/system_travel.py` |
 | `SystemTravelThrustPanel` | 32 | `panels/system_travel.py` |
 | `CsvUtilityPanel` | 50 | `panels/csv_utility.py` |
+| `ExportStarSystemsPanel` | 51 | `panels/csv_utility.py` |
+| `ImportHwcPanel` | 52 | `panels/csv_utility.py` |
 
 > **Note**: `NasaAllTablesPanel` (opt 2) and `OecPanel` (opt 7) are implemented in `nasa_exoplanet.py` and `catalogs.py` respectively, but are **not exported** from `panels/__init__.py` and do not appear in the GUI nav. Both options remain fully functional in the CLI.
 
@@ -266,7 +269,7 @@ Added to `viz_widget` when `mpl_available()` (2):
 
 `_input_count` is updated **after** `build_results_area()` completes, so `clear_results()` never destroys the persistent `_tables_widget` or `_viz_container`.
 
-Map canvases ("Map X–Y (top-down)" and "Map X–Z (edge-on)") are added to `_viz_tabs_widget` and are only visible in diagram mode.
+Three map canvases are added to `_viz_tabs_widget` and are only visible in diagram mode: "Map X–Y (top-down)", "Map X–Z (edge-on)", and "Map 3D". The 3D tab includes three Qt viewpoint preset buttons (Top View, Side View, 3D Perspective) above the matplotlib toolbar. All three canvases use a light gray background (`bg="#ebebeb"`) rather than the default `#f5f5f5`.
 
 ## Phase E Visualization Integration
 
@@ -282,7 +285,8 @@ All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures u
 |---|---|---|
 | `make_hz_canvas(parent, zones, max_au, title, eeid_au)` | NASA opts 3–5, HWC (6), Star Regions 8–10 | Concentric ring HZ diagram; optional EEID circle |
 | `make_orbits_canvas(parent, orbits, hz_zones, max_au, star_name, eeid_au)` | NASA opts 3, 6 | Keplerian orbital ellipses with HZ annulus overlay |
-| `make_star_map_canvas(parent, stars, title, xk, yk, xlabel, ylabel)` | Stars Within Distance 18, 19 | 2D scatter, spectral-class colours, hover annotation |
+| `make_star_map_canvas(parent, stars, title, xk, yk, xlabel, ylabel, bg)` | Stars Within Distance 18, 19 | 2D scatter, spectral-class colours, hover annotation; `bg` overrides figure background colour |
+| `make_star_map_3d_canvas(parent, stars, title, bg)` | Stars Within Distance 18, 19 | 3D scatter with drag-to-rotate; returns `(canvas, toolbar, ax)` so caller can bind viewpoint preset buttons; `bg` overrides figure background colour |
 | `make_system_regions_canvas(parent, data)` | Star Regions 8–10 | Concentric ring diagram (√AU scale) with zone fills + boundary labels |
 | `make_alt_hz_canvas(parent, zones, max_au, title, eeid_au)` | Star Regions 8–10 | Concentric ring diagram (⁴√AU scale) for alternate biochemistry HZ zones |
 
@@ -301,8 +305,8 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
 | `StarRegionsSemiManualPanel` (9) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
 | `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
-| `StarsWithinDistanceSolPanel` (18) | "Map X–Y (top-down)", "Map X–Z (edge-on)" | `DiagramToggleMixin` |
-| `StarsWithinDistanceStarPanel` (19) | "Map X–Y (top-down)", "Map X–Z (edge-on)" | `DiagramToggleMixin` |
+| `StarsWithinDistanceSolPanel` (18) | "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D" | `DiagramToggleMixin` |
+| `StarsWithinDistanceStarPanel` (19) | "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D" | `DiagramToggleMixin` |
 
 ### `core/viz.py` public API
 
@@ -322,5 +326,5 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | B | Complete | Static display + pure-math calculators (opts 11–16, 20–25, 33–41) |
 | C | Complete | SIMBAD-based features + QThread threading pattern (opts 1, 8–10, 17–19) |
 | D | Complete | Multi-source features, JPL Horizons, option 50 (opts 3–6, 26–32, 50); opts 2 and 7 implemented but not in GUI nav |
-| E | Complete | Visualizations embedded in existing panels: star map (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10); Show Diagrams/Show Tables toggle on all viz panels; light theme |
-| F | Pending | SQLite migration — replaces all CSV files with `data/space_app.db` |
+| E | Complete | Visualizations embedded in existing panels: star map 2D + 3D (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10); Show Diagrams/Show Tables toggle on all viz panels; light theme; 3D viewpoint preset buttons (18–19) |
+| F | Pending | SQLite migration — replaces all CSV files with `data/space_app.db`; opt 50 rewritten to write to DB; opt 51 (Export Star Systems to CSV) and opt 52 (Import HWC Data) added |

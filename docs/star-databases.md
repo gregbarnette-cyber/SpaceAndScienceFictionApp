@@ -1,6 +1,6 @@
 # Star Databases Feature Documentation
 
-Options 1–7 and 50. All sections here involve querying external star/exoplanet data sources. They change together when APIs or data schemas update.
+Options 1–7, 50–52. All sections here involve querying external star/exoplanet data sources or managing the local data store. They change together when APIs, data schemas, or the DB layer is updated.
 
 ## SIMBAD Query Feature
 
@@ -127,7 +127,9 @@ Options 1–7 and 50. All sections here involve querying external star/exoplanet
 - If `star_elems` is empty (system-level planets, no host star), prints a note and skips star/planet tables.
 - If no match found, prints a message and returns to menu.
 
-## Star Systems CSV Query Feature
+## Star Systems DB Query Feature (opt 50) / Export to CSV (opt 51) / Import HWC (opt 52)
+
+> **Phase F note**: In Phase F, opt 50 is rewritten to write to the `star_systems` SQLite table instead of a CSV file. Opt 51 exports the `star_systems` table to `starSystems.csv`. Opt 52 replaces the `hwc` table from a new `hwc.csv`. Until Phase F is implemented, the documentation below reflects the current CSV-based behavior.
 
 - Menu option 50: `query_star_systems_csv()` — runs 17 SIMBAD criteria queries in sequence and writes results to `starSystems.csv`.
 - Uses `query_criteria()` (deprecated but still functional) with `add_votable_fields("sp_type", "plx_value", "V", "ids")`. The deprecation warning is suppressed via `warnings.catch_warnings()`. `query_tap` ADQL was investigated but rejected: SIMBAD TAP does not support table-qualified column names (`basic.col`), `maintype` does not exist in the TAP schema, and the `mes_fe_h` JOIN causes syntax errors.
@@ -154,9 +156,25 @@ Options 1–7 and 50. All sections here involve querying external star/exoplanet
   - Star Name: `main_id`; Star Designations: comma-separated catalog IDs (GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS) parsed from pipe-separated `ids.ids` string via `_parse_designations_from_ids()`.
   - Parallax: 4dp; Parsecs = 1000/plx (3dp); Light Years = parsecs × 3.26156 (3dp); Apparent Magnitude: 3dp.
   - RA: converted from decimal degrees to sexagesimal `HH MM SS.SSSS` (divide by 15 to get hours). DEC: converted to `±DD MM SS.SSS`. Conversion is pure Python math, no extra libraries.
-- **Backup**: if `starSystems.csv` already exists at startup, it is renamed to `starSystemsBackup-YYYYMMDD.csv` (e.g. `starSystemsBackup-20260405.csv`) before any queries run. The function then starts fresh with an empty dataset.
+- **Backup**: if `starSystems.csv` already exists at startup, it is renamed to `starSystemsBackup-YYYYMMDD.csv` (e.g. `starSystemsBackup-20260405.csv`) before any queries run. The function then starts fresh with an empty dataset. *(Phase F: existing `star_systems` table rows are moved to a `star_systems_backup_YYYYMMDD` table instead.)*
 - **Deduplication**: `existing_ids` is passed as a live set to `_run_simbad_csv_query()` and updated in-place as rows are accepted — so each query automatically skips stars already captured by earlier queries. No separate cross-query dedup pass needed.
 - **Sort**: all new rows from all queries are sorted together ascending by Light Years before writing.
 - Helper `_run_simbad_csv_query(simbad, criteria, query_num, existing_ids)` encapsulates per-query fetch, row processing, discard logic, and deduplication; returns `(new_rows, discarded)`.
 - Helper `_parse_designations_from_ids(ids_string)` and module-level `_CSV_PREFIX_MAP` / `_CSV_DESIG_KEYS` are defined before `MENU_OPTIONS`.
 - More queries (different parallax ranges or criteria) can be added to the `queries` list in `query_star_systems_csv()`; each will merge into the same `starSystems.csv` with the same deduplication logic.
+
+## Export Star Systems to CSV Feature (opt 51 — Phase F)
+
+- Menu option 51: `export_star_systems_csv()` — reads the `star_systems` DB table and writes `starSystems.csv` to the project directory.
+- Output columns match the original CSV format: `Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Apparent Magnitude, RA, DEC`.
+- Rows sorted ascending by Light Years. Prompts for output directory; blank defaults to project root.
+- Core function: `core.databases.export_star_systems_csv(output_dir)` → `{"path": ..., "count": ...}` or `{"error": ...}`.
+- GUI panel: `ExportStarSystemsPanel` in `gui/panels/csv_utility.py`.
+
+## Import HWC Data Feature (opt 52 — Phase F)
+
+- Menu option 52: `import_hwc_data()` — loads a new `hwc.csv` from the project directory into the `hwc` DB table, replacing all existing rows.
+- Validates that the file exists and contains the expected HWC column headers before replacing.
+- Flushes the in-memory HWC cache (`_HWC_DATA = None`) so opts 2 and 6 pick up the new data immediately without a restart.
+- Core function: `core.databases.import_hwc_csv(csv_path)` → `{"count": ..., "path": ...}` or `{"error": ...}`.
+- GUI panel: `ImportHwcPanel` in `gui/panels/csv_utility.py`.

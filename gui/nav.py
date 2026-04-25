@@ -31,7 +31,7 @@ NAVIGATION = [
     ("Calculators", [
         ("Distance Between 2 Stars",           "DistanceBetweenStarsPanel"),    # 17
         ("Stars Within Distance of Sol",       "StarsWithinDistanceSolPanel"),  # 18
-        ("Stars Within Distance of Star",      "StarsWithinDistanceStarPanel"), # 19
+        ("Stars Within Distance of a Star",    "StarsWithinDistanceStarPanel"), # 19
         ("Travel Time Between Stars (LY/HR)",  "TravelTimeStarsLyHrPanel"),     # 20
         ("Travel Time Between Stars (×c)",     "TravelTimeStarsTimesCPanel"),   # 21
         ("System Travel: Planet/Moon/Asteroid","SystemTravelSolarPanel"),       # 22

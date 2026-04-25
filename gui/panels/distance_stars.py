@@ -10,7 +10,9 @@ from PySide6.QtCore import Qt
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.calculators
 import core.viz
-from gui.visualizations.plot_helpers import mpl_available, make_star_map_canvas
+from gui.visualizations.plot_helpers import (
+    mpl_available, make_star_map_canvas, make_star_map_3d_canvas,
+)
 
 
 # ── Option 17: Distance Between 2 Stars ──────────────────────────────────────
@@ -203,10 +205,46 @@ class StarsWithinDistanceSolPanel(DiagramToggleMixin, ResultPanel):
                         self, map_data["stars"],
                         title=f"Stars within {limit} ly of Sol  ({count} stars)",
                         xk=xk, yk=yk, xlabel=xl, ylabel=yl,
+                        bg="#ebebeb",
                     )
                     map_l.addWidget(toolbar)
                     map_l.addWidget(canvas)
                     self._viz_tabs_widget.addTab(map_w, f"Map {proj}")
+
+                # 3D tab with viewpoint preset buttons
+                map3d_w = QWidget()
+                map3d_l = QVBoxLayout(map3d_w)
+                map3d_l.setContentsMargins(4, 4, 4, 4)
+                map3d_l.setSpacing(0)
+                canvas3d, toolbar3d, ax3d = make_star_map_3d_canvas(
+                    self, map_data["stars"],
+                    title=f"Stars within {limit} ly of Sol  ({count} stars)",
+                    bg="#ebebeb",
+                )
+                preset_bar = QWidget()
+                preset_bar.setFixedHeight(24)
+                preset_row = QHBoxLayout(preset_bar)
+                preset_row.setContentsMargins(0, 0, 0, 0)
+                preset_row.setSpacing(6)
+                for lbl, elev, azim in [
+                    ("Top View", 90, 0),
+                    ("Side View", 0, 0),
+                    ("3D Perspective", 30, -60),
+                ]:
+                    btn = QPushButton(lbl)
+                    btn.setFixedHeight(24)
+                    def _make_cb(e=elev, a=azim):
+                        def _cb():
+                            ax3d.view_init(elev=e, azim=a)
+                            canvas3d.draw_idle()
+                        return _cb
+                    btn.clicked.connect(_make_cb())
+                    preset_row.addWidget(btn)
+                preset_row.addStretch()
+                map3d_l.addWidget(preset_bar)
+                map3d_l.addWidget(toolbar3d)
+                map3d_l.addWidget(canvas3d)
+                self._viz_tabs_widget.addTab(map3d_w, "Map 3D")
 
         self._finish_render()
 
@@ -316,9 +354,45 @@ class StarsWithinDistanceStarPanel(DiagramToggleMixin, ResultPanel):
                         self, map_data["stars"],
                         title=f"Stars within {limit} ly of {center}  ({count} stars)",
                         xk=xk, yk=yk, xlabel=xl, ylabel=yl,
+                        bg="#ebebeb",
                     )
                     map_l.addWidget(toolbar)
                     map_l.addWidget(canvas)
                     self._viz_tabs_widget.addTab(map_w, f"Map {proj}")
+
+                # 3D tab with viewpoint preset buttons
+                map3d_w = QWidget()
+                map3d_l = QVBoxLayout(map3d_w)
+                map3d_l.setContentsMargins(4, 4, 4, 4)
+                map3d_l.setSpacing(0)
+                canvas3d, toolbar3d, ax3d = make_star_map_3d_canvas(
+                    self, map_data["stars"],
+                    title=f"Stars within {limit} ly of {center}  ({count} stars)",
+                    bg="#ebebeb",
+                )
+                preset_bar = QWidget()
+                preset_bar.setFixedHeight(24)
+                preset_row = QHBoxLayout(preset_bar)
+                preset_row.setContentsMargins(0, 0, 0, 0)
+                preset_row.setSpacing(6)
+                for lbl, elev, azim in [
+                    ("Top View", 90, 0),
+                    ("Side View", 0, 0),
+                    ("3D Perspective", 30, -60),
+                ]:
+                    btn = QPushButton(lbl)
+                    btn.setFixedHeight(24)
+                    def _make_cb(e=elev, a=azim):
+                        def _cb():
+                            ax3d.view_init(elev=e, azim=a)
+                            canvas3d.draw_idle()
+                        return _cb
+                    btn.clicked.connect(_make_cb())
+                    preset_row.addWidget(btn)
+                preset_row.addStretch()
+                map3d_l.addWidget(preset_bar)
+                map3d_l.addWidget(toolbar3d)
+                map3d_l.addWidget(canvas3d)
+                self._viz_tabs_widget.addTab(map3d_w, "Map 3D")
 
         self._finish_render()

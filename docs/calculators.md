@@ -20,6 +20,7 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 - Prompts for a distance limit (float, must be > 0). Prints error if `starSystems.csv` not found (directs user to run option 50).
 - Results sorted ascending by Light Years. Displays count of matches above the table.
 - Output table columns: Star Name | Star Designations | Spectral Type | Distance (LY) (4dp).
+- **GUI diagram tabs** (via `DiagramToggleMixin`): "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D". All three use a light gray background (`bg="#ebebeb"`). The 3D tab includes Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar. Stars are coloured by spectral class; Sol is highlighted with a star marker at the origin. Hover shows name + distance; click shows full info box.
 
 ## Stars within a Certain Distance of a Star Feature
 
@@ -30,6 +31,7 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 - Skips any row with computed distance < 0.001 ly (eliminates the center star itself and floating-point near-zero matches).
 - Results sorted ascending by distance. Displays count of matches above the table.
 - Output table columns: Star Name | Star Designations | Spectral Type | Distance (LY) (3dp).
+- **GUI diagram tabs**: identical to option 18 — "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D" with the same preset buttons, background, and interactivity. Center star placed at origin (gold `#FFD700`); surrounding stars' coordinates shifted relative to it.
 
 ## Speed / Velocity Converter Features
 
