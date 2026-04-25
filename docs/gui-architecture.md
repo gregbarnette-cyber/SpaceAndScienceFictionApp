@@ -8,11 +8,13 @@ The GUI is a PySide6 desktop application that runs alongside the existing CLI (`
 python gui_main.py
 ```
 
+The app launches maximized (`window.showMaximized()`). It uses the Fusion Qt style with the default light palette — no dark palette is applied. Matplotlib figures also use a light background (`#f5f5f5`).
+
 ## Repo Structure
 
 ```
 main.py              # CLI entry point (unchanged)
-gui_main.py          # GUI entry point
+gui_main.py          # GUI entry point (Fusion style, launches maximized)
 
 core/                # Pure computation layer — no I/O, no Qt
   __init__.py
@@ -30,7 +32,8 @@ gui/                 # Qt presentation layer
   nav.py             # NAVIGATION list + populate_nav(); maps labels → panel class names
   panels/
     __init__.py      # Exports all panel classes by name; lazy __getattr__ for viz panels
-    base.py          # ResultPanel base class; Worker + run_in_background (Phase C+)
+    base.py          # ResultPanel base class; Worker + run_in_background (Phase C+);
+                     #   DiagramToggleMixin (Phase E+)
     # Phase B panels (no network calls):
     science_tables.py     # SolarSystemPanel (11), MainSequencePanel (12)
     sol_regions.py        # SolRegionsPanel (13)
@@ -63,7 +66,8 @@ gui/                 # Qt presentation layer
   visualizations/        # Phase E: shared rendering helpers + standalone panel stubs
     __init__.py
     plot_helpers.py      # mpl_available(), make_hz_canvas(), make_orbits_canvas(),
-                         #   make_star_map_canvas(), make_system_regions_canvas()
+                         #   make_star_map_canvas(), make_system_regions_canvas(),
+                         #   make_alt_hz_canvas()
     hz_diagram.py        # HabZoneDiagramPanel — standalone stub (not in nav)
     star_map.py          # StarMapPanel — standalone stub (not in nav)
     system_orbits.py     # SystemOrbitsPanel — standalone stub (not in nav)
@@ -119,6 +123,47 @@ ResultPanel (QWidget)
 Phase C adds `Worker(QObject)` and `run_in_background()` to support network calls without freezing the UI. The pattern established in Phase C is reused by all subsequent network-bound panels (Phase D).
 
 **Reset safety**: `_on_error` and `_on_thread_done` wrap `run_btn.setEnabled()` in `try/except RuntimeError` because a background thread can complete after a `reset()` has deleted the old button widget.
+
+### DiagramToggleMixin (`gui/panels/base.py`)
+
+`DiagramToggleMixin` is a Python multiple-inheritance mixin that adds a full-screen **Show Diagrams / Show Tables** toggle to any `ResultPanel` subclass. Used by all panels that have embedded matplotlib visualizations.
+
+**Subclass contract** (wired up in `build_inputs()` / `build_results_area()`):
+
+| Attribute | Type | Purpose |
+|---|---|---|
+| `_form_widget` | `QWidget` | Wraps the input form; hidden in diagram mode |
+| `_tables_widget` | `QWidget` (or `QScrollArea`) | Wraps data/table results; hidden in diagram mode |
+| `_show_diagrams_btn` | `QPushButton` | Lives inside `_form_widget`; starts hidden, revealed after a successful render with viz tabs |
+
+Call `self._setup_diagram_view()` at the end of `build_results_area()` to create:
+- `_viz_container` — hidden `QWidget` containing a "Show Tables" button bar + `_viz_tabs_widget`
+- `_viz_tabs_widget` — `QTabWidget` that receives diagram canvases during `_render()`
+
+**MRO ordering**: Always declare as `(DiagramToggleMixin, SomeBasePanel)` so the mixin's `reset()` runs before the base class re-creates the container.
+
+**Typical `_render()` pattern**:
+```python
+def _render(self, result):
+    self._prepare_render()          # exit diagram mode, hide btn, clear viz tabs
+    # ... populate _tables_widget / _result_area with data ...
+    # ... add viz QWidgets to self._viz_tabs_widget ...
+    self._finish_render()           # show Show Diagrams btn if any viz tabs were added
+```
+
+**Mixin API**:
+
+| Method | Description |
+|---|---|
+| `_setup_diagram_view()` | Creates `_viz_container` + `_viz_tabs_widget`; call at end of `build_results_area()` |
+| `_clear_viz_tabs()` | Removes and deletes all tabs from `_viz_tabs_widget` |
+| `_prepare_render()` | Calls `_exit_diagram_mode()`, hides `_show_diagrams_btn`, clears viz tabs |
+| `_finish_render()` | Shows `_show_diagrams_btn` if `_viz_tabs_widget` has any tabs |
+| `_enter_diagram_mode()` | Hides `nav_tree`, `_form_widget`, `_tables_widget`; shows `_viz_container` |
+| `_exit_diagram_mode()` | Reverses: shows nav + form + tables; hides viz container |
+| `reset()` | Restores `nav_tree` before `super().reset()` — safe if reset while in diagram mode |
+
+**NasaPlanetarySystemsPanel (opt 3) exception**: This panel has an inline implementation of the same toggle pattern (not via mixin) because its results area uses `_scroll_area` rather than a generic `_tables_widget`. The behavior is identical to the mixin.
 
 ### Lazy import in `gui/panels/__init__.py`
 
@@ -193,50 +238,71 @@ def __getattr__(name: str):
 
 ### Star Regions Panels (`panels/star_regions.py`)
 
-Three independent panels for opts 8 (Auto/SIMBAD), 9 (Semi-Manual), and 10 (Manual). All produce the same result tab set (`_build_region_tabs`); they differ only in how input values are collected (fully automated vs. partially prompted vs. fully manual).
+Three independent panels for opts 8 (Auto/SIMBAD), 9 (Semi-Manual), and 10 (Manual). All inherit `(DiagramToggleMixin, ResultPanel)` and produce the same result tabs; they differ only in how input values are collected.
 
 - **Auto (opt 8)** — one `QLineEdit` for star name; hardcoded `sunlight=1.0`, `albedo=0.3`. Single background worker combines SIMBAD lookup + region computation.
 - **Semi-Manual (opt 9)** — star name + sunlight intensity + bond albedo inputs. Same combined background worker.
 - **Manual (opt 10)** — six `QLineEdit` fields (vmag, parallax, BC, teff, sunlight, albedo); pure math, no network call.
 
-All three share `_build_region_tabs(d)` which produces a nested `QTabWidget` with seven always-present result tabs plus two conditional diagram tabs (when matplotlib is available):
+`build_results_area()` calls `_build_results_area_regions(panel)` which creates:
+- `_tables_widget` — `QWidget` wrapping `_result_area` (a `QVBoxLayout`); holds the seven data tabs.
+- `_viz_container` + `_viz_tabs_widget` — created by `_setup_diagram_view()`.
 
-Always present (7 tabs): Star System Properties, Stellar Properties, Star Distance, Earth Equiv. Orbit, System Regions, Alternate HZ Regions, Calculated HZ.
+All three share `_build_region_tabs(d, viz_widget=None)` which produces a `QTabWidget` with seven always-present data tabs. When `viz_widget` is provided (a `_viz_tabs_widget` from the mixin), the two diagram tabs are added there instead of the data tabs:
 
-Conditional (2 tabs, when `mpl_available()`):
-- **HZ Diagram** — concentric ring diagram using `d["calculatedLuminosity"]` and `d["temp"]`; marks `d["distAU"]` as the Earth Equivalent Insolation Distance (EEID).
-- **System Regions Diagram** — log-scale horizontal ruler showing all seven system boundary distances; HZ bands highlighted as coloured bars. Built from `core.viz.prepare_system_regions_diagram(d)` → `make_system_regions_canvas()`.
+Always present in data tabs (7): Star System Properties, Stellar Properties, Star Distance, Earth Equiv. Orbit, System Regions, Alternate HZ Regions, Calculated HZ.
+
+Added to `viz_widget` when `mpl_available()` (2):
+- **HZ Diagram** — concentric ring diagram using `d["calculatedLuminosity"]` and `d["temp"]`; marks `d["distAU"]` as the EEID.
+- **System Regions Diagram** — concentric ring diagram (√AU scale) showing all seven system boundary zones. Built from `core.viz.prepare_system_regions_diagram(d)` → `make_system_regions_canvas()`.
+
+### Distance Stars Panels (`panels/distance_stars.py`)
+
+`StarsWithinDistanceSolPanel` (18) and `StarsWithinDistanceStarPanel` (19) inherit `(DiagramToggleMixin, ResultPanel)`.
+
+`build_results_area()` calls `_build_results_area_distance(panel)` which creates:
+- `_tables_widget` — `QWidget` wrapping `_tables_layout` (a `QVBoxLayout`); count label and the star table are added here directly.
+- `_viz_container` + `_viz_tabs_widget` — created by `_setup_diagram_view()`.
+
+`_input_count` is updated **after** `build_results_area()` completes, so `clear_results()` never destroys the persistent `_tables_widget` or `_viz_container`.
+
+Map canvases ("Map X–Y (top-down)" and "Map X–Z (edge-on)") are added to `_viz_tabs_widget` and are only visible in diagram mode.
 
 ## Phase E Visualization Integration
 
-Phase E adds matplotlib-based visualizations embedded as extra tabs inside existing option panels. No new top-level nav entries were created — all diagrams appear alongside their data tables.
+Phase E adds matplotlib-based visualizations embedded inside existing option panels. All diagrams are accessed via the **Show Diagrams** button (see `DiagramToggleMixin` above) — they are hidden by default and expand to fill the window when activated. No new top-level nav entries were created.
 
 ### Shared rendering layer (`gui/visualizations/plot_helpers.py`)
 
 `mpl_available()` returns `True` when `matplotlib` and `PySide6` are both importable. All viz-tab code is guarded by this check so the app works without matplotlib installed.
 
+All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures use a light theme (`facecolor="#f5f5f5"`, labels `#333333`, grid `#cccccc`).
+
 | Helper | Panels that use it | Output |
 |---|---|---|
-| `make_hz_canvas(parent, zones, max_au, title, eeid_au)` | NASA opts 3–5, HWC (6), Star Regions 8–10 | Concentric ring HZ diagram; optional EEID dashed circle |
+| `make_hz_canvas(parent, zones, max_au, title, eeid_au)` | NASA opts 3–5, HWC (6), Star Regions 8–10 | Concentric ring HZ diagram; optional EEID circle |
 | `make_orbits_canvas(parent, orbits, hz_zones, max_au, star_name, eeid_au)` | NASA opts 3, 6 | Keplerian orbital ellipses with HZ annulus overlay |
 | `make_star_map_canvas(parent, stars, title, xk, yk, xlabel, ylabel)` | Stars Within Distance 18, 19 | 2D scatter, spectral-class colours, hover annotation |
-| `make_system_regions_canvas(parent, data)` | Star Regions 8–10 | Log-scale horizontal ruler with boundary lines and HZ bands |
+| `make_system_regions_canvas(parent, data)` | Star Regions 8–10 | Concentric ring diagram (√AU scale) with zone fills + boundary labels |
+| `make_alt_hz_canvas(parent, zones, max_au, title, eeid_au)` | Star Regions 8–10 | Concentric ring diagram (⁴√AU scale) for alternate biochemistry HZ zones |
 
-All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures use a dark theme (`facecolor="#03030f"`).
+All ring diagrams support click-to-info: clicking a region or orbit shows a details box in the lower-left corner; clicking empty space dismisses it. The EEID circle (dark teal `#006644`) is also clickable.
 
 ### Panels with embedded viz tabs
 
-| Panel | Extra tab(s) added |
-|---|---|
-| `NasaPlanetarySystemsPanel` (3) | "Orbital Diagram" (orbits + HZ overlay), "HZ Diagram" |
-| `NasaHwoExepPanel` (4) | "HZ Diagram" (with EEID from `st_eei_orbsep`) |
-| `NasaMissionExocatPanel` (5) | "HZ Diagram" (with EEID from `st_eeidau`; lum = `st_lbol` direct Lsun) |
-| `HwcPanel` (6) | "Orbital Diagram", "HZ Diagram" (lum = `S_LUMINOSITY` direct Lsun) |
-| `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram" |
-| `StarRegionsSemiManualPanel` (9) | "HZ Diagram", "System Regions Diagram" |
-| `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram" |
-| `StarsWithinDistanceSolPanel` (18) | "Map X–Y (top-down)", "Map X–Z (edge-on)" |
-| `StarsWithinDistanceStarPanel` (19) | "Map X–Y (top-down)", "Map X–Z (edge-on)" |
+Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via mixin) or the panel's own inline equivalent. The **Show Diagrams** button appears next to **Search/Calculate** only after a successful render that produced at least one viz tab.
+
+| Panel | Viz tab(s) | Toggle mechanism |
+|---|---|---|
+| `NasaPlanetarySystemsPanel` (3) | "Orbital Diagram", "HZ Diagram" | Inline (uses `_scroll_area`) |
+| `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`) | `DiagramToggleMixin` |
+| `NasaMissionExocatPanel` (5) | "HZ Diagram" (EEID from `st_eeidau`; lum = `st_lbol` direct Lsun) | `DiagramToggleMixin` |
+| `HwcPanel` (6) | "Orbital Diagram", "HZ Diagram" (lum = `S_LUMINOSITY` direct Lsun) | `DiagramToggleMixin` |
+| `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
+| `StarRegionsSemiManualPanel` (9) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
+| `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
+| `StarsWithinDistanceSolPanel` (18) | "Map X–Y (top-down)", "Map X–Z (edge-on)" | `DiagramToggleMixin` |
+| `StarsWithinDistanceStarPanel` (19) | "Map X–Y (top-down)", "Map X–Z (edge-on)" | `DiagramToggleMixin` |
 
 ### `core/viz.py` public API
 
@@ -256,5 +322,5 @@ All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures u
 | B | Complete | Static display + pure-math calculators (opts 11–16, 20–25, 33–41) |
 | C | Complete | SIMBAD-based features + QThread threading pattern (opts 1, 8–10, 17–19) |
 | D | Complete | Multi-source features, JPL Horizons, option 50 (opts 3–6, 26–32, 50); opts 2 and 7 implemented but not in GUI nav |
-| E | Complete | Visualizations embedded in existing panels: star map (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10) |
+| E | Complete | Visualizations embedded in existing panels: star map (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10); Show Diagrams/Show Tables toggle on all viz panels; light theme |
 | F | Pending | SQLite migration — replaces all CSV files with `data/space_app.db` |

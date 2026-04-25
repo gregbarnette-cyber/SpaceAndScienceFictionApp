@@ -17,9 +17,9 @@ try:
 except ImportError:
     _MPL_OK = False
 
-_SPACE_BG  = "#03030f"
-_LABEL_CLR = "#cccccc"
-_GRID_CLR  = "#1a1a3a"
+_SPACE_BG  = "#f5f5f5"
+_LABEL_CLR = "#333333"
+_GRID_CLR  = "#cccccc"
 
 
 def mpl_available() -> bool:
@@ -37,10 +37,10 @@ def _make_info_box(ax):
     return ax.text(
         0.02, 0.02, "",
         transform=ax.transAxes,
-        color="white", fontsize=7.5, va="bottom", ha="left",
+        color="#333333", fontsize=7.5, va="bottom", ha="left",
         multialignment="left",
-        bbox=dict(boxstyle="round,pad=0.5", facecolor="#080820",
-                  edgecolor="#4488ee", linewidth=1.2, alpha=0.93),
+        bbox=dict(boxstyle="round,pad=0.5", facecolor="#fafaf0",
+                  edgecolor="#2266cc", linewidth=1.2, alpha=0.93),
         zorder=20, visible=False,
     )
 
@@ -102,7 +102,7 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
     """Concentric ring HZ diagram.
 
     zones: list of dicts {label, outer, color} ordered inner→outer.
-    eeid_au: if given, draw a dashed white circle at this AU (Earth Equiv. Insolation).
+    eeid_au: if given, draw a dashed circle at this AU (Earth Equiv. Insolation).
     Returns (canvas, toolbar).
     """
     fig = Figure(figsize=(6, 6), facecolor=_SPACE_BG)
@@ -117,22 +117,22 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
     # Boundary dashed lines + AU labels
     for zone in zones:
         ax.add_patch(Circle((0, 0), zone["outer"],
-                            fill=False, edgecolor="white",
+                            fill=False, edgecolor="#555555",
                             linewidth=0.8, linestyle="--", alpha=0.45, zorder=3))
         lx = zone["outer"] * 0.717
         ly_ = zone["outer"] * 0.717
         ax.text(lx, ly_, f"{zone['outer']:.3f} AU",
-                color="white", fontsize=6.5, ha="left", va="bottom",
+                color="#333333", fontsize=6.5, ha="left", va="bottom",
                 alpha=0.85, zorder=4)
 
     # Earth Equivalent Insolation Distance marker
     if eeid_au and eeid_au > 0:
         ax.add_patch(Circle((0, 0), eeid_au,
-                            fill=False, edgecolor="#00FFAA",
+                            fill=False, edgecolor="#006644",
                             linewidth=1.5, linestyle="-", alpha=0.85, zorder=5))
         ax.text(eeid_au * 0.717, -eeid_au * 0.717,
                 f"EEID\n{eeid_au:.3f} AU",
-                color="#00FFAA", fontsize=6.5, ha="left", va="top",
+                color="#006644", fontsize=6.5, ha="left", va="top",
                 alpha=0.9, zorder=6)
 
     # Star
@@ -141,16 +141,16 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
 
     _style_ax(ax, max_au, title)
 
-    handles = [mpatches.Patch(facecolor=z["color"], edgecolor="white",
+    handles = [mpatches.Patch(facecolor=z["color"], edgecolor="#555555",
                                alpha=0.7, label=z["label"]) for z in zones]
-    handles.append(mpatches.Patch(facecolor=_SPACE_BG, edgecolor="white",
+    handles.append(mpatches.Patch(facecolor=_SPACE_BG, edgecolor="#555555",
                                    alpha=0.7, label="Too Cold  (> Early Mars)"))
     if eeid_au and eeid_au > 0:
-        handles.append(mpatches.Patch(facecolor="none", edgecolor="#00FFAA",
+        handles.append(mpatches.Patch(facecolor="none", edgecolor="#006644",
                                        linewidth=1.5, label="Earth Equiv. Insolation Dist"))
     ax.legend(handles=handles, loc="upper left", fontsize=6.5,
-              framealpha=0.25, labelcolor="white",
-              facecolor="#111133", edgecolor="#444466")
+              framealpha=0.85, labelcolor="#333333",
+              facecolor="#ffffff", edgecolor="#aaaaaa")
 
     # ── Click-to-info ─────────────────────────────────────────────────────────
     _hz_bodies = {
@@ -230,7 +230,7 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
     # Earth Equiv. Insolation marker
     if eeid_au and eeid_au > 0:
         ax.add_patch(Circle((0, 0), eeid_au,
-                            fill=False, edgecolor="#00FFAA",
+                            fill=False, edgecolor="#006644",
                             linewidth=1.2, linestyle="-", alpha=0.7, zorder=3))
 
     # Planet orbits
@@ -245,7 +245,7 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
     ax.add_patch(Circle((0, 0), star_r, color="#FFEE55", zorder=10))
     if star_name:
         ax.text(0, star_r * 1.8, star_name,
-                color="#FFEE55", fontsize=7, ha="center", va="bottom",
+                color="#CC8800", fontsize=7, ha="center", va="bottom",
                 alpha=0.85, zorder=11)
 
     _style_ax(ax, max_au, "Planetary Orbits")
@@ -264,12 +264,12 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
         ))
     if eeid_au and eeid_au > 0:
         hz_legend.append(Line2D(
-            [0], [0], color="#00FFAA", linewidth=1.2, linestyle="-",
+            [0], [0], color="#006644", linewidth=1.2, linestyle="-",
             alpha=0.8, label=f"Earth Equiv. Insolation  ({eeid_au:.3f} AU)",
         ))
     ax.legend(handles=orbit_handles + hz_legend, loc="upper right", fontsize=7,
-              framealpha=0.25, labelcolor="white",
-              facecolor="#111133", edgecolor="#444466")
+              framealpha=0.85, labelcolor="#333333",
+              facecolor="#ffffff", edgecolor="#aaaaaa")
 
     # ── Click-to-info: planet orbits take priority; HZ zones as fallback ───────
     _hz_bodies = {
@@ -416,7 +416,7 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
 
     # Highlight center star
     ax.scatter([xs[0]], [ys[0]], c=[colors[0]], s=90, marker="*",
-               zorder=5, edgecolors="white", linewidths=0.5)
+               zorder=5, edgecolors="#333333", linewidths=0.5)
 
     ax.set_xlabel(xlabel, color=_LABEL_CLR, fontsize=9)
     ax.set_ylabel(ylabel, color=_LABEL_CLR, fontsize=9)
@@ -436,16 +436,16 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
                for k, c in sorted(seen.items()) if k != "?"]
     if handles:
         ax.legend(handles=handles, loc="upper right", fontsize=7,
-                  framealpha=0.25, labelcolor="white",
-                  facecolor="#111133", edgecolor="#444466")
+                  framealpha=0.85, labelcolor="#333333",
+                  facecolor="#ffffff", edgecolor="#aaaaaa")
 
     # Hover tooltip
     annot = ax.annotate(
         "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
-        bbox=dict(boxstyle="round,pad=0.3", fc="#111133", ec="#4488ff",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0", ec="#2266cc",
                   lw=0.8, alpha=0.9),
-        arrowprops=dict(arrowstyle="->", color="#4488ff", lw=0.8),
-        color="white", fontsize=8, zorder=10,
+        arrowprops=dict(arrowstyle="->", color="#2266cc", lw=0.8),
+        color="#333333", fontsize=8, zorder=10,
     )
     annot.set_visible(False)
 
@@ -588,10 +588,10 @@ def make_system_regions_canvas(parent, data: dict):
     if eeid_au and 0 < eeid_au < sysol_au:
         r_e = au_to_r(eeid_au)
         ax.add_patch(Circle((0, 0), r_e,
-                            fill=False, edgecolor="#00FFAA",
+                            fill=False, edgecolor="#006644",
                             linewidth=1.5, linestyle="-", alpha=0.85, zorder=7))
         ax.text(r_e * 0.717, -r_e * 0.717, f"EEID\n{eeid_au:.3f} AU",
-                color="#00FFAA", fontsize=6, ha="left", va="top", zorder=8)
+                color="#006644", fontsize=6, ha="left", va="top", zorder=8)
 
     # Star
     ax.add_patch(Circle((0, 0), STAR_R, color="#FFEE55", zorder=10))
@@ -611,12 +611,12 @@ def make_system_regions_canvas(parent, data: dict):
         ))
     if eeid_au and 0 < eeid_au < sysol_au:
         handles.append(mpatches.Patch(
-            facecolor="none", edgecolor="#00FFAA", linewidth=1.5,
+            facecolor="none", edgecolor="#006644", linewidth=1.5,
             label=f"Earth Equiv. Insolation  ({eeid_au:.3f} AU)",
         ))
     ax.legend(handles=handles, loc="upper right", fontsize=6,
-              framealpha=0.3, labelcolor="white",
-              facecolor="#111133", edgecolor="#444466",
+              framealpha=0.85, labelcolor="#333333",
+              facecolor="#ffffff", edgecolor="#aaaaaa",
               borderpad=0.6, labelspacing=0.35)
 
     # ── Click-to-info ─────────────────────────────────────────────────────────
@@ -716,7 +716,7 @@ def make_alt_hz_canvas(parent, zones: list, max_au: float, title: str = "",
         r_outer = au_to_r(zone["outer_au"])
         ax.add_patch(mpatches.PathPatch(
             _annulus_path(r_inner, r_outer),
-            facecolor=zone["color"], edgecolor="white",
+            facecolor=zone["color"], edgecolor="#555555",
             linewidth=0.5, alpha=0.62, zorder=3 + i,
         ))
 
@@ -733,10 +733,10 @@ def make_alt_hz_canvas(parent, zones: list, max_au: float, title: str = "",
     if eeid_au and 0 < eeid_au < max_au:
         r_e = au_to_r(eeid_au)
         ax.add_patch(Circle((0, 0), r_e,
-                            fill=False, edgecolor="#00FFAA",
+                            fill=False, edgecolor="#006644",
                             linewidth=1.5, linestyle="-", alpha=0.85, zorder=10))
         ax.text(r_e * 0.717, -r_e * 0.717, f"EEID\n{eeid_au:.3f} AU",
-                color="#00FFAA", fontsize=6, ha="left", va="top", zorder=11)
+                color="#006644", fontsize=6, ha="left", va="top", zorder=11)
 
     # Star
     ax.add_patch(Circle((0, 0), STAR_R, color="#FFEE55", zorder=12))
@@ -747,7 +747,7 @@ def make_alt_hz_canvas(parent, zones: list, max_au: float, title: str = "",
     # Legend: zone name + AU range
     handles = [
         mpatches.Patch(
-            facecolor=z["color"], edgecolor="white",
+            facecolor=z["color"], edgecolor="#555555",
             linewidth=0.7, alpha=0.75,
             label=f"{z['label']}  ({z['inner_au']:.3f} – {z['outer_au']:.3f} AU)",
         )
@@ -755,12 +755,12 @@ def make_alt_hz_canvas(parent, zones: list, max_au: float, title: str = "",
     ]
     if eeid_au and 0 < eeid_au < max_au:
         handles.append(mpatches.Patch(
-            facecolor="none", edgecolor="#00FFAA", linewidth=1.5,
+            facecolor="none", edgecolor="#006644", linewidth=1.5,
             label=f"Earth Equiv. Insolation  ({eeid_au:.3f} AU)",
         ))
     ax.legend(handles=handles, loc="upper right", fontsize=6,
-              framealpha=0.3, labelcolor="white",
-              facecolor="#111133", edgecolor="#444466",
+              framealpha=0.85, labelcolor="#333333",
+              facecolor="#ffffff", edgecolor="#aaaaaa",
               borderpad=0.6, labelspacing=0.35)
 
     # ── Click-to-info ─────────────────────────────────────────────────────────

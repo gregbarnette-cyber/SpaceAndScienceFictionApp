@@ -1,8 +1,8 @@
 # gui/panels/base.py — Shared base class for all feature panels.
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QFormLayout, QPushButton,
-    QTableView, QTextEdit, QLabel, QSizePolicy,
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QPushButton,
+    QTableView, QTabWidget, QTextEdit, QLabel, QSizePolicy,
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtCore import Qt, QObject, QThread, Signal, QTimer
@@ -230,3 +230,79 @@ class ResultPanel(QWidget):
                 self.run_btn.setEnabled(True)
             except RuntimeError:
                 pass  # button was deleted by a reset() while the thread was running
+
+
+class DiagramToggleMixin:
+    """Adds full-screen Show Diagrams / Show Tables toggle to ResultPanel subclasses.
+
+    Subclass contract (fulfilled in build_inputs / build_results_area):
+        _form_widget       QWidget wrapping the input form (hidden in diagram mode)
+        _tables_widget     QWidget wrapping data/table results (hidden in diagram mode)
+        _show_diagrams_btn QPushButton inside _form_widget; initially invisible
+
+    Call _setup_diagram_view() at the end of build_results_area() to create
+    _viz_container and _viz_tabs_widget, both added to _layout.
+
+    Typical _render() pattern:
+        self._prepare_render()          # exit diagram mode, hide btn, clear viz tabs
+        # ... populate _tables_widget / _result_area with data ...
+        # ... add viz QWidgets to self._viz_tabs_widget ...
+        self._finish_render()           # show btn if any viz tabs were added
+    """
+
+    def _setup_diagram_view(self):
+        """Create the hidden viz container with Show Tables button + _viz_tabs_widget."""
+        self._viz_container = QWidget()
+        self._viz_container.setVisible(False)
+        viz_layout = QVBoxLayout(self._viz_container)
+        viz_layout.setContentsMargins(4, 4, 4, 4)
+
+        row = QHBoxLayout()
+        self._show_tables_btn = QPushButton("Show Tables")
+        self._show_tables_btn.clicked.connect(self._exit_diagram_mode)
+        row.addWidget(self._show_tables_btn)
+        row.addStretch()
+        viz_layout.addLayout(row)
+
+        self._viz_tabs_widget = QTabWidget()
+        self._viz_tabs_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        viz_layout.addWidget(self._viz_tabs_widget, 1)
+
+        self._layout.addWidget(self._viz_container, 1)
+
+    def _clear_viz_tabs(self):
+        """Remove and delete all tabs from _viz_tabs_widget."""
+        while self._viz_tabs_widget.count():
+            w = self._viz_tabs_widget.widget(0)
+            self._viz_tabs_widget.removeTab(0)
+            if w:
+                w.deleteLater()
+
+    def _prepare_render(self):
+        """Call at the start of every _render(): reset diagram mode and clear viz tabs."""
+        self._exit_diagram_mode()
+        self._show_diagrams_btn.setVisible(False)
+        self._clear_viz_tabs()
+
+    def _finish_render(self):
+        """Call at the end of _render(): show Show Diagrams btn if viz tabs exist."""
+        if self._viz_tabs_widget.count() > 0:
+            self._show_diagrams_btn.setVisible(True)
+
+    def _enter_diagram_mode(self):
+        self.window.nav_tree.hide()
+        self._form_widget.hide()
+        self._tables_widget.hide()
+        self._viz_container.show()
+
+    def _exit_diagram_mode(self):
+        self.window.nav_tree.show()
+        self._form_widget.show()
+        self._tables_widget.show()
+        self._viz_container.hide()
+
+    def reset(self):
+        self.window.nav_tree.show()
+        super().reset()

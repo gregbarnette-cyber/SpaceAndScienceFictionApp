@@ -2,12 +2,12 @@
 # Each option has its own standalone panel.
 
 from PySide6.QtWidgets import (
-    QFormLayout, QLineEdit, QPushButton, QLabel, QSizePolicy,
+    QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel, QSizePolicy,
     QTabWidget, QWidget, QVBoxLayout,
 )
 from PySide6.QtCore import Qt
 
-from gui.panels.base import ResultPanel
+from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.calculators
 import core.viz
 from gui.visualizations.plot_helpers import mpl_available, make_star_map_canvas
@@ -85,28 +85,60 @@ class DistanceBetweenStarsPanel(ResultPanel):
         self.add_result_widget(table)
 
 
+# ── Shared build helper for opts 18, 19 ──────────────────────────────────────
+
+def _build_results_area_distance(panel):
+    """Create _tables_widget + diagram view for distance-star panels."""
+    panel._tables_widget = QWidget()
+    panel._tables_layout = QVBoxLayout(panel._tables_widget)
+    panel._tables_layout.setContentsMargins(0, 0, 0, 0)
+    panel._layout.addWidget(panel._tables_widget, 1)
+    panel._setup_diagram_view()
+    panel._input_count = panel._layout.count()
+
+
+def _clear_tables_layout(panel):
+    lay = panel._tables_layout
+    while lay.count():
+        item = lay.takeAt(0)
+        w = item.widget()
+        if w:
+            w.deleteLater()
+
+
 # ── Option 18: Stars Within Distance of Sol ───────────────────────────────────
 
-class StarsWithinDistanceSolPanel(ResultPanel):
+class StarsWithinDistanceSolPanel(DiagramToggleMixin, ResultPanel):
     """Distance limit → stars in starSystems.csv within that range of Sol  (option 18)."""
 
     def build_inputs(self):
-        form = QFormLayout()
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
 
         self._limit = QLineEdit()
         self._limit.setPlaceholderText("e.g. 10.0")
         form.addRow("Distance Limit (Light Years):", self._limit)
 
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
         self.run_btn = QPushButton("Search")
         self.run_btn.clicked.connect(self._search)
         self._limit.returnPressed.connect(self._search)
-        form.addRow(self.run_btn)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
 
-        self._layout.addLayout(form)
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()
 
     def build_results_area(self):
-        pass
+        _build_results_area_distance(self)
 
     def _search(self):
         try:
@@ -114,13 +146,13 @@ class StarsWithinDistanceSolPanel(ResultPanel):
             if limit_ly <= 0:
                 raise ValueError
         except ValueError:
-            self.clear_results()
+            self._prepare_render()
+            _clear_tables_layout(self)
             lbl = QLabel("Distance must be a positive number.")
             lbl.setStyleSheet("color: red;")
-            self.add_result_widget(lbl)
+            self._tables_layout.addWidget(lbl)
             return
 
-        self.clear_results()
         self.run_in_background(
             core.calculators.compute_stars_within_distance_of_sol,
             limit_ly,
@@ -128,18 +160,21 @@ class StarsWithinDistanceSolPanel(ResultPanel):
         )
 
     def _render(self, result: dict):
-        self.clear_results()
+        self._prepare_render()
+        _clear_tables_layout(self)
+
         if "error" in result:
             lbl = QLabel(result["error"])
             lbl.setStyleSheet("color: red;")
             lbl.setWordWrap(True)
-            self.add_result_widget(lbl)
+            self._tables_layout.addWidget(lbl)
             return
 
         count = result["count"]
         limit = result["limit_ly"]
-        lbl = QLabel(f"Stars within {limit} light years of Sol: <b>{count}</b>")
-        self.add_result_widget(lbl)
+        self._tables_layout.addWidget(
+            QLabel(f"Stars within {limit} light years of Sol: <b>{count}</b>")
+        )
 
         if count == 0:
             return
@@ -150,17 +185,11 @@ class StarsWithinDistanceSolPanel(ResultPanel):
              r["Spectral Type"], f"{r['Light Years']:.4f}"]
             for r in result["stars"]
         ]
+        view = self.make_table(headers, rows)
+        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._tables_layout.addWidget(view, 1)
 
         if mpl_available():
-            tabs = QTabWidget()
-
-            tbl_w = QWidget()
-            tbl_l = QVBoxLayout(tbl_w)
-            view = self.make_table(headers, rows)
-            view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            tbl_l.addWidget(view)
-            tabs.addTab(tbl_w, "Table")
-
             map_data = core.viz.prepare_star_map_from_result(result)
             if "stars" in map_data and map_data["stars"]:
                 for proj, xk, yk, xl, yl in [
@@ -177,22 +206,19 @@ class StarsWithinDistanceSolPanel(ResultPanel):
                     )
                     map_l.addWidget(toolbar)
                     map_l.addWidget(canvas)
-                    tabs.addTab(map_w, f"Map {proj}")
+                    self._viz_tabs_widget.addTab(map_w, f"Map {proj}")
 
-            self.add_result_widget(tabs)
-        else:
-            view = self.make_table(headers, rows)
-            view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            self.add_result_widget(view)
+        self._finish_render()
 
 
 # ── Option 19: Stars Within Distance of a Star ───────────────────────────────
 
-class StarsWithinDistanceStarPanel(ResultPanel):
+class StarsWithinDistanceStarPanel(DiagramToggleMixin, ResultPanel):
     """Star name + distance limit → stars within range  (option 19)."""
 
     def build_inputs(self):
-        form = QFormLayout()
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
 
         self._star = QLineEdit()
         self._star.setPlaceholderText("e.g. Alpha Centauri, Vega, HIP 27989")
@@ -202,16 +228,26 @@ class StarsWithinDistanceStarPanel(ResultPanel):
         self._limit.setPlaceholderText("e.g. 10.0")
         form.addRow("Distance Limit (Light Years):", self._limit)
 
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
         self.run_btn = QPushButton("Search")
         self.run_btn.clicked.connect(self._search)
         self._limit.returnPressed.connect(self._search)
-        form.addRow(self.run_btn)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
 
-        self._layout.addLayout(form)
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()
 
     def build_results_area(self):
-        pass
+        _build_results_area_distance(self)
 
     def _search(self):
         star = self._star.text().strip()
@@ -222,13 +258,13 @@ class StarsWithinDistanceStarPanel(ResultPanel):
             if limit_ly <= 0:
                 raise ValueError
         except ValueError:
-            self.clear_results()
+            self._prepare_render()
+            _clear_tables_layout(self)
             lbl = QLabel("Distance must be a positive number.")
             lbl.setStyleSheet("color: red;")
-            self.add_result_widget(lbl)
+            self._tables_layout.addWidget(lbl)
             return
 
-        self.clear_results()
         self.run_in_background(
             core.calculators.compute_stars_within_distance_of_star,
             star, limit_ly,
@@ -236,19 +272,22 @@ class StarsWithinDistanceStarPanel(ResultPanel):
         )
 
     def _render(self, result: dict):
-        self.clear_results()
+        self._prepare_render()
+        _clear_tables_layout(self)
+
         if "error" in result:
             lbl = QLabel(result["error"])
             lbl.setStyleSheet("color: red;")
             lbl.setWordWrap(True)
-            self.add_result_widget(lbl)
+            self._tables_layout.addWidget(lbl)
             return
 
         center = result["center"]
         count  = result["count"]
         limit  = result["limit_ly"]
-        lbl = QLabel(f"Stars within {limit} light years of {center}: <b>{count}</b>")
-        self.add_result_widget(lbl)
+        self._tables_layout.addWidget(
+            QLabel(f"Stars within {limit} light years of {center}: <b>{count}</b>")
+        )
 
         if count == 0:
             return
@@ -259,17 +298,11 @@ class StarsWithinDistanceStarPanel(ResultPanel):
              r["Spectral Type"], f"{r['Distance']:.3f}"]
             for r in result["stars"]
         ]
+        view = self.make_table(headers, rows)
+        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._tables_layout.addWidget(view, 1)
 
         if mpl_available():
-            tabs = QTabWidget()
-
-            tbl_w = QWidget()
-            tbl_l = QVBoxLayout(tbl_w)
-            view = self.make_table(headers, rows)
-            view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            tbl_l.addWidget(view)
-            tabs.addTab(tbl_w, "Table")
-
             map_data = core.viz.prepare_star_map_from_result(result)
             if "stars" in map_data and map_data["stars"]:
                 for proj, xk, yk, xl, yl in [
@@ -286,10 +319,6 @@ class StarsWithinDistanceStarPanel(ResultPanel):
                     )
                     map_l.addWidget(toolbar)
                     map_l.addWidget(canvas)
-                    tabs.addTab(map_w, f"Map {proj}")
+                    self._viz_tabs_widget.addTab(map_w, f"Map {proj}")
 
-            self.add_result_widget(tabs)
-        else:
-            view = self.make_table(headers, rows)
-            view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            self.add_result_widget(view)
+        self._finish_render()

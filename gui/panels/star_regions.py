@@ -8,12 +8,12 @@
 import math
 
 from PySide6.QtWidgets import (
-    QTabWidget, QWidget, QVBoxLayout, QFormLayout,
+    QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QLabel, QTableView, QSizePolicy,
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
-from gui.panels.base import ResultPanel
+from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.databases
 import core.regions
 import core.viz
@@ -70,8 +70,12 @@ def _tbl(headers, rows) -> QTableView:
 
 # ── Shared results renderer ───────────────────────────────────────────────────
 
-def _build_region_tabs(d: dict) -> QTabWidget:
-    """Build a QTabWidget of result tables from a compute_star_system_regions() result dict."""
+def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
+    """Build a QTabWidget of result tables from a compute_star_system_regions() result dict.
+
+    If viz_widget is provided, visualization tabs are added to it instead of to the
+    returned tabs widget (used by the Show Diagrams toggle).
+    """
     tabs = QTabWidget()
     tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -210,8 +214,8 @@ def _build_region_tabs(d: dict) -> QTabWidget:
 
     # ── Visualization tabs (require matplotlib) ───────────────────────────────
     if mpl_available():
+        target = viz_widget if viz_widget is not None else tabs
         try:
-            # HZ Diagram: use calculatedLuminosity + temp, mark Earth Equiv. Orbit
             hz_data = core.viz.prepare_hz_diagram(d["temp"], d["calculatedLuminosity"])
             if "zones" in hz_data:
                 hz_w = QWidget()
@@ -226,9 +230,8 @@ def _build_region_tabs(d: dict) -> QTabWidget:
                 )
                 hz_l.addWidget(toolbar)
                 hz_l.addWidget(canvas)
-                tabs.addTab(hz_w, "HZ Diagram")
+                target.addTab(hz_w, "HZ Diagram")
 
-            # System Regions Diagram: concentric ring diagram (√AU scale)
             regions_data = core.viz.prepare_system_regions_diagram(d)
             sr_canvas, sr_toolbar = make_system_regions_canvas(None, regions_data)
             if sr_canvas is not None:
@@ -237,9 +240,8 @@ def _build_region_tabs(d: dict) -> QTabWidget:
                 sr_l.setContentsMargins(4, 4, 4, 4)
                 sr_l.addWidget(sr_toolbar)
                 sr_l.addWidget(sr_canvas)
-                tabs.addTab(sr_w, "System Regions Diagram")
+                target.addTab(sr_w, "System Regions Diagram")
 
-            # Alternate HZ Diagram: concentric ring diagram (⁴√AU scale)
             alt_data = core.viz.prepare_alt_hz_diagram(d)
             if "zones" in alt_data:
                 alt_canvas, alt_toolbar = make_alt_hz_canvas(
@@ -253,7 +255,7 @@ def _build_region_tabs(d: dict) -> QTabWidget:
                 alt_l.setContentsMargins(4, 4, 4, 4)
                 alt_l.addWidget(alt_toolbar)
                 alt_l.addWidget(alt_canvas)
-                tabs.addTab(alt_w, "Alternate HZ Diagram")
+                target.addTab(alt_w, "Alternate HZ Diagram")
         except Exception:
             pass
 
@@ -270,7 +272,8 @@ def _clear_layout(layout):
             w.deleteLater()
 
 
-def _render_result(result: dict, result_area: QVBoxLayout, show_designations: bool = True):
+def _render_result(result: dict, result_area: QVBoxLayout,
+                   show_designations: bool = True, viz_widget=None):
     _clear_layout(result_area)
     if "error" in result:
         lbl = QLabel(result["error"])
@@ -284,31 +287,51 @@ def _render_result(result: dict, result_area: QVBoxLayout, show_designations: bo
         banner = QLabel(f"<b>STAR DESIGNATIONS:</b><br>{desig_str}")
         banner.setWordWrap(True)
         result_area.addWidget(banner)
-    tabs = _build_region_tabs(result)
+    tabs = _build_region_tabs(result, viz_widget=viz_widget)
     result_area.addWidget(tabs, 1)
+
+
+# ── Shared build helpers for opts 8, 9, 10 ───────────────────────────────────
+
+def _build_results_area_regions(panel):
+    """Create _tables_widget + _result_area + diagram view for star-regions panels."""
+    panel._tables_widget = QWidget()
+    panel._result_area = QVBoxLayout(panel._tables_widget)
+    panel._layout.addWidget(panel._tables_widget, 1)
+    panel._setup_diagram_view()
 
 
 # ── Option 8: Auto (SIMBAD) ───────────────────────────────────────────────────
 
-class StarRegionsAutoPanel(ResultPanel):
+class StarRegionsAutoPanel(DiagramToggleMixin, ResultPanel):
     """Star System Regions — Auto (SIMBAD) [option 8]."""
 
     def build_inputs(self):
-        form = QFormLayout()
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
         self._name = QLineEdit()
         self._name.setPlaceholderText("e.g. Vega, Alpha Centauri, HIP 27989")
         self._name.returnPressed.connect(self._search)
         form.addRow("Star Name / Designation:", self._name)
+
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
         self._btn = QPushButton("Search")
         self._btn.clicked.connect(self._search)
-        form.addRow("", self._btn)
-        self._layout.addLayout(form)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self._btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
 
-        self._result_area = QVBoxLayout()
-        self._layout.addLayout(self._result_area, 1)
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
 
     def build_results_area(self):
-        pass
+        _build_results_area_regions(self)
 
     def _search(self):
         name = self._name.text().strip()
@@ -318,16 +341,20 @@ class StarRegionsAutoPanel(ResultPanel):
         self.run_in_background(_compute_auto_regions, name, on_result=self._render)
 
     def _render(self, result: dict):
-        _render_result(result, self._result_area, show_designations=True)
+        self._prepare_render()
+        _render_result(result, self._result_area, show_designations=True,
+                       viz_widget=self._viz_tabs_widget)
+        self._finish_render()
 
 
 # ── Option 9: Semi-Manual ─────────────────────────────────────────────────────
 
-class StarRegionsSemiManualPanel(ResultPanel):
+class StarRegionsSemiManualPanel(DiagramToggleMixin, ResultPanel):
     """Star System Regions — Semi-Manual [option 9]."""
 
     def build_inputs(self):
-        form = QFormLayout()
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
 
         self._name = QLineEdit()
         self._name.setPlaceholderText("e.g. Vega, Alpha Centauri, HIP 27989")
@@ -341,18 +368,27 @@ class StarRegionsSemiManualPanel(ResultPanel):
         self._albedo.setPlaceholderText("default: 0.3")
         form.addRow("Bond Albedo (Terra = 0.3, Venus = 0.9):", self._albedo)
 
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
         self._btn = QPushButton("Search")
         self._btn.clicked.connect(self._search)
-        form.addRow("", self._btn)
-        self._layout.addLayout(form)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self._btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
 
-        self._result_area = QVBoxLayout()
-        self._layout.addLayout(self._result_area, 1)
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
 
     def build_results_area(self):
-        pass
+        _build_results_area_regions(self)
 
     def _show_err(self, msg):
+        self._prepare_render()
         _clear_layout(self._result_area)
         lbl = QLabel(msg)
         lbl.setStyleSheet("color: red;")
@@ -379,16 +415,20 @@ class StarRegionsSemiManualPanel(ResultPanel):
         )
 
     def _render(self, result: dict):
-        _render_result(result, self._result_area, show_designations=True)
+        self._prepare_render()
+        _render_result(result, self._result_area, show_designations=True,
+                       viz_widget=self._viz_tabs_widget)
+        self._finish_render()
 
 
 # ── Option 10: Manual ─────────────────────────────────────────────────────────
 
-class StarRegionsManualPanel(ResultPanel):
+class StarRegionsManualPanel(DiagramToggleMixin, ResultPanel):
     """Star System Regions — Manual [option 10]."""
 
     def build_inputs(self):
-        form = QFormLayout()
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
 
         def _field(placeholder):
             f = QLineEdit()
@@ -408,19 +448,28 @@ class StarRegionsManualPanel(ResultPanel):
         form.addRow("Star Effective Temperature (K):",       self._teff)
         form.addRow("Sunlight Intensity (Terra = 1.0):",     self._sunlight)
         form.addRow("Bond Albedo (Terra = 0.3, Venus = 0.9):", self._albedo)
-        self._layout.addLayout(form)
 
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
         self._btn = QPushButton("Calculate")
         self._btn.clicked.connect(self._calculate)
-        self._layout.addWidget(self._btn)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self._btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
 
-        self._result_area = QVBoxLayout()
-        self._layout.addLayout(self._result_area, 1)
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
 
     def build_results_area(self):
-        pass
+        _build_results_area_regions(self)
 
     def _show_err(self, msg):
+        self._prepare_render()
         _clear_layout(self._result_area)
         lbl = QLabel(msg)
         lbl.setStyleSheet("color: red;")
@@ -452,6 +501,7 @@ class StarRegionsManualPanel(ResultPanel):
             self._show_err("Parallax must be greater than 0.")
             return
 
+        self._prepare_render()
         result = core.regions.compute_star_system_regions(
             vmag=values["Apparent Magnitude (V)"],
             boloLum=values["Bolometric Correction"],
@@ -460,4 +510,6 @@ class StarRegionsManualPanel(ResultPanel):
             sunlight_intensity=values["Sunlight Intensity"],
             bond_albedo=values["Bond Albedo"],
         )
-        _render_result(result, self._result_area, show_designations=False)
+        _render_result(result, self._result_area, show_designations=False,
+                       viz_widget=self._viz_tabs_widget)
+        self._finish_render()

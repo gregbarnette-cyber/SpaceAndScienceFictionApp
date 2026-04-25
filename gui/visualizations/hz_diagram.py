@@ -14,9 +14,9 @@ try:
 except ImportError:
     _MPL_OK = False
 
-_SPACE_BG   = "#03030f"
-_LABEL_CLR  = "#cccccc"
-_GRID_CLR   = "#222244"
+_SPACE_BG   = "#f5f5f5"
+_LABEL_CLR  = "#333333"
+_GRID_CLR   = "#cccccc"
 
 
 class HabZoneDiagramPanel(ResultPanel):
@@ -99,13 +99,13 @@ class HabZoneDiagramPanel(ResultPanel):
         # Boundary lines and AU labels
         for zone in zones:
             ax.add_patch(Circle((0, 0), zone["outer"],
-                                fill=False, edgecolor="white",
+                                fill=False, edgecolor="#555555",
                                 linewidth=0.8, linestyle="--", alpha=0.5, zorder=3))
             # Label at 45° angle
             lx = zone["outer"] * 0.717
             ly_ = zone["outer"] * 0.717
             ax.text(lx, ly_, f"{zone['outer']:.3f} AU",
-                    color="white", fontsize=6.5, ha="left", va="bottom",
+                    color="#333333", fontsize=6.5, ha="left", va="bottom",
                     alpha=0.9, zorder=4)
 
         # Star at centre
@@ -129,16 +129,16 @@ class HabZoneDiagramPanel(ResultPanel):
         # Legend
         import matplotlib.patches as mpatches
         handles = [
-            mpatches.Patch(facecolor=z["color"], edgecolor="white",
+            mpatches.Patch(facecolor=z["color"], edgecolor="#555555",
                            alpha=0.7, label=z["label"])
             for z in zones
         ]
         # Add "Too Cold" entry for the region beyond em
-        handles.append(mpatches.Patch(facecolor=_SPACE_BG, edgecolor="white",
+        handles.append(mpatches.Patch(facecolor=_SPACE_BG, edgecolor="#555555",
                                        alpha=0.7, label="Too Cold  (> Early Mars)"))
         ax.legend(handles=handles, loc="upper left",
-                  fontsize=7, framealpha=0.25, labelcolor="white",
-                  facecolor="#111133", edgecolor="#444466")
+                  fontsize=7, framealpha=0.85, labelcolor="#333333",
+                  facecolor="#ffffff", edgecolor="#aaaaaa")
 
         fig.tight_layout(pad=1.2)
 

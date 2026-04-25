@@ -7,12 +7,12 @@
 import math
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QFormLayout,
-    QLineEdit, QPushButton, QLabel, QScrollArea,
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
+    QLineEdit, QPushButton, QLabel, QScrollArea, QTabWidget, QSizePolicy,
 )
 from PySide6.QtCore import Qt
 
-from gui.panels.base import ResultPanel
+from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.databases
 import core.viz
 from gui.visualizations.plot_helpers import (
@@ -113,10 +113,46 @@ class _StarSearchPanel(ResultPanel):
 
 # ── Option 6: Habitable Worlds Catalog ───────────────────────────────────────
 
-class HwcPanel(_StarSearchPanel):
+class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
     """Habitable Worlds Catalog — option 6."""
 
     _placeholder = "e.g. Tau Ceti, HD 10700, GJ 667C"
+
+    def build_inputs(self):
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        self._name = QLineEdit()
+        self._name.setPlaceholderText(self._placeholder)
+        self._name.returnPressed.connect(self._search)
+        form.addRow("Star Name / Designation:", self._name)
+
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        self.run_btn = QPushButton("Search")
+        self.run_btn.clicked.connect(self._search)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
+
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        self._scroll_widget = QWidget()
+        self._result_area = QVBoxLayout(self._scroll_widget)
+        self._result_area.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scroll.setWidget(self._scroll_widget)
+        self._tables_widget = scroll
+        self._layout.addWidget(scroll, 1)
+        self._setup_diagram_view()
 
     def _do_search(self, simbad_result):
         self.set_status("Querying Habitable Worlds Catalog…")
@@ -127,6 +163,7 @@ class HwcPanel(_StarSearchPanel):
         )
 
     def _render(self, result: dict):
+        self._prepare_render()
         self._clear_results()
         if "error" in result:
             self._show_error(result["error"])
@@ -260,9 +297,10 @@ class HwcPanel(_StarSearchPanel):
                 star_row.get("S_TEMPERATURE"), None, star_row.get("S_RADIUS"))
 
         if not mpl_available():
+            self._finish_render()
             return
 
-        # ── Orbital Diagram tab ───────────────────────────────────────────────
+        # ── Viz tabs ──────────────────────────────────────────────────────────
         hwc_planets = []
         for p in planet_rows:
             hwc_planets.append({
@@ -273,48 +311,41 @@ class HwcPanel(_StarSearchPanel):
                 "st_rad":     star_row.get("S_RADIUS"),
             })
 
-        orbit_data = core.viz.prepare_system_orbits(hwc_planets) if hwc_planets else {}
-        hz_data_viz = core.viz.prepare_hz_diagram(
-            _fval(star_row.get("S_TEMPERATURE")) or 0,
-            _fval(star_row.get("S_LUMINOSITY"))  or 0,
-        ) if _fval(star_row.get("S_TEMPERATURE")) else {}
+        orbit_data  = core.viz.prepare_system_orbits(hwc_planets) if hwc_planets else {}
+        teff_v      = _fval(star_row.get("S_TEMPERATURE")) or 0
+        lum_v       = _fval(star_row.get("S_LUMINOSITY"))  or 0
+        hz_data_viz = core.viz.prepare_hz_diagram(teff_v, lum_v) if teff_v else {}
 
-        if "orbits" in orbit_data or "zones" in hz_data_viz:
-            self._result_area.addWidget(QLabel("<b>Visualizations</b>"))
-            viz_tabs = __import__("PySide6.QtWidgets", fromlist=["QTabWidget"]).QTabWidget()
+        if "orbits" in orbit_data:
+            orb_w = QWidget()
+            orb_l = QVBoxLayout(orb_w)
+            orb_l.setContentsMargins(4, 4, 4, 4)
+            canvas, toolbar = make_orbits_canvas(
+                self,
+                orbit_data["orbits"],
+                orbit_data.get("hz_zones", []),
+                orbit_data["max_au"],
+                star_name=str(star_row.get("S_NAME", "")),
+            )
+            orb_l.addWidget(toolbar)
+            orb_l.addWidget(canvas)
+            self._viz_tabs_widget.addTab(orb_w, "Orbital Diagram")
 
-            if "orbits" in orbit_data:
-                orb_w = QWidget()
-                orb_l = QVBoxLayout(orb_w)
-                orb_l.setContentsMargins(4, 4, 4, 4)
-                canvas, toolbar = make_orbits_canvas(
-                    self,
-                    orbit_data["orbits"],
-                    orbit_data.get("hz_zones", []),
-                    orbit_data["max_au"],
-                    star_name=str(star_row.get("S_NAME", "")),
-                )
-                orb_l.addWidget(toolbar)
-                orb_l.addWidget(canvas)
-                viz_tabs.addTab(orb_w, "Orbital Diagram")
+        if "zones" in hz_data_viz:
+            hz_w = QWidget()
+            hz_l = QVBoxLayout(hz_w)
+            hz_l.setContentsMargins(4, 4, 4, 4)
+            canvas, toolbar = make_hz_canvas(
+                self,
+                hz_data_viz["zones"],
+                hz_data_viz["max_au"],
+                title=f"Habitable Zone  (T={teff_v:.0f} K, L={lum_v:.4f} L☉)",
+            )
+            hz_l.addWidget(toolbar)
+            hz_l.addWidget(canvas)
+            self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
 
-            if "zones" in hz_data_viz:
-                hz_w = QWidget()
-                hz_l = QVBoxLayout(hz_w)
-                hz_l.setContentsMargins(4, 4, 4, 4)
-                teff_v = _fval(star_row.get("S_TEMPERATURE")) or 0
-                lum_v  = _fval(star_row.get("S_LUMINOSITY"))  or 0
-                canvas, toolbar = make_hz_canvas(
-                    self,
-                    hz_data_viz["zones"],
-                    hz_data_viz["max_au"],
-                    title=f"Habitable Zone  (T={teff_v:.0f} K, L={lum_v:.4f} L☉)",
-                )
-                hz_l.addWidget(toolbar)
-                hz_l.addWidget(canvas)
-                viz_tabs.addTab(hz_w, "HZ Diagram")
-
-            self._result_area.addWidget(viz_tabs)
+        self._finish_render()
 
 
 # ── Option 7: Open Exoplanet Catalogue ───────────────────────────────────────

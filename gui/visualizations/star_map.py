@@ -19,9 +19,9 @@ try:
 except ImportError:
     _MPL_OK = False
 
-_SPACE_BG  = "#03030f"
-_LABEL_CLR = "#cccccc"
-_GRID_CLR  = "#1a1a3a"
+_SPACE_BG  = "#f5f5f5"
+_LABEL_CLR = "#333333"
+_GRID_CLR  = "#cccccc"
 
 # Axis-projection options: (label, x_key, y_key, xlabel, ylabel)
 _PROJECTIONS = [
@@ -130,7 +130,7 @@ class StarMapPanel(ResultPanel):
         # Sol marker
         if stars[0]["name"] == "Sol":
             ax.scatter([xs[0]], [ys[0]], c=colors[0], s=80,
-                       marker="*", zorder=5, edgecolors="white", linewidths=0.5)
+                       marker="*", zorder=5, edgecolors="#333333", linewidths=0.5)
 
         ax.set_facecolor(_SPACE_BG)
         ax.set_xlabel(xlabel, color=_LABEL_CLR, fontsize=9)
@@ -155,16 +155,16 @@ class StarMapPanel(ResultPanel):
                    for k, c in sorted(seen.items())]
         if handles:
             ax.legend(handles=handles, loc="upper right", fontsize=7,
-                      framealpha=0.25, labelcolor="white",
-                      facecolor="#111133", edgecolor="#444466")
+                      framealpha=0.85, labelcolor="#333333",
+                      facecolor="#ffffff", edgecolor="#aaaaaa")
 
         # Hover annotation
         annot = ax.annotate(
             "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
-            bbox=dict(boxstyle="round,pad=0.3", fc="#111133", ec="#4488ff",
+            bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0", ec="#2266cc",
                       lw=0.8, alpha=0.9),
-            arrowprops=dict(arrowstyle="->", color="#4488ff", lw=0.8),
-            color="white", fontsize=8, zorder=10,
+            arrowprops=dict(arrowstyle="->", color="#2266cc", lw=0.8),
+            color="#333333", fontsize=8, zorder=10,
         )
         annot.set_visible(False)
 

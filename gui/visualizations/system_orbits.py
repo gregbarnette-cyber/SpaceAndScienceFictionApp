@@ -15,9 +15,9 @@ try:
 except ImportError:
     _MPL_OK = False
 
-_SPACE_BG  = "#03030f"
-_LABEL_CLR = "#cccccc"
-_GRID_CLR  = "#1a1a3a"
+_SPACE_BG  = "#f5f5f5"
+_LABEL_CLR = "#333333"
+_GRID_CLR  = "#cccccc"
 
 
 class SystemOrbitsPanel(ResultPanel):
@@ -127,7 +127,7 @@ class SystemOrbitsPanel(ResultPanel):
         star_r = max_au * 0.015
         ax.add_patch(Circle((0, 0), star_r, color="#FFEE55", zorder=10))
         ax.text(0, star_r * 1.6, star_name or "★",
-                color="#FFEE55", fontsize=7, ha="center", va="bottom",
+                color="#CC8800", fontsize=7, ha="center", va="bottom",
                 alpha=0.85, zorder=11)
 
         ax.set_xlim(-max_au, max_au)
@@ -144,8 +144,8 @@ class SystemOrbitsPanel(ResultPanel):
                      color=_LABEL_CLR, fontsize=10, pad=8)
 
         # Planet legend
-        ax.legend(loc="upper right", fontsize=7, framealpha=0.25,
-                  labelcolor="white", facecolor="#111133", edgecolor="#444466")
+        ax.legend(loc="upper right", fontsize=7, framealpha=0.85,
+                  labelcolor="#333333", facecolor="#ffffff", edgecolor="#aaaaaa")
 
         # HZ legend entries
         if hz_zones:
@@ -158,14 +158,14 @@ class SystemOrbitsPanel(ResultPanel):
             if hz_handles:
                 ax2_leg = ax.legend(handles=hz_handles,
                                     loc="lower right", fontsize=6,
-                                    framealpha=0.25, labelcolor="white",
-                                    facecolor="#111133", edgecolor="#444466",
+                                    framealpha=0.85, labelcolor="#333333",
+                                    facecolor="#ffffff", edgecolor="#aaaaaa",
                                     title="HZ Zones", title_fontsize=6)
                 ax.add_artist(ax2_leg)
                 # Re-add planet legend (adding second legend removes first by default)
-                ax.legend(loc="upper right", fontsize=7, framealpha=0.25,
-                          labelcolor="white", facecolor="#111133",
-                          edgecolor="#444466")
+                ax.legend(loc="upper right", fontsize=7, framealpha=0.85,
+                          labelcolor="#333333", facecolor="#ffffff",
+                          edgecolor="#aaaaaa")
 
         fig.tight_layout(pad=1.2)
 
