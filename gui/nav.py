@@ -29,22 +29,22 @@ NAVIGATION = [
         ("Honorverse Effective Speed",    "HonorverseSpeedPanel"),
     ]),
     ("Calculators", [
-        ("Velocity: LY/HR → ×c",              "VelocityLyHrPanel"),
-        ("Velocity: ×c → LY/HR",              "VelocityTimesCPanel"),
-        ("Distance Traveled at LY/HR",         "DistanceLyHrPanel"),
-        ("Distance Traveled at ×c",            "DistanceTimesCPanel"),
-        ("Travel Time at LY/HR",               "TravelTimeLyHrPanel"),
-        ("Travel Time at ×c",                  "TravelTimeTimesCPanel"),
-        ("Distance Between 2 Stars",           "DistanceBetweenStarsPanel"),
-        ("Stars Within Distance of Sol",       "StarsWithinDistanceSolPanel"),
-        ("Stars Within Distance of Star",      "StarsWithinDistanceStarPanel"),
-        ("Travel Time Between Stars (LY/HR)",  "TravelTimeStarsLyHrPanel"),
-        ("Travel Time Between Stars (×c)",     "TravelTimeStarsTimesCPanel"),
-        ("Brachistochrone: Accel → Distance",  "BrachistochroneAccelPanel"),
-        ("Brachistochrone: Distance in AU",    "BrachistochroneAuPanel"),
-        ("Brachistochrone: Distance in LM",    "BrachistochroneLmPanel"),
-        ("System Travel: Planet/Moon/Asteroid","SystemTravelSolarPanel"),
-        ("System Travel: Custom Thrust",       "SystemTravelThrustPanel"),
+        ("Distance Between 2 Stars",           "DistanceBetweenStarsPanel"),    # 17
+        ("Stars Within Distance of Sol",       "StarsWithinDistanceSolPanel"),  # 18
+        ("Stars Within Distance of Star",      "StarsWithinDistanceStarPanel"), # 19
+        ("Travel Time Between Stars (LY/HR)",  "TravelTimeStarsLyHrPanel"),     # 20
+        ("Travel Time Between Stars (×c)",     "TravelTimeStarsTimesCPanel"),   # 21
+        ("System Travel: Planet/Moon/Asteroid","SystemTravelSolarPanel"),       # 22
+        ("System Travel: Custom Thrust",       "SystemTravelThrustPanel"),      # 23
+        ("Brachistochrone: Accel → Distance",  "BrachistochroneAccelPanel"),    # 24
+        ("Distance Traveled at LY/HR",         "DistanceLyHrPanel"),            # 25
+        ("Distance Traveled at ×c",            "DistanceTimesCPanel"),          # 26
+        ("Travel Time at LY/HR",               "TravelTimeLyHrPanel"),          # 27
+        ("Travel Time at ×c",                  "TravelTimeTimesCPanel"),        # 28
+        ("Brachistochrone: Distance in AU",    "BrachistochroneAuPanel"),       # 29
+        ("Brachistochrone: Distance in LM",    "BrachistochroneLmPanel"),       # 30
+        ("Velocity: LY/HR → ×c",              "VelocityLyHrPanel"),            # 31
+        ("Velocity: ×c → LY/HR",              "VelocityTimesCPanel"),          # 32
     ]),
     ("Planetary Equations", [
         ("Orbit Periastron & Apastron", "OrbitPeriastronPanel"),

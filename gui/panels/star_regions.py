@@ -358,14 +358,17 @@ class StarRegionsSemiManualPanel(DiagramToggleMixin, ResultPanel):
 
         self._name = QLineEdit()
         self._name.setPlaceholderText("e.g. Vega, Alpha Centauri, HIP 27989")
+        self._name.returnPressed.connect(self._search)
         form.addRow("Star Name / Designation:", self._name)
 
         self._sunlight = QLineEdit()
         self._sunlight.setPlaceholderText("default: 1.0")
+        self._sunlight.returnPressed.connect(self._search)
         form.addRow("Sunlight Intensity (Terra = 1.0):", self._sunlight)
 
         self._albedo = QLineEdit()
         self._albedo.setPlaceholderText("default: 0.3")
+        self._albedo.returnPressed.connect(self._search)
         form.addRow("Bond Albedo (Terra = 0.3, Venus = 0.9):", self._albedo)
 
         btn_widget = QWidget()
@@ -441,6 +444,7 @@ class StarRegionsManualPanel(DiagramToggleMixin, ResultPanel):
         self._teff     = _field("e.g. 5778")
         self._sunlight = _field("e.g. 1.0")
         self._albedo   = _field("e.g. 0.3")
+        self._albedo.returnPressed.connect(self._calculate)
 
         form.addRow("Apparent Magnitude (V):",               self._vmag)
         form.addRow("Parallax (mas):",                       self._plx)

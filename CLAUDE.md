@@ -57,19 +57,19 @@ The main menu loop calls whichever function the user picks, then returns to the 
 1. SIMBAD Lookup Query                              17. Distance Between 2 Stars
 2. NASA Exoplanet Archive: All Tables               18. Stars within a Certain Distance of Sol
 3. NASA Exoplanet Archive: Planetary Systems        19. Stars within a Certain Distance of a Star
-4. NASA Exoplanet Archive: HWO ExEP Stars           20. Light Years per Hour to X Times the Speed of Light
-5. NASA Exoplanet Archive: Mission Exocat Stars     21. X Times the Speed of Light to Light Years per Hour
-6. Habitable Worlds Catalog                         22. Distance Traveled at a certain ly/hr within a certain time
-7. Open Exoplanet Catalogue                         23. Distance Traveled at a certain X times the speed of light
-                                                    24. Time to Travel # of Light Years at X LY/HR
-  Star System Regions                               25. Time to Travel # of Light Years at X Times the Speed of Light
-  ------------------                                26. Travel Time Between 2 Stars (LYs/HR)
-8.  Star System Regions (SIMBAD)                    27. Travel Time Between 2 Stars (X Times the Speed of Light)
-9.  Star System Regions (Semi-SIMBAD)               28. Distance Traveled at an Acceleration Within a Certain Time
+4. NASA Exoplanet Archive: HWO ExEP Stars           20. Travel Time Between 2 Stars (LYs/HR)
+5. NASA Exoplanet Archive: Mission Exocat Stars     21. Travel Time Between 2 Stars (X Times the Speed of Light)
+6. Habitable Worlds Catalog                         22. Travel Time Between 2 System Objs (Planet/Moon/Asteroid)
+7. Open Exoplanet Catalogue                         23. Travel Time Between 2 System Objs (Custom Thrust Duration)
+                                                    24. Distance Traveled at an Acceleration Within a Certain Time
+  Star System Regions                               25. Distance Traveled at a certain ly/hr within a certain time
+  ------------------                                26. Distance Traveled at a certain X times the speed of light
+8.  Star System Regions (SIMBAD)                    27. Time to Travel # of Light Years at X LY/HR
+9.  Star System Regions (Semi-SIMBAD)               28. Time to Travel # of Light Years at X Times the Speed of Light
 10. Star System Regions (Manual)                    29. Travel Time Between 2 System Objs (Generic, Distance in AUs)
                                                     30. Travel Time Between 2 System Objs (Generic, Distance in LMs)
-  Science                                           31. Travel Time Between 2 System Objs (Planet/Moon/Asteroid)
-  -------                                           32. Travel Time Between 2 System Objs (Custom Thrust Duration)
+  Science                                           31. Light Years per Hour to X Times the Speed of Light
+  -------                                           32. X Times the Speed of Light to Light Years per Hour
 11. Solar System Planet/Dwarf Planets/Asteroids
 12. Main Sequence Star Properties                   Planetary Equations
 13. Sol Solar System Regions                        -------------------

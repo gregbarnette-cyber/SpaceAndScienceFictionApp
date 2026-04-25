@@ -37,6 +37,14 @@ def _fmt(v, dp=3):
     return f"{f:.{dp}f}" if f is not None else "N/A"
 
 
+def _fit_table_height(view) -> None:
+    """Fix a QTableView's height to exactly its rows + header, no internal scrollbar."""
+    h = (view.horizontalHeader().sizeHint().height()
+         + view.verticalHeader().defaultSectionSize() * view.model().rowCount()
+         + 2)
+    view.setFixedHeight(h)
+
+
 def _add_hz(panel, layout, teff, lum_log=None, rad=None):
     hz = core.databases.compute_habitable_zone(teff, lum_log, rad)
     if not hz:
@@ -45,6 +53,7 @@ def _add_hz(panel, layout, teff, lum_log=None, rad=None):
     rows = [[name, f"{au:.3f} ({au * 8.3167:.3f} LM)"] for name, au in hz]
     t = panel.make_table(["Zone", "AU (Light Minutes)"], rows)
     t.setSortingEnabled(False)
+    _fit_table_height(t)
     layout.addWidget(t)
 
 
@@ -203,7 +212,9 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
             f"{st_dist * 3.26156:.4f}" if st_dist is not None else "N/A",
             _sf("S_METALLICITY", 3), _sf("S_AGE", 2),
         ]
-        self._result_area.addWidget(self.make_table(s_headers, [s_row]))
+        t = self.make_table(s_headers, [s_row])
+        _fit_table_height(t)
+        self._result_area.addWidget(t)
 
         # Star Habitability Properties
         self._result_area.addWidget(QLabel("<b>Star Habitability Properties</b>"))
@@ -216,7 +227,9 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
             _sf("S_HZ_CON1_MIN", 6), _sf("S_HZ_CON1_MAX", 6),
             _sf("S_TIDAL_LOCK"), _sf("S_ABIO_ZONE"), _sf("S_SNOW_LINE"),
         ]
-        self._result_area.addWidget(self.make_table(sh_headers, [sh_row]))
+        t = self.make_table(sh_headers, [sh_row])
+        _fit_table_height(t)
+        self._result_area.addWidget(t)
 
         # Planet Properties
         self._result_area.addWidget(QLabel("<b>Planet Properties</b>"))
@@ -239,7 +252,9 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 _pf("P_ECCENTRICITY", 2), _pf("P_DENSITY", 4),
                 _pf("P_POTENTIAL", 5), _pf("P_GRAVITY", 5), _pf("P_ESCAPE", 5),
             ])
-        self._result_area.addWidget(self.make_table(pp_headers, pp_rows))
+        t = self.make_table(pp_headers, pp_rows)
+        _fit_table_height(t)
+        self._result_area.addWidget(t)
 
         # Planet Habitability Properties
         self._result_area.addWidget(QLabel("<b>Planet Habitability Properties</b>"))
@@ -267,7 +282,9 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 _pflag("P_HABITABLE"), _pf2("P_ESI", 6),
                 _pflag("P_HABZONE_CON"), _pflag("P_HABZONE_OPT"),
             ])
-        self._result_area.addWidget(self.make_table(ph_headers, ph_rows))
+        t = self.make_table(ph_headers, ph_rows)
+        _fit_table_height(t)
+        self._result_area.addWidget(t)
 
         # Planet Temperature Properties
         self._result_area.addWidget(QLabel("<b>Planet Temperature Properties</b>"))
@@ -291,7 +308,9 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 _ptf("P_TEMP_SURF_MIN", 3), _ptf("P_TEMP_SURF", 3),
                 _ptf("P_TEMP_SURF_MAX", 3),
             ])
-        self._result_area.addWidget(self.make_table(pt_headers, pt_rows))
+        t = self.make_table(pt_headers, pt_rows)
+        _fit_table_height(t)
+        self._result_area.addWidget(t)
 
         _add_hz(self, self._result_area,
                 star_row.get("S_TEMPERATURE"), None, star_row.get("S_RADIUS"))
@@ -316,6 +335,28 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         lum_v       = _fval(star_row.get("S_LUMINOSITY"))  or 0
         hz_data_viz = core.viz.prepare_hz_diagram(teff_v, lum_v) if teff_v else {}
 
+        # Build markers shared by both diagrams
+        hwc_markers = []
+        tidal_lock = _fval(star_row.get("S_TIDAL_LOCK"))
+        abio_zone  = _fval(star_row.get("S_ABIO_ZONE"))
+        snow_line  = _fval(star_row.get("S_SNOW_LINE"))
+        if tidal_lock and tidal_lock > 0:
+            hwc_markers.append({
+                "label": "Tidal Lock", "au": tidal_lock, "color": "#CC6600",
+                "body": "Distance at which a planet would be tidally\nlocked to its host star.",
+            })
+        if abio_zone and abio_zone > 0:
+            hwc_markers.append({
+                "label": "Abiogenesis Zone", "au": abio_zone, "color": "#00AACC",
+                "body": "Outer boundary of the abiogenesis zone —\nfavourable conditions for the origin of life.",
+            })
+        if snow_line and snow_line > 0:
+            hwc_markers.append({
+                "label": "Snow Line", "au": snow_line, "color": "#AAAAFF",
+                "body": "Distance at which water ice condenses\nin the protoplanetary disk.",
+            })
+        markers_arg = hwc_markers if hwc_markers else None
+
         if "orbits" in orbit_data:
             orb_w = QWidget()
             orb_l = QVBoxLayout(orb_w)
@@ -326,6 +367,7 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 orbit_data.get("hz_zones", []),
                 orbit_data["max_au"],
                 star_name=str(star_row.get("S_NAME", "")),
+                markers=markers_arg,
             )
             orb_l.addWidget(toolbar)
             orb_l.addWidget(canvas)
@@ -340,6 +382,7 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 hz_data_viz["zones"],
                 hz_data_viz["max_au"],
                 title=f"Habitable Zone  (T={teff_v:.0f} K, L={lum_v:.4f} L☉)",
+                markers=markers_arg,
             )
             hz_l.addWidget(toolbar)
             hz_l.addWidget(canvas)

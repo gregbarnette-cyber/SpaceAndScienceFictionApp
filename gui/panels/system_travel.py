@@ -27,9 +27,11 @@ class SystemTravelSolarPanel(ResultPanel):
 
         self._accel = QLineEdit()
         self._accel.setPlaceholderText("e.g. 1.0")
+        self._accel.returnPressed.connect(self._calculate)
         form.addRow("Acceleration (G's):", self._accel)
 
         self._vcap = QLineEdit("3")
+        self._vcap.returnPressed.connect(self._calculate)
         form.addRow("Max Velocity (% of c):", self._vcap)
 
         self.run_btn = QPushButton("Calculate")
@@ -123,6 +125,7 @@ class SystemTravelThrustPanel(ResultPanel):
 
         self._burn = QLineEdit()
         self._burn.setPlaceholderText("e.g. 7.0")
+        self._burn.returnPressed.connect(self._calculate)
         form.addRow("Burn Duration:", self._burn)
 
         self._unit = QComboBox()
@@ -130,6 +133,7 @@ class SystemTravelThrustPanel(ResultPanel):
         form.addRow("Burn Duration Unit:", self._unit)
 
         self._vcap = QLineEdit("3")
+        self._vcap.returnPressed.connect(self._calculate)
         form.addRow("Max Velocity (% of c):", self._vcap)
 
         self.run_btn = QPushButton("Calculate")

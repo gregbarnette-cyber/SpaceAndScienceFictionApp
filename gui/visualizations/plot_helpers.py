@@ -45,15 +45,17 @@ def _make_info_box(ax):
     )
 
 
-def _attach_ring_click(canvas, ax, info_box, click_zones, r_to_au, eeid_au=None):
+def _attach_ring_click(canvas, ax, info_box, click_zones, r_to_au, eeid_au=None,
+                       markers=None):
     """Wire a click handler onto a concentric-ring diagram.
 
     click_zones : list of {inner_au, outer_au, title, body}  innermost → outermost.
                   Set outer_au=float("inf") for the unbounded exterior zone.
     r_to_au     : callable(visual_r) → AU — inverse of the diagram's scale mapping.
     eeid_au     : AU of the EEID circle (optional).
+    markers     : list of {label, au, color, body} for extra named circles (optional).
     """
-    EEID_TOL = 0.06  # fraction tolerance for snapping to the EEID circle
+    EEID_TOL = 0.06  # fraction tolerance for snapping to named circles
 
     def _on_click(event):
         if event.inaxes is not ax or event.xdata is None:
@@ -74,6 +76,19 @@ def _attach_ring_click(canvas, ax, info_box, click_zones, r_to_au, eeid_au=None)
             info_box.set_visible(True)
             canvas.draw_idle()
             return
+
+        if markers:
+            for m in markers:
+                m_au = m.get("au", 0)
+                if m_au > 0 and abs(au - m_au) < m_au * EEID_TOL:
+                    info_box.set_text(
+                        f"{m['label']}\n"
+                        f"  {m_au:.4f} AU  ·  {m_au * 8.3167:.4f} LM\n\n"
+                        f"{m['body']}"
+                    )
+                    info_box.set_visible(True)
+                    canvas.draw_idle()
+                    return
 
         for z in click_zones:
             if z["inner_au"] <= au < z["outer_au"]:
@@ -98,13 +113,21 @@ def _attach_ring_click(canvas, ax, info_box, click_zones, r_to_au, eeid_au=None)
 # ── HZ Diagram ─────────────────────────────────────────────────────────────────
 
 def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
-                   eeid_au: float = None):
+                   eeid_au: float = None, markers: list = None):
     """Concentric ring HZ diagram.
 
-    zones: list of dicts {label, outer, color} ordered inner→outer.
-    eeid_au: if given, draw a dashed circle at this AU (Earth Equiv. Insolation).
+    zones:   list of dicts {label, outer, color} ordered inner→outer.
+    eeid_au: if given, draw a solid circle at this AU (Earth Equiv. Insolation).
+    markers: optional list of {label, au, color, body} for extra named circles
+             (e.g. Tidal Lock, Abiogenesis, Snow Line).
     Returns (canvas, toolbar).
     """
+    valid_markers = [m for m in (markers or []) if m.get("au") and m["au"] > 0]
+    if valid_markers:
+        max_marker_au = max(m["au"] for m in valid_markers)
+        if max_marker_au > max_au * 0.85:
+            max_au = max_marker_au * 1.2
+
     fig = Figure(figsize=(6, 6), facecolor=_SPACE_BG)
     canvas = FigureCanvas(fig)
     ax = fig.add_subplot(111, aspect="equal", facecolor=_SPACE_BG)
@@ -135,6 +158,16 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
                 color="#006644", fontsize=6.5, ha="left", va="top",
                 alpha=0.9, zorder=6)
 
+    # Extra named marker circles (Tidal Lock, Abiogenesis, Snow Line, etc.)
+    for m in valid_markers:
+        ax.add_patch(Circle((0, 0), m["au"],
+                            fill=False, edgecolor=m["color"],
+                            linewidth=1.2, linestyle="-.", alpha=0.8, zorder=5))
+        ax.text(-m["au"] * 0.717, -m["au"] * 0.717,
+                f"{m['label']}\n{m['au']:.3f} AU",
+                color=m["color"], fontsize=6.5, ha="right", va="top",
+                alpha=0.9, zorder=6)
+
     # Star
     star_r = max_au * 0.018
     ax.add_patch(Circle((0, 0), star_r, color="#FFEE55", zorder=10))
@@ -148,6 +181,9 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
     if eeid_au and eeid_au > 0:
         handles.append(mpatches.Patch(facecolor="none", edgecolor="#006644",
                                        linewidth=1.5, label="Earth Equiv. Insolation Dist"))
+    for m in valid_markers:
+        handles.append(mpatches.Patch(facecolor="none", edgecolor=m["color"],
+                                       linewidth=1.5, label=f"{m['label']}  ({m['au']:.3f} AU)"))
     ax.legend(handles=handles, loc="upper left", fontsize=6.5,
               framealpha=0.85, labelcolor="#333333",
               facecolor="#ffffff", edgecolor="#aaaaaa")
@@ -193,7 +229,8 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
                  "greenhouse gas warming."),
     })
     _attach_ring_click(canvas, ax, _make_info_box(ax), _hz_click,
-                       r_to_au=lambda r: r, eeid_au=eeid_au)
+                       r_to_au=lambda r: r, eeid_au=eeid_au,
+                       markers=valid_markers if valid_markers else None)
 
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
@@ -204,13 +241,20 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
 
 def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                        max_au: float, star_name: str = "",
-                       eeid_au: float = None):
+                       eeid_au: float = None, markers: list = None):
     """Keplerian ellipse orbital diagram with HZ annulus overlay.
 
-    orbits: list of dicts {name, x_pts, y_pts, color, peri, sma, apo, ecc}.
+    orbits:  list of dicts {name, x_pts, y_pts, color, peri, sma, apo, ecc}.
     hz_zones: list of dicts {label, outer, color} ordered inner→outer.
+    markers: optional list of {label, au, color, body} for extra named circles.
     Returns (canvas, toolbar).
     """
+    valid_markers = [m for m in (markers or []) if m.get("au") and m["au"] > 0]
+    if valid_markers:
+        max_marker_au = max(m["au"] for m in valid_markers)
+        if max_marker_au > max_au * 0.85:
+            max_au = max_marker_au * 1.2
+
     fig = Figure(figsize=(6.5, 6.5), facecolor=_SPACE_BG)
     canvas = FigureCanvas(fig)
     ax = fig.add_subplot(111, aspect="equal", facecolor=_SPACE_BG)
@@ -232,6 +276,16 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
         ax.add_patch(Circle((0, 0), eeid_au,
                             fill=False, edgecolor="#006644",
                             linewidth=1.2, linestyle="-", alpha=0.7, zorder=3))
+
+    # Extra named marker circles (Tidal Lock, Abiogenesis, Snow Line, etc.)
+    for m in valid_markers:
+        ax.add_patch(Circle((0, 0), m["au"],
+                            fill=False, edgecolor=m["color"],
+                            linewidth=1.2, linestyle="-.", alpha=0.8, zorder=3))
+        ax.text(-m["au"] * 0.717, -m["au"] * 0.717,
+                f"{m['label']}\n{m['au']:.3f} AU",
+                color=m["color"], fontsize=6.5, ha="right", va="top",
+                alpha=0.9, zorder=4)
 
     # Planet orbits
     for orb in orbits:
@@ -266,6 +320,11 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
         hz_legend.append(Line2D(
             [0], [0], color="#006644", linewidth=1.2, linestyle="-",
             alpha=0.8, label=f"Earth Equiv. Insolation  ({eeid_au:.3f} AU)",
+        ))
+    for m in valid_markers:
+        hz_legend.append(Line2D(
+            [0], [0], color=m["color"], linewidth=1.2, linestyle="-.",
+            alpha=0.8, label=f"{m['label']}  ({m['au']:.3f} AU)",
         ))
     ax.legend(handles=orbit_handles + hz_legend, loc="upper right", fontsize=7,
               framealpha=0.85, labelcolor="#333333",
@@ -365,7 +424,20 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
             canvas.draw_idle()
             return
 
-        # Priority 3: HZ background zone
+        # Priority 3: named marker circles
+        for m in valid_markers:
+            m_au = m.get("au", 0)
+            if m_au > 0 and abs(click_au - m_au) < m_au * EEID_TOL:
+                _orb_box.set_text(
+                    f"{m['label']}\n"
+                    f"  {m_au:.4f} AU  ·  {m_au * 8.3167:.4f} LM\n\n"
+                    f"{m['body']}"
+                )
+                _orb_box.set_visible(True)
+                canvas.draw_idle()
+                return
+
+        # Priority 4: HZ background zone
         for z in _hz_click:
             if z["inner_au"] <= click_au < z["outer_au"]:
                 outer_str = (f"{z['outer_au']:.4f} AU"

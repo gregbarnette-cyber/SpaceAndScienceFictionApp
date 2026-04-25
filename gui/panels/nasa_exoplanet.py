@@ -501,6 +501,7 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self._name = QLineEdit()
         self._name.setPlaceholderText(self._placeholder)
+        self._name.returnPressed.connect(self._search)
         form.addRow("Star System:", self._name)
 
         btn_widget = QWidget()
