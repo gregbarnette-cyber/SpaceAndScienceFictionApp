@@ -68,7 +68,8 @@ gui/                 # Qt presentation layer
     __init__.py
     plot_helpers.py      # mpl_available(), make_hz_canvas(), make_orbits_canvas(),
                          #   make_star_map_canvas(bg=), make_star_map_3d_canvas(bg=),
-                         #   make_system_regions_canvas(), make_alt_hz_canvas()
+                         #   make_system_regions_canvas(), make_alt_hz_canvas(),
+                         #   make_solar_travel_canvas(), make_solar_travel_canvas_3d()
     hz_diagram.py        # HabZoneDiagramPanel — standalone stub (not in nav)
     star_map.py          # StarMapPanel — standalone stub (not in nav)
     system_orbits.py     # SystemOrbitsPanel — standalone stub (not in nav)
@@ -286,11 +287,15 @@ All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures u
 | `make_hz_canvas(parent, zones, max_au, title, eeid_au)` | NASA opts 3–5, HWC (6), Star Regions 8–10 | Concentric ring HZ diagram; optional EEID circle |
 | `make_orbits_canvas(parent, orbits, hz_zones, max_au, star_name, eeid_au)` | NASA opts 3, 6 | Keplerian orbital ellipses with HZ annulus overlay |
 | `make_star_map_canvas(parent, stars, title, xk, yk, xlabel, ylabel, bg)` | Stars Within Distance 18, 19 | 2D scatter, spectral-class colours, hover annotation; `bg` overrides figure background colour |
-| `make_star_map_3d_canvas(parent, stars, title, bg)` | Stars Within Distance 18, 19 | 3D scatter with drag-to-rotate; returns `(canvas, toolbar, ax)` so caller can bind viewpoint preset buttons; `bg` overrides figure background colour |
+| `make_star_map_3d_canvas(parent, stars, title, bg)` | Stars Within Distance 18, 19 | 3D scatter with drag-to-rotate (`azel` rotation style); returns `(canvas, toolbar, ax)` so caller can bind viewpoint preset buttons; `bg` overrides figure background colour |
 | `make_system_regions_canvas(parent, data)` | Star Regions 8–10 | Concentric ring diagram (√AU scale) with zone fills + boundary labels |
 | `make_alt_hz_canvas(parent, zones, max_au, title, eeid_au)` | Star Regions 8–10 | Concentric ring diagram (⁴√AU scale) for alternate biochemistry HZ zones |
+| `make_solar_travel_canvas(parent, data)` | System Travel 31, 32 | 2D top-down (XY ecliptic) solar system map: planet dots + reference orbit circles + origin ★ + dest ■ + dashed travel path; click-to-info on any body |
+| `make_solar_travel_canvas_3d(parent, data)` | System Travel 31, 32 | 3D version of the solar system travel map (`azel` rotation); returns `(canvas, toolbar, ax)` for preset buttons; no floating 3D text labels — body info shown via hover/click `text2D` tooltips only |
 
 All ring diagrams support click-to-info: clicking a region or orbit shows a details box in the lower-left corner; clicking empty space dismisses it. The EEID circle (dark teal `#006644`) is also clickable.
+
+**3D rotation style**: All 3D canvas functions (`make_star_map_3d_canvas`, `make_solar_travel_canvas_3d`) set `matplotlib.rcParams['axes3d.mouserotationstyle'] = 'azel'` so horizontal drag = azimuth change and vertical drag = elevation change — the natural, predictable rotation behaviour. Preset buttons also deactivate any active toolbar zoom/pan mode before applying the viewpoint so 3D rotation works immediately after pressing a preset.
 
 ### Panels with embedded viz tabs
 
@@ -307,6 +312,8 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
 | `StarsWithinDistanceSolPanel` (18) | "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D" | `DiagramToggleMixin` |
 | `StarsWithinDistanceStarPanel` (19) | "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D" | `DiagramToggleMixin` |
+| `SystemTravelSolarPanel` (31) | "Solar System Map", "3D View" | `DiagramToggleMixin` |
+| `SystemTravelThrustPanel` (32) | "Solar System Map", "3D View" | `DiagramToggleMixin` |
 
 ### `core/viz.py` public API
 
@@ -317,6 +324,25 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `prepare_hz_diagram(teff, luminosity)` | Returns `{"zones": list, "max_au": float}` or `{"error": str}`. Each zone dict: `key, label, outer (AU), color`. |
 | `prepare_star_map_from_result(result)` | Converts `compute_stars_within_distance_of_sol/star` result dict to star-map format. Center star placed at origin; surrounding stars' coordinates shifted accordingly. |
 | `prepare_system_regions_diagram(d)` | Extracts seven labelled boundary AU values + Kopparapu HZ zones + EEID from a star-regions result dict. Returns `{"regions", "hz_zones", "eeid_au", "max_au"}`. |
+| `prepare_solar_travel_diagram(result)` | Converts a `compute_travel_time_solar_objects` or `compute_travel_time_custom_thrust` result dict into solar-map viz data. Returns `{"origin_name", "dest_name", "origin_xyz", "dest_xyz", "planets", "planet_orbits", "max_au"}` or `{"error": str}`. `planet_orbits` contains only planets whose SMA ≤ `max_au × 1.1`. |
+
+### System Travel Panels (`panels/system_travel.py`)
+
+`SystemTravelSolarPanel` (31) and `SystemTravelThrustPanel` (32) both inherit `(DiagramToggleMixin, ResultPanel)`.
+
+`build_results_area()` creates:
+- `_tables_widget` — `QWidget` wrapping `_tables_layout` (a `QVBoxLayout`); the results table (opt 31) or labeled key-value rows (opt 32) are added here.
+- `_viz_container` + `_viz_tabs_widget` — created by `_setup_diagram_view()`.
+
+`_input_count` is reset at the end of `build_results_area()` so `clear_results()` never destroys the persistent widget infrastructure. A module-level `_clear_tables_layout(panel)` helper (defined in `system_travel.py`) clears the `_tables_layout` between renders.
+
+Two diagram tabs are added to `_viz_tabs_widget` when `mpl_available()` and the result contains `origin_xyz`:
+- **Solar System Map** — 2D XY ecliptic view via `make_solar_travel_canvas()`.
+- **3D View** — 3D view via `make_solar_travel_canvas_3d()`, with Top View / Side View / 3D Perspective preset buttons above the toolbar. Preset button callbacks deactivate any active toolbar zoom/pan mode before calling `view_init()`.
+
+**Planet position cache**: `core.calculators._fetch_planet_positions(epoch_jd)` fetches heliocentric positions for all 8 planets and caches the result for 30 minutes (`_PLANET_POS_CACHE_TTL = 1800 s`). This means the first calculation per session takes longer (~8 extra Horizons queries) but subsequent calculations reuse the cached positions instantly.
+
+**`_PLANET_IDS` / `_PLANET_COLORS`**: Module-level constants in `core/calculators.py` listing the 8 planets with their Horizons IDs and display colours; also mirrored as `_PLANET_SMAS` / `_PLANET_COLORS_VIZ` in `core/viz.py` for the canvas rendering layer.
 
 ## Phase Completion Status
 
@@ -326,5 +352,5 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | B | Complete | Static display + pure-math calculators (opts 11–16, 20–25, 33–41) |
 | C | Complete | SIMBAD-based features + QThread threading pattern (opts 1, 8–10, 17–19) |
 | D | Complete | Multi-source features, JPL Horizons, option 50 (opts 3–6, 26–32, 50); opts 2 and 7 implemented but not in GUI nav |
-| E | Complete | Visualizations embedded in existing panels: star map 2D + 3D (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10); Show Diagrams/Show Tables toggle on all viz panels; light theme; 3D viewpoint preset buttons (18–19) |
+| E | Complete | Visualizations embedded in existing panels: star map 2D + 3D (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10), solar system travel map 2D + 3D (31–32); Show Diagrams/Show Tables toggle on all viz panels; light theme; 3D viewpoint preset buttons (18–19, 31–32); `azel` rotation style for all 3D views |
 | F | Pending | SQLite migration — replaces all CSV files with `data/space_app.db`; opt 50 rewritten to write to DB; opt 51 (Export Star Systems to CSV) and opt 52 (Import HWC Data) added |

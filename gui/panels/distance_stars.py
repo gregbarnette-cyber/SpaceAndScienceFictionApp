@@ -235,6 +235,11 @@ class StarsWithinDistanceSolPanel(DiagramToggleMixin, ResultPanel):
                     btn.setFixedHeight(24)
                     def _make_cb(e=elev, a=azim):
                         def _cb():
+                            try:
+                                if toolbar3d.mode:
+                                    toolbar3d.zoom() if "zoom" in str(toolbar3d.mode) else toolbar3d.pan()
+                            except Exception:
+                                pass
                             ax3d.view_init(elev=e, azim=a)
                             canvas3d.draw_idle()
                         return _cb
@@ -384,6 +389,11 @@ class StarsWithinDistanceStarPanel(DiagramToggleMixin, ResultPanel):
                     btn.setFixedHeight(24)
                     def _make_cb(e=elev, a=azim):
                         def _cb():
+                            try:
+                                if toolbar3d.mode:
+                                    toolbar3d.zoom() if "zoom" in str(toolbar3d.mode) else toolbar3d.pan()
+                            except Exception:
+                                pass
                             ax3d.view_init(elev=e, azim=a)
                             canvas3d.draw_idle()
                         return _cb

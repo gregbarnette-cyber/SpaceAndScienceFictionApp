@@ -447,6 +447,39 @@ _HORIZONS_ID_MAP = {
     "tempel 1": "9P", "wild 2": "81P",
 }
 
+_PLANET_IDS = [
+    ("Mercury", "199"), ("Venus", "299"), ("Earth", "399"), ("Mars", "499"),
+    ("Jupiter", "599"), ("Saturn", "699"), ("Uranus", "799"), ("Neptune", "899"),
+]
+_PLANET_COLORS = {
+    "Mercury": "#b5b5b5", "Venus": "#e8cda0", "Earth": "#4fc3f7",
+    "Mars":    "#ef5350",  "Jupiter": "#c9956b", "Saturn": "#d4b896",
+    "Uranus":  "#7de8e8",  "Neptune": "#5b8df5",
+}
+
+_planet_pos_cache: list = []
+_planet_pos_cache_time: float = 0.0
+_PLANET_POS_CACHE_TTL = 1800.0   # 30 minutes
+
+
+def _fetch_planet_positions(epoch_jd=None) -> list:
+    """Return heliocentric x,y,z (AU) for the 8 planets. Cached for 30 min."""
+    import time
+    global _planet_pos_cache, _planet_pos_cache_time
+    if _planet_pos_cache and (time.monotonic() - _planet_pos_cache_time) < _PLANET_POS_CACHE_TTL:
+        return _planet_pos_cache
+    planets = []
+    for name, pid in _PLANET_IDS:
+        try:
+            x, y, z = _get_heliocentric_vectors(pid, epoch_jd)
+            planets.append({"name": name, "x": x, "y": y, "z": z,
+                            "color": _PLANET_COLORS[name]})
+        except Exception:
+            pass
+    _planet_pos_cache = planets
+    _planet_pos_cache_time = time.monotonic()
+    return planets
+
 
 def _resolve_horizons_id(name: str) -> str:
     """Map a body name to a JPL Horizons-compatible ID."""
@@ -689,13 +722,15 @@ def compute_travel_time_solar_objects(
          v_cap_pct, profiles: [...]}
         or {"error": str, "disambiguation": str (optional)}
     """
+    import astropy.time
     origin_id = _resolve_horizons_id(origin)
     dest_id   = _resolve_horizons_id(destination)
+    epoch_jd  = astropy.time.Time.now().jd
 
     if progress_callback:
         progress_callback(f"Querying JPL Horizons for '{origin}'…")
     try:
-        ox, oy, oz = _get_heliocentric_vectors(origin_id)
+        ox, oy, oz = _get_heliocentric_vectors(origin_id, epoch_jd)
     except Exception as e:
         err = str(e)
         if "Multiple major-bodies" in err or "ambiguous" in err.lower():
@@ -705,7 +740,7 @@ def compute_travel_time_solar_objects(
     if progress_callback:
         progress_callback(f"Querying JPL Horizons for '{destination}'…")
     try:
-        dx, dy, dz = _get_heliocentric_vectors(dest_id)
+        dx, dy, dz = _get_heliocentric_vectors(dest_id, epoch_jd)
     except Exception as e:
         err = str(e)
         if "Multiple major-bodies" in err or "ambiguous" in err.lower():
@@ -716,19 +751,26 @@ def compute_travel_time_solar_objects(
     if distance_au < 1e-9:
         return {"error": "Origin and destination appear to be the same object (distance ≈ 0 AU)."}
 
-    a_ms2      = accel_g * _G_MS2
-    d_m        = distance_au * _M_PER_AU
+    a_ms2       = accel_g * _G_MS2
+    d_m         = distance_au * _M_PER_AU
     distance_lm = d_m / _M_PER_LM
-    profiles   = _brachistochrone_profiles(d_m, a_ms2, v_cap_pct)
+    profiles    = _brachistochrone_profiles(d_m, a_ms2, v_cap_pct)
+
+    if progress_callback:
+        progress_callback("Querying JPL Horizons for planet positions…")
+    planet_positions = _fetch_planet_positions(epoch_jd)
 
     return {
-        "origin":      origin,
-        "destination": destination,
-        "accel_g":     accel_g,
-        "distance_au": distance_au,
-        "distance_lm": distance_lm,
-        "v_cap_pct":   v_cap_pct,
-        "profiles":    profiles,
+        "origin":           origin,
+        "destination":      destination,
+        "accel_g":          accel_g,
+        "distance_au":      distance_au,
+        "distance_lm":      distance_lm,
+        "v_cap_pct":        v_cap_pct,
+        "profiles":         profiles,
+        "origin_xyz":       (ox, oy, oz),
+        "dest_xyz":         (dx, dy, dz),
+        "planet_positions": planet_positions,
     }
 
 
@@ -857,6 +899,10 @@ def compute_travel_time_custom_thrust(
         eff_val = t_accel_eff / unit_seconds.get(burn_unit_label, 86400.0)
         eff_burn_str = f"{eff_val:.4f} {burn_unit_label}"
 
+    if progress_callback:
+        progress_callback("Querying JPL Horizons for planet positions…")
+    planet_positions = _fetch_planet_positions(t0_jd)
+
     return {
         "origin":           origin,
         "destination":      destination,
@@ -884,6 +930,9 @@ def compute_travel_time_custom_thrust(
         "t_total_hours":    t_total_hours,
         "travel_time_str":  format_travel_time(t_total_hours),
         "iterations_done":  iterations_done,
+        "origin_xyz":       (ox, oy, oz),
+        "dest_xyz":         (dx, dy, dz),
+        "planet_positions": planet_positions,
     }
 
 

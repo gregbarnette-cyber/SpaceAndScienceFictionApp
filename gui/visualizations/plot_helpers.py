@@ -586,6 +586,8 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
     First star is treated as the origin/center (highlighted with a star marker).
     Returns (canvas, toolbar, ax) — caller uses ax to bind viewpoint preset buttons.
     """
+    import matplotlib as _mpl
+    _mpl.rcParams['axes3d.mouserotationstyle'] = 'azel'
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers 3d projection
 
     xs     = [s["x"]     for s in stars]
@@ -1019,3 +1021,275 @@ def _style_ax(ax, max_au: float, title: str):
     ax.grid(True, color=_GRID_CLR, linewidth=0.5, linestyle=":")
     if title:
         ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=8)
+
+
+# ── Solar System Travel Diagram ────────────────────────────────────────────────
+
+def _build_solar_travel_elements(ax, data: dict):
+    """Draw planet orbits, planets, Sun, origin, destination, and travel line.
+
+    Returns (scatter_artists, origin_pt, dest_pt) for click-to-info wiring.
+    """
+    import math as _math
+
+    max_au = data["max_au"]
+
+    # Reference orbit circles (thin dashed rings)
+    for orb in data.get("planet_orbits", []):
+        ax.add_patch(Circle((0, 0), orb["sma_au"],
+                            fill=False, edgecolor=orb["color"],
+                            linewidth=0.6, linestyle="--", alpha=0.35, zorder=1))
+
+    # Planet dots
+    planet_artists = []
+    for p in data.get("planets", []):
+        sc = ax.scatter([p["x"]], [p["y"]], color=p["color"],
+                        s=60, zorder=4, picker=6)
+        sc._body_info = p
+        planet_artists.append(sc)
+        # label offset: nudge away from the Sun
+        r = _math.sqrt(p["x"] ** 2 + p["y"] ** 2) or 0.01
+        ox_lbl = p["x"] / r * max_au * 0.04
+        oy_lbl = p["y"] / r * max_au * 0.04
+        ax.text(p["x"] + ox_lbl, p["y"] + oy_lbl, p["name"],
+                color=_LABEL_CLR, fontsize=6.5, ha="center", va="center",
+                alpha=0.85, zorder=5)
+
+    # Sun
+    ax.scatter([0], [0], color="#FFD700", s=120, marker="*", zorder=6)
+    ax.text(0, max_au * 0.04, "Sun",
+            color="#CC8800", fontsize=7, ha="center", va="bottom",
+            alpha=0.9, zorder=7)
+
+    # Dashed travel path line
+    ox_, oy_, _ = data["origin_xyz"]
+    dx_, dy_, _ = data["dest_xyz"]
+    ax.plot([ox_, dx_], [oy_, dy_],
+            color="#888888", linewidth=1.5, linestyle="--",
+            alpha=0.75, zorder=3)
+
+    # Origin marker
+    orig_sc = ax.scatter([ox_], [oy_], color="#FF8800", s=120,
+                         marker="*", zorder=8, picker=8)
+    orig_sc._body_info = {"name": data["origin_name"],
+                          "x": ox_, "y": oy_, "z": data["origin_xyz"][2]}
+    ax.text(ox_ + max_au * 0.04, oy_ + max_au * 0.04,
+            f"Origin\n{data['origin_name']}",
+            color="#FF8800", fontsize=7, ha="left", va="bottom",
+            alpha=0.95, zorder=9)
+
+    # Destination marker
+    dest_sc = ax.scatter([dx_], [dy_], color="#00CCCC", s=100,
+                         marker="s", zorder=8, picker=8)
+    dest_sc._body_info = {"name": data["dest_name"],
+                          "x": dx_, "y": dy_, "z": data["dest_xyz"][2]}
+    ax.text(dx_ + max_au * 0.04, dy_ - max_au * 0.04,
+            f"Dest\n{data['dest_name']}",
+            color="#00CCCC", fontsize=7, ha="left", va="top",
+            alpha=0.95, zorder=9)
+
+    return planet_artists + [orig_sc, dest_sc]
+
+
+def _wire_solar_travel_click(canvas, ax, artists):
+    """Click-to-info: clicking a body shows its name + position."""
+    info_box = _make_info_box(ax)
+
+    def _on_pick(event):
+        art = event.artist
+        if not hasattr(art, "_body_info"):
+            return
+        p = art._body_info
+        import math as _m
+        dist_sun = _m.sqrt(p["x"] ** 2 + p["y"] ** 2 + p.get("z", 0) ** 2)
+        info_box.set_text(
+            f"{p['name']}\n"
+            f"X: {p['x']:.4f} AU   Y: {p['y']:.4f} AU\n"
+            f"Distance from Sun: {dist_sun:.4f} AU"
+        )
+        info_box.set_visible(True)
+        canvas.draw_idle()
+
+    def _on_click(event):
+        if event.inaxes != ax:
+            return
+        if not getattr(event, "artist", None):
+            if info_box.get_visible():
+                info_box.set_visible(False)
+                canvas.draw_idle()
+
+    canvas.mpl_connect("pick_event", _on_pick)
+    canvas.mpl_connect("button_press_event", _on_click)
+
+
+def make_solar_travel_canvas(parent, data: dict):
+    """2D top-down solar system travel path diagram (XY ecliptic plane).
+
+    data: prepared by core.viz.prepare_solar_travel_diagram().
+    Returns (canvas, toolbar).
+    """
+    max_au = data["max_au"]
+    title = f"{data['origin_name']}  →  {data['dest_name']}"
+
+    fig = Figure(figsize=(6.5, 6.5), facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, aspect="equal", facecolor=_SPACE_BG)
+
+    artists = _build_solar_travel_elements(ax, data)
+    _style_ax(ax, max_au, title)
+    _wire_solar_travel_click(canvas, ax, artists)
+
+    fig.tight_layout(pad=1.0)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_solar_travel_canvas_3d(parent, data: dict):
+    """3D solar system travel path diagram.
+
+    Returns (canvas, toolbar, ax) — caller binds viewpoint preset buttons via ax.
+    Labels are shown as hover/click tooltips (text2D) rather than floating 3D text
+    so they don't drift or disappear during rotation and zoom.
+    """
+    import math as _math
+    import matplotlib as _mpl
+    _mpl.rcParams['axes3d.mouserotationstyle'] = 'azel'
+    try:
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 registers projection
+    except ImportError:
+        pass
+
+    max_au = data["max_au"]
+    title = f"{data['origin_name']}  →  {data['dest_name']}"
+
+    fig = Figure(figsize=(6.5, 6.5), facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_facecolor(_SPACE_BG)
+    fig.patch.set_facecolor(_SPACE_BG)
+
+    # Reference orbit circles (thin dashed rings in the Z=0 plane)
+    import numpy as _np
+    _thetas = _np.linspace(0, 2 * _np.pi, 120)
+    for orb in data.get("planet_orbits", []):
+        xs = orb["sma_au"] * _np.cos(_thetas)
+        ys = orb["sma_au"] * _np.sin(_thetas)
+        zs = _np.zeros_like(_thetas)
+        ax.plot(xs, ys, zs, color=orb["color"],
+                linewidth=0.5, linestyle="--", alpha=0.3)
+
+    # Planet dots — individually pickable so hover/click can identify them
+    _all_bodies = []
+    for p in data.get("planets", []):
+        sc = ax.scatter([p["x"]], [p["y"]], [p["z"]],
+                        color=p["color"], s=60, zorder=4,
+                        picker=True, pickradius=6)
+        sc._body_info = p
+        _all_bodies.append(sc)
+
+    # Sun
+    sun_sc = ax.scatter([0], [0], [0], color="#FFD700", s=140,
+                        marker="*", zorder=6, picker=True, pickradius=8)
+    sun_sc._body_info = {"name": "Sun", "x": 0.0, "y": 0.0, "z": 0.0}
+
+    # Travel path line
+    ox_, oy_, oz_ = data["origin_xyz"]
+    dx_, dy_, dz_ = data["dest_xyz"]
+    ax.plot([ox_, dx_], [oy_, dy_], [oz_, dz_],
+            color="#888888", linewidth=1.5, linestyle="--", alpha=0.75)
+
+    # Origin marker
+    orig_sc = ax.scatter([ox_], [oy_], [oz_], color="#FF8800", s=140,
+                         marker="*", zorder=8, picker=True, pickradius=8)
+    orig_sc._body_info = {"name": f"Origin: {data['origin_name']}",
+                          "x": ox_, "y": oy_, "z": oz_}
+
+    # Destination marker
+    dest_sc = ax.scatter([dx_], [dy_], [dz_], color="#00CCCC", s=110,
+                         marker="s", zorder=8, picker=True, pickradius=8)
+    dest_sc._body_info = {"name": f"Destination: {data['dest_name']}",
+                          "x": dx_, "y": dy_, "z": dz_}
+
+    ax.set_xlim(-max_au, max_au)
+    ax.set_ylim(-max_au, max_au)
+    ax.set_zlim(-max_au * 0.4, max_au * 0.4)
+    ax.set_xlabel("X (AU)", color=_LABEL_CLR, fontsize=8)
+    ax.set_ylabel("Y (AU)", color=_LABEL_CLR, fontsize=8)
+    ax.set_zlabel("Z (AU)", color=_LABEL_CLR, fontsize=8)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=7)
+    ax.set_title(title, color=_LABEL_CLR, fontsize=9, pad=6)
+    ax.view_init(elev=30, azim=-60)
+
+    # Fixed legend strip (top-left) listing origin/dest colours — no floating labels
+    legend_txt = (
+        f"★  Origin: {data['origin_name']}\n"
+        f"■  Dest:   {data['dest_name']}\n"
+        f"●  Planets  (hover/click for info)"
+    )
+    ax.text2D(0.02, 0.97, legend_txt,
+              transform=ax.transAxes,
+              fontsize=7, color=_LABEL_CLR, va="top",
+              bbox=dict(boxstyle="round,pad=0.35", fc="#f8f8f0",
+                        ec="#aaaaaa", lw=0.8, alpha=0.88),
+              zorder=10)
+
+    # Hover tooltip (top-right, text2D — stays fixed regardless of rotation)
+    hover_text = ax.text2D(0.98, 0.97, "", transform=ax.transAxes,
+                           fontsize=8, color=_LABEL_CLR, va="top", ha="right",
+                           bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0",
+                                     ec="#2266cc", lw=0.8, alpha=0.9),
+                           visible=False, zorder=10)
+
+    # Click info box (bottom-left, text2D)
+    info_text = ax.text2D(0.02, 0.02, "", transform=ax.transAxes,
+                          fontsize=8, color=_LABEL_CLR,
+                          bbox=dict(boxstyle="round,pad=0.4", fc=_SPACE_BG,
+                                    ec=_GRID_CLR, lw=0.8, alpha=0.9),
+                          visible=False, zorder=10)
+
+    _pickable = _all_bodies + [sun_sc, orig_sc, dest_sc]
+
+    def _on_motion(event):
+        if event.inaxes != ax:
+            if hover_text.get_visible():
+                hover_text.set_visible(False)
+                canvas.draw_idle()
+            return
+        for sc in _pickable:
+            cont, ind = sc.contains(event)
+            if cont:
+                p = sc._body_info
+                hover_text.set_text(p["name"])
+                hover_text.set_visible(True)
+                canvas.draw_idle()
+                return
+        if hover_text.get_visible():
+            hover_text.set_visible(False)
+            canvas.draw_idle()
+
+    def _on_pick(event):
+        sc = event.artist
+        if not hasattr(sc, "_body_info"):
+            return
+        p = sc._body_info
+        dist = _math.sqrt(p["x"] ** 2 + p["y"] ** 2 + p.get("z", 0) ** 2)
+        info_text.set_text(
+            f"{p['name']}\n"
+            f"X: {p['x']:.4f} AU   Y: {p['y']:.4f} AU\n"
+            f"Distance from Sun: {dist:.4f} AU"
+        )
+        info_text.set_visible(True)
+        canvas.draw_idle()
+
+    def _on_click(event):
+        if event.inaxes is not ax or event.xdata is None:
+            if info_text.get_visible():
+                info_text.set_visible(False)
+                canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+    canvas.mpl_connect("pick_event", _on_pick)
+    canvas.mpl_connect("button_press_event", _on_click)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar, ax

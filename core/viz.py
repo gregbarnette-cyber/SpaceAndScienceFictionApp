@@ -351,6 +351,58 @@ def prepare_alt_hz_diagram(d: dict) -> dict:
     return {"zones": zones, "max_au": max_au}
 
 
+_PLANET_SMAS = {
+    "Mercury": 0.387, "Venus": 0.723, "Earth": 1.000, "Mars":    1.524,
+    "Jupiter": 5.203, "Saturn": 9.537, "Uranus": 19.191, "Neptune": 30.069,
+}
+_PLANET_COLORS_VIZ = {
+    "Mercury": "#b5b5b5", "Venus": "#e8cda0", "Earth": "#4fc3f7",
+    "Mars":    "#ef5350",  "Jupiter": "#c9956b", "Saturn": "#d4b896",
+    "Uranus":  "#7de8e8",  "Neptune": "#5b8df5",
+}
+
+
+def prepare_solar_travel_diagram(result: dict) -> dict:
+    """Convert a solar-travel result dict to visualization data.
+
+    Accepts the return value of compute_travel_time_solar_objects or
+    compute_travel_time_custom_thrust.
+
+    Returns:
+        {origin_name, dest_name, origin_xyz, dest_xyz,
+         planets, planet_orbits, max_au}
+    or {"error": str}
+    """
+    if "origin_xyz" not in result or "dest_xyz" not in result:
+        return {"error": "Position data not available."}
+
+    origin_xyz = result["origin_xyz"]
+    dest_xyz   = result["dest_xyz"]
+    planets    = result.get("planet_positions", [])
+
+    # max XY radius of all bodies to determine view scale
+    all_pts = [origin_xyz, dest_xyz] + [(p["x"], p["y"], p["z"]) for p in planets]
+    radii = [math.sqrt(x**2 + y**2) for x, y, _ in all_pts if abs(x) + abs(y) > 1e-9]
+    max_r = max(radii) if radii else 1.5
+    max_au = max(max_r * 1.15, 1.5)
+
+    planet_orbits = [
+        {"name": name, "sma_au": sma, "color": _PLANET_COLORS_VIZ.get(name, "#888888")}
+        for name, sma in _PLANET_SMAS.items()
+        if sma <= max_au * 1.1
+    ]
+
+    return {
+        "origin_name":   result["origin"],
+        "dest_name":     result["destination"],
+        "origin_xyz":    origin_xyz,
+        "dest_xyz":      dest_xyz,
+        "planets":       planets,
+        "planet_orbits": planet_orbits,
+        "max_au":        max_au,
+    }
+
+
 def prepare_hz_diagram(teff: float, luminosity: float) -> dict:
     """Compute HZ ring data for a star with given temperature and luminosity.
 
