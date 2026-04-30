@@ -331,16 +331,22 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 `SystemTravelSolarPanel` (31) and `SystemTravelThrustPanel` (32) both inherit `(DiagramToggleMixin, ResultPanel)`.
 
 `build_results_area()` creates:
-- `_tables_widget` — `QWidget` wrapping `_tables_layout` (a `QVBoxLayout`); the results table (opt 31) or labeled key-value rows (opt 32) are added here.
+- `_tables_widget` — `QWidget` wrapping `_tables_layout` (a `QVBoxLayout`); all result tables and labels are added here.
 - `_viz_container` + `_viz_tabs_widget` — created by `_setup_diagram_view()`.
 
 `_input_count` is reset at the end of `build_results_area()` so `clear_results()` never destroys the persistent widget infrastructure. A module-level `_clear_tables_layout(panel)` helper (defined in `system_travel.py`) clears the `_tables_layout` between renders.
+
+Both panels accept a **Departure Date** (`QDateEdit`, calendar popup, defaults to today) in their input form, positioned between Destination and Acceleration. The selected date is passed to the core function as an ISO string `"YYYY-MM-DD"` and displayed as a label above the result tables.
+
+**Opt 31 result layout**: "Departure Date" label → Summary table (Origin | Destination | Acceleration | Distance AU | Distance LM) → Profiles table (Acceleration Profile | Travel Time Hours | Travel Time | Max Vel).
+
+**Opt 32 result layout**: "Departure Date" label → Summary table (Origin | Destination | Acceleration | Distance AU | Distance LM | Total Travel Time Hours | Total Travel Time) → Burn Profile table (Req. Burn | Eff. Burn | Max Vel Cap | Max Vel Reached | Time to Max Vel | Coast Velocity) → optional fallback note → Phase Breakdown table (Phase | Duration | Distance AU | Distance LM, rows: Acceleration / Coast / Deceleration / Total) → iterations note.
 
 Two diagram tabs are added to `_viz_tabs_widget` when `mpl_available()` and the result contains `origin_xyz`:
 - **Solar System Map** — 2D XY ecliptic view via `make_solar_travel_canvas()`.
 - **3D View** — 3D view via `make_solar_travel_canvas_3d()`, with Top View / Side View / 3D Perspective preset buttons above the toolbar. Preset button callbacks deactivate any active toolbar zoom/pan mode before calling `view_init()`.
 
-**Planet position cache**: `core.calculators._fetch_planet_positions(epoch_jd)` fetches heliocentric positions for all 8 planets and caches the result for 30 minutes (`_PLANET_POS_CACHE_TTL = 1800 s`). This means the first calculation per session takes longer (~8 extra Horizons queries) but subsequent calculations reuse the cached positions instantly.
+**Planet position cache**: `core.calculators._fetch_planet_positions(epoch_jd)` fetches heliocentric positions for all 8 planets and caches the result for 30 minutes (`_PLANET_POS_CACHE_TTL = 1800 s`). The cache is keyed by epoch: it is only reused when the requested `epoch_jd` is within 0.02 JD (~29 min) of the cached epoch. Past or future departure dates always trigger a fresh Horizons fetch for that epoch.
 
 **`_PLANET_IDS` / `_PLANET_COLORS`**: Module-level constants in `core/calculators.py` listing the 8 planets with their Horizons IDs and display colours; also mirrored as `_PLANET_SMAS` / `_PLANET_COLORS_VIZ` in `core/viz.py` for the canvas rendering layer.
 

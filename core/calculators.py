@@ -459,14 +459,20 @@ _PLANET_COLORS = {
 
 _planet_pos_cache: list = []
 _planet_pos_cache_time: float = 0.0
+_planet_pos_cache_epoch_jd: float = 0.0
 _PLANET_POS_CACHE_TTL = 1800.0   # 30 minutes
 
 
 def _fetch_planet_positions(epoch_jd=None) -> list:
-    """Return heliocentric x,y,z (AU) for the 8 planets. Cached for 30 min."""
+    """Return heliocentric x,y,z (AU) for the 8 planets. Cached for 30 min per epoch."""
     import time
-    global _planet_pos_cache, _planet_pos_cache_time
-    if _planet_pos_cache and (time.monotonic() - _planet_pos_cache_time) < _PLANET_POS_CACHE_TTL:
+    import astropy.time as _atime
+    global _planet_pos_cache, _planet_pos_cache_time, _planet_pos_cache_epoch_jd
+    if epoch_jd is None:
+        epoch_jd = _atime.Time.now().jd
+    epoch_match = abs(epoch_jd - _planet_pos_cache_epoch_jd) < 0.02  # ~29 min in JD
+    time_ok = (time.monotonic() - _planet_pos_cache_time) < _PLANET_POS_CACHE_TTL
+    if _planet_pos_cache and epoch_match and time_ok:
         return _planet_pos_cache
     planets = []
     for name, pid in _PLANET_IDS:
@@ -478,6 +484,7 @@ def _fetch_planet_positions(epoch_jd=None) -> list:
             pass
     _planet_pos_cache = planets
     _planet_pos_cache_time = time.monotonic()
+    _planet_pos_cache_epoch_jd = epoch_jd
     return planets
 
 
@@ -714,18 +721,27 @@ def compute_travel_time_system_lm(accel_g: float, distance_lm: float) -> dict:
 def compute_travel_time_solar_objects(
         origin: str, destination: str,
         accel_g: float, v_cap_pct: float = 3.0,
+        departure_date: str = None,
         progress_callback=None) -> dict:
     """Brachistochrone travel time between two solar system objects via JPL Horizons.
 
+    Args:
+        departure_date: ISO date string "YYYY-MM-DD"; defaults to today when None.
+
     Returns:
         {origin, destination, accel_g, distance_au, distance_lm,
-         v_cap_pct, profiles: [...]}
+         v_cap_pct, departure_date, profiles: [...]}
         or {"error": str, "disambiguation": str (optional)}
     """
     import astropy.time
     origin_id = _resolve_horizons_id(origin)
     dest_id   = _resolve_horizons_id(destination)
-    epoch_jd  = astropy.time.Time.now().jd
+    if departure_date:
+        epoch_jd = astropy.time.Time(f"{departure_date}T12:00:00").jd
+    else:
+        import datetime
+        departure_date = datetime.date.today().isoformat()
+        epoch_jd = astropy.time.Time.now().jd
 
     if progress_callback:
         progress_callback(f"Querying JPL Horizons for '{origin}'…")
@@ -767,6 +783,7 @@ def compute_travel_time_solar_objects(
         "distance_au":      distance_au,
         "distance_lm":      distance_lm,
         "v_cap_pct":        v_cap_pct,
+        "departure_date":   departure_date,
         "profiles":         profiles,
         "origin_xyz":       (ox, oy, oz),
         "dest_xyz":         (dx, dy, dz),
@@ -779,17 +796,21 @@ def compute_travel_time_custom_thrust(
         accel_g: float, burn_duration_s: float,
         v_cap_pct: float = 3.0,
         burn_value: float = None, burn_unit_label: str = "Days",
+        departure_date: str = None,
         progress_callback=None) -> dict:
     """Travel time between two solar system objects with custom thrust duration.
 
     The ship accelerates for burn_duration_s seconds, coasts, then decelerates
     for the same duration. Destination position is iteratively estimated.
 
+    Args:
+        departure_date: ISO date string "YYYY-MM-DD"; defaults to today when None.
+
     Returns:
         {origin, destination, distance_au, distance_lm, accel_g, a_ms2,
          burn_value, burn_unit_label, burn_seconds, eff_burn_s,
          v_cap_pct, v_cap_ms, vmax_reached, t_to_vmax_str,
-         v_coast_ms, v_coast_pct_c, fallback,
+         v_coast_ms, v_coast_pct_c, fallback, departure_date,
          t_accel_hours, t_coast_hours, d_accel_au, d_accel_lm,
          d_coast_au, d_coast_lm, t_total_hours, travel_time_str,
          iterations_done}
@@ -803,9 +824,15 @@ def compute_travel_time_custom_thrust(
     a_ms2    = accel_g * _G_MS2
     V_CAP_MS = (v_cap_pct / 100.0) * _C_MS
 
+    if departure_date:
+        t0_jd = astropy.time.Time(f"{departure_date}T12:00:00").jd
+    else:
+        import datetime
+        departure_date = datetime.date.today().isoformat()
+        t0_jd = astropy.time.Time.now().jd
+
     if progress_callback:
         progress_callback(f"Querying JPL Horizons for '{origin}'…")
-    t0_jd = astropy.time.Time.now().jd
     try:
         ox, oy, oz = _get_heliocentric_vectors(origin_id, t0_jd)
     except Exception as e:
@@ -921,6 +948,7 @@ def compute_travel_time_custom_thrust(
         "v_coast_ms":       v_coast_ms,
         "v_coast_pct_c":    v_coast_pct_c,
         "fallback":         fallback,
+        "departure_date":   departure_date,
         "t_accel_hours":    t_accel_hours,
         "t_coast_hours":    t_coast_hours,
         "d_accel_au":       d_accel_au,

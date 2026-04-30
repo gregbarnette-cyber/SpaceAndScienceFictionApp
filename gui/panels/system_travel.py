@@ -3,8 +3,9 @@
 
 from PySide6.QtWidgets import (
     QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel,
-    QComboBox, QWidget, QVBoxLayout, QSizePolicy,
+    QComboBox, QWidget, QVBoxLayout, QSizePolicy, QDateEdit,
 )
+from PySide6.QtCore import QDate
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.calculators
@@ -39,6 +40,12 @@ class SystemTravelSolarPanel(DiagramToggleMixin, ResultPanel):
         self._dest = QLineEdit()
         self._dest.setPlaceholderText("e.g. Jupiter, 433 (Eros)")
         form.addRow("Destination:", self._dest)
+
+        self._departure_date = QDateEdit()
+        self._departure_date.setDate(QDate.currentDate())
+        self._departure_date.setCalendarPopup(True)
+        self._departure_date.setDisplayFormat("yyyy-MM-dd")
+        form.addRow("Departure Date:", self._departure_date)
 
         self._accel = QLineEdit()
         self._accel.setPlaceholderText("e.g. 1.0")
@@ -98,10 +105,14 @@ class SystemTravelSolarPanel(DiagramToggleMixin, ResultPanel):
         except ValueError:
             vcap = 3.0
 
+        qdate = self._departure_date.date()
+        date_str = qdate.toString("yyyy-MM-dd")
+
         self.run_in_background(
             core.calculators.compute_travel_time_solar_objects,
             origin, dest, accel, vcap,
             on_result=self._render,
+            departure_date=date_str,
         )
 
     def _render(self, result: dict):
@@ -122,13 +133,28 @@ class SystemTravelSolarPanel(DiagramToggleMixin, ResultPanel):
         dist_lm  = result["distance_lm"]
         profiles = result["profiles"]
 
-        headers = ["Acceleration Profile", "Origin", "Destination",
-                   "Acceleration (G's)", "Distance (AU)", "Distance (LM)",
-                   "Travel Time (Hours)", "Travel Time", "Max Vel"]
+        date_lbl = QLabel(f"Departure Date: {result['departure_date']}")
+        self._tables_layout.addWidget(date_lbl)
+
+        # ── Summary table ─────────────────────────────────────────────────────
+        sum_headers = [
+            "Origin", "Destination", "Acceleration (G's)",
+            "Distance (AU)", "Distance (LM)",
+        ]
+        sum_rows = [[
+            origin, dest,
+            f"{accel_g:.4f}",
+            f"{dist_au:.4f}",
+            f"{dist_lm:.4f}",
+        ]]
+        sum_view = self.make_table(sum_headers, sum_rows)
+        sum_view.setSortingEnabled(False)
+        self._tables_layout.addWidget(sum_view)
+
+        # ── Profiles table ────────────────────────────────────────────────────
+        headers = ["Acceleration Profile", "Travel Time (Hours)", "Travel Time", "Max Vel"]
         rows = [
-            [p["label"], origin, dest, f"{accel_g:.4f}",
-             f"{dist_au:.4f}", f"{dist_lm:.4f}",
-             f"{p['hours']:.6f}", p["travel_time_str"], p["max_vel"]]
+            [p["label"], f"{p['hours']:.6f}", p["travel_time_str"], p["max_vel"]]
             for p in profiles
         ]
         view = self.make_table(headers, rows)
@@ -207,6 +233,12 @@ class SystemTravelThrustPanel(DiagramToggleMixin, ResultPanel):
         self._dest.setPlaceholderText("e.g. Jupiter, Titan")
         form.addRow("Destination:", self._dest)
 
+        self._departure_date = QDateEdit()
+        self._departure_date.setDate(QDate.currentDate())
+        self._departure_date.setCalendarPopup(True)
+        self._departure_date.setDisplayFormat("yyyy-MM-dd")
+        form.addRow("Departure Date:", self._departure_date)
+
         self._accel = QLineEdit()
         self._accel.setPlaceholderText("e.g. 1.0")
         form.addRow("Acceleration (G's):", self._accel)
@@ -279,10 +311,14 @@ class SystemTravelThrustPanel(DiagramToggleMixin, ResultPanel):
         except ValueError:
             vcap = 3.0
 
+        qdate = self._departure_date.date()
+        date_str = qdate.toString("yyyy-MM-dd")
+
         self.run_in_background(
             core.calculators.compute_travel_time_custom_thrust,
             origin, dest, accel, burn_s, vcap, burn, unit_label,
             on_result=self._render,
+            departure_date=date_str,
         )
 
     def _render(self, result: dict):
@@ -296,66 +332,91 @@ class SystemTravelThrustPanel(DiagramToggleMixin, ResultPanel):
             self._tables_layout.addWidget(lbl)
             return
 
-        def _row(label, value):
-            row_lbl = QLabel(f"<b>{label}:</b>  {value}")
-            row_lbl.setWordWrap(True)
-            self._tables_layout.addWidget(row_lbl)
+        fmt_tt = core.calculators.format_travel_time
 
-        _row("Origin",      result["origin"])
-        _row("Destination", result["destination"])
-        _row("Distance",
-             f"{result['distance_au']:.4f} AU  ({result['distance_lm']:.4f} LM)")
-        _row("Acceleration",
-             f"{result['accel_g']:.4f} G's  ({result['a_ms2']:.4f} m/s²)")
-        if result["burn_value"] is not None:
-            _row("Requested Burn Duration",
-                 f"{result['burn_value']:.4f} {result['burn_unit_label']}")
-        _row("Effective Burn Duration", result["eff_burn_str"])
-        _row("Max Velocity Cap",
-             f"{result['v_cap_pct']}% c  ({result['v_cap_ms']:,.2f} m/s)")
-        _row("Max Velocity Reached",    "Y" if result["vmax_reached"] else "N")
-        _row("Time to Reach Max Velocity", result["t_to_vmax_str"])
-        _row("Coast Velocity",
-             f"{result['v_coast_ms']:,.2f} m/s  ({result['v_coast_pct_c']:.4f}% c)")
+        date_lbl = QLabel(f"Departure Date: {result['departure_date']}")
+        self._tables_layout.addWidget(date_lbl)
 
+        # ── Table 1: Travel Summary ───────────────────────────────────────────
+        sum_headers = [
+            "Origin", "Destination", "Acceleration (G's)",
+            "Distance (AU)", "Distance (LM)",
+            "Total Travel Time (Hours)", "Total Travel Time",
+        ]
+        sum_rows = [[
+            result["origin"],
+            result["destination"],
+            f"{result['accel_g']:.4f}",
+            f"{result['distance_au']:.4f}",
+            f"{result['distance_lm']:.4f}",
+            f"{result['t_total_hours']:.6f}",
+            result["travel_time_str"],
+        ]]
+        v1 = self.make_table(sum_headers, sum_rows)
+        v1.setSortingEnabled(False)
+        self._tables_layout.addWidget(v1)
+
+        # ── Table 2: Burn Profile ─────────────────────────────────────────────
+        req_burn = (f"{result['burn_value']:.4f} {result['burn_unit_label']}"
+                    if result["burn_value"] is not None else "N/A")
+        burn_headers = [
+            "Req. Burn Duration", "Eff. Burn Duration",
+            "Max Vel Cap", "Max Vel Reached",
+            "Time to Max Vel", "Coast Velocity",
+        ]
+        burn_rows = [[
+            req_burn,
+            result["eff_burn_str"],
+            f"{result['v_cap_pct']}% c  ({result['v_cap_ms']:,.2f} m/s)",
+            "Y" if result["vmax_reached"] else "N",
+            result["t_to_vmax_str"],
+            f"{result['v_coast_ms']:,.2f} m/s  ({result['v_coast_pct_c']:.4f}% c)",
+        ]]
+        v2 = self.make_table(burn_headers, burn_rows)
+        v2.setSortingEnabled(False)
+        self._tables_layout.addWidget(v2)
+
+        # ── Fallback note ─────────────────────────────────────────────────────
         if result["fallback"]:
             note = QLabel("<i>Note: Distance too short for requested burn — "
                           "using continuous accel-to-midpoint profile.</i>")
             note.setWordWrap(True)
             self._tables_layout.addWidget(note)
-            _row("Acceleration Time",
-                 core.calculators.format_travel_time(result["t_accel_hours"]))
-            _row("Acceleration Distance",
-                 f"{result['d_accel_au']:.4f} AU  ({result['d_accel_lm']:.4f} LM)")
-            _row("Coast Time",     "N/A")
-            _row("Coast Distance", "N/A")
-            _row("Deceleration Time",
-                 core.calculators.format_travel_time(result["t_accel_hours"]))
-            _row("Deceleration Distance",
-                 f"{result['d_accel_au']:.4f} AU  ({result['d_accel_lm']:.4f} LM)")
+
+        # ── Table 3: Phase Breakdown ──────────────────────────────────────────
+        phase_headers = ["Phase", "Duration", "Distance (AU)", "Distance (LM)"]
+        if result["fallback"]:
+            coast_dur = coast_au = coast_lm = "N/A"
         else:
-            _row("Acceleration Time",
-                 core.calculators.format_travel_time(result["t_accel_hours"]))
-            _row("Acceleration Distance",
-                 f"{result['d_accel_au']:.4f} AU  ({result['d_accel_lm']:.4f} LM)")
-            _row("Coast Time",
-                 core.calculators.format_travel_time(result["t_coast_hours"]))
-            _row("Coast Distance",
-                 f"{result['d_coast_au']:.4f} AU  ({result['d_coast_lm']:.4f} LM)")
-            _row("Deceleration Time",
-                 core.calculators.format_travel_time(result["t_accel_hours"]))
-            _row("Deceleration Distance",
-                 f"{result['d_accel_au']:.4f} AU  ({result['d_accel_lm']:.4f} LM)")
+            coast_dur = fmt_tt(result["t_coast_hours"])
+            coast_au  = f"{result['d_coast_au']:.4f}"
+            coast_lm  = f"{result['d_coast_lm']:.4f}"
+        phase_rows = [
+            ["Acceleration",
+             fmt_tt(result["t_accel_hours"]),
+             f"{result['d_accel_au']:.4f}",
+             f"{result['d_accel_lm']:.4f}"],
+            ["Coast", coast_dur, coast_au, coast_lm],
+            ["Deceleration",
+             fmt_tt(result["t_accel_hours"]),
+             f"{result['d_accel_au']:.4f}",
+             f"{result['d_accel_lm']:.4f}"],
+            ["Total",
+             result["travel_time_str"],
+             f"{result['distance_au']:.4f}",
+             f"{result['distance_lm']:.4f}"],
+        ]
+        v3 = self.make_table(phase_headers, phase_rows)
+        v3.setSortingEnabled(False)
+        self._tables_layout.addWidget(v3)
 
         n = result["iterations_done"]
-        _row("Total Travel Time",
-             f"{result['travel_time_str']}  ({result['t_total_hours']:.2f} Hours)")
-        note = QLabel(
+        iter_note = QLabel(
             f"<i>Destination position estimated via iterative JPL Horizons queries "
             f"({n} iteration{'s' if n != 1 else ''} converged).</i>"
         )
-        note.setWordWrap(True)
-        self._tables_layout.addWidget(note)
+        iter_note.setWordWrap(True)
+        self._tables_layout.addWidget(iter_note)
 
         if mpl_available() and "origin_xyz" in result:
             map_data = core.viz.prepare_solar_travel_diagram(result)

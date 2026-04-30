@@ -152,23 +152,25 @@ Options 29–31 are given a distance and solve for travel time.
 ### Option 31: Travel Time Between 2 System Objs (Planet/Moon/Asteroid) — `travel_time_between_solar_system_objects()`
 - Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Max Velocity for Accelerate-to-Max-Velocity Profile (% of c, Default 3)` (blank → 3.0).
 - Screen cleared after all user inputs and before JPL Horizons queries begin (the "Querying JPL Horizons..." status messages appear on the cleared screen).
-- Uses `astroquery.jplhorizons.Horizons` to fetch current heliocentric state vectors (x, y, z in AU) for both objects via `_get_heliocentric_vectors()`. Distance computed as 3D Euclidean: `sqrt((dx-ox)²+(dy-oy)²+(dz-oz)²)`.
+- Uses `astroquery.jplhorizons.Horizons` to fetch heliocentric state vectors (x, y, z in AU) for both objects via `_get_heliocentric_vectors()` at the selected departure epoch. Distance computed as 3D Euclidean: `sqrt((dx-ox)²+(dy-oy)²+(dz-oz)²)`.
 - **Object name resolution**: `_resolve_horizons_id(name)` checks `_HORIZONS_ID_MAP` (normalized lowercase) first, then the last token of the input (handles "Jupiter's moon Io" → "io"), then falls through to pass the raw string to Horizons (handles numeric IDs like "433", asteroid designations like "1998 QE2").
 - `_HORIZONS_ID_MAP`: module-level dict mapping ~100 common names to Horizons numeric IDs (8 planets, Sun, all major moons, dwarf planets, common asteroids/comets).
 - Profile 3 velocity cap is user-configurable: `V_CAP_MS = (v_cap_pct / 100.0) × C_MS`. Label reads `"Accel to {v_cap_pct}% c, Coast, Then Decelerate"`.
 - Same brachistochrone physics as options 29/30; Profile 1: `t = 2·√(d/a)`, Profile 2: `t = √(16d/(3a))`, Profile 3: `t = 2·t_cap + (d - a·t_cap²)/V_CAP` (falls back to Profile 1 if cap not reached).
 - Error handling: ambiguous Horizons name prints the disambiguation table from the exception message + tip to use numeric ID; other errors print the exception; both return early. Same-object detection: distance < 1e-9 AU triggers error and early return.
-- Output table columns: Acceleration Profile | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Travel Time (Hours) | Travel Time | Max Vel
-  - Max Vel: "N/A" for Profiles 1 and 2; "Y" or "N" for Profile 3.
-- Row order: Profile 1, Profile 2, Profile 3. Origin/Destination columns show user's raw input strings.
-- **GUI diagram tabs** (via `DiagramToggleMixin`): "Solar System Map" (2D top-down XY ecliptic view) and "3D View". Both show current heliocentric positions of all 8 planets as coloured dots with dashed reference orbit circles, the Sun as a gold star at the origin, the origin body as an orange ★, the destination body as a cyan ■, and a dashed line connecting origin to destination. The 3D tab includes Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar. Hover shows body name; click shows name + XY position + distance from Sun. Planet positions are fetched alongside the origin/dest query and cached for 30 minutes so repeated calculations reuse the same planet data.
-- **Core function**: `core.calculators.compute_travel_time_solar_objects()` — extended to also return `origin_xyz: (x, y, z)`, `dest_xyz: (x, y, z)`, and `planet_positions: list` in addition to the existing keys. Planet positions fetched via `_fetch_planet_positions(epoch_jd)`.
+- **GUI output** (two tables):
+  - **Summary table** (1 row): Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM)
+  - **Profiles table** (3 rows): Acceleration Profile | Travel Time (Hours) | Travel Time | Max Vel
+    - Max Vel: "N/A" for Profiles 1 and 2; "Y" or "N" for Profile 3.
+  - Row order: Profile 1, Profile 2, Profile 3. "Departure Date: YYYY-MM-DD" label above the tables.
+- **GUI diagram tabs** (via `DiagramToggleMixin`): "Solar System Map" (2D top-down XY ecliptic view) and "3D View". Both show heliocentric positions of all 8 planets at the departure date as coloured dots with dashed reference orbit circles, the Sun as a gold star at the origin, the origin body as an orange ★, the destination body as a cyan ■, and a dashed line connecting origin to destination. The 3D tab includes Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar. Hover shows body name; click shows name + XY position + distance from Sun.
+- **Core function**: `core.calculators.compute_travel_time_solar_objects(origin, destination, accel_g, v_cap_pct, departure_date)` — `departure_date` is an ISO string `"YYYY-MM-DD"`; when `None`, defaults to today. Returns `departure_date`, `origin_xyz`, `dest_xyz`, and `planet_positions` in addition to the travel data. Planet positions fetched via `_fetch_planet_positions(epoch_jd)`.
 
 ### Option 32: Travel Time Between 2 System Objs (Custom Thrust Duration) — `travel_time_custom_thrust_duration()`
 - Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Acceleration/Deceleration Duration` (> 0), `Enter Unit (H=Hours, D=Days, W=Weeks) [D]` (default Days), `Enter Max Velocity for Coast Phase (% of c, Default 3)` (blank → 3.0).
 - Screen cleared after all user inputs and before JPL Horizons queries begin.
 - Uses `_resolve_horizons_id()` and `_HORIZONS_ID_MAP` (same as option 31).
-- **Iterative destination position estimation**: unlike option 31 which uses a single snapshot, this function queries the destination's position at the estimated arrival time and iterates until the travel time converges (change < 60 seconds, max 10 iterations). Origin position is fixed at departure time (now). Uses `_get_heliocentric_vectors()` with `epoch_jd` parameter.
+- **Iterative destination position estimation**: unlike option 31 which uses a single snapshot, this function queries the destination's position at the estimated arrival time and iterates until the travel time converges (change < 60 seconds, max 10 iterations). Origin position is fixed at departure epoch. Uses `_get_heliocentric_vectors()` with `epoch_jd` parameter.
 - **Acceleration profile**: Accelerate for the user-specified burn duration, coast at the reached velocity, then decelerate for the same duration. If max velocity is reached before the burn ends, effective burn time is shortened to `v_max / a`.
 - **Physics**:
   - `t_accel_eff = min(burn_seconds, V_CAP_MS / a_ms2)`
@@ -178,6 +180,11 @@ Options 29–31 are given a distance and solve for travel time.
   - `t_total = 2 × t_accel_eff + t_coast`
 - **Fallback**: if `2 × d_accel ≥ d_total` (distance too short for requested burn), falls back to midpoint profile: `t = 2·√(d/a)`, with an explanatory note in the output.
 - **Time to Reach Max Velocity**: displayed if `burn_seconds > V_CAP_MS / a_ms2`; otherwise shows `N/A`.
-- Output: vertical key-value layout showing Origin, Destination, Distance (AU/LM), Acceleration (G's/m/s²), Requested vs Effective Burn Duration, Max Velocity Cap, Max Velocity Reached (Y/N), Time to Reach Max Velocity, Coast Velocity (m/s and % c), Acceleration/Coast/Deceleration Time and Distance, Total Travel Time. Includes a note about iterative convergence.
+- **GUI output** (three tables, preceded by "Departure Date: YYYY-MM-DD" label):
+  - **Summary table** (1 row): Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Total Travel Time (Hours) | Total Travel Time
+  - **Burn Profile table** (1 row): Req. Burn Duration | Eff. Burn Duration | Max Vel Cap | Max Vel Reached | Time to Max Vel | Coast Velocity
+  - **Phase Breakdown table** (4 rows — Acceleration, Coast, Deceleration, Total): Phase | Duration | Distance (AU) | Distance (LM). Coast row shows "N/A" in the fallback case. Fallback note rendered as italic label between Burn Profile and Phase Breakdown tables.
+  - Iterations note rendered as italic label after Phase Breakdown table.
 - Same error handling as option 31: ambiguous Horizons name, lookup failure, same-object detection (distance < 1e-9 AU).
-- **GUI diagram tabs**: identical to option 31 — "Solar System Map" and "3D View" with the same planet map, origin/dest markers, dashed travel line, preset buttons, and interactivity. Planet positions are fetched at departure epoch `t0_jd` (same epoch as origin's first Horizons query). Core function `core.calculators.compute_travel_time_custom_thrust()` returns the same three added keys: `origin_xyz`, `dest_xyz`, `planet_positions`.
+- **GUI diagram tabs**: identical to option 31 — "Solar System Map" and "3D View" with the same planet map, origin/dest markers, dashed travel line, preset buttons, and interactivity. Planet positions are fetched at departure epoch `t0_jd`.
+- **Core function**: `core.calculators.compute_travel_time_custom_thrust(origin, destination, accel_g, burn_duration_s, v_cap_pct, burn_value, burn_unit_label, departure_date)` — `departure_date` is an ISO string `"YYYY-MM-DD"`; when `None`, defaults to today. Returns `departure_date`, `origin_xyz`, `dest_xyz`, and `planet_positions` in addition to the thrust/phase data.
