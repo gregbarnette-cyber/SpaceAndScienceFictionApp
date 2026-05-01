@@ -395,6 +395,8 @@ def prepare_solar_travel_diagram(result: dict) -> dict:
     return {
         "origin_name":   result["origin"],
         "dest_name":     result["destination"],
+        "origin_id":     result.get("origin_id", ""),
+        "dest_id":       result.get("dest_id", ""),
         "origin_xyz":    origin_xyz,
         "dest_xyz":      dest_xyz,
         "planets":       planets,

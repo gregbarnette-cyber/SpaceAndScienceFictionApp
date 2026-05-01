@@ -38,13 +38,13 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 ### Shared velocity conversion constant
 - `8765.8128` = hours in a Julian year (365.25 × 24). Used to convert between ly/hr and multiples of c: `times_c = ly_hr × 8765.8128`.
 
-### Option 20: Light Years per Hour to X Times the Speed of Light — `ly_per_hour_to_speed_of_light()`
+### Option 31: Light Years per Hour to X Times the Speed of Light — `ly_per_hour_to_speed_of_light()`
 - Prompts: `Enter velocity in light years per hour`
 - Converts ly/hr → X times c: `times_c = ly_hr × 8765.8128`
 - Screen cleared after input, before output.
 - Output: single line showing both values.
 
-### Option 21: X Times the Speed of Light to Light Years per Hour — `speed_of_light_to_ly_per_hour()`
+### Option 32: X Times the Speed of Light to Light Years per Hour — `speed_of_light_to_ly_per_hour()`
 - Prompts: `Enter velocity in X times the speed of light`
 - Converts X times c → ly/hr: `ly_hr = times_c / 8765.8128`
 - Screen cleared after input, before output.
@@ -52,13 +52,13 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 
 ## Distance Traveled Features
 
-### Option 22: Distance Traveled at a certain ly/hr within a certain time — `distance_traveled_ly_per_hour()`
+### Option 25: Distance Traveled at a certain ly/hr within a certain time — `distance_traveled_ly_per_hour()`
 - Prompts: `Enter travel time in hours`, `Enter the velocity in light years per hour`
 - Calculates: `distance = ly_hr × hours`
 - Screen cleared after all inputs, before output.
 - Output: single line showing velocity, time, and distance in light years.
 
-### Option 23: Distance Traveled at a certain X times the speed of light within a certain time — `distance_traveled_times_c()`
+### Option 26: Distance Traveled at a certain X times the speed of light within a certain time — `distance_traveled_times_c()`
 - Prompts: `Enter travel time in hours`, `Enter the velocity X times the speed of light`
 - Converts to ly/hr first: `ly_hr = times_c / 8765.8128`, then `distance = ly_hr × hours`
 - Screen cleared after all inputs, before output.
@@ -72,13 +72,13 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 - Uses Julian year: `HOURS_PER_YEAR = 365.25 × 24 = 8765.82`, `HOURS_PER_MONTH = HOURS_PER_YEAR / 12`.
 - Returns a comma-separated string, e.g. `"5 Months, 24 Days, 11 Hours, 30 Minutes"`.
 
-### Option 24: Time to Travel # of Light Years at X LY/HR — `time_to_travel_ly_at_ly_per_hour()`
+### Option 27: Time to Travel # of Light Years at X LY/HR — `time_to_travel_ly_at_ly_per_hour()`
 - Prompts: `Enter number of light years`, `Enter velocity in light years per hour` (must be > 0)
 - Calculates: `total_hours = distance_ly / ly_hr`, `times_c = ly_hr × 8765.8128`
 - Screen cleared after all inputs, before output.
 - Output table columns: Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
 
-### Option 25: Time to Travel # of Light Years at X Times the Speed of Light — `time_to_travel_ly_at_times_c()`
+### Option 28: Time to Travel # of Light Years at X Times the Speed of Light — `time_to_travel_ly_at_times_c()`
 - Prompts: `Enter number of light years`, `Enter velocity in X times the speed of light` (must be > 0)
 - Calculates: `ly_hr = times_c / 8765.8128`, `total_hours = distance_ly / ly_hr`
 - Screen cleared after all inputs, before output.
@@ -87,25 +87,25 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 ## Travel Time Between 2 Stars Features
 
 ### Shared helper: `_travel_time_between_stars(velocity_label, velocity_prompt, use_times_c)`
-- Used by options 26 and 27. `use_times_c=False` → velocity input is ly/hr; `use_times_c=True` → velocity input is X times c.
+- Used by options 20 and 21. `use_times_c=False` → velocity input is ly/hr; `use_times_c=True` → velocity input is X times c.
 - Prompts: `Enter origin star`, `Enter destination star`, then the velocity prompt.
 - Looks up both stars via `_lookup_star_for_distance()` (Sun/Sol → `(0.0, 0.0, 0.0)` with no SIMBAD query).
 - Computes 3D Euclidean distance in ly using same Cartesian math as option 17.
 - Converts velocity: if `use_times_c`, derives `ly_hr = times_c / 8765.8128`; else derives `times_c = ly_hr × 8765.8128`.
 - `total_hours = distance_ly / ly_hr`; travel time formatted via `_format_travel_time()`.
 - Screen cleared after all inputs and star lookups succeed, before table output. Early-return error paths (empty name, lookup failure) do not clear.
-- Output table columns (option 26): Origin | Destination | Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
-- Output table columns (option 27): Origin | Destination | Distance (LYs) | X Times Speed of Light | LY/HR | Travel Time (Hours) | Travel Time
+- Output table columns (option 20): Origin | Destination | Distance (LYs) | LY/HR | X Times Speed of Light | Travel Time (Hours) | Travel Time
+- Output table columns (option 21): Origin | Destination | Distance (LYs) | X Times Speed of Light | LY/HR | Travel Time (Hours) | Travel Time
 
-### Option 26: Travel Time Between 2 Stars (LYs/HR) — `travel_time_between_stars_ly_hr()`
+### Option 20: Travel Time Between 2 Stars (LYs/HR) — `travel_time_between_stars_ly_hr()`
 - Calls `_travel_time_between_stars(..., use_times_c=False)`.
 
-### Option 27: Travel Time Between 2 Stars (X Times the Speed of Light) — `travel_time_between_stars_times_c()`
+### Option 21: Travel Time Between 2 Stars (X Times the Speed of Light) — `travel_time_between_stars_times_c()`
 - Calls `_travel_time_between_stars(..., use_times_c=True)`.
 
 ## Brachistochrone Calculator Features
 
-### Physical constants (used by options 28–31)
+### Physical constants (used by options 22–24, 29–30)
 - `G_MS2 = 9.80665` m/s² (1 g)
 - `C_MS = 299,792,458` m/s (speed of light)
 - `V_CAP_MS = 0.03 × C_MS` (3% of c = 8,993,773.74 m/s)
@@ -113,18 +113,18 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 - `M_PER_LM = C_MS × 60` m (metres per light-minute)
 - All kinematics are non-relativistic (appropriate at v ≤ 3% c).
 
-### Three acceleration profiles (used by options 29–31)
-Options 29–31 are given a distance and solve for travel time.
+### Three acceleration profiles (used by options 22–23, 29–30)
+Options 22–23 and 29–30 are given a distance and solve for travel time.
 - **Profile 1 — Continuous to Halfway Point**: accelerate for t/2, flip and decelerate for t/2. `t = 2 × √(d/a)`
 - **Profile 2 — Half Continuous Accel Time, Coast, Then Decelerate**: accelerate t/4, coast t/2, decelerate t/4. `t = √(16d / (3a))`
 - **Profile 3 — Accel to 3% c, Coast, Then Decelerate**: `t_cap = V_CAP / a`. If `a×t_cap² ≥ d`, cap not reached → use Profile 1 formula. Else: `t = 2×t_cap + (d - a×t_cap²) / V_CAP`.
   - When cap not reached, label appended with `"(cap not reached)"`.
 
-### Option 28: Distance Traveled at an Acceleration Within a Certain Time — `distance_traveled_at_acceleration()`
+### Option 24: Distance Traveled at an Acceleration Within a Certain Time — `distance_traveled_at_acceleration()`
 - Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Travel Time in Hours` (> 0)
 - Computes distance (metres → AU and LM) for each profile given the travel time.
-- Profile 1 for this option differs from options 29–31: **Continuous Acceleration for Entire Time** — `d = ½ × a × t²` (no flip/decelerate).
-- Profile 2: same as options 29–31 — accel t/4, coast t/2, decel t/4; `d = 3×a×t²/16`.
+- Profile 1 for this option differs from options 22–23, 29–30: **Continuous Acceleration for Entire Time** — `d = ½ × a × t²` (no flip/decelerate).
+- Profile 2: same as options 22–23, 29–30 — accel t/4, coast t/2, decel t/4; `d = 3×a×t²/16`.
 - Profile 3: accel to 3% c (V_CAP) then coast for remaining time — no decel (decel happens at destination outside the time window). `d = ½×a×t_cap² + V_CAP×(t - t_cap)`. Cap-not-reached condition: `t_cap ≥ t` (one phase only, not two); fallback is `d = ½ × a × t²`.
 - Screen cleared after all inputs, before output.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Travel Time (Hours) | Travel Time | Distance (AU) | Distance (LM) | Max Vel
@@ -149,7 +149,7 @@ Options 29–31 are given a distance and solve for travel time.
   - Max Vel: "N/A" for Profiles 1 and 2; "Y" or "N" for Profile 3.
 - Row order: Profile 1, Profile 2, Profile 3.
 
-### Option 31: Travel Time Between 2 System Objs (Planet/Moon/Asteroid) — `travel_time_between_solar_system_objects()`
+### Option 22: Travel Time Between 2 System Objs (Planet/Moon/Asteroid) — `travel_time_between_solar_system_objects()`
 - Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Max Velocity for Accelerate-to-Max-Velocity Profile (% of c, Default 3)` (blank → 3.0).
 - Screen cleared after all user inputs and before JPL Horizons queries begin (the "Querying JPL Horizons..." status messages appear on the cleared screen).
 - Uses `astroquery.jplhorizons.Horizons` to fetch heliocentric state vectors (x, y, z in AU) for both objects via `_get_heliocentric_vectors()` at the selected departure epoch. Distance computed as 3D Euclidean: `sqrt((dx-ox)²+(dy-oy)²+(dz-oz)²)`.
@@ -158,15 +158,13 @@ Options 29–31 are given a distance and solve for travel time.
 - Profile 3 velocity cap is user-configurable: `V_CAP_MS = (v_cap_pct / 100.0) × C_MS`. Label reads `"Accel to {v_cap_pct}% c, Coast, Then Decelerate"`.
 - Same brachistochrone physics as options 29/30; Profile 1: `t = 2·√(d/a)`, Profile 2: `t = √(16d/(3a))`, Profile 3: `t = 2·t_cap + (d - a·t_cap²)/V_CAP` (falls back to Profile 1 if cap not reached).
 - Error handling: ambiguous Horizons name prints the disambiguation table from the exception message + tip to use numeric ID; other errors print the exception; both return early. Same-object detection: distance < 1e-9 AU triggers error and early return.
-- **GUI output** (two tables):
-  - **Summary table** (1 row): Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM)
-  - **Profiles table** (3 rows): Acceleration Profile | Travel Time (Hours) | Travel Time | Max Vel
+- **GUI output** (one combined table, preceded by persistent "Departure Date: YYYY-MM-DD" form label):
+  - **Combined table** (3 rows — one per profile): Acceleration Profile | Max Vel | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Total Travel Time (Hours) | Total Travel Time
     - Max Vel: "N/A" for Profiles 1 and 2; "Y" or "N" for Profile 3.
-  - Row order: Profile 1, Profile 2, Profile 3. "Departure Date: YYYY-MM-DD" label above the tables.
-- **GUI diagram tabs** (via `DiagramToggleMixin`): "Solar System Map" (2D top-down XY ecliptic view) and "3D View". Both show heliocentric positions of all 8 planets at the departure date as coloured dots with dashed reference orbit circles, the Sun as a gold star at the origin, the origin body as an orange ★, the destination body as a cyan ■, and a dashed line connecting origin to destination. The 3D tab includes Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar. Hover shows body name; click shows name + XY position + distance from Sun.
-- **Core function**: `core.calculators.compute_travel_time_solar_objects(origin, destination, accel_g, v_cap_pct, departure_date)` — `departure_date` is an ISO string `"YYYY-MM-DD"`; when `None`, defaults to today. Returns `departure_date`, `origin_xyz`, `dest_xyz`, and `planet_positions` in addition to the travel data. Planet positions fetched via `_fetch_planet_positions(epoch_jd)`.
+- **GUI diagram tabs** (via `DiagramToggleMixin`): "Solar System Map" (2D top-down XY ecliptic view) and "3D View". Both show heliocentric positions of all 8 planets at the departure date as coloured dots with dashed reference orbit circles, the Sun as a gold star at the origin, the origin body as an orange ★, the destination body as a cyan ■, and a dashed line connecting origin to destination. The 3D tab includes Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar. Clicking any body opens a non-modal `_show_body_dialog` window with physical properties fetched from JPL Horizons.
+- **Core function**: `core.calculators.compute_travel_time_solar_objects(origin, destination, accel_g, v_cap_pct, departure_date)` — `departure_date` is an ISO string `"YYYY-MM-DD"`; when `None`, defaults to today. Returns `departure_date`, `origin_xyz`, `dest_xyz`, `origin_id`, `dest_id`, and `planet_positions` in addition to the travel data. Planet positions fetched via `_fetch_planet_positions(epoch_jd)`; each planet dict includes `horizons_id`.
 
-### Option 32: Travel Time Between 2 System Objs (Custom Thrust Duration) — `travel_time_custom_thrust_duration()`
+### Option 23: Travel Time Between 2 System Objs (Custom Thrust Duration) — `travel_time_custom_thrust_duration()`
 - Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Acceleration/Deceleration Duration` (> 0), `Enter Unit (H=Hours, D=Days, W=Weeks) [D]` (default Days), `Enter Max Velocity for Coast Phase (% of c, Default 3)` (blank → 3.0).
 - Screen cleared after all user inputs and before JPL Horizons queries begin.
 - Uses `_resolve_horizons_id()` and `_HORIZONS_ID_MAP` (same as option 31).
@@ -180,11 +178,10 @@ Options 29–31 are given a distance and solve for travel time.
   - `t_total = 2 × t_accel_eff + t_coast`
 - **Fallback**: if `2 × d_accel ≥ d_total` (distance too short for requested burn), falls back to midpoint profile: `t = 2·√(d/a)`, with an explanatory note in the output.
 - **Time to Reach Max Velocity**: displayed if `burn_seconds > V_CAP_MS / a_ms2`; otherwise shows `N/A`.
-- **GUI output** (three tables, preceded by "Departure Date: YYYY-MM-DD" label):
-  - **Summary table** (1 row): Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Total Travel Time (Hours) | Total Travel Time
+- **GUI output** (two tables, preceded by persistent "Departure Date: YYYY-MM-DD" form label):
+  - **Combined Phase + Summary table** (4 rows — Acceleration, Coast, Deceleration, Total): Phase | Duration | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Total Travel Time (Hours) | Total Travel Time. Only the Total row populates the last two travel-time columns; the first three phase rows leave them blank. Coast row shows "N/A" in the fallback case.
   - **Burn Profile table** (1 row): Req. Burn Duration | Eff. Burn Duration | Max Vel Cap | Max Vel Reached | Time to Max Vel | Coast Velocity
-  - **Phase Breakdown table** (4 rows — Acceleration, Coast, Deceleration, Total): Phase | Duration | Distance (AU) | Distance (LM). Coast row shows "N/A" in the fallback case. Fallback note rendered as italic label between Burn Profile and Phase Breakdown tables.
-  - Iterations note rendered as italic label after Phase Breakdown table.
+  - Iterations note rendered as italic label after Burn Profile table; fallback note rendered as italic label below that (when applicable).
 - Same error handling as option 31: ambiguous Horizons name, lookup failure, same-object detection (distance < 1e-9 AU).
-- **GUI diagram tabs**: identical to option 31 — "Solar System Map" and "3D View" with the same planet map, origin/dest markers, dashed travel line, preset buttons, and interactivity. Planet positions are fetched at departure epoch `t0_jd`.
-- **Core function**: `core.calculators.compute_travel_time_custom_thrust(origin, destination, accel_g, burn_duration_s, v_cap_pct, burn_value, burn_unit_label, departure_date)` — `departure_date` is an ISO string `"YYYY-MM-DD"`; when `None`, defaults to today. Returns `departure_date`, `origin_xyz`, `dest_xyz`, and `planet_positions` in addition to the thrust/phase data.
+- **GUI diagram tabs**: identical to option 31 — "Solar System Map" and "3D View" with the same planet map, origin/dest markers, dashed travel line, preset buttons, and click-to-dialog interactivity. Planet positions are fetched at departure epoch `t0_jd`.
+- **Core function**: `core.calculators.compute_travel_time_custom_thrust(origin, destination, accel_g, burn_duration_s, v_cap_pct, burn_value, burn_unit_label, departure_date)` — `departure_date` is an ISO string `"YYYY-MM-DD"`; when `None`, defaults to today. Returns `departure_date`, `origin_xyz`, `dest_xyz`, `origin_id`, `dest_id`, and `planet_positions` in addition to the thrust/phase data.

@@ -1072,7 +1072,8 @@ def _build_solar_travel_elements(ax, data: dict):
     orig_sc = ax.scatter([ox_], [oy_], color="#FF8800", s=120,
                          marker="*", zorder=8, picker=8)
     orig_sc._body_info = {"name": data["origin_name"],
-                          "x": ox_, "y": oy_, "z": data["origin_xyz"][2]}
+                          "x": ox_, "y": oy_, "z": data["origin_xyz"][2],
+                          "horizons_id": data.get("origin_id", "")}
     ax.text(ox_ + max_au * 0.04, oy_ + max_au * 0.04,
             f"Origin\n{data['origin_name']}",
             color="#FF8800", fontsize=7, ha="left", va="bottom",
@@ -1082,7 +1083,8 @@ def _build_solar_travel_elements(ax, data: dict):
     dest_sc = ax.scatter([dx_], [dy_], color="#00CCCC", s=100,
                          marker="s", zorder=8, picker=8)
     dest_sc._body_info = {"name": data["dest_name"],
-                          "x": dx_, "y": dy_, "z": data["dest_xyz"][2]}
+                          "x": dx_, "y": dy_, "z": data["dest_xyz"][2],
+                          "horizons_id": data.get("dest_id", "")}
     ax.text(dx_ + max_au * 0.04, dy_ - max_au * 0.04,
             f"Dest\n{data['dest_name']}",
             color="#00CCCC", fontsize=7, ha="left", va="top",
@@ -1091,8 +1093,12 @@ def _build_solar_travel_elements(ax, data: dict):
     return planet_artists + [orig_sc, dest_sc]
 
 
-def _wire_solar_travel_click(canvas, ax, artists):
-    """Click-to-info: clicking a body shows its name + position."""
+def _wire_solar_travel_click(canvas, ax, artists, on_body_click=None):
+    """Click-to-info: clicking a body shows its name + position.
+
+    on_body_click(body_info): optional callback invoked on pick; if provided,
+    the inline info_box is skipped and the callback handles display instead.
+    """
     info_box = _make_info_box(ax)
 
     def _on_pick(event):
@@ -1102,13 +1108,16 @@ def _wire_solar_travel_click(canvas, ax, artists):
         p = art._body_info
         import math as _m
         dist_sun = _m.sqrt(p["x"] ** 2 + p["y"] ** 2 + p.get("z", 0) ** 2)
-        info_box.set_text(
-            f"{p['name']}\n"
-            f"X: {p['x']:.4f} AU   Y: {p['y']:.4f} AU\n"
-            f"Distance from Sun: {dist_sun:.4f} AU"
-        )
-        info_box.set_visible(True)
-        canvas.draw_idle()
+        if on_body_click is not None:
+            on_body_click(p)
+        else:
+            info_box.set_text(
+                f"{p['name']}\n"
+                f"X: {p['x']:.4f} AU   Y: {p['y']:.4f} AU\n"
+                f"Distance from Sun: {dist_sun:.4f} AU"
+            )
+            info_box.set_visible(True)
+            canvas.draw_idle()
 
     def _on_click(event):
         if event.inaxes != ax:
@@ -1122,10 +1131,11 @@ def _wire_solar_travel_click(canvas, ax, artists):
     canvas.mpl_connect("button_press_event", _on_click)
 
 
-def make_solar_travel_canvas(parent, data: dict):
+def make_solar_travel_canvas(parent, data: dict, on_body_click=None):
     """2D top-down solar system travel path diagram (XY ecliptic plane).
 
     data: prepared by core.viz.prepare_solar_travel_diagram().
+    on_body_click(body_info): optional callback invoked when a body is clicked.
     Returns (canvas, toolbar).
     """
     max_au = data["max_au"]
@@ -1137,16 +1147,17 @@ def make_solar_travel_canvas(parent, data: dict):
 
     artists = _build_solar_travel_elements(ax, data)
     _style_ax(ax, max_au, title)
-    _wire_solar_travel_click(canvas, ax, artists)
+    _wire_solar_travel_click(canvas, ax, artists, on_body_click=on_body_click)
 
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
     return canvas, toolbar
 
 
-def make_solar_travel_canvas_3d(parent, data: dict):
+def make_solar_travel_canvas_3d(parent, data: dict, on_body_click=None):
     """3D solar system travel path diagram.
 
+    on_body_click(body_info): optional callback invoked when a body is clicked.
     Returns (canvas, toolbar, ax) — caller binds viewpoint preset buttons via ax.
     Labels are shown as hover/click tooltips (text2D) rather than floating 3D text
     so they don't drift or disappear during rotation and zoom.
@@ -1202,13 +1213,15 @@ def make_solar_travel_canvas_3d(parent, data: dict):
     orig_sc = ax.scatter([ox_], [oy_], [oz_], color="#FF8800", s=140,
                          marker="*", zorder=8, picker=True, pickradius=8)
     orig_sc._body_info = {"name": f"Origin: {data['origin_name']}",
-                          "x": ox_, "y": oy_, "z": oz_}
+                          "x": ox_, "y": oy_, "z": oz_,
+                          "horizons_id": data.get("origin_id", "")}
 
     # Destination marker
     dest_sc = ax.scatter([dx_], [dy_], [dz_], color="#00CCCC", s=110,
                          marker="s", zorder=8, picker=True, pickradius=8)
     dest_sc._body_info = {"name": f"Destination: {data['dest_name']}",
-                          "x": dx_, "y": dy_, "z": dz_}
+                          "x": dx_, "y": dy_, "z": dz_,
+                          "horizons_id": data.get("dest_id", "")}
 
     ax.set_xlim(-max_au, max_au)
     ax.set_ylim(-max_au, max_au)
@@ -1273,13 +1286,16 @@ def make_solar_travel_canvas_3d(parent, data: dict):
             return
         p = sc._body_info
         dist = _math.sqrt(p["x"] ** 2 + p["y"] ** 2 + p.get("z", 0) ** 2)
-        info_text.set_text(
-            f"{p['name']}\n"
-            f"X: {p['x']:.4f} AU   Y: {p['y']:.4f} AU\n"
-            f"Distance from Sun: {dist:.4f} AU"
-        )
-        info_text.set_visible(True)
-        canvas.draw_idle()
+        if on_body_click is not None:
+            on_body_click(p)
+        else:
+            info_text.set_text(
+                f"{p['name']}\n"
+                f"X: {p['x']:.4f} AU   Y: {p['y']:.4f} AU\n"
+                f"Distance from Sun: {dist:.4f} AU"
+            )
+            info_text.set_visible(True)
+            canvas.draw_idle()
 
     def _on_click(event):
         if event.inaxes is not ax or event.xdata is None:

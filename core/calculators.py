@@ -461,6 +461,7 @@ _planet_pos_cache: list = []
 _planet_pos_cache_time: float = 0.0
 _planet_pos_cache_epoch_jd: float = 0.0
 _PLANET_POS_CACHE_TTL = 1800.0   # 30 minutes
+_BODY_PROPS_CACHE: dict = {}
 
 
 def _fetch_planet_positions(epoch_jd=None) -> list:
@@ -479,7 +480,7 @@ def _fetch_planet_positions(epoch_jd=None) -> list:
         try:
             x, y, z = _get_heliocentric_vectors(pid, epoch_jd)
             planets.append({"name": name, "x": x, "y": y, "z": z,
-                            "color": _PLANET_COLORS[name]})
+                            "color": _PLANET_COLORS[name], "horizons_id": pid})
         except Exception:
             pass
     _planet_pos_cache = planets
@@ -511,6 +512,198 @@ def _get_heliocentric_vectors(horizons_id: str, epoch_jd=None):
     obj = Horizons(id=horizons_id, location="@sun", epochs=epoch_jd)
     vec = obj.vectors()
     return float(vec["x"][0]), float(vec["y"][0]), float(vec["z"][0])
+
+
+def fetch_body_properties(horizons_id: str) -> dict:
+    """Query JPL Horizons for physical properties of a solar system body.
+
+    Returns a dict with keys depending on body type. Always includes:
+      body_type: "planet", "moon", "asteroid", "comet", or "unknown"
+      raw_text: the full text response from Horizons
+    Cached per horizons_id for the session.
+    """
+    import re
+    import urllib.request
+    import urllib.parse
+
+    if horizons_id in _BODY_PROPS_CACHE:
+        return _BODY_PROPS_CACHE[horizons_id]
+
+    try:
+        params = {
+            "format": "text",
+            "COMMAND": horizons_id,
+            "OBJ_DATA": "YES",
+            "MAKE_EPHEM": "NO",
+        }
+        url = ("https://ssd.jpl.nasa.gov/api/horizons.api?"
+               + urllib.parse.urlencode(params))
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            text = resp.read().decode("utf-8")
+    except Exception as e:
+        result = {"body_type": "unknown", "raw_text": "", "error": str(e)}
+        _BODY_PROPS_CACHE[horizons_id] = result
+        return result
+
+    props = {"raw_text": text}
+
+    def _find(pattern, default="N/A"):
+        m = re.search(pattern, text, re.IGNORECASE)
+        return m.group(1).strip() if m else default
+
+    if "SATELLITE PHYSICAL PROPERTIES" in text or "SATELLITE PHYSICAL" in text:
+        props["body_type"] = "moon"
+        # Name: from "Revised: <date>  <Name> / (Parent)" line
+        rev_m = re.search(r"Revised:[^\n]+", text)
+        if rev_m:
+            chunks = re.split(r'\s{3,}', rev_m.group(0).strip())
+            raw = chunks[1].strip() if len(chunks) >= 2 else horizons_id
+            # Strip " / (Parent)" suffix if present
+            props["name_full"] = re.sub(r'\s*/\s*\(.*\)$', '', raw).strip()
+        else:
+            props["name_full"] = horizons_id
+        props["mean_radius_km"]   = _find(r"Mean [Rr]adius\s*\(km\)\s*=\s*([\d.]+(?:\s*[+-]+\s*[\d.]+)?)")
+        props["density_gcc"]      = _find(r"Density\s*\(g\s*(?:cm|/cm)\^?[-]?3\)\s*=?\s*([\d.]+(?:\s*[+-]+\s*[\d.]+)?)")
+        props["gm_km3s2"]         = _find(r"GM\s*\(km\^3/s\^2\)\s*=\s*([\d.]+(?:\s*[+-]+\s*[\d.]+)?)")
+        props["geometric_albedo"] = _find(r"Geometric [Aa]lbedo\s*=\s*([\d.]+)")
+        props["sma_km"]           = _find(r"Semi-major axis,\s*a\s*\(km\)\s*=?\s*([\d,. ]+(?:\(10\^3\))?)")
+        props["orbital_period_d"] = _find(r"Orbital period\s*=\s*([\d.]+)\s*d")
+        props["eccentricity"]     = _find(r"Eccentricity,\s*e\s*=\s*([\d.]+)")
+        props["inclination_deg"]  = _find(r"Inclination,\s*i\s*\(?deg\)?\s*=\s*([\d.]+)")
+        props["rot_period"]       = _find(r"Rotational period\s*=\s*([^\n]+?)(?:\s*$)", "N/A")
+        props["v10"]              = _find(r"V\(1,0\)\s*=\s*([-\d.]+)")
+
+    elif "Asteroid physical parameters" in text:
+        props["body_type"] = "asteroid"
+        nm = re.search(r"JPL/HORIZONS\s+(.+?)\s{2,}", text)
+        props["name_full"] = nm.group(1).strip() if nm else horizons_id
+        props["gm_km3s2"]         = _find(r"GM=\s*([\d.na]+)", "N/A")
+        props["mean_radius_km"]   = _find(r"RAD=\s*([\d.]+)")
+        props["rot_period_hr"]    = _find(r"ROTPER=\s*([\d.]+)")
+        props["abs_magnitude"]    = _find(r"\bH=\s*([\d.]+)")
+        props["slope_g"]          = _find(r"\bG=\s*([-\d.]+)")
+        props["bv_color"]         = _find(r"B-V=\s*([\d.]+)")
+        props["albedo"]           = _find(r"ALBEDO=\s*([\d.]+)")
+        props["spectral_type"]    = _find(r"STYP=\s*(\w+)")
+
+    elif "Comet physical" in text or "Comet non-gravitational" in text:
+        props["body_type"] = "comet"
+        nm = re.search(r"JPL/HORIZONS\s+(.+?)\s{2,}", text)
+        props["name_full"] = nm.group(1).strip() if nm else horizons_id
+        props["mean_radius_km"]   = _find(r"RAD=\s*([\d.]+)")
+        props["abs_magnitude_m1"] = _find(r"M1=\s*([\d.]+)")
+        props["abs_magnitude_m2"] = _find(r"M2=\s*([\d.]+)")
+
+    elif any(x in text for x in ("PHYSICAL DATA", "GEOPHYSICAL PROPERTIES",
+                                  "GEOPHYSICAL DATA", "PHYSICAL PROPERTIES")):
+        props["body_type"] = "planet"
+        # Name: extract from "Revised: <date>  <Name>  <ID>" line; strip / (Parent)
+        rev_m = re.search(r"Revised:[^\n]+", text)
+        if rev_m:
+            chunks = re.split(r'\s{3,}', rev_m.group(0).strip())
+            raw = chunks[1].strip() if len(chunks) >= 2 else horizons_id
+            props["name_full"] = re.sub(r'\s*/\s*\(.*\)$', '', raw).strip()
+        else:
+            props["name_full"] = horizons_id
+
+        # Mean radius — "Vol. mean radius (km) = X", "Vol. mean radius, km = X"
+        props["mean_radius_km"] = _find(
+            r"Vol\.?\s*[Mm]ean\s*[Rr]adius\s*[,(]?\s*km[).]?\s*=\s*([\d.+\-]+)")
+        if props["mean_radius_km"] == "N/A":
+            props["mean_radius_km"] = _find(
+                r"Equat(?:orial)?\s*[Rr]adius[^=\n]*=\s*([\d,]+)\s*km")
+
+        # Mass — "Mass x10^26 (kg)", "Mass x 10^26 (kg)", "Mass, x10^22 kg"
+        mass_m = re.search(
+            r"Mass[,\s]*x\s*10\^(\d+)\s*(?:\(kg\)|kg)[^=\n]*=\s*([\d.]+)", text, re.IGNORECASE)
+        if mass_m:
+            props["mass_exp"] = mass_m.group(1)
+            props["mass_val"] = mass_m.group(2)
+            props["mass_str"] = f"{mass_m.group(2)} × 10^{mass_m.group(1)} kg"
+        else:
+            props["mass_str"] = "N/A"
+
+        # Density — (g/cm^3), (g cm^-3), or "Density, g/cm^3"
+        props["density_gcc"] = _find(
+            r"Density\s*[,(]?\s*g[/ ]?cm\^?[-]?3\s*[)]?\s*=\s*([\d.]+(?:\([^)]*\))?)")
+
+        # Surface gravity — equatorial; "Equ. grav, ge (m/s^2) = X" (Saturn),
+        # "Equ. gravity  m/s^2 = X" (Mars), "g_e, m/s^2 = X" (Earth)
+        props["equ_gravity_ms2"] = _find(
+            r"Equ[^=\n]*\(m/s\^2\)\s*=\s*([\d.]+)")
+        if props["equ_gravity_ms2"] == "N/A":
+            props["equ_gravity_ms2"] = _find(
+                r"Equ(?:atorial)?\.?\s*grav(?:ity)?[,\s]+m/s\^2\s*=\s*([\d.]+)")
+        if props["equ_gravity_ms2"] == "N/A":
+            props["equ_gravity_ms2"] = _find(r"g_e,\s*m/s\^2\s*[^=\n]*=\s*([\d.]+)")
+
+        # Escape velocity — both "km/s = X" and "= X km/s" formats
+        props["escape_km_s"] = _find(
+            r"Escape\s*(?:speed|vel(?:ocity)?)[,.]?\s*km/s\s*=\s*([\d.]+)")
+        if props["escape_km_s"] == "N/A":
+            props["escape_km_s"] = _find(
+                r"Escape\s+(?:speed|velocity)\s*=\s*([\d.]+)\s*km/s")
+
+        # Rotation period — "Sidereal rot. period = X hr/d", "Sid. rot. period = 10h 39m",
+        # or "Mean sidereal day, hr = X" (Earth)
+        props["rot_period"] = _find(
+            r"Sid(?:ereal)?\.?\s*rot(?:ation)?\.?\s*period\s*[^=\n]*=\s*([^\s][^\n]*?)(?:\s{2,}|\n|$)")
+        if props["rot_period"] == "N/A":
+            rot_m = re.search(r"Mean\s+sidereal\s+day[^=\n]*=\s*([\d.]+)", text, re.IGNORECASE)
+            props["rot_period"] = (rot_m.group(1) + " hr") if rot_m else "N/A"
+        else:
+            props["rot_period"] = props["rot_period"].strip()
+
+        # Mean solar day — "(sol) = X s", "hrs =~X.X", or "2000.0, s = X"
+        props["mean_solar_day"] = _find(
+            r"Mean\s+solar\s+day[^=\n]*=\s*~?\s*([\d.]+)")
+        if props["mean_solar_day"] != "N/A":
+            props["mean_solar_day"] = props["mean_solar_day"].strip()
+
+        # Mean temperature — "(K) = X" or "(Ts), K= X" or "Atmos. temp. (1 bar)"
+        props["mean_temp_k"] = _find(
+            r"Mean\s+(?:surface\s+)?temp(?:erature)?\s*\([^)]*\)[^=\n]*=\s*([\d.]+)")
+        if props["mean_temp_k"] == "N/A":
+            props["mean_temp_k"] = _find(
+                r"Mean\s+(?:surface\s+)?temp(?:erature)?\s*\(K\)\s*=\s*([\d.]+)")
+        if props["mean_temp_k"] == "N/A":
+            props["mean_temp_k"] = _find(
+                r"Atmos\.\s*temp\.\s*\(1\s*bar\)\s*=\s*([\d.+\-]+)")
+
+        # Atmospheric pressure — "(bar) = X", "= X bar", or "Atm. pressure = X bar"
+        props["atm_pressure_bar"] = _find(
+            r"Atm(?:os)?(?:ospheric)?\.?\s*pressure\s*(?:\(bar\)\s*)?=\s*([<\d.e+\-]+)")
+        if props["atm_pressure_bar"] == "N/A":
+            props["atm_pressure_bar"] = _find(
+                r"Atm(?:os)?(?:ospheric)?\.?\s*pressure\s*=\s*([\d.]+)\s*bar")
+
+        props["geometric_albedo"] = _find(r"Geometric\s+[Aa]lbedo\s*=\s*([\d.]+)")
+
+        # Obliquity — "= X deg" or "deg = X" (Earth puts deg before the =)
+        props["obliquity_deg"] = _find(
+            r"Obliquity\s+to\s+orbit[^\n=]*=\s*([\d.]+)")
+
+        # Orbital speed — "km/s = X" or "= X km/s"
+        props["orbital_speed_kms"] = _find(
+            r"(?:Orbital|Mean\s+[Oo]rbit)\s+(?:speed|vel(?:ocity)?)[,.]?\s*km/s\s*=\s*([\d.]+)")
+        if props["orbital_speed_kms"] == "N/A":
+            props["orbital_speed_kms"] = _find(
+                r"(?:Orbital|Mean\s+[Oo]rbit)\s+(?:speed|velocity)\s*=\s*([\d.]+)\s*km/s")
+
+        props["orbital_period_y"] = _find(
+            r"(?:Mean\s+)?[Ss]idereal\s+orb(?:it)?\s+per(?:iod)?\s*=\s*([\d.]+)\s*y")
+        props["hills_sphere"] = _find(
+            r"Hill'?s?\s+sphere\s+rad(?:ius)?[^=\n]*=\s*([\d.]+)")
+        # GM — "(km^3/s^2) = X" or "GM, km^3/s^2 = X"
+        props["gm_km3s2"] = _find(
+            r"GM[,\s]*(?:\(km\^3/s\^2\)|km\^3/s\^2)\s*=\s*([\d,.]+)")
+    else:
+        props["body_type"] = "unknown"
+        nm = re.search(r"JPL/HORIZONS\s+(.+?)\s{2,}", text)
+        props["name_full"] = nm.group(1).strip() if nm else horizons_id
+
+    _BODY_PROPS_CACHE[horizons_id] = props
+    return props
 
 
 def _brachistochrone_profiles(d_m: float, a_ms2: float, v_cap_pct: float = 3.0) -> list:
@@ -788,6 +981,8 @@ def compute_travel_time_solar_objects(
         "origin_xyz":       (ox, oy, oz),
         "dest_xyz":         (dx, dy, dz),
         "planet_positions": planet_positions,
+        "origin_id":        origin_id,
+        "dest_id":          dest_id,
     }
 
 
@@ -961,6 +1156,8 @@ def compute_travel_time_custom_thrust(
         "origin_xyz":       (ox, oy, oz),
         "dest_xyz":         (dx, dy, dz),
         "planet_positions": planet_positions,
+        "origin_id":        origin_id,
+        "dest_id":          dest_id,
     }
 
 

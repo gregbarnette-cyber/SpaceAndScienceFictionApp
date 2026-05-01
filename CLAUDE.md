@@ -63,7 +63,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 7. Open Exoplanet Catalogue                         23. Travel Time Between 2 System Objs (Custom Thrust Duration)
                                                     24. Distance Traveled at an Acceleration Within a Certain Time
   Star System Regions                               25. Distance Traveled at a certain ly/hr within a certain time
-  ------------------                                26. Distance Traveled at a certain X times the speed of light
+  ------------------                                26. Distance Traveled at a certain X times the speed of light within a certain time
 8.  Star System Regions (SIMBAD)                    27. Time to Travel # of Light Years at X LY/HR
 9.  Star System Regions (Semi-SIMBAD)               28. Time to Travel # of Light Years at X Times the Speed of Light
 10. Star System Regions (Manual)                    29. Travel Time Between 2 System Objs (Generic, Distance in AUs)
@@ -82,7 +82,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
                                                     36. Centrifugal Artificial Gravity Acceleration at Point X (m/s^2)
   Utilities                                         37. Distance from Point X to the Center of Rotation (m)
   ---------                                         38. Rotation Rate at Point X (rpm)
-50. Star Systems DB Query
+50. Star Systems CSV Query
 51. Export Star Systems to CSV
 52. Import HWC Data
 Q.  Quit                                            Misc. Equations

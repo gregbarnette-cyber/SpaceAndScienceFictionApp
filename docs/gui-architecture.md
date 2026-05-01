@@ -18,7 +18,7 @@ gui_main.py          # GUI entry point (Fusion style, launches maximized)
 
 core/                # Pure computation layer — no I/O, no Qt
   __init__.py
-  calculators.py     # Speed, distance, travel time functions
+  calculators.py     # Speed, distance, travel time functions; fetch_body_properties()
   databases.py       # SIMBAD and archive query functions
   equations.py       # Planetary, habitat, HZ, luminosity equations
   regions.py         # Star system region calculations
@@ -39,9 +39,9 @@ gui/                 # Qt presentation layer
     sol_regions.py        # SolRegionsPanel (13)
     honorverse.py         # HonorverseHyperPanel (14), HonorverseAccelPanel (15),
                           #   HonorverseSpeedPanel (16)
-    velocity.py           # VelocityLyHrPanel (20), VelocityTimesCPanel (21)
-    distance.py           # DistanceLyHrPanel (22), DistanceTimesCPanel (23)
-    travel_time.py        # TravelTimeLyHrPanel (24), TravelTimeTimesCPanel (25)
+    velocity.py           # VelocityLyHrPanel (31), VelocityTimesCPanel (32)
+    distance.py           # DistanceLyHrPanel (25), DistanceTimesCPanel (26)
+    travel_time.py        # TravelTimeLyHrPanel (27), TravelTimeTimesCPanel (28)
     orbit_calc.py         # OrbitPeriastronPanel (33), MoonDistance24Panel (34),
                           #   MoonDistanceXPanel (35)
     rotating_habitat.py   # GravityAccelPanel (36), GravityDistancePanel (37),
@@ -58,10 +58,10 @@ gui/                 # Qt presentation layer
     nasa_exoplanet.py    # NasaPlanetarySystemsPanel (3), NasaHwoExepPanel (4),
                          #   NasaMissionExocatPanel (5)
     catalogs.py          # HwcPanel (6)
-    travel_time_stars.py # TravelTimeStarsLyHrPanel (26), TravelTimeStarsTimesCPanel (27)
-    brachistochrone.py   # BrachistochroneAccelPanel (28), BrachistochroneAuPanel (29),
+    travel_time_stars.py # TravelTimeStarsLyHrPanel (20), TravelTimeStarsTimesCPanel (21)
+    brachistochrone.py   # BrachistochroneAccelPanel (24), BrachistochroneAuPanel (29),
                          #   BrachistochroneLmPanel (30)
-    system_travel.py     # SystemTravelSolarPanel (31), SystemTravelThrustPanel (32)
+    system_travel.py     # SystemTravelSolarPanel (22), SystemTravelThrustPanel (23)
     csv_utility.py       # CsvUtilityPanel (50), ExportStarSystemsPanel (51),
                          #   ImportHwcPanel (52)
   visualizations/        # Phase E: shared rendering helpers + standalone panel stubs
@@ -84,6 +84,8 @@ All functions in `core/` follow this contract:
 - Return `{"error": "message"}` for recoverable failures (bad input, no SIMBAD match, missing CSV)
 
 This makes core functions testable in isolation and callable from both the CLI and GUI.
+
+**`core.calculators.fetch_body_properties(horizons_id)`** is a special-purpose helper used only by the GUI's body-info dialog. It queries JPL Horizons with `OBJ_DATA=YES, MAKE_EPHEM=NO` and parses the text response into a structured dict. Returns `{"body_type": "planet"|"moon"|"asteroid"|"comet"|"unknown", "raw_text": ..., ...type-specific fields...}` or `{"body_type": "unknown", "error": str}`. Cached per `horizons_id` for the session in `_BODY_PROPS_CACHE`.
 
 ## GUI Layer Design
 
@@ -197,12 +199,12 @@ def __getattr__(name: str):
 | `HonorverseHyperPanel` | 14 | `panels/honorverse.py` |
 | `HonorverseAccelPanel` | 15 | `panels/honorverse.py` |
 | `HonorverseSpeedPanel` | 16 | `panels/honorverse.py` |
-| `VelocityLyHrPanel` | 20 | `panels/velocity.py` |
-| `VelocityTimesCPanel` | 21 | `panels/velocity.py` |
-| `DistanceLyHrPanel` | 22 | `panels/distance.py` |
-| `DistanceTimesCPanel` | 23 | `panels/distance.py` |
-| `TravelTimeLyHrPanel` | 24 | `panels/travel_time.py` |
-| `TravelTimeTimesCPanel` | 25 | `panels/travel_time.py` |
+| `VelocityLyHrPanel` | 31 | `panels/velocity.py` |
+| `VelocityTimesCPanel` | 32 | `panels/velocity.py` |
+| `DistanceLyHrPanel` | 25 | `panels/distance.py` |
+| `DistanceTimesCPanel` | 26 | `panels/distance.py` |
+| `TravelTimeLyHrPanel` | 27 | `panels/travel_time.py` |
+| `TravelTimeTimesCPanel` | 28 | `panels/travel_time.py` |
 | `OrbitPeriastronPanel` | 33 | `panels/orbit_calc.py` |
 | `MoonDistance24Panel` | 34 | `panels/orbit_calc.py` |
 | `MoonDistanceXPanel` | 35 | `panels/orbit_calc.py` |
@@ -223,13 +225,13 @@ def __getattr__(name: str):
 | `NasaHwoExepPanel` | 4 | `panels/nasa_exoplanet.py` |
 | `NasaMissionExocatPanel` | 5 | `panels/nasa_exoplanet.py` |
 | `HwcPanel` | 6 | `panels/catalogs.py` |
-| `TravelTimeStarsLyHrPanel` | 26 | `panels/travel_time_stars.py` |
-| `TravelTimeStarsTimesCPanel` | 27 | `panels/travel_time_stars.py` |
-| `BrachistochroneAccelPanel` | 28 | `panels/brachistochrone.py` |
+| `TravelTimeStarsLyHrPanel` | 20 | `panels/travel_time_stars.py` |
+| `TravelTimeStarsTimesCPanel` | 21 | `panels/travel_time_stars.py` |
+| `BrachistochroneAccelPanel` | 24 | `panels/brachistochrone.py` |
 | `BrachistochroneAuPanel` | 29 | `panels/brachistochrone.py` |
 | `BrachistochroneLmPanel` | 30 | `panels/brachistochrone.py` |
-| `SystemTravelSolarPanel` | 31 | `panels/system_travel.py` |
-| `SystemTravelThrustPanel` | 32 | `panels/system_travel.py` |
+| `SystemTravelSolarPanel` | 22 | `panels/system_travel.py` |
+| `SystemTravelThrustPanel` | 23 | `panels/system_travel.py` |
 | `CsvUtilityPanel` | 50 | `panels/csv_utility.py` |
 | `ExportStarSystemsPanel` | 51 | `panels/csv_utility.py` |
 | `ImportHwcPanel` | 52 | `panels/csv_utility.py` |
@@ -290,8 +292,8 @@ All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures u
 | `make_star_map_3d_canvas(parent, stars, title, bg)` | Stars Within Distance 18, 19 | 3D scatter with drag-to-rotate (`azel` rotation style); returns `(canvas, toolbar, ax)` so caller can bind viewpoint preset buttons; `bg` overrides figure background colour |
 | `make_system_regions_canvas(parent, data)` | Star Regions 8–10 | Concentric ring diagram (√AU scale) with zone fills + boundary labels |
 | `make_alt_hz_canvas(parent, zones, max_au, title, eeid_au)` | Star Regions 8–10 | Concentric ring diagram (⁴√AU scale) for alternate biochemistry HZ zones |
-| `make_solar_travel_canvas(parent, data)` | System Travel 31, 32 | 2D top-down (XY ecliptic) solar system map: planet dots + reference orbit circles + origin ★ + dest ■ + dashed travel path; click-to-info on any body |
-| `make_solar_travel_canvas_3d(parent, data)` | System Travel 31, 32 | 3D version of the solar system travel map (`azel` rotation); returns `(canvas, toolbar, ax)` for preset buttons; no floating 3D text labels — body info shown via hover/click `text2D` tooltips only |
+| `make_solar_travel_canvas(parent, data, on_body_click=None)` | System Travel 31, 32 | 2D top-down (XY ecliptic) solar system map: planet dots + reference orbit circles + origin ★ + dest ■ + dashed travel path; click calls `on_body_click(body_info)` if provided, otherwise shows inline info box |
+| `make_solar_travel_canvas_3d(parent, data, on_body_click=None)` | System Travel 31, 32 | 3D version of the solar system travel map (`azel` rotation); returns `(canvas, toolbar, ax)` for preset buttons; no floating 3D text labels — click calls `on_body_click(body_info)` if provided, otherwise shows `text2D` tooltip |
 
 All ring diagrams support click-to-info: clicking a region or orbit shows a details box in the lower-left corner; clicking empty space dismisses it. The EEID circle (dark teal `#006644`) is also clickable.
 
@@ -312,8 +314,8 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
 | `StarsWithinDistanceSolPanel` (18) | "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D" | `DiagramToggleMixin` |
 | `StarsWithinDistanceStarPanel` (19) | "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D" | `DiagramToggleMixin` |
-| `SystemTravelSolarPanel` (31) | "Solar System Map", "3D View" | `DiagramToggleMixin` |
-| `SystemTravelThrustPanel` (32) | "Solar System Map", "3D View" | `DiagramToggleMixin` |
+| `SystemTravelSolarPanel` (22) | "Solar System Map", "3D View" | `DiagramToggleMixin` |
+| `SystemTravelThrustPanel` (23) | "Solar System Map", "3D View" | `DiagramToggleMixin` |
 
 ### `core/viz.py` public API
 
@@ -324,11 +326,11 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `prepare_hz_diagram(teff, luminosity)` | Returns `{"zones": list, "max_au": float}` or `{"error": str}`. Each zone dict: `key, label, outer (AU), color`. |
 | `prepare_star_map_from_result(result)` | Converts `compute_stars_within_distance_of_sol/star` result dict to star-map format. Center star placed at origin; surrounding stars' coordinates shifted accordingly. |
 | `prepare_system_regions_diagram(d)` | Extracts seven labelled boundary AU values + Kopparapu HZ zones + EEID from a star-regions result dict. Returns `{"regions", "hz_zones", "eeid_au", "max_au"}`. |
-| `prepare_solar_travel_diagram(result)` | Converts a `compute_travel_time_solar_objects` or `compute_travel_time_custom_thrust` result dict into solar-map viz data. Returns `{"origin_name", "dest_name", "origin_xyz", "dest_xyz", "planets", "planet_orbits", "max_au"}` or `{"error": str}`. `planet_orbits` contains only planets whose SMA ≤ `max_au × 1.1`. |
+| `prepare_solar_travel_diagram(result)` | Converts a `compute_travel_time_solar_objects` or `compute_travel_time_custom_thrust` result dict into solar-map viz data. Returns `{"origin_name", "dest_name", "origin_id", "dest_id", "origin_xyz", "dest_xyz", "planets", "planet_orbits", "max_au"}` or `{"error": str}`. `origin_id`/`dest_id` are Horizons IDs passed through from the core result. `planet_orbits` contains only planets whose SMA ≤ `max_au × 1.1`. |
 
 ### System Travel Panels (`panels/system_travel.py`)
 
-`SystemTravelSolarPanel` (31) and `SystemTravelThrustPanel` (32) both inherit `(DiagramToggleMixin, ResultPanel)`.
+`SystemTravelSolarPanel` (22) and `SystemTravelThrustPanel` (23) both inherit `(DiagramToggleMixin, ResultPanel)`.
 
 `build_results_area()` creates:
 - `_tables_widget` — `QWidget` wrapping `_tables_layout` (a `QVBoxLayout`); all result tables and labels are added here.
@@ -336,19 +338,23 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 
 `_input_count` is reset at the end of `build_results_area()` so `clear_results()` never destroys the persistent widget infrastructure. A module-level `_clear_tables_layout(panel)` helper (defined in `system_travel.py`) clears the `_tables_layout` between renders.
 
-Both panels accept a **Departure Date** (`QDateEdit`, calendar popup, defaults to today) in their input form, positioned between Destination and Acceleration. The selected date is passed to the core function as an ISO string `"YYYY-MM-DD"` and displayed as a label above the result tables.
+Both panels accept a **Departure Date** (`QDateEdit`, calendar popup, defaults to today) in their input form, positioned between Destination and Acceleration. The selected date is passed to the core function as an ISO string `"YYYY-MM-DD"` and surfaced as a persistent `_date_lbl` label inside the form (hidden until first successful render).
 
-**Opt 31 result layout**: "Departure Date" label → Summary table (Origin | Destination | Acceleration | Distance AU | Distance LM) → Profiles table (Acceleration Profile | Travel Time Hours | Travel Time | Max Vel).
+**Opt 22 result layout**: combined table (3 rows — one per profile): Acceleration Profile | Max Vel | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Total Travel Time (Hours) | Total Travel Time.
 
-**Opt 32 result layout**: "Departure Date" label → Summary table (Origin | Destination | Acceleration | Distance AU | Distance LM | Total Travel Time Hours | Total Travel Time) → Burn Profile table (Req. Burn | Eff. Burn | Max Vel Cap | Max Vel Reached | Time to Max Vel | Coast Velocity) → optional fallback note → Phase Breakdown table (Phase | Duration | Distance AU | Distance LM, rows: Acceleration / Coast / Deceleration / Total) → iterations note.
+**Opt 23 result layout**: combined Phase + Summary table (4 rows — Acceleration, Coast, Deceleration, Total): Phase | Duration | Origin | Destination | Acceleration (G's) | Distance (AU) | Distance (LM) | Total Travel Time (Hours) | Total Travel Time → Burn Profile table (Req. Burn | Eff. Burn | Max Vel Cap | Max Vel Reached | Time to Max Vel | Coast Velocity) → iterations note → optional fallback note.
 
 Two diagram tabs are added to `_viz_tabs_widget` when `mpl_available()` and the result contains `origin_xyz`:
-- **Solar System Map** — 2D XY ecliptic view via `make_solar_travel_canvas()`.
-- **3D View** — 3D view via `make_solar_travel_canvas_3d()`, with Top View / Side View / 3D Perspective preset buttons above the toolbar. Preset button callbacks deactivate any active toolbar zoom/pan mode before calling `view_init()`.
+- **Solar System Map** — 2D XY ecliptic view via `make_solar_travel_canvas(…, on_body_click=…)`.
+- **3D View** — 3D view via `make_solar_travel_canvas_3d(…, on_body_click=…)`, with Top View / Side View / 3D Perspective preset buttons above the toolbar. Preset button callbacks deactivate any active toolbar zoom/pan mode before calling `view_init()`.
 
-**Planet position cache**: `core.calculators._fetch_planet_positions(epoch_jd)` fetches heliocentric positions for all 8 planets and caches the result for 30 minutes (`_PLANET_POS_CACHE_TTL = 1800 s`). The cache is keyed by epoch: it is only reused when the requested `epoch_jd` is within 0.02 JD (~29 min) of the cached epoch. Past or future departure dates always trigger a fresh Horizons fetch for that epoch.
+Clicking any body (planet, origin, or destination) on either canvas calls `_show_body_dialog(parent, body_info)` — a non-modal `QDialog` that shows heliocentric position in the header, then fetches and displays physical properties (radius, mass, density, gravity, etc.) from JPL Horizons in a background `QThread` via `_BodyInfoWorker`. The dialog renders different field sets depending on `body_type` (`"planet"`, `"moon"`, `"asteroid"`, `"comet"`, `"unknown"`). `_DialogBridge` (a main-thread `QObject`) relays the worker's `finished` signal to the populate callback across the thread boundary. Results are cached session-wide in `core.calculators._BODY_PROPS_CACHE`. Live `(thread, worker, bridge)` triples are kept in module-level `_dialog_threads` until the OS thread exits.
+
+**Planet position cache**: `core.calculators._fetch_planet_positions(epoch_jd)` fetches heliocentric positions for all 8 planets and caches the result for 30 minutes (`_PLANET_POS_CACHE_TTL = 1800 s`). The cache is keyed by epoch: it is only reused when the requested `epoch_jd` is within 0.02 JD (~29 min) of the cached epoch. Past or future departure dates always trigger a fresh Horizons fetch for that epoch. Each planet dict now includes a `horizons_id` field used by `_show_body_dialog`.
 
 **`_PLANET_IDS` / `_PLANET_COLORS`**: Module-level constants in `core/calculators.py` listing the 8 planets with their Horizons IDs and display colours; also mirrored as `_PLANET_SMAS` / `_PLANET_COLORS_VIZ` in `core/viz.py` for the canvas rendering layer.
+
+**`_fit_table_height(view)`**: Module-level helper in `system_travel.py` that sets a `QTableView` to a fixed height equal to its header plus all row heights. Fires once immediately and once via `QTimer.singleShot(0, …)` so the horizontal scrollbar's visibility is included in the final measurement.
 
 ## Phase Completion Status
 
