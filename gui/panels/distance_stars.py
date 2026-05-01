@@ -237,7 +237,10 @@ class StarsWithinDistanceSolPanel(DiagramToggleMixin, ResultPanel):
                         def _cb():
                             try:
                                 if toolbar3d.mode:
-                                    toolbar3d.zoom() if "zoom" in str(toolbar3d.mode) else toolbar3d.pan()
+                                    if "zoom rect" in str(toolbar3d.mode):
+                                        toolbar3d.zoom()
+                                    else:
+                                        toolbar3d.pan()
                             except Exception:
                                 pass
                             ax3d.view_init(elev=e, azim=a)
@@ -391,7 +394,10 @@ class StarsWithinDistanceStarPanel(DiagramToggleMixin, ResultPanel):
                         def _cb():
                             try:
                                 if toolbar3d.mode:
-                                    toolbar3d.zoom() if "zoom" in str(toolbar3d.mode) else toolbar3d.pan()
+                                    if "zoom rect" in str(toolbar3d.mode):
+                                        toolbar3d.zoom()
+                                    else:
+                                        toolbar3d.pan()
                             except Exception:
                                 pass
                             ax3d.view_init(elev=e, azim=a)

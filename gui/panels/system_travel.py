@@ -12,7 +12,7 @@ from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.calculators
 import core.viz
 from gui.visualizations.plot_helpers import (
-    mpl_available, make_solar_travel_canvas, make_solar_travel_canvas_3d,
+    mpl_available, make_solar_travel_canvas,
 )
 
 
@@ -28,19 +28,26 @@ def _clear_tables_layout(panel):
 def _fit_table_height(view):
     """Set a fixed height equal to the header plus all row heights.
 
-    Recomputes once after the event loop has settled so the horizontal
-    scrollbar's visibility (if columns overflow) is included in the height.
+    Fires at 0 ms and again at 50 ms so the horizontal scrollbar's visibility
+    (if columns overflow the panel width) is included in the final height.
+    The 50 ms shot is necessary because Qt's LayoutRequest event (posted by
+    addWidget) may not be processed before the 0 ms timer fires, meaning
+    the scrollbar isn't yet marked visible on the first correction.
     """
     def _apply():
-        view.resizeRowsToContents()
-        h = view.horizontalHeader().height() + view.verticalHeader().length()
-        h += view.frameWidth() * 2
-        sb = view.horizontalScrollBar()
-        if sb.isVisible():
-            h += sb.sizeHint().height()
-        view.setFixedHeight(h)
+        try:
+            view.resizeRowsToContents()
+            h = view.horizontalHeader().height() + view.verticalHeader().length()
+            h += view.frameWidth() * 2
+            sb = view.horizontalScrollBar()
+            if sb.isVisible():
+                h += sb.sizeHint().height()
+            view.setFixedHeight(h)
+        except RuntimeError:
+            pass  # view was deleted before this shot fired
     _apply()
     QTimer.singleShot(0, _apply)
+    QTimer.singleShot(50, _apply)
 
 
 # Module-level list keeps (thread, worker, bridge) triples alive until the OS
@@ -403,7 +410,6 @@ class SystemTravelSolarPanel(DiagramToggleMixin, ResultPanel):
         self._finish_render()
 
     def _add_solar_travel_tabs(self, map_data: dict):
-        # 2D tab
         w2d = QWidget()
         l2d = QVBoxLayout(w2d)
         l2d.setContentsMargins(4, 4, 4, 4)
@@ -412,43 +418,6 @@ class SystemTravelSolarPanel(DiagramToggleMixin, ResultPanel):
         l2d.addWidget(toolbar)
         l2d.addWidget(canvas)
         self._viz_tabs_widget.addTab(w2d, "Solar System Map")
-
-        # 3D tab with viewpoint preset buttons
-        w3d = QWidget()
-        l3d = QVBoxLayout(w3d)
-        l3d.setContentsMargins(4, 4, 4, 4)
-        l3d.setSpacing(0)
-        canvas3d, toolbar3d, ax3d = make_solar_travel_canvas_3d(
-            self, map_data, on_body_click=lambda bi: _show_body_dialog(self, bi))
-        preset_bar = QWidget()
-        preset_bar.setFixedHeight(24)
-        preset_row = QHBoxLayout(preset_bar)
-        preset_row.setContentsMargins(0, 0, 0, 0)
-        preset_row.setSpacing(6)
-        for lbl_txt, elev, azim in [
-            ("Top View", 90, 0),
-            ("Side View", 0, 0),
-            ("3D Perspective", 30, -60),
-        ]:
-            btn = QPushButton(lbl_txt)
-            btn.setFixedHeight(24)
-            def _make_cb(e=elev, a=azim):
-                def _cb():
-                    try:
-                        if toolbar3d.mode:
-                            toolbar3d.zoom() if "zoom" in str(toolbar3d.mode) else toolbar3d.pan()
-                    except Exception:
-                        pass
-                    ax3d.view_init(elev=e, azim=a)
-                    canvas3d.draw_idle()
-                return _cb
-            btn.clicked.connect(_make_cb())
-            preset_row.addWidget(btn)
-        preset_row.addStretch()
-        l3d.addWidget(preset_bar)
-        l3d.addWidget(toolbar3d)
-        l3d.addWidget(canvas3d)
-        self._viz_tabs_widget.addTab(w3d, "3D View")
 
 
 # ── Option 32: Custom Thrust Duration ────────────────────────────────────────
@@ -668,7 +637,6 @@ class SystemTravelThrustPanel(DiagramToggleMixin, ResultPanel):
         self._finish_render()
 
     def _add_solar_travel_tabs(self, map_data: dict):
-        # 2D tab
         w2d = QWidget()
         l2d = QVBoxLayout(w2d)
         l2d.setContentsMargins(4, 4, 4, 4)
@@ -677,40 +645,3 @@ class SystemTravelThrustPanel(DiagramToggleMixin, ResultPanel):
         l2d.addWidget(toolbar)
         l2d.addWidget(canvas)
         self._viz_tabs_widget.addTab(w2d, "Solar System Map")
-
-        # 3D tab with viewpoint preset buttons
-        w3d = QWidget()
-        l3d = QVBoxLayout(w3d)
-        l3d.setContentsMargins(4, 4, 4, 4)
-        l3d.setSpacing(0)
-        canvas3d, toolbar3d, ax3d = make_solar_travel_canvas_3d(
-            self, map_data, on_body_click=lambda bi: _show_body_dialog(self, bi))
-        preset_bar = QWidget()
-        preset_bar.setFixedHeight(24)
-        preset_row = QHBoxLayout(preset_bar)
-        preset_row.setContentsMargins(0, 0, 0, 0)
-        preset_row.setSpacing(6)
-        for lbl_txt, elev, azim in [
-            ("Top View", 90, 0),
-            ("Side View", 0, 0),
-            ("3D Perspective", 30, -60),
-        ]:
-            btn = QPushButton(lbl_txt)
-            btn.setFixedHeight(24)
-            def _make_cb(e=elev, a=azim):
-                def _cb():
-                    try:
-                        if toolbar3d.mode:
-                            toolbar3d.zoom() if "zoom" in str(toolbar3d.mode) else toolbar3d.pan()
-                    except Exception:
-                        pass
-                    ax3d.view_init(elev=e, azim=a)
-                    canvas3d.draw_idle()
-                return _cb
-            btn.clicked.connect(_make_cb())
-            preset_row.addWidget(btn)
-        preset_row.addStretch()
-        l3d.addWidget(preset_bar)
-        l3d.addWidget(toolbar3d)
-        l3d.addWidget(canvas3d)
-        self._viz_tabs_widget.addTab(w3d, "3D View")

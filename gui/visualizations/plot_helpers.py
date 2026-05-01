@@ -26,6 +26,20 @@ def mpl_available() -> bool:
     return _MPL_OK
 
 
+def _disable_zoom_rect(toolbar):
+    """Disable the rectangle-zoom tool on a 3D toolbar.
+
+    Zoom-to-rectangle doesn't work correctly in 3D — the 2D screen rectangle
+    can't be cleanly mapped back to tilted 3D data coordinates, so the result
+    always shifts off-centre. Scroll-wheel zoom is the correct tool for 3D.
+    """
+    for action in toolbar.actions():
+        if action.text() == "Zoom":
+            action.setEnabled(False)
+            action.setToolTip("Use scroll wheel to zoom in 3D view")
+            break
+
+
 # ── Click-to-info shared helpers ───────────────────────────────────────────────
 
 def _make_info_box(ax):
@@ -701,6 +715,7 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
 
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
+    _disable_zoom_rect(toolbar)
     return canvas, toolbar, ax
 
 
@@ -1159,8 +1174,8 @@ def make_solar_travel_canvas_3d(parent, data: dict, on_body_click=None):
 
     on_body_click(body_info): optional callback invoked when a body is clicked.
     Returns (canvas, toolbar, ax) — caller binds viewpoint preset buttons via ax.
-    Labels are shown as hover/click tooltips (text2D) rather than floating 3D text
-    so they don't drift or disappear during rotation and zoom.
+    Body names are shown as floating 3D text labels anchored to each point.
+    Hover shows a tooltip; click shows a detail box or calls on_body_click.
     """
     import math as _math
     import matplotlib as _mpl
@@ -1189,7 +1204,7 @@ def make_solar_travel_canvas_3d(parent, data: dict, on_body_click=None):
         ax.plot(xs, ys, zs, color=orb["color"],
                 linewidth=0.5, linestyle="--", alpha=0.3)
 
-    # Planet dots — individually pickable so hover/click can identify them
+    # Planet dots with floating 3D name labels
     _all_bodies = []
     for p in data.get("planets", []):
         sc = ax.scatter([p["x"]], [p["y"]], [p["z"]],
@@ -1197,11 +1212,20 @@ def make_solar_travel_canvas_3d(parent, data: dict, on_body_click=None):
                         picker=True, pickradius=6)
         sc._body_info = p
         _all_bodies.append(sc)
+        r = _math.sqrt(p["x"] ** 2 + p["y"] ** 2) or 0.01
+        ox_lbl = p["x"] / r * max_au * 0.04
+        oy_lbl = p["y"] / r * max_au * 0.04
+        ax.text(p["x"] + ox_lbl, p["y"] + oy_lbl, p["z"],
+                p["name"], color=_LABEL_CLR, fontsize=6.5,
+                ha="center", va="center", alpha=0.85, zorder=5)
 
     # Sun
     sun_sc = ax.scatter([0], [0], [0], color="#FFD700", s=140,
                         marker="*", zorder=6, picker=True, pickradius=8)
     sun_sc._body_info = {"name": "Sun", "x": 0.0, "y": 0.0, "z": 0.0}
+    ax.text(0, max_au * 0.04, 0, "Sun",
+            color="#CC8800", fontsize=7, ha="center", va="bottom",
+            alpha=0.9, zorder=7)
 
     # Travel path line
     ox_, oy_, oz_ = data["origin_xyz"]
@@ -1209,19 +1233,27 @@ def make_solar_travel_canvas_3d(parent, data: dict, on_body_click=None):
     ax.plot([ox_, dx_], [oy_, dy_], [oz_, dz_],
             color="#888888", linewidth=1.5, linestyle="--", alpha=0.75)
 
-    # Origin marker
+    # Origin marker with label
     orig_sc = ax.scatter([ox_], [oy_], [oz_], color="#FF8800", s=140,
                          marker="*", zorder=8, picker=True, pickradius=8)
     orig_sc._body_info = {"name": f"Origin: {data['origin_name']}",
                           "x": ox_, "y": oy_, "z": oz_,
                           "horizons_id": data.get("origin_id", "")}
+    ax.text(ox_ + max_au * 0.04, oy_ + max_au * 0.04, oz_,
+            f"Origin\n{data['origin_name']}",
+            color="#FF8800", fontsize=7, ha="left", va="bottom",
+            alpha=0.95, zorder=9)
 
-    # Destination marker
+    # Destination marker with label
     dest_sc = ax.scatter([dx_], [dy_], [dz_], color="#00CCCC", s=110,
                          marker="s", zorder=8, picker=True, pickradius=8)
     dest_sc._body_info = {"name": f"Destination: {data['dest_name']}",
                           "x": dx_, "y": dy_, "z": dz_,
                           "horizons_id": data.get("dest_id", "")}
+    ax.text(dx_ + max_au * 0.04, dy_ - max_au * 0.04, dz_,
+            f"Dest\n{data['dest_name']}",
+            color="#00CCCC", fontsize=7, ha="left", va="top",
+            alpha=0.95, zorder=9)
 
     ax.set_xlim(-max_au, max_au)
     ax.set_ylim(-max_au, max_au)
@@ -1233,12 +1265,8 @@ def make_solar_travel_canvas_3d(parent, data: dict, on_body_click=None):
     ax.set_title(title, color=_LABEL_CLR, fontsize=9, pad=6)
     ax.view_init(elev=30, azim=-60)
 
-    # Fixed legend strip (top-left) listing origin/dest colours — no floating labels
-    legend_txt = (
-        f"★  Origin: {data['origin_name']}\n"
-        f"■  Dest:   {data['dest_name']}\n"
-        f"●  Planets  (hover/click for info)"
-    )
+    # Small legend strip (top-left) — colour key only, names now on the map
+    legend_txt = "★  Origin    ■  Dest    ●  Planets (click for details)"
     ax.text2D(0.02, 0.97, legend_txt,
               transform=ax.transAxes,
               fontsize=7, color=_LABEL_CLR, va="top",
@@ -1308,4 +1336,5 @@ def make_solar_travel_canvas_3d(parent, data: dict, on_body_click=None):
     canvas.mpl_connect("button_press_event", _on_click)
 
     toolbar = NavToolbar(canvas, parent)
+    _disable_zoom_rect(toolbar)
     return canvas, toolbar, ax
