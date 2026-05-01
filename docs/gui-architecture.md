@@ -109,13 +109,15 @@ Every nav entry maps to its own independent panel class. There are no shared tab
 ResultPanel (QWidget)
   __init__             creates outer layout, calls _init_container()
   _init_container()    creates _container widget + self._layout, calls build_inputs()
-                       then build_results_area(), then sets QPushButton children
-                       to Fixed size policy (natural text width, not full screen width)
+                       then build_results_area(), then applies two post-build passes:
+                       (1) sets QPushButton children to Fixed size policy (natural text width);
+                       (2) sets setMaximumWidth(300) on all QLineEdit, QDateEdit, and QComboBox
+                           children (unless the widget has property "no_width_cap" set to True)
   reset()              removes old _container (deleteLater), calls _init_container()
                        — used by show_panel() when switching to a different panel
   build_inputs()       override: add form widgets above results
   build_results_area() override: add result display widgets (default: QTextEdit)
-  make_table(headers, rows) → QTableView
+  make_table(headers, rows) → QTableView  # rows displayed in insertion order; interactive column sorting enabled
   clear_results()      remove all widgets below the input section (_input_count)
   show_error(msg)      display red error label
   set_status(msg)      update MainWindow status bar
@@ -128,6 +130,8 @@ ResultPanel (QWidget)
 Phase C adds `Worker(QObject)` and `run_in_background()` to support network calls without freezing the UI. The pattern established in Phase C is reused by all subsequent network-bound panels (Phase D).
 
 **Reset safety**: `_on_error` and `_on_thread_done` wrap `run_btn.setEnabled()` in `try/except RuntimeError` because a background thread can complete after a `reset()` has deleted the old button widget.
+
+**`make_table` sort-indicator fix**: `QTableView::setSortingEnabled(True)` triggers an immediate sort using the header's default sort indicator (column 0, descending), which scrambles insertion order. `make_table` calls `horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)` first to reset the indicator to "no column", making `setSortingEnabled(True)` a no-op for the initial display. Rows are shown in the order passed in; users can still click any column header to interactively sort.
 
 ### DiagramToggleMixin (`gui/panels/base.py`)
 
@@ -290,7 +294,7 @@ All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures u
 | `make_hz_canvas(parent, zones, max_au, title, eeid_au)` | NASA opts 3–5, HWC (6), Star Regions 8–10 | Concentric ring HZ diagram; optional EEID circle |
 | `make_orbits_canvas(parent, orbits, hz_zones, max_au, star_name, eeid_au)` | NASA opts 3, 6 | Keplerian orbital ellipses with HZ annulus overlay |
 | `make_star_map_canvas(parent, stars, title, xk, yk, xlabel, ylabel, bg)` | Stars Within Distance 18, 19 | 2D scatter, spectral-class colours, hover annotation; `bg` overrides figure background colour |
-| `make_star_map_3d_canvas(parent, stars, title, bg)` | Stars Within Distance 18, 19 | 3D scatter with drag-to-rotate (`azel` rotation style); returns `(canvas, toolbar, ax)` so caller can bind viewpoint preset buttons; `bg` overrides figure background colour |
+| `make_star_map_3d_canvas(parent, stars, title, bg)` | Stars Within Distance 18, 19 | 3D scatter with drag-to-rotate (`azel` rotation style); returns `(canvas, toolbar, ax)` so caller can bind viewpoint preset buttons; `bg` overrides figure background colour; rectangle Zoom button removed from toolbar; scroll wheel zoom wired via `ax._zoom_data_limits()`; `toolbar.push_current()` called at creation so Home restores initial view; hover tooltip at upper-right to avoid the spectral class legend |
 | `make_system_regions_canvas(parent, data)` | Star Regions 8–10 | Concentric ring diagram (√AU scale) with zone fills + boundary labels |
 | `make_alt_hz_canvas(parent, zones, max_au, title, eeid_au)` | Star Regions 8–10 | Concentric ring diagram (⁴√AU scale) for alternate biochemistry HZ zones |
 | `make_solar_travel_canvas(parent, data, on_body_click=None)` | System Travel 22, 23 | 2D top-down (XY ecliptic) solar system map: planet dots + reference orbit circles + origin ★ + dest ■ + dashed travel path; click calls `on_body_click(body_info)` if provided, otherwise shows inline info box |
@@ -299,6 +303,10 @@ All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures u
 All ring diagrams support click-to-info: clicking a region or orbit shows a details box in the lower-left corner; clicking empty space dismisses it. The EEID circle (dark teal `#006644`) is also clickable.
 
 **3D rotation style**: `make_star_map_3d_canvas` sets `matplotlib.rcParams['axes3d.mouserotationstyle'] = 'azel'` so horizontal drag = azimuth change and vertical drag = elevation change — the natural, predictable rotation behaviour. Preset buttons also deactivate any active toolbar zoom/pan mode before applying the viewpoint so 3D rotation works immediately after pressing a preset.
+
+**3D toolbar and zoom**: The rectangle Zoom button is removed from the 3D toolbar (`toolbar.removeAction(action)`) because it cannot map a 2D screen rectangle back to 3D data coordinates. Scroll wheel zoom is wired explicitly with `canvas.mpl_connect('scroll_event', ...)` calling `ax._zoom_data_limits(scale, scale, scale)` — matplotlib 3.10 removed the native `Axes3D._on_scroll` handler so it must be wired manually. Scale `0.9` zooms in (shrinks axis range to 90%); `1/0.9 ≈ 1.11` zooms out. `toolbar.push_current()` is called immediately after creating the toolbar to seed the nav stack with the initial xlim/ylim/zlim + elev/azim/roll; without this the stack is empty and the Home button (`_nav_stack.home()`) has nothing to restore and silently does nothing.
+
+**3D hover tooltip**: The hover `text2D` is positioned at `(0.98, 0.97)` with `ha="right"` (upper-right corner) so it does not overlap the spectral class legend, which occupies `loc="upper left"`.
 
 ### Panels with embedded viz tabs
 

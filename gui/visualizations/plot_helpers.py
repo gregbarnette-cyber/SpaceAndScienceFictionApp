@@ -27,7 +27,7 @@ def mpl_available() -> bool:
 
 
 def _disable_zoom_rect(toolbar):
-    """Disable the rectangle-zoom tool on a 3D toolbar.
+    """Remove the rectangle-zoom tool from a 3D toolbar.
 
     Zoom-to-rectangle doesn't work correctly in 3D — the 2D screen rectangle
     can't be cleanly mapped back to tilted 3D data coordinates, so the result
@@ -35,8 +35,7 @@ def _disable_zoom_rect(toolbar):
     """
     for action in toolbar.actions():
         if action.text() == "Zoom":
-            action.setEnabled(False)
-            action.setToolTip("Use scroll wheel to zoom in 3D view")
+            toolbar.removeAction(action)
             break
 
 
@@ -652,9 +651,9 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
                   framealpha=0.85, labelcolor="#333333",
                   facecolor="#ffffff", edgecolor="#aaaaaa")
 
-    # Hover tooltip — fixed top-left (3D data coords unreliable for annotation xy)
-    hover_text = ax.text2D(0.02, 0.97, "", transform=ax.transAxes,
-                           fontsize=8, color=_LABEL_CLR, va="top",
+    # Hover tooltip — fixed top-right so it doesn't overlap the upper-left legend
+    hover_text = ax.text2D(0.98, 0.97, "", transform=ax.transAxes,
+                           fontsize=8, color=_LABEL_CLR, va="top", ha="right",
                            bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0",
                                      ec="#2266cc", lw=0.8, alpha=0.9),
                            visible=False, zorder=10)
@@ -677,6 +676,16 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
         canvas.draw_idle()
 
     canvas.mpl_connect("motion_notify_event", _on_motion)
+
+    # Scroll-wheel zoom — matplotlib 3.10 removed the native Axes3D scroll handler
+    def _on_scroll(event):
+        if event.inaxes != ax:
+            return
+        scale = 0.9 if event.button == "up" else 1.0 / 0.9
+        ax._zoom_data_limits(scale, scale, scale)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("scroll_event", _on_scroll)
 
     # Click info box — fixed bottom-left corner
     info_text = ax.text2D(0.02, 0.02, "", transform=ax.transAxes,
@@ -716,6 +725,7 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
     _disable_zoom_rect(toolbar)
+    toolbar.push_current()   # seed nav stack so Home can restore initial zoom/angles
     return canvas, toolbar, ax
 
 

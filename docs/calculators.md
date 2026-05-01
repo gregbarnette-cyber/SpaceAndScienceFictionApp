@@ -20,7 +20,7 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 - Prompts for a distance limit (float, must be > 0). Prints error if `starSystems.csv` not found (directs user to run option 50).
 - Results sorted ascending by Light Years. Displays count of matches above the table.
 - Output table columns: Star Name | Star Designations | Spectral Type | Distance (LY) (4dp).
-- **GUI diagram tabs** (via `DiagramToggleMixin`): "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D". All three use a light gray background (`bg="#ebebeb"`). The 3D tab includes Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar. Stars are coloured by spectral class; Sol is highlighted with a star marker at the origin. Hover shows name + distance; click shows full info box.
+- **GUI diagram tabs** (via `DiagramToggleMixin`): "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D". All three use a light gray background (`bg="#ebebeb"`). The 3D tab includes Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar. Stars are coloured by spectral class; Sol is highlighted with a star marker at the origin. Hover shows name + distance at upper-right (clear of the spectral class legend at upper-left); click shows full info box. Scroll wheel zooms in/out; Home button resets to the initial zoom and view angles. The rectangle Zoom button is removed from the 3D toolbar — it cannot map a 2D screen selection back to 3D data coordinates correctly.
 
 ## Stars within a Certain Distance of a Star Feature
 

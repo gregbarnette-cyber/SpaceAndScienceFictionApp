@@ -4932,8 +4932,15 @@ def solar_system_data_tables():
         lm_s = f"{v * 8.3167:.3f}"
         return f"{au_s} ({lm_s} LM)"
 
+    def _sma_key(row, key="Semimajor Axis"):
+        try:
+            return float(row.get(key, "0") or "0")
+        except ValueError:
+            return 0.0
+
     # ── Planets ───────────────────────────────────────────────────────────────
     planets = _read_csv("planetInfo.csv")
+    planets.sort(key=_sma_key)
     if planets:
         title = "Solar System Planets Data"
         print(f"\n{'-' * len(title)}")
@@ -4984,6 +4991,7 @@ def solar_system_data_tables():
 
     for planet in planet_order:
         planet_moons = [m for m in moons_data if m.get("Planet Name", "").strip() == planet]
+        planet_moons.sort(key=lambda r: _sma_key(r, "SemiMajor Axis (km)"))
         if not planet_moons:
             continue
         title = _moon_title(planet)
@@ -5021,6 +5029,7 @@ def solar_system_data_tables():
 
     # ── Dwarf Planets ─────────────────────────────────────────────────────────
     dwarfs = _read_csv("dwarfPlanetInfo.csv")
+    dwarfs.sort(key=_sma_key)
     if dwarfs:
         title = "Solar System Dwarf Planets Data"
         print(f"{'-' * len(title)}")
@@ -5059,14 +5068,8 @@ def solar_system_data_tables():
 
     # ── Asteroids ─────────────────────────────────────────────────────────────
     asteroids = _read_csv("asteroidsInfo.csv")
+    asteroids.sort(key=_sma_key)
     if asteroids:
-        # Sort by Semimajor Axis ascending
-        def _sma_key(row):
-            try:
-                return float(row.get("Semimajor Axis", "0") or "0")
-            except ValueError:
-                return 0.0
-        asteroids.sort(key=_sma_key)
 
         title = "Solar System Major Asteroids Data"
         print(f"{'-' * len(title)}")

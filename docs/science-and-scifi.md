@@ -6,9 +6,9 @@ Options 11–16. All features here display data from local CSV files or hardcode
 
 ### Option 11: Solar System Planet/Dwarf Planets/Asteroids — `solar_system_data_tables()`
 - Displays four sequential data tables from CSV files in the project directory.
-- **Solar System Planets Data** — from `planetInfo.csv`; columns: Planet Name, Mass (J), Diameter (J), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity, Moons. AU values formatted as `{v:g} ({v × 8.3167:.3f} LM)`.
-- **Moon Data tables** — from `moonInfo.csv`; grouped by planet in order: Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto; columns: Satellite Name, Diameter (km), Mass (kg), Perigee (km), Apogee (km), SemiMajor Axis (km), Eccentricity, Period (days), Gravity (m/s^2), Escape Velocity (km/s).
-- **Solar System Dwarf Planets Data** — from `dwarfPlanetInfo.csv`; same columns as planets table but header row says "Dwarf Planet Name" and Mass is in Earth masses.
+- **Solar System Planets Data** — from `planetInfo.csv`; sorted ascending by Semimajor Axis; columns: Planet Name, Mass (J), Diameter (J), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity, Moons. AU values formatted as `{v:g} ({v × 8.3167:.3f} LM)`.
+- **Moon Data tables** — from `moonInfo.csv`; grouped by planet in order: Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto; each planet's moons sorted ascending by SemiMajor Axis (km); columns: Satellite Name, Diameter (km), Mass (kg), Perigee (km), Apogee (km), SemiMajor Axis (km), Eccentricity, Period (days), Gravity (m/s^2), Escape Velocity (km/s).
+- **Solar System Dwarf Planets Data** — from `dwarfPlanetInfo.csv`; sorted ascending by Semimajor Axis; same columns as planets table but header row says "Dwarf Planet Name" and Mass is in Earth masses.
 - **Solar System Major Asteroids Data** — from `asteroidsInfo.csv`; sorted ascending by Semimajor Axis; columns: Asteroid Name, Diameter (KM), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity.
 
 ### Option 12: Main Sequence Star Properties — `main_sequence_star_properties()`

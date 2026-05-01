@@ -2,7 +2,8 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QPushButton,
-    QTableView, QTabWidget, QTextEdit, QLabel, QSizePolicy,
+    QTableView, QTabWidget, QTextEdit, QLabel, QSizePolicy, QLineEdit,
+    QDateEdit, QComboBox,
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtCore import Qt, QObject, QThread, Signal, QTimer
@@ -84,6 +85,11 @@ class ResultPanel(QWidget):
         # Constrain all input buttons to their natural text width.
         for btn in self._container.findChildren(QPushButton):
             btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        # Cap all form input fields to 300 px wide.
+        for widget_type in (QLineEdit, QDateEdit, QComboBox):
+            for field in self._container.findChildren(widget_type):
+                if not field.property("no_width_cap"):
+                    field.setMaximumWidth(300)
 
     def reset(self):
         """Reset panel to its initial load state by rebuilding all content."""
@@ -120,6 +126,7 @@ class ResultPanel(QWidget):
                 model.setItem(r, c, item)
         view = QTableView()
         view.setModel(model)
+        view.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         view.setSortingEnabled(True)
         view.horizontalHeader().setStretchLastSection(True)
         view.resizeColumnsToContents()

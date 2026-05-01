@@ -38,7 +38,14 @@ def compute_solar_system_tables() -> dict:
         dwarf_planets — list of dicts (from dwarfPlanetInfo.csv)
         asteroids    — list of dicts sorted ascending by Semimajor Axis (from asteroidsInfo.csv)
     """
+    def _sma(row, key):
+        try:
+            return float(row.get(key, "0") or "0")
+        except (ValueError, TypeError):
+            return 0.0
+
     planets = _read_csv("planetInfo.csv")
+    planets.sort(key=lambda r: _sma(r, "Semimajor Axis"))
 
     moons_raw = _read_csv("moonInfo.csv")
     planet_order = ["Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
@@ -46,15 +53,14 @@ def compute_solar_system_tables() -> dict:
     for planet in planet_order:
         planet_moons = [m for m in moons_raw if m.get("Planet Name", "").strip() == planet]
         if planet_moons:
+            planet_moons.sort(key=lambda r: _sma(r, "SemiMajor Axis (km)"))
             moons[planet] = planet_moons
 
     dwarf_planets = _read_csv("dwarfPlanetInfo.csv")
+    dwarf_planets.sort(key=lambda r: _sma(r, "Semimajor Axis"))
 
     asteroids = _read_csv("asteroidsInfo.csv")
-    try:
-        asteroids.sort(key=lambda r: float(r.get("Semimajor Axis", "0") or "0"))
-    except (ValueError, TypeError):
-        pass
+    asteroids.sort(key=lambda r: _sma(r, "Semimajor Axis"))
 
     return {
         "planets": planets,
