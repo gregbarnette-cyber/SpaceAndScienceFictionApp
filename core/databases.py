@@ -405,15 +405,16 @@ _MISSION_EXOCAT = None
 
 
 def _load_mission_exocat():
-    """Load missionExocat.csv; return (hip_idx, hd_idx, gj_idx) case-insensitive dicts."""
+    """Load mission_exocat table; return (hip_idx, hd_idx, gj_idx) case-insensitive dicts."""
     global _MISSION_EXOCAT
     if _MISSION_EXOCAT is not None:
         return _MISSION_EXOCAT
-    path = os.path.normpath(os.path.join(_DATA_DIR, "missionExocat.csv"))
+    from core.db import get_conn, table_exists
     hip_idx, hd_idx, gj_idx = {}, {}, {}
     try:
-        with open(path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
+        if table_exists("mission_exocat"):
+            for row in get_conn().execute("SELECT * FROM mission_exocat").fetchall():
+                row = dict(row)
                 for idx, key in [(hip_idx, "hip_name"), (hd_idx, "hd_name"), (gj_idx, "gj_name")]:
                     v = (row.get(key) or "").strip().upper()
                     if v:
@@ -450,15 +451,16 @@ def compute_mission_exocat(simbad_result: dict) -> dict:
 # ── Option 6: Habitable Worlds Catalog ───────────────────────────────────────
 
 def _load_hwc():
-    """Load hwc.csv; return (hip_idx, hd_idx, name_idx)."""
+    """Load hwc table; return (hip_idx, hd_idx, name_idx)."""
     global _HWC_DATA
     if _HWC_DATA is not None:
         return _HWC_DATA
-    path = os.path.normpath(os.path.join(_DATA_DIR, "hwc.csv"))
+    from core.db import get_conn, table_exists
     hip_idx, hd_idx, name_idx = {}, {}, {}
     try:
-        with open(path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
+        if table_exists("hwc"):
+            for row in get_conn().execute("SELECT * FROM hwc").fetchall():
+                row = dict(row)
                 for idx, col in [(hip_idx, "S_NAME_HIP"), (hd_idx, "S_NAME_HD"), (name_idx, "S_NAME")]:
                     k = (row.get(col) or "").strip().upper()
                     if k:
@@ -702,6 +704,16 @@ def _parse_designations_from_ids(ids_string: str) -> str:
     return ", ".join(parts)
 
 
+def _masked_to_none(val):
+    """Return None if val is a numpy/astropy masked element, otherwise val."""
+    try:
+        if hasattr(val, "mask") and val.mask:
+            return None
+    except Exception:
+        pass
+    return val
+
+
 def _run_simbad_csv_query(simbad, criteria, query_num, total_queries,
                            existing_ids, progress_callback=None):
     """Run one SIMBAD criteria query; return (new_rows, discarded)."""
@@ -737,7 +749,8 @@ def _run_simbad_csv_query(simbad, criteria, query_num, total_queries,
             continue
 
         try:
-            plx_f   = float(row["plx_value"])
+            plx_raw = _masked_to_none(row["plx_value"])
+            plx_f   = float(plx_raw)
             plx     = f"{plx_f:.4f}"
             parsecs = f"{1000.0 / plx_f:.3f}" if plx_f > 0 else ""
             ly      = f"{1000.0 / plx_f * 3.26156:.3f}" if plx_f > 0 else ""
@@ -745,12 +758,14 @@ def _run_simbad_csv_query(simbad, criteria, query_num, total_queries,
             plx = parsecs = ly = ""
 
         try:
-            vmag = f"{float(row['V']):.3f}"
+            v_raw = _masked_to_none(row['V'])
+            vmag  = f"{float(v_raw):.3f}"
         except (TypeError, ValueError):
             vmag = ""
 
         try:
-            ra_deg = float(row["ra"])
+            ra_raw = _masked_to_none(row["ra"])
+            ra_deg = float(ra_raw)
             ra_h   = int(ra_deg / 15)
             ra_m   = int((ra_deg / 15 - ra_h) * 60)
             ra_s   = ((ra_deg / 15 - ra_h) * 60 - ra_m) * 60
@@ -759,7 +774,8 @@ def _run_simbad_csv_query(simbad, criteria, query_num, total_queries,
             ra = ""
 
         try:
-            dec_deg  = float(row["dec"])
+            dec_raw  = _masked_to_none(row["dec"])
+            dec_deg  = float(dec_raw)
             dec_sign = "-" if dec_deg < 0 else "+"
             dec_abs  = abs(dec_deg)
             dec_d    = int(dec_abs)
@@ -791,32 +807,33 @@ def _run_simbad_csv_query(simbad, criteria, query_num, total_queries,
 
 
 def compute_star_systems_csv(progress_callback=None) -> dict:
-    """Run 17 SIMBAD criteria queries and write starSystems.csv.
+    """Run 17 SIMBAD criteria queries and write results to the star_systems DB table.
 
     Calls progress_callback(msg) after each query.
-    Returns {total_rows, queries_run, output_file, total_new, total_discarded}
+    Returns {total_rows, queries_run, backup_table, total_new, total_discarded}
     or {"error": str}.
     """
     from astroquery.simbad import Simbad
     from datetime import datetime
+    from core.db import get_conn
 
     simbad = Simbad()
     simbad.TIMEOUT = 480
     simbad.add_votable_fields("sp_type", "plx_value", "V", "ids")
 
-    csv_path   = os.path.normpath(os.path.join(_DATA_DIR, "starSystems.csv"))
-    fieldnames = [
-        "Star Name", "Star Designations", "Spectral Type", "Parallax",
-        "Parsecs", "Light Years", "Apparent Magnitude", "RA", "DEC",
-    ]
+    conn = get_conn()
 
-    if os.path.exists(csv_path):
+    # Back up existing rows to a dated table, then clear for fresh run.
+    backup_table = None
+    existing_count = conn.execute("SELECT COUNT(*) FROM star_systems").fetchone()[0]
+    if existing_count > 0:
         date_stamp   = datetime.now().strftime("%Y%m%d")
-        backup_path  = os.path.normpath(os.path.join(_DATA_DIR, f"starSystemsBackup-{date_stamp}.csv"))
-        os.rename(csv_path, backup_path)
+        backup_table = f"star_systems_backup_{date_stamp}"
+        with conn:
+            conn.execute(f"CREATE TABLE {backup_table} AS SELECT * FROM star_systems")
+            conn.execute("DELETE FROM star_systems")
 
-    existing_rows = []
-    existing_ids  = set()
+    existing_ids = set()
 
     queries = [
         "plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'",
@@ -850,20 +867,366 @@ def compute_star_systems_csv(progress_callback=None) -> dict:
         total_discarded += discarded
 
     all_new_rows.sort(key=lambda r: float(r["Light Years"]) if r["Light Years"] else float("inf"))
-    all_rows = existing_rows + all_new_rows
 
     try:
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(all_rows)
+        with conn:
+            conn.executemany(
+                """INSERT INTO star_systems
+                   (star_name, designations, spectral_type, parallax,
+                    parsecs, light_years, app_magnitude, ra, dec)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        r["Star Name"],
+                        r["Star Designations"],
+                        r["Spectral Type"],
+                        r["Parallax"],
+                        r["Parsecs"],
+                        r["Light Years"],
+                        r["Apparent Magnitude"],
+                        r["RA"],
+                        r["DEC"],
+                    )
+                    for r in all_new_rows
+                ],
+            )
     except Exception as e:
-        return {"error": f"Could not write starSystems.csv: {e}"}
+        return {"error": f"Could not write to star_systems table: {e}"}
 
     return {
-        "total_rows":      len(all_rows),
+        "total_rows":      len(all_new_rows),
         "queries_run":     total_queries,
-        "output_file":     csv_path,
+        "backup_table":    backup_table,
         "total_new":       len(all_new_rows),
         "total_discarded": total_discarded,
     }
+
+
+# ── Option 51: Export Star Systems to CSV ────────────────────────────────────
+
+def export_star_systems_csv(output_dir: str) -> dict:
+    """Read the star_systems table and write starSystems.csv to output_dir.
+
+    Returns {"path": str, "count": int} or {"error": str}.
+    """
+    from core.db import get_conn
+
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM star_systems ORDER BY light_years ASC"
+    ).fetchall()
+
+    if not rows:
+        return {"error": "star_systems table is empty. Run option 50 first."}
+
+    path = os.path.join(output_dir, "starSystems.csv")
+    fieldnames = [
+        "Star Name", "Star Designations", "Spectral Type", "Parallax",
+        "Parsecs", "Light Years", "Apparent Magnitude", "RA", "DEC",
+    ]
+
+    try:
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in rows:
+                writer.writerow({
+                    "Star Name":          r["star_name"],
+                    "Star Designations":  r["designations"],
+                    "Spectral Type":      r["spectral_type"],
+                    "Parallax":           r["parallax"],
+                    "Parsecs":            r["parsecs"],
+                    "Light Years":        r["light_years"],
+                    "Apparent Magnitude": r["app_magnitude"],
+                    "RA":                 r["ra"],
+                    "DEC":                r["dec"],
+                })
+    except Exception as e:
+        return {"error": f"Could not write starSystems.csv: {e}"}
+
+    return {"path": path, "count": len(rows)}
+
+
+# ── Options 52–56: Import functions ──────────────────────────────────────────
+
+def import_hwc_csv(csv_path: str) -> dict:
+    """Replace the hwc table with data from csv_path.
+
+    Returns {"count": int, "path": str} or {"error": str}.
+    """
+    from core.db import get_conn
+
+    if not os.path.exists(csv_path):
+        return {"error": f"File not found: {csv_path}"}
+
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            headers = reader.fieldnames or []
+            rows = list(reader)
+    except Exception as e:
+        return {"error": f"Could not read file: {e}"}
+
+    required = {"P_NAME", "S_NAME", "S_NAME_HIP", "S_NAME_HD"}
+    missing = required - set(headers)
+    if missing:
+        return {"error": f"Missing required columns: {', '.join(sorted(missing))}"}
+
+    conn = get_conn()
+    cols_ddl = ", ".join(f'"{col}" TEXT' for col in headers)
+    placeholders = ", ".join("?" for _ in headers)
+
+    try:
+        col_list = ", ".join(f'"{col}"' for col in headers)
+        with conn:
+            conn.execute("DROP TABLE IF EXISTS hwc")
+            conn.execute(f"CREATE TABLE hwc ({cols_ddl})")
+            conn.executemany(
+                f"INSERT INTO hwc ({col_list}) VALUES ({placeholders})",
+                [tuple(r.get(col, "") for col in headers) for r in rows],
+            )
+    except Exception as e:
+        return {"error": f"Database error: {e}"}
+
+    global _HWC_DATA
+    _HWC_DATA = None
+
+    return {"count": len(rows), "path": csv_path}
+
+
+def import_mission_exocat_csv(csv_path: str) -> dict:
+    """Replace the mission_exocat table with data from csv_path.
+
+    Returns {"count": int, "path": str} or {"error": str}.
+    """
+    from core.db import get_conn
+
+    if not os.path.exists(csv_path):
+        return {"error": f"File not found: {csv_path}"}
+
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            headers = reader.fieldnames or []
+            rows = list(reader)
+    except Exception as e:
+        return {"error": f"Could not read file: {e}"}
+
+    required = {"star_name", "hip_name", "hd_name", "gj_name"}
+    missing = required - set(headers)
+    if missing:
+        return {"error": f"Missing required columns: {', '.join(sorted(missing))}"}
+
+    conn = get_conn()
+    # First column is rowid (INTEGER PRIMARY KEY); remaining are TEXT.
+    rest = [col for col in headers if col != "rowid"]
+    cols_ddl = '"rowid" INTEGER PRIMARY KEY, ' + ", ".join(f'"{col}" TEXT' for col in rest)
+    all_cols = ["rowid"] + rest
+    placeholders = ", ".join("?" for _ in all_cols)
+
+    try:
+        col_list = ", ".join(f'"{col}"' for col in all_cols)
+        with conn:
+            conn.execute("DROP TABLE IF EXISTS mission_exocat")
+            conn.execute(f"CREATE TABLE mission_exocat ({cols_ddl})")
+            conn.executemany(
+                f"INSERT INTO mission_exocat ({col_list}) VALUES ({placeholders})",
+                [tuple(r.get(col, "") for col in all_cols) for r in rows],
+            )
+    except Exception as e:
+        return {"error": f"Database error: {e}"}
+
+    global _MISSION_EXOCAT
+    _MISSION_EXOCAT = None
+
+    return {"count": len(rows), "path": csv_path}
+
+
+def import_main_sequence_csv(csv_path: str) -> dict:
+    """Replace main_sequence_stars table with data from csv_path.
+
+    Returns {"count": int, "path": str} or {"error": str}.
+    """
+    from core.db import get_conn
+
+    if not os.path.exists(csv_path):
+        return {"error": f"File not found: {csv_path}"}
+
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            headers = reader.fieldnames or []
+            rows = list(reader)
+    except Exception as e:
+        return {"error": f"Could not read file: {e}"}
+
+    required = {"Spectral Class", "Bolo. Corr. (BC)"}
+    missing = required - set(headers)
+    if missing:
+        return {"error": f"Missing required columns: {', '.join(sorted(missing))}"}
+
+    conn = get_conn()
+    try:
+        with conn:
+            conn.execute("DELETE FROM main_sequence_stars")
+            conn.executemany(
+                """INSERT INTO main_sequence_stars
+                   (spectral_class, b_v, teff_k, abs_mag_vis, abs_mag_bol, bc,
+                    lum, radius, mass, density, lifetime)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        r.get("Spectral Class", ""),
+                        r.get("B-V", ""),
+                        r.get("Teeff(K)", ""),
+                        r.get("AbsMag Vis.", ""),
+                        r.get("AbsMag Bol.", ""),
+                        r.get("Bolo. Corr. (BC)", ""),
+                        r.get("Lum", ""),
+                        r.get("R", ""),
+                        r.get("M", ""),
+                        r.get("p (g/cm3)", ""),
+                        r.get("Lifetime (years)", ""),
+                    )
+                    for r in rows
+                ],
+            )
+    except Exception as e:
+        return {"error": f"Database error: {e}"}
+
+    return {"count": len(rows), "path": csv_path}
+
+
+def import_solar_system_csvs(data_dir: str) -> dict:
+    """Replace planets, moons, dwarf_planets, and asteroids tables from CSV files in data_dir.
+
+    Validates all four files exist before replacing anything.
+    Returns {"planets": N, "moons": N, "dwarf_planets": N, "asteroids": N} or {"error": str}.
+    """
+    from core.db import get_conn
+
+    files = {
+        "planets":      "planetInfo.csv",
+        "moons":        "moonInfo.csv",
+        "dwarf_planets": "dwarfPlanetInfo.csv",
+        "asteroids":    "asteroidsInfo.csv",
+    }
+    paths = {key: os.path.join(data_dir, fname) for key, fname in files.items()}
+    missing = [fname for key, fname in files.items() if not os.path.exists(paths[key])]
+    if missing:
+        return {"error": f"File(s) not found: {', '.join(missing)}"}
+
+    def _read(path):
+        with open(path, newline="", encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+
+    try:
+        planet_rows      = _read(paths["planets"])
+        moon_rows        = _read(paths["moons"])
+        dwarf_rows       = _read(paths["dwarf_planets"])
+        asteroid_rows    = _read(paths["asteroids"])
+    except Exception as e:
+        return {"error": f"Could not read file: {e}"}
+
+    conn = get_conn()
+    try:
+        with conn:
+            conn.execute("DELETE FROM planets")
+            conn.executemany(
+                """INSERT INTO planets
+                   (planet_name, mass, diameter, period, periastron,
+                    semimajor_axis, apastron, eccentricity, moons)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [(r.get("Planet",""), r.get("Mass",""), r.get("Diameter",""),
+                  r.get("Period",""), r.get("Periastron",""), r.get("Semimajor Axis",""),
+                  r.get("Apastron",""), r.get("Eccentricity",""), r.get("Moons",""))
+                 for r in planet_rows],
+            )
+
+            conn.execute("DELETE FROM moons")
+            conn.executemany(
+                """INSERT INTO moons
+                   (satellite_name, planet_name, diameter_km, mean_radius_km, mass_kg,
+                    perigee_km, apogee_km, semimajor_axis_km, eccentricity,
+                    period_days, gravity, escape_velocity)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [(r.get("Satellite Name",""), r.get("Planet Name",""), r.get("Diameter (km)",""),
+                  r.get("Mean Radius (km)",""), r.get("Mass (kg)",""), r.get("Perigee (km)",""),
+                  r.get("Apogee (km)",""), r.get("SemiMajor Axis (km)",""), r.get("Eccentricity",""),
+                  r.get("Period (days)",""), r.get("Gravity (m/s^2)",""), r.get("Escape Velocity (km/s)",""))
+                 for r in moon_rows],
+            )
+
+            conn.execute("DELETE FROM dwarf_planets")
+            conn.executemany(
+                """INSERT INTO dwarf_planets
+                   (name, periastron, semimajor_axis, apastron, eccentricity,
+                    period, mass, diameter, moons)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [(r.get("Name",""), r.get("Periastron",""), r.get("Semimajor Axis",""),
+                  r.get("Apastron",""), r.get("Eccentricity",""), r.get("Period",""),
+                  r.get("Mass",""), r.get("Diameter",""), r.get("Moons",""))
+                 for r in dwarf_rows],
+            )
+
+            conn.execute("DELETE FROM asteroids")
+            conn.executemany(
+                """INSERT INTO asteroids
+                   (name, periastron, semimajor_axis, apastron, eccentricity, period, diameter)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                [(r.get("Name",""), r.get("Periastron",""), r.get("Semimajor Axis",""),
+                  r.get("Apastron",""), r.get("Eccentricity",""), r.get("Period",""),
+                  r.get("Diameter",""))
+                 for r in asteroid_rows],
+            )
+    except Exception as e:
+        return {"error": f"Database error: {e}"}
+
+    return {
+        "planets":      len(planet_rows),
+        "moons":        len(moon_rows),
+        "dwarf_planets": len(dwarf_rows),
+        "asteroids":    len(asteroid_rows),
+    }
+
+
+def import_honorverse_hyper_csv(csv_path: str) -> dict:
+    """Replace honorverse_hyper table with data from csv_path (headerless CSV).
+
+    Returns {"count": int, "path": str} or {"error": str}.
+    """
+    from core.db import get_conn
+
+    if not os.path.exists(csv_path):
+        return {"error": f"File not found: {csv_path}"}
+
+    rows = []
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            for line in csv.reader(f):
+                if len(line) < 2:
+                    continue
+                sp_class = line[0].strip().strip('"')
+                try:
+                    lm = float(line[1])
+                except ValueError:
+                    continue
+                rows.append((sp_class, lm))
+    except Exception as e:
+        return {"error": f"Could not read file: {e}"}
+
+    if not rows:
+        return {"error": "No valid rows found in file."}
+
+    conn = get_conn()
+    try:
+        with conn:
+            conn.execute("DELETE FROM honorverse_hyper")
+            conn.executemany(
+                "INSERT INTO honorverse_hyper (spectral_class, lm) VALUES (?, ?)",
+                rows,
+            )
+    except Exception as e:
+        return {"error": f"Database error: {e}"}
+
+    return {"count": len(rows), "path": csv_path}

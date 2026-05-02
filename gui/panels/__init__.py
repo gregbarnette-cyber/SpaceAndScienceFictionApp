@@ -33,7 +33,10 @@ from gui.panels.brachistochrone  import (BrachistochroneAccelPanel,
                                          BrachistochroneAuPanel,
                                          BrachistochroneLmPanel)
 from gui.panels.system_travel    import SystemTravelSolarPanel, SystemTravelThrustPanel
-from gui.panels.csv_utility      import CsvUtilityPanel
+from gui.panels.csv_utility      import (CsvUtilityPanel, ExportStarSystemsPanel,
+                                         ImportHwcPanel, ImportMissionExocatPanel,
+                                         ImportMainSequencePanel, ImportSolarSystemPanel,
+                                         ImportHonorversePanel)
 
 # ── Phase E panels (lazy-loaded to break circular import) ─────────────────────
 # gui/visualizations/*.py imports gui.panels.base, so direct imports here would

@@ -138,11 +138,9 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 - If `star_elems` is empty (system-level planets, no host star), prints a note and skips star/planet tables.
 - If no match found, prints a message and returns to menu.
 
-## Star Systems DB Query Feature (opt 50) / Export to CSV (opt 51) / Import HWC (opt 52)
+## Star Systems DB Query Feature (opt 50) / Export to CSV (opt 51) / Import Utilities (opts 52–56)
 
-> **Phase F note**: In Phase F, opt 50 is rewritten to write to the `star_systems` SQLite table instead of a CSV file. Opt 51 exports the `star_systems` table to `starSystems.csv`. Opt 52 replaces the `hwc` table from a new `hwc.csv`. Until Phase F is implemented, the documentation below reflects the current CSV-based behavior.
-
-- Menu option 50: `query_star_systems_csv()` — runs 17 SIMBAD criteria queries in sequence and writes results to `starSystems.csv`.
+- Menu option 50: `query_star_systems_csv()` — runs 17 SIMBAD criteria queries in sequence and writes results to the `star_systems` DB table.
 - Uses `query_criteria()` (deprecated but still functional) with `add_votable_fields("sp_type", "plx_value", "V", "ids")`. The deprecation warning is suppressed via `warnings.catch_warnings()`. `query_tap` ADQL was investigated but rejected: SIMBAD TAP does not support table-qualified column names (`basic.col`), `maintype` does not exist in the TAP schema, and the `mes_fe_h` JOIN causes syntax errors.
 - **Query 1**: `"plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"` — stars closer than ~38.5 ly.
 - **Query 2**: `"plx > 20.99 & plx < 26 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"` — stars ~38.5–47.6 ly range.
@@ -163,29 +161,53 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 - **Query 17**: `"plx > 9.99 & plx < 10.3 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~97.2–100.1 ly range.
 - Each query returns many raw rows (one per star measurement); deduplicates to unique stars in Python by `main_id`.
 - **Discard rule**: rows where `main_id` starts with `"PLX "` AND `Star Designations` is empty AND `Spectral Type` is empty are silently dropped.
-- **CSV columns**: `Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Apparent Magnitude, RA, DEC` (matches `templateStarSystems.csv`).
+- **DB columns**: `star_name`, `designations`, `spectral_type`, `parallax`, `parsecs`, `light_years`, `app_magnitude`, `ra`, `dec`. These are also the column order written by opt 51's CSV export (`Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Apparent Magnitude, RA, DEC`).
   - Star Name: `main_id`; Star Designations: comma-separated catalog IDs (GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS) parsed from pipe-separated `ids.ids` string via `_parse_designations_from_ids()`.
   - Parallax: 4dp; Parsecs = 1000/plx (3dp); Light Years = parsecs × 3.26156 (3dp); Apparent Magnitude: 3dp.
   - RA: converted from decimal degrees to sexagesimal `HH MM SS.SSSS` (divide by 15 to get hours). DEC: converted to `±DD MM SS.SSS`. Conversion is pure Python math, no extra libraries.
-- **Backup**: if `starSystems.csv` already exists at startup, it is renamed to `starSystemsBackup-YYYYMMDD.csv` (e.g. `starSystemsBackup-20260405.csv`) before any queries run. The function then starts fresh with an empty dataset. *(Phase F: existing `star_systems` table rows are moved to a `star_systems_backup_YYYYMMDD` table instead.)*
+- **Backup**: if the `star_systems` table is non-empty at startup, its rows are copied to `star_systems_backup_YYYYMMDD` (e.g. `star_systems_backup_20260405`) and `star_systems` is cleared before any queries run.
 - **Deduplication**: `existing_ids` is passed as a live set to `_run_simbad_csv_query()` and updated in-place as rows are accepted — so each query automatically skips stars already captured by earlier queries. No separate cross-query dedup pass needed.
 - **Sort**: all new rows from all queries are sorted together ascending by Light Years before writing.
-- Helper `_run_simbad_csv_query(simbad, criteria, query_num, existing_ids)` encapsulates per-query fetch, row processing, discard logic, and deduplication; returns `(new_rows, discarded)`.
+- Helper `_run_simbad_csv_query(simbad, criteria, query_num, total_queries, existing_ids, progress_callback=None)` encapsulates per-query fetch, row processing, discard logic, and deduplication; returns `(new_rows, discarded)`.
 - Helper `_parse_designations_from_ids(ids_string)` and module-level `_CSV_PREFIX_MAP` / `_CSV_DESIG_KEYS` are defined before `MENU_OPTIONS`.
-- More queries (different parallax ranges or criteria) can be added to the `queries` list in `query_star_systems_csv()`; each will merge into the same `starSystems.csv` with the same deduplication logic.
+- More queries (different parallax ranges or criteria) can be added to the `queries` list in `query_star_systems_csv()`; each will merge into the same `star_systems` table with the same deduplication logic.
 
-## Export Star Systems to CSV Feature (opt 51 — Phase F)
+## Export Star Systems to CSV Feature (opt 51)
 
 - Menu option 51: `export_star_systems_csv()` — reads the `star_systems` DB table and writes `starSystems.csv` to the project directory.
-- Output columns match the original CSV format: `Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Apparent Magnitude, RA, DEC`.
-- Rows sorted ascending by Light Years. Prompts for output directory; blank defaults to project root.
+- Output columns: `Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Apparent Magnitude, RA, DEC`. Rows sorted ascending by Light Years.
+- Returns error if `star_systems` table is empty (directs user to run opt 50 first).
 - Core function: `core.databases.export_star_systems_csv(output_dir)` → `{"path": ..., "count": ...}` or `{"error": ...}`.
 - GUI panel: `ExportStarSystemsPanel` in `gui/panels/csv_utility.py`.
 
-## Import HWC Data Feature (opt 52 — Phase F)
+## Import HWC Data Feature (opt 52)
 
-- Menu option 52: `import_hwc_data()` — loads a new `hwc.csv` from the project directory into the `hwc` DB table, replacing all existing rows.
+- Menu option 52: `import_hwc_data()` — loads `hwc.csv` from the project directory into the `hwc` DB table, replacing all existing rows.
 - Validates that the file exists and contains the expected HWC column headers before replacing.
 - Flushes the in-memory HWC cache (`_HWC_DATA = None`) so opts 2 and 6 pick up the new data immediately without a restart.
 - Core function: `core.databases.import_hwc_csv(csv_path)` → `{"count": ..., "path": ...}` or `{"error": ...}`.
 - GUI panel: `ImportHwcPanel` in `gui/panels/csv_utility.py`.
+
+## Import Mission Exocat Data Feature (opt 53)
+
+- Menu option 53: `import_mission_exocat_data()` — loads `missionExocat.csv` from the project directory into the `mission_exocat` DB table, replacing all existing rows.
+- Core function: `core.databases.import_mission_exocat_csv(csv_path)` → `{"count": ..., "path": ...}` or `{"error": ...}`.
+- GUI panel: `ImportMissionExocatPanel` in `gui/panels/csv_utility.py`.
+
+## Import Main Sequence Star Properties Feature (opt 54)
+
+- Menu option 54: `import_main_sequence_data()` — loads `propertiesOfMainSequenceStars.csv` from the project directory into the `main_sequence_stars` DB table, replacing all existing rows.
+- Core function: `core.databases.import_main_sequence_csv(csv_path)` → `{"count": ..., "path": ...}` or `{"error": ...}`.
+- GUI panel: `ImportMainSequencePanel` in `gui/panels/csv_utility.py`.
+
+## Import Solar System Data Feature (opt 55)
+
+- Menu option 55: `import_solar_system_data()` — loads `planetInfo.csv`, `moonInfo.csv`, `dwarfPlanetInfo.csv`, and `asteroidsInfo.csv` from the project directory into their respective DB tables, replacing all existing rows.
+- Core function: `core.databases.import_solar_system_csvs(data_dir)` → `{"planets": int, "moons": int, "dwarf_planets": int, "asteroids": int}` or `{"error": ...}`.
+- GUI panel: `ImportSolarSystemPanel` in `gui/panels/csv_utility.py`.
+
+## Import Honorverse Hyper Limits Feature (opt 56)
+
+- Menu option 56: `import_honorverse_hyper_data()` — loads `spTypeHyperLM.csv` from the project directory into the `honorverse_hyper` DB table, replacing all existing rows.
+- Core function: `core.databases.import_honorverse_hyper_csv(csv_path)` → `{"count": ..., "path": ...}` or `{"error": ...}`.
+- GUI panel: `ImportHonorversePanel` in `gui/panels/csv_utility.py`.

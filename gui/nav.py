@@ -62,7 +62,13 @@ NAVIGATION = [
         ("Star Luminosity",                 "LuminosityPanel"),
     ]),
     ("Utilities", [
-        ("Star Systems Database Query", "CsvUtilityPanel"),
+        ("Star Systems Database Query",    "CsvUtilityPanel"),
+        ("Export Star Systems to CSV",     "ExportStarSystemsPanel"),
+        ("Import HWC Data",                "ImportHwcPanel"),
+        ("Import Mission Exocat Data",     "ImportMissionExocatPanel"),
+        ("Import Main Sequence Star Props","ImportMainSequencePanel"),
+        ("Import Solar System Data",       "ImportSolarSystemPanel"),
+        ("Import Honorverse Hyper Limits", "ImportHonorversePanel"),
     ]),
 ]
 

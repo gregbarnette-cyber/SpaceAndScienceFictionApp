@@ -1,66 +1,111 @@
-# core/science.py — Solar system data, main sequence properties, Honorverse tables.
-# Phase A: compute_main_sequence_table (option 13).
-# Phase B: options 12, 15, 16, 17.
-
 import csv
 import os
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_DATA_DIR = os.path.join(_BASE_DIR, "..")
-
-
-def _read_csv(filename: str) -> list:
-    """Read a CSV file from the project data directory and return a list of dicts."""
-    path = os.path.join(_DATA_DIR, filename)
-    try:
-        with open(path, newline="", encoding="utf-8") as f:
-            return list(csv.DictReader(f))
-    except Exception as e:
-        print(f"Warning: Could not load {filename}: {e}")
-        return []
+from core.db import get_conn
 
 
 def compute_main_sequence_table() -> list:
-    """Return all rows from propertiesOfMainSequenceStars.csv as a list of dicts.
+    """Return all rows from main_sequence_stars as a list of dicts.
 
-    Each dict uses the raw CSV column names as keys. Returns an empty list if
-    the file cannot be read.
+    Dict keys match the original CSV column names so all callers work unchanged.
     """
-    return _read_csv("propertiesOfMainSequenceStars.csv")
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT
+            spectral_class  AS "Spectral Class",
+            b_v             AS "B-V",
+            teff_k          AS "Teeff(K)",
+            abs_mag_vis     AS "AbsMag Vis.",
+            abs_mag_bol     AS "AbsMag Bol.",
+            bc              AS "Bolo. Corr. (BC)",
+            lum             AS "Lum",
+            radius          AS "R",
+            mass            AS "M",
+            density         AS "p (g/cm3)",
+            lifetime        AS "Lifetime (years)"
+        FROM main_sequence_stars
+    """).fetchall()
+    return [dict(r) for r in rows]
 
 
 def compute_solar_system_tables() -> dict:
-    """Return solar system body data from CSV files.
+    """Return solar system body data from the DB.
 
     Returns a dict with keys:
-        planets      — list of dicts (from planetInfo.csv)
-        moons        — dict mapping planet name → list of moon dicts (from moonInfo.csv)
-        dwarf_planets — list of dicts (from dwarfPlanetInfo.csv)
-        asteroids    — list of dicts sorted ascending by Semimajor Axis (from asteroidsInfo.csv)
+        planets       — list of dicts sorted ascending by Semimajor Axis
+        moons         — dict mapping planet name → list of moon dicts sorted by SemiMajor Axis
+        dwarf_planets — list of dicts sorted ascending by Semimajor Axis
+        asteroids     — list of dicts sorted ascending by Semimajor Axis
     """
-    def _sma(row, key):
-        try:
-            return float(row.get(key, "0") or "0")
-        except (ValueError, TypeError):
-            return 0.0
+    conn = get_conn()
 
-    planets = _read_csv("planetInfo.csv")
-    planets.sort(key=lambda r: _sma(r, "Semimajor Axis"))
+    planets = [dict(r) for r in conn.execute("""
+        SELECT
+            planet_name    AS "Planet",
+            mass           AS "Mass",
+            diameter       AS "Diameter",
+            period         AS "Period",
+            periastron     AS "Periastron",
+            semimajor_axis AS "Semimajor Axis",
+            apastron       AS "Apastron",
+            eccentricity   AS "Eccentricity",
+            moons          AS "Moons"
+        FROM planets
+        ORDER BY CAST(semimajor_axis AS REAL)
+    """).fetchall()]
 
-    moons_raw = _read_csv("moonInfo.csv")
+    moons_raw = [dict(r) for r in conn.execute("""
+        SELECT
+            satellite_name    AS "Satellite Name",
+            planet_name       AS "Planet Name",
+            diameter_km       AS "Diameter (km)",
+            mean_radius_km    AS "Mean Radius (km)",
+            mass_kg           AS "Mass (kg)",
+            perigee_km        AS "Perigee (km)",
+            apogee_km         AS "Apogee (km)",
+            semimajor_axis_km AS "SemiMajor Axis (km)",
+            eccentricity      AS "Eccentricity",
+            period_days       AS "Period (days)",
+            gravity           AS "Gravity (m/s^2)",
+            escape_velocity   AS "Escape Velocity (km/s)"
+        FROM moons
+        ORDER BY CAST(semimajor_axis_km AS REAL)
+    """).fetchall()]
+
     planet_order = ["Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
     moons = {}
     for planet in planet_order:
         planet_moons = [m for m in moons_raw if m.get("Planet Name", "").strip() == planet]
         if planet_moons:
-            planet_moons.sort(key=lambda r: _sma(r, "SemiMajor Axis (km)"))
             moons[planet] = planet_moons
 
-    dwarf_planets = _read_csv("dwarfPlanetInfo.csv")
-    dwarf_planets.sort(key=lambda r: _sma(r, "Semimajor Axis"))
+    dwarf_planets = [dict(r) for r in conn.execute("""
+        SELECT
+            name           AS "Name",
+            periastron     AS "Periastron",
+            semimajor_axis AS "Semimajor Axis",
+            apastron       AS "Apastron",
+            eccentricity   AS "Eccentricity",
+            period         AS "Period",
+            mass           AS "Mass",
+            diameter       AS "Diameter",
+            moons          AS "Moons"
+        FROM dwarf_planets
+        ORDER BY CAST(semimajor_axis AS REAL)
+    """).fetchall()]
 
-    asteroids = _read_csv("asteroidsInfo.csv")
-    asteroids.sort(key=lambda r: _sma(r, "Semimajor Axis"))
+    asteroids = [dict(r) for r in conn.execute("""
+        SELECT
+            name           AS "Name",
+            periastron     AS "Periastron",
+            semimajor_axis AS "Semimajor Axis",
+            apastron       AS "Apastron",
+            eccentricity   AS "Eccentricity",
+            period         AS "Period",
+            diameter       AS "Diameter"
+        FROM asteroids
+        ORDER BY CAST(semimajor_axis AS REAL)
+    """).fetchall()]
 
     return {
         "planets": planets,
@@ -71,27 +116,19 @@ def compute_solar_system_tables() -> dict:
 
 
 def compute_honorverse_hyper_limits() -> list:
-    """Return Honorverse hyper limit data from spTypeHyperLM.csv.
+    """Return Honorverse hyper limit data from the DB.
 
     Returns a list of dicts with keys: spectral_class (str), lm (float), au (float).
     """
     LM_PER_AU = 8.3167
-    path = os.path.join(_DATA_DIR, "spTypeHyperLM.csv")
-    rows = []
-    try:
-        with open(path, newline="", encoding="utf-8") as f:
-            for line in csv.reader(f):
-                if len(line) < 2:
-                    continue
-                sp_class = line[0].strip().strip('"')
-                try:
-                    lm = float(line[1])
-                except ValueError:
-                    continue
-                rows.append({"spectral_class": sp_class, "lm": lm, "au": lm / LM_PER_AU})
-    except Exception as e:
-        print(f"Warning: Could not load spTypeHyperLM.csv: {e}")
-    return rows
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT spectral_class, lm FROM honorverse_hyper"
+    ).fetchall()
+    return [
+        {"spectral_class": r["spectral_class"], "lm": r["lm"], "au": r["lm"] / LM_PER_AU}
+        for r in rows
+    ]
 
 
 def compute_honorverse_acceleration_table() -> list:

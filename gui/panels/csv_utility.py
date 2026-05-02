@@ -1,12 +1,15 @@
-# gui/panels/csv_utility.py — Option 50: Star Systems Database CSV generator.
+# gui/panels/csv_utility.py — Options 50–56: database utilities.
 
-from PySide6.QtWidgets import (
-    QVBoxLayout, QPushButton, QLabel, QProgressBar,
-)
+import os
+from pathlib import Path
+
+from PySide6.QtWidgets import QPushButton, QLabel, QProgressBar
 from PySide6.QtCore import Qt, Signal, QObject, QThread
 
-from gui.panels.base import ResultPanel, Worker
+from gui.panels.base import ResultPanel
 import core.databases
+
+_PROJECT_ROOT = str(Path(__file__).parent.parent.parent)
 
 
 class _CsvWorker(QObject):
@@ -27,7 +30,7 @@ class _CsvWorker(QObject):
 
 
 class CsvUtilityPanel(ResultPanel):
-    """Star Systems CSV Query panel (option 50)."""
+    """Star Systems Database Query panel (option 50)."""
 
     def build_inputs(self):
         self._gen_btn = QPushButton("Generate Star Systems Database")
@@ -76,7 +79,6 @@ class CsvUtilityPanel(ResultPanel):
     def _on_progress(self, msg: str):
         self._status_lbl.setText(msg)
         self.set_status(msg)
-        # Parse "Query N/17" to advance progress bar
         import re
         m = re.search(r"Query\s+(\d+)/(\d+)", msg)
         if m:
@@ -101,14 +103,14 @@ class CsvUtilityPanel(ResultPanel):
         total   = result["total_rows"]
         new_cnt = result["total_new"]
         disc    = result["total_discarded"]
-        outfile = result["output_file"]
+        backup  = result.get("backup_table") or "none"
 
         summary = QLabel(
             f"<b>Complete.</b><br>"
             f"New rows added: {new_cnt}<br>"
             f"Rows discarded (PLX/no-desig/no-sptype): {disc}<br>"
-            f"Total rows in starSystems.csv: {total}<br>"
-            f"Output: {outfile}"
+            f"Total rows in star_systems table: {total}<br>"
+            f"Previous data backed up to: {backup}"
         )
         summary.setWordWrap(True)
         self.add_result_widget(summary)
@@ -118,3 +120,261 @@ class CsvUtilityPanel(ResultPanel):
         self._progress_bar.setFormat("Error")
         self.show_error(msg)
         self.set_status(f"Error: {msg}")
+
+
+class ExportStarSystemsPanel(ResultPanel):
+    """Export Star Systems to CSV panel (option 51)."""
+
+    def build_inputs(self):
+        self._run_btn = QPushButton("Export Star Systems to CSV")
+        self._run_btn.setFixedHeight(36)
+        self._run_btn.clicked.connect(self._run)
+        self._layout.addWidget(self._run_btn)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        pass
+
+    def _run(self):
+        self._run_btn.setEnabled(False)
+        self.clear_results()
+        self.set_status("Exporting star systems…")
+        self.run_in_background(
+            core.databases.export_star_systems_csv,
+            _PROJECT_ROOT,
+            on_result=self._on_done,
+        )
+
+    def _on_done(self, result: dict):
+        try:
+            self._run_btn.setEnabled(True)
+        except RuntimeError:
+            return
+        if "error" in result:
+            self.show_error(result["error"])
+            self.set_status(f"Error: {result['error']}")
+            return
+        lbl = QLabel(
+            f"<b>Export complete.</b><br>"
+            f"Rows exported: {result['count']}<br>"
+            f"Output: {result['path']}"
+        )
+        lbl.setWordWrap(True)
+        self.add_result_widget(lbl)
+        self.set_status("Export complete.")
+
+
+class ImportHwcPanel(ResultPanel):
+    """Import HWC Data panel (option 52)."""
+
+    def build_inputs(self):
+        self._run_btn = QPushButton("Import hwc.csv into Database")
+        self._run_btn.setFixedHeight(36)
+        self._run_btn.clicked.connect(self._run)
+        self._layout.addWidget(self._run_btn)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        pass
+
+    def _run(self):
+        self._run_btn.setEnabled(False)
+        self.clear_results()
+        self.set_status("Importing HWC data…")
+        csv_path = os.path.join(_PROJECT_ROOT, "hwc.csv")
+        self.run_in_background(
+            core.databases.import_hwc_csv,
+            csv_path,
+            on_result=self._on_done,
+        )
+
+    def _on_done(self, result: dict):
+        try:
+            self._run_btn.setEnabled(True)
+        except RuntimeError:
+            return
+        if "error" in result:
+            self.show_error(result["error"])
+            self.set_status(f"Error: {result['error']}")
+            return
+        lbl = QLabel(
+            f"<b>Import complete.</b><br>"
+            f"Rows imported: {result['count']}<br>"
+            f"Source: {result['path']}"
+        )
+        lbl.setWordWrap(True)
+        self.add_result_widget(lbl)
+        self.set_status("HWC import complete.")
+
+
+class ImportMissionExocatPanel(ResultPanel):
+    """Import Mission Exocat Data panel (option 53)."""
+
+    def build_inputs(self):
+        self._run_btn = QPushButton("Import missionExocat.csv into Database")
+        self._run_btn.setFixedHeight(36)
+        self._run_btn.clicked.connect(self._run)
+        self._layout.addWidget(self._run_btn)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        pass
+
+    def _run(self):
+        self._run_btn.setEnabled(False)
+        self.clear_results()
+        self.set_status("Importing Mission Exocat data…")
+        csv_path = os.path.join(_PROJECT_ROOT, "missionExocat.csv")
+        self.run_in_background(
+            core.databases.import_mission_exocat_csv,
+            csv_path,
+            on_result=self._on_done,
+        )
+
+    def _on_done(self, result: dict):
+        try:
+            self._run_btn.setEnabled(True)
+        except RuntimeError:
+            return
+        if "error" in result:
+            self.show_error(result["error"])
+            self.set_status(f"Error: {result['error']}")
+            return
+        lbl = QLabel(
+            f"<b>Import complete.</b><br>"
+            f"Rows imported: {result['count']}<br>"
+            f"Source: {result['path']}"
+        )
+        lbl.setWordWrap(True)
+        self.add_result_widget(lbl)
+        self.set_status("Mission Exocat import complete.")
+
+
+class ImportMainSequencePanel(ResultPanel):
+    """Import Main Sequence Star Properties panel (option 54)."""
+
+    def build_inputs(self):
+        self._run_btn = QPushButton("Import propertiesOfMainSequenceStars.csv into Database")
+        self._run_btn.setFixedHeight(36)
+        self._run_btn.clicked.connect(self._run)
+        self._layout.addWidget(self._run_btn)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        pass
+
+    def _run(self):
+        self._run_btn.setEnabled(False)
+        self.clear_results()
+        self.set_status("Importing main sequence star data…")
+        csv_path = os.path.join(_PROJECT_ROOT, "propertiesOfMainSequenceStars.csv")
+        self.run_in_background(
+            core.databases.import_main_sequence_csv,
+            csv_path,
+            on_result=self._on_done,
+        )
+
+    def _on_done(self, result: dict):
+        try:
+            self._run_btn.setEnabled(True)
+        except RuntimeError:
+            return
+        if "error" in result:
+            self.show_error(result["error"])
+            self.set_status(f"Error: {result['error']}")
+            return
+        lbl = QLabel(
+            f"<b>Import complete.</b><br>"
+            f"Rows imported: {result['count']}<br>"
+            f"Source: {result['path']}"
+        )
+        lbl.setWordWrap(True)
+        self.add_result_widget(lbl)
+        self.set_status("Main sequence import complete.")
+
+
+class ImportSolarSystemPanel(ResultPanel):
+    """Import Solar System Data panel (option 55)."""
+
+    def build_inputs(self):
+        self._run_btn = QPushButton("Import Solar System CSVs into Database")
+        self._run_btn.setFixedHeight(36)
+        self._run_btn.clicked.connect(self._run)
+        self._layout.addWidget(self._run_btn)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        pass
+
+    def _run(self):
+        self._run_btn.setEnabled(False)
+        self.clear_results()
+        self.set_status("Importing solar system data…")
+        self.run_in_background(
+            core.databases.import_solar_system_csvs,
+            _PROJECT_ROOT,
+            on_result=self._on_done,
+        )
+
+    def _on_done(self, result: dict):
+        try:
+            self._run_btn.setEnabled(True)
+        except RuntimeError:
+            return
+        if "error" in result:
+            self.show_error(result["error"])
+            self.set_status(f"Error: {result['error']}")
+            return
+        lbl = QLabel(
+            f"<b>Import complete.</b><br>"
+            f"Planets: {result['planets']} rows<br>"
+            f"Moons: {result['moons']} rows<br>"
+            f"Dwarf planets: {result['dwarf_planets']} rows<br>"
+            f"Asteroids: {result['asteroids']} rows"
+        )
+        lbl.setWordWrap(True)
+        self.add_result_widget(lbl)
+        self.set_status("Solar system import complete.")
+
+
+class ImportHonorversePanel(ResultPanel):
+    """Import Honorverse Hyper Limits panel (option 56)."""
+
+    def build_inputs(self):
+        self._run_btn = QPushButton("Import spTypeHyperLM.csv into Database")
+        self._run_btn.setFixedHeight(36)
+        self._run_btn.clicked.connect(self._run)
+        self._layout.addWidget(self._run_btn)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        pass
+
+    def _run(self):
+        self._run_btn.setEnabled(False)
+        self.clear_results()
+        self.set_status("Importing Honorverse hyper limit data…")
+        csv_path = os.path.join(_PROJECT_ROOT, "spTypeHyperLM.csv")
+        self.run_in_background(
+            core.databases.import_honorverse_hyper_csv,
+            csv_path,
+            on_result=self._on_done,
+        )
+
+    def _on_done(self, result: dict):
+        try:
+            self._run_btn.setEnabled(True)
+        except RuntimeError:
+            return
+        if "error" in result:
+            self.show_error(result["error"])
+            self.set_status(f"Error: {result['error']}")
+            return
+        lbl = QLabel(
+            f"<b>Import complete.</b><br>"
+            f"Rows imported: {result['count']}<br>"
+            f"Source: {result['path']}"
+        )
+        lbl.setWordWrap(True)
+        self.add_result_widget(lbl)
+        self.set_status("Honorverse hyper limits import complete.")

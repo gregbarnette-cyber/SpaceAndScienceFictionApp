@@ -2510,84 +2510,160 @@ def _run_simbad_csv_query(simbad, criteria, query_num, existing_ids):
 
 
 def query_star_systems_csv():
-    """Query SIMBAD by criteria and write results to starSystems.csv."""
+    """Query SIMBAD by criteria and write results to the star_systems DB table."""
+    import core.databases
     os.system("cls" if os.name == "nt" else "clear")
     print("=" * 60)
-    print("   STAR SYSTEMS CSV QUERY")
+    print("   STAR SYSTEMS DB QUERY")
     print("=" * 60)
     print()
 
-    simbad = Simbad()
-    simbad.TIMEOUT = 480
-    simbad.add_votable_fields("sp_type", "plx_value", "V", "ids")
+    def _progress(msg):
+        print(f"  {msg}")
 
-    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "starSystems.csv")
-    fieldnames = [
-        "Star Name", "Star Designations", "Spectral Type", "Parallax",
-        "Parsecs", "Light Years", "Apparent Magnitude", "RA", "DEC",
-    ]
+    result = core.databases.compute_star_systems_csv(progress_callback=_progress)
 
-    # Rename existing CSV to backup before overwriting
-    if os.path.exists(csv_path):
-        date_stamp = datetime.now().strftime("%Y%m%d")
-        backup_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"starSystemsBackup-{date_stamp}.csv")
-        os.rename(csv_path, backup_path)
-        print(f"  Backed up existing CSV to: starSystemsBackup-{date_stamp}.csv")
-        print()
+    if "error" in result:
+        print(f"\nError: {result['error']}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
 
-    # Load existing CSV so both queries can dedup against it
-    existing_rows = []
-    if os.path.exists(csv_path):
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for r in reader:
-                existing_rows.append(r)
+    print()
+    print("Done.")
+    if result["backup_table"]:
+        print(f"  Prior data backed up to table: {result['backup_table']}")
+    print(f"  Total rows discarded (PLX/no-desig/no-sptype): {result['total_discarded']}")
+    print(f"  Total new rows written:                        {result['total_new']}")
+    print(f"  Total rows in star_systems table:              {result['total_rows']}")
 
-    existing_ids = {r["Star Name"] for r in existing_rows}
+    input("\nPress Enter to Return to the Main Menu")
 
-    queries = [
-        "plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'",
-        "plx > 20.99 & plx < 26 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'",
-        "plx > 17.99 & plx < 21 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')",
-        "plx > 16.49 & plx < 18 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')",
-        "plx > 15.49 & plx < 16.5 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')",
-        "plx > 14.49 & plx < 15.5 & otype = 'Star' & (maintype != 'Planet' & maintype != 'Planet?')",
-        "plx > 13.99 & plx < 14.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 13.49 & plx < 14 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 12.99 & plx < 13.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 12.49 & plx < 13 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 11.99 & plx < 12.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 11.49 & plx < 12 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 11.09 & plx < 11.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 10.79 & plx < 11.1 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 10.49 & plx < 10.8 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 10.29 & plx < 10.5 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-        "plx > 9.99 & plx < 10.3 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')",
-    ]
 
-    all_new_rows = []
-    total_discarded = 0
+def export_star_systems_csv():
+    """Export the star_systems DB table to starSystems.csv in the project directory."""
+    import core.databases
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   EXPORT STAR SYSTEMS TO CSV")
+    print("=" * 60)
+    print()
 
-    for i, criteria in enumerate(queries, start=1):
-        new_rows, discarded = _run_simbad_csv_query(simbad, criteria, i, existing_ids)
-        all_new_rows.extend(new_rows)
-        total_discarded += discarded
-        print()
+    output_dir = os.path.dirname(os.path.abspath(__file__))
+    result = core.databases.export_star_systems_csv(output_dir)
 
-    all_new_rows.sort(key=lambda r: float(r["Light Years"]) if r["Light Years"] else float("inf"))
+    if "error" in result:
+        print(f"Error: {result['error']}")
+    else:
+        print(f"Exported {result['count']} rows to: {result['path']}")
 
-    existing_rows.extend(all_new_rows)
+    input("\nPress Enter to Return to the Main Menu")
 
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(existing_rows)
 
-    print(f"Done.")
-    print(f"  Total rows discarded (PLX/no-desig/no-sptype): {total_discarded}")
-    print(f"  Total new rows written:                        {len(all_new_rows)}")
-    print(f"  Total rows in starSystems.csv:                 {len(existing_rows)}")
-    print(f"\nOutput: {csv_path}")
+def import_hwc_data():
+    """Import hwc.csv from the project directory into the hwc DB table."""
+    import core.databases
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   IMPORT HWC DATA")
+    print("=" * 60)
+    print()
+
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hwc.csv")
+    print(f"Looking for: {csv_path}")
+    result = core.databases.import_hwc_csv(csv_path)
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+    else:
+        print(f"Imported {result['count']} rows.")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def import_mission_exocat_data():
+    """Import missionExocat.csv from the project directory into the mission_exocat DB table."""
+    import core.databases
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   IMPORT MISSION EXOCAT DATA")
+    print("=" * 60)
+    print()
+
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "missionExocat.csv")
+    print(f"Looking for: {csv_path}")
+    result = core.databases.import_mission_exocat_csv(csv_path)
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+    else:
+        print(f"Imported {result['count']} rows.")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def import_main_sequence_data():
+    """Import propertiesOfMainSequenceStars.csv into the main_sequence_stars DB table."""
+    import core.databases
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   IMPORT MAIN SEQUENCE STAR PROPERTIES")
+    print("=" * 60)
+    print()
+
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "propertiesOfMainSequenceStars.csv")
+    print(f"Looking for: {csv_path}")
+    result = core.databases.import_main_sequence_csv(csv_path)
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+    else:
+        print(f"Imported {result['count']} rows.")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def import_solar_system_data():
+    """Import solar system CSVs from the project directory into the DB."""
+    import core.databases
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   IMPORT SOLAR SYSTEM DATA")
+    print("=" * 60)
+    print()
+
+    data_dir = os.path.dirname(os.path.abspath(__file__))
+    print(f"Looking for CSVs in: {data_dir}")
+    result = core.databases.import_solar_system_csvs(data_dir)
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+    else:
+        print(f"Imported:")
+        print(f"  Planets:       {result['planets']} rows")
+        print(f"  Moons:         {result['moons']} rows")
+        print(f"  Dwarf Planets: {result['dwarf_planets']} rows")
+        print(f"  Asteroids:     {result['asteroids']} rows")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def import_honorverse_hyper_data():
+    """Import spTypeHyperLM.csv from the project directory into the honorverse_hyper DB table."""
+    import core.databases
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   IMPORT HONORVERSE HYPER LIMITS")
+    print("=" * 60)
+    print()
+
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "spTypeHyperLM.csv")
+    print(f"Looking for: {csv_path}")
+    result = core.databases.import_honorverse_hyper_csv(csv_path)
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+    else:
+        print(f"Imported {result['count']} rows.")
 
     input("\nPress Enter to Return to the Main Menu")
 
@@ -5466,7 +5542,13 @@ MENU_OPTIONS = {
     "40": ("Habitable Zone Calculator w/SMA",                               habitable_zone_calculator_sma),
     "41": ("Star Luminosity",                                                star_luminosity_calculator),
     # --- Utilities ---
-    "50": ("Star Systems CSV Query",                                  query_star_systems_csv),
+    "50": ("Star Systems DB Query",                                   query_star_systems_csv),
+    "51": ("Export Star Systems to CSV",                              export_star_systems_csv),
+    "52": ("Import HWC Data",                                         import_hwc_data),
+    "53": ("Import Mission Exocat Data",                              import_mission_exocat_data),
+    "54": ("Import Main Sequence Star Properties",                    import_main_sequence_data),
+    "55": ("Import Solar System Data",                                import_solar_system_data),
+    "56": ("Import Honorverse Hyper Limits",                          import_honorverse_hyper_data),
 }
 
 _STAR_DB_KEYS          = {"1", "2", "3", "4", "5", "6", "7"}
@@ -5477,7 +5559,7 @@ _CALCULATORS_KEYS      = {"17", "18", "19", "20", "21", "22", "23", "24", "25", 
 _PLANETARY_KEYS        = {"33", "34", "35"}
 _ROTATING_HABITAT_KEYS = {"36", "37", "38"}
 _MISC_EQUATIONS_KEYS   = {"39", "40", "41"}
-_UTILITY_KEYS          = {"50"}
+_UTILITY_KEYS          = {"50", "51", "52", "53", "54", "55", "56"}
 
 
 def _print_two_column_section(keys):

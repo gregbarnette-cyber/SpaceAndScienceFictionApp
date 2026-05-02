@@ -66,7 +66,9 @@ gui/                 # Qt presentation layer
                          #   BrachistochroneLmPanel (30)
     system_travel.py     # SystemTravelSolarPanel (22), SystemTravelThrustPanel (23)
     csv_utility.py       # CsvUtilityPanel (50), ExportStarSystemsPanel (51),
-                         #   ImportHwcPanel (52)
+                         #   ImportHwcPanel (52), ImportMissionExocatPanel (53),
+                         #   ImportMainSequencePanel (54), ImportSolarSystemPanel (55),
+                         #   ImportHonorversePanel (56)
   visualizations/        # Phase E: shared rendering helpers + standalone panel stubs
     __init__.py
     plot_helpers.py      # mpl_available(), make_hz_canvas(), make_orbits_canvas(),
@@ -243,6 +245,10 @@ def __getattr__(name: str):
 | `CsvUtilityPanel` | 50 | `panels/csv_utility.py` |
 | `ExportStarSystemsPanel` | 51 | `panels/csv_utility.py` |
 | `ImportHwcPanel` | 52 | `panels/csv_utility.py` |
+| `ImportMissionExocatPanel` | 53 | `panels/csv_utility.py` |
+| `ImportMainSequencePanel` | 54 | `panels/csv_utility.py` |
+| `ImportSolarSystemPanel` | 55 | `panels/csv_utility.py` |
+| `ImportHonorversePanel` | 56 | `panels/csv_utility.py` |
 
 > **Note**: `NasaAllTablesPanel` (opt 2) and `OecPanel` (opt 7) are implemented in `nasa_exoplanet.py` and `catalogs.py` respectively, but are **not exported** from `panels/__init__.py` and do not appear in the GUI nav. Both options remain fully functional in the CLI.
 
@@ -376,4 +382,4 @@ Clicking any body (planet, origin, or destination) on the canvas calls `_show_bo
 | C | Complete | SIMBAD-based features + QThread threading pattern (opts 1, 8–10, 17–19) |
 | D | Complete | Multi-source features, JPL Horizons, option 50 (opts 3–6, 26–32, 50); opts 2 and 7 implemented but not in GUI nav |
 | E | Complete | Visualizations embedded in existing panels: star map 2D + 3D (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10), solar system travel map 2D (22–23); Show Diagrams/Show Tables toggle on all viz panels; light theme; 3D viewpoint preset buttons (18–19); `azel` rotation style for all 3D views |
-| F | Pending | SQLite migration — replaces all CSV files with `data/space_app.db`; opt 50 rewritten to write to DB; opt 51 (Export Star Systems to CSV) and opt 52 (Import HWC Data) added |
+| F | Complete | SQLite migration — all static tables auto-seeded from CSVs on first connect; opt 50 writes to `star_systems` DB table; opts 51–56 added (Export Star Systems to CSV, Import HWC, Import Mission Exocat, Import Main Sequence, Import Solar System, Import Honorverse Hyper Limits) |
