@@ -9,6 +9,8 @@ import csv
 import math
 import os
 
+from .shared import _make_simbad, _network_error_msg, _timeout_ctx, _with_retries
+
 HOURS_PER_JULIAN_YEAR = 8765.8128  # 365.25 * 24
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -189,14 +191,14 @@ def compute_lookup_star_for_distance(designation: str) -> dict:
 
     from astroquery.simbad import Simbad
 
-    custom_simbad = Simbad()
-    custom_simbad.add_votable_fields("plx_value")
+    custom_simbad = _make_simbad("plx_value")
 
     try:
-        result     = custom_simbad.query_object(designation)
-        ids_result = Simbad.query_objectids(designation)
+        with _timeout_ctx(30):
+            result     = _with_retries(custom_simbad.query_object, designation)
+            ids_result = _with_retries(Simbad.query_objectids, designation)
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": _network_error_msg(e, "SIMBAD")}
 
     if result is None:
         return {"error": f"No results found for '{designation}'"}
@@ -462,27 +464,29 @@ _planet_pos_cache_time: float = 0.0
 _planet_pos_cache_epoch_jd: float = 0.0
 _PLANET_POS_CACHE_TTL = 1800.0   # 30 minutes
 _BODY_PROPS_CACHE: dict = {}
+_planet_fetch_errors: list = []
 
 
 def _fetch_planet_positions(epoch_jd=None) -> list:
     """Return heliocentric x,y,z (AU) for the 8 planets. Cached for 30 min per epoch."""
     import time
     import astropy.time as _atime
-    global _planet_pos_cache, _planet_pos_cache_time, _planet_pos_cache_epoch_jd
+    global _planet_pos_cache, _planet_pos_cache_time, _planet_pos_cache_epoch_jd, _planet_fetch_errors
     if epoch_jd is None:
         epoch_jd = _atime.Time.now().jd
     epoch_match = abs(epoch_jd - _planet_pos_cache_epoch_jd) < 0.02  # ~29 min in JD
     time_ok = (time.monotonic() - _planet_pos_cache_time) < _PLANET_POS_CACHE_TTL
     if _planet_pos_cache and epoch_match and time_ok:
         return _planet_pos_cache
+    _planet_fetch_errors = []
     planets = []
     for name, pid in _PLANET_IDS:
         try:
             x, y, z = _get_heliocentric_vectors(pid, epoch_jd)
             planets.append({"name": name, "x": x, "y": y, "z": z,
                             "color": _PLANET_COLORS[name], "horizons_id": pid})
-        except Exception:
-            pass
+        except Exception as e:
+            _planet_fetch_errors.append(f"{name} ({pid}): {e}")
     _planet_pos_cache = planets
     _planet_pos_cache_time = time.monotonic()
     _planet_pos_cache_epoch_jd = epoch_jd
@@ -509,9 +513,14 @@ def _get_heliocentric_vectors(horizons_id: str, epoch_jd=None):
     from astroquery.jplhorizons import Horizons
     if epoch_jd is None:
         epoch_jd = astropy.time.Time.now().jd
-    obj = Horizons(id=horizons_id, location="@sun", epochs=epoch_jd)
-    vec = obj.vectors()
-    return float(vec["x"][0]), float(vec["y"][0]), float(vec["z"][0])
+
+    def _do_query():
+        with _timeout_ctx(30):
+            obj = Horizons(id=horizons_id, location="@sun", epochs=epoch_jd)
+            vec = obj.vectors()
+            return float(vec["x"][0]), float(vec["y"][0]), float(vec["z"][0])
+
+    return _with_retries(_do_query)
 
 
 def fetch_body_properties(horizons_id: str) -> dict:
@@ -538,12 +547,14 @@ def fetch_body_properties(horizons_id: str) -> dict:
         }
         url = ("https://ssd.jpl.nasa.gov/api/horizons.api?"
                + urllib.parse.urlencode(params))
-        with urllib.request.urlopen(url, timeout=15) as resp:
-            text = resp.read().decode("utf-8")
+
+        def _do_fetch():
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                return resp.read().decode("utf-8")
+
+        text = _with_retries(_do_fetch)
     except Exception as e:
-        result = {"body_type": "unknown", "raw_text": "", "error": str(e)}
-        _BODY_PROPS_CACHE[horizons_id] = result
-        return result
+        return {"body_type": "unknown", "raw_text": "", "error": _network_error_msg(e, "JPL Horizons")}
 
     props = {"raw_text": text}
 
@@ -944,7 +955,7 @@ def compute_travel_time_solar_objects(
         err = str(e)
         if "Multiple major-bodies" in err or "ambiguous" in err.lower():
             return {"error": f"Ambiguous body name '{origin}'.\nTip: Use a more specific name or numeric ID (e.g. '499' for Mars).\n\n{err}"}
-        return {"error": f"Could not retrieve position for '{origin}': {err}"}
+        return {"error": _network_error_msg(e, f"JPL Horizons for '{origin}'")}
 
     if progress_callback:
         progress_callback(f"Querying JPL Horizons for '{destination}'…")
@@ -954,7 +965,7 @@ def compute_travel_time_solar_objects(
         err = str(e)
         if "Multiple major-bodies" in err or "ambiguous" in err.lower():
             return {"error": f"Ambiguous body name '{destination}'.\nTip: Use a more specific name or numeric ID (e.g. '501' for Io).\n\n{err}"}
-        return {"error": f"Could not retrieve position for '{destination}': {err}"}
+        return {"error": _network_error_msg(e, f"JPL Horizons for '{destination}'")}
 
     distance_au = math.sqrt((dx - ox)**2 + (dy - oy)**2 + (dz - oz)**2)
     if distance_au < 1e-9:
@@ -1034,7 +1045,7 @@ def compute_travel_time_custom_thrust(
         err = str(e)
         if "Multiple major-bodies" in err or "ambiguous" in err.lower():
             return {"error": f"Ambiguous body name '{origin}'.\nTip: Use a numeric ID (e.g. '499' for Mars).\n\n{err}"}
-        return {"error": f"Could not retrieve position for '{origin}': {err}"}
+        return {"error": _network_error_msg(e, f"JPL Horizons for '{origin}'")}
 
     def _compute_travel(d_m):
         t_to_vmax   = V_CAP_MS / a_ms2
@@ -1064,7 +1075,7 @@ def compute_travel_time_custom_thrust(
         err = str(e)
         if "Multiple major-bodies" in err or "ambiguous" in err.lower():
             return {"error": f"Ambiguous body name '{destination}'.\nTip: Use a numeric ID.\n\n{err}"}
-        return {"error": f"Could not retrieve position for '{destination}': {err}"}
+        return {"error": _network_error_msg(e, f"JPL Horizons for '{destination}'")}
 
     distance_au = math.sqrt((dx - ox)**2 + (dy - oy)**2 + (dz - oz)**2)
     if distance_au < 1e-9:

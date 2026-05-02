@@ -7,6 +7,8 @@ import math
 import os
 import re
 
+from .shared import _make_simbad, _network_error_msg, _timeout_ctx, _with_retries
+
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
 
@@ -104,14 +106,14 @@ def compute_simbad_lookup(star_name: str) -> dict:
     """
     from astroquery.simbad import Simbad
 
-    custom_simbad = Simbad()
-    custom_simbad.add_votable_fields("sp_type", "plx_value", "V", "mesfe_h")
+    custom_simbad = _make_simbad("sp_type", "plx_value", "V", "mesfe_h")
 
     try:
-        result = custom_simbad.query_object(star_name)
-        ids_result = Simbad.query_objectids(star_name)
+        with _timeout_ctx(30):
+            result     = _with_retries(custom_simbad.query_object, star_name)
+            ids_result = _with_retries(Simbad.query_objectids, star_name)
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": _network_error_msg(e, "SIMBAD")}
 
     if result is None:
         return {"error": f"No results found for '{star_name}'"}
@@ -273,13 +275,17 @@ def _query_tap(table, where, order_by=None, timeout=60):
     q = f"SELECT * FROM {table} WHERE {where}"
     if order_by:
         q += f" ORDER BY {order_by}"
-    resp = requests.get(
-        "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
-        params={"query": q, "format": "json"},
-        timeout=timeout,
-    )
-    resp.raise_for_status()
-    return resp.json()
+
+    def _do_get():
+        resp = requests.get(
+            "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
+            params={"query": q, "format": "json"},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    return _with_retries(_do_get)
 
 
 # ── Option 2: NASA Exoplanet Archive All Tables ───────────────────────────────
@@ -304,7 +310,7 @@ def compute_exoplanet_archive(simbad_result: dict,
     try:
         planets = _query_tap("pscomppars", f"{field}='{value}'", "pl_orbsmax")
     except Exception as e:
-        return {"error": f"NASA Exoplanet Archive query failed: {e}"}
+        return {"error": _network_error_msg(e, "NASA Exoplanet Archive")}
 
     if not planets:
         return {"error": f"No exoplanet data found for '{value}' in NASA Exoplanet Archive."}
@@ -356,7 +362,7 @@ def compute_planetary_systems_composite(simbad_result: dict,
     try:
         planets = _query_tap("pscomppars", f"{field}='{value}'", "pl_orbsmax")
     except Exception as e:
-        return {"error": f"NASA Exoplanet Archive query failed: {e}"}
+        return {"error": _network_error_msg(e, "NASA Exoplanet Archive")}
 
     if not planets:
         return {"error": f"No exoplanet data found for '{value}'."}
@@ -385,7 +391,7 @@ def compute_hwo_exep(simbad_result: dict,
     try:
         rows = _query_tap("di_stars_exep", f"{field}='{value}'", "sy_dist")
     except Exception as e:
-        return {"error": f"HWO ExEP query failed: {e}"}
+        return {"error": _network_error_msg(e, "HWO ExEP archive")}
 
     if not rows:
         return {"error": f"No HWO ExEP data found for '{value}'."}

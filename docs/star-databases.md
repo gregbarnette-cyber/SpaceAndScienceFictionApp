@@ -2,6 +2,17 @@
 
 Options 1–7, 50–52. All sections here involve querying external star/exoplanet data sources or managing the local data store. They change together when APIs, data schemas, or the DB layer is updated.
 
+## Network Reliability (all online features)
+
+All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
+
+- **`_make_simbad(*fields, timeout=30)`** — factory used by every SIMBAD caller except `compute_star_systems_csv` (which sets its own `simbad.TIMEOUT = 480`). Sets a 30 s instance timeout so interactive lookups don't hang indefinitely.
+- **`_timeout_ctx(seconds)`** — context manager that sets the socket default timeout; used as an additional belt-and-suspenders layer around `query_object` and `query_objectids` calls.
+- **`_with_retries(fn, retries=3, base_delay=2.0)`** — wraps any callable; on failure sleeps `base_delay × 2^attempt + jitter` seconds and retries. All three retry attempts exhaust before an error is surfaced. Used on every network call in this module.
+- **`_network_error_msg(e, service)`** — classifies `requests.Timeout`, `requests.ConnectionError`, `urllib.error.URLError`, and string-pattern matches into user-friendly messages ("… timed out. Try again." / "Could not connect to … Check your network connection.").
+
+`_query_tap` wraps its `requests.get` call in `_with_retries`; the 60 s per-request `timeout=` parameter is preserved. All callers of `_query_tap` (opts 2, 3, 4) surface failures via `_network_error_msg`. The optional HWO sub-query inside `compute_exoplanet_archive` keeps its silent `except: pass` because it is intentionally optional.
+
 ## SIMBAD Query Feature
 
 - Uses `astroquery.simbad.Simbad` with votable fields: `sp_type`, `plx_value`, `V`, `mesfe_h` (temperature in `mesfe_h.teff` column). Updated for astroquery ≥ 0.4.8 — prior names (`sptype`, `plx`, `flux(V)`, `fe_h`) are deprecated.

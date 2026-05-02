@@ -23,7 +23,10 @@ core/                # Pure computation layer — no I/O, no Qt
   equations.py       # Planetary, habitat, HZ, luminosity equations
   regions.py         # Star system region calculations
   science.py         # Solar system data, main sequence, Honorverse tables
-  shared.py          # Shared helpers (format_travel_time, etc.)
+  shared.py          # Shared helpers: _format_travel_time, _fval/_fmt, _kopparapu_seff,
+                     #   spectral/designation parsing; network reliability helpers
+                     #   (_with_retries, _timeout_ctx, _make_simbad, _network_error_msg)
+                     #   imported by databases.py and calculators.py
   viz.py             # Visualization data-prep (Phase E): star map, orbits, HZ, regions
   db.py              # SQLite connection (Phase F)
 

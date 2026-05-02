@@ -149,6 +149,17 @@ Options 22–23 and 29–30 are given a distance and solve for travel time.
   - Max Vel: "N/A" for Profiles 1 and 2; "Y" or "N" for Profile 3.
 - Row order: Profile 1, Profile 2, Profile 3.
 
+## Network Reliability (JPL Horizons features)
+
+All JPL Horizons queries use shared helpers from `core/shared.py`:
+
+- **`_get_heliocentric_vectors(horizons_id, epoch_jd)`** — wraps the `Horizons(...).vectors()` call in `_with_retries` (3 attempts, exponential backoff) inside `_timeout_ctx(30)` (30 s socket timeout per attempt). Raises on exhausted retries; callers catch and classify via `_network_error_msg`.
+- **`fetch_body_properties(horizons_id)`** — wraps `urllib.request.urlopen(url, timeout=15)` in `_with_retries`. Errors are **not cached** in `_BODY_PROPS_CACHE`; only successful responses are cached, so a transient failure retries fresh next call.
+- **`_planet_fetch_errors`** — module-level list reset at each fresh `_fetch_planet_positions` call. Any planet that fails all retries is omitted from the returned list (preserving existing behavior) and its error message appended here. The list is available for debugging but not currently surfaced in the GUI.
+- **`compute_lookup_star_for_distance`** — uses `_make_simbad("plx_value", timeout=30)` + `_with_retries` + `_timeout_ctx(30)`, same pattern as SIMBAD callers in `databases.py`. Error messages classified via `_network_error_msg`.
+
+Ambiguous-name detection (`"Multiple major-bodies"` / `"ambiguous"`) in `compute_travel_time_solar_objects` and `compute_travel_time_custom_thrust` is checked **before** `_network_error_msg` so the disambiguation hint is still shown verbatim.
+
 ### Option 22: Travel Time Between 2 System Objs (Planet/Moon/Asteroid) — `travel_time_between_solar_system_objects()`
 - Prompts: `Enter Origin Planet/Satellite/Asteroid`, `Enter Destination Planet/Satellite/Asteroid`, `Enter Acceleration in # of G's` (> 0), `Enter Max Velocity for Accelerate-to-Max-Velocity Profile (% of c, Default 3)` (blank → 3.0).
 - Screen cleared after all user inputs and before JPL Horizons queries begin (the "Querying JPL Horizons..." status messages appear on the cleared screen).

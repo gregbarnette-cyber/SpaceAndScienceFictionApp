@@ -3,7 +3,11 @@
 import csv
 import math
 import os
+import random
 import re
+import socket
+import time
+from contextlib import contextmanager
 
 # ─── Physical Constants ───────────────────────────────────────────────────────
 
@@ -317,3 +321,64 @@ def _kopparapu_seff(teff, zone):
     }
     SeffSUN, a, b, c, d = params[zone]
     return SeffSUN + a*tS + b*tS**2 + c*tS**3 + d*tS**4
+
+
+# ─── Network Reliability Helpers ─────────────────────────────────────────────
+
+def _with_retries(fn, *args, retries=3, base_delay=2.0, **kwargs):
+    """Call fn(*args, **kwargs) up to `retries` times with exponential backoff."""
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception:
+            if attempt == retries - 1:
+                raise
+            time.sleep(base_delay * (2 ** attempt) + random.uniform(0, 0.5))
+
+
+@contextmanager
+def _timeout_ctx(seconds):
+    """Temporarily set the default socket timeout (applies to all blocking socket ops)."""
+    old = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(seconds)
+    try:
+        yield
+    finally:
+        socket.setdefaulttimeout(old)
+
+
+def _make_simbad(*fields, timeout=30):
+    """Return a Simbad instance with a short timeout and the requested votable fields."""
+    from astroquery.simbad import Simbad
+    s = Simbad()
+    s.TIMEOUT = timeout
+    for f in fields:
+        s.add_votable_fields(f)
+    return s
+
+
+def _network_error_msg(e, service: str) -> str:
+    """Return a user-friendly string for a network exception."""
+    try:
+        import requests
+        if isinstance(e, requests.exceptions.Timeout):
+            return f"{service} request timed out. Try again."
+        if isinstance(e, requests.exceptions.ConnectionError):
+            return f"Could not connect to {service}. Check your network connection."
+    except ImportError:
+        pass
+    try:
+        import urllib.error
+        if isinstance(e, urllib.error.URLError):
+            reason = str(getattr(e, "reason", e)).lower()
+            if "timed out" in reason or "timeout" in reason:
+                return f"{service} request timed out. Try again."
+            return f"Could not connect to {service}. Check your network connection."
+    except ImportError:
+        pass
+    msg = str(e).lower()
+    if "timed out" in msg or "timeout" in msg:
+        return f"{service} request timed out. Try again."
+    if "connection" in msg or "unreachable" in msg or "network" in msg:
+        return f"Could not connect to {service}. Check your network connection."
+    return str(e)
