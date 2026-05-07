@@ -1,6 +1,5 @@
 astroquery
 astropy
 requests
-pyExoplaneteu
 PySide6
 matplotlib
