@@ -2828,8 +2828,8 @@ def query_distance_between_stars():
 
 
 def query_stars_within_distance():
-    """List all stars in starSystems.csv within a given distance of Sol."""
-    import csv
+    """List all stars in the star_systems DB table within a given distance of Sol."""
+    import core.db
     os.system("cls" if os.name == "nt" else "clear")
     print("=" * 50)
     print("   STARS WITHIN A CERTAIN DISTANCE OF SOL")
@@ -2852,34 +2852,34 @@ def query_stars_within_distance():
         except ValueError:
             print("  Please enter a valid number.")
 
-    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "starSystems.csv")
-    if not os.path.exists(csv_path):
-        print("\n  starSystems.csv not found. Run option 50 first to generate it.")
-        input("\nPress Enter to Return to the Main Menu")
-        return
-
-    matches = []
     try:
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                try:
-                    ly = float(row["Light Years"])
-                except (ValueError, KeyError):
-                    continue
-                if ly <= limit_ly:
-                    matches.append({
-                        "Star Name":        row.get("Star Name", ""),
-                        "Star Designations": row.get("Star Designations", ""),
-                        "Spectral Type":    row.get("Spectral Type", ""),
-                        "Light Years":      ly,
-                    })
+        conn = core.db.get_conn()
+        if conn.execute("SELECT COUNT(*) FROM star_systems").fetchone()[0] == 0:
+            print("\n  star_systems table is empty. Run option 50 first to populate it.")
+            input("\nPress Enter to Return to the Main Menu")
+            return
+        rows = conn.execute(
+            "SELECT star_name, designations, spectral_type, light_years "
+            "FROM star_systems WHERE light_years <= ?",
+            (limit_ly,),
+        ).fetchall()
     except Exception as e:
-        print(f"\n  Error reading starSystems.csv: {e}")
+        print(f"\n  Error reading star_systems table: {e}")
         input("\nPress Enter to Return to the Main Menu")
         return
 
-    matches.sort(key=lambda r: r["Light Years"])
+    matches = sorted(
+        [
+            {
+                "Star Name":         r["star_name"] or "",
+                "Star Designations": r["designations"] or "",
+                "Spectral Type":     r["spectral_type"] or "",
+                "Light Years":       r["light_years"],
+            }
+            for r in rows if r["light_years"] is not None
+        ],
+        key=lambda r: r["Light Years"],
+    )
 
     print()
     if not matches:
@@ -2903,8 +2903,9 @@ def query_stars_within_distance():
 
 
 def query_stars_within_distance_of_star():
-    """List all stars in starSystems.csv within a given distance of a queried star."""
-    import csv, math
+    """List all stars in the star_systems DB table within a given distance of a queried star."""
+    import math
+    import core.db
     os.system("cls" if os.name == "nt" else "clear")
     print("=" * 50)
     print("   STARS WITHIN A CERTAIN DISTANCE OF A STAR")
@@ -2965,39 +2966,40 @@ def query_stars_within_distance_of_star():
 
     cx, cy, cz = to_cartesian(center_ra_deg, center_dec_deg, center_ly)
 
-    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "starSystems.csv")
-    if not os.path.exists(csv_path):
-        print("\n  starSystems.csv not found. Run option 50 first to generate it.")
+    try:
+        conn = core.db.get_conn()
+        if conn.execute("SELECT COUNT(*) FROM star_systems").fetchone()[0] == 0:
+            print("\n  star_systems table is empty. Run option 50 first to populate it.")
+            input("\nPress Enter to Return to the Main Menu")
+            return
+        db_rows = conn.execute(
+            "SELECT star_name, designations, spectral_type, parallax, ra, dec FROM star_systems"
+        ).fetchall()
+    except Exception as e:
+        print(f"\n  Error reading star_systems table: {e}")
         input("\nPress Enter to Return to the Main Menu")
         return
 
     matches = []
-    try:
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                try:
-                    plx = float(row["Parallax"])
-                    if plx <= 0:
-                        continue
-                    ly = 1000.0 / plx * 3.26156
-                    ra_deg  = parse_ra(row["RA"])
-                    dec_deg = parse_dec(row["DEC"])
-                except (ValueError, KeyError):
-                    continue
-                x, y, z = to_cartesian(ra_deg, dec_deg, ly)
-                dist = math.sqrt((x - cx)**2 + (y - cy)**2 + (z - cz)**2)
-                if 0.001 < dist <= limit_ly:
-                    matches.append({
-                        "Star Name":         row.get("Star Name", ""),
-                        "Star Designations": row.get("Star Designations", ""),
-                        "Spectral Type":     row.get("Spectral Type", ""),
-                        "Distance":          dist,
-                    })
-    except Exception as e:
-        print(f"\n  Error reading starSystems.csv: {e}")
-        input("\nPress Enter to Return to the Main Menu")
-        return
+    for row in db_rows:
+        try:
+            plx = float(row["parallax"] or 0)
+            if plx <= 0:
+                continue
+            ly = 1000.0 / plx * 3.26156
+            ra_deg  = parse_ra(row["ra"] or "")
+            dec_deg = parse_dec(row["dec"] or "")
+        except (ValueError, TypeError):
+            continue
+        x, y, z = to_cartesian(ra_deg, dec_deg, ly)
+        dist = math.sqrt((x - cx)**2 + (y - cy)**2 + (z - cz)**2)
+        if 0.001 < dist <= limit_ly:
+            matches.append({
+                "Star Name":         row["star_name"] or "",
+                "Star Designations": row["designations"] or "",
+                "Spectral Type":     row["spectral_type"] or "",
+                "Distance":          dist,
+            })
 
     matches.sort(key=lambda r: r["Distance"])
 

@@ -297,6 +297,30 @@ def _seed_asteroids(conn: sqlite3.Connection, csv_path: pathlib.Path):
     )
 
 
+def get_table_status() -> list:
+    """Return row counts for all application tables, in menu order."""
+    conn = get_conn()
+    tables = [
+        ("star_systems",       "Star Systems"),
+        ("hwc",                "Habitable Worlds Catalog"),
+        ("mission_exocat",     "Mission Exocat"),
+        ("main_sequence_stars","Main Sequence Stars"),
+        ("planets",            "Planets"),
+        ("moons",              "Moons"),
+        ("dwarf_planets",      "Dwarf Planets"),
+        ("asteroids",          "Asteroids"),
+        ("honorverse_hyper",   "Honorverse Hyper Limits"),
+    ]
+    result = []
+    for table, label in tables:
+        try:
+            count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        except Exception:
+            count = 0
+        result.append({"table": label, "rows": count, "populated": count > 0})
+    return result
+
+
 def _seed_honorverse_hyper(conn: sqlite3.Connection, csv_path: pathlib.Path):
     rows = []
     with open(csv_path, newline="", encoding="utf-8") as f:

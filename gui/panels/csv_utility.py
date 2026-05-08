@@ -1,4 +1,4 @@
-# gui/panels/csv_utility.py — Options 50–56: database utilities.
+# gui/panels/csv_utility.py — Options 50–57: database utilities.
 
 import os
 from pathlib import Path
@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, Signal, QObject, QThread
 
 from gui.panels.base import ResultPanel
 import core.databases
+import core.db
 
 _PROJECT_ROOT = str(Path(__file__).parent.parent.parent)
 
@@ -378,3 +379,35 @@ class ImportHonorversePanel(ResultPanel):
         lbl.setWordWrap(True)
         self.add_result_widget(lbl)
         self.set_status("Honorverse hyper limits import complete.")
+
+
+class DbStatusPanel(ResultPanel):
+    """Database Table Status panel (option 57)."""
+
+    def build_inputs(self):
+        self._run_btn = QPushButton("Check Database Status")
+        self._run_btn.setFixedHeight(36)
+        self._run_btn.clicked.connect(self._run)
+        self._layout.addWidget(self._run_btn)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        pass
+
+    def _run(self):
+        self.clear_results()
+        self.set_status("Checking database table status…")
+        try:
+            rows = core.db.get_table_status()
+        except Exception as e:
+            self.show_error(str(e))
+            self.set_status(f"Error: {e}")
+            return
+
+        table_rows = [
+            [r["table"], f"{r['rows']:,}", "Populated" if r["populated"] else "Empty"]
+            for r in rows
+        ]
+        view = self.make_table(["Table", "Rows", "Status"], table_rows)
+        self.add_result_widget(view)
+        self.set_status("Database status check complete.")

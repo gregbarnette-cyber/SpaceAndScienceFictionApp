@@ -291,15 +291,13 @@ def compute_distance_between_stars(star1: str, star2: str) -> dict:
 
 
 def compute_stars_within_distance_of_sol(limit_ly: float) -> dict:
-    """List all stars in starSystems.csv within limit_ly light years of Sol.
+    """List all stars in the star_systems DB table within limit_ly light years of Sol.
 
     Returns:
         {limit_ly, count, stars: [sorted list of row dicts with 'Light Years' key]}
-        or {"error": str} if the CSV is missing.
+        or {"error": str} if the table is empty.
     """
-    csv_path = os.path.normpath(os.path.join(_DATA_DIR, "starSystems.csv"))
-    if not os.path.exists(csv_path):
-        return {"error": "starSystems.csv not found — run option 50 first to generate it."}
+    from core.db import get_conn
 
     def _parse_ra(s):
         p = s.strip().split()
@@ -311,52 +309,69 @@ def compute_stars_within_distance_of_sol(limit_ly: float) -> dict:
         p = s.lstrip("+-").split()
         return sign * (float(p[0]) + float(p[1]) / 60 + float(p[2]) / 3600)
 
-    matches = []
     try:
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                try:
-                    ly = float(row["Light Years"])
-                except (ValueError, KeyError):
-                    continue
-                if ly <= limit_ly:
-                    try:
-                        ra_deg  = _parse_ra(row.get("RA", ""))
-                        dec_deg = _parse_dec(row.get("DEC", ""))
-                        x, y, z = _to_cartesian(ra_deg, dec_deg, ly)
-                    except Exception:
-                        x = y = z = None
-                    matches.append({
-                        "Star Name":         row.get("Star Name", ""),
-                        "Star Designations": row.get("Star Designations", ""),
-                        "Spectral Type":     row.get("Spectral Type", ""),
-                        "Light Years":       ly,
-                        "x": x, "y": y, "z": z,
-                    })
+        conn = get_conn()
+        db_rows = conn.execute(
+            "SELECT star_name, designations, spectral_type, light_years, ra, dec "
+            "FROM star_systems WHERE light_years <= ?",
+            (limit_ly,),
+        ).fetchall()
     except Exception as e:
-        return {"error": f"Error reading starSystems.csv: {e}"}
+        return {"error": f"Error reading star_systems table: {e}"}
+
+    if not db_rows and get_conn().execute("SELECT COUNT(*) FROM star_systems").fetchone()[0] == 0:
+        return {"error": "star_systems table is empty — run option 50 first to populate it."}
+
+    matches = []
+    for row in db_rows:
+        ly = row["light_years"]
+        if ly is None:
+            continue
+        try:
+            ra_deg  = _parse_ra(row["ra"] or "")
+            dec_deg = _parse_dec(row["dec"] or "")
+            x, y, z = _to_cartesian(ra_deg, dec_deg, ly)
+        except Exception:
+            x = y = z = None
+        matches.append({
+            "Star Name":         row["star_name"] or "",
+            "Star Designations": row["designations"] or "",
+            "Spectral Type":     row["spectral_type"] or "",
+            "Light Years":       ly,
+            "x": x, "y": y, "z": z,
+        })
 
     matches.sort(key=lambda r: r["Light Years"])
     return {"limit_ly": limit_ly, "count": len(matches), "stars": matches}
 
 
 def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> dict:
-    """List all stars in starSystems.csv within limit_ly light years of center_star.
+    """List all stars in the star_systems DB table within limit_ly light years of center_star.
 
-    Queries SIMBAD for center_star, then iterates starSystems.csv and computes
+    Queries SIMBAD for center_star, then iterates star_systems and computes
     3D Euclidean distances.
 
     Returns:
         {center, limit_ly, count, stars: [sorted list of dicts with 'Distance' key]}
         or {"error": str} on failure.
     """
+    from core.db import get_conn
+
     s = compute_lookup_star_for_distance(center_star)
     if "error" in s:
         return s
 
-    csv_path = os.path.normpath(os.path.join(_DATA_DIR, "starSystems.csv"))
-    if not os.path.exists(csv_path):
-        return {"error": "starSystems.csv not found — run option 50 first to generate it."}
+    try:
+        conn = get_conn()
+        count = conn.execute("SELECT COUNT(*) FROM star_systems").fetchone()[0]
+        if count == 0:
+            return {"error": "star_systems table is empty — run option 50 first to populate it."}
+        db_rows = conn.execute(
+            "SELECT star_name, designations, spectral_type, parallax, light_years, ra, dec "
+            "FROM star_systems"
+        ).fetchall()
+    except Exception as e:
+        return {"error": f"Error reading star_systems table: {e}"}
 
     def _parse_ra(ra_str: str) -> float:
         parts = ra_str.strip().split()
@@ -373,30 +388,26 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
     cx, cy, cz = _to_cartesian(s["ra_deg"], s["dec_deg"], s["ly"])
 
     matches = []
-    try:
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                try:
-                    plx = float(row["Parallax"])
-                    if plx <= 0:
-                        continue
-                    ly = 1000.0 / plx * 3.26156
-                    ra_deg  = _parse_ra(row["RA"])
-                    dec_deg = _parse_dec(row["DEC"])
-                except (ValueError, KeyError):
-                    continue
-                x, y, z = _to_cartesian(ra_deg, dec_deg, ly)
-                dist = math.sqrt((x - cx)**2 + (y - cy)**2 + (z - cz)**2)
-                if 0.001 < dist <= limit_ly:
-                    matches.append({
-                        "Star Name":         row.get("Star Name", ""),
-                        "Star Designations": row.get("Star Designations", ""),
-                        "Spectral Type":     row.get("Spectral Type", ""),
-                        "Distance":          dist,
-                        "x": x, "y": y, "z": z,
-                    })
-    except Exception as e:
-        return {"error": f"Error reading starSystems.csv: {e}"}
+    for row in db_rows:
+        try:
+            plx = float(row["parallax"] or 0)
+            if plx <= 0:
+                continue
+            ly = 1000.0 / plx * 3.26156
+            ra_deg  = _parse_ra(row["ra"] or "")
+            dec_deg = _parse_dec(row["dec"] or "")
+        except (ValueError, TypeError):
+            continue
+        x, y, z = _to_cartesian(ra_deg, dec_deg, ly)
+        dist = math.sqrt((x - cx)**2 + (y - cy)**2 + (z - cz)**2)
+        if 0.001 < dist <= limit_ly:
+            matches.append({
+                "Star Name":         row["star_name"] or "",
+                "Star Designations": row["designations"] or "",
+                "Spectral Type":     row["spectral_type"] or "",
+                "Distance":          dist,
+                "x": x, "y": y, "z": z,
+            })
 
     matches.sort(key=lambda r: r["Distance"])
     return {

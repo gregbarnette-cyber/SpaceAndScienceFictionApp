@@ -15,19 +15,19 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 
 ## Stars within a Certain Distance of Sol Feature
 
-- Menu option 18: `query_stars_within_distance()` — lists all stars in `starSystems.csv` within a user-supplied light year limit of Sol.
-- Reads `starSystems.csv` directly; uses the `Light Years` column for distance comparison. No SIMBAD query.
-- Prompts for a distance limit (float, must be > 0). Prints error if `starSystems.csv` not found (directs user to run option 50).
+- Menu option 18: `query_stars_within_distance()` — lists all stars in the `star_systems` DB table within a user-supplied light year limit of Sol.
+- Reads from the `star_systems` DB table directly; uses the `light_years` column for distance comparison. No SIMBAD query.
+- Prompts for a distance limit (float, must be > 0). Prints error if `star_systems` table is empty (directs user to run option 50).
 - Results sorted ascending by Light Years. Displays count of matches above the table.
 - Output table columns: Star Name | Star Designations | Spectral Type | Distance (LY) (4dp).
 - **GUI diagram tabs** (via `DiagramToggleMixin`): "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D". All three use a light gray background (`bg="#ebebeb"`). The 3D tab includes Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar. Stars are coloured by spectral class; Sol is highlighted with a star marker at the origin. Hover shows name + distance at upper-right (clear of the spectral class legend at upper-left); click shows full info box. Scroll wheel zooms in/out; Home button resets to the initial zoom and view angles. The rectangle Zoom button is removed from the 3D toolbar — it cannot map a 2D screen selection back to 3D data coordinates correctly.
 
 ## Stars within a Certain Distance of a Star Feature
 
-- Menu option 19: `query_stars_within_distance_of_star()` — lists all stars in `starSystems.csv` within a user-supplied light year limit of a queried star.
+- Menu option 19: `query_stars_within_distance_of_star()` — lists all stars in the `star_systems` DB table within a user-supplied light year limit of a queried star.
 - Prompts for Star System Name and distance limit (float, must be > 0).
 - Queries SIMBAD for the center star via `_lookup_star_for_distance()`.
-- Reads `starSystems.csv`; for each row parses `Parallax` → ly, `RA` (sexagesimal HMS) → decimal degrees, `DEC` (sexagesimal ±DMS) → decimal degrees, then converts to 3D Cartesian coordinates and computes Euclidean distance from the center star.
+- Reads the `star_systems` DB table; for each row uses `parallax` → ly, `ra` (sexagesimal HMS) → decimal degrees, `dec` (sexagesimal ±DMS) → decimal degrees, then converts to 3D Cartesian coordinates and computes Euclidean distance from the center star.
 - Skips any row with computed distance < 0.001 ly (eliminates the center star itself and floating-point near-zero matches).
 - Results sorted ascending by distance. Displays count of matches above the table.
 - Output table columns: Star Name | Star Designations | Spectral Type | Distance (LY) (3dp).

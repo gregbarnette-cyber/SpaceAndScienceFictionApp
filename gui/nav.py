@@ -69,6 +69,7 @@ NAVIGATION = [
         ("Import Main Sequence Star Props","ImportMainSequencePanel"),
         ("Import Solar System Data",       "ImportSolarSystemPanel"),
         ("Import Honorverse Hyper Limits", "ImportHonorversePanel"),
+        ("Database Table Status",          "DbStatusPanel"),
     ]),
 ]
 
