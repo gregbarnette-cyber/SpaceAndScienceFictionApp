@@ -13,18 +13,23 @@ python main.py
 
 # Run the GUI app
 python gui_main.py
+
+# Query core functions as JSON (integration tool)
+python query.py <subcommand> [arguments]
 ```
 
 ## Architecture
 
-The project has two entry points that share all computation through the `core/` package:
+The project has three entry points that share all computation through the `core/` package:
 
 - **`main.py`** — CLI. All features are top-level functions registered in `MENU_OPTIONS`.
 - **`gui_main.py`** — PySide6 GUI. Navigation tree on the left, panel stack on the right.
-- **`core/`** — Pure computation layer (no I/O, no Qt). Called by both CLI and GUI.
+- **`query.py`** — JSON dispatcher. Calls `core/` functions and writes JSON to stdout; used by the ScienceFictionResearch repo via its Bash tool.
+- **`core/`** — Pure computation layer (no I/O, no Qt). Called by all three entry points.
 - **`gui/`** — Qt presentation layer: `app.py` (MainWindow), `nav.py` (navigation tree), `panels/` (one class per feature).
 
 See `@docs/gui-architecture.md` for the full GUI structure, panel class → option mapping, and phase completion status.
+See `@docs/integration.md` for `query.py` subcommands, arguments, and JSON output format.
 
 ### CLI Architecture
 
@@ -103,3 +108,4 @@ Q.  Quit                                            Misc. Equations
 @docs/calculators.md
 @docs/equations.md
 @docs/gui-architecture.md
+@docs/integration.md

@@ -21,6 +21,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 - Designations are pulled from `Simbad.query_objectids()`; the result column is `id` (lowercase).
 - Parallax (mas) from `plx_value`; distance in parsecs = 1000 / plx; light years = parsecs × 3.26156; all rounded to 4 decimal places.
 - Missing/masked SIMBAD fields are handled by `_safe_get()` and shown as `N/A`.
+- `compute_simbad_lookup` in `core/databases.py` checks `len(result) == 0` in addition to `result is None`; SIMBAD can return an empty table (not `None`) for unknown star names, and both cases now return `{"error": "No results found for '...'"}` cleanly.
 
 ## NASA Exoplanet Archive: All Tables Feature
 

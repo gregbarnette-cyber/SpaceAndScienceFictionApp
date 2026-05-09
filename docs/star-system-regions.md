@@ -8,14 +8,14 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
 
 ### Option 8: Star System Regions (SIMBAD) — `query_star_system_regions()`
 
-- Menu option 8: fully automated — SIMBAD lookup + BC CSV lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
+- Menu option 8: fully automated — SIMBAD lookup + BC DB lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
 - **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
-- **CSV lookup:** `_load_main_sequence_data()` loads `propertiesOfMainSequenceStars.csv` (lazy, cached in `_MAIN_SEQUENCE_DATA`) into `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype.
+- **DB lookup:** `_load_main_sequence_data()` queries the `main_sequence_stars` DB table (lazy, cached in `_MAIN_SEQUENCE_DATA`) and builds `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype. Row dicts use the original CSV column names so all callers work unchanged.
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
   - `_parse_spectral_class(sp_str)` uses `_SP_PATTERN.search()` to extract `(letter, subtype_float)`.
   - `_lookup_spectral_type(sp_str)` applies a **ceiling rule**: finds the smallest available subtype number ≥ the requested subtype (e.g. G1 → G2, G6 → G8, A4 → A5). If all entries in the class are cooler than requested (subtype exceeds all), advances to the next cooler letter class's hottest entry (e.g. F9 → G0). `_LETTER_SEQUENCE = ["O","B","A","F","G","K","M"]` defines the cross-letter fallthrough order.
 - **Values extracted and validated** (all required; each triggers message + early return if missing):
-  - `boloLum` — `Bolo. Corr. (BC)` from the matched CSV row (float)
+  - `boloLum` — `Bolo. Corr. (BC)` from the matched DB row (float)
   - `temp` — temperature in K from SIMBAD `mesfe_h.teff`
   - `vmag` — apparent magnitude from SIMBAD `V`
   - `plx` — parallax in mas from SIMBAD `plx_value`; also rejected if `<= 0`
@@ -23,7 +23,7 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
 
 ### Option 9: Star System Regions (Semi-SIMBAD) — `query_star_system_regions_semi_manual()`
 
-- Menu option 9: same SIMBAD lookup, checks, and BC CSV lookup as option 8, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
+- Menu option 9: same SIMBAD lookup, checks, and BC DB lookup as option 8, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
 - Prompts (loop until valid float entered):
   - `Enter Sunlight Intensity (Terra = 1.0):` — blank defaults to `1.0`
   - `Enter Bond Albedo (Terra = 0.3, Venus = 0.9):` — blank defaults to `0.3`

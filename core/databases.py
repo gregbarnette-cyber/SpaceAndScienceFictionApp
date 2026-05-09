@@ -115,7 +115,7 @@ def compute_simbad_lookup(star_name: str) -> dict:
     except Exception as e:
         return {"error": _network_error_msg(e, "SIMBAD")}
 
-    if result is None:
+    if result is None or len(result) == 0:
         return {"error": f"No results found for '{star_name}'"}
 
     row = result[0]

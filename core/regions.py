@@ -2,13 +2,10 @@
 # Phase B: compute_sol_regions() (option 14).
 # Phase C: spectral-class helpers + compute_star_system_regions_from_simbad() added.
 
-import csv
 import math
-import os
 import re
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_DATA_DIR = os.path.join(_BASE_DIR, "..")
+from core.db import get_conn
 
 # ── Spectral-class helpers (shared by options 9, 10, 13) ─────────────────────
 
@@ -18,27 +15,43 @@ _MAIN_SEQUENCE_DATA = None
 
 
 def _load_main_sequence_data() -> dict:
-    """Load propertiesOfMainSequenceStars.csv into a per-class lookup dict.
+    """Load main_sequence_stars DB table into a per-class lookup dict.
 
     Returns {letter: [(subtype_float, row_dict), ...]} sorted ascending by subtype.
+    Row dicts use the original CSV column names so all callers work unchanged.
     Cached after first load.
     """
     global _MAIN_SEQUENCE_DATA
     if _MAIN_SEQUENCE_DATA is not None:
         return _MAIN_SEQUENCE_DATA
 
-    path = os.path.normpath(os.path.join(_DATA_DIR, "propertiesOfMainSequenceStars.csv"))
     data: dict = {}
     try:
-        with open(path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                sc = row.get("Spectral Class", "").strip()
-                m = _SP_PATTERN.match(sc)
-                if not m:
-                    continue
-                letter = m.group(1)
-                subtype = float(m.group(2))
-                data.setdefault(letter, []).append((subtype, row))
+        conn = get_conn()
+        rows = conn.execute("""
+            SELECT
+                spectral_class  AS "Spectral Class",
+                b_v             AS "B-V",
+                teff_k          AS "Teeff(K)",
+                abs_mag_vis     AS "AbsMag Vis.",
+                abs_mag_bol     AS "AbsMag Bol.",
+                bc              AS "Bolo. Corr. (BC)",
+                lum             AS "Lum",
+                radius          AS "R",
+                mass            AS "M",
+                density         AS "p (g/cm3)",
+                lifetime        AS "Lifetime (years)"
+            FROM main_sequence_stars
+        """).fetchall()
+        for row in rows:
+            row = dict(row)
+            sc = row.get("Spectral Class", "").strip()
+            m = _SP_PATTERN.match(sc)
+            if not m:
+                continue
+            letter = m.group(1)
+            subtype = float(m.group(2))
+            data.setdefault(letter, []).append((subtype, row))
         for letter in data:
             data[letter].sort(key=lambda t: t[0])
     except Exception:

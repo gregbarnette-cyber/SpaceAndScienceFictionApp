@@ -15,6 +15,7 @@ The app launches maximized (`window.showMaximized()`). It uses the Fusion Qt sty
 ```
 main.py              # CLI entry point (unchanged)
 gui_main.py          # GUI entry point (Fusion style, launches maximized)
+query.py             # JSON dispatcher — calls core/ functions, writes JSON to stdout (see docs/integration.md)
 
 core/                # Pure computation layer — no I/O, no Qt
   __init__.py
