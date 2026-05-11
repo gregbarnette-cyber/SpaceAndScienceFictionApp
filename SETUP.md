@@ -3,6 +3,11 @@
 ## Requirements
 
 - **Python 3.10+** (developed and tested on Python 3.14.3)
+- **libxcb-cursor0** (Linux only — required by PySide6/Qt for the GUI):
+
+```bash
+sudo apt install libxcb-cursor0
+```
 
 ## Python Libraries
 
@@ -17,7 +22,15 @@
 
 1. **Clone or download** the repository to your local machine.
 
-2. **Install dependencies** using pip:
+2. **Create and activate a virtual environment:**
+
+```bash
+python -m venv venv
+source venv/bin/activate   # Linux/macOS
+venv\Scripts\activate      # Windows
+```
+
+3. **Install dependencies** using pip:
 
 ```bash
 pip install -r requirements.txt
