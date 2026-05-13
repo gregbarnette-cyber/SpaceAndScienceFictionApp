@@ -39,7 +39,14 @@ def cmd_simbad_lookup(args):
 
 
 def cmd_star_regions(args):
-    _out(_simbad_then(args.star, regions.compute_star_system_regions_from_simbad))
+    simbad = databases.compute_simbad_lookup(args.star)
+    if "error" in simbad:
+        _out(simbad)
+        return
+    result = regions.compute_star_system_regions_from_simbad(simbad)
+    if "error" not in result:
+        result["hypatia"] = databases.compute_hypatia_data(simbad)
+    _out(result)
 
 
 def cmd_distance(args):
@@ -84,6 +91,10 @@ def cmd_mission_exocat(args):
 
 def cmd_hwc(args):
     _out(_simbad_then(args.star, databases.compute_hwc))
+
+
+def cmd_hypatia_data(args):
+    _out(_simbad_then(args.star, databases.compute_hypatia_data))
 
 
 # ── Argument parser ───────────────────────────────────────────────────────────
@@ -160,6 +171,12 @@ def main():
     p = sub.add_parser("hwc", help="Habitable Worlds Catalog (local DB)")
     p.add_argument("--star", required=True)
     p.set_defaults(func=cmd_hwc)
+
+    # hypatia-data
+    p = sub.add_parser("hypatia-data",
+                       help="Hypatia Catalog stellar properties and elemental abundances")
+    p.add_argument("--star", required=True)
+    p.set_defaults(func=cmd_hypatia_data)
 
     args = parser.parse_args()
     try:

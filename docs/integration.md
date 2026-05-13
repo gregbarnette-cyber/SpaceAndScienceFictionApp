@@ -33,12 +33,14 @@ query.py simbad-lookup --star "Tau Ceti"
 Core function: `databases.compute_simbad_lookup(star)`
 
 #### `star-regions`
-Star system regions: HZ boundaries, snow line, stellar mass/luminosity/radius, alternate biochemistry zones.
+Star system regions: HZ boundaries, snow line, stellar mass/luminosity/radius, alternate biochemistry zones, plus Hypatia Catalog stellar properties and elemental abundances.
 Uses hardcoded `sunlight_intensity=1.0`, `bond_albedo=0.3`.
 ```bash
 query.py star-regions --star "61 Cygni A"
 ```
-Core functions: `databases.compute_simbad_lookup` → `regions.compute_star_system_regions_from_simbad`
+Core functions: `databases.compute_simbad_lookup` → `regions.compute_star_system_regions_from_simbad` + `databases.compute_hypatia_data`
+
+The result dict includes a top-level `"hypatia"` key: `{"star_name", "properties", "abundances"}` on success, or `{"error": str}` if the Hypatia API call fails. The regions result is always returned even when Hypatia fails.
 
 ### Distance and proximity
 
@@ -121,9 +123,22 @@ query.py hwc --star "Tau Ceti"
 ```
 Core functions: `databases.compute_simbad_lookup` → `databases.compute_hwc`
 
+### Hypatia Catalog (live network)
+
+#### `hypatia-data`
+Hypatia Catalog stellar properties and elemental abundances (Lodders 2009 normalisation). Live network call.
+```bash
+query.py hypatia-data --star "Tau Ceti"
+```
+Core functions: `databases.compute_simbad_lookup` → `databases.compute_hypatia_data`
+
+Returns `{"star_name", "properties", "abundances"}` on success.
+- `properties`: `{teff, logg, spectral_type, vmag, bmag, bv, distance_pc, disk, u_vel, v_vel, w_vel, pm_ra, pm_dec}` (any field may be `null`).
+- `abundances`: list of `{element, mean, std, min, max, n}` for the 19-element set (fe, mg, si, ca, ti, o, c, n, na, al, s, ni, co, cr, mn, ba, y, sr, eu); only elements with a non-null mean are included.
+
 ## Two-step subcommands
 
-For subcommands that run SIMBAD first (`star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, `hwc`): if the SIMBAD lookup returns `{"error": ...}`, that error is returned immediately and the second core function is never called.
+For subcommands that run SIMBAD first (`star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, `hwc`, `hypatia-data`): if the SIMBAD lookup returns `{"error": ...}`, that error is returned immediately and the second core function is never called.
 
 ## Implementation notes
 

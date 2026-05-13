@@ -1156,6 +1156,75 @@ def _wire_solar_travel_click(canvas, ax, artists, on_body_click=None):
     canvas.mpl_connect("button_press_event", _on_click)
 
 
+def make_abundance_canvas(parent, abundances_data: dict, star_name: str = ""):
+    """Horizontal bar chart of [X/H] elemental abundances for a single star.
+
+    abundances_data: return value of core.viz.prepare_abundance_profile().
+    Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(8, 3), dpi=100, facecolor=_SPACE_BG)
+        cv  = FigureCanvas(fig)
+        ax  = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes,
+                ha="center", va="center", color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not abundances_data or "error" in abundances_data:
+        return _error_canvas(abundances_data.get("error", "No abundance data") if abundances_data else "No abundance data")
+
+    elements = abundances_data.get("elements", [])
+    means    = abundances_data.get("means", [])
+    stds     = abundances_data.get("stds", [])
+
+    if not elements:
+        return _error_canvas("No measurable abundances found")
+
+    safe_stds = [s if s is not None else 0.0 for s in stds]
+    colors    = ["#e06c4a" if m >= 0 else "#4a90d9" for m in means]
+
+    fig_h = max(4.0, len(elements) * 0.38 + 1.6)
+    fig   = Figure(figsize=(8, fig_h), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.12, right=0.96, top=0.91, bottom=0.10)
+
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(_SPACE_BG)
+
+    y_pos = list(range(len(elements)))
+    ax.barh(y_pos, means, xerr=safe_stds, color=colors,
+            ecolor=_LABEL_CLR, capsize=3, alpha=0.85, height=0.6)
+
+    ax.axvline(0, color=_LABEL_CLR, linewidth=0.9, alpha=0.55, zorder=3)
+
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(elements, fontsize=9, color=_LABEL_CLR)
+    ax.set_xlabel("[X/H]  (Lodders 2009)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(axis="x", colors=_LABEL_CLR, labelsize=8)
+    ax.tick_params(axis="y", colors=_LABEL_CLR)
+
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    for spine in ("bottom", "left"):
+        ax.spines[spine].set_color(_GRID_CLR)
+
+    ax.grid(axis="x", color=_GRID_CLR, alpha=0.5, linewidth=0.7, linestyle="--")
+    ax.set_axisbelow(True)
+
+    title = "[X/H] Elemental Abundances"
+    if star_name:
+        title += f"  —  {star_name}"
+    ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=8)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
 def make_solar_travel_canvas(parent, data: dict, on_body_click=None):
     """2D top-down solar system travel path diagram (XY ecliptic plane).
 

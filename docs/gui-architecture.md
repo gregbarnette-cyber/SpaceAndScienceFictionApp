@@ -53,7 +53,9 @@ gui/                 # Qt presentation layer
     habitable_zone_calc.py # HabZonePanel (39), HabZoneSmaPanel (40)
     luminosity.py         # LuminosityPanel (41)
     # Phase C panels (SIMBAD / network):
-    simbad.py            # SimbadPanel (1)
+    simbad.py            # SimbadPanel (1) — tabs: Star Properties, Hypatia, Abundance Profile
+    hypatia_tab.py       # Shared: build_hypatia_tab(), fit_table_height(), _ELEMENT_NAMES
+                         #   used by simbad.py, star_regions.py, nasa_exoplanet.py, catalogs.py
     star_regions.py      # StarRegionsAutoPanel (8), StarRegionsSemiManualPanel (9),
                          #   StarRegionsManualPanel (10)
     distance_stars.py    # DistanceBetweenStarsPanel (17), StarsWithinDistanceSolPanel (18),
@@ -75,7 +77,8 @@ gui/                 # Qt presentation layer
     plot_helpers.py      # mpl_available(), make_hz_canvas(), make_orbits_canvas(),
                          #   make_star_map_canvas(bg=), make_star_map_3d_canvas(bg=),
                          #   make_system_regions_canvas(), make_alt_hz_canvas(),
-                         #   make_solar_travel_canvas(), make_solar_travel_canvas_3d()
+                         #   make_solar_travel_canvas(), make_solar_travel_canvas_3d(),
+                         #   make_abundance_canvas()
                          #   (make_solar_travel_canvas_3d is unused — 3D removed from opts 22–23)
     hz_diagram.py        # HabZoneDiagramPanel — standalone stub (not in nav)
     star_map.py          # StarMapPanel — standalone stub (not in nav)
@@ -310,6 +313,7 @@ All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures u
 | `make_alt_hz_canvas(parent, zones, max_au, title, eeid_au)` | Star Regions 8–10 | Concentric ring diagram (⁴√AU scale) for alternate biochemistry HZ zones |
 | `make_solar_travel_canvas(parent, data, on_body_click=None)` | System Travel 22, 23 | 2D top-down (XY ecliptic) solar system map: planet dots + reference orbit circles + origin ★ + dest ■ + dashed travel path; click calls `on_body_click(body_info)` if provided, otherwise shows inline info box |
 | `make_solar_travel_canvas_3d(parent, data, on_body_click=None)` | *(unused — 3D removed from opts 22–23)* | 3D version of the solar system travel map (`azel` rotation); returns `(canvas, toolbar, ax)` for preset buttons; no floating 3D text labels — click calls `on_body_click(body_info)` if provided, otherwise shows `text2D` tooltip |
+| `make_abundance_canvas(parent, abundances_data, star_name="")` | SIMBAD 1, NASA opts 3–6, Star Regions 8 | Horizontal bar chart of [X/H] elemental abundances; bars colored by sign (positive=#e06c4a, negative=#4a90d9); `axvline` at 0; error bars from `std`; figure height scales with element count |
 
 All ring diagrams support click-to-info: clicking a region or orbit shows a details box in the lower-left corner; clicking empty space dismisses it. The EEID circle (dark teal `#006644`) is also clickable.
 
@@ -325,11 +329,12 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 
 | Panel | Viz tab(s) | Toggle mechanism |
 |---|---|---|
-| `NasaPlanetarySystemsPanel` (3) | "Orbital Diagram", "HZ Diagram" | Inline (uses `_scroll_area`) |
-| `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`) | `DiagramToggleMixin` |
-| `NasaMissionExocatPanel` (5) | "HZ Diagram" (EEID from `st_eeidau`; lum = `st_lbol` direct Lsun) | `DiagramToggleMixin` |
-| `HwcPanel` (6) | "Orbital Diagram", "HZ Diagram" (lum = `S_LUMINOSITY` direct Lsun) | `DiagramToggleMixin` |
-| `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
+| `SimbadPanel` (1) | "Star Properties", "Hypatia", "Abundance Profile" (when Hypatia data available) — inline `QTabWidget`, no Show Diagrams button | Inline (all tabs always visible) |
+| `NasaPlanetarySystemsPanel` (3) | "Orbital Diagram", "HZ Diagram", "Abundance Profile" (when Hypatia data available) | Inline (uses `_scroll_area`) |
+| `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
+| `NasaMissionExocatPanel` (5) | "HZ Diagram" (EEID from `st_eeidau`; lum = `st_lbol` direct Lsun), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
+| `HwcPanel` (6) | "Orbital Diagram", "HZ Diagram" (lum = `S_LUMINOSITY` direct Lsun), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
+| `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram", "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
 | `StarRegionsSemiManualPanel` (9) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
 | `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
 | `StarsWithinDistanceSolPanel` (18) | "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D" | `DiagramToggleMixin` |

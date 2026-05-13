@@ -13,10 +13,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
+from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.viz
 from gui.visualizations.plot_helpers import (
-    mpl_available, make_hz_canvas, make_orbits_canvas,
+    mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas,
 )
 
 
@@ -120,6 +121,13 @@ class _StarSearchPanel(ResultPanel):
         raise NotImplementedError
 
 
+def _hwc_with_hypatia(simbad_result: dict) -> dict:
+    result = core.databases.compute_hwc(simbad_result)
+    if "error" not in result:
+        result["hypatia"] = core.databases.compute_hypatia_data(simbad_result)
+    return result
+
+
 # ── Option 6: Habitable Worlds Catalog ───────────────────────────────────────
 
 class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
@@ -166,7 +174,7 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
     def _do_search(self, simbad_result):
         self.set_status("Querying Habitable Worlds Catalog…")
         self.run_in_background(
-            core.databases.compute_hwc,
+            _hwc_with_hypatia,
             simbad_result,
             on_result=self._render,
         )
@@ -181,10 +189,18 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         simbad      = result["simbad"]
         star_row    = result["star_row"]
         planet_rows = result["planet_rows"]
+        hypatia     = result.get("hypatia")
 
         self._result_area.addWidget(
             QLabel(f"<b>SIMBAD:</b> {simbad.get('desig_str', 'N/A')}")
         )
+
+        # ── Data / Hypatia tabs ───────────────────────────────────────────────
+        data_tabs = QTabWidget()
+        data_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        data_w = QWidget()
+        data_l = QVBoxLayout(data_w)
+        data_l.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         def _sf(key, dp=None):
             v = star_row.get(key, "")
@@ -197,7 +213,7 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 return str(v).strip()
 
         # Star Properties
-        self._result_area.addWidget(QLabel("<b>Star Properties</b>"))
+        data_l.addWidget(QLabel("<b>Star Properties</b>"))
         st_dist = _fval(star_row.get("S_DISTANCE"))
         s_headers = ["Star", "HD", "HIP", "Spectral Type", "MagV", "L",
                      "Temp", "Mass", "Radius", "RA", "DEC", "Parsecs", "LY",
@@ -214,10 +230,10 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         ]
         t = self.make_table(s_headers, [s_row])
         _fit_table_height(t)
-        self._result_area.addWidget(t)
+        data_l.addWidget(t)
 
         # Star Habitability Properties
-        self._result_area.addWidget(QLabel("<b>Star Habitability Properties</b>"))
+        data_l.addWidget(QLabel("<b>Star Habitability Properties</b>"))
         sh_headers = ["Inner Opt HZ", "Inner Con HZ", "Outer Con HZ",
                       "Outer Opt HZ", "Inner Con 5 Me HZ", "Outer Con 5 Me HZ",
                       "Tidal Lock", "Abiogenesis", "Snow Line"]
@@ -229,10 +245,10 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         ]
         t = self.make_table(sh_headers, [sh_row])
         _fit_table_height(t)
-        self._result_area.addWidget(t)
+        data_l.addWidget(t)
 
         # Planet Properties
-        self._result_area.addWidget(QLabel("<b>Planet Properties</b>"))
+        data_l.addWidget(QLabel("<b>Planet Properties</b>"))
         pp_headers = ["Planet", "Mass E", "Radius E", "Orbit", "SMA",
                       "Eccentricity", "Density", "Potential", "Gravity", "Escape"]
         pp_rows = []
@@ -254,10 +270,10 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
             ])
         t = self.make_table(pp_headers, pp_rows)
         _fit_table_height(t)
-        self._result_area.addWidget(t)
+        data_l.addWidget(t)
 
         # Planet Habitability Properties
-        self._result_area.addWidget(QLabel("<b>Planet Habitability Properties</b>"))
+        data_l.addWidget(QLabel("<b>Planet Habitability Properties</b>"))
         ph_headers = ["Planet Type", "EFF Dist", "Periastron", "Apastron",
                       "Temp Type", "Hill Sphere", "Habitable?", "ESI",
                       "In HZ Con", "In HZ Opt"]
@@ -284,10 +300,10 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
             ])
         t = self.make_table(ph_headers, ph_rows)
         _fit_table_height(t)
-        self._result_area.addWidget(t)
+        data_l.addWidget(t)
 
         # Planet Temperature Properties
-        self._result_area.addWidget(QLabel("<b>Planet Temperature Properties</b>"))
+        data_l.addWidget(QLabel("<b>Planet Temperature Properties</b>"))
         pt_headers = ["Flux Min", "Flux", "Flux Max",
                       "EQ Min", "EQ", "EQ Max",
                       "Surf Min", "Surf", "Surf Max"]
@@ -310,10 +326,15 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
             ])
         t = self.make_table(pt_headers, pt_rows)
         _fit_table_height(t)
-        self._result_area.addWidget(t)
+        data_l.addWidget(t)
 
-        _add_hz(self, self._result_area,
+        _add_hz(self, data_l,
                 star_row.get("S_TEMPERATURE"), None, star_row.get("S_RADIUS"))
+
+        data_tabs.addTab(data_w, "Data")
+        if hypatia is not None:
+            data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
+        self._result_area.addWidget(data_tabs)
 
         if not mpl_available():
             self._finish_render()
@@ -387,6 +408,23 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
             hz_l.addWidget(toolbar)
             hz_l.addWidget(canvas)
             self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
+
+        if hypatia and "error" not in hypatia:
+            try:
+                ab_data = core.viz.prepare_abundance_profile(hypatia)
+                if "error" not in ab_data:
+                    ab_canvas, ab_toolbar = make_abundance_canvas(
+                        None, ab_data, hypatia.get("star_name", "")
+                    )
+                    if ab_canvas is not None:
+                        ab_w = QWidget()
+                        ab_l = QVBoxLayout(ab_w)
+                        ab_l.setContentsMargins(4, 4, 4, 4)
+                        ab_l.addWidget(ab_toolbar)
+                        ab_l.addWidget(ab_canvas)
+                        self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
+            except Exception:
+                pass
 
         self._finish_render()
 

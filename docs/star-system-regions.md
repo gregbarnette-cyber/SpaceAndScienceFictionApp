@@ -9,6 +9,7 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
 ### Option 8: Star System Regions (SIMBAD) — `query_star_system_regions()`
 
 - Menu option 8: fully automated — SIMBAD lookup + BC DB lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
+- After the Calculated HZ table, the CLI queries the Hypatia Catalog for stellar properties and elemental abundances (see Hypatia Catalog section below). Hypatia errors are shown inline but do not abort the function.
 - **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
 - **DB lookup:** `_load_main_sequence_data()` queries the `main_sequence_stars` DB table (lazy, cached in `_MAIN_SEQUENCE_DATA`) and builds `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype. Row dicts use the original CSV column names so all callers work unchanged.
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
@@ -85,3 +86,44 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - Uses same Kopparapu et al. coefficients as `_display_habitable_zone()` in `docs/star-databases.md`
   - Three columns: Bolometric Luminosity (`bcLuminosity`), Luminosity from Mass (`luminosityFromMass`), Calculated Luminosity
   - Six zones in order: Optimistic Inner HZ (Recent Venus), Conservative Inner HZ (RG 5 Earth Mass), Conservative Inner HZ (Runaway Greenhouse), Conservative Inner HZ (RG 0.1 Earth Mass), Conservative Outer HZ (Maximum Greenhouse), Optimistic Outer HZ (Early Mars)
+
+## Hypatia Catalog (opt 8 only)
+
+Opt 8 appends Hypatia Catalog data after the Calculated HZ output in both the CLI and GUI.
+
+### CLI output (`query_star_system_regions()`)
+
+After `_display_calculated_hz()`, a `simbad_compat` dict is built from the SIMBAD result variables already in scope (`designations`, `result[0]["main_id"]`) and passed to `core.databases.compute_hypatia_data()`. Output:
+
+- **Header**: `Hypatia Catalog Data` / `--------------------`
+- **Properties + Kinematics table** (single row via `_print_table`): T_eff (K), log g, Spectral Type, V mag, B-V, Distance (pc), Disk, U (km/s), V (km/s), W (km/s), PM RA (mas/yr), PM Dec (mas/yr).
+- **Elemental Abundances table** (one row per element via `_print_table`): Element, [X/H] Mean (±-prefixed), ±Std, Min (±-prefixed), Max (±-prefixed), # Catalogs. Printed only when abundances list is non-empty; otherwise prints `"No elemental abundance data available for this star."`.
+- Hypatia errors print inline without blocking the `input()` prompt.
+
+### GUI tabs (`_build_region_tabs()` in `gui/panels/star_regions.py`)
+
+`_build_region_tabs(d, viz_widget=None)` reads `d.get("hypatia")`. When present:
+
+- **Data tab "Hypatia"** — `QScrollArea` with three sections built by `_build_hypatia_tab(hypatia)`:
+  - **Stellar Properties table** (`make_table`): T_eff (K), log g, Spectral Type, V mag, B-V, Distance (pc), Disk.
+  - **Kinematics table** (`make_table`): U (km/s), V (km/s), W (km/s), PM RA (mas/yr), PM Dec (mas/yr).
+  - **Elemental Abundances (Lodders 2009) table** (`make_table`): Element, [X/H] Mean, ±Std, Min, Max, # Catalogs. If abundances list is empty, shows a gray italic label instead.
+  - Error state: single gray italic label with the error message.
+- **Viz tab "Abundance Profile"** (added to `viz_widget` when `mpl_available()` and abundances list non-empty) — horizontal bar chart via `make_abundance_canvas()` in `gui/visualizations/plot_helpers.py`: bars colored by sign (positive=#e06c4a, negative=#4a90d9), `axvline` at 0 (solar reference), error bars from `std`. Title: `[X/H] Elemental Abundances — {star_name}`.
+
+Opts 9 and 10 do not call the Hypatia API — `d.get("hypatia")` returns `None` and no Hypatia tab is added.
+
+### `core/databases.compute_hypatia_data(simbad_result)`
+
+- API base: `https://hypatiacatalog.com/hypatia/api/v2`
+- Name resolution: uses `simbad_result["designations"].get("HIP")` → `"HD"` → `simbad_result["main_id"]`.
+- Two HTTP calls via `_with_retries(requests.get, ...)` with `timeout=30`:
+  - `/star?name=<name>` → stellar properties and kinematics via `_parse_hypatia_star()`
+  - `/composition?name=<name>` → elemental abundances via `_parse_hypatia_composition()` (failure → `abundances=[]`, not fatal)
+- Returns `{"star_name", "properties", "abundances"}` or `{"error": str}`.
+- Element set (19, Lodders 2009 normalisation): fe, mg, si, ca, ti, o, c, n, na, al, s, ni, co, cr, mn, ba, y, sr, eu.
+
+### `core/viz.prepare_abundance_profile(hypatia_result)`
+
+- Returns `{"elements": list, "means": list, "stds": list, "star_name": str}` or `{"error": str}`.
+- Filters to elements with non-None mean; preserves `_HYPATIA_ELEMENTS` order.

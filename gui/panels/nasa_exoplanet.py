@@ -15,10 +15,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
+from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.viz
 from gui.visualizations.plot_helpers import (
-    mpl_available, make_hz_canvas, make_orbits_canvas,
+    mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas,
 )
 
 
@@ -486,6 +487,27 @@ def _make_orbits_tab(panel, planets, star_name=""):
     return w
 
 
+def _planetary_systems_with_hypatia(simbad_result: dict) -> dict:
+    result = core.databases.compute_planetary_systems_composite(simbad_result)
+    if "error" not in result:
+        result["hypatia"] = core.databases.compute_hypatia_data(simbad_result)
+    return result
+
+
+def _hwo_exep_with_hypatia(simbad_result: dict) -> dict:
+    result = core.databases.compute_hwo_exep(simbad_result)
+    if "error" not in result:
+        result["hypatia"] = core.databases.compute_hypatia_data(simbad_result)
+    return result
+
+
+def _mission_exocat_with_hypatia(simbad_result: dict) -> dict:
+    result = core.databases.compute_mission_exocat(simbad_result)
+    if "error" not in result:
+        result["hypatia"] = core.databases.compute_hypatia_data(simbad_result)
+    return result
+
+
 # ── Option 3: Planetary Systems Composite ────────────────────────────────────
 
 class NasaPlanetarySystemsPanel(_StarSearchPanel):
@@ -580,7 +602,7 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
     def _do_search(self, simbad_result):
         self.set_status("Querying NASA Exoplanet Archive…")
         self.run_in_background(
-            core.databases.compute_planetary_systems_composite,
+            _planetary_systems_with_hypatia,
             simbad_result,
             on_result=self._render,
             on_progress=self.set_status,
@@ -602,10 +624,11 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
 
         simbad  = result["simbad"]
         planets = result["planets"]
+        hypatia = result.get("hypatia")
 
         _add_simbad_banner(self._result_area, simbad)
 
-        # Data tab (tables only)
+        # Data tabs
         data_tabs = QTabWidget()
         data_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         data_w = QWidget()
@@ -614,6 +637,10 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
         _add_nasa_tables(self, data_l, simbad, planets)
         _add_hz_table(self, data_l, planets)
         data_tabs.addTab(data_w, "Data")
+
+        if hypatia is not None:
+            data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
+
         self._result_area.addWidget(data_tabs)
 
         # Viz tabs (shown only via Show Diagrams button)
@@ -624,6 +651,23 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
         hz_w = _make_hz_tab(self, planets)
         if hz_w:
             self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
+
+        if hypatia and "error" not in hypatia:
+            try:
+                ab_data = core.viz.prepare_abundance_profile(hypatia)
+                if "error" not in ab_data:
+                    ab_canvas, ab_toolbar = make_abundance_canvas(
+                        None, ab_data, hypatia.get("star_name", "")
+                    )
+                    if ab_canvas is not None:
+                        ab_w = QWidget()
+                        ab_l = QVBoxLayout(ab_w)
+                        ab_l.setContentsMargins(4, 4, 4, 4)
+                        ab_l.addWidget(ab_toolbar)
+                        ab_l.addWidget(ab_canvas)
+                        self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
+            except Exception:
+                pass
 
         if self._viz_tabs_widget.count() > 0:
             self._show_diagrams_btn.setVisible(True)
@@ -675,7 +719,7 @@ class NasaHwoExepPanel(DiagramToggleMixin, _StarSearchPanel):
     def _do_search(self, simbad_result):
         self.set_status("Querying HWO ExEP archive…")
         self.run_in_background(
-            core.databases.compute_hwo_exep,
+            _hwo_exep_with_hypatia,
             simbad_result,
             on_result=self._render,
             on_progress=self.set_status,
@@ -688,8 +732,9 @@ class NasaHwoExepPanel(DiagramToggleMixin, _StarSearchPanel):
             self._show_error(result["error"])
             return
 
-        simbad = result["simbad"]
-        hwo    = result["hwo"]
+        simbad  = result["simbad"]
+        hwo     = result["hwo"]
+        hypatia = result.get("hypatia")
 
         _add_simbad_banner(self._result_area, simbad)
 
@@ -701,11 +746,32 @@ class NasaHwoExepPanel(DiagramToggleMixin, _StarSearchPanel):
         _add_hwo_tables(self, data_l, hwo)
         _add_hz_table(self, data_l, hwo)
         data_tabs.addTab(data_w, "Data")
+
+        if hypatia is not None:
+            data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
+
         self._result_area.addWidget(data_tabs)
 
         hz_w = _make_hz_tab(self, hwo)
         if hz_w:
             self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
+
+        if hypatia and "error" not in hypatia:
+            try:
+                ab_data = core.viz.prepare_abundance_profile(hypatia)
+                if "error" not in ab_data:
+                    ab_canvas, ab_toolbar = make_abundance_canvas(
+                        None, ab_data, hypatia.get("star_name", "")
+                    )
+                    if ab_canvas is not None:
+                        ab_w = QWidget()
+                        ab_l = QVBoxLayout(ab_w)
+                        ab_l.setContentsMargins(4, 4, 4, 4)
+                        ab_l.addWidget(ab_toolbar)
+                        ab_l.addWidget(ab_canvas)
+                        self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
+            except Exception:
+                pass
 
         self._finish_render()
 
@@ -756,7 +822,7 @@ class NasaMissionExocatPanel(DiagramToggleMixin, _StarSearchPanel):
     def _do_search(self, simbad_result):
         self.set_status("Searching Mission Exocat…")
         self.run_in_background(
-            core.databases.compute_mission_exocat,
+            _mission_exocat_with_hypatia,
             simbad_result,
             on_result=self._render,
         )
@@ -768,8 +834,9 @@ class NasaMissionExocatPanel(DiagramToggleMixin, _StarSearchPanel):
             self._show_error(result["error"])
             return
 
-        simbad = result["simbad"]
-        exocat = result["exocat"]
+        simbad  = result["simbad"]
+        exocat  = result["exocat"]
+        hypatia = result.get("hypatia")
 
         _add_simbad_banner(self._result_area, simbad)
 
@@ -780,10 +847,31 @@ class NasaMissionExocatPanel(DiagramToggleMixin, _StarSearchPanel):
         data_l.setAlignment(Qt.AlignmentFlag.AlignTop)
         _add_exocat_tables(self, data_l, exocat)
         data_tabs.addTab(data_w, "Data")
+
+        if hypatia is not None:
+            data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
+
         self._result_area.addWidget(data_tabs)
 
         hz_w = _make_hz_tab_exocat(self, exocat)
         if hz_w:
             self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
+
+        if hypatia and "error" not in hypatia:
+            try:
+                ab_data = core.viz.prepare_abundance_profile(hypatia)
+                if "error" not in ab_data:
+                    ab_canvas, ab_toolbar = make_abundance_canvas(
+                        None, ab_data, hypatia.get("star_name", "")
+                    )
+                    if ab_canvas is not None:
+                        ab_w = QWidget()
+                        ab_l = QVBoxLayout(ab_w)
+                        ab_l.setContentsMargins(4, 4, 4, 4)
+                        ab_l.addWidget(ab_toolbar)
+                        ab_l.addWidget(ab_canvas)
+                        self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
+            except Exception:
+                pass
 
         self._finish_render()

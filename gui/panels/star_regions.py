@@ -9,17 +9,19 @@ import math
 
 from PySide6.QtWidgets import (
     QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLineEdit, QPushButton, QLabel, QTableView, QSizePolicy,
+    QLineEdit, QPushButton, QLabel, QSizePolicy,
 )
-from PySide6.QtGui import QStandardItemModel, QStandardItem
+from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
+from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.regions
 import core.viz
 from core.equations import _kopparapu_seff
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_system_regions_canvas, make_alt_hz_canvas,
+    make_abundance_canvas,
 )
 
 
@@ -29,7 +31,11 @@ def _compute_auto_regions(name: str) -> dict:
     simbad = core.databases.compute_simbad_lookup(name)
     if "error" in simbad:
         return simbad
-    return core.regions.compute_star_system_regions_from_simbad(simbad)
+    result = core.regions.compute_star_system_regions_from_simbad(simbad)
+    if "error" in result:
+        return result
+    result["hypatia"] = core.databases.compute_hypatia_data(simbad)
+    return result
 
 
 def _compute_semi_manual_regions(name: str, sunlight: float, albedo: float) -> dict:
@@ -49,23 +55,6 @@ def _au_lm3(val: float) -> str:
     return f"{val:.3f} ({val * 8.3167:.3f} LM)"
 
 
-# ── Shared table builder ───────────────────────────────────────────────────────
-
-def _tbl(headers, rows) -> QTableView:
-    model = QStandardItemModel(len(rows), len(headers))
-    model.setHorizontalHeaderLabels(headers)
-    for r, row in enumerate(rows):
-        for c, val in enumerate(row):
-            item = QStandardItem(str(val) if val is not None else "N/A")
-            item.setEditable(False)
-            model.setItem(r, c, item)
-    view = QTableView()
-    view.setModel(model)
-    view.setSortingEnabled(False)
-    view.horizontalHeader().setStretchLastSection(True)
-    view.resizeColumnsToContents()
-    view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-    return view
 
 
 # ── Shared results renderer ───────────────────────────────────────────────────
@@ -212,6 +201,11 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
         "Calculated HZ",
     )
 
+    # ── Hypatia Catalog data tab (opt 8 only; absent for opts 9 and 10) ───────
+    hypatia = d.get("hypatia")
+    if hypatia is not None:
+        tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
+
     # ── Visualization tabs (require matplotlib) ───────────────────────────────
     if mpl_available():
         target = viz_widget if viz_widget is not None else tabs
@@ -256,6 +250,21 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
                 alt_l.addWidget(alt_toolbar)
                 alt_l.addWidget(alt_canvas)
                 target.addTab(alt_w, "Alternate HZ Diagram")
+
+            # Abundance Profile — only when Hypatia data is present and valid
+            if hypatia and "error" not in hypatia:
+                ab_data = core.viz.prepare_abundance_profile(hypatia)
+                if "error" not in ab_data:
+                    ab_canvas, ab_toolbar = make_abundance_canvas(
+                        None, ab_data, hypatia.get("star_name", "")
+                    )
+                    if ab_canvas is not None:
+                        ab_w = QWidget()
+                        ab_l = QVBoxLayout(ab_w)
+                        ab_l.setContentsMargins(4, 4, 4, 4)
+                        ab_l.addWidget(ab_toolbar)
+                        ab_l.addWidget(ab_canvas)
+                        target.addTab(ab_w, "Abundance Profile")
         except Exception:
             pass
 

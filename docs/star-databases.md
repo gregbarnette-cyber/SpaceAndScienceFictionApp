@@ -22,6 +22,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 - Parallax (mas) from `plx_value`; distance in parsecs = 1000 / plx; light years = parsecs × 3.26156; all rounded to 4 decimal places.
 - Missing/masked SIMBAD fields are handled by `_safe_get()` and shown as `N/A`.
 - `compute_simbad_lookup` in `core/databases.py` checks `len(result) == 0` in addition to `result is None`; SIMBAD can return an empty table (not `None`) for unknown star names, and both cases now return `{"error": "No results found for '...'"}` cleanly.
+- **GUI (`SimbadPanel`)**: the background call runs `_simbad_with_hypatia()`, which calls `compute_simbad_lookup` then `compute_hypatia_data` in a single thread. Results are presented in three tabs: **Star Properties** (designation banner + star properties table), **Hypatia** (Stellar Properties, Kinematics, and Elemental Abundances tables via `build_hypatia_tab()`), and **Abundance Profile** (horizontal bar chart; only shown when matplotlib is available and the star has elemental abundance data).
 
 ## NASA Exoplanet Archive: All Tables Feature
 
@@ -43,6 +44,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 - `_display_exoplanet_results()` renders: SIMBAD star designations + info table, Star Name line, Star Properties table, Planet Properties table, and Calculated Habitable Zone (`_display_habitable_zone()`).
 - Designation priority for archive query: HIP → HD → TIC → Gaia EDR3 (same as option 2).
 - After the Calculated Habitable Zone, returns directly to the main menu prompt.
+- **GUI (`NasaPlanetarySystemsPanel`)**: background call uses `_planetary_systems_with_hypatia()`, which calls `compute_planetary_systems_composite` then `compute_hypatia_data`. Results are shown in **Data** and **Hypatia** tabs (inline `QTabWidget`). Show Diagrams view adds **Orbital Diagram**, **HZ Diagram**, and **Abundance Profile** (when Hypatia data is available) to `_viz_tabs_widget`.
 
 ## NASA Exoplanet Archive: HWO ExEP Precursor Science Stars Feature
 
@@ -59,6 +61,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
   - **Calculated Habitable Zone** via `_display_habitable_zone(hwo_rows)`.
 - Results sorted ascending by `sy_dist` (distance in parsecs).
 - If no HWO data is found, prints a message and returns to menu.
+- **GUI (`NasaHwoExepPanel`)**: background call uses `_hwo_exep_with_hypatia()`, which calls `compute_hwo_exep` then `compute_hypatia_data`. Results are shown in **Data** and **Hypatia** tabs. Show Diagrams view adds **HZ Diagram** and **Abundance Profile** (when Hypatia data is available).
 
 ## NASA Exoplanet Archive: Mission Exocat Stars Feature
 
@@ -74,6 +77,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
     - Note: `st_lbol` is direct luminosity in solar units (not log₁₀), unlike `st_lum` in the NASA/HWO archives.
   - **Calculated Habitable Zone** via `_display_habitable_zone()`. A synthetic row is passed with `st_teff` and `st_rad` from the CSV; if `st_rad` is absent, `st_lum` is set to `log₁₀(st_lbol)` as fallback.
 - If no match is found, prints a message and returns to menu.
+- **GUI (`NasaMissionExocatPanel`)**: background call uses `_mission_exocat_with_hypatia()`, which calls `compute_mission_exocat` then `compute_hypatia_data`. Results are shown in **Data** and **Hypatia** tabs. Show Diagrams view adds **HZ Diagram** and **Abundance Profile** (when Hypatia data is available).
 
 ## HWO ExEP Archive (shared helpers)
 
@@ -113,6 +117,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
   - **Planet Habitability Properties table** — one row per planet: Planet Type (`P_TYPE`), EFF Dist (`P_DISTANCE_EFF`, 5dp), Periastron (`P_PERIASTRON`, 5dp), Apastron (`P_APASTRON`, 5dp), Temp Type (`P_TYPE_TEMP`), Hill Sphere (`P_HILL_SPHERE`, 8dp), Habitable? (`P_HABITABLE`: `1`→`Yes`, `0`→`No`), ESI (`P_ESI`, 6dp), In HZ Con (`P_HABZONE_CON`: `1`→`Yes`, `0`→`No`), In HZ Opt (`P_HABZONE_OPT`: `1`→`Yes`, `0`→`No`).
   - **Planet Temperature Properties table** — one row per planet: Flux Min (`P_FLUX_MIN`, 5dp), Flux (`P_FLUX`, 5dp), Flux Max (`P_FLUX_MAX`, 5dp), EQ Min (`P_TEMP_EQUIL_MIN`, 3dp), EQ (`P_TEMP_EQUIL`, 3dp), EQ Max (`P_TEMP_EQUIL_MAX`, 3dp), Surf Min (`P_TEMP_SURF_MIN`, 3dp), Surf (`P_TEMP_SURF`, 3dp), Surf Max (`P_TEMP_SURF_MAX`, 3dp).
 - If no match is found, prints a message and returns to menu.
+- **GUI (`HwcPanel`)**: background call uses `_hwc_with_hypatia()`, which calls `compute_hwc` then `compute_hypatia_data`. All HWC tables are placed inside a **Data** tab alongside a **Hypatia** tab (inner `QTabWidget`). Show Diagrams view adds **Orbital Diagram**, **HZ Diagram**, and **Abundance Profile** (when Hypatia data is available).
 
 ## Open Exoplanet Catalogue Feature
 

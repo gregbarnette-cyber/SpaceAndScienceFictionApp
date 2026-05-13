@@ -1,19 +1,29 @@
 # gui/panels/simbad.py — Option 1: SIMBAD Lookup Query.
 
 from PySide6.QtWidgets import (
-    QFormLayout, QLineEdit, QPushButton, QLabel, QWidget, QVBoxLayout,
+    QFormLayout, QLineEdit, QPushButton, QLabel, QWidget, QVBoxLayout, QTabWidget,
 )
 from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel
+from gui.panels.hypatia_tab import build_hypatia_tab, fit_table_height
+from gui.visualizations.plot_helpers import mpl_available, make_abundance_canvas
 import core.databases
+import core.viz
+
+
+def _simbad_with_hypatia(name: str) -> dict:
+    result = core.databases.compute_simbad_lookup(name)
+    if "error" not in result:
+        result["hypatia"] = core.databases.compute_hypatia_data(result)
+    return result
 
 
 class SimbadPanel(ResultPanel):
     """SIMBAD star lookup panel (option 1).
 
     Input:  Star name / designation text field.
-    Output: Designation banner + star properties table.
+    Output: QTabWidget with Star Properties tab + Hypatia tab.
     """
 
     def build_inputs(self):
@@ -25,7 +35,7 @@ class SimbadPanel(ResultPanel):
 
         self.run_btn = QPushButton("Search")
         self.run_btn.clicked.connect(self._search)
-        form.addRow("", self.run_btn)   # button in input column, directly below the field
+        form.addRow("", self.run_btn)
 
         self._layout.addLayout(form)
         self._input_count = self._layout.count()
@@ -38,7 +48,7 @@ class SimbadPanel(ResultPanel):
         if not name:
             return
         self.clear_results()
-        self.run_in_background(core.databases.compute_simbad_lookup, name)
+        self.run_in_background(_simbad_with_hypatia, name)
 
     def render(self, result: dict):
         self.clear_results()
@@ -47,14 +57,18 @@ class SimbadPanel(ResultPanel):
             self.show_error(result["error"])
             return
 
-        # ── Designation banner ────────────────────────────────────────────────
+        # ── Star Properties tab ───────────────────────────────────────────────
+        props_widget = QWidget()
+        props_layout = QVBoxLayout(props_widget)
+        props_layout.setContentsMargins(4, 4, 4, 4)
+        props_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
         desig_str = result.get("desig_str", "N/A")
         banner = QLabel(f"<b>STAR DESIGNATIONS:</b><br>{desig_str}")
         banner.setWordWrap(True)
         banner.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        self.add_result_widget(banner)
+        props_layout.addWidget(banner)
 
-        # ── Star properties table ─────────────────────────────────────────────
         plx    = result.get("plx_value")
         parsec = result.get("parsecs")
         ly     = result.get("ly")
@@ -83,4 +97,32 @@ class SimbadPanel(ResultPanel):
 
         table = self.make_table(headers, [row])
         table.setSortingEnabled(False)
-        self.add_result_widget(table)
+        props_layout.addWidget(table)
+        fit_table_height(table)
+
+        # ── Assemble tab widget ───────────────────────────────────────────────
+        tabs = QTabWidget()
+        tabs.addTab(props_widget, "Star Properties")
+
+        hypatia = result.get("hypatia")
+        if hypatia is not None:
+            tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
+
+            if mpl_available() and "error" not in hypatia:
+                try:
+                    ab_data = core.viz.prepare_abundance_profile(hypatia)
+                    if "error" not in ab_data:
+                        ab_canvas, ab_toolbar = make_abundance_canvas(
+                            None, ab_data, hypatia.get("star_name", "")
+                        )
+                        if ab_canvas is not None:
+                            ab_w = QWidget()
+                            ab_l = QVBoxLayout(ab_w)
+                            ab_l.setContentsMargins(4, 4, 4, 4)
+                            ab_l.addWidget(ab_toolbar)
+                            ab_l.addWidget(ab_canvas)
+                            tabs.addTab(ab_w, "Abundance Profile")
+                except Exception:
+                    pass
+
+        self.add_result_widget(tabs)

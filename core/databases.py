@@ -1190,6 +1190,176 @@ def import_solar_system_csvs(data_dir: str) -> dict:
     }
 
 
+# ── Hypatia Catalog ────────────────────────────────────────────────────────────
+
+_HYPATIA_BASE = "https://hypatiacatalog.com/hypatia/api/v2"
+_HYPATIA_ELEMENTS = [
+    "fe", "mg", "si", "ca", "ti", "o",  "c",  "n",
+    "na", "al", "s",  "ni", "co", "cr", "mn",
+    "ba", "y",  "sr", "eu",
+]
+
+
+def _parse_hypatia_star(data: list) -> dict:
+    """Parse /star JSON response into a normalized properties dict.
+
+    Field names are confirmed against the live API.  Additional fallback keys
+    handle any minor naming variations across API versions.
+    """
+    if not data:
+        return {}
+    s = data[0]
+
+    def _f(key, *fallbacks):
+        for k in (key,) + fallbacks:
+            v = s.get(k)
+            if v is not None:
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    pass
+        return None
+
+    return {
+        "teff":          _f("temperature", "teff", "t_eff"),
+        "logg":          _f("logg", "log_g"),
+        "spectral_type": s.get("spectral_type") or s.get("spectraltype") or s.get("sptype"),
+        "vmag":          _f("vmag", "v_mag"),
+        "bmag":          _f("bmag", "b_mag"),
+        "bv":            _f("bv", "b_v", "color_bv"),
+        "distance_pc":   _f("dist", "distance", "distance_pc"),
+        "disk":          s.get("disk") or s.get("disk_membership"),
+        "u_vel":         _f("u", "u_vel", "uvel"),
+        "v_vel":         _f("v", "v_vel", "vvel"),
+        "w_vel":         _f("w", "w_vel", "wvel"),
+        "pm_ra":         _f("pm_ra", "pmra", "proper_motion_ra"),
+        "pm_dec":        _f("pm_dec", "pmdec", "proper_motion_dec"),
+    }
+
+
+def _parse_hypatia_composition(data: list) -> list:
+    """Parse /composition JSON response into a list of element abundance dicts.
+
+    Omits elements for which no mean value is available.
+    Preserves the _HYPATIA_ELEMENTS chemical grouping order.
+    """
+    _order = {e: i for i, e in enumerate(_HYPATIA_ELEMENTS)}
+    results = []
+
+    for item in data:
+        el_raw = item.get("element") or item.get("name") or ""
+        el = el_raw.strip().lower()
+
+        mean = None
+        for key in ("mean", "average", "median"):
+            v = item.get(key)
+            if v is not None:
+                try:
+                    mean = float(v)
+                    break
+                except (TypeError, ValueError):
+                    pass
+        if mean is None:
+            continue
+
+        def _f2(k, *fallbacks):
+            for kk in (k,) + fallbacks:
+                v = item.get(kk)
+                if v is not None:
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        pass
+            return None
+
+        n_raw = item.get("n") or item.get("catalog_count") or item.get("num_catalogs")
+        try:
+            n = int(n_raw) if n_raw is not None else None
+        except (TypeError, ValueError):
+            n = None
+
+        results.append({
+            "element": el.capitalize(),
+            "mean":    mean,
+            "std":     _f2("std", "sigma", "stdev"),
+            "min":     _f2("min", "minimum"),
+            "max":     _f2("max", "maximum"),
+            "n":       n,
+            "_order":  _order.get(el, 999),
+        })
+
+    results.sort(key=lambda x: x["_order"])
+    for r in results:
+        del r["_order"]
+    return results
+
+
+def compute_hypatia_data(simbad_result: dict) -> dict:
+    """Fetch stellar properties and elemental abundances from Hypatia Catalog API.
+
+    Uses HIP → HD → MAIN_ID from the SIMBAD result for name resolution.
+    Returns {"star_name": str, "properties": dict, "abundances": list}
+    or {"error": str}.
+    """
+    import requests
+
+    desig = simbad_result.get("designations", {})
+    star_name = (
+        desig.get("HIP")
+        or desig.get("HD")
+        or simbad_result.get("main_id", "")
+    )
+    if not star_name:
+        return {"error": "No usable designation for Hypatia Catalog lookup"}
+
+    # ── /star endpoint ────────────────────────────────────────────────────────
+    try:
+        def _get_star():
+            r = requests.get(
+                f"{_HYPATIA_BASE}/star",
+                params={"name": [star_name]},
+                timeout=30,
+            )
+            r.raise_for_status()
+            return r.json()
+        star_data = _with_retries(_get_star)
+    except Exception as e:
+        return {"error": _network_error_msg(e, "Hypatia Catalog")}
+
+    if not star_data:
+        return {"error": f"No Hypatia data for '{star_name}'"}
+
+    properties = _parse_hypatia_star(star_data)
+
+    # ── /composition endpoint (all elements batched in one request) ───────────
+    n = len(_HYPATIA_ELEMENTS)
+    comp_params = {
+        "name":      [star_name] * n,
+        "element":   _HYPATIA_ELEMENTS,
+        "solarnorm": ["lodders09"] * n,
+    }
+    abundances = []
+    try:
+        def _get_comp():
+            r = requests.get(
+                f"{_HYPATIA_BASE}/composition",
+                params=comp_params,
+                timeout=30,
+            )
+            r.raise_for_status()
+            return r.json()
+        comp_data = _with_retries(_get_comp)
+        abundances = _parse_hypatia_composition(comp_data)
+    except Exception:
+        pass  # return properties with empty abundances rather than failing entirely
+
+    return {
+        "star_name":  star_name,
+        "properties": properties,
+        "abundances": abundances,
+    }
+
+
 def import_honorverse_hyper_csv(csv_path: str) -> dict:
     """Replace honorverse_hyper table with data from csv_path (headerless CSV).
 

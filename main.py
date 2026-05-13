@@ -14,6 +14,7 @@ from astroquery.jplhorizons import Horizons
 import astropy.time
 
 import core.calculators
+import core.databases
 import core.equations
 import core.science
 
@@ -1167,7 +1168,91 @@ def query_star_system_regions():
     _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter)
     _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius)
 
+    # ── Hypatia Catalog ───────────────────────────────────────────────────────
+    print()
+    print("Hypatia Catalog Data")
+    print("--------------------")
+    try:
+        main_id = str(result[0]["main_id"]) if result is not None else ""
+        simbad_compat = {"designations": designations, "main_id": main_id}
+        hypatia = core.databases.compute_hypatia_data(simbad_compat)
+    except Exception as e:
+        hypatia = {"error": str(e)}
+
+    if "error" in hypatia:
+        print(hypatia["error"])
+    else:
+        props = hypatia.get("properties", {})
+
+        def _hf(v, dp):
+            if v is None:
+                return "N/A"
+            try:
+                return f"{float(v):.{dp}f}"
+            except (TypeError, ValueError):
+                return "N/A"
+
+        teff_h = props.get("teff")
+        teff_s = str(int(teff_h)) if teff_h is not None else "N/A"
+
+        print()
+        h1 = ["T_eff (K)", "log g", "Spectral Type", "V mag", "B-V", "Distance (pc)", "Disk",
+              "U (km/s)", "V (km/s)", "W (km/s)", "PM RA (mas/yr)", "PM Dec (mas/yr)"]
+        h2 = [""] * len(h1)
+        rows_h = [[
+            teff_s,
+            _hf(props.get("logg"), 3),
+            props.get("spectral_type") or "N/A",
+            _hf(props.get("vmag"), 3),
+            _hf(props.get("bv"), 3),
+            _hf(props.get("distance_pc"), 2),
+            props.get("disk") or "N/A",
+            _hf(props.get("u_vel"), 2),
+            _hf(props.get("v_vel"), 2),
+            _hf(props.get("w_vel"), 2),
+            _hf(props.get("pm_ra"), 3),
+            _hf(props.get("pm_dec"), 3),
+        ]]
+        aligns_h = ["r"] * len(h1)
+        aligns_h[2] = "l"  # Spectral Type
+        aligns_h[6] = "l"  # Disk
+        _print_table(h1, h2, rows_h, aligns_h)
+
+        abundances = hypatia.get("abundances", [])
+        if abundances:
+            print()
+            ah1 = ["Element", "Name", "[X/H] Mean", "±Std", "Min", "Max", "# Catalogs"]
+            ah2 = [""] * len(ah1)
+            arows = []
+            for a in abundances:
+                sym = a["element"]
+                m  = a.get("mean")
+                ms = f"{m:+.3f}" if m is not None else "N/A"
+                s  = a.get("std")
+                ss = f"{s:.3f}"  if s is not None else "N/A"
+                mn = a.get("min")
+                mns = f"{mn:+.3f}" if mn is not None else "N/A"
+                mx = a.get("max")
+                mxs = f"{mx:+.3f}" if mx is not None else "N/A"
+                n  = a.get("n")
+                ns = str(n) if n is not None else "N/A"
+                arows.append([sym, _ELEMENT_NAMES.get(sym.lower(), ""), ms, ss, mns, mxs, ns])
+            _print_table(ah1, ah2, arows, ["l", "l", "r", "r", "r", "r", "r"])
+        else:
+            print("No elemental abundance data available for this star.")
+
     input("\nPress Enter to Return to the Main Menu")
+
+
+# ─── Hypatia element symbol → full name ───────────────────────────────────────
+
+_ELEMENT_NAMES = {
+    "fe": "Iron",      "mg": "Magnesium", "si": "Silicon",   "ca": "Calcium",
+    "ti": "Titanium",  "o":  "Oxygen",    "c":  "Carbon",    "n":  "Nitrogen",
+    "na": "Sodium",    "al": "Aluminum",  "s":  "Sulfur",    "ni": "Nickel",
+    "co": "Cobalt",    "cr": "Chromium",  "mn": "Manganese", "ba": "Barium",
+    "y":  "Yttrium",   "sr": "Strontium", "eu": "Europium",
+}
 
 
 # ─── Main-Sequence Star Properties ────────────────────────────────────────────
