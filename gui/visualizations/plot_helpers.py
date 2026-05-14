@@ -315,6 +315,16 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                 color="#CC8800", fontsize=7, ha="center", va="bottom",
                 alpha=0.85, zorder=11)
 
+    # Note any planets whose entire orbit falls inside the star circle
+    hidden = [orb for orb in orbits if orb["apo"] < star_r]
+    if hidden:
+        lines = ["Not shown (inside star circle at this scale):"]
+        lines += [f"  {o['name']}  (a = {o['sma']:.4f} AU)" for o in hidden]
+        ax.text(0.02, 0.02, "\n".join(lines), transform=ax.transAxes,
+                color="#FFAA44", fontsize=7, va="bottom", ha="left",
+                bbox=dict(facecolor="#1a1a1a", alpha=0.75,
+                          edgecolor="#FFAA44", boxstyle="round,pad=3"))
+
     _style_ax(ax, max_au, "Planetary Orbits")
 
     # ── Legend: orbit lines + HZ boundary lines ────────────────────────────────

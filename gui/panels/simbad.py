@@ -2,6 +2,7 @@
 
 from PySide6.QtWidgets import (
     QFormLayout, QLineEdit, QPushButton, QLabel, QWidget, QVBoxLayout, QTabWidget,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt
 
@@ -97,6 +98,7 @@ class SimbadPanel(ResultPanel):
 
         table = self.make_table(headers, [row])
         table.setSortingEnabled(False)
+        table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         props_layout.addWidget(table)
         fit_table_height(table)
 
