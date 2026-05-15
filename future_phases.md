@@ -1,11 +1,12 @@
 # Context
 
-The app is a mature Space & Science Fiction CLI/GUI tool that has completed Phases A–F:
+The app is a mature Space & Science Fiction CLI/GUI tool that has completed Phases A–F plus the following post-F additions:
 - **A–B**: Project skeleton + static/pure-math panels
 - **C**: SIMBAD network features + QThread pattern
 - **D**: Multi-source features (NASA archives, JPL Horizons, HWC, OEC, CSV utilities)
 - **E**: Matplotlib visualizations embedded in panels (star maps, orbital diagrams, HZ rings, solar travel map)
 - **F**: SQLite migration — all static tables auto-seeded from CSVs; star systems DB query; import/export utilities
+- **Hypatia Catalog integration** (post-F): `compute_hypatia_data(simbad_result)` in `core/databases.py` fetches stellar properties, kinematics, and 19-element Lodders 2009 elemental abundances from `https://hypatiacatalog.com/hypatia/api/v2`. Integrated into opts 1, 3, 4, 5, 6, and 8 — results shown in **Hypatia** data tabs and **Abundance Profile** viz tabs (horizontal bar chart via `make_abundance_canvas()`). Also exposed as the `hypatia-data` subcommand in `query.py`.
 
 This document brainstorms future phases in order of likely value and implementation effort.
 
@@ -40,7 +41,9 @@ Filters the local `star_systems` SQLite table (populated by opt 50) by spectral 
 - Filter form: spectral type `QLineEdit` (placeholder `"e.g. G2, K%, M%"`), LY min/max `QLineEdit` pair, magnitude min/max `QLineEdit` pair, designation prefix `QLineEdit`
 - All fields optional; "Search" button disabled until at least one field is non-empty
 - Results in `make_table()` with interactive column sorting; count label above table
-- "Open in SIMBAD" button (hidden until a row is selected): calls `show_panel(SimbadPanel)` and sets the star name input to the selected row's `star_name`, then auto-triggers the search
+- "Open in SIMBAD" button (hidden until a row is selected): calls `show_panel(SimbadPanel)` and sets the star name input to the selected row's `star_name`, then auto-triggers the search — Hypatia data is automatically fetched as part of the SimbadPanel lookup
+
+**Stretch goal (requires Phase L4 Hypatia cache)**: add a `fe_h_min`/`fe_h_max` filter pair to `search_star_systems()` using a JOIN against the `hypatia_cache` table. Only applicable once L4 is implemented; include as a commented-out parameter stub in `search_star_systems()` from the start so L4 can activate it without a signature change.
 
 ### G2: HWC Planet Search — opt 58
 
@@ -512,23 +515,27 @@ Determines whether a missile fired from a moving launcher can intercept a moving
 
 ### L1: Side-by-Side Star Comparison — opt ~52
 
-Accepts 2–4 star names, runs a SIMBAD lookup for each, and renders a single transposed comparison table where rows are properties and columns are stars.
+Accepts 2–4 star names, runs a SIMBAD lookup for each, and renders a single transposed comparison table where rows are properties and columns are stars. Hypatia Catalog data (elemental abundances and kinematics) is fetched alongside SIMBAD and included as additional comparison rows.
 
 **Data resolution per star**:
 1. SIMBAD lookup (reuses existing pattern from `core/databases.py`) for: `sp_type`, `teff` (from `mesfe_h.teff`), `plx_value` (→ LY), `V` (apparent magnitude), `ra`, `dec`
 2. If `st_rad` or `st_teff` missing from SIMBAD, attempt a supplemental NASA `pscomppars` TAP query using the best available designation (HIP → HD → TIC → Gaia EDR3) to fill `st_teff`, `st_rad`, `st_mass`, `st_lum`
 3. HZ inner/outer computed via the existing Kopparapu coefficient logic (`_kopparapu_seff`) using the best available luminosity and teff
+4. Hypatia Catalog lookup via `compute_hypatia_data(simbad_result)` — fetches stellar properties (logg, B-V, distance, disk membership), kinematics (U/V/W velocities, proper motions), and elemental abundances (19-element Lodders 2009 set). Errors stored per-star without aborting the comparison.
 
 **`core/databases.py`** — add `compare_stars(names: list[str]) -> dict`:
-- Runs up to 4 lookups; per-star errors are stored in the result without aborting the comparison
+- Runs up to 4 SIMBAD + Hypatia lookup pairs; per-star errors are stored in the result without aborting the comparison
 - HZ bounds: Conservative Inner (Runaway Greenhouse) and Conservative Outer (Maximum Greenhouse) only — same two used by the single-star HZ tables
-- Returns `{"stars": [{"name": str, "sp_type": str, "teff": int|None, "luminosity": float|None, "mass": float|None, "radius": float|None, "hz_inner_au": float|None, "hz_outer_au": float|None, "ly": float|None, "app_magnitude": float|None, "error": str|None}]}`
+- Returns `{"stars": [{"name": str, "sp_type": str, "teff": int|None, "luminosity": float|None, "mass": float|None, "radius": float|None, "hz_inner_au": float|None, "hz_outer_au": float|None, "ly": float|None, "app_magnitude": float|None, "hypatia": dict|None, "error": str|None}]}`
+- `hypatia` key: the raw `compute_hypatia_data()` result dict (`{"star_name", "properties", "abundances"}`) or `{"error": str}` if the Hypatia call failed
 
-**Comparison table rows** (property labels): Spectral Type | Temp (K) | Luminosity (Lsun) | Mass (Msun) | Radius (Rsun) | HZ Inner (AU) | HZ Outer (AU) | Distance (LY) | Apparent Magnitude. Each column = one star; missing values shown as "N/A".
+**Comparison table rows** (property labels): Spectral Type | Temp (K) | Luminosity (Lsun) | Mass (Msun) | Radius (Rsun) | HZ Inner (AU) | HZ Outer (AU) | Distance (LY) | Apparent Magnitude. Followed by Hypatia rows (only rendered when at least one star has Hypatia data): log g | Disk | Fe/H | Mg/H | Si/H | O/H | U vel (km/s) | V vel (km/s) | W vel (km/s). Each column = one star; missing values shown as "N/A".
 
-**CLI** — `star_comparison()` (~52): prompts star names one per line (blank to finish; 2 minimum, 4 maximum). Screen cleared after all lookups succeed. Renders transposed table using `_print_table()` with property names as the left-most column and one star column per star.
+**CLI** — `star_comparison()` (~52): prompts star names one per line (blank to finish; 2 minimum, 4 maximum). Screen cleared after all lookups succeed. Renders transposed table using `_print_table()` with property names as the left-most column and one star column per star. Hypatia section separated by a blank row after Apparent Magnitude.
 
-**GUI** — `StarComparisonPanel`: 2–4 `QLineEdit` fields (star 1 always visible; "Add Star" button reveals stars 3 and 4 up to maximum 4). Single "Compare" button fires `run_in_background` worker. Results rendered as a transposed `make_table()` — stars as columns, properties as rows. Cells containing errors shown with red text. Parallel SIMBAD lookups: fire all 4 workers simultaneously; block until all complete before rendering.
+**GUI** — `StarComparisonPanel`: 2–4 `QLineEdit` fields (star 1 always visible; "Add Star" button reveals stars 3 and 4 up to maximum 4). Single "Compare" button fires parallel `run_in_background` workers — one per star, each running `compute_simbad_lookup` + `compute_hypatia_data` sequentially; all workers are joined before rendering. Results rendered as a transposed `make_table()` — stars as columns, properties as rows. Cells containing errors shown with red text. Hypatia rows separated by a horizontal rule row in the table.
+
+**Diagram tab** — "Abundance Profiles": when `mpl_available()` and at least one star has abundance data, add a diagram tab to `_viz_tabs_widget` (via `DiagramToggleMixin`) showing a grouped horizontal bar chart comparing [X/H] values across all stars for the elements present in any star's Hypatia result. One color per star; elements on the y-axis; vertical line at 0 (solar reference). Built from a new `make_abundance_comparison_canvas(parent, stars_data)` helper in `gui/visualizations/plot_helpers.py`.
 
 ### L2: Exoplanet ESI Ranking — opt ~53
 
@@ -594,8 +601,94 @@ Special cases:
 - **`gui/panels/__init__.py`** — export all three panel classes
 - **`gui/nav.py`** — add "Comparison" nav category with three entries
 - **`main.py`** — register new opts in `MENU_OPTIONS`
-- **`docs/star-databases.md`** — document `compare_stars`, `rank_hwc_by_esi` with filter keys and return schemas
+- **`gui/visualizations/plot_helpers.py`** — add `make_abundance_comparison_canvas(parent, stars_data)` for the multi-star grouped abundance chart
+- **`docs/star-databases.md`** — document `compare_stars` including `hypatia` key in the per-star result dict, the parallel fetch pattern, and the abundance comparison rows; document `rank_hwc_by_esi` with filter keys and return schemas
 - **`docs/equations.md`** — document `compute_stellar_evolution` with stage duration formulas and special-case mass ranges
+
+### L4: Hypatia Catalog Cache & Abundance Search — opt ~55
+
+Batch-fetches Hypatia Catalog data for all stars in the `star_systems` DB table and stores it locally, then exposes a filter-by-abundance search interface. This unlocks abundance-based filtering in G1 (Star Systems Search) and removes the per-lookup network dependency from L1 (Star Comparison).
+
+**Why a local cache**: the Hypatia API at `https://hypatiacatalog.com/hypatia/api/v2` is per-star (no bulk endpoint). With ~252K rows in `star_systems`, a full batch is impractical; the cache should target a useful subset — the same stars already in the DB that have HIP or HD designations (the Hypatia name-resolution priority order is HIP → HD → main_id).
+
+**`core/db.py`** — add to schema:
+```sql
+CREATE TABLE IF NOT EXISTS hypatia_cache (
+    star_name TEXT PRIMARY KEY,
+    hip TEXT,
+    hd TEXT,
+    teff REAL,
+    logg REAL,
+    vmag REAL,
+    bv REAL,
+    distance_pc REAL,
+    disk TEXT,
+    u_vel REAL,
+    v_vel REAL,
+    w_vel REAL,
+    pm_ra REAL,
+    pm_dec REAL,
+    fe_h REAL,
+    mg_h REAL,
+    si_h REAL,
+    ca_h REAL,
+    ti_h REAL,
+    o_h REAL,
+    c_h REAL,
+    n_h REAL,
+    na_h REAL,
+    al_h REAL,
+    s_h REAL,
+    ni_h REAL,
+    co_h REAL,
+    cr_h REAL,
+    mn_h REAL,
+    ba_h REAL,
+    y_h REAL,
+    sr_h REAL,
+    eu_h REAL,
+    fetched_date TEXT
+)
+```
+
+**`core/databases.py`** — add `import_hypatia_cache(progress_callback=None) -> dict`:
+- Queries `star_systems` for all rows that have a HIP or HD designation (parsed from the `designations` column)
+- For each star: builds a `simbad_compat` dict (same format expected by `compute_hypatia_data`) and calls `compute_hypatia_data()`; on success, upserts a row into `hypatia_cache` via `INSERT OR REPLACE`
+- Rate-limiting: 0.25 s sleep between API calls to avoid hammering the Hypatia server; progress reported via `progress_callback(current, total, star_name)`
+- Stars that return a Hypatia error are silently skipped (not inserted); a count of successes and failures is returned
+- Returns `{"inserted": int, "skipped": int, "errors": int, "total_candidates": int}`
+
+**`core/databases.py`** — add `search_hypatia_cache(filters: dict) -> list[dict]`:
+- Dynamic WHERE clause on `hypatia_cache` using non-None filter keys
+- Supported filters: `fe_h_min`/`fe_h_max` (float), `disk` (exact match: `"thin disk"`, `"thick disk"`, `"halo"`), `teff_min`/`teff_max` (float), `ly_min`/`ly_max` (float; joins against `star_systems` on `star_name` for the `light_years` column), `element` + `element_min`/`element_max` (filter on any single element column, e.g. `element="mg_h"`)
+- Default sort: `fe_h DESC`; cap at 500 rows
+- Returns list of dicts with keys: `star_name`, `hip`, `hd`, `disk`, `teff`, `fe_h`, `mg_h`, `si_h`, `o_h`, `distance_pc`, `ly` (joined from `star_systems`), plus all 19 element columns
+
+**Output table columns** (CLI and GUI): Star Name | HIP | HD | Disk | Teff (K) | Fe/H | Mg/H | Si/H | O/H | Distance (LY). Count above table; "Showing first 500 results." footer if capped.
+
+**CLI import** — `import_hypatia_cache_data()` (new opt, ~55 renumber or alongside existing utilities):
+- Prints running progress: `"Fetching Hypatia data for star N of M: <star_name> ..."`
+- On completion: `"Inserted X rows, skipped Y (no Hypatia data), Z errors."` 
+
+**CLI search** — `search_hypatia_catalog()` (new opt):
+- Prompts: Fe/H min (blank = any), Fe/H max (blank = any), Disk type (blank = any, options: thin/thick/halo), Teff range min/max (blank = any), Element filter (blank = none; if entered, prompts for min/max value for that element), Max distance LY (blank = any)
+- At least one filter required
+- After table: "Enter row number to open in SIMBAD (or Enter to return):" — chains into `query_star()`
+
+**GUI import** — `ImportHypatiaPanel`: "Import Hypatia Data" button fires `run_in_background`; progress streamed via `set_status()` updates; completion summary displayed as a result label. Warns the user upfront that this may take several minutes for large star_systems tables.
+
+**GUI search** — `HypatiaSearchPanel`: filter form matching CLI prompts (Fe/H min/max `QLineEdit` pair, disk `QComboBox` with Any/Thin/Thick/Halo, teff min/max `QLineEdit` pair, element `QComboBox` + value min/max `QLineEdit` pair, max LY `QLineEdit`). Results in sortable `make_table()`. "Open in SIMBAD" button on row selection — also activates G1 stretch goal: passing `fe_h_min`/`fe_h_max` as additional filter parameters to `search_star_systems()` when both this table and the star_systems table have data.
+
+**G1 integration**: once `hypatia_cache` is populated, `search_star_systems()` (G1) gains `fe_h_min`/`fe_h_max` filter parameters (the commented-out stub from G1). The filter adds `JOIN hypatia_cache hc ON ss.star_name = hc.star_name WHERE hc.fe_h BETWEEN ? AND ?` to the existing G1 query.
+
+### Remaining Steps (L4)
+
+- **`gui/panels/comparison.py`** — add `ImportHypatiaPanel`, `HypatiaSearchPanel`
+- **`gui/panels/__init__.py`** — export both new panel classes
+- **`gui/nav.py`** — add "Import Hypatia Cache" to Utilities category; add "Hypatia Abundance Search" to Comparison (or Search & Filter) category
+- **`main.py`** — register import and search opts in `MENU_OPTIONS`
+- **`core/db.py`** — add `hypatia_cache` table to schema (auto-created on first `get_db()` call)
+- **`docs/star-databases.md`** — document `import_hypatia_cache`, `search_hypatia_cache`, `hypatia_cache` table schema, rate-limiting behavior, and G1 integration path
 
 ---
 
@@ -608,4 +701,5 @@ Special cases:
 | I — Route Planning | Medium | Medium | Good sci-fi worldbuilding value |
 | J — User Preferences | Medium | Medium | Quality-of-life; grows more valuable as feature count grows |
 | K — Honorverse Expansion | Low | Medium | Narrow audience but fast to implement |
-| L — Comparison Dashboard | Medium | Medium | Depends on G for data access |
+| L1–L3 — Comparison Dashboard | Medium | Medium | Depends on G for data access |
+| L4 — Hypatia Cache & Search | Medium | Medium | Do after G1 to activate the Fe/H filter stretch goal; needed before L1 for offline comparison |
