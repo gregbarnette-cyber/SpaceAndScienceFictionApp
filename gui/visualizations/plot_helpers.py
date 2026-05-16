@@ -272,17 +272,15 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
     canvas = FigureCanvas(fig)
     ax = fig.add_subplot(111, aspect="equal", facecolor=_SPACE_BG)
 
-    # HZ annulus (faint background)
+    # HZ zone fills and boundary lines (matching HZ diagram style)
     if hz_zones:
         for zone in reversed(hz_zones):
             ax.add_patch(Circle((0, 0), zone["outer"],
-                                color=zone["color"], alpha=0.15, zorder=1))
-        ax.add_patch(Circle((0, 0), hz_zones[-1]["outer"],
-                            fill=False, edgecolor="#4499FF",
-                            linewidth=0.8, linestyle=":", alpha=0.5, zorder=2))
-        ax.add_patch(Circle((0, 0), hz_zones[0]["outer"],
-                            fill=False, edgecolor="#CC3300",
-                            linewidth=0.8, linestyle=":", alpha=0.5, zorder=2))
+                                color=zone["color"], alpha=0.55, zorder=1))
+        for zone in hz_zones:
+            ax.add_patch(Circle((0, 0), zone["outer"],
+                                fill=False, edgecolor="#555555",
+                                linewidth=0.8, linestyle="--", alpha=0.45, zorder=2))
 
     # Earth Equiv. Insolation marker
     if eeid_au and eeid_au > 0:

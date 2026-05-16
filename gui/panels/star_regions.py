@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
-from gui.panels.hypatia_tab import build_hypatia_tab
+from gui.panels.hypatia_tab import build_hypatia_tab, _tbl
 import core.databases
 import core.regions
 import core.viz
