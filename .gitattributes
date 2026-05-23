@@ -1,0 +1,37 @@
+# Auto-detect text files and normalize line endings to LF in the repo.
+# Working tree gets native line endings (CRLF on Windows, LF on Linux/Mac).
+* text=auto
+
+# Explicit text types
+*.py    text diff=python
+*.md    text
+*.csv   text
+*.html  text
+*.txt   text
+*.json  text
+*.yml   text
+*.yaml  text
+*.toml  text
+*.cfg   text
+*.ini   text
+.gitignore   text
+.gitattributes text
+
+# Binary types — never touch line endings
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.db    binary
+*.sqlite binary
+*.sqlite3 binary
+*.pyc   binary
+*.pyo   binary
+*.so    binary
+*.dll   binary
+*.exe   binary
