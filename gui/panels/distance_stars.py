@@ -12,6 +12,7 @@ import core.calculators
 import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_star_map_canvas, make_star_map_3d_canvas,
+    make_star_chart_canvas, make_star_chart_3d_canvas,
 )
 
 
@@ -106,6 +107,57 @@ def _clear_tables_layout(panel):
         w = item.widget()
         if w:
             w.deleteLater()
+
+
+def _build_star_chart_3d_tab(panel, map_stars, limit_ly):
+    """Build a "Star Chart 3D" tab widget with preset viewpoint buttons.
+
+    Mirrors the Map 3D tab pattern but uses the dark-themed
+    make_star_chart_3d_canvas helper.
+    """
+    chart3d_w = QWidget()
+    chart3d_l = QVBoxLayout(chart3d_w)
+    chart3d_l.setContentsMargins(4, 4, 4, 4)
+    chart3d_l.setSpacing(0)
+    canvas3d, toolbar3d, ax3d = make_star_chart_3d_canvas(
+        panel, map_stars, limit_ly=limit_ly,
+    )
+    preset_bar = QWidget()
+    preset_bar.setFixedHeight(18)
+    preset_row = QHBoxLayout(preset_bar)
+    preset_row.setContentsMargins(0, 0, 0, 0)
+    preset_row.setSpacing(6)
+    _preset_btn_style = (
+        "QPushButton { padding: 0px 8px; margin: 0px; font-size: 10px; }"
+    )
+    for lbl, elev, azim in [
+        ("Top View", 90, 0),
+        ("Side View", 0, 0),
+        ("3D Perspective", 30, -60),
+    ]:
+        btn = QPushButton(lbl)
+        btn.setFixedHeight(18)
+        btn.setStyleSheet(_preset_btn_style)
+        def _make_cb(e=elev, a=azim):
+            def _cb():
+                try:
+                    if toolbar3d.mode:
+                        if "zoom rect" in str(toolbar3d.mode):
+                            toolbar3d.zoom()
+                        else:
+                            toolbar3d.pan()
+                except Exception:
+                    pass
+                ax3d.view_init(elev=e, azim=a)
+                canvas3d.draw_idle()
+            return _cb
+        btn.clicked.connect(_make_cb())
+        preset_row.addWidget(btn)
+    preset_row.addStretch()
+    chart3d_l.addWidget(preset_bar)
+    chart3d_l.addWidget(toolbar3d)
+    chart3d_l.addWidget(canvas3d)
+    return chart3d_w
 
 
 # ── Option 18: Stars Within Distance of Sol ───────────────────────────────────
@@ -253,6 +305,23 @@ class StarsWithinDistanceSolPanel(DiagramToggleMixin, ResultPanel):
                 map3d_l.addWidget(toolbar3d)
                 map3d_l.addWidget(canvas3d)
                 self._viz_tabs_widget.addTab(map3d_w, "Map 3D")
+
+                # Labeled X-Y star chart (dark theme, mirrors stars_within_15ly.html)
+                chart_w = QWidget()
+                chart_l = QVBoxLayout(chart_w)
+                chart_l.setContentsMargins(4, 4, 4, 4)
+                canvas_sc, toolbar_sc = make_star_chart_canvas(
+                    self, map_data["stars"], limit_ly=limit,
+                )
+                chart_l.addWidget(toolbar_sc)
+                chart_l.addWidget(canvas_sc)
+                self._viz_tabs_widget.addTab(chart_w, "Star Chart")
+
+                # Star Chart 3D — labeled 3D companion (dark theme + reference spheres)
+                self._viz_tabs_widget.addTab(
+                    _build_star_chart_3d_tab(self, map_data["stars"], limit),
+                    "Star Chart 3D",
+                )
 
         self._finish_render()
 
@@ -410,5 +479,22 @@ class StarsWithinDistanceStarPanel(DiagramToggleMixin, ResultPanel):
                 map3d_l.addWidget(toolbar3d)
                 map3d_l.addWidget(canvas3d)
                 self._viz_tabs_widget.addTab(map3d_w, "Map 3D")
+
+                # Labeled X-Y star chart (dark theme, mirrors stars_within_15ly.html)
+                chart_w = QWidget()
+                chart_l = QVBoxLayout(chart_w)
+                chart_l.setContentsMargins(4, 4, 4, 4)
+                canvas_sc, toolbar_sc = make_star_chart_canvas(
+                    self, map_data["stars"], limit_ly=limit,
+                )
+                chart_l.addWidget(toolbar_sc)
+                chart_l.addWidget(canvas_sc)
+                self._viz_tabs_widget.addTab(chart_w, "Star Chart")
+
+                # Star Chart 3D — labeled 3D companion (dark theme + reference spheres)
+                self._viz_tabs_widget.addTab(
+                    _build_star_chart_3d_tab(self, map_data["stars"], limit),
+                    "Star Chart 3D",
+                )
 
         self._finish_render()

@@ -737,6 +737,598 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
     return canvas, toolbar, ax
 
 
+# ── Star Chart (labeled 2D X-Y projection, dark theme) ────────────────────────
+
+# Dark navy palette mirroring generate_star_map_html.py.
+_SC_FIG_BG       = "#070b18"
+_SC_PLOT_BG      = "#0b1020"
+_SC_GRID_MINOR   = "#1a2448"
+_SC_GRID_MAJOR   = "#2a3868"
+_SC_AXIS         = "#4a6a99"
+_SC_TICK_LBL     = "#8aa4d4"
+_SC_AXIS_TITLE   = "#cfd8ec"
+_SC_RING         = "#3a5a8a"
+_SC_RING_LBL     = "#6f8fc4"
+_SC_STAR_LBL     = "#e6ecf7"
+_SC_SOL          = "#FFD700"
+
+
+def _star_chart_steps(limit_ly: float):
+    """Pick (minor, major) grid spacing and ring step based on the axis range.
+
+    Mirrors the HTML script's 1/5 ly default and scales sensibly upward."""
+    if limit_ly <= 20:
+        minor, major = 1.0, 5.0
+    elif limit_ly <= 50:
+        minor, major = 2.0, 10.0
+    elif limit_ly <= 100:
+        minor, major = 5.0, 25.0
+    else:
+        minor, major = 10.0, 50.0
+    return minor, major
+
+
+def make_star_chart_canvas(parent, stars: list, limit_ly: float):
+    """Labeled 2D X-Y star chart in the dark navy style of stars_within_15ly.html.
+
+    stars:     list of dicts {name, color, sp_type, ly, x, y, z, desig}.
+               The first entry is treated as the origin/center star (highlighted).
+    limit_ly:  axis range ± value (e.g. 15 → axes span -15..+15 ly).
+
+    Stars whose |X| or |Y| > limit_ly are excluded (they're in the sphere but
+    off the projected square — same rule as generate_star_map_html.py).
+
+    Provides Map 3D-style interactivity: hover tooltip, click info box, and
+    scroll-wheel zoom. The standard matplotlib toolbar (Home/Pan/Zoom) is also
+    returned so users can pan/zoom precisely.
+
+    Returns (canvas, toolbar).
+    """
+    minor_step, major_step = _star_chart_steps(limit_ly)
+    # Labels are only shown when the visible half-range is ≤ LABEL_MAX_LY.
+    # Beyond that the dots/text cluster too tightly to read. The same threshold
+    # drives the initial visibility AND the zoom callback below.
+    LABEL_MAX_LY = 15.0
+    initial_show_labels = limit_ly <= LABEL_MAX_LY
+
+    fig = Figure(figsize=(8, 8), facecolor=_SC_FIG_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, facecolor=_SC_PLOT_BG)
+    ax.set_aspect("equal", adjustable="box", anchor="C")
+    ax.set_xlim(-limit_ly, limit_ly)
+    ax.set_ylim(-limit_ly, limit_ly)
+
+    # Minor + major grid lines.
+    def _ticks(step):
+        n = int(math.floor(limit_ly / step))
+        return [i * step for i in range(-n, n + 1)]
+
+    minor_ticks = _ticks(minor_step)
+    major_ticks = _ticks(major_step)
+    for v in minor_ticks:
+        if v in major_ticks:
+            continue
+        ax.axvline(v, color=_SC_GRID_MINOR, linewidth=0.4, zorder=1)
+        ax.axhline(v, color=_SC_GRID_MINOR, linewidth=0.4, zorder=1)
+    for v in major_ticks:
+        if v == 0:
+            continue
+        ax.axvline(v, color=_SC_GRID_MAJOR, linewidth=0.8, zorder=1)
+        ax.axhline(v, color=_SC_GRID_MAJOR, linewidth=0.8, zorder=1)
+
+    # Origin axes.
+    ax.axvline(0, color=_SC_AXIS, linewidth=1.2, zorder=2)
+    ax.axhline(0, color=_SC_AXIS, linewidth=1.2, zorder=2)
+
+    # Major-tick numeric labels along the origin axes.
+    for v in major_ticks:
+        if v == 0:
+            continue
+        ax.text(v, -limit_ly * 0.018, f"{int(v):+d}",
+                color=_SC_TICK_LBL, fontsize=7, ha="center", va="top", zorder=4)
+        ax.text(-limit_ly * 0.012, v, f"{int(v):+d}",
+                color=_SC_TICK_LBL, fontsize=7, ha="right", va="center", zorder=4)
+
+    ax.text(limit_ly * 0.985, -limit_ly * 0.04, "X (ly) →",
+            color=_SC_AXIS_TITLE, fontsize=9, ha="right", va="top", zorder=4)
+    ax.text(limit_ly * 0.018, limit_ly * 0.985, "↑ Y (ly)",
+            color=_SC_AXIS_TITLE, fontsize=9, ha="left", va="top", zorder=4)
+
+    # Distance rings every `major_step` ly out to limit.
+    n_rings = int(math.floor(limit_ly / major_step))
+    for i in range(1, n_rings + 1):
+        r = i * major_step
+        ax.add_patch(Circle((0, 0), r, fill=False,
+                            edgecolor=_SC_RING, linewidth=0.6,
+                            linestyle=(0, (4, 6)), alpha=0.85, zorder=2))
+        ax.text(r - limit_ly * 0.005, -limit_ly * 0.008, f"{int(r)} ly",
+                color=_SC_RING_LBL, fontsize=7, ha="right", va="top", zorder=3)
+
+    # Star plot — exclude points outside the projected square.
+    plotted = []
+    for s in stars:
+        x, y = s.get("x"), s.get("y")
+        if x is None or y is None:
+            continue
+        if abs(x) > limit_ly or abs(y) > limit_ly:
+            continue
+        plotted.append(s)
+
+    if not plotted:
+        fig.subplots_adjust(left=0.04, right=0.96, top=0.96, bottom=0.04)
+        return canvas, NavToolbar(canvas, parent)
+
+    xs     = [s["x"]     for s in plotted]
+    ys     = [s["y"]     for s in plotted]
+    colors = [s["color"] for s in plotted]
+    names  = [s["name"]  for s in plotted]
+
+    # Origin/center star (first entry) painted as a gold star marker.
+    center = plotted[0]
+    is_center_origin = (abs(center["x"]) < 1e-6 and abs(center["y"]) < 1e-6
+                        and abs(center.get("z", 0)) < 1e-6)
+    sol_label = None
+    if is_center_origin:
+        ax.scatter([0], [0], c=_SC_SOL, s=140, marker="*",
+                   edgecolors="#fff8a0", linewidths=1.0, zorder=6)
+        # Label sizing reference: use min(limit_ly, LABEL_MAX_LY) so offsets
+        # stay reasonable at the zoom level where the label is actually shown.
+        _ref_ly = min(limit_ly, LABEL_MAX_LY)
+        sol_label = ax.text(
+            _ref_ly * 0.012, _ref_ly * 0.012,
+            f"{center['name']} (Z={center.get('z', 0.0):+.3f})",
+            color=_SC_SOL, fontsize=9, fontweight="600",
+            ha="left", va="bottom", zorder=7,
+            clip_on=True,
+        )
+        sol_label.set_visible(initial_show_labels)
+        body_stars = plotted[1:]
+        body_xs    = xs[1:]
+        body_ys    = ys[1:]
+        body_cols  = colors[1:]
+        body_names = names[1:]
+    else:
+        body_stars, body_xs, body_ys = plotted, xs, ys
+        body_cols, body_names = colors, names
+
+    # Scatter for the remaining stars (used for hover/click hit-testing).
+    sc = ax.scatter(body_xs, body_ys, c=body_cols, s=36,
+                    edgecolors="#000000", linewidths=0.4,
+                    picker=True, pickradius=5, zorder=5)
+
+    # Per-star labels "Name (Z=±X.XXX)" with collision-nudging.
+    # Labels are always created — visibility is governed by the xlim/ylim
+    # callback below so they appear automatically when the user zooms in
+    # below LABEL_MAX_LY and disappear on zoom-out / Home.
+    # Offsets use min(limit_ly, LABEL_MAX_LY) so spacing is reasonable at the
+    # zoom level where they actually appear (avoids huge gaps at large limits).
+    _ref_ly = min(limit_ly, LABEL_MAX_LY)
+    label_dx = _ref_ly * 0.012
+    label_dy = _ref_ly * 0.012
+    nudge    = _ref_ly * 0.022
+    nudge_x_tol = _ref_ly * 0.18
+    nudge_y_tol = _ref_ly * 0.022
+
+    star_labels = []  # collected for the zoom-callback to toggle
+    placed = []       # (cx, cy) of already-placed label anchors
+    for s, x, y in zip(body_stars, body_xs, body_ys):
+        nm = s["name"]
+        for prefix in ("NAME ", "* ", "V* "):
+            if nm.startswith(prefix):
+                nm = nm[len(prefix):]
+                break
+        z = s.get("z", 0.0)
+        lbl = f"{nm} (Z={z:+.3f})"
+        lx, ly_ = x + label_dx, y + label_dy
+        for px, py in placed:
+            if abs(lx - px) < nudge_x_tol and abs(ly_ - py) < nudge_y_tol:
+                ly_ -= nudge
+        placed.append((lx, ly_))
+        txt = ax.text(lx, ly_, lbl, color=_SC_STAR_LBL,
+                      fontsize=7, ha="left", va="bottom", zorder=8,
+                      clip_on=True)
+        txt.set_path_effects([
+            _path_stroke(linewidth=2.5, color=_SC_PLOT_BG)
+        ])
+        txt.set_visible(initial_show_labels)
+        star_labels.append(txt)
+
+    # Tick spines/border styling — hide the tick numbers (we draw our own along
+    # the origin axes) but keep a faint border to frame the plot.
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_edgecolor(_SC_GRID_MAJOR)
+        spine.set_linewidth(0.8)
+
+    # Hover tooltip (offset annotation, follows the cursor).
+    annot = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0", ec="#2266cc",
+                  lw=0.8, alpha=0.92),
+        arrowprops=dict(arrowstyle="->", color="#2266cc", lw=0.8),
+        color="#222222", fontsize=7, zorder=20,
+    )
+    annot.set_visible(False)
+
+    def _on_motion(event):
+        if event.inaxes != ax:
+            if annot.get_visible():
+                annot.set_visible(False)
+                canvas.draw_idle()
+            return
+        cont, ind = sc.contains(event)
+        if cont:
+            idx = ind["ind"][0]
+            s = body_stars[idx]
+            annot.xy = (body_xs[idx], body_ys[idx])
+            annot.set_text(f"{body_names[idx]}\n{s.get('ly', 0):.3f} ly")
+            annot.set_visible(True)
+        elif annot.get_visible():
+            annot.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+
+    # Click info box — bottom-left corner, dismiss by clicking empty space.
+    info_box = ax.text(
+        0.02, 0.02, "",
+        transform=ax.transAxes,
+        color="#222222", fontsize=7, va="bottom", ha="left",
+        multialignment="left",
+        bbox=dict(boxstyle="round,pad=0.45", fc="#f8f8f0", ec="#2266cc",
+                  lw=1.0, alpha=0.93),
+        zorder=21, visible=False,
+    )
+
+    def _on_click(event):
+        if event.inaxes is not ax or event.xdata is None:
+            if info_box.get_visible():
+                info_box.set_visible(False)
+                canvas.draw_idle()
+            return
+        cont, ind = sc.contains(event)
+        if cont:
+            idx   = ind["ind"][0]
+            s     = body_stars[idx]
+            desig = (s.get("desig") or "").strip()
+            sp    = (s.get("sp_type") or "").strip()
+            lines = [body_names[idx]]
+            if desig:
+                lines.append(f"  Designations : {desig}")
+            if sp:
+                lines.append(f"  Spectral Type: {sp}")
+            lines.append(f"  Distance     : {s.get('ly', 0.0):.4f} ly")
+            lines.append(f"  X / Y / Z    : "
+                         f"{s['x']:+.3f}, {s['y']:+.3f}, {s.get('z', 0.0):+.3f} ly")
+            info_box.set_text("\n".join(lines))
+            info_box.set_visible(True)
+        elif info_box.get_visible():
+            info_box.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("button_press_event", _on_click)
+
+    # Scroll-wheel zoom around the cursor.
+    def _on_scroll(event):
+        if event.inaxes is not ax or event.xdata is None:
+            return
+        scale = 0.9 if event.button == "up" else 1.0 / 0.9
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        cx, cy = event.xdata, event.ydata
+        ax.set_xlim(cx + (x0 - cx) * scale, cx + (x1 - cx) * scale)
+        ax.set_ylim(cy + (y0 - cy) * scale, cy + (y1 - cy) * scale)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("scroll_event", _on_scroll)
+
+    # Zoom-driven label visibility — recomputed on every xlim/ylim change
+    # (covers toolbar zoom, scroll-wheel zoom, pan, and Home reset).
+    _label_state = {"shown": initial_show_labels}
+
+    def _refresh_label_visibility(_event_ax=None):
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        half_range = max((x1 - x0) / 2.0, (y1 - y0) / 2.0)
+        should_show = half_range <= LABEL_MAX_LY
+        if should_show == _label_state["shown"]:
+            return
+        _label_state["shown"] = should_show
+        for txt in star_labels:
+            txt.set_visible(should_show)
+        if sol_label is not None:
+            sol_label.set_visible(should_show)
+        canvas.draw_idle()
+
+    ax.callbacks.connect("xlim_changed", _refresh_label_visibility)
+    ax.callbacks.connect("ylim_changed", _refresh_label_visibility)
+
+    # Symmetric margins keep the (aspect=equal, anchor=C) square axes truly
+    # centered in the figure horizontally and vertically.
+    fig.subplots_adjust(left=0.04, right=0.96, top=0.96, bottom=0.04)
+    toolbar = NavToolbar(canvas, parent)
+    _shrink_toolbar(toolbar)
+    toolbar.push_current()   # seed nav stack so Home restores the initial view
+    return canvas, toolbar
+
+
+# ── Star Chart 3D (labeled 3D scatter, dark theme) ────────────────────────────
+
+def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float):
+    """3D companion to make_star_chart_canvas.
+
+    Same dark navy palette, spectral-class star dots, gold ★ origin marker,
+    faint wireframe reference spheres at the same intervals the 2D chart uses
+    for rings, and per-star "Name (Z=±X.XXX)" labels that appear when the user
+    zooms in (visible half-range ≤ 15 ly along the dominant axis) and disappear
+    on Home / zoom-out.
+
+    Returns (canvas, toolbar, ax) — caller binds viewpoint preset buttons via ax.
+    """
+    import matplotlib as _mpl
+    _mpl.rcParams['axes3d.mouserotationstyle'] = 'azel'
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers 3d projection
+
+    _, major_step = _star_chart_steps(limit_ly)
+    LABEL_MAX_LY = 15.0
+    initial_show_labels = limit_ly <= LABEL_MAX_LY
+
+    fig = Figure(figsize=(8, 8), facecolor=_SC_FIG_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_facecolor(_SC_PLOT_BG)
+    fig.patch.set_facecolor(_SC_FIG_BG)
+
+    ax.set_xlim(-limit_ly, limit_ly)
+    ax.set_ylim(-limit_ly, limit_ly)
+    ax.set_zlim(-limit_ly, limit_ly)
+
+    # Enlarge the 3D content within the axes box (matplotlib 3.6+ `zoom` arg).
+    # Falls back to a no-op on older versions where `zoom` isn't supported.
+    try:
+        ax.set_box_aspect((1, 1, 1), zoom=1.35)
+    except TypeError:
+        ax.set_box_aspect((1, 1, 1))
+
+    # Hide the cube — no pane fills, no pane edges, no grid lines. The
+    # wireframe distance spheres provide all the depth/orientation reference.
+    # Tick labels and X/Y/Z axis labels are kept for numeric scale reference.
+    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+        try:
+            axis.pane.fill = False
+            axis.pane.set_edgecolor((0, 0, 0, 0))
+        except Exception:
+            pass
+    ax.grid(False)
+    ax.tick_params(axis="x", colors=_SC_TICK_LBL, labelsize=7)
+    ax.tick_params(axis="y", colors=_SC_TICK_LBL, labelsize=7)
+    ax.tick_params(axis="z", colors=_SC_TICK_LBL, labelsize=7)
+    ax.set_xlabel("X (ly)", color=_SC_AXIS_TITLE, fontsize=9)
+    ax.set_ylabel("Y (ly)", color=_SC_AXIS_TITLE, fontsize=9)
+    ax.set_zlabel("Z (ly)", color=_SC_AXIS_TITLE, fontsize=9)
+    ax.view_init(elev=30, azim=-60)
+
+    # Faint wireframe reference spheres at every `major_step` ly out to limit.
+    import numpy as _np
+    n_rings = int(math.floor(limit_ly / major_step))
+    if n_rings > 0:
+        _u = _np.linspace(0, 2 * _np.pi, 28)
+        _v = _np.linspace(0, _np.pi, 14)
+        _su = _np.sin(_v)
+        _cu = _np.cos(_v)
+        _x_unit = _np.outer(_np.cos(_u), _su)
+        _y_unit = _np.outer(_np.sin(_u), _su)
+        _z_unit = _np.outer(_np.ones_like(_u), _cu)
+        for i in range(1, n_rings + 1):
+            r = i * major_step
+            ax.plot_wireframe(
+                _x_unit * r, _y_unit * r, _z_unit * r,
+                color=_SC_RING, linewidth=0.4, alpha=0.18, zorder=1,
+            )
+
+    # Filter stars to within the cubic axis range (a star may be inside the
+    # sphere but outside one of the axis ranges — match the 2D chart's rule).
+    plotted = []
+    for s in stars:
+        x, y, z = s.get("x"), s.get("y"), s.get("z")
+        if x is None or y is None or z is None:
+            continue
+        if abs(x) > limit_ly or abs(y) > limit_ly or abs(z) > limit_ly:
+            continue
+        plotted.append(s)
+
+    if not plotted:
+        toolbar = NavToolbar(canvas, parent)
+        _shrink_toolbar(toolbar)
+        _disable_zoom_rect(toolbar)
+        return canvas, toolbar, ax
+
+    xs     = [s["x"]     for s in plotted]
+    ys     = [s["y"]     for s in plotted]
+    zs     = [s["z"]     for s in plotted]
+    colors = [s["color"] for s in plotted]
+    names  = [s["name"]  for s in plotted]
+
+    # Center star (first entry) drawn as a gold ★; the rest as small dots.
+    center = plotted[0]
+    is_center_origin = (abs(center["x"]) < 1e-6 and abs(center["y"]) < 1e-6
+                        and abs(center.get("z", 0)) < 1e-6)
+    sol_label = None
+    if is_center_origin:
+        ax.scatter([0], [0], [0], c=_SC_SOL, s=160, marker="*",
+                   edgecolors="#fff8a0", linewidths=1.0, zorder=6,
+                   depthshade=False)
+        _ref_ly = min(limit_ly, LABEL_MAX_LY)
+        sol_label = ax.text(
+            _ref_ly * 0.02, _ref_ly * 0.02, _ref_ly * 0.02,
+            f"{center['name']} (Z={center.get('z', 0.0):+.3f})",
+            color=_SC_SOL, fontsize=9, fontweight="600", zorder=7,
+        )
+        sol_label.set_visible(initial_show_labels)
+        body_stars = plotted[1:]
+        body_xs, body_ys, body_zs = xs[1:], ys[1:], zs[1:]
+        body_cols, body_names = colors[1:], names[1:]
+    else:
+        body_stars = plotted
+        body_xs, body_ys, body_zs = xs, ys, zs
+        body_cols, body_names = colors, names
+
+    sc = ax.scatter(body_xs, body_ys, body_zs, c=body_cols, s=28,
+                    edgecolors="#000000", linewidths=0.4, alpha=0.92,
+                    depthshade=True, picker=True, pickradius=5, zorder=5)
+
+    # Per-star labels — always created, visibility toggled by zoom callback.
+    _ref_ly = min(limit_ly, LABEL_MAX_LY)
+    label_offset = _ref_ly * 0.018
+    star_labels = []
+    for s, x, y, z in zip(body_stars, body_xs, body_ys, body_zs):
+        nm = s["name"]
+        for prefix in ("NAME ", "* ", "V* "):
+            if nm.startswith(prefix):
+                nm = nm[len(prefix):]
+                break
+        lbl = f"{nm} (Z={s.get('z', 0.0):+.3f})"
+        txt = ax.text(x + label_offset, y + label_offset, z + label_offset,
+                      lbl, color=_SC_STAR_LBL, fontsize=7, zorder=8)
+        txt.set_path_effects([_path_stroke(linewidth=2.0, color=_SC_PLOT_BG)])
+        txt.set_visible(initial_show_labels)
+        star_labels.append(txt)
+
+    # Hover tooltip (top-right text2D — stays fixed under rotation).
+    hover_text = ax.text2D(
+        0.98, 0.97, "", transform=ax.transAxes,
+        fontsize=7, color="#222222", va="top", ha="right",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0", ec="#2266cc",
+                  lw=0.8, alpha=0.92),
+        visible=False, zorder=10,
+    )
+
+    def _on_motion(event):
+        if event.inaxes != ax:
+            if hover_text.get_visible():
+                hover_text.set_visible(False)
+                canvas.draw_idle()
+            return
+        cont, ind = sc.contains(event)
+        if cont:
+            idx = ind["ind"][0]
+            s = body_stars[idx]
+            hover_text.set_text(f"{body_names[idx]}\n{s.get('ly', 0):.3f} ly")
+            hover_text.set_visible(True)
+        elif hover_text.get_visible():
+            hover_text.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+
+    # Click info box (bottom-left text2D).
+    info_box = ax.text2D(
+        0.02, 0.02, "", transform=ax.transAxes,
+        fontsize=7, color="#222222", va="bottom", ha="left",
+        multialignment="left",
+        bbox=dict(boxstyle="round,pad=0.45", fc="#f8f8f0", ec="#2266cc",
+                  lw=1.0, alpha=0.93),
+        visible=False, zorder=11,
+    )
+
+    def _on_click(event):
+        if event.inaxes is not ax or event.xdata is None:
+            if info_box.get_visible():
+                info_box.set_visible(False)
+                canvas.draw_idle()
+            return
+        cont, ind = sc.contains(event)
+        if cont:
+            idx   = ind["ind"][0]
+            s     = body_stars[idx]
+            desig = (s.get("desig") or "").strip()
+            sp    = (s.get("sp_type") or "").strip()
+            lines = [body_names[idx]]
+            if desig:
+                lines.append(f"  Designations : {desig}")
+            if sp:
+                lines.append(f"  Spectral Type: {sp}")
+            lines.append(f"  Distance     : {s.get('ly', 0.0):.4f} ly")
+            lines.append(f"  X / Y / Z    : "
+                         f"{s['x']:+.3f}, {s['y']:+.3f}, {s.get('z', 0.0):+.3f} ly")
+            info_box.set_text("\n".join(lines))
+            info_box.set_visible(True)
+        elif info_box.get_visible():
+            info_box.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("button_press_event", _on_click)
+
+    # Scroll-wheel zoom — matches Map 3D's behaviour (matplotlib 3.10+ removed
+    # the native Axes3D scroll handler).
+    def _on_scroll(event):
+        if event.inaxes != ax:
+            return
+        scale = 0.9 if event.button == "up" else 1.0 / 0.9
+        ax._zoom_data_limits(scale, scale, scale)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("scroll_event", _on_scroll)
+
+    # Zoom-driven label visibility — for 3D we drive off the largest visible
+    # half-range across X/Y/Z so any kind of zoom-in (toolbar, scroll wheel,
+    # Home reset) reliably toggles the labels.
+    _label_state = {"shown": initial_show_labels}
+
+    def _refresh_label_visibility(_event_ax=None):
+        x0, x1 = ax.get_xlim3d()
+        y0, y1 = ax.get_ylim3d()
+        z0, z1 = ax.get_zlim3d()
+        half_range = max((x1 - x0) / 2.0,
+                         (y1 - y0) / 2.0,
+                         (z1 - z0) / 2.0)
+        should_show = half_range <= LABEL_MAX_LY
+        if should_show == _label_state["shown"]:
+            return
+        _label_state["shown"] = should_show
+        for txt in star_labels:
+            txt.set_visible(should_show)
+        if sol_label is not None:
+            sol_label.set_visible(should_show)
+        canvas.draw_idle()
+
+    ax.callbacks.connect("xlim_changed", _refresh_label_visibility)
+    ax.callbacks.connect("ylim_changed", _refresh_label_visibility)
+    ax.callbacks.connect("zlim_changed", _refresh_label_visibility)
+
+    # Very tight subplot margins — the axes-pane "cube" is hidden so we can
+    # safely push the axes nearly to the figure edges; axis labels still fit
+    # because matplotlib places them inside the axes rect, not outside.
+    fig.subplots_adjust(left=0.0, right=1.0, top=1.0, bottom=0.0)
+    toolbar = NavToolbar(canvas, parent)
+    _shrink_toolbar(toolbar)
+    _disable_zoom_rect(toolbar)
+    toolbar.push_current()
+    return canvas, toolbar, ax
+
+
+def _shrink_toolbar(toolbar, icon_px: int = 14, max_h: int = 22):
+    """Reduce a matplotlib NavToolbar's visual footprint.
+
+    Shrinks the icon size and caps the widget height so the toolbar takes
+    less vertical room above the canvas.
+    """
+    from PySide6.QtCore import QSize
+    toolbar.setIconSize(QSize(icon_px, icon_px))
+    toolbar.setMaximumHeight(max_h)
+    toolbar.setStyleSheet(
+        "QToolBar { spacing: 1px; padding: 0px; margin: 0px; border: 0px; }"
+        "QToolButton { padding: 1px; margin: 0px; }"
+    )
+
+
+def _path_stroke(linewidth: float, color: str):
+    """Small wrapper around matplotlib.patheffects.withStroke for text outlines."""
+    import matplotlib.patheffects as pe
+    return pe.withStroke(linewidth=linewidth, foreground=color)
+
+
 # ── System Regions Diagram ─────────────────────────────────────────────────────
 
 # Zone fill colors for the area between consecutive region boundaries,
