@@ -9,6 +9,7 @@ NAVIGATION = [
     ("Star Databases", [
         ("SIMBAD Lookup",              "SimbadPanel"),
         ("NASA Exoplanet: Planetary Systems", "NasaPlanetarySystemsPanel"),
+        ("NASA Planetary Systems Map",        "NasaPlanetarySystemsMapPanel"),
         ("NASA Exoplanet: HWO ExEP",          "NasaHwoExepPanel"),
         ("NASA Exoplanet: Mission Exocat",    "NasaMissionExocatPanel"),
         ("Habitable Worlds Catalog",          "HwcPanel"),

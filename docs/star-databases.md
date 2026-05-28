@@ -45,6 +45,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 - Designation priority for archive query: HIP → HD → TIC → Gaia EDR3 (same as option 2).
 - After the Calculated Habitable Zone, returns directly to the main menu prompt.
 - **GUI (`NasaPlanetarySystemsPanel`)**: background call uses `_planetary_systems_with_hypatia()`, which calls `compute_planetary_systems_composite` then `compute_hypatia_data`. Results are shown in **Data** and **Hypatia** tabs (inline `QTabWidget`). Show Diagrams view adds **Orbital Diagram**, **HZ Diagram**, and **Abundance Profile** (when Hypatia data is available) to `_viz_tabs_widget`.
+- **GUI (`NasaPlanetarySystemsMapPanel`)**: GUI-only nav entry "NASA Planetary Systems Map". A copy of `NasaPlanetarySystemsPanel` that adds a **Map Date** `QDateEdit` to the form (defaults to today) and a new **System Map** viz tab. System Map is a top-down 2D ecliptic-view diagram (style mirrors `make_solar_travel_canvas`) showing the host star at the origin and each planet at its date-resolved heliocentric position on its measured orbit. Same Data / Hypatia tabs and the same Orbital Diagram / HZ Diagram / Abundance Profile viz tabs as opt 3. Click a planet on the map to open a non-modal info dialog populated entirely from the already-fetched pscomppars row (no extra network call). See `@docs/gui-architecture.md` for the diagram pipeline and click-dialog details.
 
 ## NASA Exoplanet Archive: HWO ExEP Precursor Science Stars Feature
 

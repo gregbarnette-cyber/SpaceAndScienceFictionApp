@@ -2017,3 +2017,141 @@ def make_solar_travel_canvas_3d(parent, data: dict, on_body_click=None):
     toolbar = NavToolbar(canvas, parent)
     _disable_zoom_rect(toolbar)
     return canvas, toolbar, ax
+
+
+# ── Exoplanet System Map (top-down, per-planet positions on a given date) ─────
+
+def make_exoplanet_system_canvas(parent, data: dict, on_planet_click=None):
+    """2D top-down map of an exoplanet system at a given epoch.
+
+    data: prepared by core.viz.prepare_exoplanet_system_diagram().
+    on_planet_click(planet_info): optional callback invoked when a planet is
+    clicked.  When omitted, click shows an inline info box on the canvas.
+    Returns (canvas, toolbar).
+    """
+    max_au    = data["max_au"]
+    star_name = data.get("star_name", "")
+    epoch_iso = data.get("epoch_iso") or ""
+    title = "Exoplanet System Map"
+    if star_name:
+        title += f"  —  {star_name}"
+    if epoch_iso:
+        title += f"   ({epoch_iso})"
+
+    fig = Figure(figsize=(6.5, 6.5), facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, aspect="equal", facecolor=_SPACE_BG)
+
+    # Orbit ellipses (dashed)
+    for orb in data.get("orbits", []):
+        ax.plot(orb["x_pts"], orb["y_pts"],
+                color=orb["color"], linewidth=0.8, linestyle="--",
+                alpha=0.55, zorder=2)
+
+    # Planet markers
+    planet_artists = []
+    for p in data.get("planets", []):
+        sc = ax.scatter([p["x"]], [p["y"]], color=p["color"],
+                        s=70, zorder=4, picker=6, edgecolor="#222222",
+                        linewidth=0.5)
+        sc._body_info = p
+        planet_artists.append(sc)
+        r = math.sqrt(p["x"] ** 2 + p["y"] ** 2) or 0.01
+        ox_lbl = p["x"] / r * max_au * 0.045
+        oy_lbl = p["y"] / r * max_au * 0.045
+        ax.text(p["x"] + ox_lbl, p["y"] + oy_lbl, p["name"],
+                color=_LABEL_CLR, fontsize=7, ha="center", va="center",
+                alpha=0.9, zorder=5)
+
+    # Host star at origin (gold ★)
+    star_sc = ax.scatter([0], [0], color="#FFD700", s=160, marker="*",
+                         zorder=6, picker=8, edgecolor="#aa8800", linewidth=0.6)
+    star_sc._body_info = {"name": star_name or "Host Star",
+                          "x": 0.0, "y": 0.0, "z": 0.0,
+                          "is_star": True}
+    ax.text(0, max_au * 0.04, star_name or "Star",
+            color="#cc8800", fontsize=8, ha="center", va="bottom",
+            alpha=0.95, zorder=7)
+
+    _style_ax(ax, max_au, title)
+
+    # Legend strip (top-left)
+    legend_txt = "★  Host Star    ●  Planets (click for details)"
+    if any(not p.get("epoch_known", True) for p in data.get("planets", [])):
+        legend_txt += "    ·  open-ring = epoch unknown (planet at periastron)"
+    ax.text(0.02, 0.98, legend_txt, transform=ax.transAxes,
+            fontsize=7, color=_LABEL_CLR, va="top",
+            bbox=dict(boxstyle="round,pad=0.35", fc="#f8f8f0",
+                      ec="#aaaaaa", lw=0.8, alpha=0.88),
+            zorder=10)
+
+    # Mark planets without known epoch with an open ring overlay
+    for art in planet_artists:
+        p = art._body_info
+        if not p.get("epoch_known", True):
+            ax.scatter([p["x"]], [p["y"]], facecolor="none",
+                       edgecolor="#222222", s=180, linewidth=0.8,
+                       zorder=3, alpha=0.6)
+
+    # Hover tooltip + click info
+    hover_text = ax.text(0.98, 0.98, "", transform=ax.transAxes,
+                         fontsize=8, color=_LABEL_CLR, va="top", ha="right",
+                         bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0",
+                                   ec="#2266cc", lw=0.8, alpha=0.9),
+                         visible=False, zorder=10)
+    info_box = _make_info_box(ax)
+
+    _pickable = planet_artists + [star_sc]
+
+    def _on_motion(event):
+        if event.inaxes != ax:
+            if hover_text.get_visible():
+                hover_text.set_visible(False)
+                canvas.draw_idle()
+            return
+        for sc in _pickable:
+            cont, _ind = sc.contains(event)
+            if cont:
+                p = sc._body_info
+                hover_text.set_text(p["name"])
+                hover_text.set_visible(True)
+                canvas.draw_idle()
+                return
+        if hover_text.get_visible():
+            hover_text.set_visible(False)
+            canvas.draw_idle()
+
+    def _on_pick(event):
+        art = event.artist
+        if not hasattr(art, "_body_info"):
+            return
+        p = art._body_info
+        if p.get("is_star"):
+            return  # star click is a no-op
+        if on_planet_click is not None:
+            on_planet_click(p)
+        else:
+            dist = math.sqrt(p["x"] ** 2 + p["y"] ** 2)
+            info_box.set_text(
+                f"{p['name']}\n"
+                f"X: {p['x']:.4f} AU   Y: {p['y']:.4f} AU\n"
+                f"Distance from star: {dist:.4f} AU"
+            )
+            info_box.set_visible(True)
+            canvas.draw_idle()
+
+    def _on_click(event):
+        if event.inaxes != ax:
+            return
+        if not getattr(event, "artist", None):
+            if info_box.get_visible():
+                info_box.set_visible(False)
+                canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+    canvas.mpl_connect("pick_event", _on_pick)
+    canvas.mpl_connect("button_press_event", _on_click)
+
+    fig.tight_layout(pad=1.0)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar

@@ -25,6 +25,7 @@ from gui.panels.distance_stars import (DistanceBetweenStarsPanel,
 
 # ── Phase D panels ────────────────────────────────────────────────────────────
 from gui.panels.nasa_exoplanet   import (NasaPlanetarySystemsPanel,
+                                         NasaPlanetarySystemsMapPanel,
                                          NasaHwoExepPanel, NasaMissionExocatPanel)
 from gui.panels.catalogs         import HwcPanel
 from gui.panels.travel_time_stars import (TravelTimeStarsLyHrPanel,

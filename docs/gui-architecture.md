@@ -236,6 +236,7 @@ def __getattr__(name: str):
 | `StarsWithinDistanceSolPanel` | 18 | `panels/distance_stars.py` |
 | `StarsWithinDistanceStarPanel` | 19 | `panels/distance_stars.py` |
 | `NasaPlanetarySystemsPanel` | 3 | `panels/nasa_exoplanet.py` |
+| `NasaPlanetarySystemsMapPanel` | 3 (GUI-only variant w/ System Map) | `panels/nasa_exoplanet.py` |
 | `NasaHwoExepPanel` | 4 | `panels/nasa_exoplanet.py` |
 | `NasaMissionExocatPanel` | 5 | `panels/nasa_exoplanet.py` |
 | `HwcPanel` | 6 | `panels/catalogs.py` |
@@ -314,6 +315,7 @@ All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures u
 | `make_system_regions_canvas(parent, data)` | Star Regions 8–10 | Concentric ring diagram (√AU scale) with zone fills + boundary labels |
 | `make_alt_hz_canvas(parent, zones, max_au, title, eeid_au)` | Star Regions 8–10 | Concentric ring diagram (⁴√AU scale) for alternate biochemistry HZ zones |
 | `make_solar_travel_canvas(parent, data, on_body_click=None)` | System Travel 22, 23 | 2D top-down (XY ecliptic) solar system map: planet dots + reference orbit circles + origin ★ + dest ■ + dashed travel path; click calls `on_body_click(body_info)` if provided, otherwise shows inline info box |
+| `make_exoplanet_system_canvas(parent, data, on_planet_click=None)` | NASA Planetary Systems Map | 2D top-down map of an exoplanet system at a given epoch: host star ★ at origin + per-planet dashed orbit ellipses (rotated by pl_orblper) + planet markers at date-resolved positions; planets with no usable epoch are marked with an open-ring overlay and placed at periastron; hover tooltip, click → `on_planet_click(planet_info)` or inline info box |
 | `make_solar_travel_canvas_3d(parent, data, on_body_click=None)` | *(unused — 3D removed from opts 22–23)* | 3D version of the solar system travel map (`azel` rotation); returns `(canvas, toolbar, ax)` for preset buttons; no floating 3D text labels — click calls `on_body_click(body_info)` if provided, otherwise shows `text2D` tooltip |
 | `make_abundance_canvas(parent, abundances_data, star_name="")` | SIMBAD 1, NASA opts 3–6, Star Regions 8 | Horizontal bar chart of [X/H] elemental abundances; bars colored by sign (positive=#e06c4a, negative=#4a90d9); `axvline` at 0; error bars from `std`; figure height scales with element count |
 
@@ -333,6 +335,7 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 |---|---|---|
 | `SimbadPanel` (1) | "Star Properties", "Hypatia", "Abundance Profile" (when Hypatia data available) — inline `QTabWidget`, no Show Diagrams button | Inline (all tabs always visible) |
 | `NasaPlanetarySystemsPanel` (3) | "Orbital Diagram", "HZ Diagram", "Abundance Profile" (when Hypatia data available) | Inline (uses `_scroll_area`) |
+| `NasaPlanetarySystemsMapPanel` | "System Map", "Orbital Diagram", "HZ Diagram", "Abundance Profile" (when Hypatia data available) | Inline (uses `_scroll_area`) |
 | `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
 | `NasaMissionExocatPanel` (5) | "HZ Diagram" (EEID from `st_eeidau`; lum = `st_lbol` direct Lsun), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
 | `HwcPanel` (6) | "Orbital Diagram", "HZ Diagram" (lum = `S_LUMINOSITY` direct Lsun), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
@@ -354,6 +357,7 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `prepare_star_map_from_result(result)` | Converts `compute_stars_within_distance_of_sol/star` result dict to star-map format. Center star placed at origin; surrounding stars' coordinates shifted accordingly. |
 | `prepare_system_regions_diagram(d)` | Extracts seven labelled boundary AU values + Kopparapu HZ zones + EEID from a star-regions result dict. Returns `{"regions", "hz_zones", "eeid_au", "max_au"}`. |
 | `prepare_solar_travel_diagram(result)` | Converts a `compute_travel_time_solar_objects` or `compute_travel_time_custom_thrust` result dict into solar-map viz data. Returns `{"origin_name", "dest_name", "origin_id", "dest_id", "origin_xyz", "dest_xyz", "planets", "planet_orbits", "max_au"}` or `{"error": str}`. `origin_id`/`dest_id` are Horizons IDs passed through from the core result. `planet_orbits` contains only planets whose SMA ≤ `max_au × 1.1`. |
+| `prepare_exoplanet_system_diagram(planets, date_iso=None)` | Builds top-down system-map data for `NasaPlanetarySystemsMapPanel`. For each planet, solves Kepler's equation using `pl_orbtper` (epoch of periastron, JD) when present, else derives an epoch from `pl_tranmid` via `ν_tran = π/2 − ω`. When neither is available, the planet is placed at periastron and `epoch_known` is False. Orbits are coplanar 2D ellipses (Ω is never measured for exoplanets), rotated by `pl_orblper` (argument of periastron). Returns `{"orbits", "planets", "star_name", "max_au", "epoch_iso"}` or `{"error": str}`. Each orbit dict has `x_pts`/`y_pts` polylines; each planet dict has `x`/`y`/`z=0`, `epoch_known`, and an `info` field that carries the raw pscomppars row through for the click dialog. |
 
 ### System Travel Panels (`panels/system_travel.py`)
 

@@ -11,8 +11,9 @@ import math
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QTabWidget, QSizePolicy,
+    QDateEdit, QDialog, QGridLayout, QDialogButtonBox,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QDate
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 from gui.panels.hypatia_tab import build_hypatia_tab
@@ -20,6 +21,7 @@ import core.databases
 import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas,
+    make_exoplanet_system_canvas,
 )
 
 
@@ -875,3 +877,289 @@ class NasaMissionExocatPanel(DiagramToggleMixin, _StarSearchPanel):
                 pass
 
         self._finish_render()
+
+
+# ── NASA Planetary Systems Map (opt 3 + System Map tab) ──────────────────────
+
+def _show_exoplanet_dialog(parent_widget, planet_info: dict):
+    """Non-modal dialog showing pscomppars fields for a clicked exoplanet.
+
+    No network call — all data comes from the planet_info dict already in hand.
+    """
+    raw = planet_info.get("info") or {}
+    name = planet_info.get("name", "Unknown Planet")
+
+    dlg = QDialog(parent_widget)
+    dlg.setWindowTitle(f"Planet Info — {name}")
+    dlg.setMinimumWidth(540)
+    dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+    dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.Window)
+
+    outer = QVBoxLayout(dlg)
+    outer.setContentsMargins(12, 12, 12, 8)
+    outer.setSpacing(8)
+
+    dist = math.sqrt(planet_info["x"] ** 2 + planet_info["y"] ** 2)
+    note = "" if planet_info.get("epoch_known") else \
+           "<br/><i>(Epoch unknown &mdash; planet shown at periastron.)</i>"
+    hdr = QLabel(
+        f"<b>{name}</b>"
+        f"<br/>Position on map &mdash; "
+        f"X: {planet_info['x']:.4f} AU,  Y: {planet_info['y']:.4f} AU"
+        f"<br/>Distance from host star: <b>{dist:.4f} AU</b>"
+        + note
+    )
+    hdr.setWordWrap(True)
+    outer.addWidget(hdr)
+
+    sep = QLabel()
+    sep.setFrameShape(QLabel.Shape.HLine)
+    sep.setFrameShadow(QLabel.Shadow.Sunken)
+    outer.addWidget(sep)
+
+    content = QWidget()
+    grid = QGridLayout(content)
+    grid.setContentsMargins(4, 4, 4, 4)
+    grid.setHorizontalSpacing(16)
+    grid.setVerticalSpacing(4)
+    grid.setColumnStretch(1, 1)
+    outer.addWidget(content)
+
+    def _add_row(label, value, row):
+        lbl = QLabel(f"<b>{label}:</b>")
+        val = QLabel(str(value))
+        val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        grid.addWidget(lbl, row, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(val, row, 1, Qt.AlignmentFlag.AlignTop)
+        return row + 1
+
+    row = 0
+    row = _add_row("Host Star", raw.get("hostname", "N/A"), row)
+
+    def _show(key, label, fmt=None, suffix=""):
+        nonlocal row
+        v = raw.get(key)
+        if v is None or str(v).strip() in ("", "nan", "None"):
+            return
+        try:
+            f = float(v)
+            if math.isnan(f):
+                return
+            text = (fmt.format(f) if fmt else str(f))
+        except (ValueError, TypeError):
+            text = str(v).strip()
+        row = _add_row(label, f"{text}{(' ' + suffix) if suffix else ''}", row)
+
+    _show("discoverymethod", "Discovery Method")
+    _show("disc_year",       "Discovery Year")
+    _show("disc_facility",   "Discovery Facility")
+    _show("pl_orbsmax",      "Semi-Major Axis", "{:.4f}", "AU")
+    _show("pl_orbeccen",     "Eccentricity",    "{:.4f}")
+    _show("pl_orbper",       "Orbital Period",  "{:.4f}", "days")
+    _show("pl_orblper",      "Argument of Periastron", "{:.3f}", "°")
+    _show("pl_orbincl",      "Inclination",     "{:.3f}", "°")
+    _show("pl_orbtper",      "Epoch of Periastron", "{:.4f}", "JD")
+    _show("pl_tranmid",      "Transit Mid-point",   "{:.4f}", "JD")
+    _show("pl_bmasse",       "Mass",            "{:.3f}", "M⊕")
+    _show("pl_bmassj",       "Mass",            "{:.5f}", "M♃")
+    _show("pl_rade",         "Radius",          "{:.3f}", "R⊕")
+    _show("pl_radj",         "Radius",          "{:.4f}", "R♃")
+    _show("pl_dens",         "Density",         "{:.3f}", "g/cm³")
+    _show("pl_eqt",          "Equilibrium Temp", "{:.1f}", "K")
+    _show("pl_insol",        "Insolation Flux", "{:.3f}", "S⊕")
+    _show("pl_controv_flag", "Controversial?")
+
+    close_btn = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+    close_btn.rejected.connect(dlg.close)
+    outer.addWidget(close_btn)
+
+    dlg.adjustSize()
+    dlg.show()
+
+
+class NasaPlanetarySystemsMapPanel(_StarSearchPanel):
+    """NASA Exoplanet Archive: Planetary Systems + top-down System Map tab.
+
+    Same data + Hypatia tabs as opt 3, with an added "System Map" diagram
+    showing each planet at its date-resolved position on its orbit.
+    """
+
+    _placeholder = "e.g. Tau Ceti, HD 10700"
+
+    def build_inputs(self):
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._name = QLineEdit()
+        self._name.setPlaceholderText(self._placeholder)
+        self._name.returnPressed.connect(self._search)
+        form.addRow("Star System:", self._name)
+
+        self._departure_date = QDateEdit()
+        self._departure_date.setDate(QDate.currentDate())
+        self._departure_date.setCalendarPopup(True)
+        self._departure_date.setDisplayFormat("yyyy-MM-dd")
+        form.addRow("Map Date:", self._departure_date)
+
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        self.run_btn = QPushButton("Search")
+        self.run_btn.clicked.connect(self._search)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
+
+        self._date_lbl = QLabel("")
+        self._date_lbl.setVisible(False)
+        form.addRow(self._date_lbl)
+
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        self._scroll_widget = QWidget()
+        self._result_area = QVBoxLayout(self._scroll_widget)
+        self._result_area.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scroll.setWidget(self._scroll_widget)
+        self._scroll_area = scroll
+        self._layout.addWidget(scroll, 1)
+
+        self._viz_container = QWidget()
+        self._viz_container.setVisible(False)
+        viz_layout = QVBoxLayout(self._viz_container)
+        viz_layout.setContentsMargins(4, 4, 4, 4)
+
+        show_tables_row = QHBoxLayout()
+        self._show_tables_btn = QPushButton("Show Tables")
+        self._show_tables_btn.clicked.connect(self._exit_diagram_mode)
+        show_tables_row.addWidget(self._show_tables_btn)
+        show_tables_row.addStretch()
+        viz_layout.addLayout(show_tables_row)
+
+        self._viz_tabs_widget = QTabWidget()
+        self._viz_tabs_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        viz_layout.addWidget(self._viz_tabs_widget, 1)
+
+        self._layout.addWidget(self._viz_container, 1)
+
+    def reset(self):
+        self.window.nav_tree.show()
+        super().reset()
+
+    def _enter_diagram_mode(self):
+        self.window.nav_tree.hide()
+        self._form_widget.hide()
+        self._scroll_area.hide()
+        self._viz_container.show()
+
+    def _exit_diagram_mode(self):
+        self.window.nav_tree.show()
+        self._form_widget.show()
+        self._scroll_area.show()
+        self._viz_container.hide()
+
+    def _do_search(self, simbad_result):
+        self.set_status("Querying NASA Exoplanet Archive…")
+        self.run_in_background(
+            _planetary_systems_with_hypatia,
+            simbad_result,
+            on_result=self._render,
+            on_progress=self.set_status,
+        )
+
+    def _render(self, result):
+        self._exit_diagram_mode()
+        self._show_diagrams_btn.setVisible(False)
+        self._date_lbl.setVisible(False)
+        while self._viz_tabs_widget.count():
+            w = self._viz_tabs_widget.widget(0)
+            self._viz_tabs_widget.removeTab(0)
+            if w:
+                w.deleteLater()
+        self._clear_results()
+
+        if "error" in result:
+            self._show_error(result["error"])
+            return
+
+        simbad  = result["simbad"]
+        planets = result["planets"]
+        hypatia = result.get("hypatia")
+
+        date_iso = self._departure_date.date().toString("yyyy-MM-dd")
+        self._date_lbl.setText(f"Map Date: {date_iso}")
+        self._date_lbl.setVisible(True)
+
+        _add_simbad_banner(self._result_area, simbad)
+
+        data_tabs = QTabWidget()
+        data_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        data_w = QWidget()
+        data_l = QVBoxLayout(data_w)
+        data_l.setAlignment(Qt.AlignmentFlag.AlignTop)
+        _add_nasa_tables(self, data_l, simbad, planets)
+        _add_hz_table(self, data_l, planets)
+        data_tabs.addTab(data_w, "Data")
+
+        if hypatia is not None:
+            data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
+
+        self._result_area.addWidget(data_tabs)
+
+        star_name = str(planets[0].get("hostname") or "") if planets else ""
+
+        # NEW: System Map tab — planets at date-resolved positions
+        if mpl_available():
+            sys_data = core.viz.prepare_exoplanet_system_diagram(planets, date_iso)
+            if "error" not in sys_data:
+                if not sys_data.get("star_name"):
+                    sys_data["star_name"] = star_name
+                sm_w = QWidget()
+                sm_l = QVBoxLayout(sm_w)
+                sm_l.setContentsMargins(4, 4, 4, 4)
+                canvas, toolbar = make_exoplanet_system_canvas(
+                    self, sys_data,
+                    on_planet_click=lambda pi: _show_exoplanet_dialog(self, pi),
+                )
+                sm_l.addWidget(toolbar)
+                sm_l.addWidget(canvas)
+                self._viz_tabs_widget.addTab(sm_w, "System Map")
+
+        # Carry over the existing Orbital Diagram + HZ Diagram tabs
+        orb_w = _make_orbits_tab(self, planets, star_name)
+        if orb_w:
+            self._viz_tabs_widget.addTab(orb_w, "Orbital Diagram")
+        hz_w = _make_hz_tab(self, planets)
+        if hz_w:
+            self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
+
+        if hypatia and "error" not in hypatia:
+            try:
+                ab_data = core.viz.prepare_abundance_profile(hypatia)
+                if "error" not in ab_data:
+                    ab_canvas, ab_toolbar = make_abundance_canvas(
+                        None, ab_data, hypatia.get("star_name", "")
+                    )
+                    if ab_canvas is not None:
+                        ab_w = QWidget()
+                        ab_l = QVBoxLayout(ab_w)
+                        ab_l.setContentsMargins(4, 4, 4, 4)
+                        ab_l.addWidget(ab_toolbar)
+                        ab_l.addWidget(ab_canvas)
+                        self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
+            except Exception:
+                pass
+
+        if self._viz_tabs_widget.count() > 0:
+            self._show_diagrams_btn.setVisible(True)

@@ -451,3 +451,183 @@ def prepare_hz_diagram(teff: float, luminosity: float) -> dict:
     if not zones:
         return {"error": "Could not compute habitable zone boundaries."}
     return {"zones": zones, "max_au": zones[-1]["outer"] * 1.35}
+
+
+# ── Exoplanet system map (per-planet positions on a given date) ──────────────
+
+def _date_iso_to_jd(date_iso: str):
+    """Convert 'YYYY-MM-DD' to Julian Date at noon UT (no external dep)."""
+    if not date_iso:
+        return None
+    try:
+        y, m, d = (int(x) for x in date_iso.split("-"))
+    except (ValueError, AttributeError):
+        return None
+    a = (14 - m) // 12
+    yy = y + 4800 - a
+    mm = m + 12 * a - 3
+    jdn = d + (153 * mm + 2) // 5 + 365 * yy + yy // 4 - yy // 100 + yy // 400 - 32045
+    return float(jdn)  # noon UT
+
+
+def _solve_kepler(M: float, e: float, tol: float = 1e-9, max_iter: int = 60) -> float:
+    """Solve M = E - e sin E for eccentric anomaly E (Newton-Raphson)."""
+    M = M - 2.0 * math.pi * math.floor((M + math.pi) / (2.0 * math.pi))
+    E = M if e < 0.8 else math.pi
+    for _ in range(max_iter):
+        f = E - e * math.sin(E) - M
+        fp = 1.0 - e * math.cos(E)
+        dE = f / fp
+        E -= dE
+        if abs(dE) < tol:
+            break
+    return E
+
+
+def _true_anomaly_from_E(E: float, e: float) -> float:
+    return 2.0 * math.atan2(math.sqrt(1.0 + e) * math.sin(E / 2.0),
+                            math.sqrt(1.0 - e) * math.cos(E / 2.0))
+
+
+def _E_from_true_anomaly(nu: float, e: float) -> float:
+    return 2.0 * math.atan2(math.sqrt(1.0 - e) * math.sin(nu / 2.0),
+                            math.sqrt(1.0 + e) * math.cos(nu / 2.0))
+
+
+def _ffloat(v):
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return None if math.isnan(f) else f
+    except (ValueError, TypeError):
+        return None
+
+
+def prepare_exoplanet_system_diagram(planets: list, date_iso: str = None) -> dict:
+    """Build top-down system map data with each planet at its date-resolved position.
+
+    For each planet:
+      • Orbit ellipse polyline is computed from pl_orbsmax + pl_orbeccen and
+        rotated by pl_orblper (argument of periastron, deg).  Orbits are
+        treated as coplanar (no Ω data is available for exoplanets).
+      • Current position is solved from Kepler's equation using either
+        pl_orbtper (epoch of periastron, JD) or — if missing — derived from
+        pl_tranmid (transit mid-point, JD).  When neither is available the
+        planet is placed at periastron and `epoch_known` is False.
+
+    Returns:
+        {"orbits": [...], "planets": [...], "star_name": str,
+         "max_au": float, "epoch_iso": str|None}
+    or {"error": str}.
+
+    Each orbit dict: {name, color, x_pts, y_pts, sma, ecc, peri, apo}.
+    Each planet dict: {name, color, x, y, z, sma, ecc, period, epoch_known, info}.
+    `info` is the raw pscomppars row (for downstream display).
+    """
+    if not planets:
+        return {"error": "No planet data."}
+
+    jd = _date_iso_to_jd(date_iso) if date_iso else None
+
+    N = 361
+    thetas = [2.0 * math.pi * i / (N - 1) for i in range(N)]
+
+    orbits = []
+    plist  = []
+    max_au = 0.0
+
+    for i, p in enumerate(planets):
+        sma = _ffloat(p.get("pl_orbsmax"))
+        if sma is None or sma <= 0:
+            continue
+        ecc = _ffloat(p.get("pl_orbeccen")) or 0.0
+        if ecc < 0:
+            ecc = 0.0
+        ecc = min(ecc, 0.99)
+
+        # Argument of periastron (degrees → radians); default 0 if unknown.
+        omega_deg = _ffloat(p.get("pl_orblper"))
+        omega = math.radians(omega_deg) if omega_deg is not None else 0.0
+        cos_w, sin_w = math.cos(omega), math.sin(omega)
+
+        period = _ffloat(p.get("pl_orbper"))
+        tper   = _ffloat(p.get("pl_orbtper"))
+        if tper is None:
+            tran = _ffloat(p.get("pl_tranmid"))
+            if tran is not None and period is not None and period > 0:
+                # At mid-transit, ν + ω ≈ π/2  →  ν_tran = π/2 - ω
+                nu_tran = math.pi / 2.0 - omega
+                E_tran  = _E_from_true_anomaly(nu_tran, ecc)
+                M_tran  = E_tran - ecc * math.sin(E_tran)
+                dt_days = M_tran * period / (2.0 * math.pi)
+                tper    = tran - dt_days
+
+        # Orbit ellipse polyline (orbit-frame: focus at origin, periastron +x),
+        # rotated by ω about Z.
+        b  = sma * math.sqrt(1.0 - ecc * ecc)
+        ae = sma * ecc
+        x_pts, y_pts = [], []
+        for t in thetas:
+            xo = sma * math.cos(t) - ae
+            yo = b * math.sin(t)
+            x_pts.append(xo * cos_w - yo * sin_w)
+            y_pts.append(xo * sin_w + yo * cos_w)
+
+        # Current planet position
+        epoch_known = False
+        if jd is not None and tper is not None and period is not None and period > 0:
+            M  = 2.0 * math.pi * (jd - tper) / period
+            E  = _solve_kepler(M, ecc)
+            nu = _true_anomaly_from_E(E, ecc)
+            r  = sma * (1.0 - ecc * math.cos(E))
+            epoch_known = True
+        else:
+            nu = 0.0                          # periastron
+            r  = sma * (1.0 - ecc)
+        xo = r * math.cos(nu)
+        yo = r * math.sin(nu)
+        px = xo * cos_w - yo * sin_w
+        py = xo * sin_w + yo * cos_w
+
+        color = _ORBIT_COLORS[i % len(_ORBIT_COLORS)]
+        name  = str(p.get("pl_name") or f"Planet {i + 1}")
+
+        orbits.append({
+            "name":  name,
+            "color": color,
+            "x_pts": x_pts,
+            "y_pts": y_pts,
+            "sma":   sma,
+            "ecc":   ecc,
+            "peri":  sma * (1.0 - ecc),
+            "apo":   sma * (1.0 + ecc),
+        })
+        plist.append({
+            "name":         name,
+            "color":        color,
+            "x":            px,
+            "y":            py,
+            "z":            0.0,
+            "sma":          sma,
+            "ecc":          ecc,
+            "period":       period,
+            "omega_deg":    omega_deg,
+            "epoch_known":  epoch_known,
+            "info":         p,
+        })
+        max_au = max(max_au, sma * (1.0 + ecc))
+
+    if not orbits:
+        return {"error": "No valid orbital data found (all planets missing semi-major axis)."}
+
+    first = planets[0]
+    star_name = str(first.get("hostname") or first.get("hd_name") or "")
+
+    return {
+        "orbits":    orbits,
+        "planets":   plist,
+        "star_name": star_name,
+        "max_au":    max_au * 1.20,
+        "epoch_iso": date_iso,
+    }
