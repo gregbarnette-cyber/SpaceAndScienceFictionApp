@@ -153,7 +153,7 @@ Options 22–23 and 29–30 are given a distance and solve for travel time.
 
 ## Network Reliability (JPL Horizons features)
 
-All JPL Horizons queries use shared helpers from `core/shared.py`:
+All JPL Horizons queries are wrapped by helpers in `core/calculators.py`, which in turn rely on the shared retry/timeout/error-classification helpers (`_with_retries`, `_timeout_ctx`, `_network_error_msg`, `_make_simbad`) from `core/shared.py`:
 
 - **`_get_heliocentric_vectors(horizons_id, epoch_jd)`** — wraps the `Horizons(...).vectors()` call in `_with_retries` (3 attempts, exponential backoff) inside `_timeout_ctx(30)` (30 s socket timeout per attempt). Raises on exhausted retries; callers catch and classify via `_network_error_msg`.
 - **`fetch_body_properties(horizons_id)`** — wraps `urllib.request.urlopen(url, timeout=15)` in `_with_retries`. Errors are **not cached** in `_BODY_PROPS_CACHE`; only successful responses are cached, so a transient failure retries fresh next call.

@@ -6,6 +6,12 @@
 
 ```bash
 # Using the repo's venv directly (preferred from external repos):
+# NOTE: the base folder is named "claude" on some machines and "Claude" on others.
+# Linux paths are case-sensitive, so try both casings if one fails:
+/home/greg/claude/SpaceAndScienceFictionApp/venv/bin/python \
+  /home/greg/claude/SpaceAndScienceFictionApp/query.py \
+  <subcommand> [arguments]
+# or, if that path does not exist:
 /home/greg/Claude/SpaceAndScienceFictionApp/venv/bin/python \
   /home/greg/Claude/SpaceAndScienceFictionApp/query.py \
   <subcommand> [arguments]

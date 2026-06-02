@@ -85,7 +85,7 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - `calculatedLuminosity = stellarRadius² × (temp/5778)⁴`
   - Uses same Kopparapu et al. coefficients as `_display_habitable_zone()` in `docs/star-databases.md`
   - Three columns: Bolometric Luminosity (`bcLuminosity`), Luminosity from Mass (`luminosityFromMass`), Calculated Luminosity
-  - Six zones in order: Optimistic Inner HZ (Recent Venus), Conservative Inner HZ (RG 5 Earth Mass), Conservative Inner HZ (Runaway Greenhouse), Conservative Inner HZ (RG 0.1 Earth Mass), Conservative Outer HZ (Maximum Greenhouse), Optimistic Outer HZ (Early Mars)
+  - Six zones in order: Optimistic Inner HZ (Recent Venus), Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass), Conservative Inner HZ (Runaway Greenhouse), Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass), Conservative Outer HZ (Maximum Greenhouse), Optimistic Outer HZ (Early Mars)
 
 ## Hypatia Catalog (opt 8 only)
 
