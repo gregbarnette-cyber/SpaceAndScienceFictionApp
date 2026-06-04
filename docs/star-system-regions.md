@@ -107,9 +107,9 @@ After `_display_calculated_hz()`, a `simbad_compat` dict is built from the SIMBA
 - **Data tab "Hypatia"** — `QScrollArea` with three sections built by `_build_hypatia_tab(hypatia)`:
   - **Stellar Properties table** (`make_table`): T_eff (K), log g, Spectral Type, V mag, B-V, Distance (pc), Disk.
   - **Kinematics table** (`make_table`): U (km/s), V (km/s), W (km/s), PM RA (mas/yr), PM Dec (mas/yr).
-  - **Elemental Abundances (Lodders 2009) table** (`make_table`): Element, [X/H] Mean, ±Std, Min, Max, # Catalogs. If abundances list is empty, shows a gray italic label instead.
+  - **Elemental Abundances (Lodders 2009) table** (`make_table`): Element, [X/H] Mean, ±Std, Min, Max, # Catalogs. The `±Std` value is the Hypatia `plusminus` spread (dex), **not** the API's own `std` field — that field is `log₁₀` of the linear-space scatter and is negative for almost every element, so `_parse_hypatia_composition` reads `plusminus` instead. If abundances list is empty, shows a gray italic label instead.
   - Error state: single gray italic label with the error message.
-- **Viz tab "Abundance Profile"** (added to `viz_widget` when `mpl_available()` and abundances list non-empty) — horizontal bar chart via `make_abundance_canvas()` in `gui/visualizations/plot_helpers.py`: bars colored by sign (positive=#e06c4a, negative=#4a90d9), `axvline` at 0 (solar reference), error bars from `std`. Title: `[X/H] Elemental Abundances — {star_name}`.
+- **Viz tab "Abundance Profile"** (added to `viz_widget` when `mpl_available()` and abundances list non-empty) — horizontal bar chart via `make_abundance_canvas()` in `gui/visualizations/plot_helpers.py`: bars colored by sign (positive=#e06c4a, negative=#4a90d9), `axvline` at 0 (solar reference), error bars from the `std` field (the Hypatia `plusminus` spread; `make_abundance_canvas` clamps any negative value to 0 defensively, since matplotlib ≥ 3.6 rejects negative `xerr`). Title: `[X/H] Elemental Abundances — {star_name}`. This is one of opt 8's **four** viz tabs — it joins the always-present HZ Diagram, System Regions Diagram, and Alternate HZ Diagram (see `docs/gui-architecture.md`). Opts 9/10 show only those first three.
 
 Opts 9 and 10 do not call the Hypatia API — `d.get("hypatia")` returns `None` and no Hypatia tab is added.
 

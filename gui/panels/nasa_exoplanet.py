@@ -21,7 +21,7 @@ import core.databases
 import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas,
-    make_exoplanet_system_canvas,
+    make_exoplanet_system_canvas, log_viz_error,
 )
 
 
@@ -669,7 +669,7 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
                         ab_l.addWidget(ab_canvas)
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
-                pass
+                log_viz_error("Abundance Profile")
 
         if self._viz_tabs_widget.count() > 0:
             self._show_diagrams_btn.setVisible(True)
@@ -773,7 +773,7 @@ class NasaHwoExepPanel(DiagramToggleMixin, _StarSearchPanel):
                         ab_l.addWidget(ab_canvas)
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
-                pass
+                log_viz_error("Abundance Profile")
 
         self._finish_render()
 
@@ -874,7 +874,7 @@ class NasaMissionExocatPanel(DiagramToggleMixin, _StarSearchPanel):
                         ab_l.addWidget(ab_canvas)
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
-                pass
+                log_viz_error("Abundance Profile")
 
         self._finish_render()
 
@@ -1159,7 +1159,7 @@ class NasaPlanetarySystemsMapPanel(_StarSearchPanel):
                         ab_l.addWidget(ab_canvas)
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
-                pass
+                log_viz_error("Abundance Profile")
 
         if self._viz_tabs_widget.count() > 0:
             self._show_diagrams_btn.setVisible(True)

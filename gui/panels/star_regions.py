@@ -21,7 +21,7 @@ import core.viz
 from core.equations import _kopparapu_seff
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_system_regions_canvas, make_alt_hz_canvas,
-    make_abundance_canvas,
+    make_abundance_canvas, log_viz_error,
 )
 
 
@@ -266,7 +266,7 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
                         ab_l.addWidget(ab_canvas)
                         target.addTab(ab_w, "Abundance Profile")
         except Exception:
-            pass
+            log_viz_error("Star Regions diagrams")
 
     return tabs
 

@@ -2,4 +2,4 @@ astroquery
 astropy
 requests
 PySide6
-matplotlib
+matplotlib>=3.6,<4

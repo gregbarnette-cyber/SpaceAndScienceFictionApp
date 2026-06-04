@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel
 from gui.panels.hypatia_tab import build_hypatia_tab, fit_table_height
-from gui.visualizations.plot_helpers import mpl_available, make_abundance_canvas
+from gui.visualizations.plot_helpers import mpl_available, make_abundance_canvas, log_viz_error
 import core.databases
 import core.viz
 
@@ -125,6 +125,6 @@ class SimbadPanel(ResultPanel):
                             ab_l.addWidget(ab_canvas)
                             tabs.addTab(ab_w, "Abundance Profile")
                 except Exception:
-                    pass
+                    log_viz_error("Abundance Profile")
 
         self.add_result_widget(tabs)

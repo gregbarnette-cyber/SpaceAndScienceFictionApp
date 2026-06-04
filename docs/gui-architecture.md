@@ -274,13 +274,15 @@ Three independent panels for opts 8 (Auto/SIMBAD), 9 (Semi-Manual), and 10 (Manu
 - `_tables_widget` — `QWidget` wrapping `_result_area` (a `QVBoxLayout`); holds the seven data tabs.
 - `_viz_container` + `_viz_tabs_widget` — created by `_setup_diagram_view()`.
 
-All three share `_build_region_tabs(d, viz_widget=None)` which produces a `QTabWidget` with seven always-present data tabs. When `viz_widget` is provided (a `_viz_tabs_widget` from the mixin), the two diagram tabs are added there instead of the data tabs:
+All three share `_build_region_tabs(d, viz_widget=None)` which produces a `QTabWidget` with seven always-present data tabs. When `viz_widget` is provided (a `_viz_tabs_widget` from the mixin), the diagram tabs are added there instead of the data tabs:
 
 Always present in data tabs (7): Star System Properties, Stellar Properties, Star Distance, Earth Equiv. Orbit, System Regions, Alternate HZ Regions, Calculated HZ.
 
-Added to `viz_widget` when `mpl_available()` (2):
+Added to `viz_widget` when `mpl_available()` — three always, plus Abundance Profile when Hypatia abundance data is present (opt 8 only), so **4 tabs for opt 8** and **3 for opts 9/10**:
 - **HZ Diagram** — concentric ring diagram using `d["calculatedLuminosity"]` and `d["temp"]`; marks `d["distAU"]` as the EEID.
 - **System Regions Diagram** — concentric ring diagram (√AU scale) showing all seven system boundary zones. Built from `core.viz.prepare_system_regions_diagram(d)` → `make_system_regions_canvas()`.
+- **Alternate HZ Diagram** — concentric ring diagram (⁴√AU scale) for the six alternate-biochemistry HZ zones. Built from `core.viz.prepare_alt_hz_diagram(d)` → `make_alt_hz_canvas()`.
+- **Abundance Profile** — horizontal [X/H] bar chart via `make_abundance_canvas()`; added only on opt 8 when `d.get("hypatia")` carries a non-empty abundances list. Opts 9/10 never call the Hypatia API, so they never get this tab.
 
 ### Distance Stars Panels (`panels/distance_stars.py`)
 
@@ -339,9 +341,9 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
 | `NasaMissionExocatPanel` (5) | "HZ Diagram" (EEID from `st_eeidau`; lum = `st_lbol` direct Lsun), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
 | `HwcPanel` (6) | "Orbital Diagram", "HZ Diagram" (lum = `S_LUMINOSITY` direct Lsun), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
-| `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram", "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
-| `StarRegionsSemiManualPanel` (9) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
-| `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram" | `DiagramToggleMixin` |
+| `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram", "Alternate HZ Diagram", "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
+| `StarRegionsSemiManualPanel` (9) | "HZ Diagram", "System Regions Diagram", "Alternate HZ Diagram" | `DiagramToggleMixin` |
+| `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram", "Alternate HZ Diagram" | `DiagramToggleMixin` |
 | `StarsWithinDistanceSolPanel` (18) | "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D", "Star Chart", "Star Chart 3D" | `DiagramToggleMixin` |
 | `StarsWithinDistanceStarPanel` (19) | "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D", "Star Chart", "Star Chart 3D" | `DiagramToggleMixin` |
 | `SystemTravelSolarPanel` (22) | "Solar System Map" | `DiagramToggleMixin` |
@@ -396,5 +398,5 @@ Clicking any body (planet, origin, or destination) on the canvas calls `_show_bo
 | B | Complete | Static display + pure-math calculators (opts 11–16, 20–25, 33–41) |
 | C | Complete | SIMBAD-based features + QThread threading pattern (opts 1, 8–10, 17–19) |
 | D | Complete | Multi-source features, JPL Horizons, option 50 (opts 3–6, 26–32, 50); opts 2 and 7 implemented but not in GUI nav |
-| E | Complete | Visualizations embedded in existing panels: star map 2D + 3D (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10), solar system travel map 2D (22–23); Show Diagrams/Show Tables toggle on all viz panels; light theme; 3D viewpoint preset buttons (18–19); `azel` rotation style for all 3D views |
+| E | Complete | Visualizations embedded in existing panels: star map 2D + 3D (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10), alternate HZ diagram (8–10), solar system travel map 2D (22–23); Show Diagrams/Show Tables toggle on all viz panels; light theme; 3D viewpoint preset buttons (18–19); `azel` rotation style for all 3D views |
 | F | Complete | SQLite migration — all static tables auto-seeded from CSVs on first connect; opt 50 writes to `star_systems` DB table; opts 51–56 added (Export Star Systems to CSV, Import HWC, Import Mission Exocat, Import Main Sequence, Import Solar System, Import Honorverse Hyper Limits); opt 57 `DbStatusPanel` added (GUI only) — displays row counts and populated/empty status for all DB tables via `core.db.get_table_status()`; opts 18–19 migrated from `starSystems.csv` to the `star_systems` DB table in both CLI and GUI |

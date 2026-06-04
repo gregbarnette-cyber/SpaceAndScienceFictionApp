@@ -26,6 +26,19 @@ def mpl_available() -> bool:
     return _MPL_OK
 
 
+def log_viz_error(context: str) -> None:
+    """Print the active exception traceback to stderr with a context label.
+
+    Used by panel viz-tab builders in place of a bare ``except Exception: pass`` so
+    a diagram that fails to render is dropped gracefully (the rest of the panel
+    still works) but the failure is no longer invisible.
+    """
+    import sys
+    import traceback
+    print(f"[viz] {context} failed to render:", file=sys.stderr)
+    traceback.print_exc()
+
+
 def _disable_zoom_rect(toolbar):
     """Remove the rectangle-zoom tool from a 3D toolbar.
 
@@ -1785,7 +1798,9 @@ def make_abundance_canvas(parent, abundances_data: dict, star_name: str = ""):
     if not elements:
         return _error_canvas("No measurable abundances found")
 
-    safe_stds = [s if s is not None else 0.0 for s in stds]
+    # Error bars must be non-negative: matplotlib raises ValueError on negative
+    # xerr. Clamp defensively so one bad spread value never drops the whole tab.
+    safe_stds = [max(float(s), 0.0) if s is not None else 0.0 for s in stds]
     colors    = ["#e06c4a" if m >= 0 else "#4a90d9" for m in means]
 
     fig_h = max(4.0, len(elements) * 0.38 + 1.6)

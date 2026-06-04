@@ -1278,10 +1278,14 @@ def _parse_hypatia_composition(data: list) -> list:
         except (TypeError, ValueError):
             n = None
 
+        # Hypatia's "plusminus" is the symmetric spread in dex ([X/H]) and is the
+        # value the catalog plots as an error bar. The API's own "std" field is the
+        # log of the linear-space scatter — it is negative for almost every element
+        # and is NOT a usable dex uncertainty, so prefer "plusminus" here.
         results.append({
             "element": el.capitalize(),
             "mean":    mean,
-            "std":     _f2("std", "sigma", "stdev"),
+            "std":     _f2("plusminus", "std", "sigma", "stdev"),
             "min":     _f2("min", "minimum"),
             "max":     _f2("max", "maximum"),
             "n":       n,
