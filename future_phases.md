@@ -6,7 +6,7 @@ The app is a mature Space & Science Fiction CLI/GUI tool that has completed Phas
 - **D**: Multi-source features (NASA archives, JPL Horizons, HWC, OEC, CSV utilities)
 - **E**: Matplotlib visualizations embedded in panels (star maps, orbital diagrams, HZ rings, solar travel map)
 - **F**: SQLite migration — all static tables auto-seeded from CSVs; star systems DB query; import/export utilities
-- **Hypatia Catalog integration** (post-F): `compute_hypatia_data(simbad_result)` in `core/databases.py` fetches stellar properties, kinematics, and 19-element Lodders 2009 elemental abundances from `https://hypatiacatalog.com/hypatia/api/v2`. Integrated into opts 1, 3, 4, 5, 6, and 8 — results shown in **Hypatia** data tabs and **Abundance Profile** viz tabs (horizontal bar chart via `make_abundance_canvas()`). Also exposed as the `hypatia-data` subcommand in `query.py`.
+- **Hypatia Catalog integration** (post-F): `compute_hypatia_data(simbad_result)` in `core/databases.py` fetches stellar properties, kinematics, and the full **104-species** Lodders 2009 elemental abundance set (including ionized species; defined in `core/hypatia_elements.py`) from `https://hypatiacatalog.com/hypatia/api/v2`. The 104 species are requested in chunks of 30 (the server caps the GET request line at ~4094 bytes). Integrated into opts 1, 3, 4, 5, 6, and 8 — results shown in **Hypatia** data tabs (abundances grouped by nucleosynthetic family) and **Abundance Profile** viz tabs (category-colored horizontal bar chart via `make_abundance_canvas()`). Also exposed as the `hypatia-data` subcommand in `query.py`.
 - **NASA Planetary Systems Map** (post-F): `NasaPlanetarySystemsMapPanel` in `gui/panels/nasa_exoplanet.py` — GUI-only variant of opt 3 that adds a **Map Date** `QDateEdit` (defaults to today) and a **System Map** viz tab. The map is a top-down 2D ecliptic-view diagram showing the host star at the origin and each planet at its date-resolved heliocentric position, computed by solving Kepler's equation using `pl_orbtper` (JD epoch of periastron) or derived from `pl_tranmid`. Clicking a planet opens a non-modal info dialog populated from the already-fetched pscomppars row. Backed by `core.viz.prepare_exoplanet_system_diagram(planets, date_iso)` and `gui/visualizations/plot_helpers.py::make_exoplanet_system_canvas()`.
 
 This document brainstorms future phases in order of likely value and implementation effort.
@@ -524,7 +524,7 @@ Accepts 2–4 star names, runs a SIMBAD lookup for each, and renders a single tr
 1. SIMBAD lookup (reuses existing pattern from `core/databases.py`) for: `sp_type`, `teff` (from `mesfe_h.teff`), `plx_value` (→ LY), `V` (apparent magnitude), `ra`, `dec`
 2. If `st_rad` or `st_teff` missing from SIMBAD, attempt a supplemental NASA `pscomppars` TAP query using the best available designation (HIP → HD → TIC → Gaia EDR3) to fill `st_teff`, `st_rad`, `st_mass`, `st_lum`
 3. HZ inner/outer computed via the existing Kopparapu coefficient logic (`_kopparapu_seff`) using the best available luminosity and teff
-4. Hypatia Catalog lookup via `compute_hypatia_data(simbad_result)` — fetches stellar properties (logg, B-V, distance, disk membership), kinematics (U/V/W velocities, proper motions), and elemental abundances (19-element Lodders 2009 set). Errors stored per-star without aborting the comparison.
+4. Hypatia Catalog lookup via `compute_hypatia_data(simbad_result)` — fetches stellar properties (logg, B-V, distance, disk membership), kinematics (U/V/W velocities, proper motions), and elemental abundances (the full 104-species Lodders 2009 set; see `core/hypatia_elements.py`). The comparison table need only surface a curated subset of rows (e.g. Fe/H, Mg/H, Si/H, O/H). Errors stored per-star without aborting the comparison.
 
 **`core/databases.py`** — add `compare_stars(names: list[str]) -> dict`:
 - Runs up to 4 SIMBAD + Hypatia lookup pairs; per-star errors are stored in the result without aborting the comparison
@@ -614,7 +614,7 @@ Batch-fetches Hypatia Catalog data for all stars in the `star_systems` DB table 
 
 **Why a local cache**: the Hypatia API at `https://hypatiacatalog.com/hypatia/api/v2` is per-star (no bulk endpoint). With ~252K rows in `star_systems`, a full batch is impractical; the cache should target a useful subset — the same stars already in the DB that have HIP or HD designations (the Hypatia name-resolution priority order is HIP → HD → main_id).
 
-**`core/db.py`** — add to schema:
+**`core/db.py`** — add to schema. **Note:** the element set is now the full **104 species** (`core/hypatia_elements.py`), not the original 19 the column list below assumes. Before building this, reconsider the storage shape — a wide 104-column table is unwieldy and many species are sparsely measured; a long/EAV `hypatia_abundance(star_name, element, mean, std, min, max, n)` table (with the star-level properties kept in `hypatia_cache`) is the better fit and keeps abundance filtering generic. The column list below is the original 19-element sketch, retained for reference:
 ```sql
 CREATE TABLE IF NOT EXISTS hypatia_cache (
     star_name TEXT PRIMARY KEY,
@@ -665,7 +665,7 @@ CREATE TABLE IF NOT EXISTS hypatia_cache (
 - Dynamic WHERE clause on `hypatia_cache` using non-None filter keys
 - Supported filters: `fe_h_min`/`fe_h_max` (float), `disk` (exact match: `"thin disk"`, `"thick disk"`, `"halo"`), `teff_min`/`teff_max` (float), `ly_min`/`ly_max` (float; joins against `star_systems` on `star_name` for the `light_years` column), `element` + `element_min`/`element_max` (filter on any single element column, e.g. `element="mg_h"`)
 - Default sort: `fe_h DESC`; cap at 500 rows
-- Returns list of dicts with keys: `star_name`, `hip`, `hd`, `disk`, `teff`, `fe_h`, `mg_h`, `si_h`, `o_h`, `distance_pc`, `ly` (joined from `star_systems`), plus all 19 element columns
+- Returns list of dicts with keys: `star_name`, `hip`, `hd`, `disk`, `teff`, `fe_h`, `mg_h`, `si_h`, `o_h`, `distance_pc`, `ly` (joined from `star_systems`), plus the per-element abundance values (the full 104-species set if stored, per the schema note above)
 
 **Output table columns** (CLI and GUI): Star Name | HIP | HD | Disk | Teff (K) | Fe/H | Mg/H | Si/H | O/H | Distance (LY). Count above table; "Showing first 500 results." footer if capped.
 

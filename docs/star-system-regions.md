@@ -97,7 +97,7 @@ After `_display_calculated_hz()`, a `simbad_compat` dict is built from the SIMBA
 
 - **Header**: `Hypatia Catalog Data` / `--------------------`
 - **Properties + Kinematics table** (single row via `_print_table`): T_eff (K), log g, Spectral Type, V mag, B-V, Distance (pc), Disk, U (km/s), V (km/s), W (km/s), PM RA (mas/yr), PM Dec (mas/yr).
-- **Elemental Abundances table** (one row per element via `_print_table`): Element, [X/H] Mean (±-prefixed), ±Std, Min (±-prefixed), Max (±-prefixed), # Catalogs. Printed only when abundances list is non-empty; otherwise prints `"No elemental abundance data available for this star."`.
+- **Elemental Abundances** — grouped by nucleosynthetic family. For each non-empty category (in `core.hypatia_elements.CATEGORIES` order: Light, Volatile (CNO), Alpha, Odd-Z, Iron-peak, s-process (light), s/r-process (heavy), r-process / rare earth, Heavy / actinide), prints a category sub-header line followed by its own `_print_table`: Element (e.g. `Ba II`), Name, [X/H] Mean (±-prefixed), ±Std, Min (±-prefixed), Max (±-prefixed), # Catalogs. Printed only when the abundances list is non-empty; otherwise prints `"No elemental abundance data available for this star."`. `# Catalogs` is now populated from the response's `catalogs_linear` length. Element symbol → full name comes from `core.hypatia_elements.display_symbol` / the per-row `name` field (no local name dict).
 - Hypatia errors print inline without blocking the `input()` prompt.
 
 ### GUI tabs (`_build_region_tabs()` in `gui/panels/star_regions.py`)
@@ -107,9 +107,9 @@ After `_display_calculated_hz()`, a `simbad_compat` dict is built from the SIMBA
 - **Data tab "Hypatia"** — `QScrollArea` with three sections built by `_build_hypatia_tab(hypatia)`:
   - **Stellar Properties table** (`make_table`): T_eff (K), log g, Spectral Type, V mag, B-V, Distance (pc), Disk.
   - **Kinematics table** (`make_table`): U (km/s), V (km/s), W (km/s), PM RA (mas/yr), PM Dec (mas/yr).
-  - **Elemental Abundances (Lodders 2009) table** (`make_table`): Element, [X/H] Mean, ±Std, Min, Max, # Catalogs. The `±Std` value is the Hypatia `plusminus` spread (dex), **not** the API's own `std` field — that field is `log₁₀` of the linear-space scatter and is negative for almost every element, so `_parse_hypatia_composition` reads `plusminus` instead. If abundances list is empty, shows a gray italic label instead.
+  - **Elemental Abundances (Lodders 2009)** — grouped by nucleosynthetic family: one bold category header (`CATEGORIES` label) plus its own `make_table` per non-empty category, with columns Element (`display_symbol`, e.g. `Ba II`), Name, [X/H] Mean, ±Std, Min, Max, # Catalogs. The `±Std` value is the Hypatia `plusminus` spread (dex), **not** the API's own `std` field — that field is `log₁₀` of the linear-space scatter and is negative for almost every element, so `_parse_hypatia_composition` reads `plusminus` instead. If abundances list is empty, shows a gray italic label instead.
   - Error state: single gray italic label with the error message.
-- **Viz tab "Abundance Profile"** (added to `viz_widget` when `mpl_available()` and abundances list non-empty) — horizontal bar chart via `make_abundance_canvas()` in `gui/visualizations/plot_helpers.py`: bars colored by sign (positive=#e06c4a, negative=#4a90d9), `axvline` at 0 (solar reference), error bars from the `std` field (the Hypatia `plusminus` spread; `make_abundance_canvas` clamps any negative value to 0 defensively, since matplotlib ≥ 3.6 rejects negative `xerr`). Title: `[X/H] Elemental Abundances — {star_name}`. This is one of opt 8's **four** viz tabs — it joins the always-present HZ Diagram, System Regions Diagram, and Alternate HZ Diagram (see `docs/gui-architecture.md`). Opts 9/10 show only those first three.
+- **Viz tab "Abundance Profile"** (added to `viz_widget` when `mpl_available()` and abundances list non-empty) — horizontal bar chart via `make_abundance_canvas()` in `gui/visualizations/plot_helpers.py`: bars colored by **nucleosynthetic-family category** (colors from `CATEGORIES`; a one-row gap separates groups), with a category legend, `axvline` at 0 (solar reference), and error bars from the `std` field (the Hypatia `plusminus` spread; `make_abundance_canvas` clamps any negative value to 0 defensively, since matplotlib ≥ 3.6 rejects negative `xerr`). With up to ~100 bars the canvas is wrapped via `wrap_scrollable()` so it scrolls vertically instead of squashing. Title: `[X/H] Elemental Abundances — {star_name}`. This is one of opt 8's **four** viz tabs — it joins the always-present HZ Diagram, System Regions Diagram, and Alternate HZ Diagram (see `docs/gui-architecture.md`). Opts 9/10 show only those first three.
 
 Opts 9 and 10 do not call the Hypatia API — `d.get("hypatia")` returns `None` and no Hypatia tab is added.
 
@@ -117,13 +117,13 @@ Opts 9 and 10 do not call the Hypatia API — `d.get("hypatia")` returns `None` 
 
 - API base: `https://hypatiacatalog.com/hypatia/api/v2`
 - Name resolution: uses `simbad_result["designations"].get("HIP")` → `"HD"` → `simbad_result["main_id"]`.
-- Two HTTP calls via `_with_retries(requests.get, ...)` with `timeout=30`:
+- HTTP calls via `_with_retries(requests.get, ...)` with `timeout=30`:
   - `/star?name=<name>` → stellar properties and kinematics via `_parse_hypatia_star()`
-  - `/composition?name=<name>` → elemental abundances via `_parse_hypatia_composition()` (failure → `abundances=[]`, not fatal)
-- Returns `{"star_name", "properties", "abundances"}` or `{"error": str}`.
-- Element set (19, Lodders 2009 normalisation): fe, mg, si, ca, ti, o, c, n, na, al, s, ni, co, cr, mn, ba, y, sr, eu.
+  - `/composition?name=<name>&element=...` → elemental abundances via `_parse_hypatia_composition()` (failure → `abundances=[]`, not fatal). All 104 species are requested, but the server caps the GET request line at ~4094 bytes, so they're fetched in **chunks of `_HYPATIA_COMPOSITION_CHUNK` (30)** and the responses concatenated before parsing.
+- Returns `{"star_name", "properties", "abundances"}` or `{"error": str}`. Each abundance dict: `{element, name, z, category, mean, std, min, max, n}` (see `docs/integration.md`).
+- Element set: the full **104 species** (Lodders 2009 normalisation), including singly-ionized species — defined in `core/hypatia_elements.py` (`HYPATIA_REQUEST_SYMBOLS`), which is the single source of truth shared by the CLI, GUI, and `query.py`. A live drift test asserts this matches `GET /element`.
 
 ### `core/viz.prepare_abundance_profile(hypatia_result)`
 
-- Returns `{"elements": list, "means": list, "stds": list, "star_name": str}` or `{"error": str}`.
-- Filters to elements with non-None mean; preserves `_HYPATIA_ELEMENTS` order.
+- Returns `{"elements", "names", "means", "stds", "categories", "colors", "star_name"}` or `{"error": str}` (parallel lists).
+- `elements` uses human-readable symbols (`display_symbol`, e.g. `Ba II`); `colors` is the per-element category color. Filters to species with non-None mean; preserves the master display order.

@@ -21,7 +21,7 @@ import core.viz
 from core.equations import _kopparapu_seff
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_system_regions_canvas, make_alt_hz_canvas,
-    make_abundance_canvas, log_viz_error,
+    make_abundance_canvas, log_viz_error, wrap_scrollable,
 )
 
 
@@ -259,11 +259,7 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
                         None, ab_data, hypatia.get("star_name", "")
                     )
                     if ab_canvas is not None:
-                        ab_w = QWidget()
-                        ab_l = QVBoxLayout(ab_w)
-                        ab_l.setContentsMargins(4, 4, 4, 4)
-                        ab_l.addWidget(ab_toolbar)
-                        ab_l.addWidget(ab_canvas)
+                        ab_w = wrap_scrollable(None, ab_canvas, ab_toolbar)
                         target.addTab(ab_w, "Abundance Profile")
         except Exception:
             log_viz_error("Star Regions diagrams")

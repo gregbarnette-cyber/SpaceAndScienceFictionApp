@@ -17,6 +17,7 @@ import core.calculators
 import core.databases
 import core.equations
 import core.science
+from core.hypatia_elements import CATEGORIES, category_label, display_symbol
 
 
 # ─── SIMBAD Star Query ────────────────────────────────────────────────────────
@@ -1220,12 +1221,10 @@ def query_star_system_regions():
 
         abundances = hypatia.get("abundances", [])
         if abundances:
-            print()
             ah1 = ["Element", "Name", "[X/H] Mean", "±Std", "Min", "Max", "# Catalogs"]
             ah2 = [""] * len(ah1)
-            arows = []
-            for a in abundances:
-                sym = a["element"]
+
+            def _arow(a):
                 m  = a.get("mean")
                 ms = f"{m:+.3f}" if m is not None else "N/A"
                 s  = a.get("std")
@@ -1236,23 +1235,25 @@ def query_star_system_regions():
                 mxs = f"{mx:+.3f}" if mx is not None else "N/A"
                 n  = a.get("n")
                 ns = str(n) if n is not None else "N/A"
-                arows.append([sym, _ELEMENT_NAMES.get(sym.lower(), ""), ms, ss, mns, mxs, ns])
-            _print_table(ah1, ah2, arows, ["l", "l", "r", "r", "r", "r", "r"])
+                return [display_symbol(a["element"]), a.get("name", ""), ms, ss, mns, mxs, ns]
+
+            # Group the measured species by nucleosynthetic family, preserving order.
+            by_cat = {}
+            for a in abundances:
+                by_cat.setdefault(a.get("category", ""), []).append(a)
+            for key, label, _color in CATEGORIES:
+                group = by_cat.get(key)
+                if not group:
+                    continue
+                print()
+                print(label)
+                print("-" * len(label))
+                _print_table(ah1, ah2, [_arow(a) for a in group],
+                             ["l", "l", "r", "r", "r", "r", "r"])
         else:
             print("No elemental abundance data available for this star.")
 
     input("\nPress Enter to Return to the Main Menu")
-
-
-# ─── Hypatia element symbol → full name ───────────────────────────────────────
-
-_ELEMENT_NAMES = {
-    "fe": "Iron",      "mg": "Magnesium", "si": "Silicon",   "ca": "Calcium",
-    "ti": "Titanium",  "o":  "Oxygen",    "c":  "Carbon",    "n":  "Nitrogen",
-    "na": "Sodium",    "al": "Aluminum",  "s":  "Sulfur",    "ni": "Nickel",
-    "co": "Cobalt",    "cr": "Chromium",  "mn": "Manganese", "ba": "Barium",
-    "y":  "Yttrium",   "sr": "Strontium", "eu": "Europium",
-}
 
 
 # ─── Main-Sequence Star Properties ────────────────────────────────────────────

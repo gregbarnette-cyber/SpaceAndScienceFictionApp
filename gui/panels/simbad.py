@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel
 from gui.panels.hypatia_tab import build_hypatia_tab, fit_table_height
-from gui.visualizations.plot_helpers import mpl_available, make_abundance_canvas, log_viz_error
+from gui.visualizations.plot_helpers import mpl_available, make_abundance_canvas, log_viz_error, wrap_scrollable
 import core.databases
 import core.viz
 
@@ -118,11 +118,7 @@ class SimbadPanel(ResultPanel):
                             None, ab_data, hypatia.get("star_name", "")
                         )
                         if ab_canvas is not None:
-                            ab_w = QWidget()
-                            ab_l = QVBoxLayout(ab_w)
-                            ab_l.setContentsMargins(4, 4, 4, 4)
-                            ab_l.addWidget(ab_toolbar)
-                            ab_l.addWidget(ab_canvas)
+                            ab_w = wrap_scrollable(None, ab_canvas, ab_toolbar)
                             tabs.addTab(ab_w, "Abundance Profile")
                 except Exception:
                     log_viz_error("Abundance Profile")

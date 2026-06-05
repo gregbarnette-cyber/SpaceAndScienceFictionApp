@@ -1193,11 +1193,18 @@ def import_solar_system_csvs(data_dir: str) -> dict:
 # ── Hypatia Catalog ────────────────────────────────────────────────────────────
 
 _HYPATIA_BASE = "https://hypatiacatalog.com/hypatia/api/v2"
-_HYPATIA_ELEMENTS = [
-    "fe", "mg", "si", "ca", "ti", "o",  "c",  "n",
-    "na", "al", "s",  "ni", "co", "cr", "mn",
-    "ba", "y",  "sr", "eu",
-]
+
+# All 104 Hypatia species (incl. ionized) and their names/atomic numbers/categories
+# live in core.hypatia_elements — the single source of truth shared with the GUI and CLI.
+from core.hypatia_elements import (
+    HYPATIA_REQUEST_SYMBOLS,
+    SPECIES_BY_SYMBOL,
+    SPECIES_ORDER,
+)
+
+# The Hypatia server caps the GET request line at ~4094 bytes, so the 104 species can't be
+# requested in one call — fetch in chunks small enough to stay well under that limit.
+_HYPATIA_COMPOSITION_CHUNK = 30
 
 
 def _parse_hypatia_star(data: list) -> dict:
@@ -1240,19 +1247,21 @@ def _parse_hypatia_star(data: list) -> dict:
 def _parse_hypatia_composition(data: list) -> list:
     """Parse /composition JSON response into a list of element abundance dicts.
 
-    Omits elements for which no mean value is available.
-    Preserves the _HYPATIA_ELEMENTS chemical grouping order.
+    Omits species for which no mean value is available. Preserves the species'
+    casing as returned by the API (e.g. "Fe", "Ba_II"), attaches the full element
+    name / atomic number / nucleosynthetic-family category from the master table,
+    and orders the result by that table's display order.
     """
-    _order = {e: i for i, e in enumerate(_HYPATIA_ELEMENTS)}
     results = []
 
     for item in data:
         el_raw = item.get("element") or item.get("name") or ""
-        el = el_raw.strip().lower()
+        el = el_raw.strip()
+        key = el.lower()
 
         mean = None
-        for key in ("mean", "average", "median"):
-            v = item.get(key)
+        for k in ("mean", "average", "median"):
+            v = item.get(k)
             if v is not None:
                 try:
                     mean = float(v)
@@ -1277,19 +1286,30 @@ def _parse_hypatia_composition(data: list) -> list:
             n = int(n_raw) if n_raw is not None else None
         except (TypeError, ValueError):
             n = None
+        # The API has no explicit catalog count, but lists per-catalog values in
+        # "catalogs_linear" — use its length as the "# Catalogs" value when present.
+        if n is None:
+            cl = item.get("catalogs_linear")
+            if isinstance(cl, dict):
+                n = len(cl)
+
+        species = SPECIES_BY_SYMBOL.get(key, {})
 
         # Hypatia's "plusminus" is the symmetric spread in dex ([X/H]) and is the
         # value the catalog plots as an error bar. The API's own "std" field is the
         # log of the linear-space scatter — it is negative for almost every element
         # and is NOT a usable dex uncertainty, so prefer "plusminus" here.
         results.append({
-            "element": el.capitalize(),
-            "mean":    mean,
-            "std":     _f2("plusminus", "std", "sigma", "stdev"),
-            "min":     _f2("min", "minimum"),
-            "max":     _f2("max", "maximum"),
-            "n":       n,
-            "_order":  _order.get(el, 999),
+            "element":  el or species.get("symbol", ""),  # API casing, e.g. "Ba_II"
+            "name":     species.get("name", ""),
+            "z":        species.get("z"),
+            "category": species.get("category", ""),
+            "mean":     mean,
+            "std":      _f2("plusminus", "std", "sigma", "stdev"),
+            "min":      _f2("min", "minimum"),
+            "max":      _f2("max", "maximum"),
+            "n":        n,
+            "_order":   SPECIES_ORDER.get(key, 999),
         })
 
     results.sort(key=lambda x: x["_order"])
@@ -1335,24 +1355,30 @@ def compute_hypatia_data(simbad_result: dict) -> dict:
 
     properties = _parse_hypatia_star(star_data)
 
-    # ── /composition endpoint (all elements batched in one request) ───────────
-    n = len(_HYPATIA_ELEMENTS)
-    comp_params = {
-        "name":      [star_name] * n,
-        "element":   _HYPATIA_ELEMENTS,
-        "solarnorm": ["lodders09"] * n,
-    }
+    # ── /composition endpoint ─────────────────────────────────────────────────
+    # All 104 species are requested, but the server caps the GET request line at
+    # ~4094 bytes, so they're fetched in chunks and the responses concatenated.
     abundances = []
     try:
-        def _get_comp():
-            r = requests.get(
-                f"{_HYPATIA_BASE}/composition",
-                params=comp_params,
-                timeout=30,
-            )
-            r.raise_for_status()
-            return r.json()
-        comp_data = _with_retries(_get_comp)
+        comp_data = []
+        for i in range(0, len(HYPATIA_REQUEST_SYMBOLS), _HYPATIA_COMPOSITION_CHUNK):
+            chunk = HYPATIA_REQUEST_SYMBOLS[i:i + _HYPATIA_COMPOSITION_CHUNK]
+            nch = len(chunk)
+            comp_params = {
+                "name":      [star_name] * nch,
+                "element":   chunk,
+                "solarnorm": ["lodders09"] * nch,
+            }
+
+            def _get_comp(params=comp_params):
+                r = requests.get(
+                    f"{_HYPATIA_BASE}/composition",
+                    params=params,
+                    timeout=30,
+                )
+                r.raise_for_status()
+                return r.json()
+            comp_data.extend(_with_retries(_get_comp))
         abundances = _parse_hypatia_composition(comp_data)
     except Exception:
         pass  # return properties with empty abundances rather than failing entirely

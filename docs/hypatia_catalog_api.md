@@ -26,7 +26,7 @@ https://hypatiacatalog.com/hypatia/api/v2/
 | Endpoint | What it returns |
 |---|---|
 | `GET /solarnorm` | Available solar normalizations (Lodders 2009, Asplund 2009, absolute, etc.) |
-| `GET /element` | Full list of measurable elements and ionized species (Li, Be, C, N, O, Fe, Co, Ca, Si, etc.) |
+| `GET /element` | Full list of measurable elements and ionized species — **104 entries** in periodic-table order, including ionized species like `Be_II`, `Ba_II`, `Eu_II` (Li, Be, Be_II, B, C, N, O, … Fe, Co, … Pb, Th, Th_II) |
 | `GET /catalog` | All literature catalogs that contributed abundance data (~hundreds of papers) |
 | `GET /star` | Full stellar properties + planet data for any SIMBAD-recognized star name |
 | `GET /composition` | Element abundance values for a specific star+element+solar norm — returns mean, median, min, max, std, and per-catalog values |
@@ -111,3 +111,5 @@ print(r.json())
 - Default solar normalization is **Lodders et al. (2009)** when `solarnorm` is omitted
 - The `/data` endpoint supports filters on stellar properties, planet properties, or element ratios
 - Cross-referenced with NASA Exoplanet Archive for exoplanet host identification
+- **Request-line size limit:** `/composition` takes parallel `name[]`/`element[]`/`solarnorm[]` arrays, but the server rejects a GET whose request line exceeds **~4094 bytes** (`HTTP 400 "Request Line is too large"`). All 104 species in one call (~4848 bytes) is over the limit — request them in **chunks** (this app uses 30 per call; see `core/databases.py::compute_hypatia_data`) and concatenate the response lists.
+- **How this app uses it:** the 104-species set, element names, atomic numbers, and nucleosynthetic-family categories are defined in `core/hypatia_elements.py` (the single source of truth). See `docs/integration.md` (`hypatia-data` subcommand) and `docs/star-system-regions.md` (opt 8) for the parsed output shape and grouped display.

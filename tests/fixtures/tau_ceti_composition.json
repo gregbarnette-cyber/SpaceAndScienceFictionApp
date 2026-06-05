@@ -1,0 +1,1653 @@
+[
+ {
+  "element": "Li",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Be",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Be_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "B",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "C",
+  "mean": -0.19,
+  "median": [
+   {
+    "value": -0.16,
+    "catalog": {
+     "author": "Luck (2018)",
+     "year": 2018,
+     "id": "luck18_raw_01_01_2025",
+     "original_norm_id": "luck18"
+    }
+   }
+  ],
+  "plusminus": 0.21,
+  "std": -0.71,
+  "min": -0.41,
+  "max": 0.01,
+  "_n_catalogs": 11
+ },
+ {
+  "element": "N",
+  "mean": -0.61,
+  "median": [
+   {
+    "value": -0.64,
+    "catalog": {
+     "author": "Laird (1985)",
+     "year": 1985,
+     "id": "laird85_raw_01_01_2025",
+     "original_norm_id": "holweger79"
+    }
+   },
+   {
+    "value": -0.58,
+    "catalog": {
+     "author": "Brewer et al. (2016)",
+     "year": 2016,
+     "id": "brewer16_01_of_02_unique_01_01_2025",
+     "original_norm_id": "grevesse07"
+    }
+   }
+  ],
+  "plusminus": 0.03,
+  "std": null,
+  "min": -0.64,
+  "max": -0.58,
+  "_n_catalogs": 2
+ },
+ {
+  "element": "O",
+  "mean": -0.17,
+  "median": [
+   {
+    "value": -0.2,
+    "catalog": {
+     "author": "Allende Prieto et al. (2004)",
+     "year": 2004,
+     "id": "allendeprieto04_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   },
+   {
+    "value": -0.11,
+    "catalog": {
+     "author": "Brewer et al. (2016)",
+     "year": 2016,
+     "id": "brewer16_01_of_02_unique_01_01_2025",
+     "original_norm_id": "grevesse07"
+    }
+   }
+  ],
+  "plusminus": 0.21,
+  "std": -0.769,
+  "min": -0.44,
+  "max": -0.022,
+  "_n_catalogs": 10
+ },
+ {
+  "element": "F",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Mg",
+  "mean": -0.21,
+  "median": [
+   {
+    "value": -0.217,
+    "catalog": {
+     "author": "Hojjatpanah et al. (2019)",
+     "year": 2019,
+     "id": "hojjatpanah19_raw_01_01_2025",
+     "original_norm_id": "anders89"
+    }
+   }
+  ],
+  "plusminus": 0.65,
+  "std": -0.709,
+  "min": -1.31,
+  "max": -0.01,
+  "_n_catalogs": 17
+ },
+ {
+  "element": "Si",
+  "mean": -0.34,
+  "median": [
+   {
+    "value": -0.344,
+    "catalog": {
+     "author": "Adibekyan et al. (2012)",
+     "year": 2012,
+     "id": "adibekyan12_raw_01_01_2025",
+     "original_norm_id": "ecu04-porto-anders89_diff_fe"
+    }
+   }
+  ],
+  "plusminus": 0.15,
+  "std": -1.2,
+  "min": -0.5,
+  "max": -0.2,
+  "_n_catalogs": 23
+ },
+ {
+  "element": "Si_II",
+  "mean": -0.21,
+  "median": [
+   {
+    "value": -0.21,
+    "catalog": {
+     "author": "Luck (2017)",
+     "year": 2017,
+     "id": "luck17_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.05,
+  "std": null,
+  "min": -0.21,
+  "max": -0.21,
+  "_n_catalogs": 1
+ },
+ {
+  "element": "S",
+  "mean": -0.22,
+  "median": [
+   {
+    "value": -0.381,
+    "catalog": {
+     "author": "Costa Silva et al. (2020)",
+     "year": 2020,
+     "id": "costasilva20_raw_01_01_2025",
+     "original_norm_id": "costasilva20"
+    }
+   }
+  ],
+  "plusminus": 0.26,
+  "std": -0.523,
+  "min": -0.48,
+  "max": 0.05,
+  "_n_catalogs": 5
+ },
+ {
+  "element": "Ca",
+  "mean": -0.35,
+  "median": [
+   {
+    "value": -0.34,
+    "catalog": {
+     "author": "Luck (2018)",
+     "year": 2018,
+     "id": "luck18_raw_01_01_2025",
+     "original_norm_id": "luck18"
+    }
+   },
+   {
+    "value": -0.34,
+    "catalog": {
+     "author": "Pagano (2014)",
+     "year": 2014,
+     "id": "pagano14_raw_01_01_2025",
+     "original_norm_id": "lodders09"
+    }
+   }
+  ],
+  "plusminus": 0.41,
+  "std": -0.946,
+  "min": -1.05,
+  "max": -0.23,
+  "_n_catalogs": 16
+ },
+ {
+  "element": "Ca_II",
+  "mean": -0.33,
+  "median": [
+   {
+    "value": -0.33,
+    "catalog": {
+     "author": "Allende Prieto et al. (2004)",
+     "year": 2004,
+     "id": "allendeprieto04_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.03,
+  "std": null,
+  "min": -0.33,
+  "max": -0.33,
+  "_n_catalogs": 1
+ },
+ {
+  "element": "Ti",
+  "mean": -0.22,
+  "median": [
+   {
+    "value": -0.205,
+    "catalog": {
+     "author": "Hojjatpanah et al. (2019)",
+     "year": 2019,
+     "id": "hojjatpanah19_raw_01_01_2025",
+     "original_norm_id": "anders89"
+    }
+   }
+  ],
+  "plusminus": 0.12,
+  "std": -1.03,
+  "min": -0.37,
+  "max": -0.12,
+  "_n_catalogs": 19
+ },
+ {
+  "element": "Ti_II",
+  "mean": -0.31,
+  "median": [
+   {
+    "value": -0.29,
+    "catalog": {
+     "author": "Adibekyan et al. (2012)",
+     "year": 2012,
+     "id": "adibekyan12_raw_01_01_2025",
+     "original_norm_id": "ecu04-porto-anders89_diff_fe"
+    }
+   },
+   {
+    "value": -0.28,
+    "catalog": {
+     "author": "Neves et al. (2009)",
+     "year": 2009,
+     "id": "neves09_raw_01_01_2025",
+     "original_norm_id": "ecu04-porto-anders89_diff_fe"
+    }
+   }
+  ],
+  "plusminus": 0.66,
+  "std": -0.7,
+  "min": -1.43,
+  "max": -0.12,
+  "_n_catalogs": 8
+ },
+ {
+  "element": "Na",
+  "mean": -0.51,
+  "median": [
+   {
+    "value": -0.493,
+    "catalog": {
+     "author": "Hojjatpanah et al. (2019)",
+     "year": 2019,
+     "id": "hojjatpanah19_raw_01_01_2025",
+     "original_norm_id": "anders89"
+    }
+   },
+   {
+    "value": -0.49,
+    "catalog": {
+     "author": "Luck (2017)",
+     "year": 2017,
+     "id": "luck17_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.18,
+  "std": -1.14,
+  "min": -0.77,
+  "max": -0.405,
+  "_n_catalogs": 16
+ },
+ {
+  "element": "Al",
+  "mean": -0.3,
+  "median": [
+   {
+    "value": -0.26,
+    "catalog": {
+     "author": "Adibekyan et al. (2012)",
+     "year": 2012,
+     "id": "adibekyan12_raw_01_01_2025",
+     "original_norm_id": "ecu04-porto-anders89_diff_fe"
+    }
+   }
+  ],
+  "plusminus": 0.33,
+  "std": -0.91,
+  "min": -0.83,
+  "max": -0.17,
+  "_n_catalogs": 15
+ },
+ {
+  "element": "Al_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "P",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Cl",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "K",
+  "mean": -0.16,
+  "median": [
+   {
+    "value": -0.157,
+    "catalog": {
+     "author": "Takeda et al. (2020a)",
+     "year": 2020,
+     "id": "takeda20a_raw_01_01_2025",
+     "original_norm_id": "takeda20"
+    }
+   }
+  ],
+  "plusminus": 0.04,
+  "std": null,
+  "min": -0.16,
+  "max": -0.16,
+  "_n_catalogs": 1
+ },
+ {
+  "element": "Sc",
+  "mean": -0.25,
+  "median": [
+   {
+    "value": -0.303,
+    "catalog": {
+     "author": "Adibekyan et al. (2012)",
+     "year": 2012,
+     "id": "adibekyan12_raw_01_01_2025",
+     "original_norm_id": "ecu04-porto-anders89_diff_fe"
+    }
+   },
+   {
+    "value": -0.26,
+    "catalog": {
+     "author": "Luck (2018)",
+     "year": 2018,
+     "id": "luck18_raw_01_01_2025",
+     "original_norm_id": "luck18"
+    }
+   }
+  ],
+  "plusminus": 0.1,
+  "std": -1.02,
+  "min": -0.32,
+  "max": -0.11,
+  "_n_catalogs": 8
+ },
+ {
+  "element": "Sc_II",
+  "mean": -0.3,
+  "median": [
+   {
+    "value": -0.33,
+    "catalog": {
+     "author": "Gilli et al. (2006)",
+     "year": 2006,
+     "id": "gilli06_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.12,
+  "std": -0.982,
+  "min": -0.39,
+  "max": -0.14,
+  "_n_catalogs": 11
+ },
+ {
+  "element": "V",
+  "mean": -0.34,
+  "median": [
+   {
+    "value": -0.33,
+    "catalog": {
+     "author": "Pagano (2014)",
+     "year": 2014,
+     "id": "pagano14_raw_01_01_2025",
+     "original_norm_id": "lodders09"
+    }
+   }
+  ],
+  "plusminus": 0.12,
+  "std": -1.2,
+  "min": -0.5,
+  "max": -0.27,
+  "_n_catalogs": 13
+ },
+ {
+  "element": "V_II",
+  "mean": -0.11,
+  "median": [
+   {
+    "value": -0.31,
+    "catalog": {
+     "author": "Takeda et al. (2007d)",
+     "year": 2007,
+     "id": "takeda07d-160fgk_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   },
+   {
+    "value": 0.02,
+    "catalog": {
+     "author": "Luck (2017)",
+     "year": 2017,
+     "id": "luck17_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.16,
+  "std": null,
+  "min": -0.31,
+  "max": 0.02,
+  "_n_catalogs": 2
+ },
+ {
+  "element": "Cu",
+  "mean": -0.58,
+  "median": [
+   {
+    "value": -0.57,
+    "catalog": {
+     "author": "Maldonado et al. (2015)",
+     "year": 2015,
+     "id": "maldonado15_raw_01_01_2025",
+     "original_norm_id": "maldonado15"
+    }
+   },
+   {
+    "value": -0.55,
+    "catalog": {
+     "author": "Allende Prieto et al. (2004)",
+     "year": 2004,
+     "id": "allendeprieto04_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.44,
+  "std": -1.11,
+  "min": -1.33,
+  "max": -0.44,
+  "_n_catalogs": 12
+ },
+ {
+  "element": "Cu_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Cr",
+  "mean": -0.49,
+  "median": [
+   {
+    "value": -0.48,
+    "catalog": {
+     "author": "Maldonado et al. (2015)",
+     "year": 2015,
+     "id": "maldonado15_raw_01_01_2025",
+     "original_norm_id": "maldonado15"
+    }
+   },
+   {
+    "value": -0.475,
+    "catalog": {
+     "author": "Hojjatpanah et al. (2019)",
+     "year": 2019,
+     "id": "hojjatpanah19_raw_01_01_2025",
+     "original_norm_id": "anders89"
+    }
+   }
+  ],
+  "plusminus": 0.1,
+  "std": -1.38,
+  "min": -0.59,
+  "max": -0.38,
+  "_n_catalogs": 16
+ },
+ {
+  "element": "Cr_II",
+  "mean": -0.74,
+  "median": [
+   {
+    "value": -0.76,
+    "catalog": {
+     "author": "Maldonado et al. (2015)",
+     "year": 2015,
+     "id": "maldonado15_raw_01_01_2025",
+     "original_norm_id": "maldonado15"
+    }
+   }
+  ],
+  "plusminus": 0.08,
+  "std": -1.63,
+  "min": -0.807,
+  "max": -0.65,
+  "_n_catalogs": 5
+ },
+ {
+  "element": "Mn",
+  "mean": -0.72,
+  "median": [
+   {
+    "value": -0.77,
+    "catalog": {
+     "author": "Neves et al. (2009)",
+     "year": 2009,
+     "id": "neves09_raw_01_01_2025",
+     "original_norm_id": "ecu04-porto-anders89_diff_fe"
+    }
+   },
+   {
+    "value": -0.73,
+    "catalog": {
+     "author": "Maldonado et al. (2015)",
+     "year": 2015,
+     "id": "maldonado15_raw_01_01_2025",
+     "original_norm_id": "maldonado15"
+    }
+   }
+  ],
+  "plusminus": 0.16,
+  "std": -1.36,
+  "min": -0.86,
+  "max": -0.54,
+  "_n_catalogs": 12
+ },
+ {
+  "element": "Mn_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Fe",
+  "mean": -0.46,
+  "median": [
+   {
+    "value": -0.48,
+    "catalog": {
+     "author": "Allende Prieto et al. (2004)",
+     "year": 2004,
+     "id": "allendeprieto04_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   },
+   {
+    "value": -0.48,
+    "catalog": {
+     "author": "Costa Silva et al. (2020)",
+     "year": 2020,
+     "id": "costasilva20_raw_01_01_2025",
+     "original_norm_id": "costasilva20"
+    }
+   }
+  ],
+  "plusminus": 0.18,
+  "std": -1.22,
+  "min": -0.64,
+  "max": -0.29,
+  "_n_catalogs": 38
+ },
+ {
+  "element": "Co",
+  "mean": -0.33,
+  "median": [
+   {
+    "value": -0.36,
+    "catalog": {
+     "author": "Jofre et al. (2018)",
+     "year": 2018,
+     "id": "jofre18_raw_01_01_2025",
+     "original_norm_id": "jofre18"
+    }
+   }
+  ],
+  "plusminus": 0.12,
+  "std": -1.08,
+  "min": -0.41,
+  "max": -0.16,
+  "_n_catalogs": 13
+ },
+ {
+  "element": "Co_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ni",
+  "mean": -0.48,
+  "median": [
+   {
+    "value": -0.47,
+    "catalog": {
+     "author": "Bodaghee et al. (2003)",
+     "year": 2003,
+     "id": "bodaghee03_raw_01_01_2025",
+     "original_norm_id": "anders89"
+    }
+   },
+   {
+    "value": -0.47,
+    "catalog": {
+     "author": "Brewer et al. (2016)",
+     "year": 2016,
+     "id": "brewer16_01_of_02_unique_01_01_2025",
+     "original_norm_id": "grevesse07"
+    }
+   }
+  ],
+  "plusminus": 0.21,
+  "std": -1.29,
+  "min": -0.82,
+  "max": -0.4,
+  "_n_catalogs": 18
+ },
+ {
+  "element": "Ni_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Zn",
+  "mean": -0.42,
+  "median": [
+   {
+    "value": -0.47,
+    "catalog": {
+     "author": "Delgado Mena et al. (2017)",
+     "year": 2017,
+     "id": "delgadomena17_raw_01_01_2025",
+     "original_norm_id": "delgadomena17"
+    }
+   },
+   {
+    "value": -0.42,
+    "catalog": {
+     "author": "Luck (2017)",
+     "year": 2017,
+     "id": "luck17_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.12,
+  "std": -1.14,
+  "min": -0.52,
+  "max": -0.29,
+  "_n_catalogs": 8
+ },
+ {
+  "element": "Zn_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ga_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ge",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Se",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Rb",
+  "mean": -0.46,
+  "median": [
+   {
+    "value": -0.455,
+    "catalog": {
+     "author": "Takeda (2021)",
+     "year": 2021,
+     "id": "takeda21_raw_01_01_2025",
+     "original_norm_id": "takeda21"
+    }
+   }
+  ],
+  "plusminus": 0.12,
+  "std": null,
+  "min": -0.46,
+  "max": -0.46,
+  "_n_catalogs": 1
+ },
+ {
+  "element": "Sr",
+  "mean": -0.42,
+  "median": [
+   {
+    "value": -0.56,
+    "catalog": {
+     "author": "Moya et al. (2022)",
+     "year": 2022,
+     "id": "moya22_01_of_02_unique_01_01_2025",
+     "original_norm_id": "ecu04-porto-anders89_diff_fe"
+    }
+   },
+   {
+    "value": -0.54,
+    "catalog": {
+     "author": "Luck (2018)",
+     "year": 2018,
+     "id": "luck18_raw_01_01_2025",
+     "original_norm_id": "luck18"
+    }
+   }
+  ],
+  "plusminus": 0.26,
+  "std": -0.694,
+  "min": -0.66,
+  "max": -0.14,
+  "_n_catalogs": 4
+ },
+ {
+  "element": "Sr_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Y",
+  "mean": -0.43,
+  "median": [
+   {
+    "value": -0.49,
+    "catalog": {
+     "author": "Luck (2018)",
+     "year": 2018,
+     "id": "luck18_raw_01_01_2025",
+     "original_norm_id": "luck18"
+    }
+   },
+   {
+    "value": -0.48,
+    "catalog": {
+     "author": "Brewer et al. (2016)",
+     "year": 2016,
+     "id": "brewer16_01_of_02_unique_01_01_2025",
+     "original_norm_id": "grevesse07"
+    }
+   }
+  ],
+  "plusminus": 0.22,
+  "std": -0.867,
+  "min": -0.64,
+  "max": -0.2,
+  "_n_catalogs": 6
+ },
+ {
+  "element": "Y_II",
+  "mean": -0.43,
+  "median": [
+   {
+    "value": -0.57,
+    "catalog": {
+     "author": "Delgado Mena et al. (2017)",
+     "year": 2017,
+     "id": "delgadomena17_raw_01_01_2025",
+     "original_norm_id": "delgadomena17"
+    }
+   }
+  ],
+  "plusminus": 0.18,
+  "std": -0.809,
+  "min": -0.6,
+  "max": -0.23,
+  "_n_catalogs": 3
+ },
+ {
+  "element": "Zr",
+  "mean": -0.31,
+  "median": [
+   {
+    "value": -0.32,
+    "catalog": {
+     "author": "Luck (2018)",
+     "year": 2018,
+     "id": "luck18_raw_01_01_2025",
+     "original_norm_id": "luck18"
+    }
+   },
+   {
+    "value": -0.31,
+    "catalog": {
+     "author": "Delgado Mena et al. (2017)",
+     "year": 2017,
+     "id": "delgadomena17_raw_01_01_2025",
+     "original_norm_id": "delgadomena17"
+    }
+   }
+  ],
+  "plusminus": 0.1,
+  "std": null,
+  "min": -0.32,
+  "max": -0.31,
+  "_n_catalogs": 2
+ },
+ {
+  "element": "Zr_II",
+  "mean": -0.3,
+  "median": [
+   {
+    "value": -0.41,
+    "catalog": {
+     "author": "Luck (2017)",
+     "year": 2017,
+     "id": "luck17_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   },
+   {
+    "value": -0.22,
+    "catalog": {
+     "author": "Delgado Mena et al. (2017)",
+     "year": 2017,
+     "id": "delgadomena17_raw_01_01_2025",
+     "original_norm_id": "delgadomena17"
+    }
+   }
+  ],
+  "plusminus": 0.1,
+  "std": null,
+  "min": -0.41,
+  "max": -0.22,
+  "_n_catalogs": 2
+ },
+ {
+  "element": "Nb",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Nb_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Mo",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Mo_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Tc",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ru",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ru_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Rh",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Pd",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ag",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Cd",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "In_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Sn",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Sb",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Te",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ba",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ba_II",
+  "mean": -0.56,
+  "median": [
+   {
+    "value": -0.55,
+    "catalog": {
+     "author": "Allende Prieto et al. (2004)",
+     "year": 2004,
+     "id": "allendeprieto04_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   },
+   {
+    "value": -0.53,
+    "catalog": {
+     "author": "Castro et al. (1999)",
+     "year": 1999,
+     "id": "castro99_raw_01_01_2025",
+     "original_norm_id": "lodders09"
+    }
+   }
+  ],
+  "plusminus": 0.18,
+  "std": -1.17,
+  "min": -0.8,
+  "max": -0.43,
+  "_n_catalogs": 8
+ },
+ {
+  "element": "La",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "La_II",
+  "mean": -0.22,
+  "median": [
+   {
+    "value": -0.29,
+    "catalog": {
+     "author": "Luck (2018)",
+     "year": 2018,
+     "id": "luck18_raw_01_01_2025",
+     "original_norm_id": "luck18"
+    }
+   }
+  ],
+  "plusminus": 0.27,
+  "std": -0.527,
+  "min": -0.54,
+  "max": 0.0,
+  "_n_catalogs": 3
+ },
+ {
+  "element": "Ce",
+  "mean": -0.48,
+  "median": [
+   {
+    "value": -0.48,
+    "catalog": {
+     "author": "Luck & Heiter (2005)",
+     "year": 2005,
+     "id": "luck05_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.08,
+  "std": null,
+  "min": -0.48,
+  "max": -0.48,
+  "_n_catalogs": 1
+ },
+ {
+  "element": "Ce_II",
+  "mean": -0.15,
+  "median": [
+   {
+    "value": -0.31,
+    "catalog": {
+     "author": "Allende Prieto et al. (2004)",
+     "year": 2004,
+     "id": "allendeprieto04_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.46,
+  "std": -0.217,
+  "min": -0.63,
+  "max": 0.28,
+  "_n_catalogs": 5
+ },
+ {
+  "element": "Pr",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Pr_II",
+  "mean": 0.37,
+  "median": [
+   {
+    "value": 0.37,
+    "catalog": {
+     "author": "Luck (2017)",
+     "year": 2017,
+     "id": "luck17_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.1,
+  "std": null,
+  "min": 0.37,
+  "max": 0.37,
+  "_n_catalogs": 1
+ },
+ {
+  "element": "Nd",
+  "mean": -0.48,
+  "median": [
+   {
+    "value": -0.48,
+    "catalog": {
+     "author": "Luck & Heiter (2005)",
+     "year": 2005,
+     "id": "luck05_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.07,
+  "std": null,
+  "min": -0.48,
+  "max": -0.48,
+  "_n_catalogs": 1
+ },
+ {
+  "element": "Nd_II",
+  "mean": -0.35,
+  "median": [
+   {
+    "value": -0.32,
+    "catalog": {
+     "author": "Allende Prieto et al. (2004)",
+     "year": 2004,
+     "id": "allendeprieto04_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.42,
+  "std": -0.587,
+  "min": -0.96,
+  "max": -0.13,
+  "_n_catalogs": 3
+ },
+ {
+  "element": "Sm",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Sm_II",
+  "mean": 0.25,
+  "median": [
+   {
+    "value": -0.19,
+    "catalog": {
+     "author": "Luck (2018)",
+     "year": 2018,
+     "id": "luck18_raw_01_01_2025",
+     "original_norm_id": "luck18"
+    }
+   },
+   {
+    "value": 0.47,
+    "catalog": {
+     "author": "Luck (2017)",
+     "year": 2017,
+     "id": "luck17_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.33,
+  "std": null,
+  "min": -0.19,
+  "max": 0.47,
+  "_n_catalogs": 2
+ },
+ {
+  "element": "Eu",
+  "mean": -0.04,
+  "median": [
+   {
+    "value": -0.04,
+    "catalog": {
+     "author": "Luck (2017)",
+     "year": 2017,
+     "id": "luck17_01_of_02_unique_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.11,
+  "std": null,
+  "min": -0.04,
+  "max": -0.04,
+  "_n_catalogs": 1
+ },
+ {
+  "element": "Eu_II",
+  "mean": -0.04,
+  "median": [
+   {
+    "value": -0.03,
+    "catalog": {
+     "author": "Allende Prieto et al. (2004)",
+     "year": 2004,
+     "id": "allendeprieto04_raw_01_01_2025",
+     "original_norm_id": "asplund09"
+    }
+   }
+  ],
+  "plusminus": 0.18,
+  "std": -0.615,
+  "min": -0.29,
+  "max": 0.07,
+  "_n_catalogs": 5
+ },
+ {
+  "element": "Gd",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Gd_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Tb_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Dy",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Dy_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ho_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Er",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Er_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Tm_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Yb_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Lu_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Hf",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Hf_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "W",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "W_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Re_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Os",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Os_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Ir",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Pt",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Au",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Hg_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Pb",
+  "mean": -0.76,
+  "median": [
+   {
+    "value": -0.76,
+    "catalog": {
+     "author": "Contursi et al. (2024)",
+     "year": 2024,
+     "id": "contursi24_01_of_03_unique_01_01_2025",
+     "original_norm_id": "grevesse07"
+    }
+   }
+  ],
+  "plusminus": 0.22,
+  "std": null,
+  "min": -0.76,
+  "max": -0.76,
+  "_n_catalogs": 1
+ },
+ {
+  "element": "Pb_II",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Th",
+  "mean": null,
+  "median": [],
+  "plusminus": null,
+  "std": null,
+  "min": null,
+  "max": null,
+  "_n_catalogs": null
+ },
+ {
+  "element": "Th_II",
+  "mean": -0.22,
+  "median": [
+   {
+    "value": -0.22,
+    "catalog": {
+     "author": "Unterborn et al. (2015)",
+     "year": 2015,
+     "id": "unterborn15_raw_01_01_2025",
+     "original_norm_id": "unterborn15"
+    }
+   }
+  ],
+  "plusminus": 0.14,
+  "std": null,
+  "min": -0.22,
+  "max": -0.22,
+  "_n_catalogs": 1
+ }
+]

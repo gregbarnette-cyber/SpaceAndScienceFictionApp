@@ -101,7 +101,13 @@ def cmd_hypatia_data(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Query SpaceAndScienceFictionApp core functions; outputs JSON."
+        description="Query SpaceAndScienceFictionApp core functions; outputs JSON to stdout.",
+        epilog=(
+            "Every result is JSON: a dict on success (a list for 'habitable-zone'), "
+            "or {\"error\": \"...\"} with exit code 1 on failure — always check for an "
+            "'error' key first. For each subcommand's required arguments and the exact "
+            "output keys it returns, see docs/integration.md in this repo."
+        ),
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 

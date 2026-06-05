@@ -39,6 +39,41 @@ def log_viz_error(context: str) -> None:
     traceback.print_exc()
 
 
+def wrap_scrollable(parent, canvas, toolbar):
+    """Wrap a (canvas, toolbar) pair in a widget whose canvas can scroll vertically.
+
+    The toolbar stays pinned at the top; the canvas sits in a QScrollArea sized to
+    the figure's natural pixel height. For short figures this looks identical to
+    embedding the canvas directly; for tall ones (e.g. an abundance chart with 50+
+    bars) the chart keeps its readable per-bar height and the user scrolls instead
+    of the bars being squashed to fit the tab.
+    """
+    from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea
+
+    if canvas is None:
+        return None
+
+    container = QWidget(parent)
+    lay = QVBoxLayout(container)
+    lay.setContentsMargins(4, 4, 4, 4)
+    lay.setSpacing(2)
+    if toolbar is not None:
+        lay.addWidget(toolbar)
+
+    try:
+        fig = canvas.figure
+        px_h = int(fig.get_size_inches()[1] * fig.dpi)
+        canvas.setMinimumHeight(px_h)
+    except Exception:
+        pass
+
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setWidget(canvas)
+    lay.addWidget(scroll)
+    return container
+
+
 def _disable_zoom_rect(toolbar):
     """Remove the rectangle-zoom tool from a 3D toolbar.
 
@@ -1791,34 +1826,52 @@ def make_abundance_canvas(parent, abundances_data: dict, star_name: str = ""):
     if not abundances_data or "error" in abundances_data:
         return _error_canvas(abundances_data.get("error", "No abundance data") if abundances_data else "No abundance data")
 
-    elements = abundances_data.get("elements", [])
-    means    = abundances_data.get("means", [])
-    stds     = abundances_data.get("stds", [])
+    elements   = abundances_data.get("elements", [])
+    means      = abundances_data.get("means", [])
+    stds       = abundances_data.get("stds", [])
+    categories = abundances_data.get("categories", [])
+    bar_colors = abundances_data.get("colors", [])
 
     if not elements:
         return _error_canvas("No measurable abundances found")
 
+    n = len(elements)
     # Error bars must be non-negative: matplotlib raises ValueError on negative
     # xerr. Clamp defensively so one bad spread value never drops the whole tab.
     safe_stds = [max(float(s), 0.0) if s is not None else 0.0 for s in stds]
-    colors    = ["#e06c4a" if m >= 0 else "#4a90d9" for m in means]
+    # Colour bars by nucleosynthetic-family category; fall back to sign colouring
+    # if no category info was supplied.
+    if bar_colors and len(bar_colors) == n:
+        colors = list(bar_colors)
+    else:
+        colors = ["#e06c4a" if m >= 0 else "#4a90d9" for m in means]
 
-    fig_h = max(4.0, len(elements) * 0.38 + 1.6)
+    # Lay bars bottom-to-top in list order, inserting a one-row gap between
+    # categories so the groups read as distinct blocks.
+    cats = categories if len(categories) == n else [""] * n
+    y_pos, gap = [], 0
+    for i in range(n):
+        if i > 0 and cats[i] != cats[i - 1]:
+            gap += 1
+        y_pos.append(i + gap)
+    span = (y_pos[-1] if y_pos else 0) + 1
+
+    fig_h = max(4.0, span * 0.34 + 1.8)
     fig   = Figure(figsize=(8, fig_h), dpi=100, facecolor=_SPACE_BG)
     canvas = FigureCanvas(fig)
-    fig.subplots_adjust(left=0.12, right=0.96, top=0.91, bottom=0.10)
+    fig.subplots_adjust(left=0.13, right=0.96, top=0.93, bottom=0.07)
 
     ax = fig.add_subplot(111)
     ax.set_facecolor(_SPACE_BG)
 
-    y_pos = list(range(len(elements)))
     ax.barh(y_pos, means, xerr=safe_stds, color=colors,
-            ecolor=_LABEL_CLR, capsize=3, alpha=0.85, height=0.6)
+            ecolor=_LABEL_CLR, capsize=3, alpha=0.88, height=0.62)
 
     ax.axvline(0, color=_LABEL_CLR, linewidth=0.9, alpha=0.55, zorder=3)
 
     ax.set_yticks(y_pos)
     ax.set_yticklabels(elements, fontsize=9, color=_LABEL_CLR)
+    ax.set_ylim(-0.8, span - 0.2)
     ax.set_xlabel("[X/H]  (Lodders 2009)", color=_LABEL_CLR, fontsize=9)
     ax.tick_params(axis="x", colors=_LABEL_CLR, labelsize=8)
     ax.tick_params(axis="y", colors=_LABEL_CLR)
@@ -1830,6 +1883,23 @@ def make_abundance_canvas(parent, abundances_data: dict, star_name: str = ""):
 
     ax.grid(axis="x", color=_GRID_CLR, alpha=0.5, linewidth=0.7, linestyle="--")
     ax.set_axisbelow(True)
+
+    # Legend mapping colour → category label (only the categories actually shown).
+    try:
+        from matplotlib.patches import Patch
+        from core.hypatia_elements import category_label, category_color
+        seen, handles = [], []
+        for c in cats:
+            if c and c not in seen:
+                seen.append(c)
+                handles.append(Patch(facecolor=category_color(c), label=category_label(c)))
+        if handles:
+            leg = ax.legend(handles=handles, loc="lower right", fontsize=7,
+                            framealpha=0.85, facecolor=_SPACE_BG, edgecolor=_GRID_CLR)
+            for txt in leg.get_texts():
+                txt.set_color(_LABEL_CLR)
+    except Exception:
+        pass
 
     title = "[X/H] Elemental Abundances"
     if star_name:

@@ -8,14 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
-
-_ELEMENT_NAMES = {
-    "fe": "Iron",      "mg": "Magnesium", "si": "Silicon",   "ca": "Calcium",
-    "ti": "Titanium",  "o":  "Oxygen",    "c":  "Carbon",    "n":  "Nitrogen",
-    "na": "Sodium",    "al": "Aluminum",  "s":  "Sulfur",    "ni": "Nickel",
-    "co": "Cobalt",    "cr": "Chromium",  "mn": "Manganese", "ba": "Barium",
-    "y":  "Yttrium",   "sr": "Strontium", "eu": "Europium",
-}
+from core.hypatia_elements import CATEGORIES, category_label, display_symbol
 
 
 def _tbl(headers, rows) -> QTableView:
@@ -125,27 +118,36 @@ def build_hypatia_tab(hypatia: dict) -> QScrollArea:
     layout.addWidget(t_kin)
     fit_table_height(t_kin)
 
-    # ── Elemental Abundances ──────────────────────────────────────────────────
+    # ── Elemental Abundances (grouped by nucleosynthetic family) ───────────────
     layout.addWidget(QLabel("<b>Elemental Abundances  (Lodders 2009)</b>"))
     if abundances:
-        rows = []
+        headers = ["Element", "Name", "[X/H] Mean", "±Std", "Min", "Max", "# Catalogs"]
+        # Bucket the measured species by their category, preserving parser order.
+        by_cat = {}
         for a in abundances:
-            sym = a["element"]
-            rows.append([
-                sym,
-                _ELEMENT_NAMES.get(sym.lower(), ""),
-                _fmtsign(a.get("mean"), 3),
-                _fmts(a.get("std"), 3),
-                _fmtsign(a.get("min"), 3),
-                _fmtsign(a.get("max"), 3),
-                str(a["n"]) if a.get("n") is not None else "N/A",
-            ])
-        t_abund = _tbl(
-            ["Element", "Name", "[X/H] Mean", "±Std", "Min", "Max", "# Catalogs"],
-            rows,
-        )
-        layout.addWidget(t_abund)
-        fit_table_height(t_abund)
+            by_cat.setdefault(a.get("category", ""), []).append(a)
+
+        for key, label, _color in CATEGORIES:
+            group = by_cat.get(key)
+            if not group:
+                continue
+            hdr = QLabel(f"<b>{label}</b>")
+            hdr.setStyleSheet("color: #555555; margin-top: 4px;")
+            layout.addWidget(hdr)
+            rows = []
+            for a in group:
+                rows.append([
+                    display_symbol(a["element"]),
+                    a.get("name", ""),
+                    _fmtsign(a.get("mean"), 3),
+                    _fmts(a.get("std"), 3),
+                    _fmtsign(a.get("min"), 3),
+                    _fmtsign(a.get("max"), 3),
+                    str(a["n"]) if a.get("n") is not None else "N/A",
+                ])
+            t_abund = _tbl(headers, rows)
+            layout.addWidget(t_abund)
+            fit_table_height(t_abund)
     else:
         layout.addWidget(QLabel("No elemental abundance data available for this star."))
 

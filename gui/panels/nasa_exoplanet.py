@@ -21,7 +21,7 @@ import core.databases
 import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas,
-    make_exoplanet_system_canvas, log_viz_error,
+    make_exoplanet_system_canvas, log_viz_error, wrap_scrollable,
 )
 
 
@@ -662,11 +662,7 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
                         None, ab_data, hypatia.get("star_name", "")
                     )
                     if ab_canvas is not None:
-                        ab_w = QWidget()
-                        ab_l = QVBoxLayout(ab_w)
-                        ab_l.setContentsMargins(4, 4, 4, 4)
-                        ab_l.addWidget(ab_toolbar)
-                        ab_l.addWidget(ab_canvas)
+                        ab_w = wrap_scrollable(None, ab_canvas, ab_toolbar)
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
                 log_viz_error("Abundance Profile")
@@ -766,11 +762,7 @@ class NasaHwoExepPanel(DiagramToggleMixin, _StarSearchPanel):
                         None, ab_data, hypatia.get("star_name", "")
                     )
                     if ab_canvas is not None:
-                        ab_w = QWidget()
-                        ab_l = QVBoxLayout(ab_w)
-                        ab_l.setContentsMargins(4, 4, 4, 4)
-                        ab_l.addWidget(ab_toolbar)
-                        ab_l.addWidget(ab_canvas)
+                        ab_w = wrap_scrollable(None, ab_canvas, ab_toolbar)
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
                 log_viz_error("Abundance Profile")
@@ -867,11 +859,7 @@ class NasaMissionExocatPanel(DiagramToggleMixin, _StarSearchPanel):
                         None, ab_data, hypatia.get("star_name", "")
                     )
                     if ab_canvas is not None:
-                        ab_w = QWidget()
-                        ab_l = QVBoxLayout(ab_w)
-                        ab_l.setContentsMargins(4, 4, 4, 4)
-                        ab_l.addWidget(ab_toolbar)
-                        ab_l.addWidget(ab_canvas)
+                        ab_w = wrap_scrollable(None, ab_canvas, ab_toolbar)
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
                 log_viz_error("Abundance Profile")
@@ -1152,11 +1140,7 @@ class NasaPlanetarySystemsMapPanel(_StarSearchPanel):
                         None, ab_data, hypatia.get("star_name", "")
                     )
                     if ab_canvas is not None:
-                        ab_w = QWidget()
-                        ab_l = QVBoxLayout(ab_w)
-                        ab_l.setContentsMargins(4, 4, 4, 4)
-                        ab_l.addWidget(ab_toolbar)
-                        ab_l.addWidget(ab_canvas)
+                        ab_w = wrap_scrollable(None, ab_canvas, ab_toolbar)
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
                 log_viz_error("Abundance Profile")

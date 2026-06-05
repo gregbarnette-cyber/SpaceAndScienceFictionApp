@@ -408,10 +408,12 @@ def prepare_solar_travel_diagram(result: dict) -> dict:
 def prepare_abundance_profile(hypatia_result: dict) -> dict:
     """Extract abundance list from a compute_hypatia_data() result for bar-chart rendering.
 
-    Returns {"elements": list, "means": list, "stds": list, "star_name": str}
-    or {"error": str}.
-    Elements are returned in _HYPATIA_ELEMENTS order (already sorted by the parser).
+    Returns {"elements", "names", "means", "stds", "categories", "colors", "star_name"}
+    or {"error": str}. Lists run in parallel; elements are in the master display order
+    (already sorted by the parser). `elements` uses human-readable symbols ("Ba II").
     """
+    from core.hypatia_elements import display_symbol, category_color
+
     if not hypatia_result or "error" in hypatia_result:
         msg = hypatia_result.get("error", "No Hypatia data available") if hypatia_result else "No Hypatia data available"
         return {"error": msg}
@@ -420,23 +422,30 @@ def prepare_abundance_profile(hypatia_result: dict) -> dict:
     if not abundances:
         return {"error": "No abundance data available for this star"}
 
-    elements, means, stds = [], [], []
+    elements, names, means, stds, categories, colors = [], [], [], [], [], []
     for a in abundances:
         m = a.get("mean")
         if m is None:
             continue
-        elements.append(a["element"])
+        elements.append(display_symbol(a["element"]))
+        names.append(a.get("name", ""))
         means.append(float(m))
         stds.append(a.get("std"))
+        cat = a.get("category", "")
+        categories.append(cat)
+        colors.append(category_color(cat))
 
     if not elements:
         return {"error": "No measurable abundances found"}
 
     return {
-        "elements":  elements,
-        "means":     means,
-        "stds":      stds,
-        "star_name": hypatia_result.get("star_name", ""),
+        "elements":   elements,
+        "names":      names,
+        "means":      means,
+        "stds":       stds,
+        "categories": categories,
+        "colors":     colors,
+        "star_name":  hypatia_result.get("star_name", ""),
     }
 
 

@@ -17,7 +17,7 @@ from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.viz
 from gui.visualizations.plot_helpers import (
-    mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas,
+    mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas, wrap_scrollable,
     log_viz_error,
 )
 
@@ -418,11 +418,7 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                         None, ab_data, hypatia.get("star_name", "")
                     )
                     if ab_canvas is not None:
-                        ab_w = QWidget()
-                        ab_l = QVBoxLayout(ab_w)
-                        ab_l.setContentsMargins(4, 4, 4, 4)
-                        ab_l.addWidget(ab_toolbar)
-                        ab_l.addWidget(ab_canvas)
+                        ab_w = wrap_scrollable(None, ab_canvas, ab_toolbar)
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
                 log_viz_error("Abundance Profile")

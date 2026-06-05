@@ -1,5 +1,13 @@
 # Hypatia Catalog Integration — Phase 1: Option 8 (Star System Regions Auto)
 
+> **Historical planning doc — partly superseded.** This records the *original* integration,
+> which queried a curated **19-element** set. The app now fetches the **full 104-species**
+> Hypatia set (incl. ionized species), grouped by nucleosynthetic family, with the element
+> metadata centralized in `core/hypatia_elements.py`. For current behavior see
+> `docs/star-system-regions.md`, `docs/integration.md`, and `docs/hypatia_catalog_api.md`.
+> The 19-element list and single-batch `/composition` call described below are no longer
+> accurate (the server caps the request line at ~4094 bytes, so requests are now chunked).
+
 This document is the implementation plan for integrating the Hypatia Catalog API into
 Option 8 (Star System Regions Auto) only. Once validated here, the pattern rolls out to
 opts 1, 3, 4, 5, 6, and the CLI/query.py for opts 2 and 8.
