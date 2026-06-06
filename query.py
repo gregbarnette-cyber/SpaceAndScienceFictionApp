@@ -109,6 +109,25 @@ def cmd_gcns_system(args):
     _out(databases.compute_gcns_system(args.id))
 
 
+def cmd_gcns_distance(args):
+    _out(databases.compute_gcns_distance(
+        star1=args.star1, id1=args.id1, star2=args.star2, id2=args.id2
+    ))
+
+
+def cmd_gcns_travel_time(args):
+    _out(databases.compute_gcns_travel_time(
+        star1=args.star1, id1=args.id1, star2=args.star2, id2=args.id2,
+        ly_hr=args.ly_hr, times_c=args.times_c,
+    ))
+
+
+def cmd_gcns_stars_within_star(args):
+    _out(databases.compute_gcns_stars_within_star(
+        star=args.star, source_id=args.id, limit_ly=args.ly
+    ))
+
+
 # ── Argument parser ───────────────────────────────────────────────────────────
 
 def main():
@@ -214,6 +233,40 @@ def main():
     p.add_argument("--id", required=True, type=int,
                    help="Gaia EDR3/DR3 source_id of any component")
     p.set_defaults(func=cmd_gcns_system)
+
+    # gcns-distance
+    p = sub.add_parser("gcns-distance",
+                       help="GCNS-backed 3D distance between two stars (by name or Gaia id)")
+    g1 = p.add_mutually_exclusive_group(required=True)
+    g1.add_argument("--star1", help="Endpoint 1 by name (SIMBAD network lookup)")
+    g1.add_argument("--id1", type=int, help="Endpoint 1 by Gaia EDR3/DR3 source_id")
+    g2 = p.add_mutually_exclusive_group(required=True)
+    g2.add_argument("--star2", help="Endpoint 2 by name (SIMBAD network lookup)")
+    g2.add_argument("--id2", type=int, help="Endpoint 2 by Gaia EDR3/DR3 source_id")
+    p.set_defaults(func=cmd_gcns_distance)
+
+    # gcns-travel-time
+    p = sub.add_parser("gcns-travel-time",
+                       help="GCNS-backed FTL travel time between two stars (by name or Gaia id)")
+    g1 = p.add_mutually_exclusive_group(required=True)
+    g1.add_argument("--star1", help="Origin by name (SIMBAD network lookup)")
+    g1.add_argument("--id1", type=int, help="Origin by Gaia EDR3/DR3 source_id")
+    g2 = p.add_mutually_exclusive_group(required=True)
+    g2.add_argument("--star2", help="Destination by name (SIMBAD network lookup)")
+    g2.add_argument("--id2", type=int, help="Destination by Gaia EDR3/DR3 source_id")
+    vel = p.add_mutually_exclusive_group(required=True)
+    vel.add_argument("--ly-hr",   dest="ly_hr",   type=float, help="Velocity in light years per hour")
+    vel.add_argument("--times-c", dest="times_c", type=float, help="Velocity as a multiple of c")
+    p.set_defaults(func=cmd_gcns_travel_time)
+
+    # gcns-stars-within-star
+    p = sub.add_parser("gcns-stars-within-star",
+                       help="GCNS stars within N light years of a star (Bayesian distances)")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--star", help="Center by name (SIMBAD network lookup)")
+    g.add_argument("--id", type=int, help="Center by Gaia EDR3/DR3 source_id")
+    p.add_argument("--ly", required=True, type=float, help="Light-year radius")
+    p.set_defaults(func=cmd_gcns_stars_within_star)
 
     args = parser.parse_args()
     try:

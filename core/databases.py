@@ -2179,3 +2179,281 @@ def compute_gcns_system(source_id: int) -> dict:
             "pairs":           pairs,
         },
     }
+
+
+# ── GCNS-backed pairwise calculators (distance / travel-time / within-star) ────
+#
+# GCNS-sourced versions of the SIMBAD-based calculators in core/calculators.py.
+# Coordinates and Bayesian distances come from the gcns_stars table; the existing
+# SIMBAD-based subcommands are left unchanged. _to_cartesian / _fmt_ra / _fmt_dec /
+# format_travel_time / HOURS_PER_JULIAN_YEAR are imported lazily from core.calculators
+# inside the function bodies (neither module imports the other at top level).
+
+_GCNS_GAIA_ID_RE = re.compile(r"Gaia\s+E?DR3\s+(\d+)")  # EDR3 or DR3 only — same source_id
+
+
+def _resolve_gcns_row(*, star=None, source_id=None) -> dict:
+    """Resolve a star to a single gcns_stars row, by Gaia source_id or by name.
+
+    Exactly one of `star` / `source_id` must be supplied.
+
+    Resolution order:
+      - source_id (offline): direct gcns_stars fetch by gaia_source_id. missing_10mas
+        rows have NULL gaia_source_id and are therefore not addressable this way.
+      - star (network): SIMBAD lookup → extract the Gaia EDR3/DR3 id from its
+        designations → fetch by id. If SIMBAD itself errors, that error propagates.
+        If the id is absent from gcns_stars, fall through to an exact star_name match
+        (case-insensitive) — this is how missing_10mas rows (Alpha Cen A/B, …) resolve.
+
+    Returns the bare _gcns_row_to_dict shape, or {"error": str}. Never falls back to
+    the SIMBAD star_systems table; an unmatched star is an error, not a silent
+    substitution.
+    """
+    from core.db import get_conn
+
+    if (star is None) == (source_id is None):
+        return {"error": "Supply exactly one of star or source_id."}
+
+    # ── source_id path (offline) ──────────────────────────────────────────────
+    if source_id is not None:
+        r = compute_gcns_by_source_id(source_id)
+        if "error" in r:
+            return r
+        return r["star"]
+
+    # ── star path (network via SIMBAD) ────────────────────────────────────────
+    simbad = compute_simbad_lookup(star)
+    if "error" in simbad:
+        return simbad  # network / no-match — fatal, do not fall back
+
+    gaia_raw = (simbad.get("designations") or {}).get("Gaia EDR3")
+    if gaia_raw:
+        m = _GCNS_GAIA_ID_RE.search(str(gaia_raw))
+        if m:
+            r = compute_gcns_by_source_id(int(m.group(1)))
+            if "error" not in r:
+                return r["star"]
+            # id not in gcns_stars — fall through to name match (do not propagate)
+
+    # ── name fallback (missing_10mas and any id-miss) ─────────────────────────
+    conn = get_conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM gcns_stars").fetchone()[0]
+    except Exception as e:
+        return {"error": f"Error reading gcns_stars table: {e}"}
+    if total == 0:
+        return {"error": "gcns_stars table is empty — run option 58 (Import GCNS Data) first."}
+
+    rows = conn.execute(
+        f"SELECT {', '.join(_GCNS_ROW_COLS)} FROM gcns_stars "
+        "WHERE star_name = ? COLLATE NOCASE",
+        (str(star).strip(),),
+    ).fetchall()
+    if len(rows) == 1:
+        return _gcns_row_to_dict(rows[0])
+    if len(rows) > 1:
+        cands = []
+        for row in rows:
+            sid = row["gaia_source_id"]
+            cands.append(str(sid) if sid is not None
+                         else f"<missing_10mas: {row['star_name']}>")
+        return {"error": (f"'{star}' is ambiguous in the GCNS catalog — matches "
+                          f"{len(rows)} rows: {', '.join(cands)}. Query by --id instead.")}
+
+    return {"error": (f"'{star}' is not in the GCNS catalog "
+                      "(no Gaia EDR3 id or name match).")}
+
+
+def _gcns_endpoint_xyz(row, label):
+    """(_to_cartesian of a resolved GCNS row, or an error dict). Guards null coords."""
+    from core.calculators import _to_cartesian
+
+    ra, dec, ly = row.get("ra"), row.get("dec"), row.get("light_years")
+    if ra is None or dec is None or ly is None:
+        name = row.get("star_name") or row.get("gaia_source_id") or label
+        return None, {"error": f"GCNS row for {name} has incomplete coordinates "
+                               "(ra/dec/light_years); cannot compute a 3D position."}
+    return _to_cartesian(ra, dec, ly), None
+
+
+def _gcns_info_block(row):
+    """A resolved GCNS row plus its sexagesimal ra_hms / dec_dms (mirrors *_info)."""
+    from core.calculators import _fmt_ra, _fmt_dec
+
+    info = dict(row)
+    info["ra_hms"]  = _fmt_ra(row["ra"])
+    info["dec_dms"] = _fmt_dec(row["dec"])
+    return info
+
+
+def compute_gcns_distance(star1=None, id1=None, star2=None, id2=None) -> dict:
+    """3D Euclidean distance in light years between two GCNS stars.
+
+    Each endpoint accepts a name (star1/star2, via SIMBAD) or a Gaia source_id
+    (id1/id2, offline). Mirrors compute_distance_between_stars' output, plus the
+    GCNS provenance fields in each endpoint info block and snapshot_date/gcns_version
+    at top level.
+
+    Returns {star1_info, star2_info, distance_ly, distance_au, snapshot_date,
+    gcns_version} or {"error": str}.
+    """
+    s1 = _resolve_gcns_row(star=star1, source_id=id1)
+    if "error" in s1:
+        return s1
+    s2 = _resolve_gcns_row(star=star2, source_id=id2)
+    if "error" in s2:
+        return s2
+
+    xyz1, err = _gcns_endpoint_xyz(s1, "star1")
+    if err:
+        return err
+    xyz2, err = _gcns_endpoint_xyz(s2, "star2")
+    if err:
+        return err
+
+    (x1, y1, z1), (x2, y2, z2) = xyz1, xyz2
+    distance_ly = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+    meta = _gcns_meta_dict()
+    return {
+        "star1_info":    _gcns_info_block(s1),
+        "star2_info":    _gcns_info_block(s2),
+        "distance_ly":   distance_ly,
+        "distance_au":   distance_ly * 63241.077 if distance_ly < 0.5 else None,
+        "snapshot_date": meta.get("snapshot_date"),
+        "gcns_version":  meta.get("gcns_version"),
+    }
+
+
+def compute_gcns_travel_time(star1=None, id1=None, star2=None, id2=None,
+                             ly_hr=None, times_c=None) -> dict:
+    """GCNS-backed travel time between two stars. Supply exactly one of ly_hr/times_c.
+
+    Distance comes from the GCNS census (see compute_gcns_distance); the velocity
+    conversion and travel-time formatting mirror compute_travel_time_between_stars.
+
+    Returns {origin_info, dest_info, distance_ly, ly_hr, times_c, total_hours,
+    travel_time_str, snapshot_date, gcns_version} or {"error": str}.
+    """
+    from core.calculators import HOURS_PER_JULIAN_YEAR, format_travel_time
+
+    if ly_hr is None and times_c is None:
+        return {"error": "Must supply ly_hr or times_c."}
+    if ly_hr is not None and times_c is not None:
+        return {"error": "Supply only one of ly_hr or times_c."}
+
+    s1 = _resolve_gcns_row(star=star1, source_id=id1)
+    if "error" in s1:
+        return s1
+    s2 = _resolve_gcns_row(star=star2, source_id=id2)
+    if "error" in s2:
+        return s2
+
+    xyz1, err = _gcns_endpoint_xyz(s1, "origin")
+    if err:
+        return err
+    xyz2, err = _gcns_endpoint_xyz(s2, "destination")
+    if err:
+        return err
+
+    (x1, y1, z1), (x2, y2, z2) = xyz1, xyz2
+    distance_ly = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+    if ly_hr is not None:
+        v_ly_hr   = ly_hr
+        v_times_c = ly_hr * HOURS_PER_JULIAN_YEAR
+    else:
+        v_times_c = times_c
+        v_ly_hr   = times_c / HOURS_PER_JULIAN_YEAR
+
+    if v_ly_hr <= 0:
+        return {"error": "Velocity must be greater than 0."}
+
+    total_hours = distance_ly / v_ly_hr
+
+    meta = _gcns_meta_dict()
+    return {
+        "origin_info":     _gcns_info_block(s1),
+        "dest_info":       _gcns_info_block(s2),
+        "distance_ly":     distance_ly,
+        "ly_hr":           v_ly_hr,
+        "times_c":         v_times_c,
+        "total_hours":     total_hours,
+        "travel_time_str": format_travel_time(total_hours),
+        "snapshot_date":   meta.get("snapshot_date"),
+        "gcns_version":    meta.get("gcns_version"),
+    }
+
+
+def compute_gcns_stars_within_star(star=None, source_id=None, limit_ly=None) -> dict:
+    """All GCNS stars within limit_ly light years of a center star (Bayesian distances).
+
+    The center is resolved by name (SIMBAD) or Gaia source_id (offline). The center
+    itself is excluded precisely — by gaia_source_id when it has one, plus a Distance
+    < 1e-9 exact-self skip for a missing_10mas center (no id) — so Gaia-resolved close
+    companions remain in the results.
+
+    Returns {center, center_x, center_y, center_z, limit_ly, count, snapshot_date,
+    gcns_version, stars[]} (each star = gcns-within-sol row shape + 'Distance') or
+    {"error": str}.
+    """
+    from core.calculators import _to_cartesian
+    from core.db import get_conn
+
+    if limit_ly is None or limit_ly <= 0:
+        return {"error": "Distance limit must be greater than 0."}
+
+    center = _resolve_gcns_row(star=star, source_id=source_id)
+    if "error" in center:
+        return center
+
+    center_xyz, err = _gcns_endpoint_xyz(center, "center")
+    if err:
+        return err
+    cx, cy, cz = center_xyz
+    center_ly  = center["light_years"]
+    center_sid = center.get("gaia_source_id")
+
+    conn = get_conn()
+    # Radial pre-filter: 3D separation >= |radial difference|, so anything outside
+    # [center_ly - limit, center_ly + limit] cannot be within limit_ly. Lossless.
+    rows = conn.execute(
+        f"SELECT {', '.join(_GCNS_ROW_COLS)} FROM gcns_stars "
+        "WHERE light_years IS NOT NULL AND light_years BETWEEN ? AND ?",
+        (center_ly - limit_ly, center_ly + limit_ly),
+    ).fetchall()
+
+    matches = []
+    for row in rows:
+        ra, dec, ly = row["ra"], row["dec"], row["light_years"]
+        if ra is None or dec is None or ly is None:
+            continue
+        if center_sid is not None and row["gaia_source_id"] == center_sid:
+            continue  # the center's own row (precise exclusion)
+        x, y, z = _to_cartesian(ra, dec, ly)
+        dist = math.sqrt((x - cx)**2 + (y - cy)**2 + (z - cz)**2)
+        if dist < 1e-9:
+            continue  # exact self (covers a no-id missing_10mas center)
+        if dist <= limit_ly:
+            d = _gcns_row_to_dict(row)
+            d["x"], d["y"], d["z"] = x, y, z
+            d["Distance"] = dist
+            matches.append(d)
+
+    matches.sort(key=lambda r: r["Distance"])
+
+    center_out = dict(center)
+    center_out["x"], center_out["y"], center_out["z"] = cx, cy, cz
+
+    meta = _gcns_meta_dict()
+    return {
+        "center":        center_out,
+        "center_x":      cx,
+        "center_y":      cy,
+        "center_z":      cz,
+        "limit_ly":      limit_ly,
+        "count":         len(matches),
+        "snapshot_date": meta.get("snapshot_date"),
+        "gcns_version":  meta.get("gcns_version"),
+        "stars":         matches,
+    }

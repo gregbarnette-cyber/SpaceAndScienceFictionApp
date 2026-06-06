@@ -8,6 +8,7 @@
 # opt-50 Gaia DR3 designation parser, and the DB-status listing.
 
 import json
+import math
 import os
 import pathlib
 import shutil
@@ -409,6 +410,234 @@ class GcnsQueryCliTest(unittest.TestCase):
             payload = json.loads(proc.stdout)
             self.assertIn("error", payload)
             self.assertIn("gcns_systems", payload["error"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ── GCNS-backed calculators (distance / travel-time / within-star) ───────────
+
+class GcnsCalcTest(unittest.TestCase):
+    """Offline coverage for compute_gcns_distance / _travel_time / _stars_within_star
+    and the _resolve_gcns_row helper. The --star (SIMBAD) path is mocked."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self._saved = (db._DB_PATH, db._conn, db._auto_seed)
+        db._DB_PATH = pathlib.Path(self.tmpdir) / "test.db"
+        db._conn = None
+        db._auto_seed = lambda conn: None
+        self.conn = db.get_conn()
+
+    def tearDown(self):
+        db.close_conn()
+        db._DB_PATH, db._conn, db._auto_seed = self._saved
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _insert(self, **cols):
+        """Insert one gcns_stars row; sensible defaults for the membership flags."""
+        cols.setdefault("in_gcns", 1)
+        cols.setdefault("in_simbad", 0)
+        cols.setdefault("distance_method", "gcns_bayesian")
+        cols.setdefault("gcns_table", "main")
+        keys = list(cols)
+        self.conn.execute(
+            f"INSERT INTO gcns_stars ({', '.join(keys)}) "
+            f"VALUES ({', '.join('?' for _ in keys)})",
+            tuple(cols[k] for k in keys),
+        )
+        self.conn.commit()
+
+    # ── distance ─────────────────────────────────────────────────────────────
+
+    def test_distance_by_id_shape_and_provenance(self):
+        self._insert(gaia_source_id=10, ra=0.0,  dec=0.0,  light_years=4.0, dist_pc=1.2,
+                     dist_lo_pc=1.1, dist_hi_pc=1.3, spectral_type="M5V", star_name="A")
+        self._insert(gaia_source_id=20, ra=90.0, dec=0.0,  light_years=4.0, dist_pc=1.2,
+                     dist_lo_pc=1.1, dist_hi_pc=1.3, spectral_type="K2V", star_name="B")
+        res = databases.compute_gcns_distance(id1=10, id2=20)
+        self.assertNotIn("error", res)
+        # (4,0,0) vs (0,4,0) -> sqrt(32) ly
+        self.assertAlmostEqual(res["distance_ly"], math.sqrt(32), places=6)
+        self.assertIsNone(res["distance_au"])          # > 0.5 ly
+        self.assertTrue(res["gcns_version"] is None or isinstance(res["gcns_version"], str))
+        s1 = res["star1_info"]
+        self.assertEqual(s1["gaia_source_id"], 10)
+        self.assertEqual(s1["dist_pc"], 1.2)
+        self.assertEqual(s1["dist_lo_pc"], 1.1)
+        self.assertEqual(s1["dist_hi_pc"], 1.3)
+        self.assertEqual(s1["distance_method"], "gcns_bayesian")
+        self.assertIn("ra_hms", s1)
+        self.assertIn("dec_dms", s1)
+
+    def test_distance_self_is_zero_and_au_set(self):
+        self._insert(gaia_source_id=10, ra=12.3, dec=-45.6, light_years=4.0, dist_pc=1.2)
+        res = databases.compute_gcns_distance(id1=10, id2=10)
+        self.assertNotIn("error", res)
+        self.assertAlmostEqual(res["distance_ly"], 0.0, places=9)
+        self.assertIsNotNone(res["distance_au"])       # < 0.5 ly -> AU populated
+        self.assertAlmostEqual(res["distance_au"], 0.0, places=6)
+
+    def test_distance_missing_10mas_endpoint_no_crash(self):
+        self._insert(gaia_source_id=10, ra=0.0, dec=0.0, light_years=4.0, dist_pc=1.2,
+                     dist_lo_pc=1.1, dist_hi_pc=1.3)
+        # missing_10mas: NULL source_id, NULL lo/hi, resolvable only by name
+        self._insert(gaia_source_id=None, ra=90.0, dec=0.0, light_years=4.0,
+                     dist_pc=1.3, dist_lo_pc=None, dist_hi_pc=None,
+                     star_name="alf Cen A", distance_method="gcns_missing_plx_inversion",
+                     gcns_table="missing_10mas")
+        res = databases.compute_gcns_distance(id1=10, star2="alf Cen A")
+        self.assertNotIn("error", res)
+        s2 = res["star2_info"]
+        self.assertIsNone(s2["gaia_source_id"])
+        self.assertIsNone(s2["dist_lo_pc"])
+        self.assertIsNone(s2["dist_hi_pc"])
+        self.assertEqual(s2["distance_method"], "gcns_missing_plx_inversion")
+
+    def test_distance_not_in_gcns_errors(self):
+        self._insert(gaia_source_id=10, ra=0.0, dec=0.0, light_years=4.0, dist_pc=1.2)
+        self.assertIn("error", databases.compute_gcns_distance(id1=10, id2=99999))
+
+    # ── resolver ─────────────────────────────────────────────────────────────
+
+    def test_resolve_by_id_not_found_propagates_without_keyerror(self):
+        self._insert(gaia_source_id=10, ra=0.0, dec=0.0, light_years=4.0, dist_pc=1.2)
+        r = databases._resolve_gcns_row(source_id=99999)
+        self.assertIn("error", r)               # no KeyError on ["star"]
+
+    def test_resolve_requires_exactly_one(self):
+        self.assertIn("error", databases._resolve_gcns_row())
+        self.assertIn("error", databases._resolve_gcns_row(star="x", source_id=1))
+
+    def test_resolve_ambiguous_name_errors_and_lists_candidates(self):
+        self._insert(gaia_source_id=10, ra=0.0, dec=0.0, light_years=4.0, dist_pc=1.2,
+                     star_name="Twin")
+        self._insert(gaia_source_id=11, ra=1.0, dec=1.0, light_years=4.1, dist_pc=1.25,
+                     star_name="Twin")
+        # SIMBAD resolves but yields no Gaia id -> falls through to the name match,
+        # which finds two "Twin" rows -> ambiguity error.
+        fake = {"designations": {"Gaia EDR3": None}}
+        with mock.patch.object(databases, "compute_simbad_lookup", lambda n: fake):
+            r = databases._resolve_gcns_row(star="Twin")
+        self.assertIn("error", r)
+        self.assertIn("ambiguous", r["error"].lower())
+        self.assertIn("10", r["error"])
+        self.assertIn("11", r["error"])
+
+    def test_resolve_star_path_id_miss_falls_through_to_name(self):
+        """SIMBAD yields a Gaia id absent from gcns_stars; name match still resolves."""
+        self._insert(gaia_source_id=None, ra=5.0, dec=5.0, light_years=4.0, dist_pc=1.2,
+                     star_name="Luhman 16", gcns_table="missing_10mas",
+                     distance_method="gcns_missing_plx_inversion")
+        fake = {"designations": {"Gaia EDR3": "Gaia DR3 7777"}}  # 7777 not in table
+        with mock.patch.object(databases, "compute_simbad_lookup", lambda n: fake):
+            r = databases._resolve_gcns_row(star="Luhman 16")
+        self.assertNotIn("error", r)
+        self.assertEqual(r["star_name"], "Luhman 16")
+
+    def test_resolve_simbad_error_propagates_no_fallback(self):
+        self._insert(gaia_source_id=None, ra=5.0, dec=5.0, light_years=4.0, dist_pc=1.2,
+                     star_name="Whatever", gcns_table="missing_10mas")
+        err = {"error": "Could not connect to SIMBAD."}
+        with mock.patch.object(databases, "compute_simbad_lookup", lambda n: err):
+            r = databases._resolve_gcns_row(star="Whatever")
+        self.assertEqual(r, err)                # fatal, no name fallback
+
+    # ── travel time ──────────────────────────────────────────────────────────
+
+    def test_travel_time_distance_over_velocity(self):
+        self._insert(gaia_source_id=10, ra=0.0,  dec=0.0, light_years=4.0, dist_pc=1.2)
+        self._insert(gaia_source_id=20, ra=90.0, dec=0.0, light_years=4.0, dist_pc=1.2)
+        res = databases.compute_gcns_travel_time(id1=10, id2=20, times_c=100.0)
+        self.assertNotIn("error", res)
+        self.assertIn("origin_info", res)
+        self.assertIn("dest_info", res)
+        ly_hr = 100.0 / 8765.8128
+        self.assertAlmostEqual(res["ly_hr"], ly_hr, places=9)
+        self.assertAlmostEqual(res["total_hours"], math.sqrt(32) / ly_hr, places=3)
+        self.assertTrue(res["travel_time_str"])
+
+    def test_travel_time_zero_velocity_errors(self):
+        self._insert(gaia_source_id=10, ra=0.0,  dec=0.0, light_years=4.0, dist_pc=1.2)
+        self._insert(gaia_source_id=20, ra=90.0, dec=0.0, light_years=4.0, dist_pc=1.2)
+        self.assertIn("error", databases.compute_gcns_travel_time(id1=10, id2=20, ly_hr=0))
+
+    # ── within-star ──────────────────────────────────────────────────────────
+
+    def test_within_star_excludes_center_keeps_close_companion(self):
+        # center
+        self._insert(gaia_source_id=10, ra=0.0, dec=0.0, light_years=4.0, dist_pc=1.2,
+                     star_name="Center")
+        # close companion ~0.0001 ly away (would be dropped by a 0.001 ly threshold)
+        self._insert(gaia_source_id=11, ra=0.0, dec=0.0001, light_years=4.0, dist_pc=1.2,
+                     star_name="Companion")
+        # genuine neighbour within 1 ly
+        self._insert(gaia_source_id=12, ra=0.5, dec=0.0, light_years=4.0, dist_pc=1.2,
+                     star_name="Neighbour")
+        res = databases.compute_gcns_stars_within_star(source_id=10, limit_ly=1.0)
+        self.assertNotIn("error", res)
+        ids = {s["gaia_source_id"] for s in res["stars"]}
+        self.assertNotIn(10, ids)               # center excluded
+        self.assertIn(11, ids)                  # close companion RETAINED
+        self.assertIn(12, ids)
+        self.assertIn("Distance", res["stars"][0])
+        # sorted ascending by Distance
+        dists = [s["Distance"] for s in res["stars"]]
+        self.assertEqual(dists, sorted(dists))
+        self.assertEqual(res["center"]["gaia_source_id"], 10)
+        self.assertIn("center_x", res)
+
+    def test_within_star_radial_prefilter_is_lossless_not_sufficient(self):
+        """A row inside the radial band but in a different sky direction (3D dist >
+        limit) must be excluded by the 3D check, not admitted by the SQL pre-filter."""
+        self._insert(gaia_source_id=10, ra=0.0,   dec=0.0, light_years=10.0, dist_pc=3.0,
+                     star_name="Center")
+        # same light_years (passes radial band) but opposite sky -> 3D dist ~20 ly
+        self._insert(gaia_source_id=20, ra=180.0, dec=0.0, light_years=10.0, dist_pc=3.0,
+                     star_name="Antipode")
+        res = databases.compute_gcns_stars_within_star(source_id=10, limit_ly=2.0)
+        self.assertEqual(res["count"], 0)       # antipode correctly excluded
+
+    def test_within_star_bad_limit_and_missing_center(self):
+        self._insert(gaia_source_id=10, ra=0.0, dec=0.0, light_years=4.0, dist_pc=1.2)
+        self.assertIn("error", databases.compute_gcns_stars_within_star(source_id=10, limit_ly=0))
+        self.assertIn("error", databases.compute_gcns_stars_within_star(source_id=99999, limit_ly=5))
+
+
+# ── query.py subprocess contract for the new subcommands ─────────────────────
+
+class GcnsCalcCliTest(unittest.TestCase):
+
+    def _run(self, *argv, db_path):
+        return subprocess.run(
+            [sys.executable, str(_REPO / "query.py"), *argv],
+            capture_output=True, text=True, cwd=str(_REPO),
+            env={"SPACE_APP_DB": db_path, "PATH": os.environ.get("PATH", "")},
+        )
+
+    def test_empty_db_contract_exit1_json_error(self):
+        tmpdir = tempfile.mkdtemp()
+        try:
+            dbp = os.path.join(tmpdir, "q.db")
+            for argv in (
+                ["gcns-distance", "--id1", "100", "--id2", "200"],
+                ["gcns-travel-time", "--id1", "100", "--id2", "200", "--times-c", "50"],
+                ["gcns-stars-within-star", "--id", "100", "--ly", "5"],
+            ):
+                proc = self._run(*argv, db_path=dbp)
+                self.assertEqual(proc.returncode, 1, argv)
+                payload = json.loads(proc.stdout)
+                self.assertIn("error", payload)
+                self.assertIn("gcns_stars", payload["error"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_missing_required_group_exit2_argparse(self):
+        tmpdir = tempfile.mkdtemp()
+        try:
+            dbp = os.path.join(tmpdir, "q.db")
+            proc = self._run("gcns-distance", "--id1", "100", db_path=dbp)
+            self.assertEqual(proc.returncode, 2)       # argparse, NOT the JSON path
+            self.assertTrue(proc.stderr.strip())
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
