@@ -1,6 +1,8 @@
 # Feature Request: Extend the local catalog with GCNS for completeness + real distances
 
-Status: Request / spec. Written 2026-06-05 by the consuming project (a hard-SF worldbuilding repo that reads `starSystems.csv` via `query.py` and directly). Self-contained — no access to the other repo is needed to act on this.
+Status: **IMPLEMENTED** (2026-06-05). Written by the consuming project (a hard-SF worldbuilding repo that reads `starSystems.csv` via `query.py` and directly). Self-contained — no access to the other repo is needed to act on this.
+
+> **Implementation note.** Shipped as menu **option 58 (Import GCNS Data)** — `core.databases.compute_gcns_ingest`. Rather than overwriting `starSystems.csv`, GCNS is ingested into an **isolated** `gcns_stars` table (the SIMBAD-built `star_systems` table and opts 50/51 are left untouched), with the SIMBAD identity layer attached by exact-key cross-match. The two-layer schema, uncertainties, provenance, and all hard constraints below are honoured. Exposed via `query.py` subcommands `gcns-within-sol`, `gcns-source`, and `gcns-system`. The "expose resolved-systems info" item (Hard constraints, multiplicity) was **also implemented** — `gcns.resolvedss` is ingested into `gcns_systems` / `gcns_system_members` / `gcns_system_pairs` and queried via `gcns-system --id`. See `docs/star-databases.md` ("Import GCNS Data Feature (opt 58)") and `docs/integration.md` (GCNS subcommand contract) for the as-built details.
 
 ## TL;DR
 
@@ -63,7 +65,7 @@ Either extend the existing subcommands to expose the richer fields (distance-wit
 - **Do not mix Gaia G with Johnson V.** Keep `G/BP/RP` separate from the SIMBAD `V` column. If you add a G→V estimate, mark it derived/approximate (color-dependent) — never overwrite measured V.
 - **Do not fabricate spectral types.** GCNS has none; most faint Gaia-only objects have no published type anywhere. Leave blank.
 - **Do not silently replace SIMBAD distances with GCNS for matched rows without a flag.** Carry `distance_method` so consumers know which basis a row uses.
-- **Mind multiplicity:** rows ≠ systems. Don't collapse components silently; expose the resolved-systems info (`gcns.resolvedss`) if practical.
+- **Mind multiplicity:** rows ≠ systems. Don't collapse components silently; expose the resolved-systems info (`gcns.resolvedss`) if practical. ✅ **Done** — `gcns.resolvedss` is ingested into `gcns_systems`/`gcns_system_members`/`gcns_system_pairs` (systems = connected components over the resolved pairs); `gcns_stars` component rows are never collapsed (linkage is join-only via `system_id`); queryable through `query.py gcns-system --id`.
 
 ## Known limits to document (not fix)
 

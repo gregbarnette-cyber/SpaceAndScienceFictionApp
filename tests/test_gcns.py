@@ -51,13 +51,32 @@ def _miss_row(main_id, plx_value=743.0, **over):
     return row
 
 
-def _patch_fetch(main_rows, miss_rows, main_status="OK", miss_status="OK"):
+def _res_row(s1, s2, separation=2.0, mag_diff=0.5, proj_sep=10.0, bin=0, bound=1, **over):
+    row = {"source_id1": s1, "source_id2": s2, "separation": separation,
+           "mag_diff": mag_diff, "proj_sep": proj_sep, "bin": bin, "bound": bound}
+    row.update(over)
+    return row
+
+
+def _patch_fetch(main_rows, miss_rows, resolved_rows=(),
+                 main_status="OK", miss_status="OK", resolved_status="OK"):
     """Return a mock.patch context manager replacing databases._gcns_fetch."""
     def _fetch(adql, maxrec):
         if "missing_10mas" in adql:
             return FakeResult(miss_rows, miss_status)
+        if "resolvedss" in adql:
+            return FakeResult(list(resolved_rows), resolved_status)
         return FakeResult(main_rows, main_status)
     return mock.patch.object(databases, "_gcns_fetch", _fetch)
+
+
+def _patch_floors(main=1, missing=1, resolved=1):
+    """Patch all three row-count floors low so small fixtures pass Gate 1."""
+    return (
+        mock.patch.object(databases, "_GCNS_MAIN_MIN_ROWS", main),
+        mock.patch.object(databases, "_GCNS_MISSING_MIN_ROWS", missing),
+        mock.patch.object(databases, "_GCNS_RESOLVED_MIN_ROWS", resolved),
+    )
 
 
 # ── pure parsing / normalisation (no DB) ─────────────────────────────────────
@@ -142,10 +161,11 @@ class GcnsDBTest(unittest.TestCase):
             _main_row(222, name_2mass=None,               dist_50_kpc=0.05),   # unmatched
         ]
         miss_rows = [_miss_row("* alf Cen A", plx_value=743.0)]
+        # 999+111 form a resolved binary; 222 is single (in no pair).
+        res_rows = [_res_row(999, 111, proj_sep=42.0, bound=1)]
 
-        with mock.patch.object(databases, "_GCNS_MAIN_MIN_ROWS", 1), \
-             mock.patch.object(databases, "_GCNS_MISSING_MIN_ROWS", 1), \
-             _patch_fetch(main_rows, miss_rows):
+        f1, f2, f3 = _patch_floors()
+        with f1, f2, f3, _patch_fetch(main_rows, miss_rows, res_rows):
             res = databases.compute_gcns_ingest()
 
         self.assertNotIn("error", res)
@@ -153,6 +173,9 @@ class GcnsDBTest(unittest.TestCase):
         self.assertEqual(res["missing_count"], 1)
         self.assertEqual(res["total_rows"], 4)
         self.assertEqual(res["simbad_matched"], 3)
+        self.assertEqual(res["resolved_pairs"], 1)
+        self.assertEqual(res["systems_count"], 1)
+        self.assertEqual(res["members_in_stars"], 2)  # 999 + 111 both in gcns.main
         self.assertTrue(res["snapshot_date"])
 
         r999 = databases.compute_gcns_by_source_id(999)["star"]
@@ -165,26 +188,33 @@ class GcnsDBTest(unittest.TestCase):
         self.assertAlmostEqual(r999["dist_pc"], 1.0)               # 0.001 kpc * 1000
         self.assertAlmostEqual(r999["light_years"], 1.0 * 3.26156, places=5)
         self.assertEqual(r999["phot_g_mean_mag"], 9.0)             # Gaia G separate from V
+        self.assertEqual(r999["n_components"], 2)                  # resolved-system enrich
+        self.assertIsNotNone(r999["system_id"])
 
         r111 = databases.compute_gcns_by_source_id(111)["star"]
         self.assertEqual(r111["spectral_type"], "M8V")            # matched via 2MASS fallback
         self.assertEqual(r111["star_name"], "Test A")
+        self.assertEqual(r111["system_id"], r999["system_id"])    # same system as 999
 
         r222 = databases.compute_gcns_by_source_id(222)["star"]
         self.assertIs(r222["in_simbad"], False)                   # unmatched -> no fabrication
         self.assertIsNone(r222["spectral_type"])
         self.assertIsNone(r222["star_name"])
+        self.assertIsNone(r222["system_id"])                      # single -> not in a system
+        self.assertIsNone(r222["n_components"])
 
         meta = databases._gcns_meta_dict()
         self.assertEqual(meta["total_count"], "4")
         self.assertEqual(meta["simbad_matched"], "3")
+        self.assertEqual(meta["gcns_resolved_pairs"], "1")
+        self.assertEqual(meta["gcns_systems_count"], "1")
         self.assertIn("GCNS", meta["gcns_version"])
 
     def test_missing_10mas_plx_inversion(self):
-        with mock.patch.object(databases, "_GCNS_MAIN_MIN_ROWS", 1), \
-             mock.patch.object(databases, "_GCNS_MISSING_MIN_ROWS", 1), \
-             _patch_fetch([_main_row(1, dist_50_kpc=0.01)],
-                          [_miss_row("Luhman 16", plx_value=500.0)]):
+        f1, f2, f3 = _patch_floors()
+        with f1, f2, f3, _patch_fetch([_main_row(1, dist_50_kpc=0.01)],
+                                      [_miss_row("Luhman 16", plx_value=500.0)],
+                                      [_res_row(1, 2)]):
             res = databases.compute_gcns_ingest()
         self.assertNotIn("error", res)
 
@@ -199,6 +229,80 @@ class GcnsDBTest(unittest.TestCase):
         self.assertIsNone(m["dist_hi_pc"])
         self.assertIsNone(m["phot_g_mean_mag"])
         self.assertEqual(m["star_name"], "Luhman 16")             # GCNS main_id kept as name
+
+    # ── resolved systems (connected components) ──────────────────────────────
+
+    def test_systems_connected_components(self):
+        """resolvedss is pair-keyed; systems = connected components over the pairs.
+
+        A chain of pairs (A-B, B-C) collapses to one 3-component system; a member
+        present in resolvedss but absent from gcns_stars is retained, flagged.
+        """
+        main_rows = [_main_row(sid, dist_50_kpc=0.01)
+                     for sid in (10, 11, 12, 20, 21, 40, 30)]
+        res_rows = [
+            _res_row(10, 11), _res_row(11, 12),  # triple {10,11,12}
+            _res_row(20, 21),                    # binary {20,21}
+            _res_row(40, 99),                    # {40,99}; 99 not in gcns.main
+        ]
+        f1, f2, f3 = _patch_floors(missing=0)
+        with f1, f2, f3, _patch_fetch(main_rows, [], res_rows):
+            res = databases.compute_gcns_ingest()
+
+        self.assertNotIn("error", res)
+        self.assertEqual(res["resolved_pairs"], 4)
+        self.assertEqual(res["systems_count"], 3)
+        self.assertEqual(res["systems_multi"], 1)        # only the triple has >2
+        self.assertEqual(res["members_in_stars"], 6)     # all but 99
+
+        # Deterministic system_id: components ordered by smallest member id.
+        triple = databases.compute_gcns_system(11)["system"]
+        self.assertEqual(triple["system_id"], 1)
+        self.assertEqual(triple["n_components"], 3)
+        self.assertEqual(triple["n_pairs"], 2)
+        self.assertEqual([m["gaia_source_id"] for m in triple["members"]],
+                         [10, 11, 12])
+        self.assertTrue(any(m["is_query"] for m in triple["members"]))
+
+        # Member in resolvedss but not in gcns_stars is retained, flagged.
+        sys99 = databases.compute_gcns_system(99)["system"]
+        self.assertEqual(sorted(m["gaia_source_id"] for m in sys99["members"]),
+                         [40, 99])
+        m99 = next(m for m in sys99["members"] if m["gaia_source_id"] == 99)
+        self.assertIs(m99["in_gcns_stars"], False)
+        self.assertIsNone(m99["dist_pc"])                # no gcns_stars row to join
+        m40 = next(m for m in sys99["members"] if m["gaia_source_id"] == 40)
+        self.assertIs(m40["in_gcns_stars"], True)
+
+        # A source in no pair is not part of any resolved system.
+        self.assertIn("error", databases.compute_gcns_system(30))
+        # A source absent from the catalogue entirely.
+        self.assertIn("error", databases.compute_gcns_system(123456))
+
+    def test_gate_resolvedss_too_few_aborts_and_preserves(self):
+        """A short resolvedss download aborts before any write, preserving tables."""
+        self.conn.execute(
+            "INSERT INTO gcns_stars (gaia_source_id, light_years, in_gcns, in_simbad, "
+            "distance_method, gcns_table) VALUES (7, 4.0, 1, 0, 'gcns_bayesian', 'main')"
+        )
+        self.conn.execute(
+            "INSERT INTO gcns_systems (system_id, n_components, n_pairs) VALUES (1, 2, 1)"
+        )
+        self.conn.commit()
+        # main/missing floors low so we reach the resolved gate; resolved floor default.
+        with mock.patch.object(databases, "_GCNS_MAIN_MIN_ROWS", 1), \
+             mock.patch.object(databases, "_GCNS_MISSING_MIN_ROWS", 1), \
+             _patch_fetch([_main_row(1)], [_miss_row("x")], [_res_row(1, 2)]):
+            res = databases.compute_gcns_ingest()
+        self.assertIn("error", res)
+        self.assertIn("resolvedss", res["error"])
+        self.assertIn("aborted", res["error"].lower())
+        # Sentinels survived -> existing tables left intact.
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM gcns_stars").fetchone()[0], 1)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM gcns_systems").fetchone()[0], 1)
+
+    def test_gcns_system_empty_table_errors(self):
+        self.assertIn("error", databases.compute_gcns_system(1))
 
     # ── check gates (validate-before-destroy) ────────────────────────────────
 
@@ -288,6 +392,23 @@ class GcnsQueryCliTest(unittest.TestCase):
             payload = json.loads(proc.stdout)
             self.assertIn("error", payload)
             self.assertIn("gcns_stars", payload["error"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_query_py_gcns_system_empty_contract(self):
+        """query.py gcns-system emits valid JSON + exit 1 against an empty DB."""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(_REPO / "query.py"), "gcns-system", "--id", "42"],
+                capture_output=True, text=True, cwd=str(_REPO),
+                env={"SPACE_APP_DB": os.path.join(tmpdir, "q.db"),
+                     "PATH": os.environ.get("PATH", "")},
+            )
+            self.assertEqual(proc.returncode, 1)
+            payload = json.loads(proc.stdout)
+            self.assertIn("error", payload)
+            self.assertIn("gcns_systems", payload["error"])
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

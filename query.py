@@ -105,6 +105,10 @@ def cmd_gcns_source(args):
     _out(databases.compute_gcns_by_source_id(args.id))
 
 
+def cmd_gcns_system(args):
+    _out(databases.compute_gcns_system(args.id))
+
+
 # ── Argument parser ───────────────────────────────────────────────────────────
 
 def main():
@@ -203,6 +207,13 @@ def main():
                        help="Single GCNS row by Gaia EDR3/DR3 source_id (local DB)")
     p.add_argument("--id", required=True, type=int, help="Gaia EDR3/DR3 source_id")
     p.set_defaults(func=cmd_gcns_source)
+
+    # gcns-system
+    p = sub.add_parser("gcns-system",
+                       help="Resolved multiple-star system containing a Gaia source_id (local DB)")
+    p.add_argument("--id", required=True, type=int,
+                   help="Gaia EDR3/DR3 source_id of any component")
+    p.set_defaults(func=cmd_gcns_system)
 
     args = parser.parse_args()
     try:

@@ -166,7 +166,9 @@ def _create_schema(conn: sqlite3.Connection):
             in_gcns              INTEGER,           -- always 1 (row is GCNS-sourced)
             in_simbad            INTEGER,           -- 1 if cross-matched to star_systems
             distance_method      TEXT,             -- 'gcns_bayesian' | 'gcns_missing_plx_inversion'
-            gcns_table           TEXT               -- 'main' | 'missing_10mas'
+            gcns_table           TEXT,              -- 'main' | 'missing_10mas'
+            system_id            INTEGER,           -- gcns_systems.system_id if a resolved-system member; else NULL
+            n_components         INTEGER            -- component count of that system; NULL if not a member
         );
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_gcns_source_id
@@ -179,7 +181,76 @@ def _create_schema(conn: sqlite3.Connection):
             key   TEXT PRIMARY KEY,
             value TEXT
         );
+
+        -- GCNS resolved multiple-star systems, derived from gcns.resolvedss.
+        -- That source table is PAIR-keyed (one row per resolved pair, columns
+        -- source_id1/source_id2) and has NO system identifier. Systems here are
+        -- connected components over the pair graph; system_id is synthetic and
+        -- stable per build (components ordered by their smallest member id).
+        -- Isolated from gcns_stars; populated only by the GCNS import (opt 58).
+        CREATE TABLE IF NOT EXISTS gcns_systems (
+            system_id        INTEGER PRIMARY KEY,  -- synthetic; stable per build
+            n_components     INTEGER,              -- distinct member source_ids
+            n_pairs          INTEGER,              -- gcns.resolvedss pair rows in this system
+            any_bin          INTEGER,              -- 1 if any pair flagged 'bin' (probable >2 stars)
+            any_bound        INTEGER,              -- 1 if any pair flagged gravitationally bound
+            all_bound        INTEGER,              -- 1 if all pairs flagged bound
+            max_proj_sep_au  REAL,                 -- widest projected separation among pairs, AU
+            min_proj_sep_au  REAL,                 -- closest projected separation among pairs, AU
+            n_in_gcns_stars  INTEGER               -- members also present in gcns_stars
+        );
+
+        -- Membership join table: one row per (system, component source_id).
+        -- in_gcns_stars flags whether the member's source_id exists in gcns_stars
+        -- (resolvedss members not in gcns_stars are retained here, flagged 0).
+        CREATE TABLE IF NOT EXISTS gcns_system_members (
+            system_id      INTEGER,
+            gaia_source_id INTEGER,                -- Gaia EDR3 source_id of the component
+            in_gcns_stars  INTEGER                 -- 1 if present in gcns_stars, else 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_gcns_sysmem_system
+            ON gcns_system_members (system_id);
+        CREATE INDEX IF NOT EXISTS idx_gcns_sysmem_source
+            ON gcns_system_members (gaia_source_id);
+
+        -- Raw resolvedss pair edges, mapped into their derived system.
+        CREATE TABLE IF NOT EXISTS gcns_system_pairs (
+            system_id         INTEGER,
+            source_id1        INTEGER,             -- primary (Gaia EDR3)
+            source_id2        INTEGER,             -- secondary (Gaia EDR3)
+            separation_arcsec REAL,                -- angular separation, arcsec
+            mag_diff          REAL,                -- Gaia G magnitude difference
+            proj_sep_au       REAL,                -- projected separation, AU
+            bin               INTEGER,             -- 1 if pair probably part of a >2-star system
+            bound             INTEGER              -- 1 if pair probably gravitationally bound
+        );
+        CREATE INDEX IF NOT EXISTS idx_gcns_syspair_system
+            ON gcns_system_pairs (system_id);
     """)
+    conn.commit()
+    _migrate_schema(conn)
+
+
+def _migrate_schema(conn: sqlite3.Connection):
+    """Additive column migrations for tables that may predate a newer schema.
+
+    CREATE TABLE IF NOT EXISTS never alters an existing table, so columns added
+    after a table was first created must be patched in via ALTER TABLE. Each is
+    guarded by a PRAGMA check so re-running is a no-op.
+    """
+    def _has_col(table, col):
+        return any(r["name"] == col
+                   for r in conn.execute(f"PRAGMA table_info({table})").fetchall())
+
+    for table, col, decl in [
+        ("gcns_stars", "system_id",    "INTEGER"),
+        ("gcns_stars", "n_components", "INTEGER"),
+    ]:
+        try:
+            if not _has_col(table, col):
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
 
 
@@ -351,6 +422,7 @@ def get_table_status() -> list:
     tables = [
         ("star_systems",       "Star Systems"),
         ("gcns_stars",         "GCNS Stars"),
+        ("gcns_systems",       "GCNS Systems"),
         ("gcns_meta",          "GCNS Meta"),
         ("hwc",                "Habitable Worlds Catalog"),
         ("mission_exocat",     "Mission Exocat"),

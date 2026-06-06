@@ -1451,10 +1451,12 @@ def import_honorverse_hyper_csv(csv_path: str) -> dict:
 # never fabricated, never positionally guessed. See docs/star-databases.md.
 
 _GCNS_TAP_URL          = "https://dc.g-vo.org/tap"
-_GCNS_VERSION          = "GCNS / Smart et al. 2021 A&A 649 A6 (VizieR J/A+A/649/A6) via GAVO gcns.main"
+_GCNS_VERSION          = ("GCNS / Smart et al. 2021 A&A 649 A6 (VizieR J/A+A/649/A6) "
+                          "via GAVO gcns.main + gcns.missing_10mas + gcns.resolvedss")
 _GCNS_MAXREC           = 400_000   # must exceed the total row count AND the 20k default cap
 _GCNS_MAIN_MIN_ROWS    = 330_000   # known 331,312 — floor sits just under to tolerate version drift
 _GCNS_MISSING_MIN_ROWS = 1_200     # known 1,259
+_GCNS_RESOLVED_MIN_ROWS = 19_000   # known 19,176 resolved pairs
 _LY_PER_PC             = 3.26156
 _KPC_TO_PC             = 1000.0
 
@@ -1466,6 +1468,13 @@ _GCNS_MAIN_ADQL = """SELECT source_id, ra, dec, parallax, parallax_error,
 
 _GCNS_MISSING_ADQL = """SELECT main_id, otype, ra, dec, plx_value
   FROM gcns.missing_10mas"""
+
+# gcns.resolvedss is PAIR-keyed: one row per resolved pair, no system identifier.
+# source_id1/source_id2 are Gaia EDR3 source_ids; separation in arcsec, proj_sep
+# in AU; bin = probable >2-star system; bound = probable gravitationally bound.
+_GCNS_RESOLVED_ADQL = """SELECT source_id1, source_id2, separation, mag_diff,
+       proj_sep, bin, bound
+  FROM gcns.resolvedss"""
 
 
 def _ni(v):
@@ -1578,17 +1587,134 @@ def _gcns_check_overflow(result, n_rows: int) -> bool:
     return n_rows >= _GCNS_MAXREC
 
 
+def _gcns_build_systems(resolved_rows, gcns_star_ids):
+    """Derive resolved systems from gcns.resolvedss pair rows.
+
+    The source table has no system id — each row is a resolved PAIR
+    (source_id1, source_id2). Systems are connected components over the pair
+    graph (union-find). system_id is synthetic and deterministic: components are
+    sorted by their smallest member source_id and numbered from 1.
+
+    `gcns_star_ids` is the set of source_ids present in gcns_stars (i.e. the
+    gcns.main ids), used to flag which members link to an existing gcns_stars row.
+
+    Returns (systems_rows, members_rows, pair_rows, sid_info, n_multi,
+    n_members_in_stars):
+      - systems_rows: tuples for gcns_systems
+      - members_rows: tuples for gcns_system_members
+      - pair_rows:    tuples for gcns_system_pairs
+      - sid_info:     {source_id: (system_id, n_components)} for gcns_stars enrich
+      - n_multi:      systems with n_components > 2
+      - n_members_in_stars: members whose source_id is in gcns_stars
+    """
+    from collections import defaultdict
+
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    pairs = []
+    for row in resolved_rows:
+        s1 = _ni(row["source_id1"])
+        s2 = _ni(row["source_id2"])
+        if s1 is None or s2 is None:
+            continue
+        union(s1, s2)
+        pairs.append({
+            "s1":   s1,
+            "s2":   s2,
+            "sep":  _fval(row["separation"]),
+            "magd": _fval(row["mag_diff"]),
+            "proj": _fval(row["proj_sep"]),
+            "bin":  _ni(row["bin"]),
+            "bound": _ni(row["bound"]),
+        })
+
+    # Group source_ids into connected components.
+    comps = defaultdict(set)
+    for x in list(parent):
+        comps[find(x)].add(x)
+
+    # Deterministic system_id: order components by smallest member id.
+    comp_list = sorted(comps.values(), key=min)
+    sid_to_sysid = {}
+    n_components = {}
+    for i, members in enumerate(comp_list, start=1):
+        n_components[i] = len(members)
+        for sid in members:
+            sid_to_sysid[sid] = i
+
+    # Members + per-system in-gcns_stars counts.
+    members_rows = []
+    sys_in_stars = defaultdict(int)
+    n_members_in_stars = 0
+    for sid, sysid in sid_to_sysid.items():
+        in_stars = 1 if sid in gcns_star_ids else 0
+        members_rows.append((sysid, sid, in_stars))
+        sys_in_stars[sysid] += in_stars
+        n_members_in_stars += in_stars
+
+    # Pairs grouped per system for aggregates.
+    pair_rows = []
+    sys_pairs = defaultdict(list)
+    for p in pairs:
+        sysid = sid_to_sysid[p["s1"]]
+        sys_pairs[sysid].append(p)
+        pair_rows.append((sysid, p["s1"], p["s2"], p["sep"], p["magd"],
+                          p["proj"], p["bin"], p["bound"]))
+
+    systems_rows = []
+    n_multi = 0
+    for sysid in sorted(n_components):
+        nc = n_components[sysid]
+        if nc > 2:
+            n_multi += 1
+        ps = sys_pairs.get(sysid, [])
+        projs  = [p["proj"]  for p in ps if p["proj"]  is not None]
+        bins   = [p["bin"]   for p in ps if p["bin"]   is not None]
+        bounds = [p["bound"] for p in ps if p["bound"] is not None]
+        systems_rows.append((
+            sysid,
+            nc,
+            len(ps),
+            1 if any(b == 1 for b in bins) else 0,
+            1 if any(b == 1 for b in bounds) else 0,
+            1 if (bounds and all(b == 1 for b in bounds)) else 0,
+            max(projs) if projs else None,
+            min(projs) if projs else None,
+            sys_in_stars[sysid],
+        ))
+
+    sid_info = {sid: (sysid, n_components[sysid]) for sid, sysid in sid_to_sysid.items()}
+    return systems_rows, members_rows, pair_rows, sid_info, n_multi, n_members_in_stars
+
+
 def compute_gcns_ingest(progress_callback=None) -> dict:
     """Pull the GCNS into the gcns_stars table (replace-in-place) with check gates.
 
     Flow (validate-before-destroy — a short/truncated download leaves the
-    existing table intact):
-      1. async-fetch gcns.main and gcns.missing_10mas into memory
+    existing tables intact):
+      1. async-fetch gcns.main, gcns.missing_10mas, and gcns.resolvedss into
+         memory (one snapshot)
       2. Gate 1 (per table, BEFORE any DB write): fail on OVERFLOW or row count
          below the configured floor
-      3. transform (kpc->pc, ly, SIMBAD cross-match)
-      4. replace-in-place: DELETE + bulk INSERT in ONE transaction
-      5. Gate 2 (post-commit): assert final count >= ~331k; record provenance
+      3. transform (kpc->pc, ly, SIMBAD cross-match) + derive resolved systems
+         (connected components over the resolvedss pair graph)
+      4. replace-in-place: DELETE + bulk INSERT of gcns_stars, gcns_systems,
+         gcns_system_members, gcns_system_pairs in ONE transaction
+      5. Gate 2 (post-commit): assert final counts meet floors; record provenance
 
     Returns a stats dict on success or {"error": str}.
     """
@@ -1636,9 +1762,37 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
                           f"(expected >= {_GCNS_MISSING_MIN_ROWS:,}); aborted "
                           "before writing.")}
 
+    _progress("Querying GAVO TAP for gcns.resolvedss (resolved multiples)…")
+    try:
+        resolved_res = _gcns_fetch(_GCNS_RESOLVED_ADQL, _GCNS_MAXREC)
+    except Exception as e:
+        return {"error": _network_error_msg(e, "GAVO TAP (gcns.resolvedss)")}
+    resolved_rows = list(resolved_res)
+    n_resolved = len(resolved_rows)
+    _progress(f"gcns.resolvedss returned {n_resolved:,} pairs.")
+
+    if _gcns_check_overflow(resolved_res, n_resolved):
+        return {"error": ("gcns.resolvedss result was TRUNCATED. Aborted before "
+                          "writing; existing GCNS tables left intact.")}
+    if n_resolved < _GCNS_RESOLVED_MIN_ROWS:
+        return {"error": (f"gcns.resolvedss returned only {n_resolved:,} pairs "
+                          f"(expected >= {_GCNS_RESOLVED_MIN_ROWS:,}); aborted "
+                          "before writing.")}
+
     # ── 3. Transform + cross-match ──────────────────────────────────────────
     _progress("Cross-matching against star_systems (SIMBAD layer)…")
     by_gaia, by_2mass, by_name = _build_simbad_crossmatch()
+
+    # Derive resolved systems (connected components over the resolvedss pairs).
+    # Membership links by Gaia source_id; the in_gcns_stars flag is computed
+    # against the gcns.main source_ids (missing_10mas rows have no source_id).
+    _progress("Deriving resolved systems (connected components)…")
+    main_source_ids = {sid for sid in (_ni(r["source_id"]) for r in main_rows)
+                       if sid is not None}
+    (systems_rows, members_rows, pair_rows, sid_info,
+     n_multi, n_members_in_stars) = _gcns_build_systems(resolved_rows, main_source_ids)
+    n_systems = len(systems_rows)
+
     matched = 0
     insert_rows = []
 
@@ -1662,6 +1816,10 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
         if sim is not None:
             matched += 1
 
+        info = sid_info.get(sid) if sid is not None else None
+        system_id    = info[0] if info else None
+        n_components = info[1] if info else None
+
         insert_rows.append((
             sid,
             _fval(row["ra"]), _fval(row["dec"]),
@@ -1677,6 +1835,8 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
             1 if sim else 0,         # in_simbad
             "gcns_bayesian",
             "main",
+            system_id,
+            n_components,
         ))
 
     # missing_10mas: parallax-only objects Gaia EDR3 missed — no source_id, no
@@ -1705,14 +1865,20 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
             1 if sim else 0,                       # in_simbad
             "gcns_missing_plx_inversion",
             "missing_10mas",
+            None,                                  # system_id (no source_id to join)
+            None,                                  # n_components
         ))
 
     # ── 4. Replace-in-place (one transaction) ───────────────────────────────
-    _progress(f"Writing {len(insert_rows):,} rows to gcns_stars…")
+    _progress(f"Writing {len(insert_rows):,} stars and {n_systems:,} resolved "
+              "systems…")
     conn = get_conn()
     try:
         with conn:
             conn.execute("DELETE FROM gcns_stars")
+            conn.execute("DELETE FROM gcns_systems")
+            conn.execute("DELETE FROM gcns_system_members")
+            conn.execute("DELETE FROM gcns_system_pairs")
             conn.executemany(
                 """INSERT OR IGNORE INTO gcns_stars
                    (gaia_source_id, ra, dec, parallax, parallax_error,
@@ -1720,12 +1886,33 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
                     phot_g_mean_mag, phot_bp_mean_mag, phot_rp_mean_mag,
                     rv_kms, wd_prob, astrom_reliable_prob,
                     spectral_type, star_name, app_magnitude,
-                    in_gcns, in_simbad, distance_method, gcns_table)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    in_gcns, in_simbad, distance_method, gcns_table,
+                    system_id, n_components)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 insert_rows,
             )
+            conn.executemany(
+                """INSERT INTO gcns_systems
+                   (system_id, n_components, n_pairs, any_bin, any_bound,
+                    all_bound, max_proj_sep_au, min_proj_sep_au, n_in_gcns_stars)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                systems_rows,
+            )
+            conn.executemany(
+                """INSERT INTO gcns_system_members
+                   (system_id, gaia_source_id, in_gcns_stars)
+                   VALUES (?, ?, ?)""",
+                members_rows,
+            )
+            conn.executemany(
+                """INSERT INTO gcns_system_pairs
+                   (system_id, source_id1, source_id2, separation_arcsec,
+                    mag_diff, proj_sep_au, bin, bound)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                pair_rows,
+            )
     except Exception as e:
-        return {"error": f"Could not write gcns_stars table: {e}"}
+        return {"error": f"Could not write GCNS tables: {e}"}
 
     # ── 5. Gate 2 (post-commit) + provenance ────────────────────────────────
     final = conn.execute("SELECT COUNT(*) FROM gcns_stars").fetchone()[0]
@@ -1733,15 +1920,26 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
         return {"error": (f"Post-commit check failed: gcns_stars holds {final:,} "
                           f"rows (expected >= {_GCNS_MAIN_MIN_ROWS:,}). The table "
                           "may be incomplete — investigate before relying on it.")}
+    final_pairs = conn.execute("SELECT COUNT(*) FROM gcns_system_pairs").fetchone()[0]
+    if final_pairs < _GCNS_RESOLVED_MIN_ROWS:
+        return {"error": (f"Post-commit check failed: gcns_system_pairs holds "
+                          f"{final_pairs:,} rows (expected >= "
+                          f"{_GCNS_RESOLVED_MIN_ROWS:,}). The resolved-systems "
+                          "tables may be incomplete — investigate before relying "
+                          "on them.")}
 
     snapshot_date = datetime.now().strftime("%Y-%m-%d")
     meta = {
-        "snapshot_date":       snapshot_date,
-        "gcns_version":        _GCNS_VERSION,
-        "gcns_main_count":     str(n_main),
-        "gcns_missing_count":  str(n_miss),
-        "total_count":         str(final),
-        "simbad_matched":      str(matched),
+        "snapshot_date":         snapshot_date,
+        "gcns_version":          _GCNS_VERSION,
+        "gcns_main_count":       str(n_main),
+        "gcns_missing_count":    str(n_miss),
+        "total_count":           str(final),
+        "simbad_matched":        str(matched),
+        "gcns_resolved_pairs":   str(n_resolved),
+        "gcns_systems_count":    str(n_systems),
+        "gcns_systems_multi":    str(n_multi),
+        "gcns_members_in_stars": str(n_members_in_stars),
     }
     with conn:
         conn.executemany(
@@ -1749,14 +1947,19 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
             list(meta.items()),
         )
 
-    _progress(f"Done — {final:,} GCNS rows ({matched:,} SIMBAD-matched).")
+    _progress(f"Done — {final:,} GCNS rows ({matched:,} SIMBAD-matched); "
+              f"{n_systems:,} resolved systems ({n_multi:,} with >2 components).")
     return {
-        "total_rows":     final,
-        "main_count":     n_main,
-        "missing_count":  n_miss,
-        "simbad_matched": matched,
-        "snapshot_date":  snapshot_date,
-        "gcns_version":   _GCNS_VERSION,
+        "total_rows":       final,
+        "main_count":       n_main,
+        "missing_count":    n_miss,
+        "simbad_matched":   matched,
+        "resolved_pairs":   n_resolved,
+        "systems_count":    n_systems,
+        "systems_multi":    n_multi,
+        "members_in_stars": n_members_in_stars,
+        "snapshot_date":    snapshot_date,
+        "gcns_version":     _GCNS_VERSION,
     }
 
 
@@ -1778,6 +1981,7 @@ _GCNS_ROW_COLS = [
     "rv_kms", "wd_prob", "astrom_reliable_prob",
     "spectral_type", "star_name", "app_magnitude",
     "in_gcns", "in_simbad", "distance_method", "gcns_table",
+    "system_id", "n_components",
 ]
 
 
@@ -1871,4 +2075,107 @@ def compute_gcns_by_source_id(source_id: int) -> dict:
         "snapshot_date": meta.get("snapshot_date"),
         "gcns_version":  meta.get("gcns_version"),
         "star":          _gcns_row_to_dict(row),
+    }
+
+
+def _gcns_bool(v):
+    """0/1/None -> bool/None (membership/pair flags may be NULL)."""
+    return bool(v) if v is not None else None
+
+
+def compute_gcns_system(source_id: int) -> dict:
+    """Resolved multiple-star system containing a Gaia source_id. No network.
+
+    Looks up which derived resolved system (connected component of gcns.resolvedss
+    pairs) the component belongs to, then returns the system record, every member's
+    source_id with a thin summary joined from gcns_stars where available, and the
+    raw pair edges. A source_id that is in no resolved system (a single/unresolved
+    object) returns {"error": ...}.
+
+    Returns {snapshot_date, gcns_version, query_source_id, system} or {"error": str}.
+    """
+    from core.db import get_conn
+
+    sid = _ni(source_id)
+    if sid is None:
+        return {"error": "source_id must be an integer Gaia EDR3/DR3 id."}
+
+    conn = get_conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM gcns_systems").fetchone()[0]
+    except Exception as e:
+        return {"error": f"Error reading gcns_systems table: {e}"}
+    if total == 0:
+        return {"error": "gcns_systems table is empty — run option 58 (Import GCNS Data) first."}
+
+    mrow = conn.execute(
+        "SELECT system_id FROM gcns_system_members WHERE gaia_source_id = ?",
+        (sid,),
+    ).fetchone()
+    if mrow is None:
+        return {"error": (f"Gaia source_id {sid} is not part of any GCNS resolved "
+                          "system (single or unresolved object).")}
+    sysid = mrow["system_id"]
+
+    srow = conn.execute(
+        """SELECT system_id, n_components, n_pairs, any_bin, any_bound, all_bound,
+                  max_proj_sep_au, min_proj_sep_au, n_in_gcns_stars
+           FROM gcns_systems WHERE system_id = ?""",
+        (sysid,),
+    ).fetchone()
+
+    members = []
+    for m in conn.execute(
+        "SELECT gaia_source_id, in_gcns_stars FROM gcns_system_members "
+        "WHERE system_id = ? ORDER BY gaia_source_id",
+        (sysid,),
+    ).fetchall():
+        msid = m["gaia_source_id"]
+        star = conn.execute(
+            "SELECT star_name, spectral_type, dist_pc, light_years "
+            "FROM gcns_stars WHERE gaia_source_id = ?",
+            (msid,),
+        ).fetchone()
+        members.append({
+            "gaia_source_id": msid,
+            "in_gcns_stars":  _gcns_bool(m["in_gcns_stars"]),
+            "is_query":       msid == sid,
+            "star_name":      star["star_name"]     if star else None,
+            "spectral_type":  star["spectral_type"] if star else None,
+            "dist_pc":        star["dist_pc"]        if star else None,
+            "light_years":    star["light_years"]    if star else None,
+        })
+
+    pairs = [{
+        "source_id1":        p["source_id1"],
+        "source_id2":        p["source_id2"],
+        "separation_arcsec": p["separation_arcsec"],
+        "mag_diff":          p["mag_diff"],
+        "proj_sep_au":       p["proj_sep_au"],
+        "bin":               _gcns_bool(p["bin"]),
+        "bound":             _gcns_bool(p["bound"]),
+    } for p in conn.execute(
+        "SELECT source_id1, source_id2, separation_arcsec, mag_diff, proj_sep_au, "
+        "bin, bound FROM gcns_system_pairs WHERE system_id = ? ORDER BY proj_sep_au",
+        (sysid,),
+    ).fetchall()]
+
+    meta = _gcns_meta_dict()
+    return {
+        "snapshot_date":   meta.get("snapshot_date"),
+        "gcns_version":    meta.get("gcns_version"),
+        "query_source_id": sid,
+        "system": {
+            "system_id":       srow["system_id"],
+            "n_components":    srow["n_components"],
+            "n_pairs":         srow["n_pairs"],
+            "any_bin":         _gcns_bool(srow["any_bin"]),
+            "any_bound":       _gcns_bool(srow["any_bound"]),
+            "all_bound":       _gcns_bool(srow["all_bound"]),
+            "max_proj_sep_au": srow["max_proj_sep_au"],
+            "min_proj_sep_au": srow["min_proj_sep_au"],
+            "n_in_gcns_stars": srow["n_in_gcns_stars"],
+            "members":         members,
+            "pairs":           pairs,
+        },
     }

@@ -48,6 +48,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `hypatia-data` | `--star` | SIMBAD + Hypatia | `star_name, properties, abundances[]` |
 | `gcns-within-sol` | `--ly` | none (local DB) | `limit_ly, count, snapshot_date, gcns_version, stars[]` |
 | `gcns-source` | `--id` | none (local DB) | `snapshot_date, gcns_version, star` |
+| `gcns-system` | `--id` | none (local DB) | `snapshot_date, gcns_version, query_source_id, system` |
 
 † `distance` and `travel-time` skip the SIMBAD call for an endpoint named `"Sol"`/`"Sun"` (treated as the origin at 0,0,0).
 
@@ -185,7 +186,7 @@ Returns `{"star_name", "properties", "abundances"}` on success.
 
 ### GCNS — Gaia Catalogue of Nearby Stars (local DB, no network)
 
-Reads the `gcns_stars` DB table, populated by CLI **option 58** (Import GCNS Data) — the GCNS backbone (331,312 sources to 100 pc) with **Bayesian distances + uncertainties**, plus a SIMBAD identity layer (spectral type / common name / Johnson V) attached by cross-match. No network call after the import. If the table is empty, both subcommands return `{"error": "gcns_stars table is empty — run option 58 (Import GCNS Data) first."}` with exit 1. See `docs/star-databases.md` for the ingest/build, the cross-match, and the documented completeness limits.
+Reads the `gcns_stars` / `gcns_systems` / `gcns_system_members` / `gcns_system_pairs` DB tables, populated by CLI **option 58** (Import GCNS Data) — the GCNS backbone (331,312 sources to 100 pc) with **Bayesian distances + uncertainties**, plus a SIMBAD identity layer (spectral type / common name / Johnson V) attached by cross-match, plus the **resolved multiple-star systems** derived from `gcns.resolvedss`. No network call after the import. If the relevant table is empty, the `gcns_stars`-backed subcommands return `{"error": "gcns_stars table is empty — run option 58 (Import GCNS Data) first."}` and `gcns-system` returns the analogous `gcns_systems table is empty …`, both with exit 1. See `docs/star-databases.md` for the ingest/build, the cross-match, the resolved-system derivation, and the documented completeness limits.
 
 **Per-star fields** (snake_case; any numeric field may be `null`):
 
@@ -208,6 +209,8 @@ Reads the `gcns_stars` DB table, populated by CLI **option 58** (Import GCNS Dat
 | `in_simbad` | bool | `true` if cross-matched to a `star_systems` row. |
 | `distance_method` | str | `"gcns_bayesian"` (main) \| `"gcns_missing_plx_inversion"` (missing_10mas). |
 | `gcns_table` | str | `"main"` \| `"missing_10mas"`. |
+| `system_id` | int \| null | `gcns_systems.system_id` if this source is a member of a Gaia-resolved system; `null` otherwise (single/unresolved, or a `missing_10mas` row with no source_id). Join key for `gcns-system`. |
+| `n_components` | int \| null | Component count of that resolved system; `null` if not a member. |
 
 **Populating it:** the table is built by CLI **option 58** (Import GCNS Data) — a one-time ~331k-row pull from GAVO. GCNS is Gaia EDR3-based and static, so the data only changes when re-imported; `snapshot_date`/`gcns_version` record which build a result came from. `in_simbad` coverage depends on the `star_systems` build carrying Gaia/2MASS keys (currently ~70%). See `docs/star-databases.md`.
 
@@ -223,7 +226,7 @@ Output: `{limit_ly, count, snapshot_date, gcns_version, stars[]}`. Each star car
   "limit_ly": 6.0,
   "count": 4,
   "snapshot_date": "2026-06-05",
-  "gcns_version": "GCNS / Smart et al. 2021 A&A 649 A6 (VizieR J/A+A/649/A6) via GAVO gcns.main",
+  "gcns_version": "GCNS / Smart et al. 2021 A&A 649 A6 (VizieR J/A+A/649/A6) via GAVO gcns.main + gcns.missing_10mas + gcns.resolvedss",
   "stars": [
     {
       "gaia_source_id": 5853498713190525696,
@@ -236,6 +239,7 @@ Output: `{limit_ly, count, snapshot_date, gcns_version, stars[]}`. Each star car
       "spectral_type": "M5.5Ve", "star_name": "NAME Proxima Centauri", "app_magnitude": 11.13,
       "in_gcns": true, "in_simbad": true,
       "distance_method": "gcns_bayesian", "gcns_table": "main",
+      "system_id": null, "n_components": null,
       "x": -1.55, "y": -1.18, "z": -3.77
     }
     // … α Cen A/B appear here as gcns_table "missing_10mas" with
@@ -252,11 +256,51 @@ query.py gcns-source --id 5853498713190525696
 Core function: `databases.compute_gcns_by_source_id(id)`
 Output: `{snapshot_date, gcns_version, star}` — `star` is a single dict with the fields above (no `x`/`y`/`z`) — or `{"error": ...}` if the id is not present (exit 1).
 
+#### `gcns-system`
+The resolved multiple-star system containing a Gaia EDR3/DR3 `source_id`. Derived from `gcns.resolvedss` (pair-keyed; systems are connected components — see `docs/star-databases.md`). Pass the `source_id` of **any** component; the whole system is returned.
+```bash
+query.py gcns-system --id 1872046609345556480   # 61 Cygni A → the 61 Cyg system
+```
+Core function: `databases.compute_gcns_system(id)`
+Output: `{snapshot_date, gcns_version, query_source_id, system}`, or `{"error": ...}` (exit 1) when the id is in **no** resolved system (single/unresolved object) or the `gcns_systems` table is empty.
+
+`system` is a dict:
+- `system_id` (int, synthetic & stable per build), `n_components` (int), `n_pairs` (int).
+- `any_bin`, `any_bound`, `all_bound` — bool|null, aggregated over the system's pairs (`bin` = pair probably part of a >2-star system; `bound` = probably gravitationally bound).
+- `max_proj_sep_au`, `min_proj_sep_au` — float|null, projected separation extremes (AU).
+- `n_in_gcns_stars` (int) — members that link to a `gcns_stars` row.
+- `members` — list, one per component, sorted by `gaia_source_id`: `{gaia_source_id, in_gcns_stars (bool), is_query (bool — true for the queried id), star_name, spectral_type, dist_pc, light_years}`. The last four are joined from `gcns_stars` and are `null` for a member not present there (retained, not dropped).
+- `pairs` — list of the raw `gcns.resolvedss` edges in this system, sorted by `proj_sep_au`: `{source_id1, source_id2, separation_arcsec, mag_diff, proj_sep_au, bin (bool|null), bound (bool|null)}`.
+
+Example (61 Cygni, abridged):
+```json
+{
+  "snapshot_date": "2026-06-05",
+  "query_source_id": 1872046609345556480,
+  "system": {
+    "system_id": 1234, "n_components": 2, "n_pairs": 1,
+    "any_bin": true, "any_bound": true, "all_bound": true,
+    "max_proj_sep_au": 110.47, "min_proj_sep_au": 110.47, "n_in_gcns_stars": 2,
+    "members": [
+      {"gaia_source_id": 1872046574983497216, "in_gcns_stars": true, "is_query": false,
+       "star_name": null, "spectral_type": null, "dist_pc": 3.4966, "light_years": 11.4042},
+      {"gaia_source_id": 1872046609345556480, "in_gcns_stars": true, "is_query": true,
+       "star_name": null, "spectral_type": null, "dist_pc": 3.4966, "light_years": 11.4042}
+    ],
+    "pairs": [
+      {"source_id1": 1872046609345556480, "source_id2": 1872046574983497216,
+       "separation_arcsec": 31.59, "mag_diff": 0.68, "proj_sep_au": 110.47,
+       "bin": true, "bound": true}
+    ]
+  }
+}
+```
+
 ## Two-step subcommands
 
 For subcommands that run SIMBAD first (`star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, `hwc`, `hypatia-data`): if the SIMBAD lookup returns `{"error": ...}`, that error is returned immediately and the second core function is never called.
 
-The `gcns-within-sol` and `gcns-source` subcommands are **local DB reads** (no SIMBAD step). The DB path can be overridden with the `SPACE_APP_DB` environment variable (used by tests).
+The `gcns-within-sol`, `gcns-source`, and `gcns-system` subcommands are **local DB reads** (no SIMBAD step). The DB path can be overridden with the `SPACE_APP_DB` environment variable (used by tests).
 
 ## Implementation notes
 

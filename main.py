@@ -2790,6 +2790,10 @@ def import_gcns_data():
     print(f"  gcns.missing_10mas rows:  {result['missing_count']:,}")
     print(f"  Total rows in gcns_stars: {result['total_rows']:,}")
     print(f"  SIMBAD cross-matched:     {result['simbad_matched']:,}")
+    print(f"  Resolved pairs:           {result['resolved_pairs']:,}")
+    print(f"  Resolved systems:         {result['systems_count']:,} "
+          f"({result['systems_multi']:,} with >2 components)")
+    print(f"  System members in stars:  {result['members_in_stars']:,}")
 
     input("\nPress Enter to Return to the Main Menu")
 

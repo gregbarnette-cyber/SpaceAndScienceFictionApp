@@ -512,7 +512,11 @@ class ImportGcnsPanel(ResultPanel):
             f"gcns.main rows: {result['main_count']:,}<br>"
             f"gcns.missing_10mas rows: {result['missing_count']:,}<br>"
             f"Total rows in gcns_stars: {result['total_rows']:,}<br>"
-            f"SIMBAD cross-matched: {result['simbad_matched']:,}"
+            f"SIMBAD cross-matched: {result['simbad_matched']:,}<br>"
+            f"Resolved pairs: {result['resolved_pairs']:,}<br>"
+            f"Resolved systems: {result['systems_count']:,} "
+            f"({result['systems_multi']:,} with &gt;2 components)<br>"
+            f"System members in gcns_stars: {result['members_in_stars']:,}"
         )
         lbl.setWordWrap(True)
         self.add_result_widget(lbl)
