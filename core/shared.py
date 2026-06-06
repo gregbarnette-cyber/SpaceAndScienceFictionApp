@@ -53,7 +53,10 @@ _CSV_PREFIX_MAP = [
     ("HAT-P-",      "HAT_P"),
     ("WASP-",       "WASP"),
     ("TIC ",        "TIC"),
+    # SIMBAD now emits "Gaia DR3 <id>" (not "Gaia EDR3"); DR3 ≡ EDR3 source_ids.
+    # DR1/DR2 differ and are intentionally not captured.
     ("Gaia EDR3 ",  "Gaia EDR3"),
+    ("Gaia DR3 ",   "Gaia EDR3"),
     ("2MASS J",     "2MASS"),
     ("2MASS ",      "2MASS"),
 ]
@@ -185,7 +188,9 @@ def _parse_designations(result, ids_result):
         ("HAT-P-",      "HAT_P"),
         ("WASP-",       "WASP"),
         ("TIC ",        "TIC"),
+        # SIMBAD now emits "Gaia DR3 <id>" (not "Gaia EDR3"); DR3 ≡ EDR3 source_ids.
         ("Gaia EDR3 ",  "Gaia EDR3"),
+        ("Gaia DR3 ",   "Gaia EDR3"),
         ("2MASS J",     "2MASS"),
         ("2MASS ",      "2MASS"),
     ]

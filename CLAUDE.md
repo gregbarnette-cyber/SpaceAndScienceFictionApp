@@ -95,6 +95,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 55. Import Solar System Data
 56. Import Honorverse Hyper Limits
 57. Database Table Status (GUI only)
+58. Import GCNS Data
 Q.  Quit                                            Misc. Equations
                                                     ---------------
                                                     39. Habitable Zone Calculator

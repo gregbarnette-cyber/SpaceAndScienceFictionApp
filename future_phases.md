@@ -18,11 +18,11 @@ This document brainstorms future phases in order of likely value and implementat
 **New options**: 58 (Star Systems Search), 59 (HWC Planet Search), 60 (NASA Exoplanet Quick Search)
 **Existing options touched**: none
 
-> **Note**: opt 57 is already taken by `DbStatusPanel` (Phase F). Phase G starts at 58.
+> **Note**: opts 57 (`DbStatusPanel`, Phase F) and 58 (Import GCNS Data, post-F) are already taken. Phase G starts at 59.
 
 The large datasets (252K `star_systems` rows, 5,600 `hwc` rows) are only browsable via exact-name lookup. A filter/search UI unlocks the real power of the data.
 
-### G1: Star Systems Search — opt 58
+### G1: Star Systems Search — opt 59
 
 Filters the local `star_systems` SQLite table (populated by opt 50) by spectral type pattern, distance range, apparent magnitude range, or designation prefix. No network calls.
 
@@ -35,12 +35,12 @@ Filters the local `star_systems` SQLite table (populated by opt 50) by spectral 
 
 **Output table columns** (CLI and GUI): Star Name | Designations | Spectral Type | Light Years (4dp) | App. Magnitude (3dp). Count printed above table: `"N stars found."` Footer: `"Showing first 500 results."` if capped.
 
-**CLI** — `search_star_systems_db()` (58):
+**CLI** — `search_star_systems_db()` (59):
 - Prompts for each filter field one at a time; blank = skip that filter; at least one filter required to prevent returning the entire table
 - Clears screen after all inputs collected
 - After table: `"Enter row number to open in SIMBAD (or Enter to return):"` — if a valid row number is entered, re-prompts for the "Press Enter" and returns the `main_id` of that row so the caller can chain into `query_star()`
 
-**GUI** — `StarSystemsSearchPanel` (58):
+**GUI** — `StarSystemsSearchPanel` (59):
 - Filter form: spectral type `QLineEdit` (placeholder `"e.g. G2, K%, M%"`), LY min/max `QLineEdit` pair, magnitude min/max `QLineEdit` pair, designation prefix `QLineEdit`
 - All fields optional; "Search" button disabled until at least one field is non-empty
 - Results in `make_table()` with interactive column sorting; count label above table
@@ -48,7 +48,7 @@ Filters the local `star_systems` SQLite table (populated by opt 50) by spectral 
 
 **Stretch goal (requires Phase L4 Hypatia cache)**: add a `fe_h_min`/`fe_h_max` filter pair to `search_star_systems()` using a JOIN against the `hypatia_cache` table. Only applicable once L4 is implemented; include as a commented-out parameter stub in `search_star_systems()` from the start so L4 can activate it without a signature change.
 
-### G2: HWC Planet Search — opt 59
+### G2: HWC Planet Search — opt 60
 
 Filters the local `hwc` SQLite table with planet-level and star-level predicates. Returns a ranked list; row selection drills into the full four-table HWC display for that star system.
 
@@ -60,17 +60,17 @@ Filters the local `hwc` SQLite table with planet-level and star-level predicates
 
 **Output table columns**: Planet (P_NAME) | ESI (4dp) | Habitable? | In Con HZ? | In Opt HZ? | Temp K (0dp) | Star (S_NAME) | Spectral Type | Distance (LY, 4dp). Count above table.
 
-**CLI** — `search_hwc_planets()` (59):
+**CLI** — `search_hwc_planets()` (60):
 - Prompts: ESI min (blank = 0), Habitable only? (Y/N, default N), Conservative HZ only? (Y/N, default N), Spectral type pattern (blank = any), Max distance LY (blank = any), Temp range min/max K (blank = any)
 - Clears screen after inputs
 - After table: `"Enter row number for full star details (or Enter to return):"` — calls existing `_query_hwc()` + `_display_hwc_results()` for that system's `S_NAME`
 
-**GUI** — `HwcSearchPanel` (59):
+**GUI** — `HwcSearchPanel` (60):
 - Filter form: ESI min `QDoubleSpinBox` (0.0–1.0, step 0.05, default 0.0), `QCheckBox` "Habitable only", `QCheckBox` "Conservative HZ only", `QCheckBox` "Optimistic HZ only", spectral type `QLineEdit`, LY max `QLineEdit`, temp min/max `QLineEdit` pair
 - Results in sortable `make_table()`
 - "View Full Details" button (hidden until row selected): calls `show_panel(HwcPanel)` and pre-fills the HWC star name input with the selected row's `S_NAME`, auto-triggering the HWC lookup
 
-### G3: NASA Exoplanet Quick Search — opt 60
+### G3: NASA Exoplanet Quick Search — opt 61
 
 Queries the live NASA Exoplanet Archive `pscomppars` TAP endpoint with user-supplied predicates. Results rendered via existing `_display_exoplanet_results()`.
 
@@ -80,12 +80,12 @@ Queries the live NASA Exoplanet Archive `pscomppars` TAP endpoint with user-supp
 - Returns list of planet row dicts with the same columns as `_query_exoplanet_archive()` so existing `_display_exoplanet_results()` can render them without changes
 - Cap at 200 rows; sorted by `pl_orbsmax ASC`
 
-**CLI** — `search_exoplanets_quick()` (60):
+**CLI** — `search_exoplanets_quick()` (61):
 - Prompts for each filter (blank = skip); at least one required
 - Clears screen; prints "Querying NASA Exoplanet Archive..." before the network call
 - Displays planet rows using `_print_table()`; after table: `"Enter row number for full star details (or Enter to return):"` — re-runs the full SIMBAD + archive lookup for that star's host name
 
-**GUI** — `NasaExoplanetSearchPanel` (60):
+**GUI** — `NasaExoplanetSearchPanel` (61):
 - Filter form: planet mass min/max `QLineEdit` pair (in Earth masses), orbital period min/max `QLineEdit` pair (days), spectral type `QLineEdit`, discovery method `QComboBox` (Any / Transit / Radial Velocity / Direct Imaging / Microlensing / Astrometry / Timing), max distance `QLineEdit` (parsecs), teff min/max `QLineEdit` pair
 - "Search" fires `run_in_background` with the TAP query; uses existing `_network_error_msg` error classification
 - Results in sortable `make_table()`; "View Full Details" button navigates to `NasaPlanetarySystemsPanel` with host star name pre-filled

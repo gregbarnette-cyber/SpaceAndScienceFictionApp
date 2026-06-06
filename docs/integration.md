@@ -46,6 +46,8 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `mission-exocat` | `--star` | SIMBAD (then local DB) | `simbad, exocat` |
 | `hwc` | `--star` | SIMBAD (then local DB) | `simbad, star_row, planet_rows[]` |
 | `hypatia-data` | `--star` | SIMBAD + Hypatia | `star_name, properties, abundances[]` |
+| `gcns-within-sol` | `--ly` | none (local DB) | `limit_ly, count, snapshot_date, gcns_version, stars[]` |
+| `gcns-source` | `--id` | none (local DB) | `snapshot_date, gcns_version, star` |
 
 † `distance` and `travel-time` skip the SIMBAD call for an endpoint named `"Sol"`/`"Sun"` (treated as the origin at 0,0,0).
 
@@ -63,7 +65,8 @@ SIMBAD star lookup — returns full star info and all known designations.
 query.py simbad-lookup --star "Tau Ceti"
 ```
 Core function: `databases.compute_simbad_lookup(star)`
-Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, ly, parsecs, desig_str, designations}`. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); absent catalogs are omitted. Numeric fields may be `null`.
+Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, ly, parsecs, desig_str, designations}`. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); a catalog with no id is `null`. Numeric fields may be `null`.
+- **Gaia id**: the `"Gaia EDR3"` key holds the Gaia source id as SIMBAD now formats it — `"Gaia DR3 <id>"` (SIMBAD renamed EDR3→DR3 in its id output; the source_ids are identical). To get the bare numeric id, strip the `"Gaia DR3 "` / `"Gaia EDR3 "` prefix. This is the same id used as `--id` for `gcns-source`.
 
 #### `star-regions`
 Star system regions: HZ boundaries, snow line, stellar mass/luminosity/radius, alternate biochemistry zones, plus Hypatia Catalog stellar properties and elemental abundances.
@@ -180,9 +183,80 @@ Returns `{"star_name", "properties", "abundances"}` on success.
 - `properties`: `{teff, logg, spectral_type, vmag, bmag, bv, distance_pc, disk, u_vel, v_vel, w_vel, pm_ra, pm_dec}` (any field may be `null`).
 - `abundances`: list of `{element, name, z, category, mean, std, min, max, n}` for the full **104-species** Hypatia set (all elements the API exposes via `GET /element`, including singly-ionized species such as `Ba_II`); only species with a non-null mean are included. `element` preserves the API casing (`Fe`, `Ba_II`); `name` is the full element name (ionized → e.g. `Barium II`); `z` is the atomic number; `category` is the nucleosynthetic-family key (`light`, `cno`, `alpha`, `oddz`, `iron`, `s_light`, `s_heavy`, `ree`, `heavy`). `n` (# catalogs) is derived from the response's `catalogs_linear` length. The species set, names, atomic numbers, and categories are defined in `core/hypatia_elements.py`. Results are ordered by that table's display order (category light→heavy, then atomic number). The 104 species can't be requested in one call (the server caps the GET request line at ~4094 bytes), so `compute_hypatia_data` fetches them in chunks of 30 and concatenates the responses.
 
+### GCNS — Gaia Catalogue of Nearby Stars (local DB, no network)
+
+Reads the `gcns_stars` DB table, populated by CLI **option 58** (Import GCNS Data) — the GCNS backbone (331,312 sources to 100 pc) with **Bayesian distances + uncertainties**, plus a SIMBAD identity layer (spectral type / common name / Johnson V) attached by cross-match. No network call after the import. If the table is empty, both subcommands return `{"error": "gcns_stars table is empty — run option 58 (Import GCNS Data) first."}` with exit 1. See `docs/star-databases.md` for the ingest/build, the cross-match, and the documented completeness limits.
+
+**Per-star fields** (snake_case; any numeric field may be `null`):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `gaia_source_id` | int \| null | Gaia EDR3/DR3 source id. `null` for `missing_10mas` rows. |
+| `ra`, `dec` | float | ICRS position, degrees (J2016.0). |
+| `parallax`, `parallax_error` | float | mas. |
+| `dist_pc` | float | **Bayesian** median distance (pc). For `missing_10mas` rows this is `1000/parallax` (1/ϖ inversion). |
+| `dist_lo_pc`, `dist_hi_pc` | float \| null | 16th / 84th percentile distance (pc). `null` for `missing_10mas` (no Bayesian PDF). |
+| `light_years` | float | `dist_pc × 3.26156`. |
+| `phot_g_mean_mag`, `phot_bp_mean_mag`, `phot_rp_mean_mag` | float \| null | **Gaia bands — NOT Johnson V.** `null` for `missing_10mas`. |
+| `rv_kms` | float \| null | Adopted radial velocity (km/s). |
+| `wd_prob` | float \| null | Probability the source is a white dwarf. |
+| `astrom_reliable_prob` | float \| null | GCNS probability the astrometry is reliable. |
+| `spectral_type` | str \| null | SIMBAD spectral type (cross-match). `null` when unmatched — never fabricated. |
+| `star_name` | str \| null | SIMBAD common name (cross-match); for `missing_10mas` defaults to the GCNS `main_id`. |
+| `app_magnitude` | float \| null | SIMBAD **Johnson V** (cross-match). Distinct from the Gaia bands. |
+| `in_gcns` | bool | Always `true` (row is GCNS-sourced). |
+| `in_simbad` | bool | `true` if cross-matched to a `star_systems` row. |
+| `distance_method` | str | `"gcns_bayesian"` (main) \| `"gcns_missing_plx_inversion"` (missing_10mas). |
+| `gcns_table` | str | `"main"` \| `"missing_10mas"`. |
+
+**Populating it:** the table is built by CLI **option 58** (Import GCNS Data) — a one-time ~331k-row pull from GAVO. GCNS is Gaia EDR3-based and static, so the data only changes when re-imported; `snapshot_date`/`gcns_version` record which build a result came from. `in_simbad` coverage depends on the `star_systems` build carrying Gaia/2MASS keys (currently ~70%). See `docs/star-databases.md`.
+
+#### `gcns-within-sol`
+All GCNS sources within N light years of Sol, sorted ascending by `light_years`.
+```bash
+query.py gcns-within-sol --ly 15
+```
+Core function: `databases.compute_gcns_within_sol(ly)`
+Output: `{limit_ly, count, snapshot_date, gcns_version, stars[]}`. Each star carries the fields above plus heliocentric `x`/`y`/`z` (ly) for map parity with `stars-within-sol`. Example (abridged):
+```json
+{
+  "limit_ly": 6.0,
+  "count": 4,
+  "snapshot_date": "2026-06-05",
+  "gcns_version": "GCNS / Smart et al. 2021 A&A 649 A6 (VizieR J/A+A/649/A6) via GAVO gcns.main",
+  "stars": [
+    {
+      "gaia_source_id": 5853498713190525696,
+      "ra": 217.3923, "dec": -62.6761,
+      "parallax": 768.0665, "parallax_error": 0.0499,
+      "dist_pc": 1.3019, "dist_lo_pc": 1.2771, "dist_hi_pc": 1.3020,
+      "light_years": 4.2464,
+      "phot_g_mean_mag": 8.9847, "phot_bp_mean_mag": 11.3731, "phot_rp_mean_mag": 7.5685,
+      "rv_kms": -22.4, "wd_prob": 0.2144, "astrom_reliable_prob": 1.0,
+      "spectral_type": "M5.5Ve", "star_name": "NAME Proxima Centauri", "app_magnitude": 11.13,
+      "in_gcns": true, "in_simbad": true,
+      "distance_method": "gcns_bayesian", "gcns_table": "main",
+      "x": -1.55, "y": -1.18, "z": -3.77
+    }
+    // … α Cen A/B appear here as gcns_table "missing_10mas" with
+    //   distance_method "gcns_missing_plx_inversion" and dist_lo_pc/dist_hi_pc = null
+  ]
+}
+```
+
+#### `gcns-source`
+Single GCNS row by Gaia EDR3/DR3 `source_id` (the cross-match join key). EDR3 and DR3 source_ids are identical. The id can be taken from `simbad-lookup`'s `designations["Gaia EDR3"]` (strip the `"Gaia DR3 "` prefix).
+```bash
+query.py gcns-source --id 5853498713190525696
+```
+Core function: `databases.compute_gcns_by_source_id(id)`
+Output: `{snapshot_date, gcns_version, star}` — `star` is a single dict with the fields above (no `x`/`y`/`z`) — or `{"error": ...}` if the id is not present (exit 1).
+
 ## Two-step subcommands
 
 For subcommands that run SIMBAD first (`star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, `hwc`, `hypatia-data`): if the SIMBAD lookup returns `{"error": ...}`, that error is returned immediately and the second core function is never called.
+
+The `gcns-within-sol` and `gcns-source` subcommands are **local DB reads** (no SIMBAD step). The DB path can be overridden with the `SPACE_APP_DB` environment variable (used by tests).
 
 ## Implementation notes
 

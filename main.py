@@ -97,7 +97,9 @@ def _parse_designations(result, ids_result):
         ("HAT-P-",      "HAT_P"),
         ("WASP-",       "WASP"),
         ("TIC ",        "TIC"),
+        # SIMBAD now emits "Gaia DR3 <id>" (not "Gaia EDR3"); DR3 ≡ EDR3 source_ids.
         ("Gaia EDR3 ",  "Gaia EDR3"),
+        ("Gaia DR3 ",   "Gaia EDR3"),
         ("2MASS J",     "2MASS"),
         ("2MASS ",      "2MASS"),
     ]
@@ -2461,7 +2463,10 @@ _CSV_PREFIX_MAP = [
     ("HAT-P-",      "HAT_P"),
     ("WASP-",       "WASP"),
     ("TIC ",        "TIC"),
+    # SIMBAD now labels the Gaia source "Gaia DR3 <id>" (not "Gaia EDR3"); DR3 and
+    # EDR3 source_ids are identical. DR1/DR2 are intentionally not captured.
     ("Gaia EDR3 ",  "Gaia EDR3"),
+    ("Gaia DR3 ",   "Gaia EDR3"),
     ("2MASS J",     "2MASS"),
     ("2MASS ",      "2MASS"),
 ]
@@ -2750,6 +2755,41 @@ def import_honorverse_hyper_data():
         print(f"Error: {result['error']}")
     else:
         print(f"Imported {result['count']} rows.")
+
+    input("\nPress Enter to Return to the Main Menu")
+
+
+def import_gcns_data():
+    """Pull the Gaia Catalogue of Nearby Stars into the gcns_stars DB table."""
+    import core.databases
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   IMPORT GCNS DATA (Gaia Catalogue of Nearby Stars)")
+    print("=" * 60)
+    print()
+    print("  This downloads ~331k sources from the GAVO TAP service and")
+    print("  replaces the gcns_stars table. It can take several minutes and")
+    print("  needs a network connection. Existing data is kept until the new")
+    print("  download passes its size checks.")
+    print()
+
+    def _progress(msg):
+        print(f"  {msg}")
+
+    result = core.databases.compute_gcns_ingest(progress_callback=_progress)
+
+    if "error" in result:
+        print(f"\nError: {result['error']}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print()
+    print("Done.")
+    print(f"  Snapshot date:            {result['snapshot_date']}")
+    print(f"  gcns.main rows:           {result['main_count']:,}")
+    print(f"  gcns.missing_10mas rows:  {result['missing_count']:,}")
+    print(f"  Total rows in gcns_stars: {result['total_rows']:,}")
+    print(f"  SIMBAD cross-matched:     {result['simbad_matched']:,}")
 
     input("\nPress Enter to Return to the Main Menu")
 
@@ -5637,6 +5677,7 @@ MENU_OPTIONS = {
     "54": ("Import Main Sequence Star Properties",                    import_main_sequence_data),
     "55": ("Import Solar System Data",                                import_solar_system_data),
     "56": ("Import Honorverse Hyper Limits",                          import_honorverse_hyper_data),
+    "58": ("Import GCNS Data",                                        import_gcns_data),
 }
 
 _STAR_DB_KEYS          = {"1", "2", "3", "4", "5", "6", "7"}
@@ -5647,7 +5688,7 @@ _CALCULATORS_KEYS      = {"17", "18", "19", "20", "21", "22", "23", "24", "25", 
 _PLANETARY_KEYS        = {"33", "34", "35"}
 _ROTATING_HABITAT_KEYS = {"36", "37", "38"}
 _MISC_EQUATIONS_KEYS   = {"39", "40", "41"}
-_UTILITY_KEYS          = {"50", "51", "52", "53", "54", "55", "56"}
+_UTILITY_KEYS          = {"50", "51", "52", "53", "54", "55", "56", "58"}
 
 
 def _print_two_column_section(keys):

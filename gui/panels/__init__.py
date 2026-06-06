@@ -37,7 +37,8 @@ from gui.panels.system_travel    import SystemTravelSolarPanel, SystemTravelThru
 from gui.panels.csv_utility      import (CsvUtilityPanel, ExportStarSystemsPanel,
                                          ImportHwcPanel, ImportMissionExocatPanel,
                                          ImportMainSequencePanel, ImportSolarSystemPanel,
-                                         ImportHonorversePanel, DbStatusPanel)
+                                         ImportHonorversePanel, ImportGcnsPanel,
+                                         DbStatusPanel)
 
 # ── Phase E panels (lazy-loaded to break circular import) ─────────────────────
 # gui/visualizations/*.py imports gui.panels.base, so direct imports here would

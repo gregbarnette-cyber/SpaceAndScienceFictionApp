@@ -97,6 +97,14 @@ def cmd_hypatia_data(args):
     _out(_simbad_then(args.star, databases.compute_hypatia_data))
 
 
+def cmd_gcns_within_sol(args):
+    _out(databases.compute_gcns_within_sol(args.ly))
+
+
+def cmd_gcns_source(args):
+    _out(databases.compute_gcns_by_source_id(args.id))
+
+
 # ── Argument parser ───────────────────────────────────────────────────────────
 
 def main():
@@ -183,6 +191,18 @@ def main():
                        help="Hypatia Catalog stellar properties and elemental abundances")
     p.add_argument("--star", required=True)
     p.set_defaults(func=cmd_hypatia_data)
+
+    # gcns-within-sol
+    p = sub.add_parser("gcns-within-sol",
+                       help="GCNS stars within N light years of Sol (Bayesian distances, local DB)")
+    p.add_argument("--ly", required=True, type=float)
+    p.set_defaults(func=cmd_gcns_within_sol)
+
+    # gcns-source
+    p = sub.add_parser("gcns-source",
+                       help="Single GCNS row by Gaia EDR3/DR3 source_id (local DB)")
+    p.add_argument("--id", required=True, type=int, help="Gaia EDR3/DR3 source_id")
+    p.set_defaults(func=cmd_gcns_source)
 
     args = parser.parse_args()
     try:

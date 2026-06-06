@@ -208,7 +208,11 @@ def compute_simbad_lookup(star_name: str) -> dict:
         ("HAT-P-",      "HAT_P"),
         ("WASP-",       "WASP"),
         ("TIC ",        "TIC"),
+        # SIMBAD now labels the Gaia source "Gaia DR3 <id>" (not "Gaia EDR3");
+        # DR3 ≡ EDR3 source_ids, so both map to the "Gaia EDR3" key. DR1/DR2 differ
+        # and are intentionally not captured.
         ("Gaia EDR3 ",  "Gaia EDR3"),
+        ("Gaia DR3 ",   "Gaia EDR3"),
         ("2MASS J",     "2MASS"),
         ("2MASS ",      "2MASS"),
     ]
@@ -683,7 +687,12 @@ _CSV_PREFIX_MAP = [
     ("HAT-P-",      "HAT_P"),
     ("WASP-",       "WASP"),
     ("TIC ",        "TIC"),
+    # SIMBAD's `ids` output labels the Gaia source as "Gaia DR3 <id>" (and DR1/DR2);
+    # it no longer emits "Gaia EDR3". DR3 and EDR3 source_ids are identical, so both
+    # prefixes map to the same slot; DR1/DR2 are deliberately NOT captured (their
+    # source_ids differ). Capturing DR3 is what lets the GCNS cross-match join.
     ("Gaia EDR3 ",  "Gaia EDR3"),
+    ("Gaia DR3 ",   "Gaia EDR3"),
     ("2MASS J",     "2MASS"),
     ("2MASS ",      "2MASS"),
 ]
@@ -1430,3 +1439,436 @@ def import_honorverse_hyper_csv(csv_path: str) -> dict:
         return {"error": f"Database error: {e}"}
 
     return {"count": len(rows), "path": csv_path}
+
+
+# ── Option 58: Gaia Catalogue of Nearby Stars (GCNS) ─────────────────────────
+#
+# Ingests the GCNS (Smart et al. 2021) into the isolated `gcns_stars` DB table
+# as the astrometric/completeness backbone, with Bayesian distances + their
+# uncertainties — data the SIMBAD-built star_systems table lacks. The SIMBAD
+# identity layer (spectral type / common name / Johnson V) is attached by an
+# exact-key cross-match against star_systems (Gaia source_id → 2MASS → name);
+# never fabricated, never positionally guessed. See docs/star-databases.md.
+
+_GCNS_TAP_URL          = "https://dc.g-vo.org/tap"
+_GCNS_VERSION          = "GCNS / Smart et al. 2021 A&A 649 A6 (VizieR J/A+A/649/A6) via GAVO gcns.main"
+_GCNS_MAXREC           = 400_000   # must exceed the total row count AND the 20k default cap
+_GCNS_MAIN_MIN_ROWS    = 330_000   # known 331,312 — floor sits just under to tolerate version drift
+_GCNS_MISSING_MIN_ROWS = 1_200     # known 1,259
+_LY_PER_PC             = 3.26156
+_KPC_TO_PC             = 1000.0
+
+_GCNS_MAIN_ADQL = """SELECT source_id, ra, dec, parallax, parallax_error,
+       dist_16, dist_50, dist_84,
+       phot_g_mean_mag, phot_bp_mean_mag, phot_rp_mean_mag,
+       adoptedrv, wd_prob, gcns_prob, name_2mass
+  FROM gcns.main"""
+
+_GCNS_MISSING_ADQL = """SELECT main_id, otype, ra, dec, plx_value
+  FROM gcns.missing_10mas"""
+
+
+def _ni(v):
+    """Coerce a TAP value to int, or None if missing/masked."""
+    try:
+        if v is None:
+            return None
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _norm_2mass(s: str) -> str:
+    """Normalise a 2MASS designation to its bare coordinate core for joining.
+
+    star_systems stores '2MASS J14294291-6240465'; GCNS name_2mass stores
+    '14294291-6240465'. Strip the '2MASS'/'J' prefixes and whitespace so both
+    forms compare equal.
+    """
+    if not s:
+        return ""
+    s = str(s).strip()
+    if s.upper().startswith("2MASS"):
+        s = s[5:].strip()
+    if s[:1] in ("J", "j"):
+        s = s[1:]
+    return s.strip()
+
+
+def _build_simbad_crossmatch():
+    """Build exact-match lookup tables from star_systems for the SIMBAD layer.
+
+    Returns (by_gaia, by_2mass, by_name) where each maps a key to a dict of
+    {spectral_type, star_name, app_magnitude}. Keys:
+      - by_gaia : int Gaia EDR3/DR3 source_id parsed from `designations`
+                  (DR2 ids are deliberately excluded — they differ from EDR3/DR3)
+      - by_2mass: normalised 2MASS core
+      - by_name : exact star_name (used for missing_10mas rows)
+    Empty dicts if star_systems is empty or carries no usable keys.
+    """
+    from core.db import get_conn
+
+    by_gaia, by_2mass, by_name = {}, {}, {}
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT star_name, designations, spectral_type, app_magnitude "
+            "FROM star_systems"
+        ).fetchall()
+    except Exception:
+        return by_gaia, by_2mass, by_name
+
+    gaia_re  = re.compile(r"Gaia\s+E?DR3\s+(\d+)")  # EDR3 or DR3 only — not DR2
+    twomass_re = re.compile(r"2MASS\s+J?\s*([0-9+\-.]+)")
+
+    for r in rows:
+        sp   = (r["spectral_type"] or "").strip() or None
+        name = (r["star_name"] or "").strip() or None
+        vmag = _fval(r["app_magnitude"])
+        payload = {"spectral_type": sp, "star_name": name, "app_magnitude": vmag}
+        desig = r["designations"] or ""
+
+        m = gaia_re.search(desig)
+        if m:
+            by_gaia.setdefault(int(m.group(1)), payload)
+        tm = twomass_re.search(desig)
+        if tm:
+            by_2mass.setdefault(_norm_2mass(tm.group(1)), payload)
+        if name:
+            by_name.setdefault(name, payload)
+
+    return by_gaia, by_2mass, by_name
+
+
+def _gcns_fetch(adql: str, maxrec: int):
+    """Run an async TAP query against GAVO; return the pyvo result set.
+
+    Uses async (1 hr execution window) because the result far exceeds the 20k
+    sync cap. Deletes the UWS job afterward. Wrapped in the shared retry/timeout
+    helpers. Raises on exhausted retries (caller classifies the error).
+    """
+    import pyvo
+
+    def _do():
+        svc = pyvo.dal.TAPService(_GCNS_TAP_URL)
+        job = svc.submit_job(adql, maxrec=maxrec)
+        try:
+            job.run()
+            job.wait(phases={"COMPLETED", "ERROR", "ABORTED"}, timeout=3000.0)
+            job.raise_if_error()
+            return job.fetch_result()
+        finally:
+            try:
+                job.delete()
+            except Exception:
+                pass
+
+    with _timeout_ctx(300):
+        return _with_retries(_do, retries=3, base_delay=5.0)
+
+
+def _gcns_check_overflow(result, n_rows: int) -> bool:
+    """True if the TAP result was truncated (server OVERFLOW or hit maxrec)."""
+    try:
+        status = str(getattr(result, "query_status", "") or "")
+        if "overflow" in status.lower():
+            return True
+    except Exception:
+        pass
+    return n_rows >= _GCNS_MAXREC
+
+
+def compute_gcns_ingest(progress_callback=None) -> dict:
+    """Pull the GCNS into the gcns_stars table (replace-in-place) with check gates.
+
+    Flow (validate-before-destroy — a short/truncated download leaves the
+    existing table intact):
+      1. async-fetch gcns.main and gcns.missing_10mas into memory
+      2. Gate 1 (per table, BEFORE any DB write): fail on OVERFLOW or row count
+         below the configured floor
+      3. transform (kpc->pc, ly, SIMBAD cross-match)
+      4. replace-in-place: DELETE + bulk INSERT in ONE transaction
+      5. Gate 2 (post-commit): assert final count >= ~331k; record provenance
+
+    Returns a stats dict on success or {"error": str}.
+    """
+    from datetime import datetime
+    from core.db import get_conn
+
+    def _progress(msg):
+        if progress_callback:
+            progress_callback(msg)
+
+    # ── 1. Fetch ────────────────────────────────────────────────────────────
+    _progress("Querying GAVO TAP for gcns.main (331,312 rows; this takes a few minutes)…")
+    try:
+        main_res = _gcns_fetch(_GCNS_MAIN_ADQL, _GCNS_MAXREC)
+    except Exception as e:
+        return {"error": _network_error_msg(e, "GAVO TAP (gcns.main)")}
+    main_rows = list(main_res)
+    n_main = len(main_rows)
+    _progress(f"gcns.main returned {n_main:,} rows.")
+
+    # ── 2. Gate 1 (gcns.main) — before touching the DB ──────────────────────
+    if _gcns_check_overflow(main_res, n_main):
+        return {"error": ("gcns.main result was TRUNCATED (TAP OVERFLOW / hit "
+                          f"maxrec={_GCNS_MAXREC:,}). Aborted before writing; "
+                          "existing gcns_stars table left intact.")}
+    if n_main < _GCNS_MAIN_MIN_ROWS:
+        return {"error": (f"gcns.main returned only {n_main:,} rows (expected "
+                          f">= {_GCNS_MAIN_MIN_ROWS:,}). Likely an incomplete "
+                          "download; aborted before writing.")}
+
+    _progress("Querying GAVO TAP for gcns.missing_10mas…")
+    try:
+        miss_res = _gcns_fetch(_GCNS_MISSING_ADQL, _GCNS_MAXREC)
+    except Exception as e:
+        return {"error": _network_error_msg(e, "GAVO TAP (gcns.missing_10mas)")}
+    miss_rows = list(miss_res)
+    n_miss = len(miss_rows)
+    _progress(f"gcns.missing_10mas returned {n_miss:,} rows.")
+
+    if _gcns_check_overflow(miss_res, n_miss):
+        return {"error": ("gcns.missing_10mas result was TRUNCATED. Aborted "
+                          "before writing; existing gcns_stars left intact.")}
+    if n_miss < _GCNS_MISSING_MIN_ROWS:
+        return {"error": (f"gcns.missing_10mas returned only {n_miss:,} rows "
+                          f"(expected >= {_GCNS_MISSING_MIN_ROWS:,}); aborted "
+                          "before writing.")}
+
+    # ── 3. Transform + cross-match ──────────────────────────────────────────
+    _progress("Cross-matching against star_systems (SIMBAD layer)…")
+    by_gaia, by_2mass, by_name = _build_simbad_crossmatch()
+    matched = 0
+    insert_rows = []
+
+    for row in main_rows:
+        sid   = _ni(row["source_id"])
+        d50   = _fval(row["dist_50"])
+        d16   = _fval(row["dist_16"])
+        d84   = _fval(row["dist_84"])
+        dist_pc    = d50 * _KPC_TO_PC if d50 is not None else None
+        dist_lo_pc = d16 * _KPC_TO_PC if d16 is not None else None
+        dist_hi_pc = d84 * _KPC_TO_PC if d84 is not None else None
+        ly = dist_pc * _LY_PER_PC if dist_pc is not None else None
+
+        sim = None
+        if sid is not None and sid in by_gaia:
+            sim = by_gaia[sid]
+        else:
+            key2 = _norm_2mass(row["name_2mass"])
+            if key2 and key2 in by_2mass:
+                sim = by_2mass[key2]
+        if sim is not None:
+            matched += 1
+
+        insert_rows.append((
+            sid,
+            _fval(row["ra"]), _fval(row["dec"]),
+            _fval(row["parallax"]), _fval(row["parallax_error"]),
+            dist_pc, dist_lo_pc, dist_hi_pc, ly,
+            _fval(row["phot_g_mean_mag"]), _fval(row["phot_bp_mean_mag"]),
+            _fval(row["phot_rp_mean_mag"]),
+            _fval(row["adoptedrv"]), _fval(row["wd_prob"]), _fval(row["gcns_prob"]),
+            sim["spectral_type"] if sim else None,
+            sim["star_name"] if sim else None,
+            sim["app_magnitude"] if sim else None,
+            1,                       # in_gcns
+            1 if sim else 0,         # in_simbad
+            "gcns_bayesian",
+            "main",
+        ))
+
+    # missing_10mas: parallax-only objects Gaia EDR3 missed — no source_id, no
+    # Bayesian distance, no Gaia photometry. Distance via 1/plx inversion, flagged.
+    for row in miss_rows:
+        plx = _fval(row["plx_value"])
+        dist_pc = (1000.0 / plx) if (plx and plx > 0) else None
+        ly = dist_pc * _LY_PER_PC if dist_pc is not None else None
+        main_id = (str(row["main_id"]).strip() if row["main_id"] is not None else None)
+
+        sim = by_name.get(main_id) if main_id else None
+        if sim is not None:
+            matched += 1
+
+        insert_rows.append((
+            None,                                  # gaia_source_id
+            _fval(row["ra"]), _fval(row["dec"]),
+            plx, None,                             # parallax, parallax_error
+            dist_pc, None, None, ly,               # dist_pc, lo, hi, ly
+            None, None, None,                      # G, BP, RP
+            None, None, None,                      # rv, wd_prob, astrom_reliable
+            sim["spectral_type"] if sim else None,
+            sim["star_name"] if sim else main_id,  # keep GCNS main_id as the name
+            sim["app_magnitude"] if sim else None,
+            1,                                     # in_gcns
+            1 if sim else 0,                       # in_simbad
+            "gcns_missing_plx_inversion",
+            "missing_10mas",
+        ))
+
+    # ── 4. Replace-in-place (one transaction) ───────────────────────────────
+    _progress(f"Writing {len(insert_rows):,} rows to gcns_stars…")
+    conn = get_conn()
+    try:
+        with conn:
+            conn.execute("DELETE FROM gcns_stars")
+            conn.executemany(
+                """INSERT OR IGNORE INTO gcns_stars
+                   (gaia_source_id, ra, dec, parallax, parallax_error,
+                    dist_pc, dist_lo_pc, dist_hi_pc, light_years,
+                    phot_g_mean_mag, phot_bp_mean_mag, phot_rp_mean_mag,
+                    rv_kms, wd_prob, astrom_reliable_prob,
+                    spectral_type, star_name, app_magnitude,
+                    in_gcns, in_simbad, distance_method, gcns_table)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                insert_rows,
+            )
+    except Exception as e:
+        return {"error": f"Could not write gcns_stars table: {e}"}
+
+    # ── 5. Gate 2 (post-commit) + provenance ────────────────────────────────
+    final = conn.execute("SELECT COUNT(*) FROM gcns_stars").fetchone()[0]
+    if final < _GCNS_MAIN_MIN_ROWS:
+        return {"error": (f"Post-commit check failed: gcns_stars holds {final:,} "
+                          f"rows (expected >= {_GCNS_MAIN_MIN_ROWS:,}). The table "
+                          "may be incomplete — investigate before relying on it.")}
+
+    snapshot_date = datetime.now().strftime("%Y-%m-%d")
+    meta = {
+        "snapshot_date":       snapshot_date,
+        "gcns_version":        _GCNS_VERSION,
+        "gcns_main_count":     str(n_main),
+        "gcns_missing_count":  str(n_miss),
+        "total_count":         str(final),
+        "simbad_matched":      str(matched),
+    }
+    with conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO gcns_meta (key, value) VALUES (?, ?)",
+            list(meta.items()),
+        )
+
+    _progress(f"Done — {final:,} GCNS rows ({matched:,} SIMBAD-matched).")
+    return {
+        "total_rows":     final,
+        "main_count":     n_main,
+        "missing_count":  n_miss,
+        "simbad_matched": matched,
+        "snapshot_date":  snapshot_date,
+        "gcns_version":   _GCNS_VERSION,
+    }
+
+
+def _gcns_meta_dict() -> dict:
+    """Return the gcns_meta key/value pairs as a dict (empty if unbuilt)."""
+    from core.db import get_conn
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT key, value FROM gcns_meta").fetchall()
+        return {r["key"]: r["value"] for r in rows}
+    except Exception:
+        return {}
+
+
+_GCNS_ROW_COLS = [
+    "gaia_source_id", "ra", "dec", "parallax", "parallax_error",
+    "dist_pc", "dist_lo_pc", "dist_hi_pc", "light_years",
+    "phot_g_mean_mag", "phot_bp_mean_mag", "phot_rp_mean_mag",
+    "rv_kms", "wd_prob", "astrom_reliable_prob",
+    "spectral_type", "star_name", "app_magnitude",
+    "in_gcns", "in_simbad", "distance_method", "gcns_table",
+]
+
+
+def _gcns_row_to_dict(row) -> dict:
+    """Convert a gcns_stars DB row to the public JSON shape (snake_case keys)."""
+    d = {c: row[c] for c in _GCNS_ROW_COLS}
+    d["in_gcns"]   = bool(row["in_gcns"])
+    d["in_simbad"] = bool(row["in_simbad"])
+    return d
+
+
+def compute_gcns_within_sol(limit_ly: float) -> dict:
+    """All GCNS stars within limit_ly light years of Sol (Bayesian distances).
+
+    Reads the gcns_stars DB table only — no network. Returns
+    {limit_ly, count, snapshot_date, gcns_version, stars[]} or {"error": str}.
+    Each star carries heliocentric x/y/z (ly) for map parity with stars-within-sol.
+    """
+    import math as _math
+    from core.db import get_conn
+
+    if limit_ly is None or limit_ly <= 0:
+        return {"error": "Distance limit must be greater than 0."}
+
+    conn = get_conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM gcns_stars").fetchone()[0]
+    except Exception as e:
+        return {"error": f"Error reading gcns_stars table: {e}"}
+    if total == 0:
+        return {"error": "gcns_stars table is empty — run option 58 (Import GCNS Data) first."}
+
+    rows = conn.execute(
+        f"SELECT {', '.join(_GCNS_ROW_COLS)} FROM gcns_stars "
+        "WHERE light_years IS NOT NULL AND light_years <= ? "
+        "ORDER BY light_years ASC",
+        (limit_ly,),
+    ).fetchall()
+
+    stars = []
+    for row in rows:
+        d = _gcns_row_to_dict(row)
+        ra, dec, ly = row["ra"], row["dec"], row["light_years"]
+        if ra is not None and dec is not None and ly is not None:
+            rr, dr = _math.radians(ra), _math.radians(dec)
+            d["x"] = ly * _math.cos(dr) * _math.cos(rr)
+            d["y"] = ly * _math.cos(dr) * _math.sin(rr)
+            d["z"] = ly * _math.sin(dr)
+        else:
+            d["x"] = d["y"] = d["z"] = None
+        stars.append(d)
+
+    meta = _gcns_meta_dict()
+    return {
+        "limit_ly":      limit_ly,
+        "count":         len(stars),
+        "snapshot_date": meta.get("snapshot_date"),
+        "gcns_version":  meta.get("gcns_version"),
+        "stars":         stars,
+    }
+
+
+def compute_gcns_by_source_id(source_id: int) -> dict:
+    """Single GCNS row by Gaia EDR3/DR3 source_id (the join key). No network.
+
+    Returns {snapshot_date, gcns_version, star} or {"error": str}.
+    """
+    from core.db import get_conn
+
+    sid = _ni(source_id)
+    if sid is None:
+        return {"error": "source_id must be an integer Gaia EDR3/DR3 id."}
+
+    conn = get_conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM gcns_stars").fetchone()[0]
+    except Exception as e:
+        return {"error": f"Error reading gcns_stars table: {e}"}
+    if total == 0:
+        return {"error": "gcns_stars table is empty — run option 58 (Import GCNS Data) first."}
+
+    row = conn.execute(
+        f"SELECT {', '.join(_GCNS_ROW_COLS)} FROM gcns_stars WHERE gaia_source_id = ?",
+        (sid,),
+    ).fetchone()
+    if row is None:
+        return {"error": f"No GCNS source found with source_id {sid}."}
+
+    meta = _gcns_meta_dict()
+    return {
+        "snapshot_date": meta.get("snapshot_date"),
+        "gcns_version":  meta.get("gcns_version"),
+        "star":          _gcns_row_to_dict(row),
+    }

@@ -3,7 +3,14 @@ import os
 import pathlib
 import csv
 
-_DB_PATH = pathlib.Path(__file__).resolve().parent.parent / "data" / "space_app.db"
+# DB location: overridable via the SPACE_APP_DB env var (used for test isolation
+# and alternate data stores); defaults to data/space_app.db under the repo root.
+_DB_PATH = pathlib.Path(
+    os.environ.get(
+        "SPACE_APP_DB",
+        pathlib.Path(__file__).resolve().parent.parent / "data" / "space_app.db",
+    )
+)
 _conn: sqlite3.Connection | None = None
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -130,6 +137,47 @@ def _create_schema(conn: sqlite3.Connection):
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             spectral_class TEXT,
             lm             REAL
+        );
+
+        -- Gaia Catalogue of Nearby Stars (GCNS) backbone. Isolated from
+        -- star_systems; populated only by the GCNS import (CLI option 58),
+        -- never auto-seeded. GCNS = astrometry/distances; the SIMBAD layer
+        -- (spectral_type/star_name/app_magnitude) is attached by cross-match.
+        CREATE TABLE IF NOT EXISTS gcns_stars (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            gaia_source_id       INTEGER,          -- Gaia EDR3/DR3 id; NULL for missing_10mas rows
+            ra                   REAL,             -- ICRS deg (J2016.0)
+            dec                  REAL,             -- ICRS deg (J2016.0)
+            parallax             REAL,             -- mas
+            parallax_error       REAL,             -- mas
+            dist_pc              REAL,             -- Bayesian median (dist_50), pc
+            dist_lo_pc           REAL,             -- 16th percentile, pc
+            dist_hi_pc           REAL,             -- 84th percentile, pc
+            light_years          REAL,             -- dist_pc * 3.26156
+            phot_g_mean_mag      REAL,             -- Gaia G  (NOT Johnson V)
+            phot_bp_mean_mag     REAL,             -- Gaia BP
+            phot_rp_mean_mag     REAL,             -- Gaia RP
+            rv_kms               REAL,             -- adopted radial velocity, km/s
+            wd_prob              REAL,             -- probability white dwarf
+            astrom_reliable_prob REAL,             -- GCNS prob. of reliable astrometry
+            spectral_type        TEXT,             -- SIMBAD (cross-match); NULL if unmatched
+            star_name            TEXT,             -- SIMBAD common name (cross-match); NULL if unmatched
+            app_magnitude        REAL,             -- SIMBAD Johnson V (cross-match); NULL if unmatched
+            in_gcns              INTEGER,           -- always 1 (row is GCNS-sourced)
+            in_simbad            INTEGER,           -- 1 if cross-matched to star_systems
+            distance_method      TEXT,             -- 'gcns_bayesian' | 'gcns_missing_plx_inversion'
+            gcns_table           TEXT               -- 'main' | 'missing_10mas'
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_gcns_source_id
+            ON gcns_stars (gaia_source_id);
+        CREATE INDEX IF NOT EXISTS idx_gcns_light_years
+            ON gcns_stars (light_years);
+
+        -- Single key/value provenance record for the GCNS build.
+        CREATE TABLE IF NOT EXISTS gcns_meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT
         );
     """)
     conn.commit()
@@ -302,6 +350,8 @@ def get_table_status() -> list:
     conn = get_conn()
     tables = [
         ("star_systems",       "Star Systems"),
+        ("gcns_stars",         "GCNS Stars"),
+        ("gcns_meta",          "GCNS Meta"),
         ("hwc",                "Habitable Worlds Catalog"),
         ("mission_exocat",     "Mission Exocat"),
         ("main_sequence_stars","Main Sequence Stars"),
