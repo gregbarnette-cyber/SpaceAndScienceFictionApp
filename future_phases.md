@@ -11,7 +11,7 @@ The app is a mature Space & Science Fiction CLI/GUI tool that has completed Phas
 
 This document brainstorms future phases in order of likely value and implementation effort.
 
-> **Scope — GUI-only.** New feature work targets the PySide6 GUI only. The CLI (`main.py` / `MENU_OPTIONS`) is **frozen at opts 1–58** and is not extended by any phase below. Every new feature is a GUI nav entry backed by a panel class (the precedent set by `DbStatusPanel` and `NasaPlanetarySystemsMapPanel`, which carry no option number), so there are **no menu numbers to assign and nothing to renumber**. The shared `core/` functions each phase specifies are still built — the GUI and `query.py` consume them; only the CLI presentation layer is dropped. Phase M is already written in this GUI-only form; treat it as the template.
+> **Scope — GUI-only.** New feature work targets the PySide6 GUI only. The CLI (`main.py` / `MENU_OPTIONS`) is **frozen at opts 1–58** and is not extended by any phase below. Every new feature is a GUI nav entry backed by a panel class (the precedent set by `DbStatusPanel` and `NasaPlanetarySystemsMapPanel`, which carry no option number), so there are **no menu numbers to assign and nothing to renumber**. The shared `core/` functions each phase specifies are still built — the GUI and `query.py` consume them; only the CLI presentation layer is dropped. Phase M is already written in this GUI-only form; treat it as the template. **Exception:** Phase N is integration-surface-only — it adds `query.py` subcommands over existing `core/` functions and touches neither the GUI nor the CLI menu.
 
 ---
 
@@ -269,6 +269,7 @@ Given a set of "important" star systems, find the minimum-cost network (minimum 
 **`gui/visualizations/plot_helpers.py`** — extend `make_star_map_canvas` and `make_star_map_3d_canvas` with optional `routes` parameter
 - `routes`: list of `{"x1","y1","x2","y2","label","style"}` dicts; drawn as annotated lines over the scatter
 - Labels rendered at leg midpoints; style `"dashed"` for ordered routes, `"solid"` for MST edges
+- **Shared with Phase O8** (two-star maps for opts 17/20/21): whichever phase is built first implements the `routes` parameter; the other reuses it unchanged
 
 ### Remaining Steps
 
@@ -712,7 +713,7 @@ Error when the id is in **no** resolved system — message clarifies *"not Gaia-
 opt 1 already resolves `designations["Gaia EDR3"]`; M5 reuses that id **for free (no extra network)** to attach a GCNS block.
 
 - After designations resolve, parse the bare Gaia id and call `compute_gcns_by_source_id(id)` — a single indexed local-DB read. Store the result under a new `"gcns"` key on the `compute_simbad_lookup` return (`None` when no id / not found / table empty).
-- **Headline value**: display the GCNS **Bayesian distance with its 16th/84th uncertainty** alongside opt 1's existing naive **1/ϖ parallax distance** — a probabilistic distance *with error bars* next to the point estimate. Plus `distance_method`, `astrom_reliable_prob`, `wd_prob`, the Gaia G/BP/RP photometry (separate from Johnson V), and a "part of a resolved N-component system (opt 61)" pointer when `system_id` is set.
+- **Headline value**: display the GCNS **Bayesian distance with its 16th/84th uncertainty** alongside opt 1's existing naive **1/ϖ parallax distance** — a probabilistic distance *with error bars* next to the point estimate. Plus `distance_method`, `astrom_reliable_prob`, `wd_prob`, the Gaia G/BP/RP photometry (separate from Johnson V), and a "part of a resolved N-component system — open in the System Viewer" pointer when `system_id` is set.
 - **Non-fatal and silent when absent** — no Gaia id, GCNS not imported, or star outside the census → the block is simply omitted, exactly how opt 1's optional HWO/Hypatia sub-sections behave.
 - **GUI**: `SimbadPanel` shows the block as a small table inside the **Star Properties** tab (or a dedicated **GCNS** tab when data is present). (The CLI `query_star()` is out of scope — GUI-only project — but the enrichment lives in the shared core function, so a CLI print could be added later for free.)
 - **`query.py` parity**: `simbad-lookup` output gains the same optional `"gcns"` key, so the consuming repo gets the Bayesian distance in the call it already makes.
@@ -730,6 +731,239 @@ opt 1 already resolves `designations["Gaia EDR3"]`; M5 reuses that id **for free
 
 ---
 
+## Phase N — query.py Integration Expansion
+
+**New panels**: none — integration-surface only (no GUI, no CLI menu changes; see the scope-note exception above)
+**Existing options touched**: none — every subcommand wraps an existing `core/` function verbatim. Precedent: Phase M5 already extends `query.py` (the `"gcns"` key on `simbad-lookup`).
+
+The ScienceFictionResearch repo consumes this app exclusively through `query.py` (see `docs/integration.md`). A 2026-06-10 audit found ~24 `core/` `compute_*` functions with no subcommand; this phase exposes the **curated five** with real integration value and records why the rest were excluded.
+
+**Shared conventions** (same contract as every existing subcommand — see `docs/integration.md` "Implementation notes"):
+- Malformed/missing args → argparse rejection, **exit 2**, message on stderr (not JSON).
+- Semantically invalid values (e.g. non-positive acceleration) → the core function's `{"error": ...}` dict on stdout, **exit 1**.
+- Success → the core function's return dict, pretty-printed, **exit 0**. No new output shapes are invented — each subcommand returns exactly what its core function returns today.
+
+### N1: `habitable-zone-sma`
+
+HZ boundaries plus the object's Seff and HZ membership verdict (the opt-40 calculation).
+
+```bash
+query.py habitable-zone-sma --teff 4900 --luminosity 0.15 --sma 0.45
+```
+Core function: `equations.compute_habitable_zone_sma(teff, luminosity, sma)` (`core/equations.py:175`). No network. Complements the existing `habitable-zone` subcommand (which lacks the per-object Seff/verdict).
+
+### N2: `star-luminosity`
+
+Stellar luminosity from radius and temperature: `L = R² × (T/5778)⁴` (the opt-41 calculation).
+
+```bash
+query.py star-luminosity --radius 0.82 --teff 5344
+```
+Core function: `equations.compute_star_luminosity(radius, temp)` (`core/equations.py:38`). No network. Arg is `--teff` for consistency with N1/`habitable-zone`, mapped to the function's `temp` parameter.
+
+### N3 / N4: `brachistochrone-au` and `brachistochrone-lm`
+
+All three brachistochrone acceleration profiles for a given distance (the opt-29/opt-30 calculations).
+
+```bash
+query.py brachistochrone-au --accel-g 1.0 --au 5.2
+query.py brachistochrone-lm --accel-g 0.5 --lm 43.2
+```
+Core functions: `calculators.compute_travel_time_system_au(accel_g, distance_au)` / `compute_travel_time_system_lm(accel_g, distance_lm)` (`core/calculators.py:900` / `:918`). No network.
+
+### N5: `travel-time-solar`
+
+Brachistochrone travel time between two solar-system bodies at a departure epoch (the opt-22 calculation). **Live JPL Horizons network call** — must be flagged as such in the `docs/integration.md` quick-reference table (the only network-bound entry in this phase).
+
+```bash
+query.py travel-time-solar --origin Earth --destination Mars --accel-g 1.0
+query.py travel-time-solar --origin Earth --destination "Jupiter" --accel-g 0.3 --v-cap-pct 5 --date 2027-03-15
+```
+Core function: `calculators.compute_travel_time_solar_objects(origin, destination, accel_g, v_cap_pct=3.0, departure_date=None)` (`core/calculators.py:936`). `--v-cap-pct` defaults to 3.0; `--date` is ISO `YYYY-MM-DD`, defaulting to today. Ambiguous Horizons names return the disambiguation error already produced by the core function. The result includes `planet_positions` / `origin_xyz` / `dest_xyz`, which JSON consumers may ignore.
+
+### Deliberately excluded (do not re-propose without new justification)
+
+- **Unit converters** (opts 25–28, 31–32 equivalents: ly/hr ↔ ×c, distance/time at constant velocity) — one-line arithmetic on the documented constant `8765.8128`; a caller can do this itself.
+- **Static data-table dumps** (main-sequence properties, solar-system tables, Honorverse tables) — static reference data; no computation to delegate.
+- **`star-regions-raw`** (manual six-parameter regions) — the SIMBAD-backed `star-regions` already covers the integration use case.
+
+### Forward note — Phase H
+
+When Phase H's five equation functions are built (`compute_roche_limit`, `compute_tidal_locking_time`, `compute_hill_sphere`, `compute_binary_orbit_stability`, `compute_atmosphere_retention`), each gains a `query.py` subcommand **at build time** under this phase's conventions, rather than as a separate retrofit.
+
+### Remaining Steps
+
+- **`query.py`** — five dispatcher functions + argparse subparsers (numeric validation per shared conventions above)
+- **`docs/integration.md`** — five rows in the quick-reference table (N5 flagged as live network) + one subcommand section each, following the existing format
+- No GUI, CLI, `core/`, or DB changes
+
+---
+
+## Phase O — Visualization Expansion
+
+**New panels (GUI-only)**: none — every item adds viz tabs, canvases, or interactivity to *existing* panels
+**Existing options touched (viz layer only — no computation changes)**: 1, 3–6, 8–14, 17–24, 29–30, plus `NasaPlanetarySystemsMapPanel`
+
+Sourced from a 2026-06-10 visualization audit: the app fetches substantial data it never draws (`pl_orbincl` is explicitly dropped by both orbit-prep functions; GCNS photometry, Hypatia UVW kinematics, and the complete HR-diagram dataset in `main_sequence_stars` are all unvisualized), ~35 panels have no diagrams at all, and no animation or table↔map linking exists anywhere (no `FuncAnimation`, no time sliders; all date controls are one-shot).
+
+> **Mockup-gated, individually skippable.** Before implementing, build an HTML mockup per item (`mockups/phase-o/o<NN>-<slug>.html`, following the `mockups/phase-g.html` precedent) for maintainer review. The maintainer decides per-item inclusion **at implementation time from the mockups** — items are independent unless a dependency is noted below; skipping any item must not block the others.
+
+**Item index**: A. Signature features — O1 night sky, O2 HR diagrams, O3 mass–radius, O4 Solar System overlay, O5 date scrubber/animation. B. Diagram parity — O6 (opt 13), O7 (opt 11), O8 (opts 17/20/21), O9 brachistochrone charts (22–24/29–30), O10 Honorverse (14 + 8–10 overlay). C. Unvisualized data — O11 Toomre kinematics, O12 HWC habitability, O13 transit geometry, O14 size strip. D. Interactivity — O15 table↔map linking, O16 legend filtering, O17 isochrone rings, O18 find-star box.
+
+### O1: Night Sky From Another Star (opt 19)
+
+A celestial-sphere view of the sky as seen *from* the queried center star, computed entirely from data opt 19 already returns.
+
+**`core/viz.py`** — add `prepare_sky_from_star(result, mag_limit=6.5) -> dict`:
+- Input: the `compute_stars_within_distance_of_star` result (center at origin; each star carries shifted `x/y/z` in ly, `Star Name`, `Spectral Type`; per-row apparent magnitude and parsecs must be threaded through from the `star_systems` rows — extend the result rows with `app_magnitude` and `parsecs` keys, a one-line change in `core/calculators.py` `compute_stars_within_distance_of_star`).
+- **Sol is appended as a sky object** at the vector pointing from the center star back to Sol (i.e. `-center_x/-center_y/-center_z`), with `M_V = 4.83`.
+- Per star: vector `v = (x, y, z)` from vantage; `d_ly = |v|`; `ra_deg = degrees(atan2(y, x)) % 360`; `dec_deg = degrees(asin(z / d_ly))`.
+- Apparent magnitude from vantage: `M = app_magnitude + 5 − 5·log₁₀(parsecs)` (absolute mag from the Sol-centric values), then `m' = M − 5 + 5·log₁₀(d_ly / 3.26156)`. Stars with NULL `app_magnitude` are **skipped and counted** (`skipped_no_mag` in the return) — never given a fabricated magnitude.
+- Filter to `m' ≤ mag_limit`. Returns `{"vantage_name": str, "mag_limit": float, "skipped_no_mag": int, "stars": [{"name", "ra_deg", "dec_deg", "mag", "sp_class", "color"}]}` or `{"error": str}`.
+
+**`gui/visualizations/plot_helpers.py`** — add `make_sky_canvas(parent, data)`:
+- Dark navy chart palette (same constants as `make_star_chart_canvas`). Aitoff projection (`fig.add_subplot(projection="aitoff")`) with RA reversed (sky convention); fall back to a rectangular RA/Dec plot if the projection complicates hover math — decide in the mockup.
+- Marker size scaled by brightness: `size = max(2, 40 × 10^(−0.4 × (mag − mag_min)))` clamped to [2, 80]; color by spectral class (same map as the star charts). Hover: name, apparent mag from vantage, distance from vantage. Click: full info box.
+- Title: `"Night sky from {vantage_name} (to m={mag_limit})"`. A footnote label when `skipped_no_mag > 0`: `"N stars omitted (no V magnitude)"`.
+
+**GUI** — `StarsWithinDistanceStarPanel` (19) gains a **"Night Sky"** viz tab plus a magnitude-limit `QLineEdit` (default 6.5) inside the tab with an Apply button (re-runs `prepare_sky_from_star` on the cached result — no new query). Caveat label: the view only contains stars within the queried distance limit; querying ≥ 50 ly gives a fuller sky.
+
+### O2: HR / Color–Magnitude Diagrams (opts 12, 18, 19)
+
+No HR diagram exists anywhere despite three ready datasets. (The GCNS BP−RP CMD belongs to **Phase M1** as an extension — not duplicated here.)
+
+**O2a — opt 12 reference HR diagram.** `core/viz.py` — add `prepare_hr_main_sequence() -> dict`: reads the `main_sequence_stars` table (`spectral_class`, `b_v`, `teff_k`, `abs_mag_vis`, `lum`); returns `{"points": [{"label", "teff", "abs_mag", "bv", "lum", "color"}]}` (color by leading class letter) or `{"error"}` if the table is empty. `plot_helpers.py` — add `make_hr_canvas(parent, data, overlay_points=None)`: x = Teff in K, **log scale, inverted** (hot left); y = absolute visual magnitude, **inverted** (bright top); the main-sequence rows drawn as a connected line + labeled points (label every other row to avoid clutter); secondary top x-axis showing spectral class letters at their Teff positions. `MainSequencePanel` (12) gains `DiagramToggleMixin` + an **"HR Diagram"** viz tab.
+
+**O2b — opts 18/19 result overlay.** Same canvas, second use: `prepare_hr_from_stars(result) -> dict` computes per-result-star `M_V = app_magnitude + 5 − 5·log₁₀(parsecs)` (requires the same row extension as O1) and a Teff estimate by matching the star's parsed spectral class against `main_sequence_stars` (`_lookup_spectral_type` ceiling rule from `core/regions.py` — already the app's canonical mapping). Result stars render as scatter points (`overlay_points`) on top of the O2a reference line. Stars missing magnitude or an OBAFGKM class are skipped and counted. Opts 18/19 gain an **"HR Diagram"** viz tab.
+
+### O3: Mass–Radius Diagram (opts 3, 6, NasaPlanetarySystemsMapPanel)
+
+**`core/viz.py`** — add `prepare_mass_radius(planets, mass_key, radius_key, name_key) -> dict`:
+- Generic over sources: NASA pscomppars (`pl_bmasse`/`pl_rade`/`pl_name`) and HWC (`P_MASS`/`P_RADIUS`/`P_NAME`). Filters to planets with both values; returns `{"planets": [{"name", "mass_e", "radius_e"}], "skipped": int}` or `{"error"}` when none qualify.
+
+**`plot_helpers.py`** — add `make_mass_radius_canvas(parent, data)`:
+- log–log scatter, x = mass (M⊕) 0.05–4000, y = radius (R⊕) 0.3–25.
+- **Constant-density reference curves** via `R = (M / (ρ/ρ⊕))^(1/3)` with `ρ⊕ = 5.51 g/cm³`: iron (7.9), rocky/Earth-like (5.51), water (1.0), plus a Jupiter-density line (1.33) — labeled along the curve, thin gray dashes. (Deliberately simple constant-density curves, not Zeng interior models — state this in the legend.)
+- **Solar System reference points** (gray, small, labeled): Mercury (0.055, 0.383), Mars (0.107, 0.532), Venus (0.815, 0.95), Earth (1, 1), Uranus (14.5, 4.01), Neptune (17.1, 3.88), Saturn (95.2, 9.45), Jupiter (317.8, 11.21).
+- System planets as colored labeled points; hover + click info.
+
+**GUI** — viz tab **"Mass–Radius"** on `NasaPlanetarySystemsPanel` (3), `NasaPlanetarySystemsMapPanel`, and `HwcPanel` (6), added only when ≥ 1 planet qualifies.
+
+### O4: Solar System Reference Overlay on Orbital Diagrams (opts 3, 6)
+
+**`plot_helpers.py`** — `make_orbits_canvas()` gains an optional `solar_overlay: bool = False` parameter: when True, draws dashed gray circles at the `_PLANET_SMAS` values from `core/viz.py` (already defined at `core/viz.py:354`) for every planet whose SMA ≤ `max_au × 1.1`, each with a small end-of-orbit label (Mercury … Neptune). **GUI** — a "Show Solar System reference" `QCheckBox` placed above the Orbital Diagram canvas in opts 3 / Map panel / 6; toggling rebuilds the canvas (cheap — same data). Default unchecked so existing renders are unchanged.
+
+### O5: Date Scrubber / Orbital Animation (Map panel; opts 22–23)
+
+**`NasaPlanetarySystemsMapPanel`** — the System Map already resolves planet positions for any date by solving Kepler's equation **offline** (`prepare_exoplanet_system_diagram`); only the one-shot Search stands between it and animation.
+- Add below the System Map canvas: a horizontal `QSlider` spanning `[map_date − span, map_date + span]` where `span = min(2 × longest pl_orbper, 50 yr)`, plus a date readout label and a **Play/Pause** `QPushButton`.
+- On slider move (throttled with a 50 ms `QTimer`): recompute positions via `prepare_exoplanet_system_diagram(planets, date_iso)` and update only the planet marker offsets (`PathCollection.set_offsets`) + `canvas.draw_idle()` — orbits and star are static artists, never redrawn. Play steps the slider at ~10 fps with step = `longest_period / 200` days.
+- `epoch_known=False` planets stay pinned at periastron with their open-ring overlay (already the convention) — the scrubber must not invent motion for them.
+
+**Opts 22/23 Solar System Map (approximate mode)** — planet positions come from Horizons per epoch, so live scrubbing propagates **along the circular reference orbits** instead: from each planet's fetched position at the departure epoch, advance the angle by mean motion `n = 2π / P` with `P = a^1.5` years (Kepler's third law from `_PLANET_SMAS`). A persistent amber label **"approximate positions (propagated, not ephemeris)"** is shown whenever the slider is off the departure date. Origin/destination markers and the travel line stay fixed at their queried epochs. No new Horizons calls during scrubbing.
+
+### O6: Diagram Parity for Opt 13 (Sol Regions)
+
+`SolRegionsPanel` computes the same regions dict as opts 8–10 (`core.regions.compute_sol_regions()`, `core/regions.py:301` — same keys: `vmag`, `temp`, `calculatedLuminosity`, `distAU`, `hzil` … `phOuter`) but builds its seven tabs inline (`gui/panels/sol_regions.py:34`) and has **no diagrams**. Add `DiagramToggleMixin` + the same three viz tabs opts 9/10 get — **HZ Diagram**, **System Regions Diagram**, **Alternate HZ Diagram** — by passing the dict through the existing `prepare_system_regions_diagram` / `prepare_alt_hz_diagram` / `prepare_hz_diagram` pipeline. Note: opt 13 currently renders at construction time (`build_results_area` computes directly, no Run button); the mixin expects a render cycle — either give the panel a minimal "Show Diagrams" flow by calling `_setup_diagram_view()` + populating viz tabs in `build_results_area`, or refactor to the standard render pattern. Decide in implementation; behavior of the seven data tabs must not change.
+
+### O7: Solar System Orbital Diagrams (opt 11)
+
+Opt 11 displays full orbital elements (SMA, eccentricity, periastron/apastron, period for planets/dwarfs/asteroids; perigee/apogee/SMA-km for moons) as text only.
+
+**`core/viz.py`** — add `prepare_solar_system_orbits(kind="planets") -> dict`: reads the relevant DB table via `core/science.py` accessors; `kind` ∈ `"planets"` (8 planets + optionally dwarfs), `"dwarfs+asteroids"`, or `"moons:<planet>"` (moon SMA-km → AU via `/ 1.496e8`). Returns the same `{"orbits", "max_au", "star_name"}` shape `make_orbits_canvas` already consumes (no HZ zones; `hz_zones=[]`), with each orbit dict carrying `sma`, `ecc`, `name`, color from `_PLANET_COLORS_VIZ` where known.
+
+**GUI** — `SolarSystemPanel` (11) gains `DiagramToggleMixin` + two viz tabs: **"Orbital Diagram — Planets & Dwarfs"** and **"Moon Systems"** (a `QComboBox` of Earth/Mars/Jupiter/Saturn/Uranus/Neptune/Pluto above the canvas; switching rebuilds the canvas for that planet's moons, axis labeled in both AU and km).
+
+### O8: Two-Star Map for Distance / Travel-Time Panels (opts 17, 20, 21)
+
+`DistanceBetweenStarsPanel` (17) and the two `TravelTimeStars*` panels (20/21) compute both endpoints' 3D positions but render text only.
+
+- **Shared infrastructure with Phase I**: Phase I's "Shared Visualization Infrastructure" adds an optional `routes` parameter to `make_star_map_canvas`/`make_star_map_3d_canvas`. O8 uses exactly that parameter — **whichever of Phase I / O8 is built first implements it; the other reuses it** (note this dependency in both phases' implementation order).
+- **GUI** — all three panels gain `DiagramToggleMixin` + a **"Map"** viz tab: dark-navy star chart showing the two endpoint stars (+ Sol as a gray reference point when neither endpoint is Sol), connected by a dashed line labeled with the distance in ly (opts 20/21: distance + travel time, e.g. `"11.4 ly — 4 Months, 6 Days @ 100×c"`). View framed to fit both stars with 15% padding. Hover/click per the existing chart conventions.
+- Data: endpoints already return `(name, ra_deg, dec_deg, ly)` from `_lookup_star_for_distance` — convert with the same Cartesian math used by opt 17's distance computation; no new lookups.
+
+### O9: Brachistochrone Profile Charts (opts 22, 23, 24, 29, 30)
+
+All brachistochrone results are tables only; the three acceleration profiles are ideal line-chart material and pure math.
+
+**`core/viz.py`** — add `prepare_brachistochrone_profiles(result) -> dict`:
+- Reconstructs each profile's piecewise `v(t)` / `d(t)` segments from `accel_g` + per-profile total time + profile type, using the exact formulas documented in `docs/calculators.md` (Profile 1: accel t/2 / decel t/2 — opt 24 variant: continuous accel for the whole window; Profile 2: accel t/4, coast t/2, decel t/4; Profile 3: accel to cap, coast, decel — opt 24 variant: accel to cap then coast, no decel; opt 23: accel `t_accel_eff`, coast, decel). Sample ~200 points per profile.
+- Returns `{"profiles": [{"label", "color", "t_hours": [...], "v_kms": [...], "d_au": [...]}], "accel_g": float}` or `{"error"}`. Colors fixed per profile index so the chart matches across panels.
+
+**`plot_helpers.py`** — add `make_profile_canvas(parent, data)`: two stacked subplots sharing the x-axis (time in hours) — top: velocity (km/s, secondary y-axis in %c), bottom: cumulative distance (AU, secondary y-axis in LM). One colored line per profile, legend with profile labels, light theme.
+
+**GUI** — viz tab **"Acceleration Profiles"** via `DiagramToggleMixin` on `BrachistochroneAccelPanel` (24), `BrachistochroneAuPanel` (29), `BrachistochroneLmPanel` (30), and added to the existing viz tabs of `SystemTravelSolarPanel` (22) and `SystemTravelThrustPanel` (23) (opt 23 renders its single custom-thrust profile: accel/coast/decel segments from the phase durations already in its result).
+
+### O10: Honorverse Visualization (opt 14 + hyper-limit ring on opts 8–10)
+
+**O10a — opt 14 bar chart.** `HonorverseHyperPanel` gains `DiagramToggleMixin` + a **"Hyper Limits"** viz tab: horizontal bar chart of hyper limit per spectral class (rows in CSV order; x-axis in LM with a secondary AU axis via `/ 8.3167`), bars colored by leading class letter. Data is the already-loaded `honorverse_hyper` table — no new core function needed beyond a trivial `prepare_hyper_limits()` in `core/viz.py`.
+
+**O10b — hyper-limit ring on the System Regions Diagram.** `prepare_system_regions_diagram(d)` gains an optional lookup: when `d` carries a `spectral_type` (opts 8/9 always do; opt 10 manual does not → ring omitted), parse it with the canonical `_parse_spectral_class` and resolve a hyper limit from the `honorverse_hyper` table using the same ceiling rule as the BC lookup (`_lookup_spectral_type` semantics); convert LM → AU (`/ 8.3167`) and append a region entry `{"label": "Honorverse Hyper Limit", "au": ..., "color": "#cc2222", "style": "dashed"}`. `make_system_regions_canvas` renders it as a distinct dashed red ring (clearly styled apart from the physical zones — it is fiction). No match in the table → silently omitted. Document in both `docs/star-system-regions.md` and `docs/science-and-scifi.md`.
+
+### O11: Toomre / Galactic Kinematics Diagram (opts 1, 3–6, 8)
+
+Hypatia `u_vel`/`v_vel`/`w_vel` and `disk` membership are fetched on every lookup and shown only as table numbers.
+
+**`core/viz.py`** — add `prepare_toomre(hypatia_result) -> dict`: returns `{"v": v_vel, "uw": sqrt(u_vel² + w_vel²), "disk": str|None, "star_name": str}` or `{"error"}` when any of U/V/W is None.
+
+**`plot_helpers.py`** — add `make_toomre_canvas(parent, data)`: x = V (km/s, range ≈ −400…+100), y = √(U²+W²) (0…400); dashed quarter-circles of constant total space velocity at 50, 100, and 180 km/s centered on the origin, with region annotations "thin disk" (< 50), "thick disk" (≈ 70–180), "halo" (> 180) — clearly labeled as heuristic boundaries; the star as a gold ★ with its name; subtitle shows Hypatia's own `disk` classification when present.
+
+**GUI** — a **"Kinematics"** viz tab added wherever the Hypatia integration already adds the Abundance Profile tab (opts 1, 3–6, 8), shown only when U, V, and W are all non-null.
+
+### O12: HWC Habitability Visuals (opt 6)
+
+`P_FLUX_*`, `P_TEMP_EQUIL/SURF_MIN/MAX`, and `P_ESI` are tabled, never drawn. Two new `HwcPanel` viz tabs:
+
+- **"Temperature Ranges"** — per planet, two horizontal range bars (equilibrium min→max and surface min→max, distinct colors) with a marker at the central value; x-axis in K with dashed reference lines at 273 K and 373 K (liquid-water band, labeled). `prepare_hwc_temps(planet_rows)` filters planets having at least one min/max pair.
+- **"ESI vs Orbit"** — scatter of `P_SEMI_MAJOR_AXIS` (x, AU, log scale if span > 10×) vs `P_ESI` (y, 0–1); the star's HZ shaded as two vertical bands from `S_HZ_OPT_MIN/MAX` (light green) and `S_HZ_CON_MIN/MAX` (darker green); points colored by `P_HABITABLE` (green=1, gray=0) and labeled. `prepare_hwc_esi(star_row, planet_rows)`.
+
+(Per-system visuals only — no overlap with Phase L2's cross-catalog ESI ranking *table*.)
+
+### O13: Transit Geometry View (opts 3, NasaPlanetarySystemsMapPanel)
+
+`pl_orbincl` is fetched and explicitly ignored by both orbit-prep functions (`core/viz.py` `prepare_system_orbits` and `prepare_exoplanet_system_diagram`). A full 3D orbit view would overreach (Ω is unmeasured for exoplanets), but **impact parameter** needs only inclination: `b = (a / R★) · cos(i)` with `a` in AU and `R★ = st_rad × 0.00465 AU`.
+
+**`core/viz.py`** — add `prepare_transit_geometry(planets) -> dict`: requires `st_rad` and per-planet `pl_orbsmax` + `pl_orbincl`; returns `{"star_radius_au": float, "planets": [{"name", "a_au", "incl_deg", "b"}], "skipped": [names]}` or `{"error"}` when `st_rad` or all inclinations are missing.
+
+**`plot_helpers.py`** — add `make_transit_canvas(parent, data)`: the stellar disk drawn to scale at the left (circle of radius 1 in units of R★), each planet as a labeled marker at `(x = a_au on a log axis, y = b)`, with the band `|b| ≤ 1` shaded and labeled "transiting"; mirrored y-axis (−3…+3 R★). A footnote lists skipped planets ("no inclination measured"). Caveat label: "geometry from i only; ascending node unknown".
+
+**GUI** — viz tab **"Transit Geometry"** on opt 3 and the Map panel when ≥ 1 planet qualifies.
+
+### O14: Planet Size-Comparison Strip (opts 3, 6, NasaPlanetarySystemsMapPanel)
+
+**`plot_helpers.py`** — add `make_size_comparison_canvas(parent, planets, radius_key, name_key)`: a single row of to-scale circles — gray Earth (1 R⊕) and Jupiter (11.21 R⊕) silhouettes as anchors, then each system planet (radius from `pl_rade` / `P_RADIUS`) colored and labeled beneath with name + radius. Planets without a radius are listed in a footnote, not drawn. Equal-aspect axes, no ticks. **GUI** — viz tab **"Size Comparison"** on opts 3 / Map panel / 6 when ≥ 1 planet has a radius.
+
+### O15: Table-Row ↔ Map Linking (opts 18, 19)
+
+Confirmed absent: selecting a result row does nothing on the maps, and clicking a map star does not select its row.
+
+- **`plot_helpers.py`** — each star-map/chart helper (`make_star_map_canvas`, `make_star_map_3d_canvas`, `make_star_chart_canvas`, `make_star_chart_3d_canvas`) attaches a `canvas.highlight_star(name: str | None)` function (attribute on the canvas object — **no signature changes**, so existing callers are untouched): draws/moves a single hollow gold ring marker (`facecolors="none"`, linewidth 2, ~3× point size) at the named star's coordinates, or removes it for `None`; calls `draw_idle()`. Each helper also gains an optional `on_star_click(name)` callback (default `None`, preserving the current inline info-box behavior when unset).
+- **GUI** — opts 18/19: panels keep references to all created canvases; connect the result `QTableView`'s `selectionChanged` → resolve the row's `Star Name` → call `highlight_star(name)` on every canvas. Map click (via `on_star_click`) selects + scrolls to the matching table row. Selection must survive switching viz tabs.
+
+### O16: Clickable Legend Filtering (opts 18, 19 maps and charts)
+
+Spectral-class legends are currently display-only. In each star-map helper, draw the scatter **as one `PathCollection` per spectral class** (prerequisite for toggling; verify current single-vs-per-class structure during implementation), set `legend_handle.set_picker(5)` on each legend entry, and on `pick_event` toggle that class's collection visibility, dimming the legend text to alpha 0.3 when hidden. Per-star labels in the charts follow their star's visibility. Works in 2D and 3D variants.
+
+### O17: Travel-Time Isochrone Rings (opts 18, 19 star charts)
+
+The star charts draw distance rings at fixed ly steps. Add an **isochrone mode**: a velocity input (`QLineEdit` + unit `QComboBox` LY/HR | ×c) and Apply button above the chart; when set, rings are redrawn at distances `d = v_lyhr × t` for "nice" time steps chosen so 3–6 rings fit inside the limit (step ladder: 1 week, 1 month, 3 months, 6 months, 1 yr, 2 yr, 5 yr, 10 yr, 25 yr, 50 yr), each labeled `"6 months @ 0.01 ly/hr"`. Clearing the velocity restores the plain distance rings. Conversion uses the canonical `8765.8128` constant. Implemented as a parameter on `make_star_chart_canvas` / `make_star_chart_3d_canvas` (`isochrone: {"ly_hr": float, "label_unit": str} | None = None`) + panel-side rebuild on Apply.
+
+### O18: Find-Star-on-Map Search Box (opts 18, 19)
+
+A small `QLineEdit` + "Find" button above the chart tabs: case-insensitive substring match against `Star Name` and `Star Designations` of the rendered stars. On match: center the view on the star at a half-range of `min(current, 15)` ly (so labels become visible per the existing label-visibility rule), call `highlight_star(name)` (reuses O15's ring — **O18 depends on O15's highlight function**), and show `"1 of N matches"` when multiple match (Find again cycles). No match → status-bar message, no view change.
+
+### Remaining Steps
+
+- **`core/viz.py`** — add `prepare_sky_from_star`, `prepare_hr_main_sequence`, `prepare_hr_from_stars`, `prepare_mass_radius`, `prepare_solar_system_orbits`, `prepare_brachistochrone_profiles`, `prepare_hyper_limits`, `prepare_toomre`, `prepare_hwc_temps`, `prepare_hwc_esi`, `prepare_transit_geometry`; extend `prepare_system_regions_diagram` (O10b hyper ring)
+- **`gui/visualizations/plot_helpers.py`** — add `make_sky_canvas`, `make_hr_canvas`, `make_mass_radius_canvas`, `make_profile_canvas`, `make_toomre_canvas`, `make_transit_canvas`, `make_size_comparison_canvas`; extend `make_orbits_canvas` (`solar_overlay`), star-map/chart helpers (`highlight_star`, `on_star_click`, per-class collections + legend picking, `isochrone` param)
+- **`core/calculators.py`** — thread `app_magnitude` + `parsecs` through the opts 18/19 result rows (O1/O2b prerequisite; additive keys only)
+- **Panels touched** — `MainSequencePanel` (12), `SolarSystemPanel` (11), `SolRegionsPanel` (13), `HonorverseHyperPanel` (14), `DistanceBetweenStarsPanel` (17), `TravelTimeStars*` (20/21), `Brachistochrone*` (24/29/30), `StarsWithinDistance*` (18/19), `SystemTravel*` (22/23), `NasaPlanetarySystems*` (3/Map), `NasaHwoExepPanel`/`NasaMissionExocatPanel` (O11 only), `HwcPanel` (6), `SimbadPanel` (1, O11), `StarRegions*` (8–10, O10b)
+- **`mockups/phase-o/`** — one HTML mockup per item before its implementation (maintainer gate)
+- **Docs** — `docs/gui-architecture.md` (new helpers + per-panel viz tab lists + the `highlight_star`/linking pattern), `docs/calculators.md` (O8/O9 tabs, row-key additions), `docs/star-system-regions.md` (O6, O10b), `docs/science-and-scifi.md` (O7, O10), `docs/star-databases.md` (O3/O12/O13/O14 tabs)
+- **Cross-phase notes** — O8 shares the `routes` map parameter with Phase I (first builder implements); GCNS color–magnitude diagram and uncertainty visuals belong to Phase M, not O; multi-star abundance comparison belongs to L1
+
+---
+
 ## Implementation Priority Recommendation
 
 | Phase | Effort | Value | Recommendation |
@@ -741,4 +975,7 @@ opt 1 already resolves `designations["Gaia EDR3"]`; M5 reuses that id **for free
 | K — Honorverse Expansion | Low | Medium | Narrow audience but fast to implement |
 | L1–L3 — Comparison Dashboard | Medium | Medium | Independent of G — L1 uses live SIMBAD+Hypatia, L2 reads the `hwc` table, L3 is pure math. (L1 *benefits* from L4's cache for offline comparison.) |
 | L4 — Hypatia Cache & Search | Medium | Medium | Do after G1 to activate the Fe/H filter stretch goal; needed before L1 for offline comparison |
+| M — GCNS Surfacing | Low | High | Low effort (reuses `compute_gcns_*` verbatim), high visibility — surfaces the only dataset with distance uncertainties |
+| N — query.py Expansion | Low | Medium | Anytime — no dependencies on G–M; pure integration-surface work over existing core functions |
+| O — Visualization Expansion | Varies (per-item S–M) | High | Mockup-gated, individually skippable items; small items (O4, O6, O9, O10, O14) are quick wins; O1/O5 carry the most wow. O8 shares the `routes` param with Phase I |
 | **M — GCNS Surfacing** | **Low–Medium** | **High** | **Strong candidate to do early** — data is already ingested; reuses `compute_gcns_*` verbatim, so it's mostly UI. Surfaces the only major dataset with no interactive surface, and the only one with distance uncertainties. |
