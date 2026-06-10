@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase G — Interactive Data Search &amp; Filtering (Mockup)</title>
+<style>
+  :root{
+    --bg:#f0f0f0; --panel:#ffffff; --border:#b8b8b8; --border-soft:#d8d8d8;
+    --text:#222; --muted:#6a6a6a; --accent:#4a90d9; --accent-d:#3a73ad;
+    --head:#e9eef5; --zebra:#f7f9fc; --sel:#d6e6f7; --good:#2e8b57; --bad:#b03030; --chip:#eef2f7;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+       font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}
+  .topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600}
+  .notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px}
+  .notice b{color:#4d4109}
+  .app{flex:1;display:flex;min-height:0}
+  .nav{width:240px;min-width:240px;background:#fafafa;border-right:1px solid var(--border);overflow:auto;padding:6px 0}
+  .nav .cat{padding:7px 12px 3px;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px}
+  .nav .cat.muted{color:#bbb}
+  .nav .item{padding:5px 12px 5px 24px;color:#555;border-left:3px solid transparent}
+  .nav .item.muted{color:#bbb}
+  .nav .item.live{color:#1f3a57;cursor:pointer}
+  .nav .item.live:hover{background:#eef4fb}
+  .nav .item.active{background:#e2eefb;border-left-color:var(--accent);color:#13314e;font-weight:600}
+  .nav .new{background:var(--accent);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .content{flex:1;overflow:auto;padding:18px 22px}
+  .panel{display:none}
+  .panel.active{display:block}
+  h2.title{margin:0 0 2px;font-size:18px}
+  .sub{color:var(--muted);margin:0 0 12px;font-size:12.5px;max-width:820px;line-height:1.45}
+  details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--border-soft);border-radius:5px;padding:6px 10px;max-width:840px}
+  details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+  details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+  details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.55}
+  /* tabs */
+  .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px;flex-wrap:wrap}
+  .tab{padding:6px 13px;background:#e6e6e6;border:1px solid var(--border);border-bottom:none;border-radius:5px 5px 0 0;
+       cursor:pointer;font-size:12.5px;color:#555;display:flex;align-items:center;gap:8px}
+  .tab.active{background:#fff;color:#13314e;font-weight:600;margin-bottom:-1px;border-bottom:1px solid #fff}
+  .tab .x{color:#999;font-weight:700;border-radius:50%;width:16px;height:16px;line-height:14px;text-align:center;font-size:13px}
+  .tab .x:hover{background:#d33;color:#fff}
+  .tabpage{display:none}
+  .tabpage.active{display:block}
+  /* form */
+  .form{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:14px 16px;max-width:840px;margin-bottom:14px}
+  .frow{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:3px}
+  .field label{font-size:11px;color:#555;font-weight:600}
+  .field .pair{display:flex;align-items:center;gap:5px}
+  .field input[type=text],.field input[type=number],.field select{height:28px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff}
+  .field input[type=number]{width:74px}
+  .field input[type=text]{width:150px}
+  .field .pair span{color:#999;font-size:11px}
+  .classchips{display:flex;gap:4px;flex-wrap:wrap}
+  .cchip{min-width:26px;height:26px;line-height:24px;text-align:center;border:1px solid var(--border);border-radius:4px;background:#fff;cursor:pointer;font-weight:600;font-size:12px;color:#555;user-select:none;padding:0 6px}
+  .cchip.on{background:var(--accent);color:#fff;border-color:var(--accent-d)}
+  .cls-wrap{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .field input.subtype{width:92px}
+  .checks{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#444}
+  .checks label{display:flex;align-items:center;gap:6px;font-weight:500}
+  .disabled-field{opacity:.5}
+  .l4badge{background:#9a7bd0;color:#fff;border-radius:3px;font-size:9px;padding:0 5px;font-weight:700;margin-left:5px}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+  button.btn{height:30px;padding:0 16px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+  button.btn:hover{background:var(--accent-d)}
+  button.btn:disabled{background:#bcbcbc;border-color:#aaa;cursor:not-allowed}
+  button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+  button.ghost:hover{background:#f0f0f0}
+  .hint{font-size:11px;color:#999}
+  .resbar{display:flex;align-items:center;gap:14px;margin:4px 0 8px;max-width:1200px}
+  .count{font-weight:600;font-size:13px}
+  .count.empty{color:#999;font-weight:400}
+  .tablewrap{border:1px solid var(--border);border-radius:6px;overflow:auto;max-width:1200px;background:#fff}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th{position:sticky;top:0;background:var(--head);text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none;font-size:11.5px}
+  th:hover{background:#dde7f3}
+  th .arrow{color:var(--accent);font-size:10px;margin-left:3px}
+  td{padding:6px 10px;border-bottom:1px solid #eee;white-space:nowrap}
+  tr.row{cursor:pointer}
+  tr.row:nth-child(even){background:var(--zebra)}
+  tr.row:hover{background:#eef4fb}
+  tr.row.sel{background:var(--sel)!important}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .yes{color:var(--good);font-weight:600}
+  .no{color:#999}
+  .placeholder{padding:26px;text-align:center;color:#aaa;font-style:italic}
+  .footer{font-size:11px;color:#a06a00;margin-top:6px}
+  .selbar{margin-top:10px;display:flex;align-items:center;gap:12px;min-height:32px}
+  .selbar .selinfo{font-size:12px;color:#555}
+  .chip{background:var(--chip);border:1px solid var(--border-soft);border-radius:12px;padding:1px 9px;font-size:11px}
+  /* detail */
+  .detail{background:#fff;border:1px solid var(--border);border-radius:6px;padding:16px 18px;max-width:820px}
+  .detail h3{margin:0 0 3px;font-size:16px}
+  .detail .who{color:#666;font-size:12.5px}
+  .minihdr{font-weight:700;color:#3a73ad;margin:14px 0 4px;font-size:12.5px}
+  .detail .kv{display:grid;grid-template-columns:175px 1fr;gap:4px 12px;font-size:12.5px;margin:6px 0}
+  .detail .kv .k{color:#666}
+  .mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:7px 11px;border-radius:5px;font-size:12px;margin-top:12px;max-width:760px;line-height:1.45}
+</style>
+</head>
+<body>
+<div class="topbar">
+  Space &amp; Science Fiction App <span style="color:#888">— GUI mockup</span>
+  <span class="tag">Phase G &middot; Search &amp; Filter</span>
+</div>
+<div class="notice">
+  <b>Interactive mockup for feedback — not the real app.</b>
+  Filters, columns, sorting, caps, and drill-down tabs match the Phase G plan (updated with your feedback).
+  Data is a small <b>mock sample</b>; the real panels query the local SQLite tables and the live NASA archive (G3).
+  Open a row in a new tab to switch between stars/planets.
+</div>
+
+<div class="app">
+  <div class="nav">
+    <div class="cat muted">Star Databases</div>
+    <div class="item muted">SIMBAD Lookup</div>
+    <div class="item muted">Habitable Worlds Catalog</div>
+    <div class="cat" style="color:var(--accent)">Search &amp; Filter <span class="new">NEW</span></div>
+    <div class="item live active" data-panel="g1" onclick="showPanel('g1')">Star Systems Search</div>
+    <div class="item live" data-panel="g2" onclick="showPanel('g2')">HWC Planet Search</div>
+    <div class="item live" data-panel="g3" onclick="showPanel('g3')">NASA Exoplanet Quick Search</div>
+    <div class="cat muted">Calculators</div>
+    <div class="item muted">Stars Within Distance of Sol</div>
+    <div class="cat muted">GCNS <span class="new" style="background:#888">FUTURE</span></div>
+    <div class="item muted">GCNS Census Browser</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ========================= G1 ========================= -->
+    <div class="panel active" id="panel-g1">
+      <h2 class="title">Star Systems Search</h2>
+      <p class="sub">Filter the local <code>star_systems</code> table by spectral class, distance, apparent magnitude,
+        or designation prefix. No network calls — instant local query.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><b>Source:</b> local <code>star_systems</code> SQLite table · <b>cap:</b> 500 rows · <b>default sort:</b> Light Years asc</li>
+          <li><b>Filters:</b> spectral class (chips + subtype/luminosity refine), <code>ly_min/max</code>, <code>mag_min/max</code>, <code>designation_prefix</code></li>
+          <li><b>Drill-down:</b> opens the star inline in a new tab (SIMBAD view + Hypatia) — switchable, multiple at once.</li>
+          <li><b>Fe/H filter</b> = Phase L4 stretch (needs the Hypatia cache) — shown disabled.</li>
+        </ul>
+      </details>
+
+      <div class="tabbar" id="g1_tabs">
+        <div class="tab active" data-tab="results" onclick="switchTab('g1','results')">Search Results</div>
+      </div>
+      <div class="tabpages" id="g1_pages">
+        <div class="tabpage active" data-page="results">
+          <div class="form">
+            <div class="frow">
+              <div class="field"><label>Spectral Class</label>
+                <div class="cls-wrap"><div class="classchips" id="g1_class"></div>
+                  <input type="text" id="g1_subtype" class="subtype" placeholder="e.g. 2V, V" oninput="g1gate()"></div></div>
+              <div class="field"><label>Light Years</label>
+                <div class="pair"><input type="number" id="g1_lymin" placeholder="min" step="0.1" oninput="g1gate()">
+                  <span>to</span><input type="number" id="g1_lymax" placeholder="max" step="0.1" oninput="g1gate()"></div></div>
+              <div class="field"><label>Apparent Magnitude</label>
+                <div class="pair"><input type="number" id="g1_magmin" placeholder="min" step="0.1" oninput="g1gate()">
+                  <span>to</span><input type="number" id="g1_magmax" placeholder="max" step="0.1" oninput="g1gate()"></div></div>
+              <div class="field"><label>Designation Prefix</label>
+                <input type="text" id="g1_desig" placeholder="e.g. GJ, HD 1" oninput="g1gate()"></div>
+              <div class="field disabled-field"><label>Fe/H <span class="l4badge">L4</span></label>
+                <div class="pair"><input type="number" placeholder="min" disabled><span>to</span><input type="number" placeholder="max" disabled></div></div>
+            </div>
+            <div class="actions">
+              <button class="btn" id="g1_btn" onclick="runG1()" disabled>Search</button>
+              <button class="ghost btn" onclick="clearForm('g1')">Clear</button>
+              <span class="hint" id="g1_hint">Pick a spectral class or enter at least one filter.</span>
+            </div>
+          </div>
+          <div class="resbar"><span class="count empty" id="g1_count">No search run yet.</span></div>
+          <div class="tablewrap"><table id="g1_table"><tbody><tr><td class="placeholder">Set filters and click Search.</td></tr></tbody></table></div>
+          <div class="footer" id="g1_foot" style="display:none"></div>
+          <div class="selbar" id="g1_selbar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================= G2 ========================= -->
+    <div class="panel" id="panel-g2">
+      <h2 class="title">HWC Planet Search</h2>
+      <p class="sub">Filter the Habitable Worlds Catalog (<code>hwc</code> table) by habitability flags, ESI, mass, radius,
+        temperature, spectral class, and distance. Ranked by Earth Similarity Index. No network calls.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><b>Source:</b> local <code>hwc</code> SQLite table · <b>cap:</b> 500 rows · <b>default sort:</b> ESI desc</li>
+          <li><b>Filters:</b> <code>esi_min</code>, habitable / con-HZ / opt-HZ flags, <code>mass_min/max</code> (P_MASS, M⊕), <code>radius_min/max</code> (P_RADIUS, R⊕), <code>temp_min/max</code>, spectral class, <code>ly_max</code></li>
+          <li><b>Drill-down:</b> opens the full four-table HWC view for that system inline in a new tab.</li>
+        </ul>
+      </details>
+
+      <div class="tabbar" id="g2_tabs">
+        <div class="tab active" data-tab="results" onclick="switchTab('g2','results')">Search Results</div>
+      </div>
+      <div class="tabpages" id="g2_pages">
+        <div class="tabpage active" data-page="results">
+          <div class="form">
+            <div class="frow">
+              <div class="field"><label>ESI minimum</label>
+                <input type="number" id="g2_esi" min="0" max="1" step="0.05" value="0"></div>
+              <div class="field"><label>Filters</label>
+                <div class="checks">
+                  <label><input type="checkbox" id="g2_hab"> Habitable only</label>
+                  <label><input type="checkbox" id="g2_con"> Conservative HZ only</label>
+                  <label><input type="checkbox" id="g2_opt"> Optimistic HZ only</label>
+                </div></div>
+              <div class="field"><label>Planet Mass (M⊕)</label>
+                <div class="pair"><input type="number" id="g2_mmin" placeholder="min"><span>to</span><input type="number" id="g2_mmax" placeholder="max"></div></div>
+              <div class="field"><label>Planet Radius (R⊕)</label>
+                <div class="pair"><input type="number" id="g2_rmin" placeholder="min"><span>to</span><input type="number" id="g2_rmax" placeholder="max"></div></div>
+              <div class="field"><label>Equil. Temp (K)</label>
+                <div class="pair"><input type="number" id="g2_tmin" placeholder="min"><span>to</span><input type="number" id="g2_tmax" placeholder="max"></div></div>
+              <div class="field"><label>Spectral Class</label>
+                <div class="cls-wrap"><div class="classchips" id="g2_class"></div>
+                  <input type="text" id="g2_subtype" class="subtype" placeholder="e.g. 5V, V"></div></div>
+              <div class="field"><label>Max Distance (LY)</label>
+                <input type="number" id="g2_lymax" placeholder="any" step="1"></div>
+            </div>
+            <div class="actions">
+              <button class="btn" onclick="runG2()">Search</button>
+              <button class="ghost btn" onclick="clearForm('g2')">Clear</button>
+              <span class="hint">Sorted by ESI (desc) · caps at 500 rows.</span>
+            </div>
+          </div>
+          <div class="resbar"><span class="count empty" id="g2_count">No search run yet.</span></div>
+          <div class="tablewrap"><table id="g2_table"><tbody><tr><td class="placeholder">Set filters and click Search.</td></tr></tbody></table></div>
+          <div class="footer" id="g2_foot" style="display:none"></div>
+          <div class="selbar" id="g2_selbar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================= G3 ========================= -->
+    <div class="panel" id="panel-g3">
+      <h2 class="title">NASA Exoplanet Quick Search</h2>
+      <p class="sub">Query the live NASA Exoplanet Archive (<code>pscomppars</code>) by planet mass, radius, orbital period,
+        host spectral class, discovery method, distance, and temperature.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><b>Source:</b> live NASA <code>pscomppars</code> TAP query (background thread) · <b>cap:</b> 200 rows · <b>default sort:</b> SMA asc</li>
+          <li><b>Filters:</b> <code>pl_bmasse_min/max</code> (M⊕), <code>pl_rade_min/max</code> (R⊕), <code>pl_orbper_min/max</code> (days), spectral class, <code>discoverymethod</code>, <code>st_teff_min/max</code>, <code>sy_dist_max</code> (pc)</li>
+          <li><b>Drill-down:</b> opens the host star's full system view inline in a new tab.</li>
+        </ul>
+      </details>
+
+      <div class="tabbar" id="g3_tabs">
+        <div class="tab active" data-tab="results" onclick="switchTab('g3','results')">Search Results</div>
+      </div>
+      <div class="tabpages" id="g3_pages">
+        <div class="tabpage active" data-page="results">
+          <div class="form">
+            <div class="frow">
+              <div class="field"><label>Planet Mass (M⊕)</label>
+                <div class="pair"><input type="number" id="g3_mmin" placeholder="min"><span>to</span><input type="number" id="g3_mmax" placeholder="max"></div></div>
+              <div class="field"><label>Planet Radius (R⊕)</label>
+                <div class="pair"><input type="number" id="g3_rmin" placeholder="min"><span>to</span><input type="number" id="g3_rmax" placeholder="max"></div></div>
+              <div class="field"><label>Orbital Period (days)</label>
+                <div class="pair"><input type="number" id="g3_pmin" placeholder="min"><span>to</span><input type="number" id="g3_pmax" placeholder="max"></div></div>
+              <div class="field"><label>Discovery Method</label>
+                <select id="g3_method">
+                  <option>Any</option><option>Transit</option><option>Radial Velocity</option>
+                  <option>Direct Imaging</option><option>Microlensing</option><option>Astrometry</option><option>Timing</option>
+                </select></div>
+              <div class="field"><label>Teff (K)</label>
+                <div class="pair"><input type="number" id="g3_tmin" placeholder="min"><span>to</span><input type="number" id="g3_tmax" placeholder="max"></div></div>
+              <div class="field"><label>Spectral Class</label>
+                <div class="cls-wrap"><div class="classchips" id="g3_class"></div>
+                  <input type="text" id="g3_subtype" class="subtype" placeholder="e.g. 0V, V"></div></div>
+              <div class="field"><label>Max Distance (pc)</label>
+                <input type="number" id="g3_dist" placeholder="any"></div>
+            </div>
+            <div class="actions">
+              <button class="btn" id="g3_btn" onclick="runG3()">Search</button>
+              <button class="ghost btn" onclick="clearForm('g3')">Clear</button>
+              <span class="hint" id="g3_hint">Live network query · caps at 200 rows · sorted by SMA.</span>
+            </div>
+          </div>
+          <div class="resbar"><span class="count empty" id="g3_count">No search run yet.</span></div>
+          <div class="tablewrap"><table id="g3_table"><tbody><tr><td class="placeholder">Set filters and click Search.</td></tr></tbody></table></div>
+          <div class="footer" id="g3_foot" style="display:none"></div>
+          <div class="selbar" id="g3_selbar"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ===================== mock data ===================== */
+// G1 star_systems: [name, designations, sptype, plx_mas, app_mag]
+const STARS = [
+  ["Proxima Centauri","GJ 551, HIP 70890","M5.5Ve",768.07,11.13],
+  ["Alpha Centauri A","GJ 559 A, HD 128620, HIP 71683","G2V",754.81,0.01],
+  ["Alpha Centauri B","GJ 559 B, HD 128621","K1V",754.81,1.33],
+  ["Barnard's Star","GJ 699, HIP 87937","M4.0V",546.98,9.51],
+  ["Wolf 359","GJ 406, CN Leo","M6.0V",415.18,13.51],
+  ["Lalande 21185","GJ 411, HD 95735, HIP 54035","M2.0V",392.75,7.52],
+  ["Sirius A","GJ 244 A, HD 48915, HIP 32349","A1V",379.21,-1.46],
+  ["Sirius B","GJ 244 B","DA2",379.21,8.44],
+  ["Luyten 726-8 A","GJ 65 A, BL Cet","M5.5V",373.70,12.54],
+  ["Ross 154","GJ 729, HIP 92403","M3.5V",336.13,10.44],
+  ["Ross 248","GJ 905, HH And","M5.5V",316.48,12.29],
+  ["Epsilon Eridani","GJ 144, HD 22049, HIP 16537","K2V",310.58,3.73],
+  ["Lacaille 9352","GJ 887, HD 217987, HIP 114046","M0.5V",305.08,7.34],
+  ["Ross 128","GJ 447, FI Vir","M4.0V",296.31,11.13],
+  ["EZ Aquarii A","GJ 866 A","M5.0V",289.50,13.33],
+  ["61 Cygni A","GJ 820 A, HD 201091, HIP 104214","K5V",286.15,5.21],
+  ["61 Cygni B","GJ 820 B, HD 201092","K7V",285.95,6.03],
+  ["Procyon A","GJ 280, HD 61421, HIP 37279","F5IV-V",284.56,0.34],
+  ["Struve 2398 A","GJ 725 A","M3.0V",283.84,8.90],
+  ["Groombridge 34 A","GJ 15 A, HD 1326","M1.5V",280.69,8.08],
+  ["DX Cancri","GJ 1111","M6.5V",276.30,14.81],
+  ["Tau Ceti","GJ 71, HD 10700, HIP 8102","G8.5V",273.81,3.50],
+  ["Epsilon Indi A","GJ 845, HD 209100, HIP 108870","K5V",274.80,4.69],
+  ["GJ 1061","GJ 1061","M5.5V",271.92,13.03],
+  ["YZ Ceti","GJ 54.1","M4.5V",269.36,12.07],
+  ["Luyten's Star","GJ 273, BD+05 1668","M3.5V",263.26,9.86],
+  ["Teegarden's Star","GAT 1370, SO J025300.5+165258","M7.0V",260.99,15.08],
+  ["Kapteyn's Star","GJ 191, HD 33793, HIP 24186","M1.5V",254.20,8.85],
+  ["Lacaille 8760","GJ 825, HD 202560, AX Mic","M0.0V",251.90,6.67],
+  ["Kruger 60 A","GJ 860 A","M3.0V",248.06,9.79],
+  ["Wolf 1061","GJ 628, HIP 80824","M3.0V",234.51,10.07],
+  ["Van Maanen's Star","GJ 35, Wolf 28","DZ7",242.80,12.38],
+  ["Gliese 1","GJ 1, HD 225213, HIP 439","M1.5V",230.42,8.55],
+  ["Gliese 687","GJ 687, HIP 86162","M3.0V",220.46,9.17],
+  ["Gliese 876","GJ 876, HIP 113020","M3.5V",214.04,10.17],
+];
+// G2 hwc: [pname, esi, hab, con, opt, teq, star, sptype, dist_pc, mass_Me, radius_Re]
+const HWC = [
+  ["Earth",1.00,1,1,1,255,"Sun","G2V",0.0,1.00,1.00],
+  ["Teegarden's Star b",0.95,1,1,1,264,"Teegarden's Star","M7.0V",3.83,1.05,1.02],
+  ["TRAPPIST-1 d",0.90,1,1,1,282,"TRAPPIST-1","M8V",12.43,0.30,0.78],
+  ["Kepler-1649 c",0.90,1,1,1,234,"Kepler-1649","M5V",92.0,1.20,1.06],
+  ["K2-72 e",0.90,1,1,1,261,"K2-72","M-type",66.0,2.20,1.29],
+  ["Luyten b",0.91,1,1,1,259,"Luyten's Star","M3.5V",3.80,2.89,1.35],
+  ["Proxima Centauri b",0.87,1,1,1,234,"Proxima Centauri","M5.5V",1.30,1.27,1.08],
+  ["GJ 1061 c",0.86,1,1,1,275,"GJ 1061","M5.5V",3.67,1.74,1.18],
+  ["Ross 128 b",0.86,1,1,1,269,"Ross 128","M4.0V",3.37,1.40,1.11],
+  ["TRAPPIST-1 e",0.85,1,1,1,246,"TRAPPIST-1","M8V",12.43,0.69,0.92],
+  ["GJ 667 C c",0.84,1,1,1,277,"GJ 667 C","M1.5V",7.24,3.80,1.54],
+  ["Kepler-442 b",0.84,1,1,1,233,"Kepler-442","K-type",370.0,2.30,1.34],
+  ["Wolf 1061 c",0.80,1,1,1,223,"Wolf 1061","M3.0V",4.31,3.41,1.60],
+  ["Tau Ceti e",0.78,0,0,1,311,"Tau Ceti","G8.5V",3.65,3.93,1.59],
+  ["GJ 1061 d",0.73,1,1,1,226,"GJ 1061","M5.5V",3.67,1.64,1.16],
+  ["Tau Ceti f",0.71,0,1,1,220,"Tau Ceti","G8.5V",3.65,3.93,1.59],
+  ["TRAPPIST-1 f",0.68,1,1,1,219,"TRAPPIST-1","M8V",12.43,1.04,1.05],
+  ["Teegarden's Star c",0.68,1,1,1,199,"Teegarden's Star","M7.0V",3.83,1.10,1.04],
+  ["Kepler-186 f",0.61,0,0,1,188,"Kepler-186","M1V",178.0,1.40,1.17],
+  ["TRAPPIST-1 g",0.58,0,0,1,199,"TRAPPIST-1","M8V",12.43,1.32,1.13],
+];
+// G3 exoplanets: [pname, host, mass_Me, period_d, sma_au, sptype, method, teff, dist_pc, radius_Re|null]
+const EXO = [
+  ["55 Cancri e","55 Cancri",8.0,0.74,0.0154,"K0V","Transit",5172,12.6,1.88],
+  ["WASP-12 b","WASP-12",446,1.09,0.0234,"G0V","Transit",6300,427,21.3],
+  ["HD 209458 b","HD 209458",219,3.52,0.0475,"G0V","Transit",6065,48.3,15.5],
+  ["51 Pegasi b","51 Pegasi",150,4.23,0.0527,"G2IV","Radial Velocity",5793,15.6,null],
+  ["Proxima Centauri b","Proxima Centauri",1.07,11.19,0.0485,"M5.5V","Radial Velocity",3042,1.30,null],
+  ["TRAPPIST-1 e","TRAPPIST-1",0.69,6.10,0.0293,"M8V","Transit",2566,12.43,0.92],
+  ["GJ 1214 b","GJ 1214",8.2,1.58,0.0143,"M4.5V","Transit",3026,14.6,2.74],
+  ["HD 189733 b","HD 189733",363,2.22,0.0313,"K2V","Transit",4875,19.8,12.9],
+  ["55 Cancri f","55 Cancri",45,261.5,0.781,"K0V","Radial Velocity",5172,12.6,null],
+  ["Tau Ceti e","Tau Ceti",3.9,162.9,0.538,"G8.5V","Radial Velocity",5344,3.65,null],
+  ["Kepler-22 b","Kepler-22",36,289.9,0.849,"G5V","Transit",5518,196,2.38],
+  ["HD 176051 b","HD 176051",470,1016,1.76,"F9V","Astrometry",6000,14.9,null],
+  ["GJ 876 b","GJ 876",723,61.1,0.208,"M3.5V","Radial Velocity",3129,4.67,null],
+  ["Kepler-16 b","Kepler-16 (AB)",106,228.8,0.705,"K-type","Transit",4450,75,8.27],
+  ["Kepler-442 b","Kepler-442",2.3,112.3,0.409,"K-type","Transit",4402,370,1.34],
+  ["HR 8799 b","HR 8799",1700,164000,68.0,"A5V","Direct Imaging",7430,40.9,null],
+  ["Beta Pictoris b","Beta Pictoris",3700,7300,9.2,"A6V","Direct Imaging",8052,19.6,null],
+  ["OGLE-2005-BLG-390L b","OGLE-2005-BLG-390L",5.5,3500,2.6,"M-type","Microlensing",4000,6500,null],
+  ["PSR B1257+12 c","PSR B1257+12",4.3,66.5,0.36,"Pulsar","Timing",0,710,null],
+];
+
+const LY=3.26156;
+function num(id){const v=document.getElementById(id).value;return v===''?null:parseFloat(v);}
+function txt(id){return document.getElementById(id).value.trim();}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function yn(v){return v?'<span class="yes">Yes</span>':'<span class="no">No</span>';}
+
+/* spectral-class chips */
+const CLASSES=["O","B","A","F","G","K","M","Other"];
+const classSel={g1:new Set(),g2:new Set(),g3:new Set()};
+function buildChips(panel){
+  const box=document.getElementById(panel+'_class');
+  box.innerHTML=CLASSES.map(c=>`<span class="cchip" data-c="${c}" onclick="toggleClass('${panel}','${c}',this)">${c}</span>`).join('');
+}
+function toggleClass(panel,c,el){
+  const s=classSel[panel];
+  if(s.has(c)){s.delete(c);el.classList.remove('on');}else{s.add(c);el.classList.add('on');}
+  if(panel==='g1')g1gate();
+}
+function classOf(sp){
+  if(!sp)return 'Other';
+  if(/^D/.test(sp))return 'Other';                 // white dwarfs / degenerates
+  const m=sp.match(/[OBAFGKM]/);
+  return m?m[0]:'Other';
+}
+function classMatch(panel,sp){
+  const s=classSel[panel];
+  if(s.size>0 && !s.has(classOf(sp)))return false;
+  const refEl=document.getElementById(panel+'_subtype');
+  const ref=refEl?refEl.value.trim().toUpperCase():'';
+  if(ref && !String(sp||'').toUpperCase().includes(ref))return false;  // subtype / luminosity refine
+  return true;
+}
+
+/* ===================== generic table ===================== */
+const STATE={};
+function renderTable(panel){
+  const st=STATE[panel];
+  const tbl=document.getElementById(panel+'_table');
+  let rows=st.rows.slice();
+  if(st.sortKey!=null){
+    const k=st.sortKey,dir=st.sortDir;
+    rows.sort((a,b)=>{let x=a[k],y=b[k];
+      if(x==null)return 1; if(y==null)return -1;
+      if(typeof x==='number'&&typeof y==='number')return dir*(x-y);
+      return dir*String(x).localeCompare(String(y));});
+  }
+  let h='<thead><tr>';
+  st.cols.forEach(c=>{const ar=st.sortKey===c.idx?(st.sortDir>0?'▲':'▼'):'';
+    h+=`<th onclick="sortBy('${panel}',${c.idx})">${esc(c.label)}<span class="arrow">${ar}</span></th>`;});
+  h+='</tr></thead><tbody>';
+  if(rows.length===0)h+=`<tr><td class="placeholder" colspan="${st.cols.length}">No matches. Loosen your filters.</td></tr>`;
+  rows.forEach((r,ri)=>{
+    h+=`<tr class="row${st.sel===r?' sel':''}" onclick="selectRow('${panel}',${ri})">`;
+    st.cols.forEach(c=>{const v=r[c.idx];h+=`<td class="${c.num?'num':''}">${c.fmt?c.fmt(v,r):esc(v)}</td>`;});
+    h+='</tr>';});
+  h+='</tbody>';
+  tbl.innerHTML=h;
+  st.displayed=rows;
+}
+function sortBy(panel,idx){const st=STATE[panel];if(st.sortKey===idx)st.sortDir*=-1;else{st.sortKey=idx;st.sortDir=1;}renderTable(panel);}
+function selectRow(panel,ri){const st=STATE[panel];st.sel=st.displayed[ri];renderTable(panel);st.onSelect(st.sel);}
+
+/* ===================== G1 ===================== */
+function g1gate(){
+  const any=classSel.g1.size>0||txt('g1_subtype')||num('g1_lymin')!=null||num('g1_lymax')!=null||
+            num('g1_magmin')!=null||num('g1_magmax')!=null||txt('g1_desig');
+  document.getElementById('g1_btn').disabled=!any;
+  document.getElementById('g1_hint').textContent=any?'Ready — searching the star_systems table.':'Pick a spectral class or enter at least one filter.';
+}
+function runG1(){
+  const lymin=num('g1_lymin'),lymax=num('g1_lymax'),mmin=num('g1_magmin'),mmax=num('g1_magmax'),desig=txt('g1_desig').toLowerCase();
+  let rows=STARS.map(s=>{const pc=1000/s[3];return [s[0],s[1],s[2],pc*LY,s[4]];});
+  rows=rows.filter(r=>{
+    if(!classMatch('g1',r[2]))return false;
+    if(lymin!=null&&r[3]<lymin)return false;
+    if(lymax!=null&&r[3]>lymax)return false;
+    if(mmin!=null&&r[4]<mmin)return false;
+    if(mmax!=null&&r[4]>mmax)return false;
+    if(desig){const toks=(r[1]+', '+r[0]).toLowerCase().split(/,\s*/);if(!toks.some(t=>t.startsWith(desig)))return false;}
+    return true;});
+  const capped=rows.length>500;if(capped)rows=rows.slice(0,500);
+  STATE.g1={rows,sortKey:3,sortDir:1,sel:null,onSelect:g1sel,
+    cols:[{idx:0,label:'Star Name'},{idx:1,label:'Designations'},{idx:2,label:'Spectral Type'},
+          {idx:3,label:'Light Years',num:true,fmt:v=>v.toFixed(4)},{idx:4,label:'App. Magnitude',num:true,fmt:v=>v.toFixed(3)}]};
+  renderTable('g1');setCount('g1',rows.length,'star');foot('g1',capped);document.getElementById('g1_selbar').innerHTML='';
+}
+function g1sel(r){
+  document.getElementById('g1_selbar').innerHTML=
+    `<span class="selinfo">Selected <span class="chip">${esc(r[0])}</span></span>
+     <button class="btn" onclick="openSel('g1')">Open star in new tab →</button>`;
+}
+function g1Detail(r){
+  const ly=r[3],pc=ly/LY,plx=1000/pc;
+  return `<div class="detail"><h3>★ ${esc(r[0])}</h3><div class="who">${esc(r[2])} · ${esc(r[1])}</div>
+    <div class="minihdr">Star Properties (SIMBAD)</div>
+    <div class="kv">
+      <div class="k">Spectral Type</div><div>${esc(r[2])}</div>
+      <div class="k">Apparent Magnitude</div><div>${r[4].toFixed(3)}</div>
+      <div class="k">Parallax</div><div>${plx.toFixed(4)} mas</div>
+      <div class="k">Distance</div><div>${pc.toFixed(4)} pc &nbsp;(${ly.toFixed(4)} ly)</div>
+      <div class="k">Designations</div><div>${esc(r[1])}</div>
+    </div>
+    <div class="minihdr">Hypatia Catalog</div>
+    <div class="mocknote">In the app this tab also renders the Hypatia stellar properties, kinematics, and the
+      category-colored [X/H] abundance profile — fetched live when the star is opened.</div></div>`;
+}
+
+/* ===================== G2 ===================== */
+function runG2(){
+  const esiMin=num('g2_esi')||0,hab=g2c('g2_hab'),con=g2c('g2_con'),opt=g2c('g2_opt'),
+        mmin=num('g2_mmin'),mmax=num('g2_mmax'),rmin=num('g2_rmin'),rmax=num('g2_rmax'),
+        tmin=num('g2_tmin'),tmax=num('g2_tmax'),lymax=num('g2_lymax');
+  // mapped: 0 pname,1 esi,2 hab,3 con,4 opt,5 teq,6 star,7 sp,8 ly,9 mass,10 radius
+  let rows=HWC.map(p=>[p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],p[8]*LY,p[9],p[10]]);
+  rows=rows.filter(r=>{
+    if(r[1]<esiMin)return false;
+    if(hab&&r[2]!==1)return false;
+    if(con&&r[3]!==1)return false;
+    if(opt&&r[4]!==1)return false;
+    if(mmin!=null&&r[9]<mmin)return false;
+    if(mmax!=null&&r[9]>mmax)return false;
+    if(rmin!=null&&r[10]<rmin)return false;
+    if(rmax!=null&&r[10]>rmax)return false;
+    if(tmin!=null&&r[5]<tmin)return false;
+    if(tmax!=null&&r[5]>tmax)return false;
+    if(!classMatch('g2',r[7]))return false;
+    if(lymax!=null&&r[8]>lymax)return false;
+    return true;});
+  const capped=rows.length>500;if(capped)rows=rows.slice(0,500);
+  STATE.g2={rows,sortKey:1,sortDir:-1,sel:null,onSelect:g2sel,
+    cols:[{idx:0,label:'Planet'},{idx:1,label:'ESI',num:true,fmt:v=>v.toFixed(4)},
+          {idx:2,label:'Habitable?',fmt:yn},{idx:3,label:'In Con HZ?',fmt:yn},{idx:4,label:'In Opt HZ?',fmt:yn},
+          {idx:9,label:'Mass (M⊕)',num:true,fmt:v=>v.toFixed(2)},{idx:10,label:'Radius (R⊕)',num:true,fmt:v=>v.toFixed(2)},
+          {idx:5,label:'Temp K',num:true,fmt:v=>v.toFixed(0)},{idx:6,label:'Star'},{idx:7,label:'Spectral Type'},
+          {idx:8,label:'Distance (LY)',num:true,fmt:v=>v.toFixed(4)}]};
+  renderTable('g2');setCount('g2',rows.length,'planet');foot('g2',capped);document.getElementById('g2_selbar').innerHTML='';
+}
+function g2c(id){return document.getElementById(id).checked;}
+function g2sel(r){
+  document.getElementById('g2_selbar').innerHTML=
+    `<span class="selinfo">Selected <span class="chip">${esc(r[0])}</span> · host <span class="chip">${esc(r[6])}</span></span>
+     <button class="btn" onclick="openSel('g2')">Open system in new tab →</button>`;
+}
+function g2Detail(r){
+  return `<div class="detail"><h3>🪐 ${esc(r[0])}</h3><div class="who">Host: ${esc(r[6])} · ${esc(r[7])}</div>
+    <div class="minihdr">Planet Habitability (HWC)</div>
+    <div class="kv">
+      <div class="k">ESI</div><div>${r[1].toFixed(4)}</div>
+      <div class="k">Habitable</div><div>${r[2]?'Yes':'No'}</div>
+      <div class="k">In Conservative HZ</div><div>${r[3]?'Yes':'No'}</div>
+      <div class="k">In Optimistic HZ</div><div>${r[4]?'Yes':'No'}</div>
+      <div class="k">Mass / Radius</div><div>${r[9].toFixed(2)} M⊕ &nbsp;/&nbsp; ${r[10].toFixed(2)} R⊕</div>
+      <div class="k">Equilibrium Temp</div><div>${r[5].toFixed(0)} K</div>
+      <div class="k">Distance</div><div>${r[8].toFixed(4)} ly</div>
+    </div>
+    <div class="mocknote">The full panel renders all four HWC tables for <b>${esc(r[6])}</b> — Star Properties,
+      Star Habitability, Planet Properties, Planet Temperature — plus the Hypatia tab and HZ/orbital diagrams.</div></div>`;
+}
+
+/* ===================== G3 ===================== */
+function runG3(){
+  const btn=document.getElementById('g3_btn'),hint=document.getElementById('g3_hint'),cnt=document.getElementById('g3_count');
+  btn.disabled=true;hint.innerHTML='Querying NASA Exoplanet Archive…';cnt.className='count empty';cnt.textContent='Querying…';
+  setTimeout(()=>{
+    const mmin=num('g3_mmin'),mmax=num('g3_mmax'),rmin=num('g3_rmin'),rmax=num('g3_rmax'),
+          pmin=num('g3_pmin'),pmax=num('g3_pmax'),method=document.getElementById('g3_method').value,
+          dist=num('g3_dist'),tmin=num('g3_tmin'),tmax=num('g3_tmax');
+    let rows=EXO.slice();
+    rows=rows.filter(r=>{
+      if(mmin!=null&&r[2]<mmin)return false;
+      if(mmax!=null&&r[2]>mmax)return false;
+      if(rmin!=null&&(r[9]==null||r[9]<rmin))return false;   // BETWEEN excludes null radius
+      if(rmax!=null&&(r[9]==null||r[9]>rmax))return false;
+      if(pmin!=null&&r[3]<pmin)return false;
+      if(pmax!=null&&r[3]>pmax)return false;
+      if(method!=='Any'&&r[6]!==method)return false;
+      if(dist!=null&&r[8]>dist)return false;
+      if(tmin!=null&&r[7]<tmin)return false;
+      if(tmax!=null&&r[7]>tmax)return false;
+      if(!classMatch('g3',r[5]))return false;
+      return true;});
+    const capped=rows.length>200;if(capped)rows=rows.slice(0,200);
+    STATE.g3={rows,sortKey:4,sortDir:1,sel:null,onSelect:g3sel,
+      cols:[{idx:0,label:'Planet'},{idx:1,label:'Host Star'},
+            {idx:2,label:'Mass (M⊕)',num:true,fmt:v=>v.toFixed(2)},
+            {idx:9,label:'Radius (R⊕)',num:true,fmt:v=>v==null?'N/A':v.toFixed(2)},
+            {idx:3,label:'Period (d)',num:true,fmt:v=>v.toFixed(2)},
+            {idx:4,label:'SMA (AU)',num:true,fmt:v=>v.toFixed(4)},
+            {idx:5,label:'Spectral Type'},{idx:6,label:'Discovery Method'},
+            {idx:7,label:'Teff (K)',num:true,fmt:v=>v?v.toFixed(0):'N/A'},
+            {idx:8,label:'Distance (pc)',num:true,fmt:v=>v.toFixed(2)}]};
+    renderTable('g3');setCount('g3',rows.length,'planet');foot('g3',capped,200);document.getElementById('g3_selbar').innerHTML='';
+    btn.disabled=false;hint.innerHTML='Live network query · caps at 200 rows · sorted by SMA.';
+  },750);
+}
+function g3sel(r){
+  document.getElementById('g3_selbar').innerHTML=
+    `<span class="selinfo">Selected <span class="chip">${esc(r[0])}</span> · host <span class="chip">${esc(r[1])}</span></span>
+     <button class="btn" onclick="openSel('g3')">Open system in new tab →</button>`;
+}
+function g3Detail(r){
+  return `<div class="detail"><h3>🪐 ${esc(r[0])}</h3><div class="who">Host: ${esc(r[1])} · ${esc(r[5])}</div>
+    <div class="minihdr">Planet (NASA pscomppars)</div>
+    <div class="kv">
+      <div class="k">Mass</div><div>${r[2].toFixed(2)} M⊕</div>
+      <div class="k">Radius</div><div>${r[9]==null?'N/A (no transit)':r[9].toFixed(2)+' R⊕'}</div>
+      <div class="k">Orbital Period</div><div>${r[3].toFixed(2)} days</div>
+      <div class="k">Semi-Major Axis</div><div>${r[4].toFixed(4)} AU</div>
+      <div class="k">Discovery Method</div><div>${esc(r[6])}</div>
+      <div class="k">Host Teff / Distance</div><div>${r[7]?r[7].toFixed(0)+' K':'N/A'} &nbsp;/&nbsp; ${r[8].toFixed(2)} pc</div>
+    </div>
+    <div class="mocknote">The full panel runs a fresh SIMBAD + NASA archive lookup for <b>${esc(r[1])}</b> —
+      all planets in the system, the HZ &amp; orbital diagrams, and Hypatia abundances.</div></div>`;
+}
+
+/* ===================== drill-down tabs ===================== */
+let tabSeq=0;
+function openSel(panel){
+  const r=STATE[panel].sel;if(!r)return;
+  let title,body;
+  if(panel==='g1'){title='★ '+r[0];body=g1Detail(r);}
+  else if(panel==='g2'){title='🪐 '+r[0];body=g2Detail(r);}
+  else{title='🪐 '+r[0];body=g3Detail(r);}
+  // if a tab for this item already exists, just switch to it
+  const existing=[...document.querySelectorAll('#'+panel+'_tabs .tab')].find(t=>t.dataset.title===title);
+  if(existing){switchTab(panel,existing.dataset.tab);return;}
+  const id=panel+'_d'+(tabSeq++);
+  const tab=document.createElement('div');
+  tab.className='tab';tab.dataset.tab=id;tab.dataset.title=title;
+  tab.innerHTML=`<span>${esc(title)}</span><span class="x" title="close" onclick="event.stopPropagation();closeTab('${panel}','${id}')">×</span>`;
+  tab.addEventListener('click',()=>switchTab(panel,id));
+  document.getElementById(panel+'_tabs').appendChild(tab);
+  const page=document.createElement('div');
+  page.className='tabpage';page.dataset.page=id;page.innerHTML=body;
+  document.getElementById(panel+'_pages').appendChild(page);
+  switchTab(panel,id);
+}
+function switchTab(panel,id){
+  document.querySelectorAll('#'+panel+'_tabs .tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===id));
+  document.querySelectorAll('#'+panel+'_pages .tabpage').forEach(p=>p.classList.toggle('active',p.dataset.page===id));
+}
+function closeTab(panel,id){
+  const t=document.querySelector('#'+panel+'_tabs .tab[data-tab="'+id+'"]');
+  const p=document.querySelector('#'+panel+'_pages .tabpage[data-page="'+id+'"]');
+  const wasActive=t.classList.contains('active');
+  if(t)t.remove();if(p)p.remove();
+  if(wasActive)switchTab(panel,'results');
+}
+
+/* ===================== shared ===================== */
+function setCount(panel,n,noun){const c=document.getElementById(panel+'_count');c.className='count';c.textContent=`${n} ${noun}${n===1?'':'s'} found.`;}
+function foot(panel,capped,cap){const f=document.getElementById(panel+'_foot');if(capped){f.style.display='block';f.textContent=`Showing first ${cap||500} results (result cap reached).`;}else f.style.display='none';}
+function clearForm(panel){
+  document.querySelectorAll('#panel-'+panel+' .tabpage[data-page="results"] input').forEach(i=>{
+    if(i.type==='checkbox')i.checked=false;else i.value=(i.id===panel+'_esi'?'0':'');});
+  const sel=document.querySelector('#panel-'+panel+' select');if(sel)sel.selectedIndex=0;
+  classSel[panel].clear();
+  document.querySelectorAll('#'+panel+'_class .cchip').forEach(c=>c.classList.remove('on'));
+  if(panel==='g1')g1gate();
+  document.getElementById(panel+'_table').innerHTML='<tbody><tr><td class="placeholder">Set filters and click Search.</td></tr></tbody>';
+  const c=document.getElementById(panel+'_count');c.className='count empty';c.textContent='No search run yet.';
+  document.getElementById(panel+'_foot').style.display='none';
+  document.getElementById(panel+'_selbar').innerHTML='';
+}
+function showPanel(p){
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  document.getElementById('panel-'+p).classList.add('active');
+  document.querySelectorAll('.nav .item.live').forEach(x=>x.classList.toggle('active',x.dataset.panel===p));
+}
+buildChips('g1');buildChips('g2');buildChips('g3');
+</script>
+</body>
+</html>
