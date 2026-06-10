@@ -54,7 +54,7 @@ gui/                 # Qt presentation layer
     luminosity.py         # LuminosityPanel (41)
     # Phase C panels (SIMBAD / network):
     simbad.py            # SimbadPanel (1) — tabs: Star Properties, Hypatia, Abundance Profile
-    hypatia_tab.py       # Shared: build_hypatia_tab(), fit_table_height(), _ELEMENT_NAMES
+    hypatia_tab.py       # Shared: build_hypatia_tab(), fit_table_height(); element metadata from core.hypatia_elements
                          #   used by simbad.py, star_regions.py, nasa_exoplanet.py, catalogs.py
     star_regions.py      # StarRegionsAutoPanel (8), StarRegionsSemiManualPanel (9),
                          #   StarRegionsManualPanel (10)

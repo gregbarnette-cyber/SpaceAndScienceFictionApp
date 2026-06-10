@@ -3,4 +3,5 @@ astropy
 requests
 PySide6
 matplotlib>=3.6,<4
+numpy
 pyvo

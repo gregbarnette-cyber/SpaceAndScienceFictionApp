@@ -105,13 +105,25 @@ class CsvUtilityPanel(ResultPanel):
         new_cnt = result["total_new"]
         disc    = result["total_discarded"]
         backup  = result.get("backup_table") or "none"
+        dropped = result.get("backups_dropped") or []
+        kept    = result.get("backups_kept") or []
+
+        backups_line = ""
+        if dropped:
+            backups_line += (
+                f"Old backup tables dropped (kept newest 3): {', '.join(dropped)}<br>"
+            )
+        backups_line += (
+            f"Backup tables retained: {', '.join(kept) if kept else 'none'}"
+        )
 
         summary = QLabel(
             f"<b>Complete.</b><br>"
             f"New rows added: {new_cnt}<br>"
             f"Rows discarded (PLX/no-desig/no-sptype): {disc}<br>"
             f"Total rows in star_systems table: {total}<br>"
-            f"Previous data backed up to: {backup}"
+            f"Previous data backed up to: {backup}<br>"
+            f"{backups_line}"
         )
         summary.setWordWrap(True)
         self.add_result_widget(summary)

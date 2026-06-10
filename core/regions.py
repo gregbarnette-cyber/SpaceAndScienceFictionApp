@@ -142,7 +142,7 @@ def compute_star_system_regions(
     mainSeqLifeSpan = (10.0 ** 10) * ((1.0 / stellarMass) ** 2.5)
 
     trigParallax = plx / 1000.0
-    lightYears = 3.2616 / trigParallax
+    lightYears = 3.26156 / trigParallax
 
     distAU = math.sqrt(bcLuminosity / sunlight_intensity)
     distKM = distAU * 149000000.0

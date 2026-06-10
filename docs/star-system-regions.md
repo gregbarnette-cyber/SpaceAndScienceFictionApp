@@ -61,7 +61,7 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - Columns: Stellar Mass (4dp), Stellar Radius (5dp), Stellar Diameter Sol (4dp), Stellar Diameter KM (5e), Main Sequence Life Span (5e)
 - **Star Distance table** — rendered by `_display_star_distance()`; uses `_print_table()` (single header row, all columns right-aligned):
   - `trigParallax = plx / 1000`
-  - `lightYears = 3.2616 / trigParallax`
+  - `lightYears = 3.26156 / trigParallax`
   - `parsecs` already computed as `1000.0 / plx`
   - Columns: Parallax (2dp), Trig Parallax (4dp), Parsecs (4dp), Light Years (4dp)
 - **Earth Equivalent Orbit Properties table** — rendered by `_display_earth_equivalent_orbit()`; uses `_print_table()` (two-line header row, all columns right-aligned):
@@ -90,6 +90,8 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
 ## Hypatia Catalog (opt 8 only)
 
 Opt 8 appends Hypatia Catalog data after the Calculated HZ output in both the CLI and GUI.
+
+> See `docs/hypatia_catalog_api.md` for a reference overview of the external Hypatia Catalog data source and its public API (what it covers, endpoints, no API key required). That file is reference-only — it is not `@`-loaded by CLAUDE.md.
 
 ### CLI output (`query_star_system_regions()`)
 

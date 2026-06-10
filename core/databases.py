@@ -902,12 +902,18 @@ def compute_star_systems_csv(progress_callback=None) -> dict:
     except Exception as e:
         return {"error": f"Could not write to star_systems table: {e}"}
 
+    # Prune old dated backups — keep the 3 newest (including the one just made).
+    from core.db import prune_star_systems_backups
+    prune = prune_star_systems_backups(keep_n=3)
+
     return {
         "total_rows":      len(all_new_rows),
         "queries_run":     total_queries,
         "backup_table":    backup_table,
         "total_new":       len(all_new_rows),
         "total_discarded": total_discarded,
+        "backups_dropped": prune["dropped"],
+        "backups_kept":    prune["kept"],
     }
 
 

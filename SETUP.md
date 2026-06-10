@@ -18,6 +18,7 @@ sudo apt install libxcb-cursor0
 | `requests` | 2.33.1 | HTTP calls to Hypatia Catalog API and NASA TAP endpoints |
 | `PySide6` | 6.11.0 | Qt-based GUI (`gui_main.py`) |
 | `matplotlib` | 3.10.8 | Embedded visualizations in the GUI (HZ diagrams, orbital maps, star maps, abundance charts) |
+| `numpy` | 2.4.4 | Numeric arrays for the 3D star-map and abundance visualizations (imported directly by `gui/visualizations/plot_helpers.py`) |
 
 ## Installation
 
@@ -77,4 +78,5 @@ The following CSV files must be present in the project directory. They are auto-
 
 - An internet connection is required for SIMBAD, NASA Exoplanet Archive, JPL Horizons, Open Exoplanet Catalogue, and Hypatia Catalog queries.
 - The Open Exoplanet Catalogue data is downloaded once per session and cached in memory.
-- The local SQLite database (`space_app.db`) is created automatically in the project directory on first run.
+- The local SQLite database is created automatically on first run at `data/space_app.db` under the repo root (the `data/` directory is gitignored). Set the `SPACE_APP_DB` environment variable to override this path (see `docs/integration.md`).
+- The `backups/` directory holds manual CSV snapshots (e.g. `starSystemsBackup-*.csv`, `templateStarSystems.csv`) that are **not** read by the app — they are retained for reference only.

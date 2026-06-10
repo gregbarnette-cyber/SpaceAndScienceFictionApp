@@ -16,7 +16,21 @@ python gui_main.py
 
 # Query core functions as JSON (integration tool)
 python query.py <subcommand> [arguments]
+
+# Run the test suite (pytest or the stdlib runner both work)
+pytest                      # or: python -m unittest discover -s tests
 ```
+
+### Tests
+
+Tests live in `tests/`. The bulk are **offline** and need no network or Qt:
+
+- `test_equations.py`, `test_calculators.py`, `test_regions.py` — pure math/physics core (HZ + Kopparapu Seff, brachistochrone profiles, velocity/coordinate conversions, planetary & rotating-habitat equations, the spectral-type ceiling rule).
+- `test_db_backups.py` — the opt-50 backup pruner (`core.db.prune_star_systems_backups`).
+- `test_gcns.py` — GCNS ingest/query path with the GAVO TAP fetch mocked.
+- `test_hypatia_elements.py`, `test_parse_composition.py`, `test_prepare_abundance_profile.py`, `test_gui_hypatia.py` — Hypatia element table, composition parsing, and abundance-profile prep.
+
+The `*_live.py` files (`test_gcns_live.py`, `test_hypatia_live.py`) hit the **live network** and are gated by `tests/_netcheck.py` via `@unittest.skipUnless(...)` (skipped automatically when GAVO/Hypatia is unreachable). Tests that touch the SQLite store never mutate `data/space_app.db`: in-process tests monkeypatch `core.db._DB_PATH` to a tmp file with auto-seeding disabled (pattern in `tests/test_gcns.py`, `tests/test_regions.py`, `tests/test_db_backups.py`), and the `query.py` subprocess tests pass a throwaway DB via the `SPACE_APP_DB` environment variable.
 
 ## Architecture
 
@@ -102,6 +116,10 @@ Q.  Quit                                            Misc. Equations
                                                     40. Habitable Zone Calculator w/SMA
                                                     41. Star Luminosity
 ```
+
+> Option 4 is abbreviated above to fit the two-column layout; its full in-app
+> label (as registered in `MENU_OPTIONS`) is "NASA Exoplanet Archive: HWO ExEP
+> Precursor Science Stars".
 
 @docs/star-databases.md
 @docs/star-system-regions.md

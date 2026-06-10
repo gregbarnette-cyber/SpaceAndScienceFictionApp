@@ -1133,7 +1133,7 @@ def query_star_system_regions():
     stellarDiameterKM = stellarDiameterSol * 1391600
     mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
     trigParallax = plx / 1000
-    lightYears = 3.2616 / trigParallax
+    lightYears = 3.26156 / trigParallax
     distAU = math.sqrt(bcLuminosity / sunlightIntensity)
     distKM = distAU * 149000000
     planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
@@ -1653,7 +1653,7 @@ def query_star_system_regions_semi_manual():
     stellarDiameterKM = stellarDiameterSol * 1391600
     mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
     trigParallax = plx / 1000
-    lightYears = 3.2616 / trigParallax
+    lightYears = 3.26156 / trigParallax
     distAU = math.sqrt(bcLuminosity / sunlightIntensity)
     distKM = distAU * 149000000
     planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
@@ -1731,7 +1731,7 @@ def query_star_system_regions_manual():
     stellarDiameterKM = stellarDiameterSol * 1391600
     mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
     trigParallax = plx / 1000
-    lightYears = 3.2616 / trigParallax
+    lightYears = 3.26156 / trigParallax
     distAU = math.sqrt(bcLuminosity / sunlightIntensity)
     distKM = distAU * 149000000
     planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
@@ -2626,6 +2626,11 @@ def query_star_systems_csv():
     print(f"  Total rows discarded (PLX/no-desig/no-sptype): {result['total_discarded']}")
     print(f"  Total new rows written:                        {result['total_new']}")
     print(f"  Total rows in star_systems table:              {result['total_rows']}")
+    dropped = result.get("backups_dropped") or []
+    kept    = result.get("backups_kept") or []
+    if dropped:
+        print(f"  Old backup tables dropped (kept newest 3):     {', '.join(dropped)}")
+    print(f"  Backup tables retained:                        {', '.join(kept) if kept else 'none'}")
 
     input("\nPress Enter to Return to the Main Menu")
 
@@ -5389,7 +5394,7 @@ def sol_solar_system_regions():
     stellarDiameterKM  = stellarDiameterSol * 1391600
     mainSeqLifeSpan  = (10 ** 10) * ((1 / stellarMass) ** 2.5)
     trigParallax     = plx / 1000
-    lightYears       = 3.2616 / trigParallax
+    lightYears       = 3.26156 / trigParallax
     distAU           = math.sqrt(bcLuminosity / sunlightIntensity)
     distKM           = distAU * 149000000
     planetaryYear    = math.sqrt((distAU ** 3) / stellarMass)

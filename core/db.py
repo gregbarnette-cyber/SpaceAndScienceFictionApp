@@ -46,6 +46,47 @@ def table_exists(table_name: str) -> bool:
     ).fetchone()[0] > 0
 
 
+import re as _re
+
+# Only tables matching this exact pattern may ever be dropped by the pruner.
+_BACKUP_TABLE_RE = _re.compile(r"^star_systems_backup_\d{8}$")
+
+
+def prune_star_systems_backups(keep_n: int = 3) -> dict:
+    """Drop all but the newest `keep_n` star_systems_backup_YYYYMMDD tables.
+
+    Backups are ranked by their 8-digit date stamp (lexicographic order on
+    YYYYMMDD == chronological order). Only tables whose name matches
+    `^star_systems_backup_\\d{8}$` are ever considered or dropped — no other
+    table is touched. A no-op when `keep_n` or fewer backups exist.
+
+    Returns {"dropped": [table_name, ...], "kept": [table_name, ...]} with both
+    lists ordered newest → oldest.
+    """
+    conn = get_conn()
+    names = [
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'star_systems_backup_%'"
+        ).fetchall()
+        if _BACKUP_TABLE_RE.match(row[0])
+    ]
+    # Newest first (date stamp descending).
+    names.sort(reverse=True)
+
+    kept    = names[:keep_n]
+    dropped = names[keep_n:]
+
+    if dropped:
+        with conn:
+            for name in dropped:
+                # name is guaranteed to match the strict backup pattern above,
+                # so this f-string interpolation cannot inject arbitrary SQL.
+                conn.execute(f"DROP TABLE IF EXISTS {name}")
+
+    return {"dropped": dropped, "kept": kept}
+
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------

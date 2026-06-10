@@ -1,5 +1,7 @@
 # Integration Plan: SpaceAndScienceFictionApp → ScienceFictionResearch
 
+> **Historical planning doc — completed.** This describes the original plan for the `query.py` JSON dispatcher, which is now fully implemented. See `docs/integration.md` for the as-built contract.
+
 ## Context
 
 The `core/` modules already expose clean Python APIs returning plain Python dicts. The goal
