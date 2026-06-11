@@ -201,10 +201,20 @@ class ResultPanel(QWidget):
         callback    = on_result   if on_result   is not None else self.render
         progress_cb = on_progress if on_progress is not None else self.set_status
 
+        def _safe_callback(result, _cb=callback):
+            # The receiving panel may have been reset()/deleted while the worker
+            # was still running (e.g. an embedded detail panel torn down on a
+            # nav-away). Delivering to a deleted Qt object raises RuntimeError —
+            # swallow it rather than crash the event loop.
+            try:
+                _cb(result)
+            except RuntimeError:
+                pass
+
         thread.started.connect(worker.run)
         # QueuedConnection ensures callback and error handler are always
         # delivered on the main thread.
-        worker.finished.connect(callback,       Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(_safe_callback, Qt.ConnectionType.QueuedConnection)
         worker.finished.connect(thread.quit)
         worker.error.connect(self._on_error,    Qt.ConnectionType.QueuedConnection)
         worker.progress.connect(progress_cb,    Qt.ConnectionType.QueuedConnection)

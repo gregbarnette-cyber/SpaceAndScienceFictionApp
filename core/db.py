@@ -106,6 +106,13 @@ def _create_schema(conn: sqlite3.Connection):
             dec           TEXT
         );
 
+        -- Speeds up the Phase G search + opts 18/19 (ORDER BY light_years LIMIT,
+        -- and light-year range filters) so they don't full-scan + temp-sort the
+        -- whole table. Added via CREATE INDEX IF NOT EXISTS so existing DBs pick
+        -- it up on the next connect.
+        CREATE INDEX IF NOT EXISTS idx_star_systems_ly
+            ON star_systems (light_years);
+
         CREATE TABLE IF NOT EXISTS main_sequence_stars (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             spectral_class TEXT,

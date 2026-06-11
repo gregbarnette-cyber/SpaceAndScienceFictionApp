@@ -251,3 +251,71 @@ GCNS exposes Gaia-resolved multiples in `gcns.resolvedss`, so consumers can tell
 - **Distances:** `gcns.main` uses GCNS Bayesian distances (Bailer-Jones-style); `missing_10mas` rows fall back to biased `1/ϖ` inversion and are flagged via `distance_method`.
 - **Snapshot/version:** GCNS is Gaia EDR3-based and static; the pull date and catalogue/source string are recorded in `gcns_meta` for reproducibility.
 - **Resolved systems cover only Gaia-resolved multiples.** `gcns.resolvedss` is built from Gaia's own astrometry, so it captures pairs Gaia could resolve; unresolved (close/spectroscopic) binaries and wide or literature-only companions are **not** in it — a `source_id` returning "not part of any resolved system" means *not Gaia-resolved*, not necessarily single. The connected-component grouping is a friends-of-friends linkage: a small number of dense regions chain into large spurious "systems" (the largest derived component has ~159 members). These are represented faithfully (not dropped); the per-pair `bin`/`bound` flags and `proj_sep_au` let consumers filter. Treat `n_components` from chained pairs as an upper bound on true multiplicity in crowded fields.
+
+## Phase G — Interactive Search & Filtering (GUI-only)
+
+Three filter functions backing the GUI **Search & Filter** nav category. They are
+GUI-only (no CLI menu option, no `query.py` subcommand). Each returns a dict
+`{"count": int, "capped": bool, "cap": int, "stars": [row dicts]}` or
+`{"error": str}` — always check for `"error"` before reading `stars`.
+
+### Shared spectral-class control
+
+All three filter spectral type with a friendly **chips + refine** control, not a
+raw `LIKE` box. Two core filter keys (in `core/shared.py`):
+
+- `spectral_classes: list[str]` — selected chips from `O B A F G K M Other`.
+  Each letter → a parameterized leading-anchor `LIKE 'X%'`, OR-ed together
+  (the canonical leading-letter rule, matching `_SP_PATTERN`). `Other` →
+  `(<col> IS NULL OR NOT (<col> LIKE 'O%' OR … 'M%'))` — i.e. white dwarfs /
+  degenerate `D…` types and untyped rows.
+- `spectral_refine: str` — case-insensitive **contains** match on the rest of the
+  type: `AND <col> LIKE '%refine%'` (LIKE wildcards in the refine text are escaped
+  with `ESCAPE '\'`). So `V` finds the luminosity class wherever it sits, and
+  `M5.5Ve` still matches `V`.
+
+`core.shared.spectral_where(column, classes, refine) -> (sql_fragment, params)`
+builds the parameterized SQL for the SQLite searches (G1/G2);
+`spectral_adql(column, classes, refine) -> str` builds the inline-literal ADQL
+clause for the live archive search (G3) — the refine text is sanitized to a safe
+character set (quotes stripped) so it cannot break out of the ADQL string literal.
+
+### G1 — `search_star_systems(filters: dict) -> dict`
+
+Filters the local `star_systems` table. No network. Filter keys (all optional):
+`spectral_classes` / `spectral_refine`, `ly_min` / `ly_max`, `mag_min` / `mag_max`
+(floats, inclusive), `designation_prefix` (matches `star_name` or any `designations`
+token — a parameterized `LIKE 'p%'` at the start or after a `", "` separator).
+Default sort `light_years ASC`; capped at `_SEARCH_CAP` (500). Returns
+`{"error": "star_systems table is empty — run option 50 first…"}` when the table is
+empty. (Commented stub for the Phase L4 `fe_h_min`/`fe_h_max` JOIN against
+`hypatia_cache` is left in place so L4 needs no signature change.)
+
+### G2 — `search_hwc(filters: dict) -> dict`
+
+Filters the local `hwc` table. No network. **All `hwc` columns are TEXT** (created
+dynamically from the CSV headers), so every numeric predicate is
+`CAST(<col> AS REAL)` guarded by `NULLIF(<col>,'') IS NOT NULL` — a blank cell is
+excluded, never treated as `0`. Filter keys: `esi_min`; `habitable` /
+`habzone_con` / `habzone_opt` (bool → `P_HABITABLE='1'` etc.); `mass_min/max`
+(`P_MASS`), `radius_min/max` (`P_RADIUS`), `temp_min/max` (`P_TEMP_EQUIL`);
+`spectral_classes` / `spectral_refine` (on `S_TYPE`); `ly_max`
+(`CAST(S_DISTANCE AS REAL) * 3.26156`). Default sort `P_ESI DESC` (blank ESI sorts
+last); capped at 500. Empty table → `{"error": "… run option 52 …"}`.
+
+### G3 — `search_exoplanets(filters: dict) -> dict`
+
+Live NASA `pscomppars` TAP query. Builds an ADQL `WHERE` from the filters and calls
+`_query_tap("pscomppars", where, order_by="pl_orbsmax", top=200, select=<cols>)`.
+Filter keys: `pl_bmasse_min/max`, `pl_rade_min/max`, `pl_orbper_min/max`,
+`st_teff_min/max` (floats), `sy_dist_max` (**pc** — `sy_dist` is parsecs; the GUI
+panel's "Max Distance (LY)" field converts ly→pc as `ly / 3.26156` and displays the
+result column back in ly), `discoverymethod` (exact; `"Any"`
+ignored), `spectral_classes` / `spectral_refine` (on `st_spectype`). A set
+`pl_rade` bound naturally excludes null-radius detections (ADQL comparison
+semantics). Capped at `_EXO_SEARCH_CAP` (200). Network failures are classified via
+`_network_error_msg(…, "NASA Exoplanet Archive")` into `{"error": str}`.
+
+`_query_tap` gained two backward-compatible kwargs for this: `top` (ADQL
+`SELECT TOP N`) and `select` (column list, default `"*"`). Existing callers
+(opts 2/4) are unaffected.

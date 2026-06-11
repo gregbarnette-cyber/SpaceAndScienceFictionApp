@@ -14,6 +14,11 @@ NAVIGATION = [
         ("NASA Exoplanet: Mission Exocat",    "NasaMissionExocatPanel"),
         ("Habitable Worlds Catalog",          "HwcPanel"),
     ]),
+    ("Search & Filter", [
+        ("Star Systems Search",        "StarSystemsSearchPanel"),
+        ("HWC Planet Search",          "HwcSearchPanel"),
+        ("NASA Exoplanet Quick Search","NasaExoplanetSearchPanel"),
+    ]),
     ("Star System Regions", [
         ("Auto (SIMBAD)",  "StarRegionsAutoPanel"),
         ("Semi-Manual",    "StarRegionsSemiManualPanel"),

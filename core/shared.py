@@ -18,6 +18,7 @@ M_PER_AU     = 149_597_870_700.0      # metres per AU
 M_PER_LM     = C_MS * 60.0           # metres per light-minute
 HOURS_PER_YEAR  = 365.25 * 24        # 8765.82  (Julian year)
 HOURS_PER_MONTH = HOURS_PER_YEAR / 12
+LY_PER_PC       = 3.26156            # light years per parsec
 
 # ─── Spectral Class Helpers ───────────────────────────────────────────────────
 
@@ -326,6 +327,86 @@ def _kopparapu_seff(teff, zone):
     }
     SeffSUN, a, b, c, d = params[zone]
     return SeffSUN + a*tS + b*tS**2 + c*tS**3 + d*tS**4
+
+
+# ─── Search Filter Helpers (Phase G) ─────────────────────────────────────────
+
+# Spectral-class chips used by the search panels. "Other" matches anything whose
+# leading type is not OBAFGKM (white dwarfs / degenerate D... types) plus NULLs.
+_SPECTRAL_CHIP_LETTERS = ["O", "B", "A", "F", "G", "K", "M"]
+
+
+def _escape_like(s: str) -> str:
+    """Escape LIKE wildcards so user text matches literally (use with ESCAPE '\\')."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _adql_sanitize(s: str) -> str:
+    """Keep only characters safe inside an ADQL string literal for a spectral refine."""
+    return re.sub(r"[^A-Za-z0-9 .+\-/]", "", s or "").strip()
+
+
+def spectral_where(column: str, classes, refine: str):
+    """Build a parameterized SQL fragment for the spectral chips + refine control.
+
+    classes: list of selected chip letters from {O,B,A,F,G,K,M,Other} (or empty/None).
+    refine:  case-insensitive substring matched against the rest of the type.
+
+    Returns (fragment, params). The fragment is '' when both inputs are empty; the
+    caller ANDs it into its WHERE clause. Letter chips match a LEADING class letter
+    via LIKE 'X%' (the canonical leading-letter rule); "Other" matches NULL or any
+    type whose leading letter is not OBAFGKM. Refine adds LIKE '%refine%' (ESCAPEd).
+    """
+    classes = classes or []
+    letters = [c for c in classes if c in _SPECTRAL_CHIP_LETTERS]
+    want_other = "Other" in classes
+
+    clauses, params = [], []
+
+    sub = []
+    for letter in letters:
+        sub.append(f"{column} LIKE ?")
+        params.append(f"{letter}%")
+    if want_other:
+        not_obafgkm = " OR ".join(f"{column} LIKE ?" for _ in _SPECTRAL_CHIP_LETTERS)
+        sub.append(f"({column} IS NULL OR NOT ({not_obafgkm}))")
+        params.extend(f"{l}%" for l in _SPECTRAL_CHIP_LETTERS)
+    if sub:
+        clauses.append("(" + " OR ".join(sub) + ")")
+
+    refine = (refine or "").strip()
+    if refine:
+        clauses.append(f"{column} LIKE ? ESCAPE '\\'")
+        params.append(f"%{_escape_like(refine)}%")
+
+    if not clauses:
+        return "", []
+    return " AND ".join(clauses), params
+
+
+def spectral_adql(column: str, classes, refine: str) -> str:
+    """ADQL counterpart of spectral_where (inline literals; no parameters).
+
+    Letter chips come from a fixed whitelist; the refine text is sanitized to a
+    safe character set. Returns '' when empty; the caller ANDs the result.
+    """
+    classes = classes or []
+    letters = [c for c in classes if c in _SPECTRAL_CHIP_LETTERS]
+    want_other = "Other" in classes
+
+    clauses = []
+    sub = [f"{column} LIKE '{letter}%'" for letter in letters]
+    if want_other:
+        not_obafgkm = " OR ".join(f"{column} LIKE '{l}%'" for l in _SPECTRAL_CHIP_LETTERS)
+        sub.append(f"({column} IS NULL OR NOT ({not_obafgkm}))")
+    if sub:
+        clauses.append("(" + " OR ".join(sub) + ")")
+
+    refine = _adql_sanitize(refine)
+    if refine:
+        clauses.append(f"{column} LIKE '%{refine}%'")
+
+    return " AND ".join(clauses)
 
 
 # ─── Network Reliability Helpers ─────────────────────────────────────────────

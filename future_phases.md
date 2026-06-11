@@ -103,6 +103,14 @@ Queries the live NASA Exoplanet Archive `pscomppars` TAP endpoint with user-supp
 
 ## Phase H — Worldbuilding Calculators
 
+> **📋 Detailed implementation plan: [`PHASE_H_PLAN.md`](PHASE_H_PLAN.md)** — build-ready
+> spec (core fn signatures, constants block, validation, panels, query.py subcommands,
+> tests, success criteria). Interactive mockup: [`mockups/phase-h.html`](mockups/phase-h.html).
+> **The plan corrects two formula errors in the sketch below:** (H1) the rigid Roche
+> coefficient is **1.26**, not 2.44 (2.44 makes rigid ≈ fluid); (H4) the P-type term is
+> **`+4.12μ`**, not `−4.12μ` (the negative sign gives a negative critical SMA). Use the
+> plan's formulas, not these, when implementing.
+
 **New panels (GUI-only)**: `RocheLimitPanel`, `TidalLockingPanel`, `HillSpherePanel`, `BinaryOrbitPanel`, `AtmosphereRetentionPanel`
 **Existing options touched**: none (pure additions alongside the existing equation calculators, opts 33–41)
 

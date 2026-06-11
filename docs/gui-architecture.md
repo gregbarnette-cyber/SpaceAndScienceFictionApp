@@ -73,6 +73,9 @@ gui/                 # Qt presentation layer
                          #   ImportMainSequencePanel (54), ImportSolarSystemPanel (55),
                          #   ImportHonorversePanel (56), DbStatusPanel (57),
                          #   ImportGcnsPanel (58)
+    search_common.py     # Phase G: SpectralClassControl, SearchPanelBase (inline drill-down tabs)
+    search.py            # Phase G: StarSystemsSearchPanel (G1), HwcSearchPanel (G2),
+                         #   NasaExoplanetSearchPanel (G3)
   visualizations/        # Phase E: shared rendering helpers + standalone panel stubs
     __init__.py
     plot_helpers.py      # mpl_available(), make_hz_canvas(), make_orbits_canvas(),
@@ -257,10 +260,44 @@ def __getattr__(name: str):
 | `ImportHonorversePanel` | 56 | `panels/csv_utility.py` |
 | `DbStatusPanel` | 57 (GUI only) | `panels/csv_utility.py` |
 | `ImportGcnsPanel` | 58 | `panels/csv_utility.py` |
+| `StarSystemsSearchPanel` | — (GUI-only, Phase G1) | `panels/search.py` |
+| `HwcSearchPanel` | — (GUI-only, Phase G2) | `panels/search.py` |
+| `NasaExoplanetSearchPanel` | — (GUI-only, Phase G3) | `panels/search.py` |
 
 > **Note**: `NasaAllTablesPanel` (opt 2) and `OecPanel` (opt 7) are implemented in `nasa_exoplanet.py` and `catalogs.py` respectively, but are **not exported** from `panels/__init__.py` and do not appear in the GUI nav. Both options remain fully functional in the CLI.
 
 > **Note**: `StarMapPanel`, `SystemOrbitsPanel`, and `HabZoneDiagramPanel` live in `gui/visualizations/` and are exported via the lazy `__getattr__` in `panels/__init__.py`. They are **not in the nav tree** — visualizations appear as embedded tabs inside the relevant option panels rather than as standalone nav entries.
+
+## Search & Filter Panels (Phase G — `panels/search.py`, `panels/search_common.py`)
+
+The three **Search & Filter** nav entries (`StarSystemsSearchPanel`,
+`HwcSearchPanel`, `NasaExoplanetSearchPanel`) introduce an **inline drill-down
+tab** pattern — new vs. the rest of the GUI, which shows one panel at a time.
+
+- **`SearchPanelBase(ResultPanel)`** (`panels/search_common.py`) hosts an inner
+  `QTabWidget` with a permanent **"Search Results"** tab (index 0 — its close
+  button is stripped) plus **closable detail tabs** added on demand, so the user
+  can open multiple stars/planets at once and switch between them. `open_detail_tab(key, title, factory)`
+  re-focuses an already-open `key` instead of duplicating it; `tabCloseRequested`
+  refuses index 0 and defensively restores `window.nav_tree` (in case a detail
+  panel was closed while in full-screen diagram mode). Subclasses implement
+  `build_search_ui(layout)` and use `_build_results_scaffold(layout)` +
+  `_render_table(headers, display_rows, records, open_label, on_open, noun)`.
+  `_render_table` stashes each record on its column-0 item via `Qt.UserRole`, so
+  row selection survives interactive column sorting. `run_btn` is the standard
+  `ResultPanel` attribute, so background searches (G1/G3) auto-disable it.
+- **`SpectralClassControl(QWidget)`** (`panels/search_common.py`) is the shared
+  `O B A F G K M Other` chip row + refine box used by all three panels. API:
+  `.classes()`, `.refine()`, `.is_empty()`, `.clear()`, and a `changed` signal
+  (drives G1's "≥1 filter" button gating). It mirrors the core
+  `spectral_where` / `spectral_adql` semantics (see `docs/star-databases.md`).
+- **Detail tabs reuse existing panels** by embedding an instance: G1 →
+  `SimbadPanel`, G2 → `HwcPanel`, G3 → `NasaPlanetarySystemsPanel`. The factory
+  constructs the panel with the shared `window`, sets its name field
+  (`_name_input` / `_name`), and calls `_search()` to run the normal lookup
+  (Hypatia / diagrams come along for free). G1's `SimbadPanel` has no full-screen
+  diagram toggle so it embeds cleanly; the G2/G3 targets carry their own
+  Show Diagrams toggle, which operates within the detail tab.
 
 ## Star Regions Panel Layout Notes
 

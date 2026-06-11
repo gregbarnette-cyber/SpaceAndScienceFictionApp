@@ -191,10 +191,12 @@ def compute_lookup_star_for_distance(designation: str) -> dict:
 
     from astroquery.simbad import Simbad
 
-    custom_simbad = _make_simbad("plx_value")
-
     try:
         with _timeout_ctx(30):
+            # Inside the try: _make_simbad lazily hits SIMBAD's TAP capabilities
+            # endpoint, so a connection failure there is classified by
+            # _network_error_msg rather than leaking a raw DALServiceError.
+            custom_simbad = _make_simbad("plx_value")
             result     = _with_retries(custom_simbad.query_object, designation)
             ids_result = _with_retries(Simbad.query_objectids, designation)
     except Exception as e:

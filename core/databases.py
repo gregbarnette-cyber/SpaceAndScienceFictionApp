@@ -7,7 +7,8 @@ import math
 import os
 import re
 
-from .shared import _make_simbad, _network_error_msg, _timeout_ctx, _with_retries
+from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
+                     _escape_like, spectral_where, spectral_adql, LY_PER_PC)
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
@@ -106,10 +107,13 @@ def compute_simbad_lookup(star_name: str) -> dict:
     """
     from astroquery.simbad import Simbad
 
-    custom_simbad = _make_simbad("sp_type", "plx_value", "V", "mesfe_h")
-
     try:
         with _timeout_ctx(30):
+            # _make_simbad lazily hits SIMBAD's TAP capabilities endpoint (via
+            # add_votable_fields), so it must be inside the try — otherwise a
+            # capabilities/connection failure escapes as a raw DALServiceError
+            # instead of the friendly _network_error_msg classification.
+            custom_simbad = _make_simbad("sp_type", "plx_value", "V", "mesfe_h")
             result     = _with_retries(custom_simbad.query_object, star_name)
             ids_result = _with_retries(Simbad.query_objectids, star_name)
     except Exception as e:
@@ -273,10 +277,15 @@ def _get_hwo_query_params(designations):
     return None, None
 
 
-def _query_tap(table, where, order_by=None, timeout=60):
-    """Query NASA Exoplanet Archive TAP endpoint; return list of row dicts."""
+def _query_tap(table, where, order_by=None, timeout=60, top=None, select="*"):
+    """Query NASA Exoplanet Archive TAP endpoint; return list of row dicts.
+
+    top: optional ADQL row cap (SELECT TOP N). select: column list (default '*').
+    Defaults preserve the original `SELECT * FROM table WHERE where` behaviour.
+    """
     import requests
-    q = f"SELECT * FROM {table} WHERE {where}"
+    top_clause = f"TOP {int(top)} " if top else ""
+    q = f"SELECT {top_clause}{select} FROM {table} WHERE {where}"
     if order_by:
         q += f" ORDER BY {order_by}"
 
@@ -1463,7 +1472,7 @@ _GCNS_MAXREC           = 400_000   # must exceed the total row count AND the 20k
 _GCNS_MAIN_MIN_ROWS    = 330_000   # known 331,312 — floor sits just under to tolerate version drift
 _GCNS_MISSING_MIN_ROWS = 1_200     # known 1,259
 _GCNS_RESOLVED_MIN_ROWS = 19_000   # known 19,176 resolved pairs
-_LY_PER_PC             = 3.26156
+_LY_PER_PC             = LY_PER_PC   # single-sourced from core.shared
 _KPC_TO_PC             = 1000.0
 
 _GCNS_MAIN_ADQL = """SELECT source_id, ra, dec, parallax, parallax_error,
@@ -2463,3 +2472,210 @@ def compute_gcns_stars_within_star(star=None, source_id=None, limit_ly=None) -> 
         "gcns_version":  meta.get("gcns_version"),
         "stars":         matches,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase G — Interactive search / filtering (GUI-only)
+#
+# Three filter functions backing the Search & Filter panels. star_systems and
+# hwc are read directly from the local SQLite store (no network); exoplanets
+# hits the live NASA pscomppars TAP endpoint. All three return a dict
+# {count, capped, cap, stars[]} or {"error": str}.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_SEARCH_CAP     = 500    # star_systems / hwc row cap
+_EXO_SEARCH_CAP = 200    # NASA pscomppars row cap
+
+
+def _range_clause(col, vmin, vmax, params, cast=False):
+    """Append SQL >= / <= range predicates to *params*; return the clause list.
+
+    cast=True wraps the (TEXT) column in CAST(... AS REAL) with a non-empty guard
+    so a blank cell is excluded rather than treated as 0.0 (hwc stores all TEXT).
+    """
+    expr = f"CAST({col} AS REAL)" if cast else col
+    guard = f"NULLIF({col}, '') IS NOT NULL AND " if cast else ""
+    out = []
+    if vmin is not None:
+        out.append(f"({guard}{expr} >= ?)")
+        params.append(vmin)
+    if vmax is not None:
+        out.append(f"({guard}{expr} <= ?)")
+        params.append(vmax)
+    return out
+
+
+def search_star_systems(filters: dict) -> dict:
+    """Filter the local star_systems table (Phase G1). No network.
+
+    Filter keys (all optional): spectral_classes (list), spectral_refine (str),
+    ly_min/ly_max, mag_min/mag_max (floats), designation_prefix (str).
+    Returns {count, capped, cap, stars[]} sorted by light_years asc, capped at
+    _SEARCH_CAP, or {"error": str} if the table is empty.
+    """
+    from core.db import get_conn
+
+    f = filters or {}
+    clauses, params = [], []
+
+    sp, sp_params = spectral_where(
+        "spectral_type", f.get("spectral_classes"), f.get("spectral_refine", ""))
+    if sp:
+        clauses.append(sp)
+        params.extend(sp_params)
+
+    clauses += _range_clause("light_years",   f.get("ly_min"),  f.get("ly_max"),  params)
+    clauses += _range_clause("app_magnitude", f.get("mag_min"), f.get("mag_max"), params)
+
+    prefix = (f.get("designation_prefix") or "").strip()
+    if prefix:
+        esc = _escape_like(prefix)
+        clauses.append(
+            "(star_name LIKE ? ESCAPE '\\' "
+            "OR designations LIKE ? ESCAPE '\\' "
+            "OR designations LIKE ? ESCAPE '\\')"
+        )
+        params += [f"{esc}%", f"{esc}%", f"%, {esc}%"]
+
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = (
+        "SELECT star_name, designations, spectral_type, parallax, parsecs, "
+        "light_years, app_magnitude, ra, dec FROM star_systems"
+        f"{where} ORDER BY light_years ASC LIMIT ?"
+    )
+    params.append(_SEARCH_CAP + 1)
+
+    try:
+        conn = get_conn()
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    except Exception as e:
+        return {"error": f"Error reading star_systems table: {e}"}
+
+    if not rows and conn.execute("SELECT COUNT(*) FROM star_systems").fetchone()[0] == 0:
+        return {"error": "star_systems table is empty — run option 50 first to populate it."}
+
+    capped = len(rows) > _SEARCH_CAP
+    if capped:
+        rows = rows[:_SEARCH_CAP]
+    return {"count": len(rows), "capped": capped, "cap": _SEARCH_CAP, "stars": rows}
+
+
+def search_hwc(filters: dict) -> dict:
+    """Filter the local hwc table (Phase G2). No network.
+
+    hwc columns are all TEXT, so numeric predicates CAST to REAL with a non-empty
+    guard (a blank cell must not match as 0). Filter keys (all optional): esi_min,
+    habitable / habzone_con / habzone_opt (bool), mass_min/max (P_MASS),
+    radius_min/max (P_RADIUS), temp_min/max (P_TEMP_EQUIL), spectral_classes /
+    spectral_refine (S_TYPE), ly_max (S_DISTANCE pc * 3.26156). Sorted by ESI desc,
+    capped at _SEARCH_CAP. Returns {count, capped, cap, stars[]} or {"error": str}.
+    """
+    from core.db import get_conn, table_exists
+
+    if not table_exists("hwc"):
+        return {"error": "hwc table is empty — run option 52 (Import HWC Data) first."}
+
+    f = filters or {}
+    clauses, params = [], []
+
+    esi_min = f.get("esi_min")
+    if esi_min is not None:
+        clauses.append("(NULLIF(P_ESI,'') IS NOT NULL AND CAST(P_ESI AS REAL) >= ?)")
+        params.append(esi_min)
+
+    for key, col in [("habitable", "P_HABITABLE"),
+                     ("habzone_con", "P_HABZONE_CON"),
+                     ("habzone_opt", "P_HABZONE_OPT")]:
+        if f.get(key):
+            clauses.append(f"{col} = '1'")
+
+    clauses += _range_clause("P_MASS",       f.get("mass_min"),   f.get("mass_max"),   params, cast=True)
+    clauses += _range_clause("P_RADIUS",     f.get("radius_min"), f.get("radius_max"), params, cast=True)
+    clauses += _range_clause("P_TEMP_EQUIL", f.get("temp_min"),   f.get("temp_max"),   params, cast=True)
+
+    sp, sp_params = spectral_where("S_TYPE", f.get("spectral_classes"), f.get("spectral_refine", ""))
+    if sp:
+        clauses.append(sp)
+        params.extend(sp_params)
+
+    ly_max = f.get("ly_max")
+    if ly_max is not None:
+        clauses.append(
+            f"(NULLIF(S_DISTANCE,'') IS NOT NULL AND CAST(S_DISTANCE AS REAL) * {_LY_PER_PC} <= ?)")
+        params.append(ly_max)
+
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = (
+        "SELECT P_NAME, P_ESI, P_HABITABLE, P_HABZONE_CON, P_HABZONE_OPT, "
+        "P_MASS, P_RADIUS, P_TEMP_EQUIL, S_NAME, S_NAME_HD, S_NAME_HIP, "
+        "S_TYPE, S_DISTANCE FROM hwc"
+        f"{where} ORDER BY CAST(NULLIF(P_ESI,'') AS REAL) DESC LIMIT ?"
+    )
+    params.append(_SEARCH_CAP + 1)
+
+    try:
+        conn = get_conn()
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    except Exception as e:
+        return {"error": f"Error reading hwc table: {e}"}
+
+    capped = len(rows) > _SEARCH_CAP
+    if capped:
+        rows = rows[:_SEARCH_CAP]
+    return {"count": len(rows), "capped": capped, "cap": _SEARCH_CAP, "stars": rows}
+
+
+def search_exoplanets(filters: dict) -> dict:
+    """Live NASA pscomppars search (Phase G3). Builds an ADQL WHERE from filters,
+    caps at _EXO_SEARCH_CAP rows sorted by pl_orbsmax asc.
+
+    Filter keys (all optional): pl_bmasse_min/max, pl_rade_min/max,
+    pl_orbper_min/max, st_teff_min/max (floats), sy_dist_max (pc),
+    discoverymethod (exact, 'Any' ignored), spectral_classes / spectral_refine
+    (st_spectype). A set radius bound excludes null-radius rows (ADQL semantics).
+    Returns {count, capped, cap, stars[]} or {"error": str}.
+    """
+    f = filters or {}
+    parts = []
+
+    def _rng(col, vmin, vmax):
+        if vmin is not None:
+            parts.append(f"{col} >= {float(vmin)}")
+        if vmax is not None:
+            parts.append(f"{col} <= {float(vmax)}")
+
+    try:
+        _rng("pl_bmasse", f.get("pl_bmasse_min"), f.get("pl_bmasse_max"))
+        _rng("pl_rade",   f.get("pl_rade_min"),   f.get("pl_rade_max"))
+        _rng("pl_orbper", f.get("pl_orbper_min"), f.get("pl_orbper_max"))
+        _rng("st_teff",   f.get("st_teff_min"),   f.get("st_teff_max"))
+        if f.get("sy_dist_max") is not None:
+            parts.append(f"sy_dist <= {float(f['sy_dist_max'])}")
+    except (TypeError, ValueError):
+        return {"error": "Numeric filters must be numbers."}
+
+    method = (f.get("discoverymethod") or "").strip()
+    if method and method.lower() != "any":
+        parts.append(f"discoverymethod = '{method.replace(chr(39), chr(39) * 2)}'")
+
+    sp = spectral_adql("st_spectype", f.get("spectral_classes"), f.get("spectral_refine", ""))
+    if sp:
+        parts.append(sp)
+
+    where = " AND ".join(parts) if parts else "pl_name IS NOT NULL"
+    select = ("pl_name, hostname, pl_bmasse, pl_rade, pl_orbper, pl_orbsmax, "
+              "st_spectype, discoverymethod, st_teff, sy_dist")
+
+    try:
+        # Fetch cap+1 so an exact-cap match isn't misreported as "cap reached"
+        # (mirrors search_star_systems / search_hwc).
+        rows = _query_tap("pscomppars", where, order_by="pl_orbsmax",
+                          top=_EXO_SEARCH_CAP + 1, select=select)
+    except Exception as e:
+        return {"error": _network_error_msg(e, "NASA Exoplanet Archive")}
+
+    rows = rows or []
+    capped = len(rows) > _EXO_SEARCH_CAP
+    if capped:
+        rows = rows[:_EXO_SEARCH_CAP]
+    return {"count": len(rows), "capped": capped, "cap": _EXO_SEARCH_CAP, "stars": rows}
