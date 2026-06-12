@@ -128,6 +128,43 @@ def cmd_gcns_stars_within_star(args):
     ))
 
 
+# ── Worldbuilding calculators (Phase H) ───────────────────────────────────────
+
+def cmd_roche_limit(args):
+    _out(equations.compute_roche_limit(
+        args.primary_mass_earth, args.satellite_density,
+        primary_radius_earth=args.primary_radius_earth,
+    ))
+
+
+def cmd_tidal_locking(args):
+    _out(equations.compute_tidal_locking_time(
+        args.primary_mass_earth, args.satellite_mass_earth,
+        args.sma_km, args.rotation_hours,
+        rigidity_pa=args.rigidity_pa, tidal_q=args.tidal_q,
+    ))
+
+
+def cmd_hill_sphere(args):
+    _out(equations.compute_hill_sphere(
+        args.star_mass_solar, args.planet_mass_earth, args.sma_au,
+        eccentricity=args.eccentricity,
+    ))
+
+
+def cmd_binary_stability(args):
+    _out(equations.compute_binary_orbit_stability(
+        args.mass1_solar, args.mass2_solar, args.binary_sma_au, args.test_sma_au,
+        eccentricity=args.eccentricity,
+    ))
+
+
+def cmd_atmosphere_retention(args):
+    _out(equations.compute_atmosphere_retention(
+        args.planet_mass_earth, args.planet_radius_earth, args.temperature_k,
+    ))
+
+
 # ── Argument parser ───────────────────────────────────────────────────────────
 
 def main():
@@ -267,6 +304,53 @@ def main():
     g.add_argument("--id", type=int, help="Center by Gaia EDR3/DR3 source_id")
     p.add_argument("--ly", required=True, type=float, help="Light-year radius")
     p.set_defaults(func=cmd_gcns_stars_within_star)
+
+    # roche-limit
+    p = sub.add_parser("roche-limit", help="Rigid + fluid Roche limits for a satellite")
+    p.add_argument("--primary-mass-earth", required=True, type=float,
+                   help="Primary mass in Earth masses")
+    p.add_argument("--satellite-density", required=True, type=float,
+                   help="Satellite bulk density in g/cm³")
+    p.add_argument("--primary-radius-earth", type=float, default=None,
+                   help="Primary radius in Earth radii (optional; estimated from mass if omitted)")
+    p.set_defaults(func=cmd_roche_limit)
+
+    # tidal-locking
+    p = sub.add_parser("tidal-locking", help="Tidal-locking timescale of a satellite")
+    p.add_argument("--primary-mass-earth",   required=True, type=float)
+    p.add_argument("--satellite-mass-earth", required=True, type=float)
+    p.add_argument("--sma-km",               required=True, type=float)
+    p.add_argument("--rotation-hours",       required=True, type=float,
+                   help="Initial rotation period in hours")
+    p.add_argument("--rigidity-pa", type=float, default=3e10)
+    p.add_argument("--tidal-q",     type=float, default=100)
+    p.set_defaults(func=cmd_tidal_locking)
+
+    # hill-sphere
+    p = sub.add_parser("hill-sphere", help="Hill sphere of a planet in a star system")
+    p.add_argument("--star-mass-solar",   required=True, type=float)
+    p.add_argument("--planet-mass-earth", required=True, type=float)
+    p.add_argument("--sma-au",            required=True, type=float)
+    p.add_argument("--eccentricity",      type=float, default=0)
+    p.set_defaults(func=cmd_hill_sphere)
+
+    # binary-stability
+    p = sub.add_parser("binary-stability",
+                       help="Planet orbit stability in a binary (Holman & Wiegert 1999)")
+    p.add_argument("--mass1-solar",  required=True, type=float)
+    p.add_argument("--mass2-solar",  required=True, type=float)
+    p.add_argument("--binary-sma-au", required=True, type=float)
+    p.add_argument("--test-sma-au",   required=True, type=float)
+    p.add_argument("--eccentricity",  type=float, default=0)
+    p.set_defaults(func=cmd_binary_stability)
+
+    # atmosphere-retention
+    p = sub.add_parser("atmosphere-retention",
+                       help="Atmospheric gases a planet retains against Jeans escape")
+    p.add_argument("--planet-mass-earth",   required=True, type=float)
+    p.add_argument("--planet-radius-earth", required=True, type=float)
+    p.add_argument("--temperature-k",       required=True, type=float)
+    p.set_defaults(func=cmd_atmosphere_retention)
 
     args = parser.parse_args()
     try:

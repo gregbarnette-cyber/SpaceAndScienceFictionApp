@@ -101,7 +101,16 @@ Queries the live NASA Exoplanet Archive `pscomppars` TAP endpoint with user-supp
 
 ---
 
-## Phase H — Worldbuilding Calculators
+## Phase H — Worldbuilding Calculators ✅ IMPLEMENTED (2026-06-11)
+
+> **Implemented** per [`PHASE_H_PLAN.md`](PHASE_H_PLAN.md): five core functions in
+> `core/equations.py` (`compute_roche_limit`, `compute_tidal_locking_time`,
+> `compute_hill_sphere`, `compute_binary_orbit_stability`,
+> `compute_atmosphere_retention`), five panels in `gui/panels/worldbuilding.py`
+> under a "Worldbuilding" nav category, five `query.py` subcommands, and
+> `tests/test_worldbuilding.py`. Both formula corrections (rigid coeff 1.26,
+> P-type `+4.12μ`) are in place and locked by tests. Docs updated in
+> `docs/equations.md`, `docs/integration.md`, `docs/gui-architecture.md`.
 
 > **📋 Detailed implementation plan: [`PHASE_H_PLAN.md`](PHASE_H_PLAN.md)** — build-ready
 > spec (core fn signatures, constants block, validation, panels, query.py subcommands,

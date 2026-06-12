@@ -52,6 +52,8 @@ gui/                 # Qt presentation layer
                           #   GravityRpmPanel (38)
     habitable_zone_calc.py # HabZonePanel (39), HabZoneSmaPanel (40)
     luminosity.py         # LuminosityPanel (41)
+    worldbuilding.py      # Phase H (GUI-only): RocheLimitPanel, TidalLockingPanel,
+                          #   HillSpherePanel, BinaryOrbitPanel, AtmosphereRetentionPanel
     # Phase C panels (SIMBAD / network):
     simbad.py            # SimbadPanel (1) — tabs: Star Properties, Hypatia, Abundance Profile
     hypatia_tab.py       # Shared: build_hypatia_tab(), fit_table_height(); element metadata from core.hypatia_elements
@@ -232,6 +234,11 @@ def __getattr__(name: str):
 | `HabZonePanel` | 39 | `panels/habitable_zone_calc.py` |
 | `HabZoneSmaPanel` | 40 | `panels/habitable_zone_calc.py` |
 | `LuminosityPanel` | 41 | `panels/luminosity.py` |
+| `RocheLimitPanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
+| `TidalLockingPanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
+| `HillSpherePanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
+| `BinaryOrbitPanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
+| `AtmosphereRetentionPanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
 | `SimbadPanel` | 1 | `panels/simbad.py` |
 | `StarRegionsAutoPanel` | 8 | `panels/star_regions.py` |
 | `StarRegionsSemiManualPanel` | 9 | `panels/star_regions.py` |
@@ -441,3 +448,5 @@ Clicking any body (planet, origin, or destination) on the canvas calls `_show_bo
 | E | Complete | Visualizations embedded in existing panels: star map 2D + 3D (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10), alternate HZ diagram (8–10), solar system travel map 2D (22–23); Show Diagrams/Show Tables toggle on all viz panels; light theme; 3D viewpoint preset buttons (18–19); `azel` rotation style for all 3D views |
 | F | Complete | SQLite migration — all static tables auto-seeded from CSVs on first connect; opt 50 writes to `star_systems` DB table; opts 51–56 added (Export Star Systems to CSV, Import HWC, Import Mission Exocat, Import Main Sequence, Import Solar System, Import Honorverse Hyper Limits); opt 57 `DbStatusPanel` added (GUI only) — displays row counts and populated/empty status for all DB tables via `core.db.get_table_status()`; opts 18–19 migrated from `starSystems.csv` to the `star_systems` DB table in both CLI and GUI |
 | post-F | Complete | **GCNS** (Gaia Catalogue of Nearby Stars): opt 58 `ImportGcnsPanel` / `import_gcns_data` ingests ~331k sources into the isolated `gcns_stars` table (+ `gcns_meta`) via GAVO TAP, plus the Gaia-resolved multiples from `gcns.resolvedss` into `gcns_systems` / `gcns_system_members` / `gcns_system_pairs` (systems = connected components over the resolvedss pairs); exposed only through `query.py` (readers `gcns-within-sol`, `gcns-source`, `gcns-system`; GCNS-backed calculators `gcns-distance`, `gcns-travel-time`, `gcns-stars-within-star`) — no existing option displays it; `get_table_status()` lists GCNS Stars + GCNS Systems + GCNS Meta. See `docs/star-databases.md` (ingest) and `docs/integration.md` (query contract). |
+| G | Complete | **Interactive Search & Filtering** (GUI-only): "Search & Filter" nav category — `StarSystemsSearchPanel` (local `star_systems`), `HwcSearchPanel` (local `hwc`), `NasaExoplanetSearchPanel` (live NASA `pscomppars` TAP). Shared `SpectralClassControl` chips + refine box and inline drill-down detail tabs (`SearchPanelBase`). Core fns `search_star_systems` / `search_hwc` / `search_exoplanets` + `spectral_where` / `spectral_adql`. See `docs/star-databases.md`. |
+| H | Complete | **Worldbuilding Calculators** (GUI-only): "Worldbuilding" nav category — `RocheLimitPanel`, `TidalLockingPanel`, `HillSpherePanel`, `BinaryOrbitPanel`, `AtmosphereRetentionPanel` (pure math, no `DiagramToggleMixin`). Backed by five self-validating `core/equations.py` functions (`compute_roche_limit`, `compute_tidal_locking_time`, `compute_hill_sphere`, `compute_binary_orbit_stability`, `compute_atmosphere_retention`) also exposed as `query.py` subcommands (`roche-limit`, `tidal-locking`, `hill-sphere`, `binary-stability`, `atmosphere-retention`). See `docs/equations.md` (formulas + the two corrections) and `docs/integration.md` (query contract). |

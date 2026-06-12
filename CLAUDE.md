@@ -26,6 +26,7 @@ pytest                      # or: python -m unittest discover -s tests
 Tests live in `tests/`. The bulk are **offline** and need no network or Qt:
 
 - `test_equations.py`, `test_calculators.py`, `test_regions.py` — pure math/physics core (HZ + Kopparapu Seff, brachistochrone profiles, velocity/coordinate conversions, planetary & rotating-habitat equations, the spectral-type ceiling rule).
+- `test_worldbuilding.py` — the Phase H worldbuilding calculators (Roche limit, tidal-locking timescale, Hill sphere, binary orbit stability, atmosphere retention) in `core/equations.py`; anchored to reference values and locks the two formula corrections (rigid Roche coeff 1.26, binary P-type `+4.12μ`).
 - `test_db_backups.py` — the opt-50 backup pruner (`core.db.prune_star_systems_backups`).
 - `test_gcns.py` — GCNS ingest/query path with the GAVO TAP fetch mocked.
 - `test_hypatia_elements.py`, `test_parse_composition.py`, `test_prepare_abundance_profile.py`, `test_gui_hypatia.py` — Hypatia element table, composition parsing, and abundance-profile prep.

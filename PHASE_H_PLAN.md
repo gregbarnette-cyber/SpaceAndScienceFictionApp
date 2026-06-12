@@ -6,7 +6,8 @@ new `core/equations.py` function + a `ResultPanel` subclass (no
 `DiagramToggleMixin` — none have visualizations), plus a `query.py` subcommand
 (Phase N forward-note: H functions get their integration surface at build time).
 
-> Status: **plan only — not implemented.** Pointer lives in the Phase H section of
+> Status: **implemented (2026-06-11).** All five core functions, panels, query.py
+> subcommands, tests, and docs are in place. Pointer lives in the Phase H section of
 > `future_phases.md`. Companion mockup: `mockups/phase-h.html`.
 
 ---

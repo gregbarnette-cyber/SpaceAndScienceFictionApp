@@ -34,6 +34,9 @@ from gui.panels.brachistochrone  import (BrachistochroneAccelPanel,
                                          BrachistochroneAuPanel,
                                          BrachistochroneLmPanel)
 from gui.panels.system_travel    import SystemTravelSolarPanel, SystemTravelThrustPanel
+from gui.panels.worldbuilding    import (RocheLimitPanel, TidalLockingPanel,
+                                         HillSpherePanel, BinaryOrbitPanel,
+                                         AtmosphereRetentionPanel)
 from gui.panels.search           import (StarSystemsSearchPanel, HwcSearchPanel,
                                          NasaExoplanetSearchPanel)
 from gui.panels.csv_utility      import (CsvUtilityPanel, ExportStarSystemsPanel,

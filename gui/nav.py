@@ -57,6 +57,13 @@ NAVIGATION = [
         ("Moon Orbital Distance (24h)", "MoonDistance24Panel"),
         ("Moon Orbital Distance (Xh)",  "MoonDistanceXPanel"),
     ]),
+    ("Worldbuilding", [
+        ("Roche Limit",              "RocheLimitPanel"),
+        ("Tidal Locking Timescale",  "TidalLockingPanel"),
+        ("Hill Sphere",              "HillSpherePanel"),
+        ("Binary Orbit Stability",   "BinaryOrbitPanel"),
+        ("Atmosphere Retention",     "AtmosphereRetentionPanel"),
+    ]),
     ("Rotating Habitat", [
         ("Gravity Acceleration",   "GravityAccelPanel"),
         ("Distance from Center",   "GravityDistancePanel"),
