@@ -990,6 +990,102 @@ A small `QLineEdit` + "Find" button above the chart tabs: case-insensitive subst
 
 ---
 
+## Phase P — Snow Lines & Alternative-Solvent Habitable Zones (grounded + extended)
+
+**New panels (GUI-only)**: `SolventZonePanel`, `IceLineCalculatorPanel`, `SolventReferencePanel`
+**Existing options touched**: opts 8–10 (Star System Regions) and opt 13 (Sol Regions) — the corrected divisors in `core/regions.py` flow through their existing output (no new menu numbers); the GUI **System Regions Diagram** + **Alternate HZ Diagram** (opts 8–10) and `query.py star-regions` carry the same corrections/additions for free since they read the same region dict.
+
+Grounds the app's existing **Alternate Habitable Zone Regions** table and snow-line outputs in current astrobiology literature, fixes the divisor values that don't survive a physical check, and adds the missing solvent bands + a reusable solvent-zone engine. Sourced from a 2026-06-12 deep-research pass (Bains/Petkowski/Seager 2024; National Academies *The Limits of Organic Life in Planetary Systems*; the sulfuric-acid solvent study; the protoplanetary snow-line literature). See the research findings note for the full citation list.
+
+### Background — the divisors are insolation values, and they're checkable
+
+The app's alternate-HZ table computes each zone edge as `distance_AU = sqrt(bcLuminosity / divisor)`, so **each divisor IS the effective insolation `S_eff` at that edge**. Flux maps to an equilibrium temperature via:
+
+```
+T_eq ≈ 278.5 K × S_eff^0.25        (airless, zero albedo; × (1−A)^0.25 for albedo A — × 0.915 at A=0.3)
+```
+
+Back-converting every current divisor (`core/regions.py` `_display_alternate_hz_regions()` keys `ffInner/ffOuter, fsInner/fsOuter, prwInner/prwOuter, praInner/praOuter, pmInner/pmOuter, phInner/phOuter`; snow line in `_display_solar_system_regions()`) and comparing to measured liquid ranges:
+
+| App band (key, divisors in/out) | Implied T_eq band (A=0) | Sun-distance band | Measured liquid range | Verdict |
+|---|---|---|---|---|
+| Fluorosilicone `ffInner/ffOuter` (52 / 29.9) | 748–651 K | 0.14–0.18 AU | silicones degrade below ~573 K | ⚠️ too hot — only a hypothetical high-T analog |
+| Fluorocarbon-sulfur `fsInner/fsOuter` (38.7 / 3.2) | 695–373 K | 0.16–0.56 AU | liquid sulfur usable 388–443 K; heavy PFCs ~400–550 K | ✓ brackets sulfur+PFC; band wider than sulfur's usable window |
+| Protein-water `prwInner/prwOuter` (2.8 / 0.8) | 360–263 K | 0.60–1.12 AU | 273–373 K | ✓ sound; runs ~10 K cold (ignores greenhouse) |
+| Protein-ammonia `praInner/praOuter` (0.48 / 0.21) | 232–188 K | 1.44–2.18 AU | **195–240 K** | ✅ excellent |
+| Polylipid-methane `pmInner/pmOuter` (0.023 / 0.0094) | 108–87 K | 6.6–10.3 AU | **91–112 K** | ✅ excellent |
+| Polylipid-hydrogen `phInner/phOuter` (0.0025 / 0.000024) | 62–19.5 K | 20–204 AU | **14–20 K** | ⚠️ only the outer edge is right; 62 K is above H₂'s 33 K critical temp (gas) |
+| `snowLine` (0.04) | ~124 K | 5.0 AU | water ice 150–170 K | △ matches a *cold present-day frost line*, not the canonical 170 K / 2.7 AU formation snow line (divisor ≈ 0.14) |
+| `lh2Line` (0.0025) | ~62 K | 20 AU | H₂ condenses ~20 K | ⚠️ 62 K is the N₂/CO frost regime, not hydrogen |
+
+The ammonia and methane bands match measured 1-atm liquid ranges almost exactly — strong evidence the table was deliberately built as "where the solvent's equilibrium temperature equals its liquid range." The water band is sound (a touch cold because it's airless-equilibrium, no greenhouse). The **hydrogen inner edge, the `snowLine`/`lh2Line` labels, and the fluorosilicone band** are the only weak spots.
+
+> **Provenance — source available at implementation time.** The divisors are attributed to Stephen L. Gillett's *World-Building* (1996). The 2026-06-12 research pass could not read the book directly (the only open copy is borrow-restricted on archive.org), so the verification table above rests on physics, not on the printed source. **The maintainer has an ebook copy and will provide it as `.docx` + `.pdf` to scan when Phase P is built** — so the first implementation step is to read Gillett's actual table and the surrounding text (his stated temperature ranges, reference temperature, and any albedo/greenhouse assumption) to settle: (a) whether the current divisors transcribe his values faithfully, and (b) what model he used to derive them (e.g. equilibrium `278.5 × S_eff^0.25` vs. the app's warmer `411.4 × (1−A) × S^0.25` form). That reading **decides P1**: if a divisor is faithful to Gillett but unphysical (e.g. the hydrogen inner edge), the choice is keep-as-Gillett vs. retune-to-literature; if it's a transcription slip, just fix it. Until then, P1's edits are framed as *physics-grounded corrections*, and the recommended split stands: **P1 = corrections gated on the Gillett scan + maintainer call; P2–P7 = pure additions that don't touch existing numbers.**
+
+### P1: Corrections to existing divisors (behavior-changing — `core/regions.py`)
+
+Each edit shifts current CLI opts 8–10/13 output, the two GUI ring diagrams, and `query.py star-regions`, so each ships with its `docs/star-system-regions.md` update + a test re-anchor (the Phase H pattern in `tests/test_worldbuilding.py`) in the same commit. **Gate behind the maintainer decision above.**
+
+- **P1a — hydrogen inner edge** (`phInner`, divisor `0.0025` → 62 K, supercritical for H₂): tighten toward the ~20 K end so the band is thermodynamically possible for hydrogen.
+- **P1b — `lh2Line`** (0.0025 → 62 K): relabel as an **N₂/CO frost line**, or move to a true H₂ value (~0.000024). 62 K is not where H₂ condenses.
+- **P1c — `snowLine`** (0.04 → 5 AU for the Sun): this is the *present-day* frost line, not the 170 K / 2.7 AU *formation* line. Either label it as such or add the second line (see P3c). Divisor for 2.7 AU ≈ 0.14.
+- **P1d — fluorosilicone band** (`ffInner/ffOuter`, 651–748 K): hotter than any real silicone survives — retune downward or relabel "hypothetical high-T silicone analog" so it isn't read literally.
+
+*(Ammonia, methane, and water bands verified sound — leave them. Water optionally annotated as a no-greenhouse equilibrium band.)*
+
+### P2: New alternative-solvent bands (additive — `core/regions.py`)
+
+New rows in `_display_alternate_hz_regions()` (and matching `query.py star-regions` keys + the Alternate HZ ring diagram), each derived from its solvent's liquid range via `S_eff = (T_liquid / 278.5)^4`:
+
+- **P2a — liquid / supercritical CO₂** — Bains 2024's standout non-protonating solvent; currently absent. Critical point 304 K.
+- **P2b — explicit liquid-sulfur band** — narrow usable window 388–443 K (115–170 °C); currently only implied inside fluorocarbon-sulfur.
+- **P2c — water-ammonia eutectic band** — stays liquid well below 273 K (Titan-relevant); distinct, well-supported.
+- **P2d — concentrated sulfuric acid band** — pure freezes 283.6 K; aqueous mixtures liquid 170–610 K depending on concentration; one of only two solvents Bains 2024 rates as both functional and plausibly abundant on rocky worlds.
+
+### P3: Volatile condensation fronts + dual snow line (additive — `core/regions.py`)
+
+- **P3a — ice-line set** — add CO₂ (~70–80 K), CO (~17 K, ALMA-confirmed), N₂, and NH₃ frost lines alongside the water snow line, each via the same `sqrt(L/S_eff)` form, so the app reports a full condensation-front family.
+- **P3b — front temperature annotations** — display each front's condensation temperature beside its AU value.
+- **P3c — dual water snow line** — emit both the formation-era line (~170 K / 2.7 AU, divisor ≈ 0.14) and the present-day frost line (current 0.04), clearly labeled. The literature treats these as physically distinct (formation = accretion-heated disk midplane; present-day = stellar irradiation); a calculator should not conflate them. The √L scaling is the *irradiation* law and mis-places the formation snow line — note this.
+
+### P4: Solvent Habitable Zone Calculator — `SolventZonePanel` (GUI) + `core/` + `query.py`
+
+The high-value addition: generalize the hardcoded divisor table into a first-class engine.
+
+**`core/equations.py`** — add `compute_solvent_zone(luminosity_solar, solvent=None, t_low_k=None, t_high_k=None, albedo=0.0) -> dict`:
+- Either pick a named solvent from a built-in table (water, ammonia, methane, ethane, water-ammonia, CO₂, sulfuric acid, sulfur, hydrogen, nitrogen, HF, formamide — each with freeze/boil K + a literature citation) **or** supply a custom `t_low_k`/`t_high_k` liquid range.
+- `S_eff_edge = ((T_edge / 278.5)^4) / (1 − albedo)`; `inner_au = sqrt(luminosity / S_eff_at_T_high)`, `outer_au = sqrt(luminosity / S_eff_at_T_low)`.
+- Self-validates (`luminosity > 0`, `0 ≤ albedo < 1`, `0 < t_low < t_high`) and returns `{"error": str}` on bad input — the Phase H contract.
+- Returns `{solvent, t_low_k, t_high_k, albedo, luminosity_solar, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, citation}`.
+
+**GUI** — `SolventZonePanel` (pure math, no `DiagramToggleMixin` initially; stretch: a ring-diagram tab reusing `make_alt_hz_canvas`): luminosity `QLineEdit`, solvent `QComboBox` (+ "Custom" revealing two temperature fields), optional albedo. Mirrors the `LuminosityPanel` pattern.
+**`query.py`** — `solvent-zone` subcommand (Phase H/N conventions: argparse exit 2 / `{"error"}` exit 1 / dict exit 0).
+
+### P5: Ice-Line Calculator — `IceLineCalculatorPanel` (GUI) + `core/` + `query.py`
+
+Standalone version of P3: input luminosity, output water (both definitions) + CO₂/CO/N₂/NH₃ front distances with temperature annotations and the formation-vs-present-day toggle. Backed by `compute_ice_lines(luminosity_solar) -> dict`; `query.py ice-lines` subcommand. Pure math.
+
+### P6: Solvent Reference Table — `SolventReferencePanel` (GUI, static display)
+
+A static "Alternative Solvents for Life" reference table à la `MainSequencePanel` (opt 12): columns Solvent | Liquid Range (K, 1 atm) | Equilibrium-T Band | Abundance/Plausibility Verdict (Bains 2024 four-criterion) | Key Citation. No computation — pulls from the same built-in solvent table P4 uses. Good home for the "only water + concentrated sulfuric acid are plausibly abundant on rocky worlds; ammonia fails occurrence; CO₂ is the standout non-protonating solvent" findings.
+
+### P7: Transparency annotations (low-risk — `core/regions.py` + the diagrams)
+
+- **P7a** — show the implied equilibrium temperature (`278.5 × S_eff^0.25`) next to every alternate-HZ AU value, so users see why a band sits where it does.
+- **P7b** — per-zone citation footnotes (Bains 2024, NAS *Limits of Organic Life*, etc.).
+- **P7c** — a one-line "equilibrium, no-greenhouse" disclaimer: these bands run systematically closer-in than greenhouse-corrected HZs (the water band is 0.60–1.12 AU vs. Kopparapu's ~0.95–1.37 AU).
+
+### Remaining Steps
+
+- **`core/equations.py`** — `compute_solvent_zone`, `compute_ice_lines`, and the shared built-in solvent table (liquid ranges + citations); **`core/regions.py`** — P1 corrections, P2/P3 new bands/fronts, P7 annotations
+- **`gui/panels/`** — new file (e.g. `solvent_zones.py`) with `SolventZonePanel`, `IceLineCalculatorPanel`, `SolventReferencePanel`; export from `gui/panels/__init__.py`; add a nav category (e.g. "Solvent Zones" or fold into "Worldbuilding")
+- **`query.py`** — `solvent-zone`, `ice-lines` subcommands
+- **`docs/star-system-regions.md`** — corrected divisor list + the T_eq/citation table + dual snow-line definitions; **`docs/equations.md`** + **`docs/integration.md`** — the two new calculators + subcommands
+- **`tests/test_worldbuilding.py`** (or a new `test_solvent_zones.py`) — anchor the T_eq↔distance conversion, the P1 corrected divisors, and the ammonia/methane reference matches
+- **Suggested sequencing** — P7 (transparency, zero risk) → P4 (the reusable engine, biggest win) → P2/P3 (additions) → P1 (gated behind the maintainer keep-vs-retune decision)
+
+---
+
 ## Implementation Priority Recommendation
 
 | Phase | Effort | Value | Recommendation |
@@ -1004,4 +1100,5 @@ A small `QLineEdit` + "Find" button above the chart tabs: case-insensitive subst
 | M — GCNS Surfacing | Low | High | Low effort (reuses `compute_gcns_*` verbatim), high visibility — surfaces the only dataset with distance uncertainties |
 | N — query.py Expansion | Low | Medium | Anytime — no dependencies on G–M; pure integration-surface work over existing core functions |
 | O — Visualization Expansion | Varies (per-item S–M) | High | Mockup-gated, individually skippable items; small items (O4, O6, O9, O10, O14) are quick wins; O1/O5 carry the most wow. O8 shares the `routes` param with Phase I |
+| P — Snow Lines & Solvent Zones | Low–Medium | Med–High | Grounds + extends an existing app feature. P7/P4 are clean additions (pure math, query.py parity); P1 divisor corrections are gated on scanning the maintainer's Gillett ebook (provided as docx/pdf at build time) + a keep-vs-retune call. Independent of all other phases. |
 | **M — GCNS Surfacing** | **Low–Medium** | **High** | **Strong candidate to do early** — data is already ingested; reuses `compute_gcns_*` verbatim, so it's mostly UI. Surfaces the only major dataset with no interactive surface, and the only one with distance uncertainties. |
