@@ -78,6 +78,9 @@ gui/                 # Qt presentation layer
     search_common.py     # Phase G: SpectralClassControl, SearchPanelBase (inline drill-down tabs)
     search.py            # Phase G: StarSystemsSearchPanel (G1), HwcSearchPanel (G2),
                          #   NasaExoplanetSearchPanel (G3)
+    gcns.py              # Phase M: GcnsCensusBrowserPanel (M1), GcnsSourceLookupPanel (M2),
+                         #   GcnsSystemViewerPanel (M3), GcnsDistancePanel (M4a),
+                         #   GcnsTravelTimePanel (M4b), GcnsStarsWithinStarPanel (M4c)
   visualizations/        # Phase E: shared rendering helpers + standalone panel stubs
     __init__.py
     plot_helpers.py      # mpl_available(), make_hz_canvas(), make_orbits_canvas(),
@@ -270,6 +273,12 @@ def __getattr__(name: str):
 | `StarSystemsSearchPanel` | — (GUI-only, Phase G1) | `panels/search.py` |
 | `HwcSearchPanel` | — (GUI-only, Phase G2) | `panels/search.py` |
 | `NasaExoplanetSearchPanel` | — (GUI-only, Phase G3) | `panels/search.py` |
+| `GcnsCensusBrowserPanel` | — (GUI-only, Phase M1) | `panels/gcns.py` |
+| `GcnsSourceLookupPanel` | — (GUI-only, Phase M2) | `panels/gcns.py` |
+| `GcnsSystemViewerPanel` | — (GUI-only, Phase M3) | `panels/gcns.py` |
+| `GcnsDistancePanel` | — (GUI-only, Phase M4a) | `panels/gcns.py` |
+| `GcnsTravelTimePanel` | — (GUI-only, Phase M4b) | `panels/gcns.py` |
+| `GcnsStarsWithinStarPanel` | — (GUI-only, Phase M4c) | `panels/gcns.py` |
 
 > **Note**: `NasaAllTablesPanel` (opt 2) and `OecPanel` (opt 7) are implemented in `nasa_exoplanet.py` and `catalogs.py` respectively, but are **not exported** from `panels/__init__.py` and do not appear in the GUI nav. Both options remain fully functional in the CLI.
 
@@ -305,6 +314,60 @@ tab** pattern — new vs. the rest of the GUI, which shows one panel at a time.
   (Hypatia / diagrams come along for free). G1's `SimbadPanel` has no full-screen
   diagram toggle so it embeds cleanly; the G2/G3 targets carry their own
   Show Diagrams toggle, which operates within the detail tab.
+
+## GCNS Panels (Phase M — `panels/gcns.py`)
+
+Six **GUI-only** panels (no menu numbers) under a new **"GCNS"** nav category that
+surface the GCNS census (opt 58) — previously reachable only via `query.py`'s
+`gcns-*` subcommands. **All call the existing `core.databases.compute_gcns_*`
+functions verbatim**; the file adds no new core code. The only new `core/` code in
+Phase M is M5 (the `compute_simbad_lookup` `"gcns"` enrichment — see below).
+
+- **Dual name/id resolution model.** M2/M3/M4 panels expose **both** a name
+  `QLineEdit` (resolved via SIMBAD → Gaia id) and a raw Gaia source_id `QLineEdit`
+  (offline) per endpoint; **the id wins if both are filled**. The shared
+  `_GcnsFormPanel._endpoint()` returns `('id'|'name'|'empty'|'err', value)`, and
+  `_go(fn, kwargs, network)` branches: **any name endpoint → `run_in_background`**
+  (SIMBAD network), **all-id → synchronous instant** call. The `compute_gcns_*`
+  functions do the actual resolution internally (their `star=`/`id=`/`source_id=`
+  params), so the panels add no resolution logic. Core errors (not-in-GCNS,
+  ambiguous name, empty table) surface in the panel's red `_err` label.
+- **`GcnsCensusBrowserPanel` (M1)** and **`GcnsStarsWithinStarPanel` (M4c)** inherit
+  `(DiagramToggleMixin, ResultPanel)` and reuse the opt-18/19 map infrastructure —
+  a module-level `_gcns_map_stars(result, center=)` adapts the GCNS rows (snake_case
+  `star_name`/`spectral_type`/`light_years` + `x`/`y`/`z`) into the
+  `{name, color, ly, x, y, z}` shape, and `_add_chart_tabs(panel, stars, limit_ly)`
+  adds the labeled dark-navy **"Star Chart"** + **"Star Chart 3D"** tabs
+  (`make_star_chart_canvas` / `_build_star_chart_3d_tab`, the opts-18/19 diagrams;
+  3D with Top/Side/Perspective presets) to `_viz_tabs_widget` — the center (Sol or
+  the queried star) is the gold ★ at the origin. M1 is an **instant** local read
+  (no thread, like opt 18); M4c
+  threads only when the center is a name. The **−σ / +σ (pc)** uncertainty columns
+  (`dist_lo_pc`/`dist_hi_pc`, `—` for `missing_10mas`) are the headline — the app's
+  only distance error bar.
+- **`GcnsSourceLookupPanel` (M2)**, **`GcnsSystemViewerPanel` (M3)**,
+  **`GcnsDistancePanel` (M4a)**, **`GcnsTravelTimePanel` (M4b)** inherit the
+  `_GcnsFormPanel` scaffold (red `_err` label + a `_box` result container rebuilt
+  per run, `_kv()` for Field/Value tables). M2 renders a Bayesian-distance-with-σ
+  headline + detail (Gaia G/BP/RP kept explicitly separate from Johnson V) + a
+  resolved-system pointer when `system_id` is set, or a muted "not part of a
+  Gaia-resolved multiple system (single or unresolved)" note otherwise (so the
+  multiplicity status is explicit and agrees with the System Viewer); M3 renders
+  System Summary + Members (▶ on the queried
+  component) + Pairs; M4a/M4b render the distance / travel-time results.
+
+### M5 — opt-1 SIMBAD GCNS cross-reference
+
+`compute_simbad_lookup` gains a **non-fatal, silent** top-level `"gcns"` key
+(`core/databases.py::_simbad_gcns_block`): the Gaia id is parsed from the
+designations and looked up via `compute_gcns_by_source_id` (one indexed local read,
+no extra network); `None` when there is no Gaia id / not in GCNS / table empty.
+`SimbadPanel.render` adds a **"GCNS" tab** (after Star Properties) when
+`result["gcns"]` is present, showing the **Bayesian distance with 16th/84th
+uncertainty beside opt 1's naive 1/ϖ distance**, `distance_method`,
+`astrom_reliable_prob`, `wd_prob`, Gaia G/BP/RP, and a resolved-system pointer.
+`query.py simbad-lookup` emits the key with **no dispatcher change** (it serializes
+the core dict verbatim).
 
 ## Star Regions Panel Layout Notes
 
@@ -358,8 +421,8 @@ All canvas helpers return `(FigureCanvasQTAgg, NavigationToolbar2QT)`. Figures u
 | `make_orbits_canvas(parent, orbits, hz_zones, max_au, star_name, eeid_au)` | NASA opts 3, 6 | Keplerian orbital ellipses with HZ annulus overlay |
 | `make_star_map_canvas(parent, stars, title, xk, yk, xlabel, ylabel, bg)` | Stars Within Distance 18, 19 | 2D scatter, spectral-class colours, hover annotation; `bg` overrides figure background colour |
 | `make_star_map_3d_canvas(parent, stars, title, bg)` | Stars Within Distance 18, 19 | 3D scatter with drag-to-rotate (`azel` rotation style); returns `(canvas, toolbar, ax)` so caller can bind viewpoint preset buttons; `bg` overrides figure background colour; rectangle Zoom button removed from toolbar; scroll wheel zoom wired via `ax._zoom_data_limits()`; `toolbar.push_current()` called at creation so Home restores initial view; hover tooltip at upper-right to avoid the spectral class legend |
-| `make_star_chart_canvas(parent, stars, limit_ly)` | Stars Within Distance 18, 19 | Labeled X–Y star chart in the dark navy palette of `generate_star_map_html.py`; no title; scaled grid/major-tick/distance-ring intervals; per-star `"Name (Z=±X.XXX)"` labels with collision-nudging and a `path_effects` stroke for readability (`clip_on=True` so zoomed-in views don't render off-screen labels); center star drawn as a gold ★ at the origin (Sol for opt 18, queried star for opt 19); hover tooltip, click info box, scroll-wheel zoom around cursor; `toolbar.push_current()` seeds Home; xlim/ylim callbacks toggle label visibility based on a 15 ly half-range threshold |
-| `make_star_chart_3d_canvas(parent, stars, limit_ly)` | Stars Within Distance 18, 19 | 3D companion to `make_star_chart_canvas`: dark navy panes + grid, gold ★ center marker, spectral-class star dots, per-star `"Name (Z=±X.XXX)"` labels (zoom-driven via `xlim_changed`/`ylim_changed`/`zlim_changed` against `max((x1-x0)/2, (y1-y0)/2, (z1-z0)/2) ≤ 15 ly`); faint wireframe reference spheres at every `major_step` ly out to the limit; hover tooltip + click info (text2D pinned upper-right / lower-left); `azel` drag rotation; scroll-wheel zoom via `ax._zoom_data_limits`; rectangle Zoom removed from the toolbar; returns `(canvas, toolbar, ax)` so caller can bind viewpoint preset buttons (Top / Side / 3D Perspective) |
+| `make_star_chart_canvas(parent, stars, limit_ly)` | Stars Within Distance 18, 19 | Labeled X–Y star chart in the dark navy palette of `generate_star_map_html.py`; no title; scaled grid/major-tick/distance-ring intervals; per-star `"Name (Z=±X.XXX)"` labels anchored with a **fixed pixel offset** (`annotate(textcoords="offset points")`, so labels track their dots on zoom rather than drifting) plus screen-space collision-nudging and a `path_effects` stroke for readability (`annotation_clip=True` so zoomed-in views don't render off-screen labels); center star drawn as a gold ★ at the origin (Sol for opt 18, queried star for opt 19); hover tooltip, click info box, scroll-wheel zoom around cursor; `toolbar.push_current()` seeds Home; xlim/ylim callbacks toggle label visibility based on a 15 ly half-range threshold |
+| `make_star_chart_3d_canvas(parent, stars, limit_ly)` | Stars Within Distance 18, 19 | 3D companion to `make_star_chart_canvas`: dark navy panes + grid, gold ★ center marker, spectral-class star dots, per-star `"Name (Z=±X.XXX)"` labels **anchored at each star's exact 3D point with left/bottom alignment** (so they track the dot on rotation and zoom instead of drifting on a fixed data-space offset), zoom-driven via `xlim_changed`/`ylim_changed`/`zlim_changed` against `max((x1-x0)/2, (y1-y0)/2, (z1-z0)/2) ≤ 15 ly`; faint wireframe reference spheres at every `major_step` ly out to the limit; hover tooltip + click info (text2D pinned upper-right / lower-left); `azel` drag rotation; scroll-wheel zoom via `ax._zoom_data_limits`; rectangle Zoom removed from the toolbar; returns `(canvas, toolbar, ax)` so caller can bind viewpoint preset buttons (Top / Side / 3D Perspective) |
 | `make_system_regions_canvas(parent, data)` | Star Regions 8–10 | Concentric ring diagram (√AU scale) with zone fills + boundary labels |
 | `make_alt_hz_canvas(parent, zones, max_au, title, eeid_au)` | Star Regions 8–10 | Concentric ring diagram (⁴√AU scale) for alternate biochemistry HZ zones |
 | `make_solar_travel_canvas(parent, data, on_body_click=None)` | System Travel 22, 23 | 2D top-down (XY ecliptic) solar system map: planet dots + reference orbit circles + origin ★ + dest ■ + dashed travel path; click calls `on_body_click(body_info)` if provided, otherwise shows inline info box |
@@ -382,7 +445,7 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 
 | Panel | Viz tab(s) | Toggle mechanism |
 |---|---|---|
-| `SimbadPanel` (1) | "Star Properties", "Hypatia", "Abundance Profile" (when Hypatia data available) — inline `QTabWidget`, no Show Diagrams button | Inline (all tabs always visible) |
+| `SimbadPanel` (1) | "Star Properties", "GCNS" (when `result["gcns"]` present — Phase M5), "Hypatia", "Abundance Profile" (when Hypatia data available) — inline `QTabWidget`, no Show Diagrams button | Inline (all tabs always visible) |
 | `NasaPlanetarySystemsPanel` (3) | "Orbital Diagram", "HZ Diagram", "Abundance Profile" (when Hypatia data available) | Inline (uses `_scroll_area`) |
 | `NasaPlanetarySystemsMapPanel` | "System Map", "Orbital Diagram", "HZ Diagram", "Abundance Profile" (when Hypatia data available) | Inline (uses `_scroll_area`) |
 | `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`), "Abundance Profile" (when Hypatia data available) | `DiagramToggleMixin` |
@@ -450,3 +513,4 @@ Clicking any body (planet, origin, or destination) on the canvas calls `_show_bo
 | post-F | Complete | **GCNS** (Gaia Catalogue of Nearby Stars): opt 58 `ImportGcnsPanel` / `import_gcns_data` ingests ~331k sources into the isolated `gcns_stars` table (+ `gcns_meta`) via GAVO TAP, plus the Gaia-resolved multiples from `gcns.resolvedss` into `gcns_systems` / `gcns_system_members` / `gcns_system_pairs` (systems = connected components over the resolvedss pairs); exposed only through `query.py` (readers `gcns-within-sol`, `gcns-source`, `gcns-system`; GCNS-backed calculators `gcns-distance`, `gcns-travel-time`, `gcns-stars-within-star`) — no existing option displays it; `get_table_status()` lists GCNS Stars + GCNS Systems + GCNS Meta. See `docs/star-databases.md` (ingest) and `docs/integration.md` (query contract). |
 | G | Complete | **Interactive Search & Filtering** (GUI-only): "Search & Filter" nav category — `StarSystemsSearchPanel` (local `star_systems`), `HwcSearchPanel` (local `hwc`), `NasaExoplanetSearchPanel` (live NASA `pscomppars` TAP). Shared `SpectralClassControl` chips + refine box and inline drill-down detail tabs (`SearchPanelBase`). Core fns `search_star_systems` / `search_hwc` / `search_exoplanets` + `spectral_where` / `spectral_adql`. See `docs/star-databases.md`. |
 | H | Complete | **Worldbuilding Calculators** (GUI-only): "Worldbuilding" nav category — `RocheLimitPanel`, `TidalLockingPanel`, `HillSpherePanel`, `BinaryOrbitPanel`, `AtmosphereRetentionPanel` (pure math, no `DiagramToggleMixin`). Backed by five self-validating `core/equations.py` functions (`compute_roche_limit`, `compute_tidal_locking_time`, `compute_hill_sphere`, `compute_binary_orbit_stability`, `compute_atmosphere_retention`) also exposed as `query.py` subcommands (`roche-limit`, `tidal-locking`, `hill-sphere`, `binary-stability`, `atmosphere-retention`). See `docs/equations.md` (formulas + the two corrections) and `docs/integration.md` (query contract). |
+| M | Complete | **GCNS Interactive Surfacing** (GUI-only): new "GCNS" nav category — `GcnsCensusBrowserPanel` (M1), `GcnsSourceLookupPanel` (M2), `GcnsSystemViewerPanel` (M3), `GcnsDistancePanel` (M4a), `GcnsTravelTimePanel` (M4b), `GcnsStarsWithinStarPanel` (M4c) in `panels/gcns.py`, all reusing the existing `compute_gcns_*` readers verbatim (no new core code for M1–M4). Dual name/id input with an instant-vs-background branch; M1/M4c reuse the opt-18/19 map tabs and surface the GCNS −σ/+σ distance uncertainty. **M5**: `compute_simbad_lookup` gains a non-fatal top-level `"gcns"` key (`_simbad_gcns_block`); `SimbadPanel` shows it as a "GCNS" tab; `query.py simbad-lookup` emits it with no dispatcher change. See `PHASE_M_PLAN.md`, `docs/star-databases.md` (display surfaces), and `docs/integration.md` (the `"gcns"` key). Tests: `tests/test_simbad_gcns_enrichment.py`. |

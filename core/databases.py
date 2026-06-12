@@ -87,6 +87,31 @@ def compute_habitable_zone(st_teff, st_lum_log10=None, st_rad=None):
     ]
 
 
+def _simbad_gcns_block(designations):
+    """Optional GCNS cross-reference for a SIMBAD result (Phase M5).
+
+    Parses the Gaia EDR3/DR3 source_id from *designations* and returns the matching
+    gcns_stars row (Bayesian dist_pc + dist_lo_pc/dist_hi_pc, distance_method, Gaia
+    G/BP/RP photometry, astrom_reliable_prob, wd_prob, system_id/n_components) — the
+    same shape as gcns-source's "star". Returns None when there is no Gaia id, the id
+    is absent from GCNS, the table is empty/missing, or any error occurs: non-fatal
+    and silent, exactly like opt 1's optional HWO/Hypatia sub-sections.
+    """
+    try:
+        gaia_raw = (designations or {}).get("Gaia EDR3")
+        if not gaia_raw:
+            return None
+        m = _GCNS_GAIA_ID_RE.search(str(gaia_raw))
+        if not m:
+            return None
+        r = compute_gcns_by_source_id(int(m.group(1)))
+        if "error" in r:
+            return None
+        return r["star"]
+    except Exception:
+        return None
+
+
 def compute_simbad_lookup(star_name: str) -> dict:
     """Query SIMBAD for a star by name or designation.
 
@@ -232,7 +257,7 @@ def compute_simbad_lookup(star_name: str) -> dict:
     desig_list = [str(designations[k]) for k in keys_order if designations[k]]
     desig_str = ", ".join(desig_list) if desig_list else "N/A"
 
-    return {
+    result = {
         "main_id":      main_id,
         "ra":           ra,
         "dec":          dec,
@@ -245,6 +270,12 @@ def compute_simbad_lookup(star_name: str) -> dict:
         "designations": designations,
         "desig_str":    desig_str,
     }
+    # Phase M5: optional GCNS cross-reference (Bayesian distance + uncertainty).
+    # Non-fatal and silent — None when there is no Gaia id / the source is not in
+    # GCNS / the table is empty/missing. Lives here so query.py's simbad-lookup
+    # gains the "gcns" key for free (cmd_simbad_lookup serializes this dict verbatim).
+    result["gcns"] = _simbad_gcns_block(designations)
+    return result
 
 
 # ── NASA Exoplanet Archive helpers ────────────────────────────────────────────

@@ -39,6 +39,9 @@ from gui.panels.worldbuilding    import (RocheLimitPanel, TidalLockingPanel,
                                          AtmosphereRetentionPanel)
 from gui.panels.search           import (StarSystemsSearchPanel, HwcSearchPanel,
                                          NasaExoplanetSearchPanel)
+from gui.panels.gcns             import (GcnsCensusBrowserPanel, GcnsSourceLookupPanel,
+                                         GcnsSystemViewerPanel, GcnsDistancePanel,
+                                         GcnsTravelTimePanel, GcnsStarsWithinStarPanel)
 from gui.panels.csv_utility      import (CsvUtilityPanel, ExportStarSystemsPanel,
                                          ImportHwcPanel, ImportMissionExocatPanel,
                                          ImportMainSequencePanel, ImportSolarSystemPanel,

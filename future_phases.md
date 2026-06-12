@@ -671,7 +671,16 @@ CREATE TABLE IF NOT EXISTS hypatia_cache (
 
 ---
 
-## Phase M — GCNS Interactive Surfacing
+## Phase M — GCNS Interactive Surfacing ✅ IMPLEMENTED (2026-06-11)
+
+> **Implemented** per [`PHASE_M_PLAN.md`](PHASE_M_PLAN.md): six GUI-only panels in
+> `gui/panels/gcns.py` under a new "GCNS" nav category (all reusing the existing
+> `compute_gcns_*` readers verbatim — no new core code for M1–M4), plus **M5** —
+> a non-fatal top-level `"gcns"` key on `core.databases.compute_simbad_lookup`
+> (`_simbad_gcns_block`) rendered as a "GCNS" tab in `SimbadPanel` and carried for
+> free by `query.py simbad-lookup`. Tests: `tests/test_simbad_gcns_enrichment.py`.
+> Docs updated in `docs/gui-architecture.md`, `docs/star-databases.md`,
+> `docs/integration.md`. Companion mockup: [`mockups/phase-m.html`](mockups/phase-m.html).
 
 **New panels (GUI-only, no menu numbers)**: `GcnsCensusBrowserPanel`, `GcnsSourceLookupPanel`, `GcnsSystemViewerPanel`, plus `GcnsDistancePanel`, `GcnsTravelTimePanel`, `GcnsStarsWithinStarPanel`
 **Existing options touched**: opt 1 (SIMBAD Lookup) gains a GCNS cross-reference block; opts 18/19 star-map viz infrastructure reused by M1

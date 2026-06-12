@@ -19,6 +19,14 @@ NAVIGATION = [
         ("HWC Planet Search",          "HwcSearchPanel"),
         ("NASA Exoplanet Quick Search","NasaExoplanetSearchPanel"),
     ]),
+    ("GCNS", [
+        ("GCNS Census Browser",         "GcnsCensusBrowserPanel"),
+        ("GCNS Source Lookup",          "GcnsSourceLookupPanel"),
+        ("Resolved System Viewer",      "GcnsSystemViewerPanel"),
+        ("GCNS Distance Between 2 Stars","GcnsDistancePanel"),
+        ("GCNS Travel Time",            "GcnsTravelTimePanel"),
+        ("GCNS Stars Within a Star",    "GcnsStarsWithinStarPanel"),
+    ]),
     ("Star System Regions", [
         ("Auto (SIMBAD)",  "StarRegionsAutoPanel"),
         ("Semi-Manual",    "StarRegionsSemiManualPanel"),

@@ -29,6 +29,7 @@ Tests live in `tests/`. The bulk are **offline** and need no network or Qt:
 - `test_worldbuilding.py` — the Phase H worldbuilding calculators (Roche limit, tidal-locking timescale, Hill sphere, binary orbit stability, atmosphere retention) in `core/equations.py`; anchored to reference values and locks the two formula corrections (rigid Roche coeff 1.26, binary P-type `+4.12μ`).
 - `test_db_backups.py` — the opt-50 backup pruner (`core.db.prune_star_systems_backups`).
 - `test_gcns.py` — GCNS ingest/query path with the GAVO TAP fetch mocked.
+- `test_simbad_gcns_enrichment.py` — the Phase M5 `compute_simbad_lookup` `"gcns"` cross-reference (non-fatal/silent when no Gaia id / not in GCNS / table empty); SIMBAD mocked, seeded temp `gcns_stars`.
 - `test_hypatia_elements.py`, `test_parse_composition.py`, `test_prepare_abundance_profile.py`, `test_gui_hypatia.py` — Hypatia element table, composition parsing, and abundance-profile prep.
 
 The `*_live.py` files (`test_gcns_live.py`, `test_hypatia_live.py`) hit the **live network** and are gated by `tests/_netcheck.py` via `@unittest.skipUnless(...)` (skipped automatically when GAVO/Hypatia is unreachable). Tests that touch the SQLite store never mutate `data/space_app.db`: in-process tests monkeypatch `core.db._DB_PATH` to a tmp file with auto-seeding disabled (pattern in `tests/test_gcns.py`, `tests/test_regions.py`, `tests/test_db_backups.py`), and the `query.py` subprocess tests pass a throwaway DB via the `SPACE_APP_DB` environment variable.

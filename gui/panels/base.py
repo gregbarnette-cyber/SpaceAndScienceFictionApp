@@ -201,20 +201,21 @@ class ResultPanel(QWidget):
         callback    = on_result   if on_result   is not None else self.render
         progress_cb = on_progress if on_progress is not None else self.set_status
 
-        def _safe_callback(result, _cb=callback):
-            # The receiving panel may have been reset()/deleted while the worker
-            # was still running (e.g. an embedded detail panel torn down on a
-            # nav-away). Delivering to a deleted Qt object raises RuntimeError —
-            # swallow it rather than crash the event loop.
-            try:
-                _cb(result)
-            except RuntimeError:
-                pass
+        # Stash the per-call callback on the worker so the delivery slot can
+        # recover it via self.sender() — this keeps chained/concurrent workers
+        # (e.g. SIMBAD → catalog) from clobbering one another.
+        worker._on_result_cb = callback
 
         thread.started.connect(worker.run)
-        # QueuedConnection ensures callback and error handler are always
-        # delivered on the main thread.
-        worker.finished.connect(_safe_callback, Qt.ConnectionType.QueuedConnection)
+        # Deliver the result through a BOUND METHOD of `self` (a QObject that
+        # lives on the main thread). A queued connection runs its slot in the
+        # receiver object's thread; a context-less free function has no QObject
+        # affinity and Qt would instead run it on the *worker* thread — building
+        # QWidgets / matplotlib canvases off the main thread, which triggers
+        # "QObject::setParent: ... different thread" warnings and can freeze the
+        # UI. Routing through self._deliver_bg_result guarantees main-thread
+        # delivery.
+        worker.finished.connect(self._deliver_bg_result, Qt.ConnectionType.QueuedConnection)
         worker.finished.connect(thread.quit)
         worker.error.connect(self._on_error,    Qt.ConnectionType.QueuedConnection)
         worker.progress.connect(progress_cb,    Qt.ConnectionType.QueuedConnection)
@@ -230,6 +231,28 @@ class ResultPanel(QWidget):
         )
 
         thread.start()
+
+    def _deliver_bg_result(self, result):
+        """Main-thread slot that runs the per-call callback for a finished worker.
+
+        Connected to worker.finished as a bound method of this panel so the queued
+        connection delivers here on the main thread (see run_in_background). The
+        callback is recovered from the emitting worker via sender(), so concurrent
+        workers don't clobber each other.
+        """
+        worker = self.sender()
+        cb = getattr(worker, "_on_result_cb", None) if worker is not None else None
+        if cb is None:
+            cb = getattr(self, "render", None)
+        if cb is None:
+            return
+        # The receiving panel (or an embedded detail panel) may have been
+        # reset()/deleted while the worker was still running; delivering to a
+        # deleted Qt object raises RuntimeError — swallow it rather than crash.
+        try:
+            cb(result)
+        except RuntimeError:
+            pass
 
     def _on_error(self, msg: str):
         self.set_status(f"Error: {msg}")

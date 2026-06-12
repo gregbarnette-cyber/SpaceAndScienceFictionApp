@@ -919,15 +919,13 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float):
     if is_center_origin:
         ax.scatter([0], [0], c=_SC_SOL, s=140, marker="*",
                    edgecolors="#fff8a0", linewidths=1.0, zorder=6)
-        # Label sizing reference: use min(limit_ly, LABEL_MAX_LY) so offsets
-        # stay reasonable at the zoom level where the label is actually shown.
-        _ref_ly = min(limit_ly, LABEL_MAX_LY)
-        sol_label = ax.text(
-            _ref_ly * 0.012, _ref_ly * 0.012,
+        # Fixed PIXEL offset keeps the label glued to the ★ at any zoom level
+        # (a data-space offset drifts off the marker as you zoom in).
+        sol_label = ax.annotate(
             f"{center['name']} (Z={center.get('z', 0.0):+.3f})",
+            xy=(0, 0), xytext=(6.0, 5.0), textcoords="offset points",
             color=_SC_SOL, fontsize=9, fontweight="600",
-            ha="left", va="bottom", zorder=7,
-            clip_on=True,
+            ha="left", va="bottom", zorder=7, annotation_clip=True,
         )
         sol_label.set_visible(initial_show_labels)
         body_stars = plotted[1:]
@@ -944,21 +942,18 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float):
                     edgecolors="#000000", linewidths=0.4,
                     picker=True, pickradius=5, zorder=5)
 
-    # Per-star labels "Name (Z=±X.XXX)" with collision-nudging.
-    # Labels are always created — visibility is governed by the xlim/ylim
-    # callback below so they appear automatically when the user zooms in
-    # below LABEL_MAX_LY and disappear on zoom-out / Home.
-    # Offsets use min(limit_ly, LABEL_MAX_LY) so spacing is reasonable at the
-    # zoom level where they actually appear (avoids huge gaps at large limits).
-    _ref_ly = min(limit_ly, LABEL_MAX_LY)
-    label_dx = _ref_ly * 0.012
-    label_dy = _ref_ly * 0.012
-    nudge    = _ref_ly * 0.022
-    nudge_x_tol = _ref_ly * 0.18
-    nudge_y_tol = _ref_ly * 0.022
+    # Per-star labels "Name (Z=±X.XXX)". Anchored to each star with a fixed
+    # PIXEL offset (textcoords="offset points") so the label stays glued to its
+    # dot at any zoom level — a data-space offset drifts apart on zoom-in.
+    # Collision-nudging pushes initially-overlapping labels downward in screen
+    # space (points). Visibility is governed by the xlim/ylim callback below
+    # (shown when zoomed in past LABEL_MAX_LY, hidden on zoom-out / Home).
+    LABEL_DX_PT, LABEL_DY_PT, NUDGE_PT = 6.0, 5.0, 11.0
+    nudge_x_tol = limit_ly * 0.10   # data-space proximity ⇒ on-screen overlap
+    nudge_y_tol = limit_ly * 0.04
 
     star_labels = []  # collected for the zoom-callback to toggle
-    placed = []       # (cx, cy) of already-placed label anchors
+    placed = []       # (x, y) data anchors already placed
     for s, x, y in zip(body_stars, body_xs, body_ys):
         nm = s["name"]
         for prefix in ("NAME ", "* ", "V* "):
@@ -967,17 +962,18 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float):
                 break
         z = s.get("z", 0.0)
         lbl = f"{nm} (Z={z:+.3f})"
-        lx, ly_ = x + label_dx, y + label_dy
+        dy_pt = LABEL_DY_PT
         for px, py in placed:
-            if abs(lx - px) < nudge_x_tol and abs(ly_ - py) < nudge_y_tol:
-                ly_ -= nudge
-        placed.append((lx, ly_))
-        txt = ax.text(lx, ly_, lbl, color=_SC_STAR_LBL,
-                      fontsize=7, ha="left", va="bottom", zorder=8,
-                      clip_on=True)
-        txt.set_path_effects([
-            _path_stroke(linewidth=2.5, color=_SC_PLOT_BG)
-        ])
+            if abs(x - px) < nudge_x_tol and abs(y - py) < nudge_y_tol:
+                dy_pt -= NUDGE_PT
+        placed.append((x, y))
+        txt = ax.annotate(
+            lbl, xy=(x, y), xytext=(LABEL_DX_PT, dy_pt),
+            textcoords="offset points",
+            color=_SC_STAR_LBL, fontsize=7, ha="left", va="bottom",
+            zorder=8, annotation_clip=True,
+        )
+        txt.set_path_effects([_path_stroke(linewidth=2.5, color=_SC_PLOT_BG)])
         txt.set_visible(initial_show_labels)
         star_labels.append(txt)
 
@@ -1207,11 +1203,14 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float):
         ax.scatter([0], [0], [0], c=_SC_SOL, s=160, marker="*",
                    edgecolors="#fff8a0", linewidths=1.0, zorder=6,
                    depthshade=False)
-        _ref_ly = min(limit_ly, LABEL_MAX_LY)
+        # Anchor the label at the ★'s exact point (left/bottom aligned) so it
+        # tracks the marker on rotation and zoom instead of drifting on a fixed
+        # data-space offset.
         sol_label = ax.text(
-            _ref_ly * 0.02, _ref_ly * 0.02, _ref_ly * 0.02,
+            0.0, 0.0, 0.0,
             f"{center['name']} (Z={center.get('z', 0.0):+.3f})",
             color=_SC_SOL, fontsize=9, fontweight="600", zorder=7,
+            ha="left", va="bottom",
         )
         sol_label.set_visible(initial_show_labels)
         body_stars = plotted[1:]
@@ -1226,9 +1225,10 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float):
                     edgecolors="#000000", linewidths=0.4, alpha=0.92,
                     depthshade=True, picker=True, pickradius=5, zorder=5)
 
-    # Per-star labels — always created, visibility toggled by zoom callback.
-    _ref_ly = min(limit_ly, LABEL_MAX_LY)
-    label_offset = _ref_ly * 0.018
+    # Per-star labels anchored at each star's exact 3D point (left/bottom
+    # aligned) so the label tracks its dot precisely on rotation and zoom — a
+    # fixed data-space offset drifts off the dot when the view changes.
+    # Visibility is toggled by the zoom callback.
     star_labels = []
     for s, x, y, z in zip(body_stars, body_xs, body_ys, body_zs):
         nm = s["name"]
@@ -1237,8 +1237,8 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float):
                 nm = nm[len(prefix):]
                 break
         lbl = f"{nm} (Z={s.get('z', 0.0):+.3f})"
-        txt = ax.text(x + label_offset, y + label_offset, z + label_offset,
-                      lbl, color=_SC_STAR_LBL, fontsize=7, zorder=8)
+        txt = ax.text(x, y, z, lbl, color=_SC_STAR_LBL, fontsize=7, zorder=8,
+                      ha="left", va="bottom")
         txt.set_path_effects([_path_stroke(linewidth=2.0, color=_SC_PLOT_BG)])
         txt.set_visible(initial_show_labels)
         star_labels.append(txt)

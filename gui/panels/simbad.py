@@ -20,6 +20,81 @@ def _simbad_with_hypatia(name: str) -> dict:
     return result
 
 
+def _fmtf(v, dp):
+    return f"{v:.{dp}f}" if isinstance(v, (int, float)) else "N/A"
+
+
+def _build_gcns_tab(gcns: dict, simbad: dict) -> QWidget:
+    """Phase M5: a GCNS cross-reference tab — Bayesian distance + 16th/84th
+    uncertainty shown beside opt 1's naive 1/ϖ parallax distance."""
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(6, 6, 6, 6)
+    lay.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    # Headline: naive 1/ϖ vs GCNS Bayesian + σ
+    naive_pc = simbad.get("parsecs")
+    naive_ly = simbad.get("ly")
+    bay_pc = gcns.get("dist_pc")
+    lo, hi = gcns.get("dist_lo_pc"), gcns.get("dist_hi_pc")
+    bay_ly = gcns.get("light_years")
+    sig = (f" <span style='color:#1f6f8b'>({_fmtf(lo, 4)} … {_fmtf(hi, 4)})</span>"
+           if lo is not None and hi is not None else
+           " <span style='color:#888'>(1/ϖ point value — no error bar)</span>")
+    headline = QLabel(
+        f"<table cellpadding='4'>"
+        f"<tr><td style='color:#777'>opt 1 naive 1/ϖ distance</td>"
+        f"<td><b>{_fmtf(naive_pc, 4)} pc</b> &nbsp; {_fmtf(naive_ly, 4)} ly "
+        f"<span style='color:#888'>· point estimate</span></td></tr>"
+        f"<tr><td style='color:#1d6b41'>GCNS Bayesian distance</td>"
+        f"<td><b>{_fmtf(bay_pc, 4)} pc</b>{sig} &nbsp; {_fmtf(bay_ly, 4)} ly "
+        f"<span style='color:#3a6b48'>· 16th/84th-percentile uncertainty</span></td></tr>"
+        f"</table>"
+    )
+    headline.setTextFormat(Qt.TextFormat.RichText)
+    lay.addWidget(headline)
+
+    g, bp, rp = (gcns.get("phot_g_mean_mag"), gcns.get("phot_bp_mean_mag"),
+                 gcns.get("phot_rp_mean_mag"))
+    phot = ("N/A" if g is None else
+            f"{_fmtf(g, 2)} / {_fmtf(bp, 2)} / {_fmtf(rp, 2)}  (Gaia bands — NOT Johnson V)")
+    method = {"gcns_bayesian": "Bayesian",
+              "gcns_missing_plx_inversion": "1/ϖ inversion"}.get(
+                  gcns.get("distance_method"), gcns.get("distance_method") or "N/A")
+    detail = [
+        ("Gaia source_id", gcns.get("gaia_source_id")),
+        ("Distance method", method),
+        ("Astrometry reliable prob.", _fmtf(gcns.get("astrom_reliable_prob"), 4)),
+        ("White-dwarf prob.", _fmtf(gcns.get("wd_prob"), 4)),
+        ("Gaia G / BP / RP", phot),
+        ("Radial velocity (km/s)", _fmtf(gcns.get("rv_kms"), 1)),
+    ]
+    from PySide6.QtWidgets import QTableView
+    from PySide6.QtGui import QStandardItemModel, QStandardItem
+    model = QStandardItemModel(len(detail), 2)
+    model.setHorizontalHeaderLabels(["Field", "Value"])
+    for r, (k, v) in enumerate(detail):
+        ki = QStandardItem(str(k)); ki.setEditable(False)
+        vi = QStandardItem(str(v) if v is not None else "N/A"); vi.setEditable(False)
+        model.setItem(r, 0, ki); model.setItem(r, 1, vi)
+    view = QTableView()
+    view.setModel(model)
+    view.setSortingEnabled(False)
+    view.horizontalHeader().setStretchLastSection(True)
+    view.resizeColumnsToContents()
+    lay.addWidget(view)
+
+    if gcns.get("system_id") is not None:
+        ptr = QLabel(f"▶ Part of a resolved <b>{gcns.get('n_components')}-component</b> "
+                     "system — open the Resolved System Viewer (GCNS category).")
+        ptr.setWordWrap(True)
+        ptr.setStyleSheet("color:#23517d; background:#eaf3fb; border:1px solid #c3ddf2; "
+                          "border-radius:4px; padding:6px 9px;")
+        lay.addWidget(ptr)
+
+    return w
+
+
 class SimbadPanel(ResultPanel):
     """SIMBAD star lookup panel (option 1).
 
@@ -105,6 +180,11 @@ class SimbadPanel(ResultPanel):
         # ── Assemble tab widget ───────────────────────────────────────────────
         tabs = QTabWidget()
         tabs.addTab(props_widget, "Star Properties")
+
+        # Phase M5: GCNS cross-reference (silent when absent — no Gaia id / not in GCNS).
+        gcns = result.get("gcns")
+        if gcns is not None:
+            tabs.addTab(_build_gcns_tab(gcns, result), "GCNS")
 
         hypatia = result.get("hypatia")
         if hypatia is not None:

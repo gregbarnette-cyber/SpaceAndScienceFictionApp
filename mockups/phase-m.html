@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase M — GCNS Interactive Surfacing (Mockup)</title>
+<style>
+  :root{
+    --bg:#f0f0f0; --panel:#ffffff; --border:#b8b8b8; --border-soft:#d8d8d8;
+    --text:#222; --muted:#6a6a6a; --accent:#4a90d9; --accent-d:#3a73ad;
+    --head:#e9eef5; --zebra:#f7f9fc; --good:#2e8b57; --warn:#b8860b; --bad:#b03030; --chip:#eef2f7;
+    --sigma:#1f6f8b; --space:#0b1020;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+       font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}
+  .topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600}
+  .notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px}
+  .notice b{color:#4d4109}
+  .app{flex:1;display:flex;min-height:0}
+  .nav{width:250px;min-width:250px;background:#fafafa;border-right:1px solid var(--border);overflow:auto;padding:6px 0}
+  .nav .cat{padding:7px 12px 3px;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px}
+  .nav .cat.new{color:var(--accent)}
+  .nav .new-badge{background:var(--accent);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .nav .item{padding:5px 12px 5px 24px;color:#555;border-left:3px solid transparent}
+  .nav .item.muted{color:#bbb}
+  .nav .item.live{color:#1f3a57;cursor:pointer}
+  .nav .item.live:hover{background:#eef4fb}
+  .nav .item.active{background:#e2eefb;border-left-color:var(--accent);color:#13314e;font-weight:600}
+  .content{flex:1;overflow:auto;padding:18px 22px}
+  .panel{display:none}
+  .panel.active{display:block}
+  h2.title{margin:0 0 2px;font-size:18px}
+  .sub{color:var(--muted);margin:0 0 12px;font-size:12.5px;max-width:880px;line-height:1.45}
+  details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--border-soft);border-radius:5px;padding:6px 10px;max-width:880px}
+  details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+  details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+  details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.55}
+  /* form */
+  .form{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:14px 16px;max-width:760px;margin-bottom:14px}
+  .field{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .field label{font-size:12.5px;color:#444;width:215px;text-align:right;font-weight:500}
+  .field input[type=text]{height:28px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff;width:200px}
+  .field select{height:28px;border:1px solid var(--border);border-radius:4px;font-size:12.5px;background:#fff}
+  .field .unit{color:#999;font-size:11px}
+  .field.optional label{color:#888;font-style:italic}
+  .endpoint{border:1px solid var(--border-soft);border-radius:5px;padding:8px 12px 2px;margin:0 0 10px;background:#fcfdff}
+  .endpoint .ep-head{font-size:11px;color:#777;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.3px}
+  .orsep{font-size:11px;color:#aaa;width:215px;text-align:right;font-style:italic}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:12px}
+  button.btn{height:30px;padding:0 16px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+  button.btn:hover{background:var(--accent-d)}
+  button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+  button.ghost:hover{background:#f0f0f0}
+  .modepill{font-size:10.5px;font-weight:700;border-radius:10px;padding:1px 9px;margin-left:6px}
+  .modepill.net{background:#fde9d0;color:#8a5316}
+  .modepill.local{background:#d8efe0;color:#1d6b41}
+  .err{color:var(--bad);font-size:12px;margin:8px 0;display:none;font-weight:600}
+  .count{font-size:13px;font-weight:600;margin:10px 0 4px;display:none}
+  .secthead{font-size:12.5px;font-weight:700;color:#33506e;margin:14px 0 4px}
+  .tablewrap{border:1px solid var(--border);border-radius:6px;overflow:auto;max-width:1180px;background:#fff;margin-top:6px}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th{background:var(--head);text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;font-size:11.5px}
+  td{padding:6px 10px;border-bottom:1px solid #eee;white-space:nowrap}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:nth-child(even) td{background:var(--zebra)}
+  th.sig,td.sig{color:var(--sigma);font-weight:600}
+  td.qmark{color:var(--accent-d);font-weight:700}
+  .pill{font-size:11px;border-radius:9px;padding:0 8px;font-weight:600}
+  .pill.y{background:#d8efe0;color:#1d6b41}
+  .pill.n{background:#eee;color:#888}
+  .pointer{display:none;font-size:12.5px;margin:10px 0;padding:8px 11px;background:#eaf3fb;border:1px solid #c3ddf2;border-radius:5px;color:#23517d}
+  .headline{display:none;background:#f4f9f4;border:1px solid #cfe6cf;border-radius:6px;padding:10px 13px;margin:8px 0;max-width:760px}
+  .headline .hl-row{display:flex;gap:16px;flex-wrap:wrap}
+  .headline .hl-box{flex:1;min-width:240px}
+  .headline .hl-k{font-size:11px;color:#777;text-transform:uppercase;letter-spacing:.3px}
+  .headline .hl-v{font-size:15px;font-weight:700;color:#1d4e2e}
+  .headline .hl-naive .hl-v{color:#555}
+  .headline .sig{color:var(--sigma)}
+  .mapwrap{display:none;margin-top:10px}
+  .mapwrap svg{background:var(--space);border:1px solid #233; border-radius:6px}
+  .note{font-size:11.5px;color:#777;margin-top:10px;max-width:880px;line-height:1.45;display:none}
+  .mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:7px 11px;border-radius:5px;font-size:12px;margin:12px 0;max-width:880px;line-height:1.45}
+  /* tabs (M5) */
+  .tabbar{display:flex;gap:2px;margin:10px 0 0;border-bottom:1px solid var(--border)}
+  .tabbtn{padding:6px 14px;font-size:12.5px;border:1px solid var(--border);border-bottom:none;background:#eef1f5;color:#556;border-radius:5px 5px 0 0;cursor:pointer}
+  .tabbtn.active{background:#fff;color:#13314e;font-weight:600;position:relative;top:1px}
+  .tabbody{display:none;padding-top:10px}
+  .tabbody.active{display:block}
+  .gcnsbadge{background:#1f6f8b;color:#fff;font-size:9px;border-radius:3px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="topbar">
+  Space &amp; Science Fiction App <span style="color:#888">— GUI mockup</span>
+  <span class="tag">Phase M &middot; GCNS Interactive Surfacing</span>
+</div>
+<div class="notice">
+  <b>Interactive mockup for feedback — not the real app.</b>
+  The panels run on a small <b>representative sample</b> of nearby GCNS stars (client-side JS). The real panels
+  read the local <code>gcns_stars</code> / <code>gcns_systems</code> tables via the existing
+  <code>compute_gcns_*</code> functions (opt 58 ingests ~331k sources). The headline feature —
+  <b>Bayesian distances with −σ/+σ uncertainty</b> — is shown live; no other feature in the app carries a distance error bar.
+</div>
+
+<div class="app">
+  <div class="nav">
+    <div class="cat">Star Databases</div>
+    <div class="item live" data-panel="m5" onclick="showPanel('m5')">SIMBAD Lookup <span class="gcnsbadge">+GCNS</span></div>
+    <div class="item muted">NASA Exoplanet Archive…</div>
+    <div class="item muted">Habitable Worlds Catalog</div>
+    <div class="cat new">GCNS <span class="new-badge">NEW</span></div>
+    <div class="item live active" data-panel="m1" onclick="showPanel('m1')">GCNS Census Browser</div>
+    <div class="item live" data-panel="m2" onclick="showPanel('m2')">GCNS Source Lookup</div>
+    <div class="item live" data-panel="m3" onclick="showPanel('m3')">Resolved System Viewer</div>
+    <div class="item live" data-panel="m4a" onclick="showPanel('m4a')">GCNS Distance (2 Stars)</div>
+    <div class="item live" data-panel="m4b" onclick="showPanel('m4b')">GCNS Travel Time</div>
+    <div class="item live" data-panel="m4c" onclick="showPanel('m4c')">GCNS Stars Within a Star</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ===== M1 Census ===== -->
+    <div class="panel active" id="panel-m1">
+      <h2 class="title">GCNS Census Browser <span class="modepill local">LOCAL · instant</span></h2>
+      <p class="sub">All GCNS sources within N light years of Sol — an instant local-DB read (no SIMBAD, no thread).
+        The <b>−σ / +σ</b> columns are the headline: GCNS Bayesian distance uncertainty, nothing else in the app has it.
+        <code>missing_10mas</code> rows (e.g. Alpha Cen A/B — Gaia missed them) show a 1/ϖ point value with no error bar.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li>Backed by <code>compute_gcns_within_sol(limit_ly)</code> → <code>{limit_ly, count, snapshot_date, gcns_version, stars[]}</code>.</li>
+          <li>Panel <code>GcnsCensusBrowserPanel(DiagramToggleMixin, ResultPanel)</code>; reuses the opt 18/19 map tabs via the heliocentric <code>x/y/z</code> already returned.</li>
+          <li>Optional viz: radial distance-uncertainty indicator from <code>dist_lo_pc/dist_hi_pc</code> in <code>make_star_map_canvas</code>.</li>
+        </ul>
+      </details>
+      <div class="form">
+        <div class="field"><label>Distance from Sol (ly):</label><input type="text" id="m1_ly" value="9"></div>
+        <div class="field optional"><label>Show distance uncertainty:</label><input type="checkbox" id="m1_unc" style="width:auto" onchange="runM1()"> <span class="unit">radial ±σ on the map</span></div>
+        <div class="actions"><button class="btn" onclick="runM1()">Search</button>
+          <button class="ghost btn" onclick="document.getElementById('m1_ly').value='';clearM1()">Clear</button>
+          <button class="ghost btn" onclick="toggleMap('m1')">Show / Hide Map</button></div>
+        <div class="err" id="m1_err"></div>
+      </div>
+      <div class="count" id="m1_count"></div>
+      <div class="tablewrap" id="m1_out" style="display:none"></div>
+      <div class="mapwrap" id="m1_map"></div>
+      <div class="note" id="m1_snap" style="display:block"></div>
+    </div>
+
+    <!-- ===== M2 Source Lookup ===== -->
+    <div class="panel" id="panel-m2">
+      <h2 class="title">GCNS Source Lookup <span class="modepill" id="m2_mode"></span></h2>
+      <p class="sub">Full detail for one GCNS source. Enter a <b>name</b> (resolved via SIMBAD → Gaia id) or a raw
+        <b>Gaia source_id</b> (offline, instant). If both are filled, the id wins.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li>id path → <code>compute_gcns_by_source_id(id)</code> (instant); name path → <code>_resolve_gcns_row(star=…)</code> (SIMBAD → id → name fallback for <code>missing_10mas</code>).</li>
+          <li>Gaia <b>G/BP/RP</b> kept explicitly separate from Johnson V (<code>app_magnitude</code>). Spectral type from SIMBAD cross-match; never fabricated.</li>
+        </ul>
+      </details>
+      <div class="form">
+        <div class="endpoint">
+          <div class="ep-head">Resolve by name OR Gaia source_id (id wins)</div>
+          <div class="field"><label>Star name:</label><input type="text" id="m2_name" value="Barnard's Star" oninput="syncMode('m2')"></div>
+          <div class="field optional"><label>Gaia source_id:</label><input type="text" id="m2_id" placeholder="e.g. 4472832130942575872" oninput="syncMode('m2')"></div>
+        </div>
+        <div class="actions"><button class="btn" onclick="runM2()">Look Up</button>
+          <button class="ghost btn" onclick="clearOut('m2')">Clear</button></div>
+        <div class="err" id="m2_err"></div>
+      </div>
+      <div class="tablewrap" id="m2_out" style="display:none"></div>
+      <div class="pointer" id="m2_ptr"></div>
+    </div>
+
+    <!-- ===== M3 System Viewer ===== -->
+    <div class="panel" id="panel-m3">
+      <h2 class="title">Resolved Multiple-Star System Viewer <span class="modepill" id="m3_mode"></span></h2>
+      <p class="sub">The Gaia-resolved system containing a source (from <code>gcns.resolvedss</code>; systems are connected
+        components over the resolved pairs). Pass any component — the whole system is returned. A single/unresolved star
+        returns a clean <i>"not Gaia-resolved (not necessarily single)"</i> message.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li>Backed by <code>compute_gcns_system(source_id)</code> → <code>{system_id, n_components, n_pairs, any_bin/any_bound/all_bound, …, members[], pairs[]}</code>.</li>
+          <li>Members not present in <code>gcns_stars</code> are retained (flagged), never dropped. ▶ marks the queried component.</li>
+          <li>Try: <b>61 Cygni A</b> or <b>Sirius A</b> (resolved pairs) vs. <b>Proxima Centauri</b> (single → error).</li>
+        </ul>
+      </details>
+      <div class="form">
+        <div class="endpoint">
+          <div class="ep-head">Resolve by name OR Gaia source_id</div>
+          <div class="field"><label>Star name:</label><input type="text" id="m3_name" value="61 Cygni A" oninput="syncMode('m3')"></div>
+          <div class="field optional"><label>Gaia source_id:</label><input type="text" id="m3_id" placeholder="any component's id" oninput="syncMode('m3')"></div>
+        </div>
+        <div class="actions"><button class="btn" onclick="runM3()">View System</button>
+          <button class="ghost btn" onclick="clearOut3()">Clear</button></div>
+        <div class="err" id="m3_err"></div>
+      </div>
+      <div id="m3_summary" style="display:none">
+        <div class="secthead">System Summary</div>
+        <div class="tablewrap" id="m3_sum_out"></div>
+        <div class="secthead">Members</div>
+        <div class="tablewrap" id="m3_mem_out"></div>
+        <div class="secthead">Resolved Pairs</div>
+        <div class="tablewrap" id="m3_pair_out"></div>
+      </div>
+    </div>
+
+    <!-- ===== M4a Distance ===== -->
+    <div class="panel" id="panel-m4a">
+      <h2 class="title">GCNS Distance Between 2 Stars <span class="modepill" id="m4a_mode"></span></h2>
+      <p class="sub">3D Euclidean distance over the <b>GCNS Bayesian-distance census</b> (with uncertainties), instead of the
+        SIMBAD <code>star_systems</code> table. Each endpoint accepts a name or a Gaia source_id.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul><li><code>compute_gcns_distance(star1,id1,star2,id2)</code> → <code>{star1_info, star2_info, distance_ly, distance_au, …}</code>; info blocks carry <code>distance_method</code> + <code>dist_lo_pc/dist_hi_pc</code>.</li></ul>
+      </details>
+      <div class="form">
+        <div class="endpoint"><div class="ep-head">Star 1</div>
+          <div class="field"><label>Name:</label><input type="text" id="m4a_n1" value="Proxima Centauri" oninput="syncMode('m4a')"></div>
+          <div class="field optional"><label>or Gaia source_id:</label><input type="text" id="m4a_i1" oninput="syncMode('m4a')"></div></div>
+        <div class="endpoint"><div class="ep-head">Star 2</div>
+          <div class="field"><label>Name:</label><input type="text" id="m4a_n2" value="Barnard's Star" oninput="syncMode('m4a')"></div>
+          <div class="field optional"><label>or Gaia source_id:</label><input type="text" id="m4a_i2" oninput="syncMode('m4a')"></div></div>
+        <div class="actions"><button class="btn" onclick="runM4a()">Compute</button>
+          <button class="ghost btn" onclick="clearOut('m4a')">Clear</button></div>
+        <div class="err" id="m4a_err"></div>
+      </div>
+      <div class="headline" id="m4a_hl"></div>
+      <div class="tablewrap" id="m4a_out" style="display:none"></div>
+    </div>
+
+    <!-- ===== M4b Travel Time ===== -->
+    <div class="panel" id="panel-m4b">
+      <h2 class="title">GCNS Travel Time <span class="modepill" id="m4b_mode"></span></h2>
+      <p class="sub">FTL travel time between two GCNS stars at a chosen velocity.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul><li><code>compute_gcns_travel_time(star1,id1,star2,id2,ly_hr,times_c)</code> → <code>{distance_ly, ly_hr, times_c, total_hours, travel_time_str, …}</code>.</li></ul>
+      </details>
+      <div class="form">
+        <div class="endpoint"><div class="ep-head">Origin</div>
+          <div class="field"><label>Name:</label><input type="text" id="m4b_n1" value="Proxima Centauri" oninput="syncMode('m4b')"></div>
+          <div class="field optional"><label>or Gaia source_id:</label><input type="text" id="m4b_i1" oninput="syncMode('m4b')"></div></div>
+        <div class="endpoint"><div class="ep-head">Destination</div>
+          <div class="field"><label>Name:</label><input type="text" id="m4b_n2" value="61 Cygni A" oninput="syncMode('m4b')"></div>
+          <div class="field optional"><label>or Gaia source_id:</label><input type="text" id="m4b_i2" oninput="syncMode('m4b')"></div></div>
+        <div class="field"><label>Velocity unit:</label>
+          <select id="m4b_unit"><option value="c">× the speed of light</option><option value="lyhr">light years / hour</option></select></div>
+        <div class="field"><label>Velocity value:</label><input type="text" id="m4b_vel" value="100"></div>
+        <div class="actions"><button class="btn" onclick="runM4b()">Compute</button>
+          <button class="ghost btn" onclick="clearOut('m4b')">Clear</button></div>
+        <div class="err" id="m4b_err"></div>
+      </div>
+      <div class="tablewrap" id="m4b_out" style="display:none"></div>
+    </div>
+
+    <!-- ===== M4c Within Star ===== -->
+    <div class="panel" id="panel-m4c">
+      <h2 class="title">GCNS Stars Within a Star <span class="modepill" id="m4c_mode"></span></h2>
+      <p class="sub">All GCNS stars within N ly of a center star. Unlike the SIMBAD version (which drops everything within
+        0.001 ly ≈ 63 AU), this <b>keeps Gaia-resolved close companions</b> — they're excluded only by exact source_id.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul><li><code>compute_gcns_stars_within_star(star,source_id,limit_ly)</code> → <code>{center, center_x/y/z, count, stars[]}</code>; each star carries a per-row <code>Distance</code> from the center.</li>
+        <li>Panel <code>GcnsStarsWithinStarPanel(DiagramToggleMixin, ResultPanel)</code> — center gold-highlighted on the map.</li></ul>
+      </details>
+      <div class="form">
+        <div class="endpoint"><div class="ep-head">Center star</div>
+          <div class="field"><label>Name:</label><input type="text" id="m4c_n" value="Sirius A" oninput="syncMode('m4c')"></div>
+          <div class="field optional"><label>or Gaia source_id:</label><input type="text" id="m4c_i" oninput="syncMode('m4c')"></div></div>
+        <div class="field"><label>Distance (ly):</label><input type="text" id="m4c_ly" value="6"></div>
+        <div class="actions"><button class="btn" onclick="runM4c()">Search</button>
+          <button class="ghost btn" onclick="document.getElementById('m4c_out').style.display='none';document.getElementById('m4c_count').style.display='none';document.getElementById('m4c_map').style.display='none'">Clear</button>
+          <button class="ghost btn" onclick="toggleMap('m4c')">Show / Hide Map</button></div>
+        <div class="err" id="m4c_err"></div>
+      </div>
+      <div class="count" id="m4c_count"></div>
+      <div class="tablewrap" id="m4c_out" style="display:none"></div>
+      <div class="mapwrap" id="m4c_map"></div>
+    </div>
+
+    <!-- ===== M5 SIMBAD + GCNS cross-reference ===== -->
+    <div class="panel" id="panel-m5">
+      <h2 class="title">SIMBAD Lookup — with GCNS cross-reference <span class="modepill net">NETWORK · SIMBAD</span></h2>
+      <p class="sub">M5 enriches the existing opt-1 SIMBAD lookup. Because opt 1 already resolves the Gaia id, M5 reuses it
+        <b>for free (no extra network)</b> to attach a GCNS block: the <b>Bayesian distance with 16th/84th-percentile
+        uncertainty</b> shown right beside opt 1's naive <b>1/ϖ parallax distance</b>. Silent when the star has no Gaia id
+        or isn't in GCNS.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li>The only new <b>core</b> code in Phase M: a non-fatal top-level <code>"gcns"</code> key added inside
+            <code>compute_simbad_lookup</code> (parallel to <code>"hypatia"</code>).</li>
+          <li><code>query.py</code> parity is <b>free</b> — <code>cmd_simbad_lookup</code> serializes the core dict verbatim,
+            so <code>simbad-lookup</code> output gains the <code>"gcns"</code> key with no dispatcher change.</li>
+          <li>Try a GCNS-present star (<b>Proxima Centauri</b>, <b>Tau Ceti</b>) vs. one outside the sample
+            (<b>Betelgeuse</b> → block silently omitted).</li>
+        </ul>
+      </details>
+      <div class="form">
+        <div class="field"><label>Star name:</label><input type="text" id="m5_name" value="Proxima Centauri"></div>
+        <div class="actions"><button class="btn" onclick="runM5()">Look Up</button>
+          <button class="ghost btn" onclick="clearOut('m5')">Clear</button></div>
+        <div class="err" id="m5_err"></div>
+      </div>
+      <div id="m5_result" style="display:none">
+        <div class="tabbar">
+          <div class="tabbtn active" data-t="props" onclick="m5tab('props')">Star Properties</div>
+          <div class="tabbtn" data-t="gcns" id="m5_gcns_tabbtn" onclick="m5tab('gcns')">GCNS</div>
+        </div>
+        <div class="tabbody active" id="m5_props"></div>
+        <div class="tabbody" id="m5_gcns">
+          <div class="headline" id="m5_hl" style="display:block"></div>
+          <div class="tablewrap" id="m5_gcns_tbl"></div>
+          <div class="pointer" id="m5_ptr"></div>
+        </div>
+      </div>
+      <div class="mocknote" id="m5_silent" style="display:none"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   Representative sample of nearby GCNS sources (NOT the full 331k census).
+   Field set mirrors _GCNS_ROW_COLS. dist_lo/hi null => missing_10mas (1/ϖ).
+   ========================================================================= */
+const SNAP = "2026-06-05";
+const GVER = "GCNS / Smart et al. 2021 A&A 649 A6 via GAVO gcns.main + gcns.missing_10mas + gcns.resolvedss";
+
+const RAW = [
+ // name, gaia, ra, dec, sp, dist_pc, lo, hi, ly, plx, G,BP,RP, rv, wd, astrom, V, method, table, sysid, ncomp
+ ["Proxima Centauri","5853498713190525696",217.39,-62.68,"M5.5Ve",1.301,1.277,1.302,4.246,768.07,8.98,11.37,7.57,-22.4,0.00,1.00,11.13,"gcns_bayesian","main",null,null],
+ ["Alpha Centauri A",null,219.90,-60.83,"G2V",1.339,null,null,4.365,747.10,null,null,null,-21.4,null,null,-0.01,"gcns_missing_plx_inversion","missing_10mas",null,null],
+ ["Alpha Centauri B",null,219.91,-60.84,"K1V",1.339,null,null,4.365,747.10,null,null,null,-18.6,null,null,1.33,"gcns_missing_plx_inversion","missing_10mas",null,null],
+ ["Barnard's Star","4472832130942575872",269.45,4.69,"M4.0V",1.828,1.820,1.836,5.963,546.98,8.20,9.57,7.06,-110.5,0.00,1.00,9.51,"gcns_bayesian","main",null,null],
+ ["Wolf 359","3864972938605115520",164.12,7.01,"M6.0V",2.409,2.392,2.426,7.856,415.18,11.05,12.97,9.55,19.3,0.00,0.99,13.51,"gcns_bayesian","main",null,null],
+ ["Lalande 21185","3990470790065609088",165.83,35.97,"M2.0V",2.547,2.540,2.553,8.307,392.75,6.55,7.52,5.50,-85.0,0.00,1.00,7.52,"gcns_bayesian","main",null,null],
+ ["Sirius A","2947050466531873024",101.29,-16.72,"A1V",2.637,2.628,2.643,8.601,379.21,-1.46,-1.51,-1.40,-5.5,0.00,0.98,-1.46,"gcns_bayesian","main","sirius",2],
+ ["Sirius B","2947050466531864832",101.29,-16.72,"DA2",2.637,2.628,2.643,8.601,379.21,8.44,8.51,8.40,-5.5,0.99,0.95,8.44,"gcns_bayesian","main","sirius",2],
+ ["Ross 154","4332097261486326784",282.46,-23.84,"M3.5V",2.971,2.960,2.983,9.690,336.85,10.27,11.96,8.93,-10.7,0.00,1.00,10.44,"gcns_bayesian","main",null,null],
+ ["Epsilon Eridani","5164707970261630080",53.23,-9.46,"K2V",3.212,3.203,3.221,10.475,311.37,3.46,4.05,2.73,15.5,0.00,0.97,3.73,"gcns_bayesian","main",null,null],
+ ["61 Cygni A","1872046609345556480",316.72,38.75,"K5V",3.497,3.480,3.514,11.404,285.95,4.79,5.59,3.94,-65.7,0.00,0.99,5.21,"gcns_bayesian","main","61cyg",2],
+ ["61 Cygni B","1872046574983497216",316.73,38.74,"K7V",3.497,3.480,3.514,11.404,285.95,5.59,6.55,4.66,-64.3,0.00,0.99,6.03,"gcns_bayesian","main","61cyg",2],
+ ["Procyon A","3137211988940080128",114.83,5.22,"F5IV-V",3.513,3.501,3.526,11.457,284.56,0.34,0.69,-0.13,-3.2,0.00,0.94,0.34,"gcns_bayesian","main",null,null],
+ ["Tau Ceti","2452378776434276992",26.02,-15.94,"G8.5V",3.603,3.595,3.612,11.749,277.52,3.28,3.91,2.52,-16.6,0.00,0.98,3.50,"gcns_bayesian","main",null,null],
+];
+const KEYS=["star_name","gaia_source_id","ra","dec","spectral_type","dist_pc","dist_lo_pc","dist_hi_pc","light_years","parallax","phot_g_mean_mag","phot_bp_mean_mag","phot_rp_mean_mag","rv_kms","wd_prob","astrom_reliable_prob","app_magnitude","distance_method","gcns_table","system_id","n_components"];
+const STARS = RAW.map(r=>{const o={};KEYS.forEach((k,i)=>o[k]=r[i]);
+  const ra=o.ra*Math.PI/180, dec=o.dec*Math.PI/180, ly=o.light_years;
+  o.x=ly*Math.cos(dec)*Math.cos(ra); o.y=ly*Math.cos(dec)*Math.sin(ra); o.z=ly*Math.sin(dec);
+  o.in_simbad = o.gcns_table==="main" ? 1 : 1; o.in_gcns=1; return o;});
+
+const SYSTEMS = {
+ "61cyg":{system_id:14021,n_components:2,n_pairs:1,any_bin:1,any_bound:1,all_bound:1,max_proj_sep_au:110.47,min_proj_sep_au:110.47,n_in_gcns_stars:2,
+   members:["1872046609345556480","1872046574983497216"],
+   pairs:[{source_id1:"1872046609345556480",source_id2:"1872046574983497216",separation_arcsec:31.59,mag_diff:0.68,proj_sep_au:110.47,bin:1,bound:1}]},
+ "sirius":{system_id:9088,n_components:2,n_pairs:1,any_bin:1,any_bound:1,all_bound:1,max_proj_sep_au:19.8,min_proj_sep_au:19.8,n_in_gcns_stars:2,
+   members:["2947050466531873024","2947050466531864832"],
+   pairs:[{source_id1:"2947050466531873024",source_id2:"2947050466531864832",separation_arcsec:11.0,mag_diff:9.90,proj_sep_au:19.8,bin:1,bound:1}]},
+};
+
+/* ---- helpers ---- */
+const HRS_PER_YR=8765.8128, HRS_PER_MO=HRS_PER_YR/12, HRS_PER_DAY=24;
+function byId(id){return STARS.find(s=>s.gaia_source_id===String(id).trim());}
+function byName(n){n=n.trim().toLowerCase(); if(!n)return null;
+  // strip a leading "sol-adjacent: " style prefix used in a demo default
+  if(n.includes(":")) n=n.split(":").pop().trim();
+  let m=STARS.find(s=>s.star_name.toLowerCase()===n); if(m)return m;
+  return STARS.find(s=>s.star_name.toLowerCase().includes(n));}
+function resolveEndpoint(nameVal,idVal){
+  const id=(idVal||"").trim(), nm=(nameVal||"").trim();
+  if(id){const s=byId(id); return s?{star:s}:{error:`Gaia source_id ${id} is not in the GCNS catalog (sample).`};}
+  if(nm){const s=byName(nm); return s?{star:s}:{error:`'${nm}' is not in the GCNS catalog (no Gaia EDR3 id or name match).`};}
+  return {error:"Enter a name or a Gaia source_id."};
+}
+function f(v,d){return (v===null||v===undefined||isNaN(v))?"N/A":Number(v).toFixed(d);}
+function sig(s){return (s.dist_lo_pc===null)?'<span style="color:#999">—</span>':`${s.dist_lo_pc.toFixed(3)} / ${s.dist_hi_pc.toFixed(3)}`;}
+function meth(m){return m==="gcns_bayesian"?"Bayesian":"1/ϖ inversion";}
+function yn(v){return v?'<span class="pill y">Yes</span>':'<span class="pill n">No</span>';}
+function dist3(a,b){return Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);}
+function fail(p,msg){const e=document.getElementById(p+'_err');e.textContent=msg;e.style.display='block';
+  ['_out','_count','_hl','_ptr','_map'].forEach(s=>{const el=document.getElementById(p+s);if(el)el.style.display='none';});return false;}
+function ok(p){document.getElementById(p+'_err').style.display='none';return true;}
+function clearOut(p){['_out','_hl','_ptr','_err','_count','_map'].forEach(s=>{const el=document.getElementById(p+s);if(el)el.style.display='none';});
+  const r=document.getElementById(p+'_result'); if(r)r.style.display='none';
+  const sl=document.getElementById(p+'_silent'); if(sl)sl.style.display='none';}
+function tbl(headers,rows,sigCols){sigCols=sigCols||[];
+  return '<table><thead><tr>'+headers.map((h,i)=>`<th class="${sigCols.includes(i)?'sig':''}">${h}</th>`).join('')+'</tr></thead><tbody>'+rows+'</tbody></table>';}
+function fmtTime(hours){if(hours===null)return "N/A"; let h=hours,parts=[];
+  const y=Math.floor(h/HRS_PER_YR);h-=y*HRS_PER_YR; const mo=Math.floor(h/HRS_PER_MO);h-=mo*HRS_PER_MO;
+  const d=Math.floor(h/HRS_PER_DAY);h-=d*HRS_PER_DAY; const hr=Math.floor(h);h-=hr; const mn=Math.round(h*60);
+  if(y)parts.push(y+" Yr"); if(mo)parts.push(mo+" Mo"); if(d)parts.push(d+" Day"+(d>1?"s":"")); if(hr)parts.push(hr+" Hr"); if(mn&&parts.length<3)parts.push(mn+" Min");
+  return parts.join(", ")||"<1 Min";}
+
+/* spectral color (mirrors star-map palette) */
+function spColor(sp){const c=(sp||"")[0]; return {O:"#9bb0ff",B:"#aabfff",A:"#cad7ff",F:"#f8f7ff",G:"#fff4c2",K:"#ffd2a1",M:"#ff9d6c",D:"#dfe6ff"}[c]||"#cccccc";}
+
+/* ---- mode pill (network vs local) ---- */
+function syncMode(p){
+  const map={m2:['m2_name','m2_id'],m3:['m3_name','m3_id'],
+    m4a:['m4a_n1','m4a_i1','m4a_n2','m4a_i2'],m4b:['m4b_n1','m4b_i1','m4b_n2','m4b_i2'],m4c:['m4c_n','m4c_i']};
+  const ids=map[p]; let net=false;
+  // network needed if any endpoint is given by NAME (id empty but name filled)
+  for(let i=0;i<ids.length;i+=2){const nm=val(ids[i]), id=val(ids[i+1]); if(!id && nm) net=true;}
+  const el=document.getElementById(p+'_mode'); if(!el)return;
+  el.textContent = net?"NETWORK · SIMBAD name→id":"LOCAL · instant";
+  el.className = "modepill "+(net?"net":"local");
+}
+function val(id){const e=document.getElementById(id);return e?e.value.trim():"";}
+
+/* ====================== M1 Census ====================== */
+function clearM1(){['m1_out','m1_count','m1_map'].forEach(i=>document.getElementById(i).style.display='none');}
+function runM1(){
+  const ly=parseFloat(val('m1_ly'));
+  document.getElementById('m1_snap').style.display='block';
+  document.getElementById('m1_snap').textContent=`snapshot_date: ${SNAP}  ·  source: ${GVER}`;
+  if(!(ly>0)) return fail('m1','Distance must be a positive number.'); ok('m1');
+  const hits=STARS.filter(s=>s.light_years<=ly).sort((a,b)=>a.light_years-b.light_years);
+  const c=document.getElementById('m1_count'); c.textContent=`${hits.length} GCNS sources found within ${ly} ly.`; c.style.display='block';
+  const rows=hits.map(s=>`<tr><td>${s.star_name}</td><td class="num">${s.gaia_source_id||'<span style=color:#aaa>—</span>'}</td>`+
+    `<td>${s.spectral_type}</td><td class="num">${f(s.dist_pc,4)}</td><td class="num sig">${sig(s)}</td>`+
+    `<td class="num">${f(s.light_years,4)}</td><td>${meth(s.distance_method)}</td><td>${yn(s.in_simbad)}</td></tr>`).join('');
+  const o=document.getElementById('m1_out');
+  o.innerHTML=tbl(['Star Name','Gaia source_id','Spectral Type','Dist (pc)','−σ / +σ (pc)','Light Years','Distance Method','In SIMBAD'],rows,[4]);
+  o.style.display='block';
+  drawMap('m1_map',hits,null,document.getElementById('m1_unc').checked);
+}
+
+/* ====================== M2 Source Lookup ====================== */
+function runM2(){
+  const r=resolveEndpoint(val('m2_name'),val('m2_id'));
+  if(r.error) return fail('m2',r.error); ok('m2');
+  const s=r.star, P=[
+    ["Gaia source_id",s.gaia_source_id||"N/A (missing_10mas — no source_id)"],
+    ["Star name (SIMBAD)",s.star_name],["Spectral Type (SIMBAD)",s.spectral_type],
+    ["Bayesian distance (pc)",f(s.dist_pc,4)],["Uncertainty −σ / +σ (pc)",s.dist_lo_pc===null?"— (1/ϖ point value)":`${f(s.dist_lo_pc,4)} / ${f(s.dist_hi_pc,4)}`],
+    ["Light Years",f(s.light_years,4)],["Distance method",meth(s.distance_method)],
+    ["RA / DEC (deg)",`${f(s.ra,4)} / ${f(s.dec,4)}`],["Parallax (mas)",f(s.parallax,4)],
+    ["Gaia G / BP / RP",s.phot_g_mean_mag===null?"N/A (not in Gaia)":`${f(s.phot_g_mean_mag,2)} / ${f(s.phot_bp_mean_mag,2)} / ${f(s.phot_rp_mean_mag,2)}  (Gaia bands — NOT Johnson V)`],
+    ["Johnson V (app_magnitude)",f(s.app_magnitude,2)],["Radial velocity (km/s)",f(s.rv_kms,1)],
+    ["White-dwarf prob.",f(s.wd_prob,2)],["Astrometry reliable prob.",f(s.astrom_reliable_prob,2)],
+    ["GCNS table",s.gcns_table],
+  ];
+  const rows=P.map(([k,v])=>`<tr><td style="color:#666;font-weight:600">${k}</td><td>${v}</td></tr>`).join('');
+  const o=document.getElementById('m2_out'); o.innerHTML=tbl(['Field','Value'],rows); o.style.display='block';
+  const ptr=document.getElementById('m2_ptr');
+  if(s.system_id){ptr.innerHTML=`▶ Part of a resolved <b>${s.n_components}-component</b> system — open it in the <b>Resolved System Viewer</b>.`;ptr.style.display='block';}
+  else ptr.style.display='none';
+}
+
+/* ====================== M3 System Viewer ====================== */
+function clearOut3(){document.getElementById('m3_summary').style.display='none';document.getElementById('m3_err').style.display='none';}
+function runM3(){
+  const r=resolveEndpoint(val('m3_name'),val('m3_id'));
+  if(r.error){document.getElementById('m3_summary').style.display='none';return fail('m3',r.error);} ok('m3');
+  const s=r.star;
+  if(!s.system_id){document.getElementById('m3_summary').style.display='none';
+    return fail('m3',`Gaia source_id ${s.gaia_source_id||s.star_name} is not part of any GCNS resolved system (single or unresolved — i.e. not Gaia-resolved, not necessarily physically single).`);}
+  const sys=SYSTEMS[s.system_id];
+  // summary
+  const sumP=[["system_id",sys.system_id],["n_components",sys.n_components],["n_pairs",sys.n_pairs],
+    ["any_bin",yn(sys.any_bin)],["any_bound",yn(sys.any_bound)],["all_bound",yn(sys.all_bound)],
+    ["min / max proj. sep (AU)",`${f(sys.min_proj_sep_au,2)} / ${f(sys.max_proj_sep_au,2)}`],["members in gcns_stars",sys.n_in_gcns_stars]];
+  document.getElementById('m3_sum_out').innerHTML=tbl(['Field','Value'],
+    sumP.map(([k,v])=>`<tr><td style="color:#666;font-weight:600">${k}</td><td>${v}</td></tr>`).join(''));
+  // members
+  const memRows=sys.members.map(mid=>{const m=byId(mid);const q=(mid===s.gaia_source_id);
+    return `<tr><td class="num">${mid}</td><td>${yn(m?1:0)}</td><td class="qmark">${q?'▶':''}</td>`+
+      `<td>${m?m.star_name:'<span style=color:#aaa>N/A</span>'}</td><td>${m?m.spectral_type:'<span style=color:#aaa>N/A</span>'}</td>`+
+      `<td class="num">${m?f(m.dist_pc,4):'N/A'}</td><td class="num">${m?f(m.light_years,4):'N/A'}</td></tr>`;}).join('');
+  document.getElementById('m3_mem_out').innerHTML=tbl(['Gaia source_id','In gcns_stars','◀ query','Star Name','Spectral Type','Dist (pc)','Light Years'],memRows);
+  // pairs
+  const pairRows=sys.pairs.map(p=>`<tr><td class="num">${p.source_id1}</td><td class="num">${p.source_id2}</td>`+
+    `<td class="num">${f(p.separation_arcsec,2)}</td><td class="num">${f(p.mag_diff,2)}</td><td class="num">${f(p.proj_sep_au,2)}</td>`+
+    `<td>${yn(p.bin)}</td><td>${yn(p.bound)}</td></tr>`).join('');
+  document.getElementById('m3_pair_out').innerHTML=tbl(['source_id1','source_id2','Separation (″)','Δmag','Proj. Sep (AU)','bin','bound'],pairRows);
+  document.getElementById('m3_summary').style.display='block';
+}
+
+/* ====================== M4a Distance ====================== */
+function infoBlock(headers,a,b){
+  const row=s=>[s.gaia_source_id||"N/A",s.star_name,s.spectral_type,f(s.dist_pc,4),s.dist_lo_pc===null?"—":`${f(s.dist_lo_pc,3)} / ${f(s.dist_hi_pc,3)}`,f(s.light_years,4),meth(s.distance_method)];
+  const ra=row(a),rb=row(b);
+  const body=headers.map((h,i)=>`<tr><td style="color:#666;font-weight:600">${h}</td><td>${ra[i]}</td><td>${rb[i]}</td></tr>`).join('');
+  return tbl(['Field','Star 1','Star 2'],body);
+}
+function runM4a(){
+  const r1=resolveEndpoint(val('m4a_n1'),val('m4a_i1')), r2=resolveEndpoint(val('m4a_n2'),val('m4a_i2'));
+  if(r1.error)return fail('m4a',r1.error); if(r2.error)return fail('m4a',r2.error); ok('m4a');
+  const a=r1.star,b=r2.star,d=dist3(a,b);
+  const hl=document.getElementById('m4a_hl');
+  hl.innerHTML=`<div class="hl-row"><div class="hl-box"><div class="hl-k">Distance (GCNS Bayesian)</div>`+
+    `<div class="hl-v">${f(d,4)} light years</div></div>`+
+    `<div class="hl-box"><div class="hl-k">Endpoints</div><div class="hl-v" style="font-size:13px;color:#444">${a.star_name} ↔ ${b.star_name}</div></div></div>`+
+    (d<0.5?`<div style="margin-top:6px;color:#555">= ${f(d*63241.077,2)} AU (&lt; 0.5 ly)</div>`:``);
+  hl.style.display='block';
+  const o=document.getElementById('m4a_out');
+  o.innerHTML=infoBlock(['Gaia source_id','Star name','Spectral type','Dist (pc)','−σ / +σ (pc)','Light Years','Distance method'],a,b);
+  o.style.display='block';
+}
+
+/* ====================== M4b Travel Time ====================== */
+function runM4b(){
+  const r1=resolveEndpoint(val('m4b_n1'),val('m4b_i1')), r2=resolveEndpoint(val('m4b_n2'),val('m4b_i2'));
+  if(r1.error)return fail('m4b',r1.error); if(r2.error)return fail('m4b',r2.error);
+  const v=parseFloat(val('m4b_vel')); if(!(v>0))return fail('m4b','Velocity must be a positive number.'); ok('m4b');
+  const a=r1.star,b=r2.star,d=dist3(a,b);
+  let ly_hr,times_c; if(val('m4b_unit')==='c'){times_c=v; ly_hr=v/8765.8128;} else {ly_hr=v; times_c=v*8765.8128;}
+  const hours=d/ly_hr;
+  const o=document.getElementById('m4b_out');
+  o.innerHTML=tbl(['Origin','Destination','Distance (LY)','LY/HR','× c','Travel Time (Hours)','Travel Time'],
+    `<tr><td>${a.star_name}</td><td>${b.star_name}</td><td class="num">${f(d,4)}</td><td class="num">${ly_hr.toExponential(4)}</td>`+
+    `<td class="num">${f(times_c,2)}</td><td class="num">${f(hours,2)}</td><td>${fmtTime(hours)}</td></tr>`);
+  o.style.display='block';
+}
+
+/* ====================== M4c Within Star ====================== */
+function runM4c(){
+  const r=resolveEndpoint(val('m4c_n'),val('m4c_i')); if(r.error)return fail('m4c',r.error);
+  const ly=parseFloat(val('m4c_ly')); if(!(ly>0))return fail('m4c','Distance must be a positive number.'); ok('m4c');
+  const c=r.star;
+  const hits=STARS.map(s=>({s,d:dist3(c,s)}))
+    .filter(o=> o.s.gaia_source_id!==c.gaia_source_id && o.d>1e-9 && o.d<=ly)  // exclude center by exact id only (keeps close companions)
+    .sort((x,y)=>x.d-y.d);
+  const cnt=document.getElementById('m4c_count'); cnt.textContent=`${hits.length} GCNS stars within ${ly} ly of ${c.star_name}.`; cnt.style.display='block';
+  const rows=hits.map(({s,d})=>`<tr><td>${s.star_name}</td><td class="num">${s.gaia_source_id||'—'}</td><td>${s.spectral_type}</td>`+
+    `<td class="num">${f(s.dist_pc,4)}</td><td class="num sig">${sig(s)}</td><td class="num">${f(d,4)}</td><td>${meth(s.distance_method)}</td></tr>`).join('');
+  const o=document.getElementById('m4c_out');
+  o.innerHTML=tbl(['Star Name','Gaia source_id','Spectral Type','Dist (pc)','−σ / +σ (pc)','Distance from center (ly)','Distance Method'],rows,[4]);
+  o.style.display='block';
+  drawMap('m4c_map',hits.map(h=>h.s),c,false);
+}
+
+/* ====================== M5 SIMBAD + GCNS ====================== */
+function m5tab(t){document.querySelectorAll('#panel-m5 .tabbtn').forEach(b=>b.classList.toggle('active',b.dataset.t===t));
+  document.getElementById('m5_props').classList.toggle('active',t==='props');
+  document.getElementById('m5_gcns').classList.toggle('active',t==='gcns');}
+function runM5(){
+  const nm=val('m5_name'); if(!nm)return fail('m5','Enter a star name.'); ok('m5');
+  const s=byName(nm);
+  document.getElementById('m5_result').style.display='block';
+  document.getElementById('m5_silent').style.display='none';
+  // ----- Star Properties tab (the existing opt-1 SIMBAD result) -----
+  let props;
+  if(s){
+    props=[["main_id",s.star_name],["Spectral Type",s.spectral_type],["Parallax (mas)",f(s.parallax,4)],
+      ["Naive distance 1/ϖ (pc)",f(1000/s.parallax,4)],["Naive distance (ly)",f(1000/s.parallax*3.26156,4)],
+      ["App. Magnitude (V)",f(s.app_magnitude,2)],["RA / DEC (deg)",`${f(s.ra,4)} / ${f(s.dec,4)}`],
+      ["Gaia EDR3 (designations)",s.gaia_source_id?`Gaia DR3 ${s.gaia_source_id}`:"N/A (no Gaia source_id — missing_10mas)"]];
+  } else {
+    props=[["Resolved name",nm],["(SIMBAD)","star resolved; full properties shown in the real panel"]];
+  }
+  document.getElementById('m5_props').innerHTML=
+    tbl(['Field','Value'],props.map(([k,v])=>`<tr><td style="color:#666;font-weight:600">${k}</td><td>${v}</td></tr>`).join(''));
+  // ----- GCNS block: present only when SIMBAD yielded a Gaia id that's in GCNS -----
+  if(s && s.gaia_source_id){
+    document.getElementById('m5_gcns_tabbtn').style.display='';
+    const naive_pc=1000/s.parallax;
+    document.getElementById('m5_hl').innerHTML=`<div class="hl-row">`+
+      `<div class="hl-box hl-naive"><div class="hl-k">opt 1 naive 1/ϖ distance</div>`+
+        `<div class="hl-v">${f(naive_pc,4)} pc</div><div style="color:#888">${f(naive_pc*3.26156,4)} ly · point estimate, no error bar</div></div>`+
+      `<div class="hl-box"><div class="hl-k">GCNS Bayesian distance <span class="gcnsbadge">+σ</span></div>`+
+        `<div class="hl-v">${f(s.dist_pc,4)} pc <span class="sig">(${f(s.dist_lo_pc,4)} … ${f(s.dist_hi_pc,4)})</span></div>`+
+        `<div style="color:#3a6b48">${f(s.light_years,4)} ly · 16th/84th-percentile uncertainty</div></div></div>`;
+    const g=[["distance_method",meth(s.distance_method)],["astrom_reliable_prob",f(s.astrom_reliable_prob,2)],
+      ["wd_prob",f(s.wd_prob,2)],["Gaia G / BP / RP (≠ Johnson V)",`${f(s.phot_g_mean_mag,2)} / ${f(s.phot_bp_mean_mag,2)} / ${f(s.phot_rp_mean_mag,2)}`],
+      ["rv_kms",f(s.rv_kms,1)]];
+    document.getElementById('m5_gcns_tbl').innerHTML=tbl(['Field','Value'],
+      g.map(([k,v])=>`<tr><td style="color:#666;font-weight:600">${k}</td><td>${v}</td></tr>`).join(''));
+    const ptr=document.getElementById('m5_ptr');
+    if(s.system_id){ptr.innerHTML=`▶ Part of a resolved <b>${s.n_components}-component</b> system — open the Resolved System Viewer.`;ptr.style.display='block';}
+    else ptr.style.display='none';
+    m5tab('gcns');   // focus the GCNS tab so the headline is front-and-centre
+  } else {
+    document.getElementById('m5_gcns_tabbtn').style.display='none';
+    m5tab('props');
+    const sl=document.getElementById('m5_silent');
+    sl.innerHTML = s
+      ? `<b>GCNS block silently omitted.</b> '${s.star_name}' has no Gaia source_id (a <code>missing_10mas</code> object) → <code>result["gcns"] = None</code> — exactly how opt 1's optional HWO / Hypatia sub-sections behave when absent.`
+      : `<b>GCNS block silently omitted.</b> '${nm}' isn't in the GCNS sample (no Gaia id / outside the census) → <code>result["gcns"] = None</code>.`;
+    sl.style.display='block';
+  }
+}
+
+/* ====================== shared SVG map ====================== */
+function toggleMap(p){const m=document.getElementById(p+'_map'); m.style.display = m.style.display==='block'?'none':'block';}
+function drawMap(elId,stars,center,showUnc){
+  const el=document.getElementById(elId); if(!stars.length){el.style.display='none';return;}
+  const W=520,H=420,cx=W/2,cy=H/2;
+  // include origin (Sol) or center at 0,0 in extent
+  const ox=center?center.x:0, oy=center?center.y:0;
+  let R=0.5; stars.forEach(s=>{R=Math.max(R,Math.hypot(s.x-ox,s.y-oy));});
+  const sc=(Math.min(W,H)/2-40)/R;
+  const dot=(x,y,col,r,stroke)=>`<circle cx="${cx+(x-ox)*sc}" cy="${cy-(y-oy)*sc}" r="${r}" fill="${col}" stroke="${stroke||'#000'}" stroke-opacity="0.25"/>`;
+  const txt=(x,y,t)=>`<text x="${cx+(x-ox)*sc+6}" y="${cy-(y-oy)*sc+3}" fill="#9fb8d8" font-size="9">${t}</text>`;
+  let rings=''; for(let rr=Math.ceil(R/ (R>8?5:2))* (R>8?5:2); rr>0; rr-= (R>8?5:2)){ if(rr*sc<8)continue;
+    rings+=`<circle cx="${cx}" cy="${cy}" r="${rr*sc}" fill="none" stroke="#22345a" stroke-width="1"/>`+
+           `<text x="${cx+2}" y="${cy-rr*sc+11}" fill="#3a5a8a" font-size="8">${rr} ly</text>`;}
+  let unc=''; if(showUnc){stars.forEach(s=>{if(s.dist_lo_pc!==null){const r0=Math.hypot(s.x-ox,s.y-oy)||1e-6;
+    const loly=s.dist_lo_pc*3.26156, hily=s.dist_hi_pc*3.26156, base=s.light_years;
+    const ux=(s.x-ox)/r0,uy=(s.y-oy)/r0;
+    const x1=ox+ux*(r0*loly/base),y1=oy+uy*(r0*loly/base),x2=ox+ux*(r0*hily/base),y2=oy+uy*(r0*hily/base);
+    unc+=`<line x1="${cx+(x1-ox)*sc}" y1="${cy-(y1-oy)*sc}" x2="${cx+(x2-ox)*sc}" y2="${cy-(y2-oy)*sc}" stroke="#5ad1ff" stroke-width="2" stroke-opacity="0.8"/>`;}});}
+  let pts=stars.map(s=>dot(s.x,s.y,spColor(s.spectral_type),4.5)+txt(s.x,s.y,s.star_name)).join('');
+  // origin marker: Sol (gold ★) or center star (gold ★)
+  const star=(x,y,label,col)=>{const X=cx+(x-ox)*sc,Y=cy-(y-oy)*sc;
+    return `<path d="M${X},${Y-7} L${X+2},${Y-2} L${X+7},${Y-2} L${X+3},${Y+1} L${X+4.5},${Y+6} L${X},${Y+3} L${X-4.5},${Y+6} L${X-3},${Y+1} L${X-7},${Y-2} L${X-2},${Y-2} Z" fill="${col}"/>`+
+      `<text x="${X+8}" y="${Y+3}" fill="${col}" font-size="9.5" font-weight="bold">${label}</text>`;}
+  const origin = center?star(center.x,center.y,center.star_name,"#FFD700"):star(0,0,"Sol","#FFD700");
+  el.innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${rings}${unc}${pts}${origin}</svg>`+
+    `<div style="font-size:11px;color:#888;margin-top:4px">Top-down X–Y map (a placeholder for the real matplotlib "Map X–Y / X–Z / 3D" tabs). `+
+    (showUnc?`Cyan radial bars = Bayesian distance ±σ.`:`Tick "Show distance uncertainty" to draw radial ±σ bars.`)+`</div>`;
+  el.style.display='block';
+}
+
+/* ---- nav ---- */
+function showPanel(p){
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  document.getElementById('panel-'+p).classList.add('active');
+  document.querySelectorAll('.nav .item.live').forEach(x=>x.classList.toggle('active',x.dataset.panel===p));
+}
+/* init: run defaults so each panel opens populated */
+['m2','m3','m4a','m4b','m4c'].forEach(syncMode);
+runM1();runM2();runM3();runM4a();runM4b();runM4c();runM5();
+showPanel('m1');
+</script>
+</body>
+</html>
