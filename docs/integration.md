@@ -57,6 +57,11 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `hill-sphere` | `--star-mass-solar --planet-mass-earth --sma-au` [`--eccentricity`] | none | `hill_radius_km, hill_radius_au, stable_orbit_limit_km/au, …` |
 | `binary-stability` | `--mass1-solar --mass2-solar --binary-sma-au --test-sma-au` [`--eccentricity`] | none | `mass_ratio, stype_critical_sma_au, ptype_critical_sma_au, orbit_type, is_stable, …` |
 | `atmosphere-retention` | `--planet-mass-earth --planet-radius-earth --temperature-k` | none | `v_escape_kms, gases[]` |
+| `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
+| `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
+| `brachistochrone-au` | `--accel-g --au` | none | `accel_g, distance_au, distance_lm, profiles[]` |
+| `brachistochrone-lm` | `--accel-g --lm` | none | `accel_g, distance_au, distance_lm, profiles[]` |
+| `travel-time-solar` | `--origin --destination --accel-g` [`--v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles[], …` |
 
 † `distance` and `travel-time` skip the SIMBAD call for an endpoint named `"Sol"`/`"Sun"` (treated as the origin at 0,0,0).
 ‡ The `gcns-*` calculators use SIMBAD **only** for `--star` endpoints (to resolve a name to a Gaia id); `--id` endpoints are fully offline. There is **no** `"Sol"`/`"Sun"` special case — Sol is not a GCNS row, so a Sol endpoint returns an error (use `gcns-within-sol` for Sol-centered census queries).
@@ -176,6 +181,63 @@ Which atmospheric gases a planet retains against Jeans escape (optimistic — us
 query.py atmosphere-retention --planet-mass-earth 1.0 --planet-radius-earth 1.0 --temperature-k 255
 ```
 Core function: `equations.compute_atmosphere_retention(planet_mass_earth, planet_radius_earth, temperature_k)`. Output: `{planet_mass_earth, planet_radius_earth, temperature_k, v_escape_kms, gases[]}` where each gas is `{gas, mol_mass_amu, lambda, v_thermal_kms, status}` (status ∈ Retained / Escaping slowly / Lost rapidly) for H₂, He, CH₄, H₂O, N₂, O₂, CO₂.
+
+### Integration expansion (Phase N)
+
+Five subcommands that each wrap an **existing `core/` function verbatim** — no new output shapes; each returns
+exactly what its core function returns today, pretty-printed. Four are pure-compute (no network); `travel-time-solar`
+is the **only network-bound** entry (live JPL Horizons).
+
+> **⚠️ Validation contract — read this before relying on exit codes.** Unlike the Phase-H worldbuilding calculators
+> (which **self-validate** and return a curated `{"error": str}` for out-of-range input), the four pure-compute Phase-N
+> subcommands wrap the project's **older, non-self-validating** equation/calculator functions, and Phase N adds **no
+> validation** (it is a thin verbatim wrapper). The exit-code behavior is therefore:
+>
+> - **Malformed / missing / non-numeric arg** → argparse rejection, **exit 2**, message on **stderr** (not JSON) — all five.
+> - **Out-of-range numeric** for `habitable-zone-sma`, `brachistochrone-au`, `brachistochrone-lm` → the wrapped function
+>   **raises**, and `query.py`'s top-level handler turns it into `{"error": str(e)}` on stdout, **exit 1** — but the
+>   message is a **raw Python exception string** (e.g. `"math domain error"` for a negative luminosity/distance,
+>   `"float division by zero"` for `--sma 0` or `--accel-g 0`), **not** a curated sentence. Do not pattern-match on the
+>   exact text; key on the presence of `"error"` + exit 1.
+> - **`star-luminosity` has no out-of-range error path at all**: `L = R²·(T/5778)⁴` returns a finite number for any
+>   float (a negative radius yields a positive luminosity because it is squared), so the only non-zero exit it produces
+>   is argparse's **exit 2**.
+> - **`travel-time-solar`** is the exception: it **does** return curated `{"error": str}` dicts (ambiguous Horizons
+>   name — with a disambiguation hint — same-object, and network failures), **exit 1**.
+>
+> This was a deliberate decision (honor "no `core/` changes"; the raw-exception path is the already-blessed behavior —
+> see `tests/test_equations.py::test_bad_input_raises`). Tests: `tests/test_query_phase_n.py` (offline subprocess
+> contracts + the mocked `travel-time-solar` wiring; live Horizons round-trip gated on reachability).
+
+#### `habitable-zone-sma`
+Kopparapu HZ boundaries **plus** the object's S_eff at its orbit and a plain-language HZ-membership verdict (the opt-40 calculation). Complements `habitable-zone`, which lacks the per-object Seff/verdict.
+```bash
+query.py habitable-zone-sma --teff 4900 --luminosity 0.15 --sma 0.45
+```
+Core function: `equations.compute_habitable_zone_sma(teff, luminosity, sma)`. No network. Output: `{zones, planet_seff, verdict}` — `zones` is the same 6-element list as `habitable-zone` (each `{zone_name, key, au, lm, seff}`); `planet_seff = (1/sma)² · luminosity`; `verdict` is a human-readable HZ-membership string.
+
+#### `star-luminosity`
+Stellar luminosity from radius and temperature: `L = R² × (T/5778)⁴` (the opt-41 calculation).
+```bash
+query.py star-luminosity --radius 0.82 --teff 5344
+```
+Core function: `equations.compute_star_luminosity(radius, temp)`. No network. Arg is `--teff` (consistency with `habitable-zone` / `habitable-zone-sma`), mapped to the function's `temp` parameter. Output: `{radius, temp, luminosity}`.
+
+#### `brachistochrone-au` and `brachistochrone-lm`
+All three brachistochrone acceleration profiles for a given distance (the opt-29 / opt-30 calculations).
+```bash
+query.py brachistochrone-au --accel-g 1.0 --au 5.2
+query.py brachistochrone-lm --accel-g 0.5 --lm 43.2
+```
+Core functions: `calculators.compute_travel_time_system_au(accel_g, distance_au)` / `compute_travel_time_system_lm(accel_g, distance_lm)`. No network. Output: `{accel_g, distance_au, distance_lm, profiles}` (`distance_lm` ↔ `distance_au` are inter-derived). `profiles` is a list of 3 dicts, each `{label, hours, travel_time_str, max_vel}` (`max_vel` ∈ `"N/A"`/`"Y"`/`"N"`): ① continuous-to-halfway, ② accel¼/coast½/decel¼, ③ accel-to-3%c/coast/decel.
+
+#### `travel-time-solar`
+Brachistochrone travel time between two solar-system bodies at a departure epoch (the opt-22 calculation). **Live JPL Horizons network call** — the only network-bound entry in this phase.
+```bash
+query.py travel-time-solar --origin Earth --destination Mars --accel-g 1.0
+query.py travel-time-solar --origin Earth --destination "Jupiter" --accel-g 0.3 --v-cap-pct 5 --date 2027-03-15
+```
+Core function: `calculators.compute_travel_time_solar_objects(origin, destination, accel_g, v_cap_pct=3.0, departure_date=None)`. `--v-cap-pct` defaults to `3.0`; `--date` is ISO `YYYY-MM-DD`, defaulting to today (mapped to `departure_date`). The GUI-only `progress_callback` is never passed. Output: `{origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles, origin_xyz, dest_xyz, planet_positions, origin_id, dest_id}` — `profiles` carries the same `{label, hours, travel_time_str, max_vel}` shape as the brachistochrone subcommands; JSON consumers may ignore `origin_xyz`/`dest_xyz`/`planet_positions`/`origin_id`/`dest_id`. Ambiguous Horizons names return the disambiguation error already produced by the core function.
 
 ### Exoplanet archives (network)
 
@@ -395,3 +457,4 @@ The `gcns-within-sol`, `gcns-source`, and `gcns-system` subcommands are **local 
 - Unexpected exceptions from core functions are caught by a top-level handler in `main()` and returned as `{"error": str(e)}` with exit code 1.
 - `--ly-hr` and `--times-c` for `travel-time` are a mutually exclusive required group; supplying both or neither is rejected by `argparse` with exit code 2.
 - The `gcns-*` calculators use one required mutually-exclusive group **per endpoint** (`--star1`/`--id1`, `--star2`/`--id2`, or `--star`/`--id`), plus the `--ly-hr`/`--times-c` group for `gcns-travel-time`. Supplying both or neither within any group is rejected by `argparse` with **exit code 2** and a message on **stderr** — this is the argparse path, **not** the JSON-`{"error"}`/exit-1 path, so do not parse stdout as JSON for those invocations. A resolvable-but-invalid request (e.g. a name not in GCNS, an ambiguous name, or an empty `gcns_stars` table) instead returns `{"error": ...}` on stdout with exit 1.
+- **Phase N validation asymmetry** (see "Integration expansion (Phase N)" above): the pure-compute Phase-N subcommands (`habitable-zone-sma`, `star-luminosity`, `brachistochrone-au`, `brachistochrone-lm`) wrap **non-self-validating** legacy core functions, so out-of-range numerics surface via the generic top-level handler as `{"error": str(e)}` with a **raw exception message** (not a curated sentence), exit 1 — except `star-luminosity`, which has no out-of-range error path (only argparse exit 2). Only `travel-time-solar` returns curated `{"error": ...}` dicts. This is intentional (Phase N adds no `core/` validation); key on `"error"` + exit code, never on the message text.

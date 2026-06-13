@@ -640,3 +640,56 @@ def prepare_exoplanet_system_diagram(planets: list, date_iso: str = None) -> dic
         "max_au":    max_au * 1.20,
         "epoch_iso": date_iso,
     }
+
+
+# ── Phase I — Route map overlay ──────────────────────────────────────────────
+
+def prepare_route_map(result: dict) -> dict:
+    """Normalize a route-planning result into star-chart + route-edge geometry.
+
+    Accepts a compute_multi_stop_journey / compute_nearest_neighbor_chain
+    (ordered, dashed) or compute_trade_route_mst (MST, solid) result.
+
+    Returns:
+        {"stars": [...], "edges": [{x1,y1,z1,x2,y2,z2,label,style}], "edge_style"}
+        or {"error": str} (passthrough).
+    """
+    if not isinstance(result, dict) or "error" in result:
+        return result
+
+    stars = result.get("stars", [])
+    edges = []
+
+    if "legs" in result or "chain" in result:
+        # Ordered route: dashed edges between consecutive stars.
+        style = "dashed"
+        for i in range(len(stars) - 1):
+            a, b = stars[i], stars[i + 1]
+            if "legs" in result and i < len(result["legs"]):
+                label = f"{result['legs'][i]['distance_ly']:.1f} ly"
+            else:
+                label = _CIRCLED[i] if i < len(_CIRCLED) else str(i + 1)
+            edges.append({
+                "x1": a["x"], "y1": a["y"], "z1": a["z"],
+                "x2": b["x"], "y2": b["y"], "z2": b["z"],
+                "label": label, "style": style,
+            })
+    else:
+        # MST: solid edges mapped from {from,to} names to coordinates.
+        style = "solid"
+        by_name = {s["name"]: s for s in stars}
+        for e in result.get("edges", []):
+            a, b = by_name.get(e["from"]), by_name.get(e["to"])
+            if a is None or b is None:
+                continue
+            edges.append({
+                "x1": a["x"], "y1": a["y"], "z1": a["z"],
+                "x2": b["x"], "y2": b["y"], "z2": b["z"],
+                "label": f"{e['distance_ly']:.1f} ly", "style": style,
+            })
+
+    return {"stars": stars, "edges": edges, "edge_style": style}
+
+
+_CIRCLED = ["①", "②", "③", "④", "⑤", "⑥",
+            "⑦", "⑧", "⑨", "⑩", "⑪", "⑫"]

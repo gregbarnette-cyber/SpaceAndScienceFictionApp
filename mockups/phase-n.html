@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase N — query.py Integration Expansion (Contract Preview)</title>
+<style>
+  :root{
+    --bg:#f0f0f0; --panel:#ffffff; --border:#b8b8b8; --border-soft:#d8d8d8;
+    --text:#222; --muted:#6a6a6a; --accent:#4a90d9; --accent-d:#3a73ad;
+    --head:#e9eef5; --zebra:#f7f9fc; --good:#2e8b57; --warn:#b8860b; --bad:#b03030;
+    --term-bg:#10141c; --term-fg:#d7dde8; --json-key:#7fb8ff; --json-str:#9fd39f;
+    --json-num:#f0b86e; --json-punct:#8893a5;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+       font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}
+  .topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600}
+  .topbar .sub{color:#9aa3ad;font-weight:400}
+  .notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px;line-height:1.5}
+  .notice b{color:#4d4109}
+  .notice code{background:#f4ead0;padding:0 4px;border-radius:3px}
+  .app{flex:1;display:flex;min-height:0}
+  .nav{width:250px;min-width:250px;background:#fafafa;border-right:1px solid var(--border);overflow:auto;padding:6px 0}
+  .nav .cat{padding:9px 12px 3px;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px}
+  .nav .cat.new{color:var(--accent)}
+  .nav .new-badge{background:var(--accent);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .nav .item{padding:6px 12px 6px 18px;border-left:3px solid transparent;cursor:pointer;color:#41566f}
+  .nav .item:hover{background:#eef4fb}
+  .nav .item.active{background:#e2eefb;border-left-color:var(--accent);color:#13314e;font-weight:600}
+  .nav .item .mono{font-family:"Cascadia Code",Consolas,Menlo,monospace;font-size:11.5px}
+  .nav .item .net{color:var(--bad);font-size:10px;margin-left:5px;font-weight:700}
+  .content{flex:1;overflow:auto;padding:18px 22px}
+  .panel{display:none;max-width:980px}
+  .panel.active{display:block}
+  h2.title{margin:0 0 2px;font-size:18px;font-family:"Cascadia Code",Consolas,Menlo,monospace}
+  h2.title .net{font-family:"Segoe UI",sans-serif;font-size:11px;background:var(--bad);color:#fff;border-radius:3px;padding:1px 7px;margin-left:8px;vertical-align:middle}
+  .sub{color:var(--muted);margin:4px 0 12px;font-size:12.5px;max-width:880px;line-height:1.5}
+  .sub code{background:#e7ebf0;padding:0 4px;border-radius:3px}
+  details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--border-soft);border-radius:5px;padding:6px 10px;max-width:900px}
+  details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+  details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+  details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.6}
+  /* command builder */
+  .builder{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:13px 15px;margin-bottom:12px}
+  .builder h3{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+  .args{display:flex;flex-wrap:wrap;gap:10px 18px;margin-bottom:6px}
+  .field{display:flex;flex-direction:column;gap:3px}
+  .field label{font-size:11.5px;color:#555;font-weight:600;font-family:"Cascadia Code",Consolas,monospace}
+  .field label .opt{color:#aaa;font-weight:400;font-style:italic;font-family:"Segoe UI",sans-serif}
+  .field input{height:28px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff;width:150px}
+  .field .hint{font-size:10.5px;color:#999}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:10px}
+  button.btn{height:30px;padding:0 16px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+  button.btn:hover{background:var(--accent-d)}
+  button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+  button.ghost:hover{background:#f0f0f0}
+  .quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .quick span{font-size:11px;color:#777;margin-right:2px}
+  .chip{font-size:11px;border:1px solid var(--border-soft);background:#f4f6f9;border-radius:11px;padding:2px 9px;cursor:pointer;color:#41566f}
+  .chip:hover{background:#e7eef7;border-color:var(--accent)}
+  /* terminal */
+  .term{background:var(--term-bg);border-radius:7px;overflow:hidden;border:1px solid #05080d;margin-top:4px}
+  .term .bar{background:#1b212c;padding:5px 11px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #05080d}
+  .term .bar .dot{width:10px;height:10px;border-radius:50%}
+  .term .bar .t{color:#8893a5;font-size:11px;margin-left:6px;font-family:"Cascadia Code",Consolas,monospace}
+  .term .body{padding:11px 13px;font-family:"Cascadia Code",Consolas,Menlo,monospace;font-size:12.5px;line-height:1.5;color:var(--term-fg);overflow-x:auto;white-space:pre}
+  .term .cmd{color:#cfe3ff}
+  .term .cmd .prompt{color:#5fae6e;user-select:none}
+  .term .cmd .flag{color:#c9a6ff}
+  .term .cmd .val{color:#f0b86e}
+  .term .out{margin-top:8px}
+  .badge{display:inline-block;font-size:11px;font-weight:700;border-radius:3px;padding:1px 8px;margin-bottom:6px}
+  .badge.e0{background:#1d3a28;color:#7fe0a0;border:1px solid #2e8b57}
+  .badge.e1{background:#3a1d1d;color:#f0a0a0;border:1px solid #b03030}
+  .badge.e2{background:#3a341d;color:#e9d28a;border:1px solid #b8860b}
+  .badge.net{background:#1d2b3a;color:#8fc3ff;border:1px solid #4a90d9}
+  .stderr{color:#f0a0a0}
+  .jk{color:var(--json-key)} .js{color:var(--json-str)} .jn{color:var(--json-num)} .jp{color:var(--json-punct)} .jb{color:#d98fd9}
+  /* validation table */
+  .vt{border-collapse:collapse;width:100%;font-size:12px;max-width:960px;margin-top:6px;background:#fff;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+  .vt th{background:var(--head);text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11.5px}
+  .vt td{padding:6px 10px;border-bottom:1px solid #eee;vertical-align:top}
+  .vt tr:nth-child(even) td{background:var(--zebra)}
+  .vt code{background:#eef1f5;padding:0 4px;border-radius:3px;font-size:11.5px}
+  .e0t{color:var(--good);font-weight:700} .e1t{color:var(--bad);font-weight:700} .e2t{color:var(--warn);font-weight:700}
+  .mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:8px 11px;border-radius:5px;font-size:12px;margin:12px 0;max-width:900px;line-height:1.5}
+  .mocknote code{background:#e7ddf5;padding:0 4px;border-radius:3px}
+  .ov-card{background:#fff;border:1px solid var(--border);border-radius:6px;padding:10px 13px;margin-bottom:10px}
+  .ov-card .cmd{font-family:"Cascadia Code",Consolas,monospace;font-weight:700;color:#13314e;font-size:13px}
+  .ov-card .net{font-size:10px;background:var(--bad);color:#fff;border-radius:3px;padding:1px 6px;margin-left:7px;font-weight:700}
+  .ov-card .d{color:#666;font-size:12px;margin-top:3px;line-height:1.45}
+  .ov-card .fn{color:#888;font-size:11.5px;font-family:"Cascadia Code",Consolas,monospace;margin-top:3px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  Space &amp; Science Fiction App <span class="sub">— contract preview (no GUI)</span>
+  <span class="tag">Phase N &middot; query.py Integration Expansion</span>
+</div>
+<div class="notice">
+  <b>Interactive CONTRACT PREVIEW — not a GUI and not the real app.</b>
+  Phase N is integration-surface only: it adds <b>five <code>query.py</code> subcommands</b> that each wrap an
+  <b>existing <code>core/</code> function verbatim</b> (no GUI / CLI-menu / <code>core/</code> / DB changes).
+  This page previews the exact <b>command line + JSON</b> each one emits so you can approve the contract.
+  <b>N1–N4 are computed live</b> in your browser (mirroring the real core formulas);
+  <b>N5 is a canned live-network sample</b> (it can't run JPL Horizons here).
+</div>
+
+<div class="app">
+  <div class="nav">
+    <div class="cat new">query.py — Phase N <span class="new-badge">NEW</span></div>
+    <div class="item active" data-panel="ov" onclick="showPanel('ov')">Contract overview</div>
+    <div class="item" data-panel="n1" onclick="showPanel('n1')"><span class="mono">habitable-zone-sma</span></div>
+    <div class="item" data-panel="n2" onclick="showPanel('n2')"><span class="mono">star-luminosity</span></div>
+    <div class="item" data-panel="n3" onclick="showPanel('n3')"><span class="mono">brachistochrone-au</span></div>
+    <div class="item" data-panel="n4" onclick="showPanel('n4')"><span class="mono">brachistochrone-lm</span></div>
+    <div class="item" data-panel="n5" onclick="showPanel('n5')"><span class="mono">travel-time-solar</span><span class="net">NET</span></div>
+    <div class="cat">Reference</div>
+    <div class="item" data-panel="val" onclick="showPanel('val')">Validation &amp; exit codes</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ============ OVERVIEW ============ -->
+    <div class="panel active" id="panel-ov">
+      <h2 class="title">Contract overview</h2>
+      <p class="sub">Five new subcommands, each a thin verbatim wrapper over an already-shipped <code>core/</code>
+        function. Output is exactly what that function returns today, pretty-printed
+        (<code>json.dumps(result, indent=2, default=str)</code>). Click any card — or a nav entry — to try it.</p>
+
+      <div class="ov-card">
+        <span class="cmd">query.py habitable-zone-sma --teff &lt;K&gt; --luminosity &lt;Lsun&gt; --sma &lt;AU&gt;</span>
+        <div class="d">HZ boundaries + the object's S<sub>eff</sub> and a habitable-zone membership verdict (the opt-40 calc).</div>
+        <div class="fn">→ equations.compute_habitable_zone_sma(teff, luminosity, sma) · no network</div>
+      </div>
+      <div class="ov-card">
+        <span class="cmd">query.py star-luminosity --radius &lt;R☉&gt; --teff &lt;K&gt;</span>
+        <div class="d">Stellar luminosity from radius &amp; temperature: <code>L = R²·(T/5778)⁴</code> (the opt-41 calc).</div>
+        <div class="fn">→ equations.compute_star_luminosity(radius, temp) · no network · <i>--teff maps to the fn's <code>temp</code> param</i></div>
+      </div>
+      <div class="ov-card">
+        <span class="cmd">query.py brachistochrone-au --accel-g &lt;g&gt; --au &lt;AU&gt;</span>
+        <div class="d">Three brachistochrone acceleration profiles for a distance in AU (the opt-29 calc).</div>
+        <div class="fn">→ calculators.compute_travel_time_system_au(accel_g, distance_au) · no network</div>
+      </div>
+      <div class="ov-card">
+        <span class="cmd">query.py brachistochrone-lm --accel-g &lt;g&gt; --lm &lt;LM&gt;</span>
+        <div class="d">Same three profiles for a distance in light-minutes (the opt-30 calc).</div>
+        <div class="fn">→ calculators.compute_travel_time_system_lm(accel_g, distance_lm) · no network</div>
+      </div>
+      <div class="ov-card">
+        <span class="cmd">query.py travel-time-solar --origin &lt;body&gt; --destination &lt;body&gt; --accel-g &lt;g&gt; [--v-cap-pct 3.0] [--date YYYY-MM-DD]<span class="net">LIVE NETWORK</span></span>
+        <div class="d">Brachistochrone travel time between two solar-system bodies at a departure epoch (the opt-22 calc).
+          The only network-bound entry this phase — live JPL Horizons.</div>
+        <div class="fn">→ calculators.compute_travel_time_solar_objects(origin, destination, accel_g, v_cap_pct=3.0, departure_date=None)</div>
+      </div>
+      <div class="mocknote"><b>Key contract decision (see "Validation &amp; exit codes"):</b> N1–N4 wrap the older,
+        <b>non-self-validating</b> equation/calculator functions. With no core changes, out-of-range numbers surface as
+        <code>{"error": str(e)}</code> with a <b>raw Python message</b> ("math domain error" / "float division by zero")
+        via query.py's top-level handler — exit 1. Only <code>travel-time-solar</code> emits curated error dicts.
+        <code>star-luminosity</code> has no error path at all beyond argparse.</div>
+    </div>
+
+    <!-- ============ N1 ============ -->
+    <div class="panel" id="panel-n1">
+      <h2 class="title">habitable-zone-sma</h2>
+      <p class="sub">Kopparapu HZ boundaries <b>plus</b> the object's S<sub>eff</sub> at its orbit and a plain-language
+        HZ-membership verdict. Complements the existing <code>habitable-zone</code> subcommand (which lacks the per-object Seff/verdict).</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>equations.compute_habitable_zone_sma(teff, luminosity, sma)</code> — wrapped verbatim, no network.</li>
+          <li>Output: <code>{zones:[6×{zone_name,key,au,lm,seff}], planet_seff, verdict}</code>.</li>
+          <li><code>planet_seff = (1/sma)²·luminosity</code>; verdict compares it to the rv/rg/mg/em boundaries.</li>
+          <li><b>Validation:</b> <code>--sma 0</code> → exit 1 (division by zero); <code>--luminosity &lt; 0</code> → exit 1 (math domain).</li>
+        </ul>
+      </details>
+      <div class="builder">
+        <h3>Command builder</h3>
+        <div class="args">
+          <div class="field"><label>--teff</label><input id="n1_teff" value="5778"><span class="hint">stellar temp (K)</span></div>
+          <div class="field"><label>--luminosity</label><input id="n1_lum" value="1.0"><span class="hint">L in solar units</span></div>
+          <div class="field"><label>--sma</label><input id="n1_sma" value="1.0"><span class="hint">object SMA (AU)</span></div>
+        </div>
+        <div class="quick"><span>Try:</span>
+          <span class="chip" onclick="setN1(5778,1,1)">Earth @ Sun</span>
+          <span class="chip" onclick="setN1(4900,0.15,0.45)">K-dwarf @ 0.45 AU</span>
+          <span class="chip" onclick="setN1(5778,1,3)">cold @ 3 AU</span>
+          <span class="chip" onclick="setN1(5778,-1,1)">bad: L=−1</span>
+          <span class="chip" onclick="setN1(5778,1,0)">bad: sma=0</span>
+        </div>
+        <div class="actions"><button class="btn" onclick="runN1()">Run ▸</button></div>
+      </div>
+      <div class="term" id="n1_term"></div>
+    </div>
+
+    <!-- ============ N2 ============ -->
+    <div class="panel" id="panel-n2">
+      <h2 class="title">star-luminosity</h2>
+      <p class="sub">Stellar luminosity from radius and temperature — <code>L = R²·(T/5778)⁴</code> (the opt-41 calc).</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>equations.compute_star_luminosity(radius, temp)</code> — wrapped verbatim, no network.</li>
+          <li>Output: <code>{radius, temp, luminosity}</code>.</li>
+          <li>Arg is <code>--teff</code> (naming parity with N1 / <code>habitable-zone</code>), mapped to the fn's <code>temp</code> parameter.</li>
+          <li><b>No error path:</b> any float computes a number (radius is squared) — only argparse can reject input (non-numeric → exit 2).</li>
+        </ul>
+      </details>
+      <div class="builder">
+        <h3>Command builder</h3>
+        <div class="args">
+          <div class="field"><label>--radius</label><input id="n2_rad" value="1.0"><span class="hint">stellar radius (R☉)</span></div>
+          <div class="field"><label>--teff</label><input id="n2_teff" value="5778"><span class="hint">effective temp (K)</span></div>
+        </div>
+        <div class="quick"><span>Try:</span>
+          <span class="chip" onclick="setN2(1,5778)">Sun</span>
+          <span class="chip" onclick="setN2(0.82,5344)">61 Cyg A-ish</span>
+          <span class="chip" onclick="setN2(11.2,5778)">giant</span>
+          <span class="chip" onclick="setN2(-1,5778)">edge: R=−1 (still exit 0)</span>
+        </div>
+        <div class="actions"><button class="btn" onclick="runN2()">Run ▸</button></div>
+      </div>
+      <div class="term" id="n2_term"></div>
+    </div>
+
+    <!-- ============ N3 ============ -->
+    <div class="panel" id="panel-n3">
+      <h2 class="title">brachistochrone-au</h2>
+      <p class="sub">All three brachistochrone acceleration profiles for a given distance in <b>AU</b> (the opt-29 calc).</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>calculators.compute_travel_time_system_au(accel_g, distance_au)</code> — wrapped verbatim, no network.</li>
+          <li>Output: <code>{accel_g, distance_au, distance_lm, profiles:[3×{label,hours,travel_time_str,max_vel}]}</code>.</li>
+          <li>Profiles: ① continuous-to-halfway · ② accel¼/coast½/decel¼ · ③ accel-to-3%c/coast/decel.</li>
+          <li><b>Validation:</b> <code>--accel-g 0</code> → exit 1 (division by zero); negative distance/accel → exit 1 (math domain).</li>
+        </ul>
+      </details>
+      <div class="builder">
+        <h3>Command builder</h3>
+        <div class="args">
+          <div class="field"><label>--accel-g</label><input id="n3_acc" value="1.0"><span class="hint">acceleration (g)</span></div>
+          <div class="field"><label>--au</label><input id="n3_au" value="5.2"><span class="hint">distance (AU)</span></div>
+        </div>
+        <div class="quick"><span>Try:</span>
+          <span class="chip" onclick="setN3(1,1)">1 g, 1 AU</span>
+          <span class="chip" onclick="setN3(1,5.2)">1 g, Jupiter</span>
+          <span class="chip" onclick="setN3(0.1,0.5)">0.1 g, 0.5 AU</span>
+          <span class="chip" onclick="setN3(0,1)">bad: accel=0</span>
+        </div>
+        <div class="actions"><button class="btn" onclick="runN3()">Run ▸</button></div>
+      </div>
+      <div class="term" id="n3_term"></div>
+    </div>
+
+    <!-- ============ N4 ============ -->
+    <div class="panel" id="panel-n4">
+      <h2 class="title">brachistochrone-lm</h2>
+      <p class="sub">The same three profiles for a distance in <b>light-minutes</b> (the opt-30 calc).</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>calculators.compute_travel_time_system_lm(accel_g, distance_lm)</code> — wrapped verbatim, no network.</li>
+          <li>Output shape identical to <code>brachistochrone-au</code>; <code>distance_au</code> is back-derived (LM → AU).</li>
+          <li><b>Validation:</b> <code>--accel-g 0</code> → exit 1; negative distance/accel → exit 1.</li>
+        </ul>
+      </details>
+      <div class="builder">
+        <h3>Command builder</h3>
+        <div class="args">
+          <div class="field"><label>--accel-g</label><input id="n4_acc" value="0.5"><span class="hint">acceleration (g)</span></div>
+          <div class="field"><label>--lm</label><input id="n4_lm" value="43.2"><span class="hint">distance (light-min)</span></div>
+        </div>
+        <div class="quick"><span>Try:</span>
+          <span class="chip" onclick="setN4(1,8.3167)">1 g, 8.3167 LM (≈1 AU)</span>
+          <span class="chip" onclick="setN4(0.5,43.2)">0.5 g, 43.2 LM</span>
+          <span class="chip" onclick="setN4(0,10)">bad: accel=0</span>
+        </div>
+        <div class="actions"><button class="btn" onclick="runN4()">Run ▸</button></div>
+      </div>
+      <div class="term" id="n4_term"></div>
+    </div>
+
+    <!-- ============ N5 ============ -->
+    <div class="panel" id="panel-n5">
+      <h2 class="title">travel-time-solar <span class="net">LIVE JPL HORIZONS</span></h2>
+      <p class="sub">Brachistochrone travel time between two solar-system bodies at a departure epoch (the opt-22 calc).
+        The only network-bound subcommand added this phase — it queries JPL Horizons for both bodies' heliocentric
+        positions, so the JSON below is a <b>canned sample</b> (not computed in your browser).</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>calculators.compute_travel_time_solar_objects(origin, destination, accel_g, v_cap_pct=3.0, departure_date=None)</code>.</li>
+          <li><code>--v-cap-pct</code> defaults to 3.0; <code>--date</code> is ISO <code>YYYY-MM-DD</code> (default: today) → maps to <code>departure_date</code>.</li>
+          <li><b>progress_callback is GUI-only and is never passed</b> — it stays at its <code>None</code> default.</li>
+          <li>Output: <code>{origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles, …}</code>
+            or curated <code>{"error": …}</code> (ambiguous Horizons name, same-object, or network failure).</li>
+          <li>Result also carries <code>origin_xyz / dest_xyz / planet_positions / origin_id / dest_id</code> — JSON consumers may ignore these.</li>
+        </ul>
+      </details>
+      <div class="builder">
+        <h3>Command builder</h3>
+        <div class="args">
+          <div class="field"><label>--origin</label><input id="n5_org" value="Earth"></div>
+          <div class="field"><label>--destination</label><input id="n5_dst" value="Mars"></div>
+          <div class="field"><label>--accel-g</label><input id="n5_acc" value="1.0"></div>
+          <div class="field"><label>--v-cap-pct <span class="opt">(opt, dflt 3.0)</span></label><input id="n5_vcap" value="3"></div>
+          <div class="field"><label>--date <span class="opt">(opt, dflt today)</span></label><input id="n5_date" value="2027-03-15"></div>
+        </div>
+        <div class="quick"><span>Scenario:</span>
+          <span class="chip" onclick="setN5('Earth','Mars','1','3','2027-03-15')">Earth → Mars</span>
+          <span class="chip" onclick="setN5('Earth','Jupiter','0.3','5','2027-03-15')">Earth → Jupiter, 0.3 g</span>
+          <span class="chip" onclick="setN5('Earth','Pluto','','3','')">ambiguous-name (error)</span>
+        </div>
+        <div class="actions"><button class="btn" onclick="runN5()">Show sample ▸</button></div>
+      </div>
+      <div class="term" id="n5_term"></div>
+      <div class="mocknote">Live network. The sample above mirrors the real output <b>shape</b> only — the numbers come
+        from a representative Horizons run, not a live query. Ambiguous names (e.g. a body matching multiple
+        Horizons records) return a curated <code>{"error": …}</code> with a disambiguation hint, exit 1.</div>
+    </div>
+
+    <!-- ============ VALIDATION ============ -->
+    <div class="panel" id="panel-val">
+      <h2 class="title" style="font-family:'Segoe UI',sans-serif">Validation &amp; exit codes</h2>
+      <p class="sub">Standard <code>query.py</code> contract: argparse errors exit 2 (stderr); a result dict with an
+        <code>"error"</code> key exits 1; success exits 0. The nuance this phase documents honestly: N1–N4 wrap
+        <b>non-validating legacy functions</b>, so their out-of-range errors are <b>raw exception messages</b>, not curated sentences.</p>
+      <table class="vt">
+        <thead><tr><th>Input class</th>
+          <th><code>habitable-zone-sma</code></th><th><code>star-luminosity</code></th>
+          <th><code>brachistochrone-au/lm</code></th><th><code>travel-time-solar</code></th></tr></thead>
+        <tbody>
+          <tr><td><b>Valid</b></td>
+            <td class="e0t">exit 0 · result</td><td class="e0t">exit 0 · result</td>
+            <td class="e0t">exit 0 · result</td><td class="e0t">exit 0 · result</td></tr>
+          <tr><td>Missing / non-numeric arg</td>
+            <td class="e2t">exit 2 · stderr</td><td class="e2t">exit 2 · stderr</td>
+            <td class="e2t">exit 2 · stderr</td><td class="e2t">exit 2 · stderr</td></tr>
+          <tr><td>Zero where it divides</td>
+            <td class="e1t">exit 1 · <code>--sma 0</code> → "float division by zero"</td>
+            <td>— (no division)</td>
+            <td class="e1t">exit 1 · <code>--accel-g 0</code> → "float division by zero"</td>
+            <td class="e1t">exit 1 · <code>--accel-g 0</code> (after network)</td></tr>
+          <tr><td>Negative → sqrt domain</td>
+            <td class="e1t">exit 1 · <code>--luminosity -1</code> → "math domain error"</td>
+            <td class="e0t">exit 0 (radius² ⇒ valid number)</td>
+            <td class="e1t">exit 1 · negative au/lm/accel → "math domain error"</td>
+            <td>n/a</td></tr>
+          <tr><td>Semantic (network / ambiguous / self)</td>
+            <td>n/a</td><td>n/a</td><td>n/a</td>
+            <td class="e1t">exit 1 · curated <code>{"error": …}</code> (disambiguation / same-object / network-down)</td></tr>
+        </tbody>
+      </table>
+      <div class="mocknote"><b>Why not add validation?</b> Phase N's hard constraint is <i>no <code>core/</code> changes</i>,
+        and the verbatim-wrapper property means we don't add per-command checks in <code>query.py</code> either. This
+        matches the existing blessed precedent: <code>tests/test_equations.py::test_bad_input_raises</code> already
+        documents that <code>compute_habitable_zone(5778, -1.0)</code> raises and query.py's top-level handler turns it
+        into <code>{"error": …}</code>. The real behavior is documented in <code>docs/integration.md</code> so callers
+        aren't surprised.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ---------- constants (mirror core/) ---------- */
+const C_MS=299792458, M_PER_AU=149597870700, M_PER_LM=C_MS*60, G_MS2=9.80665, AU_TO_LM=8.3167;
+const HRS_PER_YEAR=8765.82, HRS_PER_MONTH=8765.82/12;   // format_travel_time (Julian year)
+/* Kopparapu 2014 params: [SeffSUN, a, b, c, d] */
+const KP={
+  rv:[1.776,2.136e-4,2.533e-8,-1.332e-11,-3.097e-15],
+  rg5:[1.188,1.433e-4,1.707e-8,-8.968e-12,-2.084e-15],
+  rg01:[0.99,1.209e-4,1.404e-8,-7.418e-12,-1.713e-15],
+  rg:[1.107,1.332e-4,1.580e-8,-8.308e-12,-1.931e-15],
+  mg:[0.356,6.171e-5,1.698e-9,-3.198e-12,-5.575e-16],
+  em:[0.320,5.547e-5,1.526e-9,-2.874e-12,-5.011e-16],
+};
+const ZONE_DEFS=[
+  ["Optimistic Inner HZ (Recent Venus)","rv"],
+  ["Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass)","rg5"],
+  ["Conservative Inner HZ (Runaway Greenhouse)","rg"],
+  ["Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass)","rg01"],
+  ["Conservative Outer HZ (Maximum Greenhouse)","mg"],
+  ["Optimistic Outer HZ (Early Mars)","em"],
+];
+function seff(teff,zone){const tS=teff-5780,[s,a,b,c,d]=KP[zone];return s+a*tS+b*tS*tS+c*tS**3+d*tS**4;}
+
+/* ---------- format_travel_time (faithful-ish) ---------- */
+function fmtTravel(hours){
+  if(hours<=0) return "0 Seconds";
+  let rem=hours, parts=[];
+  const yr=Math.floor(rem/HRS_PER_YEAR); rem-=yr*HRS_PER_YEAR;
+  const mo=Math.floor(rem/HRS_PER_MONTH); rem-=mo*HRS_PER_MONTH;
+  const dy=Math.floor(rem/24); rem-=dy*24;
+  const hr=Math.floor(rem); rem-=hr;
+  const mi=Math.floor(rem*60); const sc=(rem*60-mi)*60;
+  if(yr) parts.push(yr+(yr===1?" Year":" Years"));
+  if(mo) parts.push(mo+(mo===1?" Month":" Months"));
+  if(dy) parts.push(dy+(dy===1?" Day":" Days"));
+  if(hr) parts.push(hr+(hr===1?" Hour":" Hours"));
+  if(mi) parts.push(mi+(mi===1?" Minute":" Minutes"));
+  if(parts.length===0 || (mi<1 && sc>=0.005 && yr===0 && mo===0 && dy===0 && hr===0))
+    parts.push(sc.toFixed(2)+" Seconds");
+  return parts.join(", ");
+}
+
+/* ---------- brachistochrone profiles (mirror _brachistochrone_profiles) ---------- */
+function profiles(d_m,a_ms2,vcap){
+  const VCAP=(vcap/100)*C_MS;
+  const t1=2*Math.sqrt(d_m/a_ms2);
+  const t2=Math.sqrt((16*d_m)/(3*a_ms2));
+  const tcap=VCAP/a_ms2, dboth=a_ms2*tcap*tcap;
+  let t3,label3,cap;
+  if(dboth>=d_m){t3=t1;label3=`Accel to ${vcap}% c, Coast, Then Decelerate (cap not reached)`;cap=false;}
+  else{t3=2*tcap+(d_m-dboth)/VCAP;label3=`Accel to ${vcap}% c, Coast, Then Decelerate`;cap=true;}
+  return [
+    {label:"Continuous to Halfway Point",hours:t1/3600,travel_time_str:fmtTravel(t1/3600),max_vel:"N/A"},
+    {label:"Half Continuous Accel Time, Coast, Then Decelerate",hours:t2/3600,travel_time_str:fmtTravel(t2/3600),max_vel:"N/A"},
+    {label:label3,hours:t3/3600,travel_time_str:fmtTravel(t3/3600),max_vel:cap?"Y":"N"},
+  ];
+}
+
+/* ---------- JSON pretty-printer with colored spans ---------- */
+function jsonHTML(obj){
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  function walk(v,ind){
+    const pad='  '.repeat(ind), pad1='  '.repeat(ind+1);
+    if(v===null) return '<span class="jb">null</span>';
+    if(typeof v==='number') return `<span class="jn">${Number.isInteger(v)?v:(+v.toPrecision(12))}</span>`;
+    if(typeof v==='boolean') return `<span class="jb">${v}</span>`;
+    if(typeof v==='string') return `<span class="js">"${esc(v)}"</span>`;
+    if(Array.isArray(v)){
+      if(v.length===0) return '<span class="jp">[]</span>';
+      return '<span class="jp">[</span>\n'+v.map(x=>pad1+walk(x,ind+1)).join('<span class="jp">,</span>\n')+'\n'+pad+'<span class="jp">]</span>';
+    }
+    const ks=Object.keys(v);
+    if(ks.length===0) return '<span class="jp">{}</span>';
+    return '<span class="jp">{</span>\n'+ks.map(k=>pad1+`<span class="jk">"${esc(k)}"</span><span class="jp">:</span> `+walk(v[k],ind+1)).join('<span class="jp">,</span>\n')+'\n'+pad+'<span class="jp">}</span>';
+  }
+  return walk(obj,0);
+}
+
+/* ---------- terminal renderer ---------- */
+function cmdLine(parts){
+  // parts: array of {flag, val} ; flags rendered purple, vals orange
+  let html='<span class="prompt">$</span> python query.py <span class="val">'+parts.cmd+'</span>';
+  (parts.args||[]).forEach(a=>{
+    html+=' <span class="flag">'+a[0]+'</span>';
+    if(a.length>1 && a[1]!==undefined && a[1]!=='') html+=' <span class="val">'+(/[\s]/.test(a[1])?('"'+a[1]+'"'):a[1])+'</span>';
+  });
+  return html;
+}
+function termRender(id,cmdParts,result,code,stderr){
+  let badge, body;
+  if(code===2){
+    badge='<span class="badge e2">exit 2 · argparse → stderr</span>';
+    body='<span class="stderr">'+stderr+'</span>';
+  } else if(code===1){
+    badge='<span class="badge e1">exit 1 · error</span>';
+    body=jsonHTML(result);
+  } else {
+    badge='<span class="badge e0">exit 0 · success</span>';
+    body=jsonHTML(result);
+  }
+  const net = cmdParts.net ? '<span class="badge net">live JPL Horizons</span> ' : '';
+  document.getElementById(id).innerHTML=
+    '<div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="t">bash — query.py</span></div>'+
+    '<div class="body"><span class="cmd">'+cmdLine(cmdParts)+'</span>'+
+    '<div class="out">'+net+badge+'\n'+body+'</div></div>';
+}
+function numOr(id){const s=document.getElementById(id).value.trim(); if(s==='')return {bad:true}; const v=Number(s); return isFinite(v)?{v}:{bad:true};}
+
+/* ---------- N1 ---------- */
+function setN1(t,l,s){n1_teff.value=t;n1_lum.value=l;n1_sma.value=s;runN1();}
+function runN1(){
+  const t=numOr('n1_teff'),l=numOr('n1_lum'),s=numOr('n1_sma');
+  const parts={cmd:'habitable-zone-sma',args:[['--teff',n1_teff.value],['--luminosity',n1_lum.value],['--sma',n1_sma.value]]};
+  if(t.bad||l.bad||s.bad){return termRender('n1_term',parts,null,2,"query.py habitable-zone-sma: error: argument --teff/--luminosity/--sma: invalid float value");}
+  if(l.v<0){return termRender('n1_term',parts,{error:"math domain error"},1);}
+  if(s.v===0){return termRender('n1_term',parts,{error:"float division by zero"},1);}
+  const zones=ZONE_DEFS.map(([name,key])=>{const se=seff(t.v,key),au=Math.sqrt(l.v/se);return {zone_name:name,key,au,lm:au*AU_TO_LM,seff:se};});
+  const pse=(1/s.v)**2*l.v;
+  const m={}; zones.forEach(z=>m[z.key]=z.seff);
+  let verdict;
+  if(pse<m.em) verdict="This object is NOT in the Habitable Zone (Beyond Early Mars)";
+  else if(pse<=m.mg) verdict="This object is in the Optimistic Habitable Zone (Between Maximum Greenhouse and Early Mars)";
+  else if(pse<=m.rg) verdict="This object is in the Conservative Habitable Zone (Between Runaway Greenhouse and Maximum Greenhouse)";
+  else if(pse<=m.rv) verdict="This object is in the Optimistic Habitable Zone (Between Recent Venus and Runaway Greenhouse)";
+  else verdict="This object is NOT in the Habitable Zone (Interior to Recent Venus)";
+  termRender('n1_term',parts,{zones,planet_seff:pse,verdict},0);
+}
+
+/* ---------- N2 ---------- */
+function setN2(r,t){n2_rad.value=r;n2_teff.value=t;runN2();}
+function runN2(){
+  const r=numOr('n2_rad'),t=numOr('n2_teff');
+  const parts={cmd:'star-luminosity',args:[['--radius',n2_rad.value],['--teff',n2_teff.value]]};
+  if(r.bad||t.bad){return termRender('n2_term',parts,null,2,"query.py star-luminosity: error: argument --radius/--teff: invalid float value");}
+  const lum=r.v**2*(t.v/5778)**4;
+  termRender('n2_term',parts,{radius:r.v,temp:t.v,luminosity:lum},0);
+}
+
+/* ---------- N3 / N4 ---------- */
+function setN3(a,au){n3_acc.value=a;n3_au.value=au;runN3();}
+function runN3(){
+  const a=numOr('n3_acc'),d=numOr('n3_au');
+  const parts={cmd:'brachistochrone-au',args:[['--accel-g',n3_acc.value],['--au',n3_au.value]]};
+  brach('n3_term',parts,a,d,'au');
+}
+function setN4(a,lm){n4_acc.value=a;n4_lm.value=lm;runN4();}
+function runN4(){
+  const a=numOr('n4_acc'),d=numOr('n4_lm');
+  const parts={cmd:'brachistochrone-lm',args:[['--accel-g',n4_acc.value],['--lm',n4_lm.value]]};
+  brach('n4_term',parts,a,d,'lm');
+}
+function brach(id,parts,a,d,unit){
+  if(a.bad||d.bad){return termRender(id,parts,null,2,`query.py ${parts.cmd}: error: argument --accel-g/--${unit}: invalid float value`);}
+  if(a.v===0){return termRender(id,parts,{error:"float division by zero"},1);}
+  const a_ms2=a.v*G_MS2;
+  const d_m=unit==='au'? d.v*M_PER_AU : d.v*M_PER_LM;
+  if(d_m/a_ms2<0){return termRender(id,parts,{error:"math domain error"},1);}
+  const distance_au=unit==='au'? d.v : d_m/M_PER_AU;
+  const distance_lm=unit==='au'? d_m/M_PER_LM : d.v;
+  termRender(id,parts,{accel_g:a.v,distance_au,distance_lm,profiles:profiles(d_m,a_ms2,3)},0);
+}
+
+/* ---------- N5 (canned) ---------- */
+function setN5(o,dst,a,v,dt){n5_org.value=o;n5_dst.value=dst;n5_acc.value=a;n5_vcap.value=v;n5_date.value=dt;runN5();}
+function runN5(){
+  const parts={cmd:'travel-time-solar',net:true,args:[
+    ['--origin',n5_org.value],['--destination',n5_dst.value],['--accel-g',n5_acc.value],
+    ['--v-cap-pct',n5_vcap.value],['--date',n5_date.value]]};
+  if(!n5_org.value.trim()){return termRender('n5_term',parts,null,2,"query.py travel-time-solar: error: the following arguments are required: --origin");}
+  if(!n5_acc.value.trim()){return termRender('n5_term',parts,null,2,"query.py travel-time-solar: error: the following arguments are required: --accel-g");}
+  // ambiguous-name scenario demo
+  if(/pluto/i.test(n5_dst.value)){
+    return termRender('n5_term',parts,{error:"Ambiguous body name 'Pluto'.\nTip: Use a more specific name or numeric ID (e.g. '999' for the Pluto system barycenter).\n\nMultiple major-bodies match string \"pluto\""},1);
+  }
+  const acc=Number(n5_acc.value)||1.0, vcap=Number(n5_vcap.value)||3.0;
+  // representative canned numbers (NOT a live query)
+  const dist_au = /jupiter/i.test(n5_dst.value)?4.1573:0.5241;
+  const d_m=dist_au*M_PER_AU, prof=profiles(d_m,acc*G_MS2,vcap);
+  termRender('n5_term',parts,{
+    origin:n5_org.value, destination:n5_dst.value, accel_g:acc,
+    distance_au:dist_au, distance_lm:d_m/M_PER_LM, v_cap_pct:vcap,
+    departure_date:n5_date.value||"2026-06-12",
+    profiles:prof,
+    origin_xyz:[-0.9837,0.1623,-0.0000], dest_xyz:[-1.3892,0.9043,0.0461],
+    planet_positions:"… 8 planet position dicts (omitted in preview) …",
+    origin_id:399, dest_id:499
+  },0);
+}
+
+/* ---------- nav ---------- */
+function showPanel(p){
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  document.getElementById('panel-'+p).classList.add('active');
+  document.querySelectorAll('.nav .item').forEach(x=>x.classList.toggle('active',x.dataset.panel===p));
+}
+/* populate each panel with its default example */
+runN1();runN2();runN3();runN4();runN5();showPanel('ov');
+</script>
+</body>
+</html>

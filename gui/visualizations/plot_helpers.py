@@ -799,6 +799,9 @@ _SC_RING         = "#3a5a8a"
 _SC_RING_LBL     = "#6f8fc4"
 _SC_STAR_LBL     = "#e6ecf7"
 _SC_SOL          = "#FFD700"
+_SC_ROUTE        = "#7fd3ff"   # dashed ordered-route legs (I1/I2)
+_SC_MST          = "#7fe0a0"   # solid MST edges (I3)
+_SC_ROUTE_LBL    = "#cfe3ff"   # per-segment route labels
 
 
 def _star_chart_steps(limit_ly: float):
@@ -816,12 +819,16 @@ def _star_chart_steps(limit_ly: float):
     return minor, major
 
 
-def make_star_chart_canvas(parent, stars: list, limit_ly: float):
+def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
     """Labeled 2D X-Y star chart in the dark navy style of stars_within_15ly.html.
 
     stars:     list of dicts {name, color, sp_type, ly, x, y, z, desig}.
                The first entry is treated as the origin/center star (highlighted).
     limit_ly:  axis range ± value (e.g. 15 → axes span -15..+15 ly).
+    routes:    optional list of {x1,y1,z1,x2,y2,z2,label,style} edge dicts
+               (Phase I route overlay) — dashed for ordered legs, solid for MST
+               edges; per-segment labels follow the same zoom-driven visibility
+               as the star labels.
 
     Stars whose |X| or |Y| > limit_ly are excluded (they're in the sphere but
     off the projected square — same rule as generate_star_map_html.py).
@@ -873,14 +880,18 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float):
         if v == 0:
             continue
         ax.text(v, -limit_ly * 0.018, f"{int(v):+d}",
-                color=_SC_TICK_LBL, fontsize=7, ha="center", va="top", zorder=4)
+                color=_SC_TICK_LBL, fontsize=7, ha="center", va="top", zorder=4,
+                clip_on=True)
         ax.text(-limit_ly * 0.012, v, f"{int(v):+d}",
-                color=_SC_TICK_LBL, fontsize=7, ha="right", va="center", zorder=4)
+                color=_SC_TICK_LBL, fontsize=7, ha="right", va="center", zorder=4,
+                clip_on=True)
 
     ax.text(limit_ly * 0.985, -limit_ly * 0.04, "X (ly) →",
-            color=_SC_AXIS_TITLE, fontsize=9, ha="right", va="top", zorder=4)
+            color=_SC_AXIS_TITLE, fontsize=9, ha="right", va="top", zorder=4,
+            clip_on=True)
     ax.text(limit_ly * 0.018, limit_ly * 0.985, "↑ Y (ly)",
-            color=_SC_AXIS_TITLE, fontsize=9, ha="left", va="top", zorder=4)
+            color=_SC_AXIS_TITLE, fontsize=9, ha="left", va="top", zorder=4,
+            clip_on=True)
 
     # Distance rings every `major_step` ly out to limit.
     n_rings = int(math.floor(limit_ly / major_step))
@@ -890,7 +901,8 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float):
                             edgecolor=_SC_RING, linewidth=0.6,
                             linestyle=(0, (4, 6)), alpha=0.85, zorder=2))
         ax.text(r - limit_ly * 0.005, -limit_ly * 0.008, f"{int(r)} ly",
-                color=_SC_RING_LBL, fontsize=7, ha="right", va="top", zorder=3)
+                color=_SC_RING_LBL, fontsize=7, ha="right", va="top", zorder=3,
+                clip_on=True)
 
     # Star plot — exclude points outside the projected square.
     plotted = []
@@ -925,7 +937,7 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float):
             f"{center['name']} (Z={center.get('z', 0.0):+.3f})",
             xy=(0, 0), xytext=(6.0, 5.0), textcoords="offset points",
             color=_SC_SOL, fontsize=9, fontweight="600",
-            ha="left", va="bottom", zorder=7, annotation_clip=True,
+            ha="left", va="bottom", zorder=7, annotation_clip=True, clip_on=True,
         )
         sol_label.set_visible(initial_show_labels)
         body_stars = plotted[1:]
@@ -971,11 +983,31 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float):
             lbl, xy=(x, y), xytext=(LABEL_DX_PT, dy_pt),
             textcoords="offset points",
             color=_SC_STAR_LBL, fontsize=7, ha="left", va="bottom",
-            zorder=8, annotation_clip=True,
+            zorder=8, annotation_clip=True, clip_on=True,
         )
         txt.set_path_effects([_path_stroke(linewidth=2.5, color=_SC_PLOT_BG)])
         txt.set_visible(initial_show_labels)
         star_labels.append(txt)
+
+    # Route overlay (Phase I) — dashed ordered legs (I1/I2) or solid MST edges
+    # (I3), drawn under the dots. Lines stay visible at all zooms; the small
+    # per-segment labels follow the same zoom-driven visibility as star labels.
+    for e in (routes or []):
+        solid = e.get("style") == "solid"
+        ax.plot([e["x1"], e["x2"]], [e["y1"], e["y2"]],
+                color=(_SC_MST if solid else _SC_ROUTE), linewidth=1.6,
+                linestyle="-" if solid else "--", alpha=0.9, zorder=3)
+        lbl = e.get("label")
+        if lbl:
+            mx, my = (e["x1"] + e["x2"]) / 2.0, (e["y1"] + e["y2"]) / 2.0
+            rtxt = ax.annotate(
+                str(lbl), xy=(mx, my), xytext=(0, 0), textcoords="offset points",
+                color=_SC_ROUTE_LBL, fontsize=7, ha="center", va="center",
+                zorder=9, annotation_clip=True, clip_on=True,
+            )
+            rtxt.set_path_effects([_path_stroke(linewidth=2.5, color=_SC_PLOT_BG)])
+            rtxt.set_visible(initial_show_labels)
+            star_labels.append(rtxt)
 
     # Tick spines/border styling — hide the tick numbers (we draw our own along
     # the origin axes) but keep a faint border to frame the plot.
@@ -1099,7 +1131,7 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float):
 
 # ── Star Chart 3D (labeled 3D scatter, dark theme) ────────────────────────────
 
-def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float):
+def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None):
     """3D companion to make_star_chart_canvas.
 
     Same dark navy palette, spectral-class star dots, gold ★ origin marker,
@@ -1242,6 +1274,23 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float):
         txt.set_path_effects([_path_stroke(linewidth=2.0, color=_SC_PLOT_BG)])
         txt.set_visible(initial_show_labels)
         star_labels.append(txt)
+
+    # Route overlay (Phase I) — dashed ordered legs / solid MST edges in 3D.
+    for e in (routes or []):
+        solid = e.get("style") == "solid"
+        ax.plot([e["x1"], e["x2"]], [e["y1"], e["y2"]], [e["z1"], e["z2"]],
+                color=(_SC_MST if solid else _SC_ROUTE), linewidth=1.6,
+                linestyle="-" if solid else "--", alpha=0.9, zorder=4)
+        lbl = e.get("label")
+        if lbl:
+            mx = (e["x1"] + e["x2"]) / 2.0
+            my = (e["y1"] + e["y2"]) / 2.0
+            mz = (e["z1"] + e["z2"]) / 2.0
+            rtxt = ax.text(mx, my, mz, str(lbl), color=_SC_ROUTE_LBL,
+                           fontsize=7, zorder=9, ha="center", va="center")
+            rtxt.set_path_effects([_path_stroke(linewidth=2.0, color=_SC_PLOT_BG)])
+            rtxt.set_visible(initial_show_labels)
+            star_labels.append(rtxt)
 
     # Hover tooltip (top-right text2D — stays fixed under rotation).
     hover_text = ax.text2D(

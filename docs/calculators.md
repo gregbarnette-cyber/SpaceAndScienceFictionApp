@@ -21,7 +21,7 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 - Results sorted ascending by Light Years. Displays count of matches above the table.
 - Output table columns: Star Name | Star Designations | Spectral Type | Distance (LY) (4dp).
 - **GUI diagram tabs** (via `DiagramToggleMixin`): "Map X–Y (top-down)", "Map X–Z (edge-on)", "Map 3D", "Star Chart", "Star Chart 3D". The first three use a light gray background (`bg="#ebebeb"`). The 3D tab includes Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar. Stars are coloured by spectral class; Sol is highlighted with a star marker at the origin. Hover shows name + distance at upper-right (clear of the spectral class legend at upper-left); click shows full info box. Scroll wheel zooms in/out; Home button resets to the initial zoom and view angles. The rectangle Zoom button is removed from the 3D toolbar — it cannot map a 2D screen selection back to 3D data coordinates correctly.
-  - "Star Chart" is a labeled X–Y projection in the dark navy palette of `generate_star_map_html.py` (fig bg `#070b18`, plot bg `#0b1020`, minor grid `#1a2448` / major `#2a3868`, axes `#4a6a99`, distance rings `#3a5a8a`). Each star is drawn as a small dot coloured by spectral class with a `"Name (Z=±X.XXX)"` label nudged downward when it would overlap a previously placed label; Sol is a gold ★ at the origin. Grid/ring intervals scale with the user's distance limit (1/5 ly for ≤ 20, 2/10 for ≤ 50, 5/25 for ≤ 100, 10/50 otherwise). Stars whose `|x|` or `|y|` exceeds the limit (still inside the sphere but outside the projection square) are excluded — same rule as the HTML script. Per-star labels (and the Sol Z-label) are always created but their visibility is governed by the visible half-range: they're shown whenever `(x1-x0)/2 ≤ 15` (or equivalently `(y1-y0)/2 ≤ 15`) and hidden otherwise. So at small initial limits (≤ 15 ly) labels appear immediately; at larger limits the chart starts unlabeled and labels appear as soon as the user zooms in enough that the visible half-range drops below 15 ly. The toolbar's Home button resets the view to the original limit, which hides them again. Per-star labels are drawn with `ax.annotate(..., xytext=(6, 5), textcoords="offset points")` — a **fixed pixel offset** — so each label stays glued to its dot at any zoom level (a data-space offset would drift off the marker as you zoom in); initially-overlapping labels are nudged downward in screen-space points. Labels use `annotation_clip=True` so off-screen-star labels don't render past the axes box when zoomed in. Hover/click still surface individual star details at any zoom level.
+  - "Star Chart" is a labeled X–Y projection in the dark navy palette of `generate_star_map_html.py` (fig bg `#070b18`, plot bg `#0b1020`, minor grid `#1a2448` / major `#2a3868`, axes `#4a6a99`, distance rings `#3a5a8a`). Each star is drawn as a small dot coloured by spectral class with a `"Name (Z=±X.XXX)"` label nudged downward when it would overlap a previously placed label; Sol is a gold ★ at the origin. Grid/ring intervals scale with the user's distance limit (1/5 ly for ≤ 20, 2/10 for ≤ 50, 5/25 for ≤ 100, 10/50 otherwise). Stars whose `|x|` or `|y|` exceeds the limit (still inside the sphere but outside the projection square) are excluded — same rule as the HTML script. Per-star labels (and the Sol Z-label) are always created but their visibility is governed by the visible half-range: they're shown whenever `(x1-x0)/2 ≤ 15` (or equivalently `(y1-y0)/2 ≤ 15`) and hidden otherwise. So at small initial limits (≤ 15 ly) labels appear immediately; at larger limits the chart starts unlabeled and labels appear as soon as the user zooms in enough that the visible half-range drops below 15 ly. The toolbar's Home button resets the view to the original limit, which hides them again. Per-star labels are drawn with `ax.annotate(..., xytext=(6, 5), textcoords="offset points")` — a **fixed pixel offset** — so each label stays glued to its dot at any zoom level (a data-space offset would drift off the marker as you zoom in); initially-overlapping labels are nudged downward in screen-space points. All in-plot text — the per-star/Sol labels **and** the axis tick numbers, the `X (ly)`/`Y (ly)` axis titles, and the ring `N ly` labels — is drawn with `clip_on=True` (plus `annotation_clip=True` on the annotations) so nothing renders past the axes box when the view is panned or zoomed (only the click-info box, anchored in axes-fraction coordinates, is intentionally unclipped). Hover/click still surface individual star details at any zoom level.
   - "Star Chart 3D" is the 3D companion to "Star Chart" — same dark navy palette and styling, drag-rotate (`azel` style), Top View / Side View / 3D Perspective preset buttons above the matplotlib toolbar, scroll-wheel zoom, and the same zoom-driven label toggle (visibility recomputed off `max((x1-x0)/2, (y1-y0)/2, (z1-z0)/2) ≤ 15 ly`, with `xlim_changed`/`ylim_changed`/`zlim_changed` callbacks). The center star is a gold ★ at the origin; surrounding stars are spectral-class colored dots. Faint blue wireframe spheres are drawn at every `major_step` ly (5, 10, 15 ly at the default 1/5 stepping) as 3D depth cues. **The 3D axis cube is hidden** — pane fills, pane edges, and grid lines are all removed (`axis.pane.fill = False`, transparent pane edge color, `ax.grid(False)`); only the tick labels and X/Y/Z axis labels remain for numeric scale reference. The 3D content is enlarged within the axes via `ax.set_box_aspect((1,1,1), zoom=1.35)` (matplotlib 3.6+; falls back gracefully on older versions) and full-figure subplot margins (`left=0, right=1, top=1, bottom=0`). Hover tooltip in the upper-right (text2D so it stays fixed under rotation); click info box in the lower-left. Rectangle Zoom is removed from the toolbar — it cannot map a 2D screen selection back to 3D data coords correctly. The figure uses symmetric `subplots_adjust(left=0.04, right=0.96, top=0.94, bottom=0.06)` plus `anchor="C"` so the square aspect-equal axes stays visually centred when the canvas is wider than tall. Hover shows name + distance; click shows the full info box (name, designations, spectral type, distance, X/Y/Z); scroll wheel zooms around the cursor; the toolbar Home button restores the initial view.
 
 ## Stars within a Certain Distance of a Star Feature
@@ -198,3 +198,69 @@ Ambiguous-name detection (`"Multiple major-bodies"` / `"ambiguous"`) in `compute
 - Same error handling as option 31: ambiguous Horizons name, lookup failure, same-object detection (distance < 1e-9 AU).
 - **GUI diagram tab**: identical to option 22 — "Solar System Map" (2D top-down XY ecliptic view) with the same planet map, origin/dest markers, dashed travel line, and click-to-dialog interactivity. Planet positions are fetched at departure epoch `t0_jd`.
 - **Core function**: `core.calculators.compute_travel_time_custom_thrust(origin, destination, accel_g, burn_duration_s, v_cap_pct, burn_value, burn_unit_label, departure_date)` — `departure_date` is an ISO string `"YYYY-MM-DD"`; when `None`, defaults to today. Returns `departure_date`, `origin_xyz`, `dest_xyz`, `origin_id`, `dest_id`, and `planet_positions` in addition to the thrust/phase data.
+
+## Route Planning (Phase I — GUI-only)
+
+Three route-planning calculators in `core/calculators.py`, surfaced by the GUI **"Route Planning"** nav category
+(`MultiStopJourneyPanel`, `NearestNeighborPanel`, `TradeRoutePlannerPanel` in `gui/panels/route_planning.py`). New,
+**self-validating** functions (return `{"error": str}` for bad input) reusing the existing distance / Cartesian /
+travel-time helpers. **No CLI menu entry, no `query.py` subcommand.**
+
+### Shared star resolution
+
+All three resolve a typed star **name** via `_resolve_star_position(name)` (no picker/autocomplete — free-hand text,
+like opts 17–21), in this order so most names never hit the network:
+
+1. `"sol"`/`"sun"` → the origin `(0,0,0)` instantly (no DB, no SIMBAD), `sp_type="G2V"`.
+2. **DB-first** — case-insensitive exact match on `star_systems.star_name` (offline; also yields the spectral type
+   used for the map dot colour). Uses module-level `_parse_db_ra` / `_parse_db_dec` (sexagesimal → degrees) + `_to_cartesian`.
+3. **SIMBAD fallback** — `compute_lookup_star_for_distance(name)` (live network, background thread); `sp_type=""` (grey dot).
+
+A name matching neither returns `{"error": str}`. Resolved records become star-map-compatible dicts
+(`{name, desig, sp_type, color, ly, x, y, z}`; `ly` = distance from Sol) via `_map_node`. `_load_star_systems_positions()`
+reads the whole `star_systems` table as the candidate pool for the nearest-neighbor chain (empty table → the opt-50 message).
+
+### Multi-Stop Journey — `compute_multi_stop_journey(star_names, velocity_input, use_times_c)`
+
+Cumulative travel time along an ordered list of stops (same 3D-Euclidean + `format_travel_time` math as opts 20/21).
+- Validate: `len(star_names) >= 2`; `velocity_input > 0`. `use_times_c` selects the unit (×c vs LY/HR); derives both
+  via `HOURS_PER_JULIAN_YEAR` (8765.8128).
+- Resolves every stop; **the first unresolvable stop fails fast → `{"error": "Stop N ('name'): <reason>"}`**. *(This
+  deviates from the original "ask skip/abort" brainstorm — a pure core function cannot prompt and this is GUI-only, so
+  the panel surfaces the error and the user edits the list and re-runs.)*
+- Returns `{legs:[{leg, origin, dest, distance_ly, ly_hr, times_c, hours, cumulative_hours, travel_time,
+  cumulative_time}], total_ly, total_hours, total_time, stars:[map dicts]}`.
+- **GUI table**: Leg # | Origin | Destination | Distance (LY) | LY/HR | × c | Travel Time | Cumulative Time; totals label above.
+
+### Nearest-Neighbor Chain — `compute_nearest_neighbor_chain(start_star, num_hops, max_ly)`
+
+Greedy nearest-unvisited traversal from a start star over the `star_systems` candidate pool.
+- Validate: `num_hops >= 1` (int); `max_ly > 0`. Resolve the start (`sol`/`sun` → origin); empty table → opt-50 error.
+- **Self-exclusion**: the start's own DB row is dropped within `1e-3` ly so it can't be hop 1.
+- Each step picks the closest unvisited star with `dist <= max_ly`; if none in range, sets `stopped_early=True` (not an error) and stops.
+- Returns `{chain:[{hop, star_name, desig, sp_type, dist_from_prev_ly, cumulative_ly, ly_from_sol}], stars:[map dicts,
+  start at index 0 (gold)], total_ly, stopped_early, start_name}`.
+- **GUI table**: Hop # | Star Name | Designations | Spectral Type | Dist from Prev (LY) | Cumulative (LY) | Dist from Sol (LY); an amber italic note when `stopped_early`.
+
+### Trade-Route Network (MST) — `compute_trade_route_mst(star_names)` *(stretch)*
+
+Minimum spanning tree connecting a set of systems (Kruskal + `_UnionFind`).
+- Validate: dedup case-insensitively, then `>= 2` systems; resolve each (first failure → `{"error": "'name': <reason>"}`).
+- Builds all `N·(N−1)/2` Euclidean edges, sorts ascending, adds non-cycle-forming edges until `N−1` chosen.
+- Returns `{nodes:[{name,x,y,z,sp_type,desig}], edges:[{from,to,distance_ly}] (N−1, ascending), total_ly, stars:[map dicts]}`.
+- **GUI table**: From | To | Distance (LY); node/edge/total summary label above.
+
+### Route map overlay — `core.viz.prepare_route_map(result)` + the Star-Chart `routes=` param
+
+`prepare_route_map(result)` normalizes any of the three results into `{stars, edges:[{x1,y1,z1,x2,y2,z2,label,style}],
+edge_style}` — `"dashed"` consecutive legs for the ordered routes (I1/I2; label = leg distance / hop ②③…), `"solid"`
+MST edges for I3 (label = edge ly). `{"error"}` passes through.
+
+The maps are the **dark-navy GCNS "Star Chart" + "Star Chart 3D"** diagrams (`make_star_chart_canvas` /
+`make_star_chart_3d_canvas` in `gui/visualizations/plot_helpers.py`), which gained an optional trailing
+`routes=None` kwarg (additive — existing opts-18/19 / GCNS callers are unaffected). The panel shifts coordinates so the
+route's origin/start/center sits at the chart origin (gold ★), with distance rings measured from it and
+`limit_ly = max node distance × 1.1`. Route lines stay visible at all zooms; the per-segment labels follow the chart's
+existing **zoom-driven label decluttering** (shown once the visible half-range drops below ~15 ly), so a busy route
+starts uncluttered and reveals labels on zoom. **Phase O8 (two-star maps for opts 17/20/21) reuses this same `routes=`
+parameter** — Phase I built it first.

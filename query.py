@@ -165,6 +165,39 @@ def cmd_atmosphere_retention(args):
     ))
 
 
+# ── Integration expansion (Phase N) ───────────────────────────────────────────
+# Each handler is a thin verbatim wrapper over an existing core function. N1–N4
+# wrap the older, non-self-validating equation/calculator functions, so
+# out-of-range numerics surface as {"error": str(e)} (a raw exception message)
+# via main()'s top-level handler with exit 1 — see docs/integration.md. Only N5
+# (travel-time-solar) emits curated {"error": ...} dicts.
+
+def cmd_habitable_zone_sma(args):
+    _out(equations.compute_habitable_zone_sma(args.teff, args.luminosity, args.sma))
+
+
+def cmd_star_luminosity(args):
+    # --teff is mapped to the function's `temp` parameter (naming parity with
+    # habitable-zone / habitable-zone-sma).
+    _out(equations.compute_star_luminosity(args.radius, args.teff))
+
+
+def cmd_brachistochrone_au(args):
+    _out(calculators.compute_travel_time_system_au(args.accel_g, args.au))
+
+
+def cmd_brachistochrone_lm(args):
+    _out(calculators.compute_travel_time_system_lm(args.accel_g, args.lm))
+
+
+def cmd_travel_time_solar(args):
+    # progress_callback is GUI-only and is deliberately NOT passed (defaults to None).
+    _out(calculators.compute_travel_time_solar_objects(
+        args.origin, args.destination, args.accel_g,
+        v_cap_pct=args.v_cap_pct, departure_date=args.date,
+    ))
+
+
 # ── Argument parser ───────────────────────────────────────────────────────────
 
 def main():
@@ -351,6 +384,48 @@ def main():
     p.add_argument("--planet-radius-earth", required=True, type=float)
     p.add_argument("--temperature-k",       required=True, type=float)
     p.set_defaults(func=cmd_atmosphere_retention)
+
+    # ── Integration expansion (Phase N) ──────────────────────────────────────
+
+    # habitable-zone-sma
+    p = sub.add_parser("habitable-zone-sma",
+                       help="HZ boundaries + object's Seff and HZ-membership verdict")
+    p.add_argument("--teff",       required=True, type=float, help="Stellar temperature in K")
+    p.add_argument("--luminosity", required=True, type=float, help="Stellar luminosity in solar units")
+    p.add_argument("--sma",        required=True, type=float, help="Object's semi-major axis in AU")
+    p.set_defaults(func=cmd_habitable_zone_sma)
+
+    # star-luminosity
+    p = sub.add_parser("star-luminosity",
+                       help="Stellar luminosity from radius and temperature: L = R^2 * (T/5778)^4")
+    p.add_argument("--radius", required=True, type=float, help="Stellar radius in solar radii (R_sun)")
+    p.add_argument("--teff",   required=True, type=float, help="Effective temperature in K")
+    p.set_defaults(func=cmd_star_luminosity)
+
+    # brachistochrone-au
+    p = sub.add_parser("brachistochrone-au",
+                       help="Brachistochrone travel time for three profiles, distance in AU")
+    p.add_argument("--accel-g", dest="accel_g", required=True, type=float, help="Acceleration in g")
+    p.add_argument("--au",      required=True, type=float, help="Distance in AU")
+    p.set_defaults(func=cmd_brachistochrone_au)
+
+    # brachistochrone-lm
+    p = sub.add_parser("brachistochrone-lm",
+                       help="Brachistochrone travel time for three profiles, distance in light minutes")
+    p.add_argument("--accel-g", dest="accel_g", required=True, type=float, help="Acceleration in g")
+    p.add_argument("--lm",      required=True, type=float, help="Distance in light minutes")
+    p.set_defaults(func=cmd_brachistochrone_lm)
+
+    # travel-time-solar
+    p = sub.add_parser("travel-time-solar",
+                       help="Brachistochrone travel time between two solar-system bodies (live JPL Horizons)")
+    p.add_argument("--origin",      required=True, help="Origin body name or Horizons ID")
+    p.add_argument("--destination", required=True, help="Destination body name or Horizons ID")
+    p.add_argument("--accel-g", dest="accel_g", required=True, type=float, help="Acceleration in g")
+    p.add_argument("--v-cap-pct", dest="v_cap_pct", type=float, default=3.0,
+                   help="Coast-phase velocity cap as %% of c (default 3.0)")
+    p.add_argument("--date", default=None, help="Departure date ISO YYYY-MM-DD (default: today)")
+    p.set_defaults(func=cmd_travel_time_solar)
 
     args = parser.parse_args()
     try:

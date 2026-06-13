@@ -230,7 +230,22 @@ Determines which atmospheric gases a planet can retain against Jeans escape, giv
 
 ---
 
-## Phase I — Multi-System / Route Planning
+## Phase I — Multi-System / Route Planning ✅ IMPLEMENTED (2026-06-12)
+
+> **Implemented** per [`PHASE_I_PLAN.md`](PHASE_I_PLAN.md): three new self-validating
+> `core/calculators.py` functions (`compute_multi_stop_journey`,
+> `compute_nearest_neighbor_chain`, `compute_trade_route_mst`) + a shared
+> `_resolve_star_position` (DB-first → SIMBAD, `sol`/`sun` → origin) and
+> `core.viz.prepare_route_map`; three GUI panels in `gui/panels/route_planning.py`
+> under a new **"Route Planning"** nav category. Maps reuse the dark-navy **Star
+> Chart** / **Star Chart 3D** canvases with a new additive `routes=` overlay
+> (dashed ordered legs / solid MST edges; per-segment labels follow the chart's
+> zoom-driven decluttering) — **shared with Phase O8** (Phase I built it first).
+> Stars are free-hand typed (no autocomplete); I3 (`TradeRoutePlannerPanel`) is the
+> stretch goal and ships. **GUI-only — no CLI menu, no `query.py`.** Tests:
+> `tests/test_route_planning.py` (22, offline). Mockups:
+> [`mockups/phase-i.html`](mockups/phase-i.html) (light scatter) and
+> [`mockups/phase-i-alt.html`](mockups/phase-i-alt.html) (the chosen GCNS Star-Chart maps).
 
 **New panels (GUI-only)**: `MultiStopJourneyPanel`, `NearestNeighborPanel`, `TradeRoutePlannerPanel` (stretch)
 **Existing options touched**: opts 17–21 share `compute_lookup_star_for_distance` — no changes needed, just reused; `core/viz.py` and `gui/visualizations/plot_helpers.py` extended for route overlays
@@ -757,7 +772,20 @@ opt 1 already resolves `designations["Gaia EDR3"]`; M5 reuses that id **for free
 
 ---
 
-## Phase N — query.py Integration Expansion
+## Phase N — query.py Integration Expansion ✅ IMPLEMENTED (2026-06-12)
+
+> **Implemented** per [`PHASE_N_PLAN.md`](PHASE_N_PLAN.md): five `query.py` subcommands —
+> `habitable-zone-sma`, `star-luminosity`, `brachistochrone-au`, `brachistochrone-lm`,
+> `travel-time-solar` (the only network-bound one — live JPL Horizons) — each a thin
+> verbatim wrapper over an existing `core/` function (no `core/`, GUI, CLI-menu, or DB
+> changes). **Validation decision (documented in `docs/integration.md`):** N1–N4 wrap the
+> *non-self-validating* legacy functions, so out-of-range numerics surface as
+> `{"error": str(e)}` (raw exception text) via the top-level handler, exit 1 —
+> `star-luminosity` has no out-of-range error path at all (argparse exit 2 only); only
+> `travel-time-solar` emits curated error dicts. Tests: `tests/test_query_phase_n.py`
+> (offline subprocess contracts + parity + exit-code matrix + mocked `travel-time-solar`
+> wiring; Horizons-gated live round-trip). Companion mockup:
+> [`mockups/phase-n.html`](mockups/phase-n.html) (a CLI/JSON contract preview — no GUI).
 
 **New panels**: none — integration-surface only (no GUI, no CLI menu changes; see the scope-note exception above)
 **Existing options touched**: none — every subcommand wraps an existing `core/` function verbatim. Precedent: Phase M5 already extends `query.py` (the `"gcns"` key on `simbad-lookup`).

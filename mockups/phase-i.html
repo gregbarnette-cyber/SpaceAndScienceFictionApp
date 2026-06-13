@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase I — Multi-System / Route Planning (Mockup)</title>
+<style>
+  :root{
+    --bg:#f0f0f0; --panel:#ffffff; --border:#b8b8b8; --border-soft:#d8d8d8;
+    --text:#222; --muted:#6a6a6a; --accent:#4a90d9; --accent-d:#3a73ad;
+    --head:#e9eef5; --zebra:#f7f9fc; --good:#2e8b57; --warn:#b8860b; --bad:#b03030;
+    --map-bg:#0b1020; --map-grid:#1a2448; --route:#7fd3ff; --mst:#7fe0a0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+       font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}
+  .topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600}
+  .topbar .sub{color:#9aa3ad;font-weight:400}
+  .notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px;line-height:1.5}
+  .notice b{color:#4d4109}
+  .notice code{background:#f4ead0;padding:0 4px;border-radius:3px}
+  .app{flex:1;display:flex;min-height:0}
+  .nav{width:230px;min-width:230px;background:#fafafa;border-right:1px solid var(--border);overflow:auto;padding:6px 0}
+  .nav .cat{padding:9px 12px 3px;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px}
+  .nav .cat.new{color:var(--accent)}
+  .nav .new-badge{background:var(--accent);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .nav .item{padding:6px 12px 6px 22px;color:#41566f;border-left:3px solid transparent;cursor:pointer}
+  .nav .item:hover{background:#eef4fb}
+  .nav .item.active{background:#e2eefb;border-left-color:var(--accent);color:#13314e;font-weight:600}
+  .nav .item.muted{color:#bbb;cursor:default}
+  .nav .item .stretch{font-size:9px;color:#a07b2a;border:1px solid #e0c98a;border-radius:3px;padding:0 4px;margin-left:5px;font-weight:700}
+  .content{flex:1;overflow:auto;padding:16px 20px}
+  .panel{display:none}
+  .panel.active{display:block}
+  h2.title{margin:0 0 2px;font-size:18px}
+  h2.title .stretch{font-size:11px;background:#b8860b;color:#fff;border-radius:3px;padding:1px 7px;margin-left:8px;vertical-align:middle}
+  .sub{color:var(--muted);margin:4px 0 12px;font-size:12.5px;max-width:880px;line-height:1.5}
+  details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--border-soft);border-radius:5px;padding:6px 10px;max-width:900px}
+  details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+  details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+  details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.6}
+  .layout{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+  .col-form{flex:0 0 330px;max-width:330px}
+  .col-out{flex:1;min-width:380px}
+  .form{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:13px 15px;margin-bottom:12px}
+  .form h3{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+  .field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+  .field label{font-size:12px;color:#444;font-weight:600}
+  .field textarea{height:108px;border:1px solid var(--border);border-radius:4px;padding:6px 7px;font-size:12.5px;font-family:"Cascadia Code",Consolas,monospace;resize:vertical}
+  .field input,.field select{height:30px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff}
+  .field .hint{font-size:10.5px;color:#999}
+  .row2{display:flex;gap:10px}
+  .row2 .field{flex:1}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:6px}
+  button.btn{height:30px;padding:0 16px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+  button.btn:hover{background:var(--accent-d)}
+  button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+  button.ghost:hover{background:#f0f0f0}
+  .err{color:var(--bad);font-size:12px;margin:8px 0;display:none;font-weight:600}
+  .tablewrap{border:1px solid var(--border);border-radius:6px;overflow:auto;background:#fff;margin-bottom:8px;display:none}
+  table{border-collapse:collapse;width:100%;font-size:12px}
+  th{background:var(--head);text-align:left;padding:6px 9px;border-bottom:1px solid var(--border);white-space:nowrap;font-size:11px}
+  td{padding:5px 9px;border-bottom:1px solid #eee;white-space:nowrap}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:nth-child(even) td{background:var(--zebra)}
+  .totals{font-size:13px;font-weight:600;margin:6px 0 10px;display:none}
+  .totals span{color:var(--accent-d)}
+  .earlynote{font-size:11.5px;color:#b8860b;font-style:italic;margin:4px 0 8px;display:none}
+  /* map */
+  .mapcard{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:none}
+  .mapcard .mh{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .mapcard .mh h3{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+  .mapcard .proj{font-size:11.5px}
+  .mapcard .proj select{height:24px;border:1px solid var(--border);border-radius:4px;font-size:11.5px}
+  svg.map{width:100%;height:360px;background:var(--map-bg);border-radius:5px;display:block}
+  .leglbl{fill:#cfe3ff;font-size:10px;font-family:"Cascadia Code",Consolas,monospace}
+  .nodelbl{fill:#c7d2e6;font-size:10px}
+  .maplegend{font-size:11px;color:#777;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap}
+  .maplegend i{display:inline-block;width:18px;height:0;border-top-width:2px;vertical-align:middle;margin-right:4px}
+  .mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:8px 11px;border-radius:5px;font-size:12px;margin:12px 0;max-width:900px;line-height:1.5}
+  .mocknote code{background:#e7ddf5;padding:0 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  Space &amp; Science Fiction App <span class="sub">— GUI mockup</span>
+  <span class="tag">Phase I &middot; Multi-System / Route Planning</span>
+</div>
+<div class="notice">
+  <b>Interactive GUI mockup — not the real app.</b> All three panels are live (client-side JS) computing over a
+  built-in <b>14-star nearby catalog</b> (Sol + 13 neighbours, approximate heliocentric ly coords). The real app
+  resolves names <b>DB-first then SIMBAD</b> over the full <code>star_systems</code> table; distances and the route
+  logic (cumulative time, greedy nearest-neighbour, Kruskal MST) match <code>PHASE_I_PLAN.md</code>.
+</div>
+
+<div class="app">
+  <div class="nav">
+    <div class="cat">Calculators</div>
+    <div class="item muted">Distance / Travel Time (17–21)</div>
+    <div class="cat new">Route Planning <span class="new-badge">NEW</span></div>
+    <div class="item active" data-panel="i1" onclick="showPanel('i1')">Multi-Stop Journey</div>
+    <div class="item" data-panel="i2" onclick="showPanel('i2')">Nearest-Neighbor Chain</div>
+    <div class="item" data-panel="i3" onclick="showPanel('i3')">Trade-Route Network<span class="stretch">STRETCH</span></div>
+  </div>
+
+  <div class="content">
+
+    <!-- ============ I1 ============ -->
+    <div class="panel active" id="panel-i1">
+      <h2 class="title">Multi-Stop Journey Calculator</h2>
+      <p class="sub">Cumulative travel time along an ordered list of stops — same 3D-Euclidean distance and
+        <code>format_travel_time</code> as opts 20/21. Enter one stop per line.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>compute_multi_stop_journey(star_names, velocity_input, use_times_c)</code> — self-validating, GUI-only.</li>
+          <li>Per-stop resolution: <b>DB-first</b> (case-insensitive <code>star_name</code>) → <b>SIMBAD fallback</b>; <code>sol</code>/<code>sun</code> → origin.</li>
+          <li>First unresolvable stop → <code>{"error": "Stop N ('name'): …"}</code> (fail-fast; no skip/abort prompt — GUI-only).</li>
+          <li>≥ 2 stops and velocity &gt; 0 required.</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form">
+          <div class="form">
+            <h3>Journey</h3>
+            <div class="field"><label>Stops (one per line):</label>
+              <textarea id="i1_stops">Sol
+Alpha Centauri A
+Sirius
+Procyon</textarea></div>
+            <div class="row2">
+              <div class="field"><label>Velocity unit:</label>
+                <select id="i1_unit"><option value="c">× c</option><option value="ly">LY/HR</option></select></div>
+              <div class="field"><label>Velocity:</label><input id="i1_vel" value="100"></div>
+            </div>
+            <div class="actions"><button class="btn" onclick="runI1()">Plan Journey</button>
+              <button class="ghost btn" onclick="clearOut('i1')">Clear</button></div>
+            <div class="err" id="i1_err"></div>
+          </div>
+        </div>
+        <div class="col-out">
+          <div class="totals" id="i1_tot"></div>
+          <div class="tablewrap" id="i1_out"></div>
+          <div class="mapcard" id="i1_mapcard">
+            <div class="mh"><h3>Route Map</h3>
+              <div class="proj">Projection
+                <select id="i1_proj" onchange="runI1()"><option value="xy">X–Y</option><option value="xz">X–Z</option></select></div></div>
+            <svg class="map" id="i1_map"></svg>
+            <div class="maplegend"><span><i style="border-top:2px dashed var(--route)"></i>numbered legs (in order)</span>
+              <span>★ origin · ● stop (colour = spectral class)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ I2 ============ -->
+    <div class="panel" id="panel-i2">
+      <h2 class="title">Nearest-Neighbor Chain</h2>
+      <p class="sub">From a start star, hop to the closest unvisited star within the max hop distance, building a
+        chain of up to N hops. Reads positions from the local <code>star_systems</code> table.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>compute_nearest_neighbor_chain(start_star, num_hops, max_ly)</code> — self-validating.</li>
+          <li>Start resolved via SIMBAD (<code>sol</code>/<code>sun</code> → origin); the start's own DB row is excluded within <code>1e-3</code> ly so it can't be hop 1.</li>
+          <li>No unvisited star within <code>max_ly</code> → chain ends early (<b>not</b> an error: <code>stopped_early=True</code>).</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form">
+          <div class="form">
+            <h3>Chain</h3>
+            <div class="field"><label>Start star:</label><input id="i2_start" value="Sol"></div>
+            <div class="row2">
+              <div class="field"><label>Hops (1–50):</label><input id="i2_hops" value="6"></div>
+              <div class="field"><label>Max hop (LY):</label><input id="i2_max" value="6"></div>
+            </div>
+            <div class="actions"><button class="btn" onclick="runI2()">Build Chain</button>
+              <button class="ghost btn" onclick="clearOut('i2')">Clear</button></div>
+            <div class="err" id="i2_err"></div>
+          </div>
+        </div>
+        <div class="col-out">
+          <div class="totals" id="i2_tot"></div>
+          <div class="earlynote" id="i2_early"></div>
+          <div class="tablewrap" id="i2_out"></div>
+          <div class="mapcard" id="i2_mapcard">
+            <div class="mh"><h3>Route Map</h3>
+              <div class="proj">Projection
+                <select id="i2_proj" onchange="runI2()"><option value="xy">X–Y</option><option value="xz">X–Z</option></select></div></div>
+            <svg class="map" id="i2_map"></svg>
+            <div class="maplegend"><span><i style="border-top:2px dashed var(--route)"></i>hop order ①②③…</span>
+              <span>★ start · ● hop</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ I3 ============ -->
+    <div class="panel" id="panel-i3">
+      <h2 class="title">Trade-Route Network Planner <span class="stretch">STRETCH</span></h2>
+      <p class="sub">Given a set of systems, find the minimum-cost network (minimum spanning tree) that connects them
+        all — Kruskal's algorithm with union-find.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>compute_trade_route_mst(star_names)</code> — self-validating; ≥ 2 systems.</li>
+          <li>Pairwise 3D distances → sort edges ascending → add non-cycle-forming edges until N−1 chosen.</li>
+          <li>Solid edges (vs. the dashed ordered routes of I1/I2). <b>Stretch goal</b> — ships last; I1/I2 work without it.</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form">
+          <div class="form">
+            <h3>Network</h3>
+            <div class="field"><label>Systems (one per line):</label>
+              <textarea id="i3_sys">Sol
+Sirius
+Procyon
+Alpha Centauri A
+61 Cygni
+Epsilon Eridani</textarea></div>
+            <div class="actions"><button class="btn" onclick="runI3()">Build Network</button>
+              <button class="ghost btn" onclick="clearOut('i3')">Clear</button></div>
+            <div class="err" id="i3_err"></div>
+          </div>
+        </div>
+        <div class="col-out">
+          <div class="totals" id="i3_tot"></div>
+          <div class="tablewrap" id="i3_out"></div>
+          <div class="mapcard" id="i3_mapcard">
+            <div class="mh"><h3>Network Map</h3>
+              <div class="proj">Projection
+                <select id="i3_proj" onchange="runI3()"><option value="xy">X–Y</option><option value="xz">X–Z</option></select></div></div>
+            <svg class="map" id="i3_map"></svg>
+            <div class="maplegend"><span><i style="border-top:2px solid var(--mst)"></i>MST edge</span>
+              <span>● node (colour = spectral class)</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="mocknote">In the real app each node also carries hover/click details (designations, spectral type,
+        distance from Sol) and the map appears as <b>Map X–Y / X–Z / Map 3D</b> tabs behind the Show Diagrams toggle,
+        exactly like opts 18/19.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ---------- built-in nearby-star catalog (approx heliocentric ly) ---------- */
+/* color by spectral class; on the dark map these are intentionally bright. */
+const SPC={O:"#9db4ff",B:"#a9c0ff",A:"#cdd8ff",F:"#f4f4ff",G:"#ffe98a",K:"#ffb56b",M:"#ff7b6b","?":"#aaaaaa"};
+const CAT=[
+  {name:"Sol",               x:0.00,  y:0.00,  z:0.00,  cls:"G"},
+  {name:"Proxima Centauri",  x:-1.53, y:-1.20, z:-3.77, cls:"M"},
+  {name:"Alpha Centauri A",  x:-1.61, y:-1.31, z:-3.81, cls:"G"},
+  {name:"Barnard's Star",    x:-0.06, y:5.94,  z:0.49,  cls:"M"},
+  {name:"Wolf 359",          x:-7.42, y:2.10,  z:1.02,  cls:"M"},
+  {name:"Lalande 21185",     x:-6.28, y:1.72,  z:4.78,  cls:"M"},
+  {name:"Sirius",            x:-1.61, y:8.07,  z:-2.45, cls:"A"},
+  {name:"Luyten 726-8",      x:7.20,  y:3.02,  z:-2.88, cls:"M"},
+  {name:"Ross 154",          x:1.87,  y:-8.46, z:-1.70, cls:"M"},
+  {name:"Epsilon Eridani",   x:7.20,  y:-6.48, z:-2.51, cls:"K"},
+  {name:"Procyon",           x:-0.46, y:11.40, z:1.10,  cls:"F"},
+  {name:"61 Cygni",          x:6.50,  y:6.13,  z:7.13,  cls:"K"},
+  {name:"Tau Ceti",          x:10.22, y:-4.97, z:-3.27, cls:"G"},
+  {name:"Epsilon Indi",      x:5.74,  y:-3.07, z:-10.28,cls:"K"},
+];
+const ALIAS={"sun":"Sol","sol":"Sol","proxima":"Proxima Centauri","alpha cen":"Alpha Centauri A",
+  "alpha centauri":"Alpha Centauri A","rigil kent":"Alpha Centauri A","barnard":"Barnard's Star",
+  "61 cyg":"61 Cygni"};
+const HRS_PER_YR_VEL=8765.8128, HRS_PER_YEAR=8765.82, HRS_PER_MONTH=8765.82/12;
+
+function resolve(name){
+  const key=name.trim().toLowerCase();
+  if(key==="") return null;
+  if(ALIAS[key]) name=ALIAS[key];
+  const hit=CAT.find(s=>s.name.toLowerCase()===name.trim().toLowerCase());
+  if(!hit) return {error:`'${name.trim()}' not in the catalog`};
+  return {...hit, color:SPC[hit.cls]||SPC["?"], ly:Math.hypot(hit.x,hit.y,hit.z)};
+}
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+const f=(v,d)=>v.toFixed(d);
+
+function fmtTravel(hours){
+  if(hours<=0) return "0 Seconds"; let rem=hours, parts=[];
+  const yr=Math.floor(rem/HRS_PER_YEAR); rem-=yr*HRS_PER_YEAR;
+  const mo=Math.floor(rem/HRS_PER_MONTH); rem-=mo*HRS_PER_MONTH;
+  const dy=Math.floor(rem/24); rem-=dy*24; const hr=Math.floor(rem); rem-=hr;
+  const mi=Math.floor(rem*60);
+  if(yr)parts.push(yr+(yr===1?" Year":" Years")); if(mo)parts.push(mo+(mo===1?" Month":" Months"));
+  if(dy)parts.push(dy+(dy===1?" Day":" Days")); if(hr)parts.push(hr+(hr===1?" Hour":" Hours"));
+  if(mi)parts.push(mi+(mi===1?" Minute":" Minutes"));
+  return parts.length?parts.join(", "):"< 1 Minute";
+}
+
+/* ---------- table + map helpers ---------- */
+function tbl(headers,rows){return '<table><thead><tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>'+rows+'</tbody></table>';}
+function fail(p,msg){const e=document.getElementById(p+'_err');e.textContent=msg;e.style.display='block';
+  ['_out','_tot','_mapcard','_early'].forEach(s=>{const el=document.getElementById(p+s);if(el)el.style.display='none';});return false;}
+function okp(p){document.getElementById(p+'_err').style.display='none';}
+function clearOut(p){['_out','_tot','_mapcard','_early','_err'].forEach(s=>{const el=document.getElementById(p+s);if(el)el.style.display='none';});}
+
+const CIRC=["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩","⑪","⑫"];
+function drawMap(svgId,nodes,edges,proj,startIdx){
+  const svg=document.getElementById(svgId); const W=svg.clientWidth||520, H=360, pad=34;
+  const px=proj==="xz"?"x":"x", py=proj==="xz"?"z":"y";
+  const xs=nodes.map(n=>n[px]), ys=nodes.map(n=>n[py]);
+  let minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  if(maxX-minX<1){minX-=1;maxX+=1;} if(maxY-minY<1){minY-=1;maxY+=1;}
+  const sx=v=>pad+(v-minX)/(maxX-minX)*(W-2*pad);
+  const sy=v=>H-pad-(v-minY)/(maxY-minY)*(H-2*pad);   // invert: +axis up
+  let el='';
+  // faint grid frame
+  el+=`<rect x="0" y="0" width="${W}" height="${H}" fill="none"/>`;
+  // edges
+  edges.forEach(e=>{
+    const a=nodes[e.a],b=nodes[e.b];
+    const col=e.style==="solid"?getCSS('--mst'):getCSS('--route');
+    el+=`<line x1="${sx(a[px])}" y1="${sy(a[py])}" x2="${sx(b[px])}" y2="${sy(b[py])}" stroke="${col}" stroke-width="2" ${e.style==="solid"?'':'stroke-dasharray="6 4"'} opacity="0.85"/>`;
+    if(e.label){const mx=(sx(a[px])+sx(b[px]))/2, my=(sy(a[py])+sy(b[py]))/2;
+      el+=`<rect x="${mx-13}" y="${my-9}" width="26" height="15" rx="3" fill="#0b1020" opacity="0.7"/>`+
+          `<text class="leglbl" x="${mx}" y="${my+2}" text-anchor="middle">${e.label}</text>`;}
+  });
+  // nodes
+  nodes.forEach((n,i)=>{
+    const cx=sx(n[px]),cy=sy(n[py]);
+    if(i===startIdx){
+      el+=`<path d="${starPath(cx,cy,8,4)}" fill="#FFD700" stroke="#7a5c00" stroke-width="0.6"><title>${n.name} (start)</title></path>`;
+    } else {
+      el+=`<circle cx="${cx}" cy="${cy}" r="5" fill="${n.color}" stroke="#05080d" stroke-width="0.5"><title>${n.name} — ${f(Math.hypot(n.x,n.y,n.z),2)} ly from Sol</title></circle>`;
+    }
+    el+=`<text class="nodelbl" x="${cx+8}" y="${cy+4}">${n.name}</text>`;
+  });
+  svg.innerHTML=el;
+}
+function starPath(cx,cy,R,r){let p="";for(let i=0;i<10;i++){const ang=Math.PI/2+ i*Math.PI/5;const rad=i%2?r:R;
+  p+=(i?"L":"M")+(cx+rad*Math.cos(ang))+","+(cy-rad*Math.sin(ang));}return p+"Z";}
+function getCSS(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+
+/* ---------- I1 Multi-Stop ---------- */
+function runI1(){
+  const names=document.getElementById('i1_stops').value.split('\n').map(s=>s.trim()).filter(s=>s!=='');
+  if(names.length<2) return fail('i1','Enter at least two stops.');
+  const vel=parseFloat(document.getElementById('i1_vel').value);
+  if(!(vel>0)) return fail('i1','Velocity must be positive.');
+  const useC=document.getElementById('i1_unit').value==='c';
+  const ly_hr=useC? vel/HRS_PER_YR_VEL : vel, times_c=useC? vel : vel*HRS_PER_YR_VEL;
+  const nodes=[];
+  for(let i=0;i<names.length;i++){const r=resolve(names[i]);
+    if(!r||r.error) return fail('i1',`Stop ${i+1} ('${names[i]}'): ${r?r.error:'empty'}`);
+    nodes.push(r);}
+  okp('i1');
+  let cum=0,totLy=0,rows='';
+  for(let i=0;i<nodes.length-1;i++){const d=dist(nodes[i],nodes[i+1]);const hrs=d/ly_hr;cum+=hrs;totLy+=d;
+    rows+=`<tr><td class="num">${i+1}</td><td>${nodes[i].name}</td><td>${nodes[i+1].name}</td>`+
+      `<td class="num">${f(d,3)}</td><td class="num">${f(ly_hr,5)}</td><td class="num">${f(times_c,2)}</td>`+
+      `<td>${fmtTravel(hrs)}</td><td>${fmtTravel(cum)}</td></tr>`;}
+  const o=document.getElementById('i1_out');o.innerHTML=tbl(
+    ['Leg #','Origin','Destination','Distance (LY)','LY/HR','× c','Travel Time','Cumulative Time'],rows);o.style.display='block';
+  const t=document.getElementById('i1_tot');t.innerHTML=`Total Distance: <span>${f(totLy,3)} LY</span> &nbsp;·&nbsp; Total Travel Time: <span>${fmtTravel(cum)}</span>`;t.style.display='block';
+  document.getElementById('i1_mapcard').style.display='block';
+  const edges=nodes.slice(0,-1).map((_,i)=>({a:i,b:i+1,label:CIRC[i]||(i+1),style:'dashed'}));
+  drawMap('i1_map',nodes,edges,document.getElementById('i1_proj').value,0);
+}
+
+/* ---------- I2 Nearest-Neighbor ---------- */
+function runI2(){
+  const start=resolve(document.getElementById('i2_start').value);
+  if(!start||start.error) return fail('i2',`Start star: ${start?start.error:'empty'}`);
+  const hops=parseInt(document.getElementById('i2_hops').value,10);
+  if(!(hops>=1)) return fail('i2','Hops must be a positive integer.');
+  const maxLy=parseFloat(document.getElementById('i2_max').value);
+  if(!(maxLy>0)) return fail('i2','Max hop distance must be positive.');
+  okp('i2');
+  // candidate pool = catalog minus the start (self-exclusion within 1e-3 ly)
+  const pool=CAT.map(s=>({...s,color:SPC[s.cls]||SPC["?"]})).filter(s=>dist(s,start)>1e-3);
+  const visited=new Set(); let cur={x:start.x,y:start.y,z:start.z}; let cum=0,rows='',stoppedEarly=false;
+  const chainNodes=[{name:start.name,x:start.x,y:start.y,z:start.z,color:start.color||SPC[start.cls]||"#FFD700",cls:start.cls}];
+  for(let h=1;h<=hops;h++){
+    let best=null,bd=Infinity;
+    pool.forEach((c,ci)=>{if(visited.has(ci))return;const d=dist(cur,c);if(d<=maxLy&&d<bd){bd=d;best=ci;}});
+    if(best===null){stoppedEarly=true;break;}
+    visited.add(best);const c=pool[best];cum+=bd;
+    rows+=`<tr><td class="num">${h}</td><td>${c.name}</td><td>${c.name.length>14?'…':''}</td><td>${c.cls}</td>`+
+      `<td class="num">${f(bd,3)}</td><td class="num">${f(cum,3)}</td><td class="num">${f(Math.hypot(c.x,c.y,c.z),3)}</td></tr>`;
+    chainNodes.push(c);cur={x:c.x,y:c.y,z:c.z};
+  }
+  const o=document.getElementById('i2_out');
+  if(rows===''){o.innerHTML=tbl(['Hop #','Star','Desig','Spectral','Dist from Prev (LY)','Cumulative (LY)','Dist from Sol (LY)'],
+    '<tr><td colspan="7" style="color:#888">No hops — no unvisited star within max hop distance.</td></tr>');}
+  else{o.innerHTML=tbl(['Hop #','Star Name','Desig','Spectral','Dist from Prev (LY)','Cumulative (LY)','Dist from Sol (LY)'],rows);}
+  o.style.display='block';
+  const t=document.getElementById('i2_tot');t.innerHTML=`${chainNodes.length-1} hop(s) · Total Distance: <span>${f(cum,3)} LY</span>`;t.style.display='block';
+  const en=document.getElementById('i2_early');
+  if(stoppedEarly){en.textContent='No unvisited star within max hop distance — chain ended early.';en.style.display='block';}else en.style.display='none';
+  document.getElementById('i2_mapcard').style.display='block';
+  const edges=chainNodes.slice(0,-1).map((_,i)=>({a:i,b:i+1,label:CIRC[i]||(i+1),style:'dashed'}));
+  drawMap('i2_map',chainNodes,edges,document.getElementById('i2_proj').value,0);
+}
+
+/* ---------- I3 Trade-Route MST ---------- */
+function runI3(){
+  let names=document.getElementById('i3_sys').value.split('\n').map(s=>s.trim()).filter(s=>s!=='');
+  // dedup case-insensitive
+  const seen=new Set();names=names.filter(n=>{const k=n.toLowerCase();if(seen.has(k))return false;seen.add(k);return true;});
+  if(names.length<2) return fail('i3','Enter at least two systems.');
+  const nodes=[];
+  for(const nm of names){const r=resolve(nm);if(!r||r.error) return fail('i3',`'${nm}': ${r?r.error:'empty'}`);nodes.push(r);}
+  okp('i3');
+  // candidate edges
+  const E=[];for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++)E.push({a:i,b:j,w:dist(nodes[i],nodes[j])});
+  E.sort((p,q)=>p.w-q.w);
+  // union-find
+  const par=nodes.map((_,i)=>i);const find=x=>{while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;};
+  const mst=[];let total=0;
+  for(const e of E){const ra=find(e.a),rb=find(e.b);if(ra!==rb){par[ra]=rb;mst.push(e);total+=e.w;if(mst.length===nodes.length-1)break;}}
+  let rows='';mst.forEach(e=>{rows+=`<tr><td>${nodes[e.a].name}</td><td>${nodes[e.b].name}</td><td class="num">${f(e.w,3)}</td></tr>`;});
+  const o=document.getElementById('i3_out');o.innerHTML=tbl(['From','To','Distance (LY)'],rows);o.style.display='block';
+  const t=document.getElementById('i3_tot');t.innerHTML=`${nodes.length} nodes · ${mst.length} edges · Total Network Distance: <span>${f(total,3)} LY</span>`;t.style.display='block';
+  document.getElementById('i3_mapcard').style.display='block';
+  const edges=mst.map(e=>({a:e.a,b:e.b,label:f(e.w,1),style:'solid'}));
+  drawMap('i3_map',nodes,edges,document.getElementById('i3_proj').value,-1);
+}
+
+/* ---------- nav ---------- */
+function showPanel(p){
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  document.getElementById('panel-'+p).classList.add('active');
+  document.querySelectorAll('.nav .item').forEach(x=>x.classList.toggle('active',x.dataset.panel===p));
+  if(p==='i1')runI1(); if(p==='i2')runI2(); if(p==='i3')runI3();   // redraw map at correct width
+}
+runI1();showPanel('i1');
+</script>
+</body>
+</html>

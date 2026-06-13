@@ -60,6 +60,11 @@ NAVIGATION = [
         ("Velocity: LY/HR → ×c",              "VelocityLyHrPanel"),            # 31
         ("Velocity: ×c → LY/HR",              "VelocityTimesCPanel"),          # 32
     ]),
+    ("Route Planning", [
+        ("Multi-Stop Journey",        "MultiStopJourneyPanel"),
+        ("Nearest-Neighbor Chain",    "NearestNeighborPanel"),
+        ("Trade-Route Network",       "TradeRoutePlannerPanel"),
+    ]),
     ("Planetary Equations", [
         ("Orbit Periastron & Apastron", "OrbitPeriastronPanel"),
         ("Moon Orbital Distance (24h)", "MoonDistance24Panel"),

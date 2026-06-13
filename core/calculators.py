@@ -1204,3 +1204,359 @@ def compute_travel_time_times_c(distance_ly: float, times_c: float) -> dict:
         "total_hours": total_hours,
         "travel_time_str": format_travel_time(total_hours),
     }
+
+
+# ── Phase I — Route Planning ──────────────────────────────────────────────────
+# Multi-stop journeys, nearest-neighbor chains, and trade-route MSTs. New,
+# self-validating functions (return {"error": str} on bad input) reusing the
+# existing resolver / Cartesian / travel-time helpers above. GUI-only — no CLI
+# menu entry, no query.py subcommand.
+
+
+def _parse_db_ra(s: str) -> float:
+    """Sexagesimal RA string 'HH MM SS' → decimal degrees (×15)."""
+    p = s.strip().split()
+    return (float(p[0]) + float(p[1]) / 60 + float(p[2]) / 3600) * 15
+
+
+def _parse_db_dec(s: str) -> float:
+    """Sexagesimal DEC string '±DD MM SS' → signed decimal degrees."""
+    s = s.strip()
+    sign = -1 if s.startswith("-") else 1
+    p = s.lstrip("+-").split()
+    return sign * (float(p[0]) + float(p[1]) / 60 + float(p[2]) / 3600)
+
+
+def _star_map_color(sp_type: str) -> str:
+    """Spectral type → map dot colour (leading-letter; default grey)."""
+    palette = {
+        "O": "#9bb0ff", "B": "#aabfff", "A": "#cad7ff", "F": "#f8f7ff",
+        "G": "#fff4c2", "K": "#ffd2a1", "M": "#ff9d6c", "D": "#dfe6ff",
+    }
+    c = (sp_type or "").strip()
+    return palette.get(c[0].upper(), "#cccccc") if c else "#cccccc"
+
+
+def _resolve_star_position(name: str) -> dict:
+    """Resolve a star name to a heliocentric position, DB-first then SIMBAD.
+
+    Order: 'sol'/'sun' → origin (no DB, no network); then a case-insensitive
+    exact match on star_systems.star_name (offline, also yields a spectral
+    type); then a live SIMBAD lookup via compute_lookup_star_for_distance.
+
+    Returns:
+        {name, x, y, z, ly, sp_type, desig, source}  on success
+        {"error": str}                                if it resolves nowhere
+    """
+    norm = name.strip().lower()
+    if norm in ("sun", "sol"):
+        return {"name": name.strip(), "x": 0.0, "y": 0.0, "z": 0.0,
+                "ly": 0.0, "sp_type": "G2V", "desig": "", "source": "sol"}
+
+    # DB-first: exact (case-insensitive) star_name match.
+    try:
+        from core.db import get_conn
+        row = get_conn().execute(
+            "SELECT star_name, designations, spectral_type, parallax, "
+            "light_years, ra, dec FROM star_systems "
+            "WHERE lower(star_name) = ? LIMIT 1",
+            (norm,),
+        ).fetchone()
+    except Exception:
+        row = None
+
+    if row is not None:
+        try:
+            ly = row["light_years"]
+            if ly is None or ly <= 0:
+                plx = float(row["parallax"] or 0)
+                if plx > 0:
+                    ly = 1000.0 / plx * 3.26156
+            if ly and ly > 0 and row["ra"] and row["dec"]:
+                ra_deg = _parse_db_ra(row["ra"])
+                dec_deg = _parse_db_dec(row["dec"])
+                x, y, z = _to_cartesian(ra_deg, dec_deg, ly)
+                return {
+                    "name": row["star_name"] or name.strip(),
+                    "x": x, "y": y, "z": z, "ly": ly,
+                    "sp_type": row["spectral_type"] or "",
+                    "desig": row["designations"] or "",
+                    "source": "db",
+                }
+        except Exception:
+            pass  # fall through to SIMBAD
+
+    # SIMBAD fallback (live network).
+    s = compute_lookup_star_for_distance(name)
+    if "error" in s:
+        return s
+    x, y, z = _to_cartesian(s["ra_deg"], s["dec_deg"], s["ly"])
+    return {
+        "name": s["name"], "x": x, "y": y, "z": z, "ly": s["ly"],
+        "sp_type": "", "desig": s.get("desig_str", ""), "source": "simbad",
+    }
+
+
+def _map_node(rec: dict) -> dict:
+    """Build a star-map-compatible dict from a resolved record."""
+    return {
+        "name": rec["name"], "desig": rec.get("desig", ""),
+        "sp_type": rec.get("sp_type", ""),
+        "color": _star_map_color(rec.get("sp_type", "")),
+        "ly": math.sqrt(rec["x"] ** 2 + rec["y"] ** 2 + rec["z"] ** 2),
+        "x": rec["x"], "y": rec["y"], "z": rec["z"],
+    }
+
+
+def _load_star_systems_positions() -> dict:
+    """Read all star_systems rows as 3D positions for the nearest-neighbor pool.
+
+    Returns:
+        {"stars": [ {name, desig, sp_type, ly, x, y, z} ]}  on success
+        {"error": str}                                       if the table is empty
+    """
+    from core.db import get_conn
+    try:
+        conn = get_conn()
+        if conn.execute("SELECT COUNT(*) FROM star_systems").fetchone()[0] == 0:
+            return {"error": "star_systems table is empty — run option 50 first to populate it."}
+        rows = conn.execute(
+            "SELECT star_name, designations, spectral_type, parallax, "
+            "light_years, ra, dec FROM star_systems"
+        ).fetchall()
+    except Exception as e:
+        return {"error": f"Error reading star_systems table: {e}"}
+
+    out = []
+    for row in rows:
+        try:
+            plx = float(row["parallax"] or 0)
+            if plx <= 0:
+                continue
+            ly = 1000.0 / plx * 3.26156
+            ra_deg = _parse_db_ra(row["ra"] or "")
+            dec_deg = _parse_db_dec(row["dec"] or "")
+        except (ValueError, TypeError, IndexError):
+            continue
+        x, y, z = _to_cartesian(ra_deg, dec_deg, ly)
+        out.append({
+            "name": row["star_name"] or "", "desig": row["designations"] or "",
+            "sp_type": row["spectral_type"] or "", "ly": ly,
+            "x": x, "y": y, "z": z,
+        })
+    return {"stars": out}
+
+
+def compute_multi_stop_journey(star_names, velocity_input: float,
+                               use_times_c: bool) -> dict:
+    """Cumulative travel time along an ordered list of stops.
+
+    Resolution per stop is DB-first then SIMBAD ('sol'/'sun' → origin); the
+    first unresolvable stop fails fast with an error naming it.
+
+    Returns:
+        {legs:[{leg, origin, dest, distance_ly, ly_hr, times_c, hours,
+                cumulative_hours, travel_time, cumulative_time}],
+         total_ly, total_hours, total_time, stars:[map dicts]}
+        or {"error": str}
+    """
+    if not star_names or len(star_names) < 2:
+        return {"error": "Enter at least two stops."}
+    if velocity_input is None or velocity_input <= 0:
+        return {"error": "Velocity must be positive."}
+
+    if use_times_c:
+        ly_hr = velocity_input / HOURS_PER_JULIAN_YEAR
+        times_c = velocity_input
+    else:
+        ly_hr = velocity_input
+        times_c = velocity_input * HOURS_PER_JULIAN_YEAR
+
+    nodes = []
+    for i, nm in enumerate(star_names):
+        rec = _resolve_star_position(nm)
+        if "error" in rec:
+            return {"error": f"Stop {i + 1} ('{nm}'): {rec['error']}"}
+        nodes.append(rec)
+
+    legs = []
+    cumulative_hours = 0.0
+    total_ly = 0.0
+    for i in range(len(nodes) - 1):
+        a, b = nodes[i], nodes[i + 1]
+        d = math.sqrt((b["x"] - a["x"]) ** 2 + (b["y"] - a["y"]) ** 2 + (b["z"] - a["z"]) ** 2)
+        hours = d / ly_hr
+        cumulative_hours += hours
+        total_ly += d
+        legs.append({
+            "leg": i + 1, "origin": a["name"], "dest": b["name"],
+            "distance_ly": d, "ly_hr": ly_hr, "times_c": times_c,
+            "hours": hours, "cumulative_hours": cumulative_hours,
+            "travel_time": format_travel_time(hours),
+            "cumulative_time": format_travel_time(cumulative_hours),
+        })
+
+    return {
+        "legs": legs,
+        "total_ly": total_ly,
+        "total_hours": cumulative_hours,
+        "total_time": format_travel_time(cumulative_hours),
+        "stars": [_map_node(n) for n in nodes],
+    }
+
+
+def compute_nearest_neighbor_chain(start_star: str, num_hops: int,
+                                   max_ly: float) -> dict:
+    """Greedy nearest-unvisited traversal from a start star over star_systems.
+
+    Returns:
+        {chain:[{hop, star_name, desig, sp_type, dist_from_prev_ly,
+                 cumulative_ly, ly_from_sol}],
+         stars:[map dicts incl. start at index 0], total_ly,
+         stopped_early, start_name}
+        or {"error": str}
+    """
+    try:
+        num_hops = int(num_hops)
+    except (TypeError, ValueError):
+        return {"error": "Number of hops must be a positive integer."}
+    if num_hops < 1:
+        return {"error": "Number of hops must be a positive integer."}
+    if max_ly is None or max_ly <= 0:
+        return {"error": "Max hop distance must be positive."}
+
+    start = _resolve_star_position(start_star)
+    if "error" in start:
+        return start
+
+    pool_res = _load_star_systems_positions()
+    if "error" in pool_res:
+        return pool_res
+    # Self-exclusion: drop the start's own DB row (within 1e-3 ly).
+    pool = [
+        s for s in pool_res["stars"]
+        if math.sqrt((s["x"] - start["x"]) ** 2 + (s["y"] - start["y"]) ** 2
+                     + (s["z"] - start["z"]) ** 2) > 1e-3
+    ]
+
+    visited = set()
+    cur = start
+    cumulative_ly = 0.0
+    chain = []
+    chain_nodes = [start]
+    stopped_early = False
+    for hop in range(1, num_hops + 1):
+        best_i, best_d = None, float("inf")
+        for idx, cand in enumerate(pool):
+            if idx in visited:
+                continue
+            d = math.sqrt((cand["x"] - cur["x"]) ** 2 + (cand["y"] - cur["y"]) ** 2
+                          + (cand["z"] - cur["z"]) ** 2)
+            if d <= max_ly and d < best_d:
+                best_d, best_i = d, idx
+        if best_i is None:
+            stopped_early = True
+            break
+        visited.add(best_i)
+        cand = pool[best_i]
+        cumulative_ly += best_d
+        chain.append({
+            "hop": hop, "star_name": cand["name"], "desig": cand["desig"],
+            "sp_type": cand["sp_type"], "dist_from_prev_ly": best_d,
+            "cumulative_ly": cumulative_ly, "ly_from_sol": cand["ly"],
+        })
+        chain_nodes.append(cand)
+        cur = cand
+
+    stars = [_map_node(start)]
+    stars[0]["color"] = "#FFD700"  # start highlighted gold
+    for c in chain_nodes[1:]:
+        stars.append(_map_node(c))
+
+    return {
+        "chain": chain,
+        "stars": stars,
+        "total_ly": cumulative_ly,
+        "stopped_early": stopped_early,
+        "start_name": start["name"],
+    }
+
+
+class _UnionFind:
+    """Disjoint-set with path compression + union by rank (for Kruskal)."""
+
+    def __init__(self, n):
+        self.parent = list(range(n))
+        self.rank = [0] * n
+
+    def find(self, x):
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, a, b):
+        ra, rb = self.find(a), self.find(b)
+        if ra == rb:
+            return False
+        if self.rank[ra] < self.rank[rb]:
+            ra, rb = rb, ra
+        self.parent[rb] = ra
+        if self.rank[ra] == self.rank[rb]:
+            self.rank[ra] += 1
+        return True
+
+
+def compute_trade_route_mst(star_names) -> dict:
+    """Minimum spanning tree connecting a set of systems (Kruskal + union-find).
+
+    Returns:
+        {nodes:[{name,x,y,z,sp_type,desig}], edges:[{from,to,distance_ly}],
+         total_ly, stars:[map dicts]}
+        or {"error": str}
+    """
+    # Dedup case-insensitively, preserving order.
+    seen, names = set(), []
+    for nm in (star_names or []):
+        k = nm.strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            names.append(nm)
+    if len(names) < 2:
+        return {"error": "Enter at least two systems."}
+
+    nodes = []
+    for nm in names:
+        rec = _resolve_star_position(nm)
+        if "error" in rec:
+            return {"error": f"'{nm}': {rec['error']}"}
+        nodes.append(rec)
+
+    n = len(nodes)
+    candidates = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            a, b = nodes[i], nodes[j]
+            d = math.sqrt((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2 + (a["z"] - b["z"]) ** 2)
+            candidates.append((d, i, j))
+    candidates.sort(key=lambda e: e[0])
+
+    uf = _UnionFind(n)
+    edges, total_ly = [], 0.0
+    for d, i, j in candidates:
+        if uf.union(i, j):
+            edges.append({"from": nodes[i]["name"], "to": nodes[j]["name"], "distance_ly": d})
+            total_ly += d
+            if len(edges) == n - 1:
+                break
+
+    return {
+        "nodes": [
+            {"name": nd["name"], "x": nd["x"], "y": nd["y"], "z": nd["z"],
+             "sp_type": nd.get("sp_type", ""), "desig": nd.get("desig", "")}
+            for nd in nodes
+        ],
+        "edges": edges,
+        "total_ly": total_ly,
+        "stars": [_map_node(nd) for nd in nodes],
+    }
