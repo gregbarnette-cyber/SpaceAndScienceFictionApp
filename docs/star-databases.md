@@ -302,8 +302,9 @@ Filters the local `star_systems` table. No network. Filter keys (all optional):
 token — a parameterized `LIKE 'p%'` at the start or after a `", "` separator).
 Default sort `light_years ASC`; capped at `_SEARCH_CAP` (500). Returns
 `{"error": "star_systems table is empty — run option 50 first…"}` when the table is
-empty. (Commented stub for the Phase L4 `fe_h_min`/`fe_h_max` JOIN against
-`hypatia_cache` is left in place so L4 needs no signature change.)
+empty. (The planned Phase L4 `fe_h_min`/`fe_h_max` JOIN against `hypatia_cache`
+is **not** stubbed here yet — L4 will add the filter + JOIN when it builds the
+`hypatia_cache` table.)
 
 ### G2 — `search_hwc(filters: dict) -> dict`
 
@@ -333,3 +334,68 @@ semantics). Capped at `_EXO_SEARCH_CAP` (200). Network failures are classified v
 `_query_tap` gained two backward-compatible kwargs for this: `top` (ADQL
 `SELECT TOP N`) and `select` (column list, default `"*"`). Existing callers
 (opts 2/4) are unaffected.
+
+## Phase L — Comparison Dashboard (L1–L3)
+
+GUI-only "Comparison" nav category (`gui/panels/comparison.py`) plus one `query.py`
+subcommand. L4 (Hypatia cache + abundance search) is **deferred** — see
+`PHASE_L_PLAN.md` and `future_phases.md`.
+
+### L1 — `compare_stars(names: list) -> dict`
+
+Side-by-side comparison of **2–4 stars** (`StarComparisonPanel`). Reuses
+`compute_simbad_lookup`, the NASA `_get_archive_query_params` / `_query_tap`
+helpers, `regions.compute_star_system_regions_from_simbad`,
+`equations.compute_habitable_zone`, and `compute_hypatia_data` verbatim — no new
+query path. Per star: SIMBAD lookup → **pscomppars supplement** (designation
+priority HIP → HD → TIC → Gaia EDR3; fills `st_rad`/`st_mass` and `st_teff`/`st_lum`
+that SIMBAD lacks) → **photometric fallback** for mass/radius/luminosity when
+pscomppars has no row → luminosity (prefers `radius² × (teff/5778)⁴`, else the
+archive/regions value) → Conservative HZ inner (`rg`) / outer (`mg`) via
+`compute_habitable_zone` → Hypatia data.
+
+- **Photometric fallback** (the key coverage fix): NASA `pscomppars` only carries
+  planet-**host** stars, so most stars (e.g. 18 Scorpii, Delta Pavonis) miss it and
+  would show N/A for mass/radius/luminosity. When `st_rad`/`st_mass` are still
+  unfilled, `compare_stars` calls `compute_star_system_regions_from_simbad(sl)` and
+  takes its `stellarMass`/`stellarRadius`/`bcLuminosity` — the same V mag + parallax
+  + teff + bolometric-correction derivation as the Star System Regions feature,
+  which works for any main-sequence star. Luminosity is then recomputed uniformly
+  as `radius² × (teff/5778)⁴`, and the HZ follows. A star whose spectral type isn't
+  a parseable O B A F G K M class (e.g. a white dwarf) still falls through to N/A.
+
+- **Per-star failures are isolated**: each star carries its own `"error"` key
+  (`None` on success) and missing numerics are `None`; the **only** top-level error
+  is the arg-count check (`< 2` non-blank names, or `> 4`).
+- **Sol/Sun special-case** (`_sol_compare_entry`): `"Sol"`/`"Sun"` (case-insensitive)
+  don't resolve in SIMBAD, so the Sun's textbook reference constants are injected
+  directly (G2V, 5778 K, 1 M☉/R☉/L☉, HZ from `compute_habitable_zone`, ly 0,
+  app mag −26.74). Because Hypatia's [X/H] is *defined* relative to the Sun under
+  Lodders 2009, the synthetic Hypatia block carries every species at `mean = 0.0`
+  with `n = 0` — the natural zero-point baseline. `prepare_abundance_comparison`
+  treats `n = 0` rows as baseline-only: they fill existing element rows but never
+  expand the chart's element union (so a Sun column doesn't bloat it to all 104
+  species).
+- Returns `{"stars": [ {name, sp_type, teff, luminosity, mass, radius, hz_inner_au,
+  hz_outer_au, ly, app_magnitude, hypatia, error}, … ]}` where `hypatia` is the raw
+  `compute_hypatia_data` result (or `{"error": …}`).
+- **GUI:** transposed `make_table` (properties as rows, stars as columns) + a
+  second "Hypatia Catalog" table (log g, Disk, Fe/H, Mg/H, Si/H, O/H, U/V/W) when
+  ≥1 star has Hypatia data; per-star error surfaced on the Spectral Type row. A
+  background worker runs `compare_stars`; a **"Abundance Profiles"** diagram tab
+  (`DiagramToggleMixin`) shows a grouped [X/H] bar chart via
+  `core.viz.prepare_abundance_comparison` → `make_abundance_comparison_canvas`.
+
+### L2 — ESI Ranking (no new core function)
+
+`EsiRankingPanel` is **presentation-only over the Phase G2 `search_hwc`** — it
+calls `search_hwc({"esi_min", "habitable", "habzone_con", "ly_max"})` (already
+sorted `P_ESI DESC`, cap 500), prepends a 1-based **Rank** column, and computes
+Distance (LY) = `S_DISTANCE (pc) × 3.26156`. Synchronous local-DB read; a
+double-clicked row opens `HwcPanel` for that `S_NAME`. No new core code and **no
+`esi-ranking` query.py subcommand** — `search-hwc --esi-min …` already covers it.
+
+### L3 — Stellar Evolution
+
+`compute_stellar_evolution` (in `core/equations.py` — see `docs/equations.md`)
+backs `StellarEvolutionPanel` and the `stellar-evolution` `query.py` subcommand.

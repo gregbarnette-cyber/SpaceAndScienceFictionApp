@@ -183,6 +183,10 @@ def cmd_star_luminosity(args):
     _out(equations.compute_star_luminosity(args.radius, args.teff))
 
 
+def cmd_stellar_evolution(args):
+    _out(equations.compute_stellar_evolution(args.mass_solar, args.current_age_gyr))
+
+
 def cmd_brachistochrone_au(args):
     _out(calculators.compute_travel_time_system_au(args.accel_g, args.au))
 
@@ -554,6 +558,15 @@ def main():
     p.add_argument("--radius", required=True, type=float, help="Stellar radius in solar radii (R_sun)")
     p.add_argument("--teff",   required=True, type=float, help="Effective temperature in K")
     p.set_defaults(func=cmd_star_luminosity)
+
+    # stellar-evolution
+    p = sub.add_parser("stellar-evolution",
+                       help="Evolutionary-stage timeline from stellar mass (0.1-20 M_sun)")
+    p.add_argument("--mass-solar",      required=True, type=float,
+                   help="Stellar mass in solar masses (0.1-20)")
+    p.add_argument("--current-age-gyr", type=float, default=None,
+                   help="Optional current age in Gyr (marks the current stage)")
+    p.set_defaults(func=cmd_stellar_evolution)
 
     # brachistochrone-au
     p = sub.add_parser("brachistochrone-au",

@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase L — Exoplanet Comparison Dashboard (Mockup)</title>
+<style>
+  :root{
+    --bg:#f0f0f0; --panel:#ffffff; --border:#b8b8b8; --border-soft:#d8d8d8;
+    --text:#222; --muted:#6a6a6a; --accent:#4a90d9; --accent-d:#3a73ad;
+    --head:#e9eef5; --zebra:#f7f9fc; --good:#2e8b57; --warn:#b8860b; --bad:#b03030; --chip:#eef2f7;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+       font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}
+  .topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600}
+  .notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px}
+  .notice b{color:#4d4109}
+  .app{flex:1;display:flex;min-height:0}
+  .nav{width:250px;min-width:250px;background:#fafafa;border-right:1px solid var(--border);overflow:auto;padding:6px 0}
+  .nav .cat{padding:7px 12px 3px;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px}
+  .nav .cat.new{color:var(--accent)}
+  .nav .new-badge{background:var(--accent);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .nav .q-badge{background:#2e8b57;color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .nav .item{padding:5px 12px 5px 24px;color:#555;border-left:3px solid transparent}
+  .nav .item.muted{color:#bbb}
+  .nav .item.live{color:#1f3a57;cursor:pointer}
+  .nav .item.live:hover{background:#eef4fb}
+  .nav .item.active{background:#e2eefb;border-left-color:var(--accent);color:#13314e;font-weight:600}
+  .content{flex:1;overflow:auto;padding:18px 22px}
+  .panel{display:none}
+  .panel.active{display:block}
+  h2.title{margin:0 0 2px;font-size:18px}
+  .sub{color:var(--muted);margin:0 0 12px;font-size:12.5px;max-width:860px;line-height:1.45}
+  details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--border-soft);border-radius:5px;padding:6px 10px;max-width:880px}
+  details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+  details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+  details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.55}
+  /* form */
+  .form{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:14px 16px;max-width:720px;margin-bottom:14px}
+  .field{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .field label{font-size:12.5px;color:#444;width:210px;text-align:right;font-weight:500}
+  .field input[type=text],.field input[type=number]{height:28px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff;width:170px}
+  .field select{height:28px;border:1px solid var(--border);border-radius:4px;background:#fff;font-size:12.5px}
+  .field .unit{color:#999;font-size:11px}
+  .field.optional label{color:#888;font-style:italic}
+  .checks{display:flex;flex-wrap:wrap;gap:14px;margin:4px 0 4px 220px}
+  .checks label{font-size:12.5px;color:#444;display:flex;align-items:center;gap:5px}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:12px;margin-left:0}
+  button.btn{height:30px;padding:0 16px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+  button.btn:hover{background:var(--accent-d)}
+  button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+  button.ghost:hover{background:#f0f0f0}
+  button.tiny{height:24px;padding:0 9px;font-size:11px;border-radius:3px;border:1px solid var(--border);background:#fff;color:#345;cursor:pointer}
+  button.tiny:hover{background:#eef4fb}
+  .err{color:var(--bad);font-size:12px;margin:6px 0;display:none}
+  .countline{font-size:12.5px;font-weight:600;margin:10px 0 4px;display:none}
+  .tablewrap{border:1px solid var(--border);border-radius:6px;overflow:auto;max-width:1180px;background:#fff;margin-top:8px;display:none}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th{background:var(--head);text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;font-size:11.5px;cursor:pointer}
+  th .arrow{color:#9bb; font-size:10px}
+  td{padding:6px 10px;border-bottom:1px solid #eee;white-space:nowrap}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.rowhead{font-weight:600;background:#f4f7fb;color:#333}
+  tr:nth-child(even) td{background:var(--zebra)}
+  tr.seprow td{background:#eef0f4;color:#888;font-weight:600;font-size:11px;letter-spacing:.4px;text-transform:uppercase}
+  tr.drill{cursor:pointer}
+  tr.drill:hover td{background:#eef6ff}
+  .cell-na{color:#bbb}
+  .cell-err{color:var(--bad);font-weight:600}
+  .yes{color:var(--good);font-weight:600}.no{color:#aaa}
+  .chip{display:inline-block;background:var(--chip);border:1px solid #d4deea;border-radius:10px;padding:1px 9px;font-size:11px;color:#345;margin-left:6px}
+  /* viz tabs */
+  .vizbar{display:flex;gap:6px;margin:14px 0 0;border-bottom:1px solid var(--border);max-width:1180px}
+  .vizbar .vtab{padding:6px 14px;border:1px solid var(--border);border-bottom:none;background:#eef1f5;border-radius:5px 5px 0 0;cursor:pointer;font-size:12px;color:#456}
+  .vizbar .vtab.active{background:#fff;font-weight:600;color:#13314e}
+  .vizpane{border:1px solid var(--border);border-top:none;background:#fff;padding:14px;max-width:1180px;display:none}
+  .vizpane.active{display:block}
+  /* abundance comparison chart */
+  .abchart{font-size:11px}
+  .abrow{display:flex;align-items:center;height:20px;margin:2px 0}
+  .ablab{width:64px;text-align:right;padding-right:8px;color:#445;font-variant-numeric:tabular-nums}
+  .abtrack{position:relative;flex:1;height:18px;background:linear-gradient(90deg,#f3f5f8,#f3f5f8);border-left:2px solid #888}
+  .abbar{position:absolute;top:3px;height:5px;border-radius:2px;opacity:.92}
+  .ableg{display:flex;gap:16px;margin:6px 0 12px;flex-wrap:wrap}
+  .ableg span{display:flex;align-items:center;gap:5px;font-size:11.5px;color:#445}
+  .ableg i{width:12px;height:12px;border-radius:2px;display:inline-block}
+  .zero-note{font-size:11px;color:#999;margin-top:4px}
+  /* evolution chart */
+  .evowrap{padding:8px 4px}
+  .evobar{display:flex;height:46px;border:1px solid var(--border);border-radius:4px;overflow:hidden;position:relative;max-width:1000px}
+  .evoseg{display:flex;align-items:center;justify-content:center;color:#3a2d00;font-size:11px;font-weight:600;border-right:1px solid rgba(0,0,0,.12);overflow:hidden;white-space:nowrap}
+  .evoaxis{display:flex;justify-content:space-between;max-width:1000px;margin-top:4px;color:#777;font-size:11px}
+  .evonow{position:absolute;top:-4px;bottom:-4px;width:0;border-left:2px dashed #b03030;z-index:5}
+  .evonow span{position:absolute;top:-18px;left:4px;color:#b03030;font-size:10.5px;font-weight:700;white-space:nowrap}
+  .mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:7px 11px;border-radius:5px;font-size:12px;margin:12px 0;max-width:880px;line-height:1.45}
+  .mocknote code{background:#e7e0f4;padding:0 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  Space &amp; Science Fiction App <span style="color:#888">— GUI mockup</span>
+  <span class="tag">Phase L &middot; Exoplanet Comparison Dashboard</span>
+</div>
+<div class="notice">
+  <b>Interactive mockup for feedback — not the real app.</b>
+  L3 (Stellar Evolution) is <b>live client-side math</b>. L1/L2/L4 use canned sample
+  rows to show layout &amp; interactions. Reflects <b>PHASE_L_PLAN.md</b>: L2 reuses the
+  shipped <code style="background:#f3ecc7">search_hwc</code> (no new core fn); only
+  <b>stellar-evolution</b> is exposed in <code style="background:#f3ecc7">query.py</code>.
+</div>
+
+<div class="app">
+  <div class="nav">
+    <div class="cat">Star Databases</div>
+    <div class="item muted">SIMBAD Lookup</div>
+    <div class="item muted">Habitable Worlds Catalog</div>
+    <div class="cat">Search &amp; Filter</div>
+    <div class="item muted">Star Systems Search</div>
+    <div class="item muted">HWC Planet Search</div>
+    <div class="cat new">Comparison <span class="new-badge">NEW</span></div>
+    <div class="item live active" data-panel="l1" onclick="showPanel('l1')">Star Comparison</div>
+    <div class="item live" data-panel="l2" onclick="showPanel('l2')">ESI Ranking</div>
+    <div class="item live" data-panel="l3" onclick="showPanel('l3')">Stellar Evolution <span class="q-badge">query.py</span></div>
+    <div class="item live" data-panel="l4s" onclick="showPanel('l4s')">Hypatia Abundance Search</div>
+    <div class="cat">Utilities</div>
+    <div class="item muted">Database Table Status</div>
+    <div class="item live" data-panel="l4i" onclick="showPanel('l4i')" style="color:#1f3a57">Import Hypatia Cache <span class="new-badge">NEW</span></div>
+  </div>
+
+  <div class="content">
+
+  <!-- ===================== L1 — STAR COMPARISON ===================== -->
+  <div class="panel active" id="l1">
+    <h2 class="title">Side-by-Side Star Comparison</h2>
+    <p class="sub">Compare 2–4 stars in one transposed table — SIMBAD properties, computed
+      habitable-zone bounds, and Hypatia stellar/kinematic/abundance data. Per-star failures
+      are isolated (one bad name never drops the others).</p>
+    <details class="spec"><summary>Implementation</summary>
+      <ul>
+        <li>Core: <code>databases.compare_stars(names)</code> — reuses <code>compute_simbad_lookup</code>
+          + <code>compute_hypatia_data</code>; optional NASA <code>pscomppars</code> supplement to fill
+          missing teff/radius/mass/lum.</li>
+        <li>HZ bounds: <code>compute_habitable_zone(teff, luminosity)</code> → Conservative Inner
+          (<code>rg</code>) &amp; Outer (<code>mg</code>).</li>
+        <li>GUI-only — multi-star network fan-out is not a query.py subcommand.</li>
+      </ul>
+    </details>
+
+    <div class="form">
+      <div class="field"><label>Star 1</label><input type="text" id="s1" value="Sol"></div>
+      <div class="field"><label>Star 2</label><input type="text" id="s2" value="Tau Ceti"></div>
+      <div class="field" id="s3wrap" style="display:none"><label>Star 3</label><input type="text" id="s3" value="61 Cygni A"></div>
+      <div class="field" id="s4wrap" style="display:none"><label>Star 4</label><input type="text" id="s4" value="Wolf 359"></div>
+      <div class="actions">
+        <button class="btn" onclick="runCompare()">Compare</button>
+        <button class="ghost" id="addStarBtn" onclick="addStar()">+ Add Star</button>
+      </div>
+    </div>
+    <div class="err" id="l1err"></div>
+
+    <div class="tablewrap" id="l1tbl"></div>
+
+    <div class="vizbar" id="l1viz" style="display:none">
+      <div class="vtab active" onclick="vizSwitch('l1',0)">Comparison Table</div>
+      <div class="vtab" onclick="vizSwitch('l1',1)">Abundance Profiles</div>
+    </div>
+    <div class="vizpane" id="l1viz0"></div>
+    <div class="vizpane" id="l1viz1">
+      <div class="ableg">
+        <span><i style="background:#d8a13a"></i>Sol</span>
+        <span><i style="background:#4a90d9"></i>Tau Ceti</span>
+        <span><i style="background:#7a5bd0"></i>61 Cygni A</span>
+      </div>
+      <div class="abchart" id="abchart"></div>
+      <div class="zero-note">Vertical line = solar reference [X/H] = 0. Bars right = enriched, left = depleted.</div>
+    </div>
+  </div>
+
+  <!-- ===================== L2 — ESI RANKING ===================== -->
+  <div class="panel" id="l2">
+    <h2 class="title">Exoplanet ESI Ranking <span class="chip">presentation-only · reuses search_hwc</span></h2>
+    <p class="sub">A leaderboard of the most Earth-like worlds in the local Habitable Worlds
+      Catalog, ranked by Earth Similarity Index. Double-click a row to open the full HWC system view.</p>
+    <details class="spec"><summary>Implementation — no new core function</summary>
+      <ul>
+        <li>Calls the shipped <code>databases.search_hwc({esi_min, habitable, habzone_con, ly_max})</code>
+          (already sorted <code>P_ESI DESC</code>, cap 500).</li>
+        <li>Panel adds the 1-based <b>Rank</b> column and the LY conversion
+          (<code>S_DISTANCE × 3.26156</code>) — pure presentation.</li>
+        <li>Already reachable headless via <code>query.py search-hwc --esi-min 0.8 --habitable</code>
+          — so <b>no</b> new <code>esi-ranking</code> subcommand.</li>
+      </ul>
+    </details>
+
+    <div class="form">
+      <div class="field"><label>Minimum ESI</label><input type="number" id="esimin" value="0.80" min="0" max="1" step="0.05" style="width:90px"></div>
+      <div class="checks">
+        <label><input type="checkbox" id="habonly"> Habitable only</label>
+        <label><input type="checkbox" id="cononly"> Conservative HZ only</label>
+      </div>
+      <div class="field optional"><label>Max Distance (LY)</label><input type="text" id="lymax" placeholder="(any)"></div>
+      <div class="actions"><button class="btn" onclick="runEsi()">Rank</button></div>
+    </div>
+    <div class="countline" id="l2count"></div>
+    <div class="tablewrap" id="l2tbl"></div>
+    <div class="mocknote">Double-click a row → opens <code>HwcPanel</code> with the star pre-filled (drill-down).</div>
+  </div>
+
+  <!-- ===================== L3 — STELLAR EVOLUTION ===================== -->
+  <div class="panel" id="l3">
+    <h2 class="title">Stellar Evolution Timeline <span class="q-badge" style="background:#2e8b57;color:#fff;border-radius:3px;font-size:10px;padding:1px 6px">query.py: stellar-evolution</span></h2>
+    <p class="sub">Evolutionary-stage durations and timeline for a main-sequence star (valid 0.1–20 M☉).
+      Self-validating: a mass outside the range returns a clear error rather than extrapolating.</p>
+    <details class="spec"><summary>Implementation</summary>
+      <ul>
+        <li>Core: <code>equations.compute_stellar_evolution(mass_solar, current_age_gyr=None)</code> — pure math.</li>
+        <li><code>T_ms = 10¹⁰ × (1/M)^2.5 yr</code> (mirrors <code>core/regions.py</code> <code>mainSeqLifeSpan</code>);
+          stage fractions Pre-MS .01 · MS 1.0 · Subgiant .15 · RGB .10 · HB .10 · AGB .02.</li>
+        <li>Special cases: <code>M&lt;0.8</code> → MS "&gt; 13.8 Gyr"; <code>M&gt;8</code> → AGB replaced by "Supergiant → Supernova".</li>
+        <li><b>query.py:</b> <code>stellar-evolution --mass-solar 1.0 [--current-age-gyr 4.6]</code> — curated <code>{"error"}</code> for out-of-range mass.</li>
+      </ul>
+    </details>
+
+    <div class="form">
+      <div class="field"><label>Stellar Mass (M☉)</label><input type="number" id="evomass" value="1.0" min="0" step="0.1" style="width:110px"><span class="unit">0.1 – 20</span></div>
+      <div class="field"><label><input type="checkbox" id="evoageck" onchange="document.getElementById('evoage').disabled=!this.checked"> Current Age (Gyr)</label>
+        <input type="number" id="evoage" value="4.6" min="0" step="0.1" style="width:110px" disabled></div>
+      <div class="actions"><button class="btn" onclick="runEvo()">Compute</button></div>
+    </div>
+    <div class="err" id="l3err"></div>
+    <div class="tablewrap" id="l3tbl"></div>
+
+    <div class="vizbar" id="l3viz" style="display:none">
+      <div class="vtab active" onclick="vizSwitch('l3',0)">Stage Table</div>
+      <div class="vtab" onclick="vizSwitch('l3',1)">Evolution Diagram</div>
+    </div>
+    <div class="vizpane" id="l3viz0"></div>
+    <div class="vizpane" id="l3viz1"><div class="evowrap" id="evowrap"></div></div>
+  </div>
+
+  <!-- ===================== L4 — SEARCH ===================== -->
+  <div class="panel" id="l4s">
+    <h2 class="title">Hypatia Abundance Search <span class="chip">L4 · needs the cache imported first</span></h2>
+    <p class="sub">Filter the locally cached Hypatia abundances by metallicity, galactic disk
+      membership, temperature, distance, or any single element. Populated by "Import Hypatia Cache".</p>
+    <details class="spec"><summary>Implementation</summary>
+      <ul>
+        <li>Core: <code>databases.search_hypatia_cache(filters)</code> over the new
+          <code>hypatia_cache</code> + <code>hypatia_abundance</code> (EAV) tables.</li>
+        <li>Also unlocks the G1 <code>fe_h_min/max</code> filter (built from scratch — the assumed stub never shipped).</li>
+        <li><b>query.py — deferred:</b> revisit a <code>search-hypatia</code> subcommand <i>after</i> L4 ships (the cache must exist first).</li>
+      </ul>
+    </details>
+
+    <div class="form">
+      <div class="field"><label>Fe/H min</label><input type="text" id="fehmin" value="-0.2" style="width:90px"><span class="unit">dex</span></div>
+      <div class="field"><label>Fe/H max</label><input type="text" id="fehmax" placeholder="(any)" style="width:90px"><span class="unit">dex</span></div>
+      <div class="field"><label>Galactic Disk</label>
+        <select id="disk"><option>Any</option><option>thin disk</option><option>thick disk</option><option>halo</option></select></div>
+      <div class="field"><label>Element</label>
+        <select id="elem"><option>—</option><option>Mg</option><option>Si</option><option>O</option><option>C</option><option>Ba_II</option></select>
+        <input type="text" placeholder="min" style="width:60px"> <input type="text" placeholder="max" style="width:60px"></div>
+      <div class="field optional"><label>Max Distance (LY)</label><input type="text" placeholder="(any)"></div>
+      <div class="actions"><button class="btn" onclick="runHyp()">Search</button></div>
+    </div>
+    <div class="countline" id="l4count"></div>
+    <div class="tablewrap" id="l4tbl"></div>
+  </div>
+
+  <!-- ===================== L4 — IMPORT ===================== -->
+  <div class="panel" id="l4i">
+    <h2 class="title">Import Hypatia Cache</h2>
+    <p class="sub">Batch-fetches Hypatia Catalog data for every <code>star_systems</code> row carrying
+      a HIP or HD designation and stores it locally — removing the per-lookup network dependency from
+      Star Comparison and unlocking the Fe/H filter in Star Systems Search.</p>
+    <div class="mocknote">⚠️ This may take several minutes (one rate-limited API call per candidate star).
+      Resumable &amp; idempotent (<code>INSERT OR REPLACE</code>); per-star errors are skipped and counted.</div>
+    <div class="form" style="max-width:560px">
+      <div class="actions"><button class="btn" onclick="runImport()">Import Hypatia Data</button></div>
+      <div id="impprog" style="display:none;margin-top:10px">
+        <div style="height:14px;background:#e7ebf0;border-radius:7px;overflow:hidden;max-width:420px">
+          <div id="impbar" style="height:100%;width:0;background:var(--accent);transition:width .12s"></div>
+        </div>
+        <div id="impstat" style="font-size:12px;color:#555;margin-top:6px"></div>
+      </div>
+      <div id="impdone" style="display:none;margin-top:10px;font-size:13px;font-weight:600;color:var(--good)"></div>
+    </div>
+  </div>
+
+  </div><!-- /content -->
+</div>
+
+<script>
+/* ---------- nav ---------- */
+function showPanel(id){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav .item').forEach(n=>n.classList.remove('active'));
+  const it=document.querySelector('.nav .item[data-panel="'+id+'"]'); if(it) it.classList.add('active');
+}
+function vizSwitch(prefix, idx){
+  const bar=document.getElementById(prefix+'viz');
+  [...bar.querySelectorAll('.vtab')].forEach((t,i)=>t.classList.toggle('active',i===idx));
+  document.getElementById(prefix+'viz0').classList.toggle('active',idx===0);
+  document.getElementById(prefix+'viz1').classList.toggle('active',idx===1);
+}
+function na(){return '<span class="cell-na">N/A</span>';}
+
+/* ===================== L1 ===================== */
+let starCount=2;
+function addStar(){
+  if(starCount>=4) return;
+  starCount++;
+  document.getElementById('s'+starCount+'wrap').style.display='flex';
+  if(starCount>=4) document.getElementById('addStarBtn').style.display='none';
+}
+// canned per-star data keyed by lowercased name
+const STAR_DB = {
+  'sol':       {name:'Sol', sp:'G2V', teff:5778, lum:1.000, mass:1.00, rad:1.00, hzi:0.95, hzo:1.67, ly:0.00, mag:-26.74,
+                hyp:{logg:4.44,disk:'thin disk',feh:0.00,mgh:0.00,sih:0.00,oh:0.00,u:-11,v:-12,w:-7}},
+  'tau ceti':  {name:'Tau Ceti', sp:'G8.5V', teff:5344, lum:0.520, mass:0.78, rad:0.79, hzi:0.68, hzo:1.20, ly:11.91, mag:3.50,
+                hyp:{logg:4.53,disk:'thin disk',feh:-0.49,mgh:-0.28,sih:-0.34,oh:-0.30,u:-23,v:-37,w:-13}},
+  '61 cygni a':{name:'61 Cygni A', sp:'K5V', teff:4374, lum:0.153, mass:0.70, rad:0.67, hzi:0.37, hzo:0.66, ly:11.40, mag:5.21,
+                hyp:{logg:4.63,disk:'thin disk',feh:-0.20,mgh:-0.07,sih:-0.12,oh:null,u:-92,v:-48,w:-9}},
+  'wolf 359':  {name:'Wolf 359', sp:'M6V', teff:2800, lum:0.0014, mass:0.09, rad:0.16, hzi:0.036, hzo:0.073, ly:7.86, mag:13.54,
+                hyp:null}
+};
+function lookupStar(raw){
+  const k=raw.trim().toLowerCase();
+  if(!k) return {error:'empty'};
+  if(STAR_DB[k]) return STAR_DB[k];
+  return {name:raw.trim(), error:'No SIMBAD match for "'+raw.trim()+'"'};
+}
+function fmt(v,d){return v==null?na():'<span>'+Number(v).toFixed(d)+'</span>';}
+function runCompare(){
+  const names=[]; for(let i=1;i<=starCount;i++){const v=document.getElementById('s'+i).value; if(v.trim()) names.push(v);}
+  const err=document.getElementById('l1err');
+  if(names.length<2){err.textContent='Enter at least 2 stars (max 4).';err.style.display='block';return;}
+  err.style.display='none';
+  const stars=names.map(lookupStar);
+  // transposed table
+  const rowsSpec=[
+    ['Spectral Type', s=>s.error?'<span class="cell-err">'+s.error+'</span>':s.sp],
+    ['Temp (K)',      s=>s.error?'':fmt(s.teff,0)],
+    ['Luminosity (L☉)',s=>s.error?'':fmt(s.lum,4)],
+    ['Mass (M☉)',     s=>s.error?'':fmt(s.mass,2)],
+    ['Radius (R☉)',   s=>s.error?'':fmt(s.rad,2)],
+    ['HZ Inner (AU)', s=>s.error?'':fmt(s.hzi,3)],
+    ['HZ Outer (AU)', s=>s.error?'':fmt(s.hzo,3)],
+    ['Distance (LY)', s=>s.error?'':fmt(s.ly,2)],
+    ['Apparent Mag',  s=>s.error?'':fmt(s.mag,2)],
+  ];
+  const anyHyp = stars.some(s=>s.hyp);
+  const hypSpec=[
+    ['log g',  s=>s.hyp?fmt(s.hyp.logg,2):na()],
+    ['Disk',   s=>s.hyp?s.hyp.disk:na()],
+    ['Fe/H',   s=>s.hyp?fmt(s.hyp.feh,2):na()],
+    ['Mg/H',   s=>s.hyp?fmt(s.hyp.mgh,2):na()],
+    ['Si/H',   s=>s.hyp?fmt(s.hyp.sih,2):na()],
+    ['O/H',    s=>s.hyp?(s.hyp.oh==null?na():fmt(s.hyp.oh,2)):na()],
+    ['U (km/s)',s=>s.hyp?fmt(s.hyp.u,0):na()],
+    ['V (km/s)',s=>s.hyp?fmt(s.hyp.v,0):na()],
+    ['W (km/s)',s=>s.hyp?fmt(s.hyp.w,0):na()],
+  ];
+  let h='<table><tr><th>Property</th>'+stars.map(s=>'<th>'+s.name+'</th>').join('')+'</tr>';
+  rowsSpec.forEach(([lab,fn])=>{h+='<tr><td class="rowhead">'+lab+'</td>'+stars.map(s=>'<td class="num">'+fn(s)+'</td>').join('')+'</tr>';});
+  if(anyHyp){
+    h+='<tr class="seprow"><td colspan="'+(stars.length+1)+'">Hypatia Catalog</td></tr>';
+    hypSpec.forEach(([lab,fn])=>{h+='<tr><td class="rowhead">'+lab+'</td>'+stars.map(s=>'<td class="num">'+fn(s)+'</td>').join('')+'</tr>';});
+  }
+  h+='</table>';
+  const tbl=document.getElementById('l1tbl'); tbl.innerHTML=h; tbl.style.display='block';
+  document.getElementById('l1viz').style.display='flex';
+  document.getElementById('l1viz0').classList.add('active'); vizSwitch('l1',0);
+  // route the table into viz0 so the tabs feel real
+  document.getElementById('l1viz0').innerHTML='<div style="color:#888;font-size:12px">The comparison table above is the default view. Switch to <b>Abundance Profiles</b> for the chart.</div>';
+}
+// static abundance comparison chart (Sol / Tau Ceti / 61 Cyg A)
+function buildAbChart(){
+  const elems=[['Fe',[0.00,-0.49,-0.20]],['O',[0.00,-0.30,null]],['Mg',[0.00,-0.28,-0.07]],
+               ['Si',[0.00,-0.34,-0.12]],['Ca',[0.00,-0.31,-0.10]],['Na',[0.00,-0.40,-0.18]],
+               ['Ni',[0.00,-0.52,-0.24]],['Ba_II',[0.00,-0.15,0.05]]];
+  const cols=['#d8a13a','#4a90d9','#7a5bd0'];
+  const span=1.0; // [-span,+span] dex
+  let h='';
+  elems.forEach(([el,vals])=>{
+    h+='<div class="abrow"><div class="ablab">'+el+'</div><div class="abtrack">';
+    vals.forEach((v,i)=>{
+      if(v==null) return;
+      const pct=(v/span)*50; // -50..+50 from center
+      const left=v>=0?50:50+pct, w=Math.abs(pct);
+      h+='<div class="abbar" style="left:'+left+'%;width:'+w+'%;background:'+cols[i]+';top:'+(2+i*5)+'px"></div>';
+    });
+    h+='</div></div>';
+  });
+  document.getElementById('abchart').innerHTML=h;
+}
+
+/* ===================== L2 ===================== */
+const HWC=[
+  {p:'Earth',esi:1.000,hab:1,con:1,opt:1,temp:255,star:'Sol',sp:'G2V',ly:0.00},
+  {p:'Teegarden b',esi:0.950,hab:1,con:1,opt:1,temp:264,star:"Teegarden's Star",sp:'M7V',ly:12.50},
+  {p:'TOI-700 d',esi:0.930,hab:1,con:1,opt:1,temp:268,star:'TOI-700',sp:'M2V',ly:101.40},
+  {p:'Kepler-1649 c',esi:0.900,hab:1,con:1,opt:1,temp:234,star:'Kepler-1649',sp:'M5V',ly:301.00},
+  {p:'Proxima b',esi:0.870,hab:1,con:1,opt:1,temp:234,star:'Proxima Centauri',sp:'M5.5Ve',ly:4.25},
+  {p:'GJ 1002 b',esi:0.860,hab:1,con:1,opt:1,temp:230,star:'GJ 1002',sp:'M5.5V',ly:15.80},
+  {p:'Ross 128 b',esi:0.860,hab:1,con:0,opt:1,temp:294,star:'Ross 128',sp:'M4V',ly:11.00},
+  {p:'Gliese 667 Cc',esi:0.840,hab:1,con:1,opt:1,temp:277,star:'Gliese 667 C',sp:'M1.5V',ly:23.60},
+  {p:'Kepler-442 b',esi:0.830,hab:1,con:1,opt:1,temp:233,star:'Kepler-442',sp:'K5V',ly:1206.0},
+  {p:'Wolf 1061 c',esi:0.800,hab:1,con:0,opt:1,temp:290,star:'Wolf 1061',sp:'M3V',ly:13.80},
+];
+function flag(v){return v?'<span class="yes">Yes</span>':'<span class="no">No</span>';}
+function runEsi(){
+  const emin=parseFloat(document.getElementById('esimin').value)||0;
+  const habOnly=document.getElementById('habonly').checked;
+  const conOnly=document.getElementById('cononly').checked;
+  const lymaxV=parseFloat(document.getElementById('lymax').value);
+  let rows=HWC.filter(r=>r.esi>=emin && (!habOnly||r.hab) && (!conOnly||r.con) && (isNaN(lymaxV)||r.ly<=lymaxV));
+  rows.sort((a,b)=>b.esi-a.esi);
+  const c=document.getElementById('l2count');
+  c.textContent=rows.length+' planet'+(rows.length==1?'':'s')+' found.'; c.style.display='block';
+  let h='<table><tr><th>Rank</th><th>Planet</th><th>ESI</th><th>Habitable?</th><th>In Con HZ?</th><th>In Opt HZ?</th><th>Temp (K)</th><th>Star</th><th>Spectral</th><th>Distance (LY)</th></tr>';
+  rows.forEach((r,i)=>{
+    h+='<tr class="drill" ondblclick="alert(\'→ opens HwcPanel for '+r.star+'\')">'
+      +'<td class="num">'+(i+1)+'</td><td>'+r.p+'</td><td class="num">'+r.esi.toFixed(4)+'</td>'
+      +'<td>'+flag(r.hab)+'</td><td>'+flag(r.con)+'</td><td>'+flag(r.opt)+'</td>'
+      +'<td class="num">'+r.temp+'</td><td>'+r.star+'</td><td>'+r.sp+'</td><td class="num">'+r.ly.toFixed(4)+'</td></tr>';
+  });
+  h+='</table>';
+  const tbl=document.getElementById('l2tbl'); tbl.innerHTML=h; tbl.style.display='block';
+}
+
+/* ===================== L3 (LIVE) ===================== */
+const STAGES=[['Pre-Main Sequence',0.01,'#aaaaaa'],['Main Sequence',1.00,'#ffe066'],
+              ['Subgiant Branch',0.15,'#ffaa33'],['Red Giant Branch',0.10,'#ff6600'],
+              ['Horizontal Branch',0.10,'#ff99cc'],['Asymptotic Giant Branch',0.02,'#cc3300']];
+function computeEvolution(mass, age){
+  if(isNaN(mass)||mass<0.1||mass>20) return {error:'mass_solar must be between 0.1 and 20 M☉'};
+  const Tms_gyr = (1e10*Math.pow(1/mass,2.5))/1e9;
+  const lowMass = mass<0.8, highMass = mass>8;
+  let stages=[], t=0;
+  STAGES.forEach(([nm,frac,col],i)=>{
+    let name=nm, dur=frac*Tms_gyr;
+    if(highMass && nm==='Asymptotic Giant Branch'){name='Supergiant → Supernova'; col='#7a0000';}
+    if(lowMass && i>1) return; // post-MS not reachable yet
+    stages.push({name, start:t, end:t+dur, dur, color:col}); t+=dur;
+  });
+  const total=t, msEnd=stages.find(s=>s.name==='Main Sequence').end;
+  let cur=null;
+  if(age!=null){ const s=stages.find(s=>age>=s.start&&age<s.end); cur=s?s.name:(age>=total?'Beyond AGB':null); }
+  return {mass, stages, total, msEnd, age, cur, lowMass, highMass, Tms_gyr};
+}
+function gyr(v){ return v>=1000 ? (v/1000).toFixed(2)+' Tyr' : v.toFixed(v<0.01?4:(v<1?3:2))+' '; }
+function runEvo(){
+  const mass=parseFloat(document.getElementById('evomass').value);
+  const age = document.getElementById('evoageck').checked ? parseFloat(document.getElementById('evoage').value) : null;
+  const err=document.getElementById('l3err'), res=computeEvolution(mass,age);
+  if(res.error){err.textContent=res.error;err.style.display='block';
+    document.getElementById('l3tbl').style.display='none';document.getElementById('l3viz').style.display='none';return;}
+  err.style.display='none';
+  // table
+  let h='<table><tr><th>Stage</th><th>Start (Gyr)</th><th>End (Gyr)</th><th>Duration (Gyr)</th></tr>';
+  res.stages.forEach(s=>{
+    const isCur = res.cur===s.name;
+    const endTxt = (res.lowMass && s.name==='Main Sequence') ? '&gt; 13.8' : s.end.toFixed(s.end<1?3:2);
+    h+='<tr'+(isCur?' style="font-weight:700;background:#fff6da"':'')+'><td>'+s.name+(isCur?' ◀ current':'')+'</td>'
+      +'<td class="num">'+s.start.toFixed(s.start<1?3:2)+'</td><td class="num">'+endTxt+'</td>'
+      +'<td class="num">'+s.dur.toFixed(s.dur<1?3:2)+'</td></tr>';
+  });
+  h+='</table>';
+  document.getElementById('l3tbl').innerHTML=h; document.getElementById('l3tbl').style.display='block';
+  // footer line in viz0
+  let foot='<div style="font-size:12.5px;color:#444;line-height:1.7">'
+    +'<b>Total lifetime:</b> '+(res.lowMass?'&gt; 13.8 Gyr (exceeds age of universe)':res.total.toFixed(2)+' Gyr')
+    +' &nbsp;·&nbsp; <b>MS lifetime:</b> '+(res.lowMass?'&gt; 13.8 Gyr':res.msEnd.toFixed(2)+' Gyr');
+  if(res.cur) foot+=' &nbsp;·&nbsp; <b>Current stage:</b> '+res.cur;
+  if(res.highMass) foot+='<br><span style="color:#7a0000">Note: M &gt; 8 M☉ — ends as a supergiant → supernova in a few Myr.</span>';
+  if(res.lowMass) foot+='<br><span style="color:#888">Note: M &lt; 0.8 M☉ — main-sequence lifetime exceeds the age of the universe; post-MS stages not yet reachable.</span>';
+  foot+='</div>';
+  document.getElementById('l3viz0').innerHTML=foot;
+  // diagram
+  const xmax=Math.max(res.total, age||0)*1.1;
+  let bar='';
+  res.stages.forEach(s=>{
+    const w=(s.dur/xmax)*100;
+    bar+='<div class="evoseg" style="width:'+w+'%;background:'+s.color+'" title="'+s.name+'">'+(w>9?s.name.split(' ')[0]:'')+'</div>';
+  });
+  let nowMark='';
+  if(age!=null){ const left=Math.min(age/xmax*100,100); nowMark='<div class="evonow" style="left:'+left+'%"><span>Current Age: '+age.toFixed(2)+' Gyr</span></div>'; }
+  const wrap='<div style="font-size:12px;color:#555;margin-bottom:6px">Mass: <b>'+res.mass+' M☉</b></div>'
+    +'<div style="position:relative"><div class="evobar">'+bar+'</div>'+nowMark+'</div>'
+    +'<div class="evoaxis"><span>0 Gyr</span><span>'+xmax.toFixed(1)+' Gyr</span></div>';
+  document.getElementById('evowrap').innerHTML=wrap;
+  document.getElementById('l3viz').style.display='flex'; vizSwitch('l3',0);
+}
+
+/* ===================== L4 search ===================== */
+const HYP=[
+  {star:'HD 4628',hip:'HIP 3765',hd:'HD 4628',disk:'thin disk',teff:4960,feh:-0.28,mgh:-0.15,sih:-0.20,oh:-0.10,ly:24.3},
+  {star:'Tau Ceti',hip:'HIP 8102',hd:'HD 10700',disk:'thin disk',teff:5344,feh:-0.49,mgh:-0.28,sih:-0.34,oh:-0.30,ly:11.9},
+  {star:'82 G. Eridani',hip:'HIP 15510',hd:'HD 20794',disk:'thin disk',teff:5401,feh:-0.40,mgh:-0.18,sih:-0.25,oh:-0.22,ly:19.7},
+  {star:'HD 102365',hip:'HIP 57443',hd:'HD 102365',disk:'thin disk',teff:5630,feh:-0.30,mgh:-0.14,sih:-0.19,oh:null,ly:30.1},
+  {star:'61 Virginis',hip:'HIP 64924',hd:'HD 115617',disk:'thin disk',teff:5577,feh:-0.02,mgh:0.01,sih:-0.03,oh:0.00,ly:27.8},
+];
+function runHyp(){
+  const fmin=parseFloat(document.getElementById('fehmin').value);
+  const fmax=parseFloat(document.getElementById('fehmax').value);
+  const disk=document.getElementById('disk').value;
+  let rows=HYP.filter(r=>(isNaN(fmin)||r.feh>=fmin)&&(isNaN(fmax)||r.feh<=fmax)&&(disk==='Any'||r.disk===disk));
+  rows.sort((a,b)=>b.feh-a.feh);
+  const c=document.getElementById('l4count'); c.textContent=rows.length+' stars found.'; c.style.display='block';
+  let h='<table><tr><th>Star Name</th><th>HIP</th><th>HD</th><th>Disk</th><th>Teff (K)</th><th>Fe/H</th><th>Mg/H</th><th>Si/H</th><th>O/H</th><th>Distance (LY)</th></tr>';
+  rows.forEach(r=>{h+='<tr><td>'+r.star+'</td><td>'+r.hip+'</td><td>'+r.hd+'</td><td>'+r.disk+'</td>'
+    +'<td class="num">'+r.teff+'</td><td class="num">'+r.feh.toFixed(2)+'</td><td class="num">'+r.mgh.toFixed(2)+'</td>'
+    +'<td class="num">'+r.sih.toFixed(2)+'</td><td class="num">'+(r.oh==null?na():r.oh.toFixed(2))+'</td>'
+    +'<td class="num">'+r.ly.toFixed(1)+'</td></tr>';});
+  h+='</table>';
+  const tbl=document.getElementById('l4tbl'); tbl.innerHTML=h; tbl.style.display='block';
+}
+
+/* ===================== L4 import ===================== */
+function runImport(){
+  const prog=document.getElementById('impprog'), bar=document.getElementById('impbar'),
+        stat=document.getElementById('impstat'), done=document.getElementById('impdone');
+  prog.style.display='block'; done.style.display='none';
+  const total=1840; let cur=0, ins=0, skip=0, errs=0;
+  const names=['HD 4628','Tau Ceti','61 Cygni A','82 G. Eridani','Wolf 359','HD 102365','Lalande 21185','Gliese 887'];
+  const timer=setInterval(()=>{
+    cur+=Math.floor(20+Math.random()*45); if(cur>total)cur=total;
+    const r=Math.random(); if(r<0.82)ins++; else if(r<0.95)skip++; else errs++;
+    bar.style.width=(cur/total*100)+'%';
+    stat.textContent='Fetching '+cur+' / '+total+'  ('+names[cur%names.length]+')  —  inserted '+ins+', skipped '+skip+', errors '+errs;
+    if(cur>=total){clearInterval(timer);
+      done.style.display='block';
+      done.innerHTML='✓ Import complete — inserted '+Math.round(total*0.82)+', skipped '+Math.round(total*0.13)+', errors '+Math.round(total*0.05)+' (of '+total+' candidates).';}
+  },90);
+}
+
+/* init */
+runCompare(); buildAbChart(); runEvo();
+</script>
+</body>
+</html>

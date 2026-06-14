@@ -11,7 +11,7 @@ The app is a mature Space & Science Fiction CLI/GUI tool that has completed Phas
 
 This document brainstorms future phases in order of likely value and implementation effort.
 
-> **Status (updated 2026-06-13):** of the phases below, **G, H, I (+ the I-OPTS route-planning extension), K, M, and N are ✅ implemented** (see each phase's header note). **J, L, O, P remain** un-built (P is fully spec'd; J/L/O were brought to build-ready depth — validation contract + tests + success criteria — on 2026-06-13; K shipped with a formal `PHASE_K_PLAN.md` + mockup). **Q, R, S** at the end are new brainstorm candidates. `query.py` now carries **48 subcommands** after the Phase N follow-on expansion.
+> **Status (updated 2026-06-13):** of the phases below, **G, H, I (+ the I-OPTS route-planning extension), K, M, and N are ✅ implemented** (see each phase's header note). **J, O, P remain** un-built (P is fully spec'd; J/O were brought to build-ready depth — validation contract + tests + success criteria — on 2026-06-13). **Phase L's L1–L3 are now ✅ implemented** (2026-06-13) per [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md) + [`mockups/phase-l.html`](mockups/phase-l.html); **L4 (Hypatia cache) stays DEFERRED** behind a verification spike. K shipped with a formal `PHASE_K_PLAN.md` + mockup. **Q, R, S** at the end are new brainstorm candidates. `query.py` now carries **48 subcommands** after the Phase N follow-on expansion.
 
 > **Scope — GUI-only.** New feature work targets the PySide6 GUI only. The CLI (`main.py` / `MENU_OPTIONS`) is **frozen at opts 1–58** and is not extended by any phase below. Every new feature is a GUI nav entry backed by a panel class (the precedent set by `DbStatusPanel` and `NasaPlanetarySystemsMapPanel`, which carry no option number), so there are **no menu numbers to assign and nothing to renumber**. The shared `core/` functions each phase specifies are still built — the GUI and `query.py` consume them; only the CLI presentation layer is dropped. Phase M is already written in this GUI-only form; treat it as the template. **Exception:** Phase N is integration-surface-only — it adds `query.py` subcommands over existing `core/` functions and touches neither the GUI nor the CLI menu.
 
@@ -605,6 +605,18 @@ All three new core functions **self-validate** (the Phase H contract → `{"erro
 
 ## Phase L — Exoplanet Comparison Dashboard
 
+> **✅ L1–L3 IMPLEMENTED (2026-06-13)** per [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md):
+> `core/databases.compare_stars` (L1), `EsiRankingPanel` over the existing
+> `search_hwc` (L2, no new core fn), and `core/equations.compute_stellar_evolution`
+> (L3) + the `stellar-evolution` `query.py` subcommand; three panels in
+> `gui/panels/comparison.py` under a new **"Comparison"** nav category;
+> `core.viz.prepare_abundance_comparison` / `prepare_evolution_diagram` +
+> `make_abundance_comparison_canvas` / `make_evolution_canvas`. Docs updated in
+> `docs/equations.md`, `docs/star-databases.md`, `docs/integration.md`,
+> `docs/gui-architecture.md`. Tests: `tests/test_comparison.py`. **L4 remains
+> DEFERRED** behind the verification spike (see the L4 section). Original brainstorm
+> retained below.
+
 **New panels (GUI-only)**: `StarComparisonPanel`, `EsiRankingPanel`, `StellarEvolutionPanel`, plus `ImportHypatiaPanel` and `HypatiaSearchPanel` (L4)
 **Existing options touched**: opt 1 SIMBAD lookup logic reused by L1; opt 6 `HwcPanel` drill-down target for L2; `core/viz.py` and `gui/visualizations/plot_helpers.py` extended for the evolution diagram in L3
 
@@ -630,20 +642,37 @@ Accepts 2–4 star names, runs a SIMBAD lookup for each, and renders a single tr
 
 **Diagram tab** — "Abundance Profiles": when `mpl_available()` and at least one star has abundance data, add a diagram tab to `_viz_tabs_widget` (via `DiagramToggleMixin`) showing a grouped horizontal bar chart comparing [X/H] values across all stars for the elements present in any star's Hypatia result. One color per star; elements on the y-axis; vertical line at 0 (solar reference). Built from a new `make_abundance_comparison_canvas(parent, stars_data)` helper in `gui/visualizations/plot_helpers.py`.
 
-### L2: Exoplanet ESI Ranking
+### L2: Exoplanet ESI Ranking *(presentation-only — reuses Phase G2 `search_hwc`)*
 
-Queries the local HWC SQLite table for all planets meeting a minimum ESI threshold, with optional additional filters, and displays a ranked list. Row selection drills into the full HWC display for that star system.
+> **Revised 2026-06-13 — no new core function.** The original sketch proposed a
+> new `core/databases.py::rank_hwc_by_esi(...)`. That is now **redundant**: the
+> Phase G2 function `search_hwc(filters)` (shipped after this plan was first
+> sketched) already does exactly this — it accepts `esi_min`, `habitable`,
+> `habzone_con`, `habzone_opt`, `ly_max` (and more), and **already sorts
+> `P_ESI DESC`**, capped at 500. `rank_hwc_by_esi` would be a strict subset.
+> **L2 is therefore a GUI panel only**, built directly on `search_hwc`; no new
+> core code and no query.py subcommand (the ranking is already reachable via the
+> existing `search-hwc --esi-min …` subcommand — see the query.py note below).
+
+A dedicated "leaderboard" view of the most Earth-like worlds. Queries the local
+HWC SQLite table for all planets meeting a minimum ESI threshold (plus optional
+habitability/distance filters) and displays a **ranked** list. Row selection
+drills into the full HWC display for that star system.
 
 **ESI context**: Earth Similarity Index (0–1.0); Earth = 1.0. Values > 0.8 are considered "Earth-like". The `P_ESI` column is already present in the `hwc` table.
 
-**`core/databases.py`** — add `rank_hwc_by_esi(esi_min=0.8, habitable_only=False, con_hz_only=False, ly_max=None) -> list[dict]`:
-- Builds dynamic WHERE clause: `P_ESI >= ?` always; `P_HABITABLE = 1` if `habitable_only`; `P_HABZONE_CON = 1` if `con_hz_only`; `S_DISTANCE * 3.26156 <= ?` if `ly_max` supplied
-- Returns list of dicts: `P_NAME`, `P_ESI`, `P_HABITABLE`, `P_HABZONE_CON`, `P_HABZONE_OPT`, `P_TEMP_EQUIL`, `S_NAME`, `S_NAME_HD`, `S_NAME_HIP`, `S_TYPE`, `S_DISTANCE` (parsecs)
-- Sorted by `P_ESI DESC`
+**Core**: **no new function.** `EsiRankingPanel` calls the existing
+`databases.search_hwc(filters)` with `{"esi_min": …, "habitable": …,
+"habzone_con": …, "ly_max": …}`. Its result is already
+`{"count", "capped", "cap", "stars": [...]}` sorted `P_ESI DESC`; each star row
+carries `P_NAME, P_ESI, P_HABITABLE, P_HABZONE_CON, P_HABZONE_OPT, P_MASS,
+P_RADIUS, P_TEMP_EQUIL, S_NAME, S_NAME_HD, S_NAME_HIP, S_TYPE, S_DISTANCE`. The
+panel adds the **Rank** column itself (1-based over the returned order) — pure
+presentation, since the rows arrive pre-sorted.
 
-**Output table columns**: Rank | Planet (P_NAME) | ESI (4dp) | Habitable? | In Con HZ? | In Opt HZ? | Temp K (0dp) | Star (S_NAME) | Spectral Type | Distance (LY, 4dp)
+**Output table columns**: Rank | Planet (P_NAME) | ESI (4dp) | Habitable? | In Con HZ? | In Opt HZ? | Temp K (0dp) | Star (S_NAME) | Spectral Type | Distance (LY, 4dp). The "Distance (LY)" column is `S_DISTANCE (pc) × 3.26156`, computed in the panel.
 
-**GUI** — `EsiRankingPanel`: `QDoubleSpinBox` for ESI (0.0–1.0, default 0.8, step 0.05) + `QCheckBox` for "Habitable only" + `QCheckBox` for "Conservative HZ only" + optional max LY `QLineEdit`. Results in sortable `make_table()`. Row double-click fires `show_panel(HwcPanel)` with `S_NAME` pre-filled in the HWC search field.
+**GUI** — `EsiRankingPanel`: `QDoubleSpinBox` for ESI (0.0–1.0, default 0.8, step 0.05) + `QCheckBox` for "Habitable only" (→ `habitable`) + `QCheckBox` for "Conservative HZ only" (→ `habzone_con`) + optional max LY `QLineEdit` (→ `ly_max`). "Rank" button (synchronous — local DB read, no network) calls `search_hwc`, prepends the Rank column, and renders a sortable `make_table()`. Row double-click fires `show_panel(HwcPanel)` with `S_NAME` pre-filled in the HWC search field. Empty `hwc` table → the opt-52 error surfaced from `search_hwc`.
 
 ### L3: Stellar Evolution Timeline
 
@@ -690,14 +719,36 @@ Special cases:
 - **`gui/panels/__init__.py`** — export all three panel classes
 - **`gui/nav.py`** — add "Comparison" nav category with three entries
 - **`gui/visualizations/plot_helpers.py`** — add `make_abundance_comparison_canvas(parent, stars_data)` for the multi-star grouped abundance chart
-- **`docs/star-databases.md`** — document `compare_stars` including `hypatia` key in the per-star result dict, the parallel fetch pattern, and the abundance comparison rows; document `rank_hwc_by_esi` with filter keys and return schemas
+- **`query.py`** — add the **`stellar-evolution`** subcommand only (wraps `equations.compute_stellar_evolution`; `--mass-solar` required, `--current-age-gyr` optional). **No `esi-ranking` subcommand** — already covered by `search-hwc`.
+- **`docs/star-databases.md`** — document the `EsiRankingPanel` → `search_hwc` reuse (L2 adds no core function); note `compare_stars` including the `hypatia` key in the per-star result dict, the parallel fetch pattern, and the abundance comparison rows
 - **`docs/equations.md`** — document `compute_stellar_evolution` with stage duration formulas and special-case mass ranges
+- **`docs/integration.md`** — add the `stellar-evolution` subcommand row + section (self-validating; curated `{"error"}` for mass outside `0.1–20 M☉`)
 
 ### L4: Hypatia Catalog Cache & Abundance Search
 
-Batch-fetches Hypatia Catalog data for all stars in the `star_systems` DB table and stores it locally, then exposes a filter-by-abundance search interface. This unlocks abundance-based filtering in G1 (Star Systems Search) and removes the per-lookup network dependency from L1 (Star Comparison).
+> **⛔ DEFERRED (decided 2026-06-13).** L4 is **not** part of the Phase L build pass
+> (which ships L1–L3 only — see [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md)). L1–L3 need no
+> cache. The cache is justified by **one** feature — abundance *search* — which is
+> impossible against the per-star live API. **Two gates must pass before any L4
+> code:**
+> 1. **Bulk import path** — verify the `GET /data` endpoint (catalog-wide scatter
+>    data, e.g. `?xaxis1=Fe&yaxis1=Si`) returns a **star identifier per point**. If
+>    so, the import is ~50–104 element-keyed calls over the whole catalog instead of
+>    thousands of per-star calls. If not, fall back to per-star (and reassess L4).
+> 2. **⚠️ Rate-limit / acceptable-use / IP-block check — do this FIRST.** Before any
+>    batch/looped pull against `hypatiacatalog.com`, confirm there is no rate limit,
+>    request cap, or AUP that a bulk import could trip and get our IP **throttled or
+>    blocked** (check the site terms/AUP, `Retry-After`/`X-RateLimit-*` headers,
+>    `robots.txt`). Design the importer to respect whatever is found: conservative
+>    throttle, exponential backoff on 429/503 (reuse `_with_retries`), a per-run
+>    request cap, a descriptive `User-Agent`, and a resumable import. Prefer the
+>    `/data` bulk path precisely because it is ~100 requests, not thousands. When in
+>    doubt, contact the Hypatia maintainers before a full run. **"Don't get
+>    IP-blocked" is a hard requirement.**
 
-**Why a local cache**: the Hypatia API at `https://hypatiacatalog.com/hypatia/api/v2` is per-star (no bulk endpoint). With ~252K rows in `star_systems`, a full batch is impractical; the cache should target a useful subset — the same stars already in the DB that have HIP or HD designations (the Hypatia name-resolution priority order is HIP → HD → main_id).
+Batch-fetches Hypatia Catalog data for stars in the `star_systems` DB table and stores it locally, then exposes a filter-by-abundance search interface. This unlocks abundance-based filtering in G1 (Star Systems Search) and removes the per-lookup network dependency from L1 (Star Comparison).
+
+**Why a local cache**: the Hypatia API at `https://hypatiacatalog.com/hypatia/api/v2` `/star` and `/composition` endpoints are **per-star** (no filter-across-stars endpoint), so abundance *search* cannot be answered live. The `GET /data` endpoint returns catalog-wide data and may enable a far cheaper bulk import (gate 1 above). The cache targets the useful subset — `star_systems` rows that have HIP or HD designations (the Hypatia name-resolution priority order is HIP → HD → main_id).
 
 **`core/db.py`** — add to schema. **Note:** the element set is now the full **104 species** (`core/hypatia_elements.py`), not the original 19 the column list below assumes. Before building this, reconsider the storage shape — a wide 104-column table is unwieldy and many species are sparsely measured; a long/EAV `hypatia_abundance(star_name, element, mean, std, min, max, n)` table (with the star-level properties kept in `hypatia_cache`) is the better fit and keeps abundance filtering generic. The column list below is the original 19-element sketch, retained for reference:
 ```sql
@@ -758,30 +809,56 @@ CREATE TABLE IF NOT EXISTS hypatia_cache (
 
 **GUI search** — `HypatiaSearchPanel`: filter form matching CLI prompts (Fe/H min/max `QLineEdit` pair, disk `QComboBox` with Any/Thin/Thick/Halo, teff min/max `QLineEdit` pair, element `QComboBox` + value min/max `QLineEdit` pair, max LY `QLineEdit`). Results in sortable `make_table()`. "Open in SIMBAD" button on row selection — also activates G1 stretch goal: passing `fe_h_min`/`fe_h_max` as additional filter parameters to `search_star_systems()` when both this table and the star_systems table have data.
 
-**G1 integration**: once `hypatia_cache` is populated, `search_star_systems()` (G1) gains `fe_h_min`/`fe_h_max` filter parameters (the commented-out stub from G1). The filter adds `JOIN hypatia_cache hc ON ss.star_name = hc.star_name WHERE hc.fe_h BETWEEN ? AND ?` to the existing G1 query.
+**G1 integration**: once `hypatia_cache` is populated, `search_star_systems()` (G1) gains `fe_h_min`/`fe_h_max` filter parameters. The filter adds `JOIN hypatia_cache hc ON ss.star_name = hc.star_name WHERE hc.fe_h BETWEEN ? AND ?` to the existing G1 query.
+
+> **⚠️ Stale-premise correction (2026-06-13).** Earlier drafts of this plan (and
+> the current `docs/star-databases.md` G1 description) claim G1 "left a
+> commented-out `fe_h_min`/`fe_h_max` stub in place so L4 needs no signature
+> change." **That stub was never shipped** — `search_star_systems`
+> (`core/databases.py:2539`) has no `fe_h` parameter, comment, or JOIN. L4 must
+> therefore **add the `fe_h` filter + the `hypatia_cache` JOIN from scratch**
+> (a small additive change — the function already returns a dict and builds a
+> dynamic WHERE, so it's low-risk, just not "free"). Part of L4's docs step is to
+> **correct the false claim in `docs/star-databases.md`** at the same time.
 
 ### Validation, Tests & Success Criteria (L1–L4)
 
 **Validation & contract**
 - `compare_stars(names)`: `2 ≤ len(names) ≤ 4` → else `{"error"}`. **Per-star failures never abort** — each star carries its own `"error"` key and missing fields are `None`; the call only top-level-errors on the arg-count check. SIMBAD/Hypatia/NASA-supplement failures are isolated per star.
-- `rank_hwc_by_esi(...)`: `0 ≤ esi_min ≤ 1`; empty `hwc` table → the opt-52 error. Returns `[]` (not an error) when nothing meets the threshold.
+- L2 (ESI ranking): **no new core function** — `EsiRankingPanel` calls the existing self-validating `search_hwc(filters)` (empty `hwc` → opt-52 error; returns `{"count":0, …, "stars":[]}`, not an error, when nothing meets the threshold). The only L2-specific logic is the panel-side Rank column + ly conversion.
 - `compute_stellar_evolution(mass_solar, …)`: self-validating (`0.1 ≤ mass_solar ≤ 20` is the model's stated valid range — outside it, return `{"error"}` naming the range, **don't extrapolate silently**); `current_age_gyr` optional and may exceed total lifetime (`current_stage="Beyond AGB"`, not an error). The `< 0.8 M☉` ("> 13.8 Gyr") and `> 8 M☉` (supergiant→SN) special cases are values, not errors.
 - L4 `import_hypatia_cache`: network, **resumable/idempotent** (`INSERT OR REPLACE`); per-star Hypatia errors are skipped and counted, never fatal; returns the `{inserted, skipped, errors, total_candidates}` summary even on partial completion. `search_hypatia_cache`: empty cache → an error directing the user to run the import.
 
 **Tests — `tests/test_comparison.py` (offline; network paths mocked)**
 - `compute_stellar_evolution`: stage durations against the table formulas for a 1 M☉ star (MS ≈ 10 Gyr); monotonic non-overlapping stage boundaries summing to `total_gyr`; `current_stage` selection for an age inside MS and an age past AGB; both special-case branches (`0.5 M☉` → "> 13.8 Gyr"; `10 M☉` → supergiant note); bad mass (`0` / `50`) → `{"error"}`.
-- `rank_hwc_by_esi`: against a seeded `hwc` (a few rows at known ESI/habitable flags) — threshold filtering, `habitable_only`/`con_hz_only`/`ly_max` combinations, `P_ESI DESC` ordering, `[]` when none qualify.
+- L2 ESI ranking: covered by the existing `search_hwc` tests (Phase G2) — no new core test needed. A light panel test (or manual check) confirms the Rank column is 1-based over the `P_ESI DESC` order and that the ly conversion (`S_DISTANCE × 3.26156`) is applied.
 - `compare_stars`: monkeypatch `compute_simbad_lookup` + `compute_hypatia_data` to fixtures — 2- and 4-star shapes, a per-star error isolated (one bad name doesn't drop the others), HZ bounds from the Kopparapu path, the `hypatia` sub-dict carried through.
 - L4: `import_hypatia_cache` against a seeded `star_systems` with mocked Hypatia (success + error rows → correct `inserted`/`skipped`/`errors`); `search_hypatia_cache` filter matrix against a seeded `hypatia_cache`; the G1 `fe_h` JOIN activates only when the cache has data. The live Hypatia round-trip is reachability-gated (skips offline), like `tests/test_hypatia_live.py`.
 
 **Success criteria**
 - [ ] `compare_stars` renders a transposed 2–4-column table with per-star error isolation and a Hypatia abundance-comparison diagram tab when ≥ 1 star has abundances.
-- [ ] `rank_hwc_by_esi` ranks correctly and row-drill opens the `HwcPanel` for the system.
+- [ ] `EsiRankingPanel` ranks correctly off `search_hwc` (no new core function) and row-drill opens the `HwcPanel` for the system.
 - [ ] `compute_stellar_evolution` matches the stage formulas and special cases; the evolution diagram marks current age.
 - [ ] L4 import is resumable and reports a success/skip/error summary; `search_hypatia_cache` filters correctly; G1 gains a working `fe_h` filter once the cache is populated; the L4 EAV-vs-wide storage decision (per the schema note) is settled before building.
 - [ ] Whole suite green; offline tests mock all network; the storage shape handles the full 104-species set.
 
-> **`query.py`**: `rank_hwc_by_esi` and `compute_stellar_evolution` are clean factual-answer functions — strong follow-on subcommand candidates (`esi-ranking`, `stellar-evolution`). `compare_stars` (multi-star network fan-out) and the L4 cache import are better left GUI-only.
+> **`query.py` (revised 2026-06-13)**: expose **only `stellar-evolution`** — a
+> clean, self-validating, no-network factual-answer function that fits the
+> existing equations subcommand pattern (1-line handler → `_out(...)`). **Do not
+> add `esi-ranking`**: ESI ranking is already reachable via the existing
+> `search-hwc --esi-min 0.8 [--habitable] [--habzone-con] [--ly-max]` subcommand
+> (results pre-sorted `P_ESI DESC`), so a new subcommand would duplicate it; the
+> Rank column is trivially derivable by the consumer. `compare_stars` (multi-star
+> network fan-out) and the L4 cache import are GUI-only.
+>
+> **L4 follow-on — revisit after implementation:** once L4 ships and the
+> `hypatia_cache` table exists, **reconsider exposing `search_hypatia_cache` as a
+> `query.py` subcommand** (e.g. `search-hypatia` — a no-network local-DB filter
+> with the same `{count, capped, cap, stars[]}` contract as the other `search-*`
+> subcommands, a natural fit for the factual-answer/integration surface). It is
+> deliberately **out of scope until then** because it returns an empty-cache error
+> until the import has been run at least once. The L4 import itself stays GUI-only
+> (long-running network fan-out).
 
 ### Remaining Steps (L4)
 
@@ -789,7 +866,9 @@ CREATE TABLE IF NOT EXISTS hypatia_cache (
 - **`gui/panels/__init__.py`** — export both new panel classes
 - **`gui/nav.py`** — add "Import Hypatia Cache" to Utilities category; add "Hypatia Abundance Search" to Comparison (or Search & Filter) category
 - **`core/db.py`** — add `hypatia_cache` table to schema (auto-created on first `get_db()` call)
-- **`docs/star-databases.md`** — document `import_hypatia_cache`, `search_hypatia_cache`, `hypatia_cache` table schema, rate-limiting behavior, and G1 integration path
+- **`core/databases.py`** — add the `fe_h_min`/`fe_h_max` filter + `hypatia_cache` JOIN to `search_star_systems` **from scratch** (the assumed commented stub does not exist — see the stale-premise correction above)
+- **`docs/star-databases.md`** — document `import_hypatia_cache`, `search_hypatia_cache`, `hypatia_cache` table schema, rate-limiting behavior, and the G1 integration path; **correct the existing false claim** that G1 left a commented `fe_h` stub in place
+- **`query.py` — REVISIT (deferred):** after L4 ships, reconsider exposing `search_hypatia_cache` as a `search-hypatia` subcommand (no-network local-DB read, same `{count, capped, cap, stars[]}` contract as the other `search-*` commands). Out of scope until the cache exists; the import stays GUI-only.
 
 ---
 

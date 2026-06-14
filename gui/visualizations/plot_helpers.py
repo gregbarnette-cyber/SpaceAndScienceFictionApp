@@ -1959,6 +1959,164 @@ def make_abundance_canvas(parent, abundances_data: dict, star_name: str = ""):
     return canvas, toolbar
 
 
+def make_abundance_comparison_canvas(parent, data: dict):
+    """Grouped horizontal [X/H] bar chart comparing 1–4 stars (Phase L1).
+
+    data: return value of core.viz.prepare_abundance_comparison().
+    Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(8, 3), dpi=100, facecolor=_SPACE_BG)
+        cv  = FigureCanvas(fig)
+        ax  = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes,
+                ha="center", va="center", color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No abundance data") if data else "No abundance data")
+
+    star_names = data.get("star_names", [])
+    colors     = data.get("colors", [])
+    elements   = data.get("elements", [])
+    matrix     = data.get("matrix", [])
+    n_stars    = len(star_names)
+    n_elem     = len(elements)
+    if not n_stars or not n_elem:
+        return _error_canvas("No measurable abundances found")
+
+    import numpy as np
+    base    = np.arange(n_elem)              # one group per element
+    group_h = 0.8
+    bar_h   = group_h / n_stars
+
+    fig_h = max(4.0, n_elem * 0.42 + 1.6)
+    fig   = Figure(figsize=(8, fig_h), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.13, right=0.96, top=0.93, bottom=0.07)
+
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(_SPACE_BG)
+
+    for j in range(n_stars):
+        ys   = base + group_h / 2 - (j + 0.5) * bar_h
+        vals = [matrix[i][j] if matrix[i][j] is not None else 0.0 for i in range(n_elem)]
+        color = colors[j] if j < len(colors) else None
+        ax.barh(ys, vals, height=bar_h * 0.92, color=color,
+                alpha=0.9, label=star_names[j])
+
+    ax.axvline(0, color=_LABEL_CLR, linewidth=0.9, alpha=0.55, zorder=3)
+    ax.set_yticks(base)
+    ax.set_yticklabels(elements, fontsize=9, color=_LABEL_CLR)
+    ax.set_ylim(-0.6, n_elem - 0.4)
+    ax.invert_yaxis()                        # first element at top
+    ax.set_xlabel("[X/H]  (Lodders 2009)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(axis="x", colors=_LABEL_CLR, labelsize=8)
+    ax.tick_params(axis="y", colors=_LABEL_CLR)
+
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    for spine in ("bottom", "left"):
+        ax.spines[spine].set_color(_GRID_CLR)
+    ax.grid(axis="x", color=_GRID_CLR, alpha=0.5, linewidth=0.7, linestyle="--")
+    ax.set_axisbelow(True)
+
+    leg = ax.legend(loc="lower right", fontsize=8, framealpha=0.85,
+                    facecolor=_SPACE_BG, edgecolor=_GRID_CLR)
+    for txt in leg.get_texts():
+        txt.set_color(_LABEL_CLR)
+
+    ax.set_title("[X/H] Elemental Abundances — Comparison",
+                 color=_LABEL_CLR, fontsize=10, pad=8)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_evolution_canvas(parent, data: dict):
+    """Horizontal stacked-bar stellar-evolution timeline (Phase L3).
+
+    data: return value of core.viz.prepare_evolution_diagram().
+    Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(8, 2.2), dpi=100, facecolor=_SPACE_BG)
+        cv  = FigureCanvas(fig)
+        ax  = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes,
+                ha="center", va="center", color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No evolution data") if data else "No evolution data")
+
+    stages = data.get("stages", [])
+    if not stages:
+        return _error_canvas("No evolution stages to plot")
+
+    x_max = data.get("x_max_gyr") or 1.0
+    age   = data.get("current_age_gyr")
+    mass  = data.get("mass_solar")
+
+    fig = Figure(figsize=(9, 3.4), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.06, right=0.97, top=0.84, bottom=0.34)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(_SPACE_BG)
+
+    y = 0
+    for s in stages:
+        ax.barh(y, s["duration_gyr"], left=s["start_gyr"], height=0.6,
+                color=s["color"], edgecolor=_SPACE_BG, alpha=0.92)
+        # Label the segment in-place only if it's wide enough to fit text; every
+        # stage is identifiable via the legend below regardless of width.
+        if s["duration_gyr"] / x_max > 0.07:
+            ax.text(s["start_gyr"] + s["duration_gyr"] / 2, y, s["name"],
+                    ha="center", va="center", fontsize=7.5, color="#332b00")
+
+    if age is not None:
+        ax.axvline(age, color="#b03030", linewidth=1.6, linestyle="--", zorder=5)
+        ax.text(age, 0.42, f"  Current Age: {age:.2f} Gyr",
+                color="#b03030", fontsize=8, fontweight="bold",
+                ha="left", va="bottom")
+
+    ax.set_xlim(0, x_max)
+    ax.set_ylim(-0.5, 0.6)
+    ax.set_yticks([0])
+    ax.set_yticklabels([f"{mass:g} M☉" if mass is not None else ""],
+                       fontsize=9, color=_LABEL_CLR)
+    ax.set_xlabel("Time (Gyr)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(axis="x", colors=_LABEL_CLR, labelsize=8)
+    ax.tick_params(axis="y", colors=_LABEL_CLR)
+    for spine in ("top", "right", "left"):
+        ax.spines[spine].set_visible(False)
+    ax.spines["bottom"].set_color(_GRID_CLR)
+    ax.set_title("Stellar Evolution Timeline", color=_LABEL_CLR, fontsize=10, pad=8)
+
+    # Legend: every stage colour → name, so the narrow segments (Pre-MS, RGB, HB,
+    # AGB) that can't fit an in-bar label are still identifiable.
+    from matplotlib.patches import Patch
+    handles = [Patch(facecolor=s["color"], label=s["name"]) for s in stages]
+    leg = ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.22),
+                    ncol=min(len(handles), 6), fontsize=7.5, framealpha=0.9,
+                    facecolor=_SPACE_BG, edgecolor=_GRID_CLR)
+    for txt in leg.get_texts():
+        txt.set_color(_LABEL_CLR)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
 def make_solar_travel_canvas(parent, data: dict, on_body_click=None):
     """2D top-down solar system travel path diagram (XY ecliptic plane).
 

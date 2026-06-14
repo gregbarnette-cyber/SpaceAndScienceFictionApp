@@ -496,3 +496,88 @@ def compute_atmosphere_retention(planet_mass_earth: float, planet_radius_earth: 
         "v_escape_kms": v_escape_kms,
         "gases": gases,
     }
+
+
+# ── Stellar evolution timeline (Phase L3) ────────────────────────────────────
+# Pure-math, self-validating (like the Phase H calculators) so it can back both
+# the GUI panel and the `stellar-evolution` query.py subcommand.
+
+# Stage fractions are multiples of the main-sequence lifetime T_ms. T_ms itself
+# uses the same 10^10 × (1/M)^2.5 relation as core/regions.py (`mainSeqLifeSpan`).
+_EVOLUTION_STAGES = [
+    ("Pre-Main Sequence",        0.01, "#aaaaaa"),
+    ("Main Sequence",            1.00, "#ffe066"),
+    ("Subgiant Branch",          0.15, "#ffaa33"),
+    ("Red Giant Branch",         0.10, "#ff6600"),
+    ("Horizontal Branch",        0.10, "#ff99cc"),
+    ("Asymptotic Giant Branch",  0.02, "#cc3300"),
+]
+
+
+def compute_stellar_evolution(mass_solar: float, current_age_gyr: float = None) -> dict:
+    """Evolutionary-stage durations and timeline for a star of a given mass.
+
+    Valid for 0.1 ≤ mass_solar ≤ 20 M☉ (self-validating — outside that range
+    returns {"error": str} rather than extrapolating). `current_age_gyr` is
+    optional and may exceed the total lifetime (current_stage = "Beyond AGB").
+
+    Special cases (values, not errors):
+        mass < 0.8 M☉ — main-sequence lifetime exceeds a Hubble time; only the
+                        Pre-MS and MS stages are emitted (post-MS not reachable),
+                        and `low_mass` is True.
+        mass > 8 M☉   — the AGB stage is replaced by "Supergiant → Supernova"
+                        and `high_mass` is True.
+
+    Returns {mass_solar, stages:[{name, start_gyr, end_gyr, duration_gyr, color}],
+    total_gyr, ms_end_gyr, current_age_gyr, current_stage, low_mass, high_mass}.
+    """
+    if mass_solar is None or mass_solar < 0.1 or mass_solar > 20:
+        return {"error": "Stellar mass must be between 0.1 and 20 M☉."}
+    if current_age_gyr is not None and current_age_gyr < 0:
+        return {"error": "Current age must be ≥ 0 Gyr."}
+
+    t_ms_gyr  = (1e10 * (1.0 / mass_solar) ** 2.5) / 1e9
+    low_mass  = mass_solar < 0.8
+    high_mass = mass_solar > 8.0
+
+    stages, t = [], 0.0
+    for name, frac, color in _EVOLUTION_STAGES:
+        # Below ~0.8 M☉ the MS lifetime exceeds the age of the universe, so no
+        # post-MS stage is reachable — emit only Pre-MS and MS.
+        if low_mass and name not in ("Pre-Main Sequence", "Main Sequence"):
+            continue
+        stage_name, stage_color = name, color
+        if high_mass and name == "Asymptotic Giant Branch":
+            stage_name, stage_color = "Supergiant → Supernova", "#7a0000"
+        dur = frac * t_ms_gyr
+        stages.append({
+            "name": stage_name,
+            "start_gyr": t,
+            "end_gyr": t + dur,
+            "duration_gyr": dur,
+            "color": stage_color,
+        })
+        t += dur
+
+    total_gyr  = t
+    ms_end_gyr = next(s["end_gyr"] for s in stages if s["name"] == "Main Sequence")
+
+    current_stage = None
+    if current_age_gyr is not None:
+        for s in stages:
+            if s["start_gyr"] <= current_age_gyr < s["end_gyr"]:
+                current_stage = s["name"]
+                break
+        if current_stage is None and current_age_gyr >= total_gyr:
+            current_stage = "Beyond AGB"
+
+    return {
+        "mass_solar":      mass_solar,
+        "stages":          stages,
+        "total_gyr":       total_gyr,
+        "ms_end_gyr":      ms_end_gyr,
+        "current_age_gyr": current_age_gyr,
+        "current_stage":   current_stage,
+        "low_mass":        low_mass,
+        "high_mass":       high_mass,
+    }

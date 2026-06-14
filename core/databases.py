@@ -2710,3 +2710,162 @@ def search_exoplanets(filters: dict) -> dict:
     if capped:
         rows = rows[:_EXO_SEARCH_CAP]
     return {"count": len(rows), "capped": capped, "cap": _EXO_SEARCH_CAP, "stars": rows}
+
+
+# ── Star comparison (Phase L1) ───────────────────────────────────────────────
+
+def _sol_compare_entry() -> dict:
+    """Reference-constant comparison entry for the Sun.
+
+    The Sun is not a SIMBAD catalog object — "Sol"/"Sun" don't resolve — so its
+    textbook values are injected directly. Under the Lodders (2009) solar
+    normalisation that Hypatia uses, every [X/H]_sun ≡ 0 by definition, so the
+    Sun is the natural zero-point baseline for the abundance comparison; its
+    synthetic abundance rows carry n=0 (no catalog) to mark them as the reference
+    rather than measurements.
+    """
+    from core.equations import compute_habitable_zone
+    from core.hypatia_elements import HYPATIA_SPECIES
+
+    zmap = {z["key"]: z["au"] for z in compute_habitable_zone(5778.0, 1.0)}
+    abundances = [{
+        "element": s["symbol"], "name": s["name"], "z": s["z"],
+        "category": s["category"], "mean": 0.0, "std": 0.0,
+        "min": 0.0, "max": 0.0, "n": 0,
+    } for s in HYPATIA_SPECIES]
+    return {
+        "name": "Sun", "sp_type": "G2V", "teff": 5778.0, "luminosity": 1.0,
+        "mass": 1.0, "radius": 1.0,
+        "hz_inner_au": zmap.get("rg"), "hz_outer_au": zmap.get("mg"),
+        "ly": 0.0, "app_magnitude": -26.74,
+        "hypatia": {"star_name": "Sun",
+                    # U/V/W are heliocentric galactic space velocities — the Sun
+                    # is the origin of that frame, so its U/V/W ≡ 0 (the same
+                    # "Sun = reference" basis as [X/H] ≡ 0 and distance ≡ 0).
+                    "properties": {"logg": 4.44, "disk": "thin disk",
+                                   "u_vel": 0.0, "v_vel": 0.0, "w_vel": 0.0},
+                    "abundances": abundances},
+        "error": None,
+    }
+
+
+def compare_stars(names: list) -> dict:
+    """Side-by-side comparison of 2–4 stars.
+
+    Per star: a SIMBAD lookup, an optional NASA pscomppars supplement to fill
+    radius / mass / (teff/lum) that SIMBAD lacks, computed conservative HZ
+    inner/outer bounds, and Hypatia Catalog data. **Per-star failures are
+    isolated** — each star carries its own "error" key (None on success) and
+    missing numeric fields are None; the only top-level error is the arg-count
+    check. Reuses compute_simbad_lookup / compute_hypatia_data / the archive
+    helpers / equations.compute_habitable_zone verbatim.
+
+    Returns {"stars": [ {name, sp_type, teff, luminosity, mass, radius,
+    hz_inner_au, hz_outer_au, ly, app_magnitude, hypatia, error}, ... ]}
+    or {"error": str}.
+    """
+    from core.equations import compute_habitable_zone
+
+    if not names or len([n for n in names if (n or "").strip()]) < 2:
+        return {"error": "Enter at least 2 stars to compare."}
+    if len(names) > 4:
+        return {"error": "A maximum of 4 stars can be compared at once."}
+
+    stars = []
+    for raw in names:
+        name = (raw or "").strip()
+        entry = {
+            "name": name, "sp_type": None, "teff": None, "luminosity": None,
+            "mass": None, "radius": None, "hz_inner_au": None, "hz_outer_au": None,
+            "ly": None, "app_magnitude": None, "hypatia": None, "error": None,
+        }
+        if not name:
+            entry["error"] = "Empty star name."
+            stars.append(entry)
+            continue
+
+        if name.lower() in ("sol", "sun"):
+            stars.append(_sol_compare_entry())
+            continue
+
+        sl = compute_simbad_lookup(name)
+        if isinstance(sl, dict) and "error" in sl:
+            entry["error"] = sl["error"]
+            stars.append(entry)
+            continue
+
+        entry["name"]          = sl.get("main_id") or name
+        entry["sp_type"]       = sl.get("sp_type")
+        entry["ly"]            = sl.get("ly")
+        entry["app_magnitude"] = sl.get("vmag")
+
+        teff   = _fval(sl.get("teff"))
+        radius = None
+        mass   = None
+        lum    = None
+
+        # NASA pscomppars supplement: SIMBAD never carries radius/mass, so fetch
+        # them (and teff/lum if missing). Best-effort — never fatal.
+        field, value = _get_archive_query_params(sl.get("designations", {}))
+        if field and value:
+            try:
+                rows = _query_tap("pscomppars", f"{field}='{value}'",
+                                  order_by="pl_orbsmax", top=1,
+                                  select="st_teff,st_rad,st_mass,st_lum")
+                if rows:
+                    row = rows[0]
+                    if teff is None:
+                        teff = _fval(row.get("st_teff"))
+                    radius = _fval(row.get("st_rad"))
+                    mass   = _fval(row.get("st_mass"))
+                    st_lum = _fval(row.get("st_lum"))
+                    if st_lum is not None:
+                        lum = 10 ** st_lum            # archive st_lum is log10(L/Lsun)
+            except Exception:
+                pass
+
+        # Photometric fallback: NASA pscomppars only carries planet-HOST stars, so
+        # most stars miss it. Derive mass/radius/luminosity from V mag + parallax +
+        # teff + bolometric correction — the same method as the Star System Regions
+        # feature — which works for any main-sequence star.
+        if radius is None or mass is None:
+            try:
+                from core.regions import compute_star_system_regions_from_simbad
+                reg = compute_star_system_regions_from_simbad(sl)
+                if isinstance(reg, dict) and "error" not in reg:
+                    if mass is None:
+                        mass = reg.get("stellarMass")
+                    if radius is None:
+                        radius = reg.get("stellarRadius")
+                    if lum is None:
+                        lum = reg.get("bcLuminosity")
+            except Exception:
+                pass
+
+        # Luminosity: prefer radius²·(teff/5778)⁴; else the archive/regions value.
+        if radius is not None and teff is not None:
+            lum = radius ** 2 * (teff / 5778.0) ** 4
+
+        entry["teff"]       = teff
+        entry["radius"]     = radius
+        entry["mass"]       = mass
+        entry["luminosity"] = lum
+
+        # Conservative HZ inner (Runaway Greenhouse 'rg') / outer (Max Greenhouse 'mg').
+        if teff is not None and lum is not None and lum > 0:
+            try:
+                zmap = {z["key"]: z["au"] for z in compute_habitable_zone(teff, lum)}
+                entry["hz_inner_au"] = zmap.get("rg")
+                entry["hz_outer_au"] = zmap.get("mg")
+            except Exception:
+                pass
+
+        # Hypatia (per-star, non-fatal).
+        try:
+            entry["hypatia"] = compute_hypatia_data(sl)
+        except Exception as e:
+            entry["hypatia"] = {"error": str(e)}
+
+        stars.append(entry)
+
+    return {"stars": stars}

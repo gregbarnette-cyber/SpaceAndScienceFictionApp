@@ -48,6 +48,8 @@ from gui.panels.route_planning    import (MultiStopJourneyPanel, NearestNeighbor
 from gui.panels.gcns             import (GcnsCensusBrowserPanel, GcnsSourceLookupPanel,
                                          GcnsSystemViewerPanel, GcnsDistancePanel,
                                          GcnsTravelTimePanel, GcnsStarsWithinStarPanel)
+from gui.panels.comparison       import (StarComparisonPanel, EsiRankingPanel,
+                                         StellarEvolutionPanel)
 from gui.panels.csv_utility      import (CsvUtilityPanel, ExportStarSystemsPanel,
                                          ImportHwcPanel, ImportMissionExocatPanel,
                                          ImportMainSequencePanel, ImportSolarSystemPanel,

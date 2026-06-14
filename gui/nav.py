@@ -19,6 +19,11 @@ NAVIGATION = [
         ("HWC Planet Search",          "HwcSearchPanel"),
         ("NASA Exoplanet Quick Search","NasaExoplanetSearchPanel"),
     ]),
+    ("Comparison", [
+        ("Star Comparison",        "StarComparisonPanel"),
+        ("ESI Ranking",            "EsiRankingPanel"),
+        ("Stellar Evolution",      "StellarEvolutionPanel"),
+    ]),
     ("GCNS", [
         ("GCNS Census Browser",         "GcnsCensusBrowserPanel"),
         ("GCNS Source Lookup",          "GcnsSourceLookupPanel"),

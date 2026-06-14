@@ -137,3 +137,14 @@ Which atmospheric gases a planet retains against Jeans escape.
 
 ### GUI panels (`gui/panels/worldbuilding.py`)
 All five inherit `ResultPanel` directly (no `DiagramToggleMixin` — no visualizations), following the `LuminosityPanel` pure-math pattern (`QFormLayout` of `QLineEdit`s + Calculate button, hidden red `_err` label, a `_result_container` rebuilt on each calc). A shared `_WorldbuildingPanel` scaffold factors the form/button/error/clear logic and a `_read_float` helper. `RocheLimitPanel`'s radius and the optional eccentricity / advanced fields default when left blank. `BinaryOrbitPanel` shows a green/red **Stable/Unstable** verdict label above the table plus the description line below it; `AtmosphereRetentionPanel` color-codes each gas's Status cell (green Retained / amber Escaping slowly / red Lost rapidly) and prints the escape velocity in a label above the table. `TidalLockingPanel` puts rigidity + Q in a collapsible "Advanced Parameters" `QGroupBox` pre-filled with `3e10` / `100`.
+
+## Stellar Evolution Timeline (Phase L3)
+
+`compute_stellar_evolution(mass_solar, current_age_gyr=None)` in `core/equations.py` — evolutionary-stage durations and timeline for a star, backing the GUI `StellarEvolutionPanel` (Comparison nav) and the `stellar-evolution` `query.py` subcommand. **Self-validating** (like the Phase H calculators): a mass outside `0.1 ≤ mass_solar ≤ 20 M☉` returns `{"error": str}` rather than extrapolating; `current_age_gyr` may be `< 0` → error, or exceed the total lifetime (`current_stage="Beyond AGB"`, not an error).
+
+- `T_ms = 10¹⁰ × (1/mass_solar)^2.5` years (same relation as `core/regions.py` `mainSeqLifeSpan`), reported in Gyr. Module constant `_EVOLUTION_STAGES` holds the six `(name, fraction_of_T_ms, color)` rows: Pre-Main Sequence 0.01, Main Sequence 1.00, Subgiant 0.15, Red Giant Branch 0.10, Horizontal Branch 0.10, Asymptotic Giant Branch 0.02.
+- Stages are emitted with contiguous `start_gyr`/`end_gyr`/`duration_gyr`; `current_stage` is the stage containing `current_age_gyr`.
+- **Special cases (values, not errors):** `mass < 0.8 M☉` → `low_mass=True`, only Pre-MS + MS emitted (MS lifetime exceeds a Hubble time; the GUI/diagram render MS as "> 13.8 Gyr"). `mass > 8 M☉` → `high_mass=True`, the AGB stage is replaced by `"Supergiant → Supernova"` (color `#7a0000`).
+- Returns `{mass_solar, stages:[{name, start_gyr, end_gyr, duration_gyr, color}], total_gyr, ms_end_gyr, current_age_gyr, current_stage, low_mass, high_mass}`.
+- **Anchor:** 1 M☉ → `T_ms = 10 Gyr`, `ms_end_gyr ≈ 10.1 Gyr` (after the 0.01·T_ms Pre-MS), six stages, `total_gyr ≈ 13.8 Gyr`.
+- Viz: `core.viz.prepare_evolution_diagram(result)` → `{stages, current_age_gyr, x_max_gyr, …}`; `gui/visualizations/plot_helpers.make_evolution_canvas(parent, data)` renders the horizontal stacked-bar timeline with a dashed current-age marker.

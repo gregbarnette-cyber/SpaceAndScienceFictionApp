@@ -737,3 +737,90 @@ def prepare_route_map(result: dict) -> dict:
 
 _CIRCLED = ["①", "②", "③", "④", "⑤", "⑥",
             "⑦", "⑧", "⑨", "⑩", "⑪", "⑫"]
+
+
+# ── Stellar evolution diagram (Phase L3) ─────────────────────────────────────
+
+def prepare_evolution_diagram(result: dict) -> dict:
+    """Normalize a compute_stellar_evolution() result into stacked-bar data.
+
+    Returns {stages, current_age_gyr, x_max_gyr, mass_solar, total_gyr,
+    ms_end_gyr, current_stage, low_mass, high_mass} or {"error": str}.
+    `x_max_gyr` = max(total, current_age) × 1.1 for axis scaling.
+    """
+    if not result or "error" in result:
+        return {"error": result.get("error", "No evolution data") if result else "No evolution data"}
+    stages = result.get("stages", [])
+    total  = result.get("total_gyr", 0.0) or 0.0
+    age    = result.get("current_age_gyr")
+    x_max  = max(total, age or 0.0) * 1.1 or 1.0
+    return {
+        "stages":          stages,
+        "current_age_gyr": age,
+        "x_max_gyr":       x_max,
+        "mass_solar":      result.get("mass_solar"),
+        "total_gyr":       total,
+        "ms_end_gyr":      result.get("ms_end_gyr"),
+        "current_stage":   result.get("current_stage"),
+        "low_mass":        result.get("low_mass", False),
+        "high_mass":       result.get("high_mass", False),
+    }
+
+
+# ── Multi-star abundance comparison (Phase L1) ───────────────────────────────
+
+# Distinct per-star series colours for the grouped abundance chart.
+_COMPARE_COLORS = ["#d8a13a", "#4a90d9", "#7a5bd0", "#2e8b57"]
+
+
+def prepare_abundance_comparison(compare_result: dict) -> dict:
+    """Build grouped [X/H] bar-chart data from a compare_stars() result.
+
+    Returns {star_names, colors, elements, matrix} or {"error": str}.
+    `elements` is the union of measured species across all stars, in the master
+    display order (core.hypatia_elements); `matrix[i][j]` is star j's [X/H] mean
+    for element i (None when that star lacks the species). Only stars whose
+    Hypatia result carries ≥1 non-None abundance are included.
+    """
+    from core.hypatia_elements import display_symbol, SPECIES_ORDER
+
+    if not compare_result or "error" in compare_result:
+        return {"error": "No comparison data available"}
+
+    star_names, per_star, defining = [], [], set()
+    for s in compare_result.get("stars", []):
+        hyp = s.get("hypatia")
+        if not hyp or "error" in hyp:
+            continue
+        vals = {}
+        for a in hyp.get("abundances", []):
+            m = a.get("mean")
+            if m is None:
+                continue
+            el = a["element"]
+            vals[el] = float(m)
+            # Only catalogued measurements (n > 0, or unknown n) define which
+            # elements to chart; an all-zero reference baseline like the Sun
+            # (n = 0) fills existing rows but must not expand the union to all
+            # 104 species.
+            n = a.get("n")
+            if n is None or n > 0:
+                defining.add(el)
+        if vals:
+            star_names.append(s.get("name", "?"))
+            per_star.append(vals)
+
+    if len(star_names) < 1:
+        return {"error": "No stars with elemental abundance data to compare"}
+
+    # Element union: catalogued measurements only; fall back to all present keys
+    # when nothing is catalogued (e.g. the Sun compared against itself).
+    keys = defining if defining else set().union(*[set(v) for v in per_star])
+    ordered = sorted(keys, key=lambda k: SPECIES_ORDER.get(k.lower(), 999))
+
+    elements = [display_symbol(k) for k in ordered]
+    matrix   = [[vals.get(k) for vals in per_star] for k in ordered]
+    colors   = [_COMPARE_COLORS[i % len(_COMPARE_COLORS)] for i in range(len(star_names))]
+
+    return {"star_names": star_names, "colors": colors,
+            "elements": elements, "matrix": matrix}
