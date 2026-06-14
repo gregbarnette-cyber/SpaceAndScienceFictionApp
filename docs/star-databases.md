@@ -264,10 +264,12 @@ Until Phase M, GCNS was reachable only through `query.py`. Phase M adds six **GU
 
 **M5 — opt-1 SIMBAD GCNS cross-reference.** `compute_simbad_lookup` gains a **non-fatal, silent** top-level `"gcns"` key (`_simbad_gcns_block`): it parses the Gaia id from the designations and attaches the matching `gcns_stars` row (Bayesian `dist_pc` + `dist_lo_pc`/`dist_hi_pc`, `distance_method`, Gaia G/BP/RP, `astrom_reliable_prob`, `wd_prob`, `system_id`/`n_components`) — a single indexed local read, no extra network. `None` when there is no Gaia id, the source is not in GCNS, or the table is empty. `SimbadPanel` shows it as a **"GCNS" tab** (Bayesian distance + σ beside the naive 1/ϖ distance); `query.py simbad-lookup` carries the key for free. See `docs/integration.md`.
 
-## Phase G — Interactive Search & Filtering (GUI-only)
+## Phase G — Interactive Search & Filtering
 
-Three filter functions backing the GUI **Search & Filter** nav category. They are
-GUI-only (no CLI menu option, no `query.py` subcommand). Each returns a dict
+Three filter functions backing the GUI **Search & Filter** nav category. **No CLI
+menu option**; originally GUI-only, they were later exposed as `query.py`
+subcommands (`search-star-systems` / `search-hwc` / `search-exoplanets`, all
+filters optional — see `docs/integration.md`). Each returns a dict
 `{"count": int, "capped": bool, "cap": int, "stars": [row dicts]}` or
 `{"error": str}` — always check for `"error"` before reading `stars`.
 

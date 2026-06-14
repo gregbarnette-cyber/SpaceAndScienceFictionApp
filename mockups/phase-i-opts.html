@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase I — Route Planning: New Option Candidates (Mockup)</title>
+<style>
+  :root{
+    --bg:#f0f0f0; --panel:#ffffff; --border:#b8b8b8; --border-soft:#d8d8d8;
+    --text:#222; --muted:#6a6a6a; --accent:#4a90d9; --accent-d:#3a73ad;
+    --head:#e9eef5; --zebra:#f7f9fc; --good:#2e8b57; --warn:#b8860b; --bad:#b03030;
+    --map-bg:#0b1020; --map-grid:#1a2448; --route:#7fd3ff; --mst:#7fe0a0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+       font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}
+  .topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600}
+  .topbar .sub{color:#9aa3ad;font-weight:400}
+  .notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px;line-height:1.5}
+  .notice b{color:#4d4109}
+  .notice code{background:#f4ead0;padding:0 4px;border-radius:3px}
+  .app{flex:1;display:flex;min-height:0}
+  .nav{width:248px;min-width:248px;background:#fafafa;border-right:1px solid var(--border);overflow:auto;padding:6px 0}
+  .nav .cat{padding:9px 12px 3px;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px}
+  .nav .cat.new{color:var(--accent)}
+  .nav .new-badge{background:var(--accent);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .nav .item{padding:6px 12px 6px 22px;color:#41566f;border-left:3px solid transparent;cursor:pointer}
+  .nav .item:hover{background:#eef4fb}
+  .nav .item.active{background:#e2eefb;border-left-color:var(--accent);color:#13314e;font-weight:600}
+  .nav .item.muted{color:#bbb;cursor:default}
+  .nav .item .new2{font-size:9px;color:#2e6da4;border:1px solid #a9c8e6;border-radius:3px;padding:0 4px;margin-left:5px;font-weight:700}
+  .content{flex:1;overflow:auto;padding:16px 20px}
+  .panel{display:none}
+  .panel.active{display:block}
+  h2.title{margin:0 0 2px;font-size:18px}
+  h2.title .new2{font-size:11px;background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;margin-left:8px;vertical-align:middle}
+  .sub{color:var(--muted);margin:4px 0 12px;font-size:12.5px;max-width:900px;line-height:1.5}
+  details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--border-soft);border-radius:5px;padding:6px 10px;max-width:920px}
+  details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+  details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+  details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.6}
+  details.spec .why{color:#2e8b57;font-weight:600}
+  .layout{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+  .col-form{flex:0 0 340px;max-width:340px}
+  .col-out{flex:1;min-width:380px}
+  .form{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:13px 15px;margin-bottom:12px}
+  .form h3{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+  .field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+  .field label{font-size:12px;color:#444;font-weight:600}
+  .field textarea{height:108px;border:1px solid var(--border);border-radius:4px;padding:6px 7px;font-size:12.5px;font-family:"Cascadia Code",Consolas,monospace;resize:vertical}
+  .field input,.field select{height:30px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff}
+  .field .hint{font-size:10.5px;color:#999}
+  .row2{display:flex;gap:10px}
+  .row2 .field{flex:1}
+  .chk{display:flex;align-items:center;gap:7px;margin:2px 0 10px;font-size:12.5px;color:#444}
+  .chk input{width:15px;height:15px}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:6px}
+  button.btn{height:30px;padding:0 16px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+  button.btn:hover{background:var(--accent-d)}
+  button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+  button.ghost:hover{background:#f0f0f0}
+  .err{color:var(--bad);font-size:12px;margin:8px 0;display:none;font-weight:600}
+  .tablewrap{border:1px solid var(--border);border-radius:6px;overflow:auto;background:#fff;margin-bottom:8px;display:none}
+  table{border-collapse:collapse;width:100%;font-size:12px}
+  th{background:var(--head);text-align:left;padding:6px 9px;border-bottom:1px solid var(--border);white-space:nowrap;font-size:11px}
+  td{padding:5px 9px;border-bottom:1px solid #eee;white-space:nowrap}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.tierc{font-weight:700}
+  tr:nth-child(even) td{background:var(--zebra)}
+  tr.tierhdr td{background:#eef2f7;font-weight:700;color:#3a73ad;font-size:11px}
+  .totals{font-size:13px;font-weight:600;margin:6px 0 10px;display:none}
+  .totals span{color:var(--accent-d)}
+  .totals .imp{color:var(--good)}
+  .earlynote{font-size:11.5px;color:#b8860b;font-style:italic;margin:4px 0 8px;display:none}
+  .badnote{font-size:12px;color:var(--bad);font-weight:600;margin:4px 0 8px;display:none}
+  /* map */
+  .mapcard{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:none}
+  .mapcard .mh{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .mapcard .mh h3{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+  .mapcard .proj{font-size:11.5px}
+  .mapcard .proj select{height:24px;border:1px solid var(--border);border-radius:4px;font-size:11.5px}
+  svg.map{width:100%;height:380px;background:var(--map-bg);border-radius:5px;display:block}
+  .leglbl{fill:#cfe3ff;font-size:10px;font-family:"Cascadia Code",Consolas,monospace}
+  .nodelbl{fill:#c7d2e6;font-size:10px}
+  .maplegend{font-size:11px;color:#777;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .maplegend i{display:inline-block;width:18px;height:0;border-top-width:2px;vertical-align:middle;margin-right:4px}
+  .maplegend .dot{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:middle;margin-right:4px}
+  .mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:8px 11px;border-radius:5px;font-size:12px;margin:12px 0;max-width:920px;line-height:1.5}
+  .mocknote code{background:#e7ddf5;padding:0 4px;border-radius:3px}
+  .intro{background:#fff;border:1px solid var(--border);border-radius:6px;padding:13px 16px;max-width:920px;margin-bottom:14px;line-height:1.6}
+  .intro h3{margin:0 0 8px;font-size:14px}
+  .intro table{margin-top:6px}
+  .intro td,.intro th{white-space:normal}
+</style>
+</head>
+<body>
+<div class="topbar">
+  Space &amp; Science Fiction App <span class="sub">— GUI mockup (proposal)</span>
+  <span class="tag">Phase I &middot; Route Planning — New Option Candidates</span>
+</div>
+<div class="notice">
+  <b>Interactive proposal mockup — not the real app, no code written yet.</b> These are <b>four new candidate
+  options</b> proposed to sit <b>alongside</b> the existing Multi-Stop Journey / Nearest-Neighbor Chain / Trade-Route
+  Network — none replaces them. All four panels are live (client-side JS) computing over the same built-in
+  <b>14-star nearby catalog</b> (Sol + 13 neighbours) used by <code>phase-i.html</code>. The real app would resolve
+  names <b>DB-first then SIMBAD</b> over the full <code>star_systems</code> table and reuse the dark-navy
+  <b>Star Chart</b> <code>routes=</code> overlay.
+</div>
+
+<div class="app">
+  <div class="nav">
+    <div class="cat">Route Planning <span class="new-badge">EXISTING</span></div>
+    <div class="item muted">Multi-Stop Journey (I1)</div>
+    <div class="item muted">Nearest-Neighbor Chain (I2)</div>
+    <div class="item muted">Trade-Route Network (I3)</div>
+    <div class="cat new">Proposed Additions <span class="new-badge">NEW</span></div>
+    <div class="item" data-panel="intro" onclick="showPanel('intro')">Overview &amp; comparison</div>
+    <div class="item active" data-panel="a" onclick="showPanel('a')">Optimal Tour<span class="new2">A</span></div>
+    <div class="item" data-panel="b" onclick="showPanel('b')">Jump-Range Pathfinding<span class="new2">B</span></div>
+    <div class="item" data-panel="c" onclick="showPanel('c')">Jump Network / Reachability<span class="new2">C</span></div>
+    <div class="item" data-panel="d" onclick="showPanel('d')">Farthest-First Coverage<span class="new2">D</span></div>
+  </div>
+
+  <div class="content">
+
+    <!-- ============ OVERVIEW ============ -->
+    <div class="panel" id="panel-intro">
+      <h2 class="title">Proposed Additions — Overview</h2>
+      <p class="sub">Each candidate answers a routing question the current three (I1–I3) cannot. They are all
+        GUI-only, pure-core, self-validating (the Phase I/H <code>{"error": str}</code> contract), and reuse the
+        existing Star Chart <code>routes=</code> overlay. Pick the ones you want and I'll write specs + build them.</p>
+      <div class="intro">
+        <h3>What each one is for</h3>
+        <table>
+          <thead><tr><th>Candidate</th><th>Logic</th><th>Question it answers</th><th>Gap it fills</th></tr></thead>
+          <tbody>
+            <tr><td><b>A · Optimal Tour</b></td><td>Nearest-neighbor seed + 2-opt local search; open or closed loop</td>
+              <td>"Visit all these stars in the order with the shortest <i>total</i> trip"</td>
+              <td>I2 is greedy &amp; never backtracks — its total route is often far from optimal</td></tr>
+            <tr><td><b>B · Jump-Range Pathfinding</b></td><td>Dijkstra (min distance) / BFS (min jumps) over a jump-limited graph</td>
+              <td>"Get from A to B through intermediate stars, each jump ≤ my drive's range"</td>
+              <td>Point-to-point navigation with a hard jump range — nothing covers this today</td></tr>
+            <tr><td><b>C · Jump Network / Reachability</b></td><td>BFS frontier — min jumps to every reachable star</td>
+              <td>"At jump range X, what can I reach from here, and in how many jumps?"</td>
+              <td>Empire-frontier / expansion mapping — strategic, not a single route</td></tr>
+            <tr><td><b>D · Farthest-First Coverage</b></td><td>Greedy farthest-from-visited traversal (de-clustering)</td>
+              <td>"Plant N outposts spread as widely as possible"</td>
+              <td>Direct counterpoint to I2's clustering (your Alpha Cen result)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mocknote">Try each panel — the defaults are chosen to show the behaviour. In the real app every map
+        node also carries hover/click details and appears behind the <b>Show Diagrams</b> toggle as
+        <b>Star Chart / Star Chart 3D</b> tabs, exactly like opts 18/19 and I1–I3.</div>
+    </div>
+
+    <!-- ============ A — OPTIMAL TOUR ============ -->
+    <div class="panel active" id="panel-a">
+      <h2 class="title">Optimal Tour Planner <span class="new2">CANDIDATE A</span></h2>
+      <p class="sub">Visit a given <b>set</b> of stars in the order that minimizes <b>total</b> trip distance — the
+        fix for nearest-neighbor's greediness. The first line is the fixed start; tick <b>Closed loop</b> to return to it.</p>
+      <details class="spec"><summary>Proposed plan details</summary>
+        <ul>
+          <li>Proposed <code>compute_optimal_tour(star_names, velocity_input, use_times_c, closed=False)</code> — self-validating, GUI-only.</li>
+          <li>Resolve + case-insensitive dedup (like I3). <b>Nearest-neighbor seed</b> from the first stop, then <b>2-opt</b> reversal passes until no improvement.</li>
+          <li>First node stays fixed (the entered start); 2-opt reorders the rest. Open tour = end free; closed = return-to-start leg added.</li>
+          <li class="why">Why: I2 minimizes each hop, not the trip. For the handful of stars a worldbuilder picks, 2-opt reaches near-optimal instantly.</li>
+          <li>Reuses I1's leg / <code>format_travel_time</code> math + the dashed <code>routes=</code> overlay.</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form">
+          <div class="form">
+            <h3>Tour</h3>
+            <div class="field"><label>Stars to visit (first = start):</label>
+              <textarea id="a_stops">Sol
+Procyon
+Sirius
+Barnard's Star
+Wolf 359
+Lalande 21185</textarea></div>
+            <label class="chk"><input type="checkbox" id="a_closed"> Closed loop (return to start)</label>
+            <div class="row2">
+              <div class="field"><label>Velocity unit:</label>
+                <select id="a_unit"><option value="c">× c</option><option value="ly">LY/HR</option></select></div>
+              <div class="field"><label>Velocity:</label><input id="a_vel" value="500"></div>
+            </div>
+            <div class="actions"><button class="btn" onclick="runA()">Optimize Tour</button>
+              <button class="ghost btn" onclick="clearOut('a')">Clear</button></div>
+            <div class="err" id="a_err"></div>
+          </div>
+        </div>
+        <div class="col-out">
+          <div class="totals" id="a_tot"></div>
+          <div class="tablewrap" id="a_out"></div>
+          <div class="mapcard" id="a_mapcard">
+            <div class="mh"><h3>Tour Map</h3>
+              <div class="proj">Projection
+                <select id="a_proj" onchange="runA()"><option value="xy">X–Y</option><option value="xz">X–Z</option></select></div></div>
+            <svg class="map" id="a_map"></svg>
+            <div class="maplegend"><span><i style="border-top:2px dashed var(--route)"></i>optimized visit order ①②③…</span>
+              <span>★ start · ● stop (colour = spectral class)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ B — JUMP-RANGE PATHFINDING ============ -->
+    <div class="panel" id="panel-b">
+      <h2 class="title">Jump-Range Pathfinding <span class="new2">CANDIDATE B</span></h2>
+      <p class="sub">Navigate from an origin to a destination through intermediate stars, where every single jump must
+        be within the drive's max range. Minimize total distance travelled, or the number of jumps.</p>
+      <details class="spec"><summary>Proposed plan details</summary>
+        <ul>
+          <li>Proposed <code>compute_jump_route(origin, destination, max_jump_ly, optimize="distance"|"jumps")</code> — self-validating, GUI-only.</li>
+          <li>Build an implicit graph over <code>star_systems</code>: an edge connects any two stars within <code>max_jump_ly</code>. <b>Dijkstra</b> (distance) or <b>BFS</b> (fewest jumps) from origin to destination.</li>
+          <li>No path within range → <code>reachable=False</code> (a clear message, not a crash) — the map shows the disconnected endpoints over the faint jump lattice.</li>
+          <li class="why">Why: a jump drive with a hard per-jump range is a core FTL trope; I2 wanders with no destination — this is true point-to-point navigation.</li>
+          <li>Reuses the pool loader + dashed <code>routes=</code> overlay; faint lines show the reachable lattice for context.</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form">
+          <div class="form">
+            <h3>Jump Route</h3>
+            <div class="field"><label>Origin:</label><input id="b_from" value="Sol"></div>
+            <div class="field"><label>Destination:</label><input id="b_to" value="Procyon"></div>
+            <div class="row2">
+              <div class="field"><label>Max jump (LY):</label><input id="b_max" value="9"></div>
+              <div class="field"><label>Optimize for:</label>
+                <select id="b_opt"><option value="distance">Min distance</option><option value="jumps">Fewest jumps</option></select></div>
+            </div>
+            <div class="actions"><button class="btn" onclick="runB()">Find Route</button>
+              <button class="ghost btn" onclick="clearOut('b')">Clear</button></div>
+            <div class="err" id="b_err"></div>
+          </div>
+          <div class="form" style="padding:10px 13px">
+            <div class="field" style="margin:0"><span class="hint">Try Max jump <b>6</b> (Sol→Procyon becomes <i>unreachable</i> — the centauri cluster is the only thing in range) vs <b>9</b> (routes Sol→Sirius→Procyon).</span></div>
+          </div>
+        </div>
+        <div class="col-out">
+          <div class="totals" id="b_tot"></div>
+          <div class="badnote" id="b_bad"></div>
+          <div class="tablewrap" id="b_out"></div>
+          <div class="mapcard" id="b_mapcard">
+            <div class="mh"><h3>Route Map</h3>
+              <div class="proj">Projection
+                <select id="b_proj" onchange="runB()"><option value="xy">X–Y</option><option value="xz">X–Z</option></select></div></div>
+            <svg class="map" id="b_map"></svg>
+            <div class="maplegend"><span><i style="border-top:2px dashed var(--route)"></i>chosen route</span>
+              <span><i style="border-top:1px solid #2a3a64"></i>in-range jump lattice</span>
+              <span>★ origin · ● waypoint · ○ other stars</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ C — REACHABILITY ============ -->
+    <div class="panel" id="panel-c">
+      <h2 class="title">Jump Network / Reachability Map <span class="new2">CANDIDATE C</span></h2>
+      <p class="sub">From a start system, with a given jump range, map everything reachable and how many jumps away it
+        is — the connected "empire frontier."</p>
+      <details class="spec"><summary>Proposed plan details</summary>
+        <ul>
+          <li>Proposed <code>compute_jump_network(start, max_jump_ly, max_jumps=None)</code> — self-validating, GUI-only.</li>
+          <li><b>BFS</b> over the same jump-range graph as B, labelling each reachable star with its minimum jump count (tier). Stars outside the connected component are listed as unreachable-nearby.</li>
+          <li class="why">Why: answers expansion / strategic questions ("how far does my territory extend at range X; which systems are 1/2/3 jumps out") that no single-route planner touches.</li>
+          <li>Reuses the I2 pool; the Star Chart colours nodes by <b>jump tier</b> instead of spectral class.</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form">
+          <div class="form">
+            <h3>Reachability</h3>
+            <div class="field"><label>Start system:</label><input id="c_start" value="Sol"></div>
+            <div class="row2">
+              <div class="field"><label>Max jump (LY):</label><input id="c_max" value="6"></div>
+              <div class="field"><label>Max jumps (blank=∞):</label><input id="c_hops" value=""></div>
+            </div>
+            <div class="actions"><button class="btn" onclick="runC()">Map Reachable</button>
+              <button class="ghost btn" onclick="clearOut('c')">Clear</button></div>
+            <div class="err" id="c_err"></div>
+          </div>
+        </div>
+        <div class="col-out">
+          <div class="totals" id="c_tot"></div>
+          <div class="tablewrap" id="c_out"></div>
+          <div class="mapcard" id="c_mapcard">
+            <div class="mh"><h3>Jump-Network Map</h3>
+              <div class="proj">Projection
+                <select id="c_proj" onchange="runC()"><option value="xy">X–Y</option><option value="xz">X–Z</option></select></div></div>
+            <svg class="map" id="c_map"></svg>
+            <div class="maplegend" id="c_legend"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ D — FARTHEST-FIRST ============ -->
+    <div class="panel" id="panel-d">
+      <h2 class="title">Farthest-First Coverage Chain <span class="new2">CANDIDATE D</span></h2>
+      <p class="sub">Explore for maximum spread: each step picks the unvisited star <b>farthest</b> from everything
+        already visited (optionally still within reach of the chain). The de-clustering sibling of nearest-neighbor.</p>
+      <details class="spec"><summary>Proposed plan details</summary>
+        <ul>
+          <li>Proposed <code>compute_farthest_first_chain(start, num_stops, max_reach_ly=None)</code> — self-validating, GUI-only.</li>
+          <li>Greedy <b>farthest-from-visited</b>: track each candidate's distance to the nearest visited star; repeatedly pick the one that maximizes it (so the set spreads out). With a reach limit, a pick must be within <code>max_reach_ly</code> of some visited star — else the chain ends early.</li>
+          <li>The dashed edges form the exploration tree: each new star links to the nearest visited star it reached from.</li>
+          <li class="why">Why: I2 hugs dense multiples (Proxima → α Cen A → α Cen B). This is the opposite intent — cover ground, not stars.</li>
+          <li>Shares almost all of I2's scaffold — same loop, selection criterion flipped.</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form">
+          <div class="form">
+            <h3>Coverage</h3>
+            <div class="field"><label>Start star:</label><input id="d_start" value="Sol"></div>
+            <div class="row2">
+              <div class="field"><label>Stops (1–50):</label><input id="d_stops" value="5"></div>
+              <div class="field"><label>Max reach (LY, blank=∞):</label><input id="d_max" value=""></div>
+            </div>
+            <div class="actions"><button class="btn" onclick="runD()">Build Coverage</button>
+              <button class="ghost btn" onclick="clearOut('d')">Clear</button></div>
+            <div class="err" id="d_err"></div>
+          </div>
+        </div>
+        <div class="col-out">
+          <div class="totals" id="d_tot"></div>
+          <div class="earlynote" id="d_early"></div>
+          <div class="tablewrap" id="d_out"></div>
+          <div class="mapcard" id="d_mapcard">
+            <div class="mh"><h3>Coverage Map</h3>
+              <div class="proj">Projection
+                <select id="d_proj" onchange="runD()"><option value="xy">X–Y</option><option value="xz">X–Z</option></select></div></div>
+            <svg class="map" id="d_map"></svg>
+            <div class="maplegend"><span><i style="border-top:2px dashed var(--route)"></i>reached-from link (step order)</span>
+              <span>★ start · ● outpost · ○ other stars</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ---------- built-in nearby-star catalog (approx heliocentric ly) ---------- */
+const SPC={O:"#9db4ff",B:"#a9c0ff",A:"#cdd8ff",F:"#f4f4ff",G:"#ffe98a",K:"#ffb56b",M:"#ff7b6b","?":"#aaaaaa"};
+const CAT=[
+  {name:"Sol",               x:0.00,  y:0.00,  z:0.00,  cls:"G"},
+  {name:"Proxima Centauri",  x:-1.53, y:-1.20, z:-3.77, cls:"M"},
+  {name:"Alpha Centauri A",  x:-1.61, y:-1.31, z:-3.81, cls:"G"},
+  {name:"Barnard's Star",    x:-0.06, y:5.94,  z:0.49,  cls:"M"},
+  {name:"Wolf 359",          x:-7.42, y:2.10,  z:1.02,  cls:"M"},
+  {name:"Lalande 21185",     x:-6.28, y:1.72,  z:4.78,  cls:"M"},
+  {name:"Sirius",            x:-1.61, y:8.07,  z:-2.45, cls:"A"},
+  {name:"Luyten 726-8",      x:7.20,  y:3.02,  z:-2.88, cls:"M"},
+  {name:"Ross 154",          x:1.87,  y:-8.46, z:-1.70, cls:"M"},
+  {name:"Epsilon Eridani",   x:7.20,  y:-6.48, z:-2.51, cls:"K"},
+  {name:"Procyon",           x:-0.46, y:11.40, z:1.10,  cls:"F"},
+  {name:"61 Cygni",          x:6.50,  y:6.13,  z:7.13,  cls:"K"},
+  {name:"Tau Ceti",          x:10.22, y:-4.97, z:-3.27, cls:"G"},
+  {name:"Epsilon Indi",      x:5.74,  y:-3.07, z:-10.28,cls:"K"},
+];
+const ALIAS={"sun":"Sol","sol":"Sol","proxima":"Proxima Centauri","alpha cen":"Alpha Centauri A",
+  "alpha centauri":"Alpha Centauri A","rigil kent":"Alpha Centauri A","barnard":"Barnard's Star",
+  "61 cyg":"61 Cygni"};
+const TIERCOL=["#FFD700","#7fd3ff","#7fe0a0","#ffd27f","#ff9bce","#c8a2ff","#9affd0","#ffec99"];
+const HRS_PER_YR_VEL=8765.8128, HRS_PER_YEAR=8765.82, HRS_PER_MONTH=8765.82/12;
+
+function resolve(name){
+  const key=name.trim().toLowerCase();
+  if(key==="") return null;
+  if(ALIAS[key]) name=ALIAS[key];
+  const hit=CAT.find(s=>s.name.toLowerCase()===name.trim().toLowerCase());
+  if(!hit) return {error:`'${name.trim()}' not in the catalog`};
+  return {...hit, color:SPC[hit.cls]||SPC["?"], ly:Math.hypot(hit.x,hit.y,hit.z)};
+}
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+const f=(v,d)=>v.toFixed(d);
+const idxOf=name=>CAT.findIndex(s=>s.name===name);
+
+function fmtTravel(hours){
+  if(hours<=0) return "0 Seconds"; let rem=hours, parts=[];
+  const yr=Math.floor(rem/HRS_PER_YEAR); rem-=yr*HRS_PER_YEAR;
+  const mo=Math.floor(rem/HRS_PER_MONTH); rem-=mo*HRS_PER_MONTH;
+  const dy=Math.floor(rem/24); rem-=dy*24; const hr=Math.floor(rem); rem-=hr;
+  const mi=Math.floor(rem*60);
+  if(yr)parts.push(yr+(yr===1?" Year":" Years")); if(mo)parts.push(mo+(mo===1?" Month":" Months"));
+  if(dy)parts.push(dy+(dy===1?" Day":" Days")); if(hr)parts.push(hr+(hr===1?" Hour":" Hours"));
+  if(mi)parts.push(mi+(mi===1?" Minute":" Minutes"));
+  return parts.length?parts.join(", "):"< 1 Minute";
+}
+
+/* ---------- table + state helpers ---------- */
+function tbl(headers,rows){return '<table><thead><tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>'+rows+'</tbody></table>';}
+function fail(p,msg){const e=document.getElementById(p+'_err');e.textContent=msg;e.style.display='block';
+  ['_out','_tot','_mapcard','_early','_bad'].forEach(s=>{const el=document.getElementById(p+s);if(el)el.style.display='none';});return false;}
+function okp(p){document.getElementById(p+'_err').style.display='none';}
+function clearOut(p){['_out','_tot','_mapcard','_early','_bad','_err'].forEach(s=>{const el=document.getElementById(p+s);if(el)el.style.display='none';});}
+
+const CIRC=["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩","⑪","⑫","⑬","⑭","⑮","⑯"];
+function starPath(cx,cy,R,r){let p="";for(let i=0;i<10;i++){const ang=Math.PI/2+ i*Math.PI/5;const rad=i%2?r:R;
+  p+=(i?"L":"M")+(cx+rad*Math.cos(ang))+","+(cy-rad*Math.sin(ang));}return p+"Z";}
+function getCSS(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+
+/* ---------- shared map renderer ----------
+   nodes: highlighted/selected stars (drawn big + labelled)
+   edges: ordered/route edges {a,b indices into nodes, label, style}
+   opts.bg: faint context stars (small dot + tooltip only)
+   opts.weak: faint lattice lines [{a:{x,y,z}, b:{x,y,z}}]
+*/
+function drawMap(svgId,nodes,edges,proj,startIdx,opts){
+  opts=opts||{}; const bg=opts.bg||[], weak=opts.weak||[];
+  const svg=document.getElementById(svgId); const W=svg.clientWidth||540, H=380, pad=36;
+  const px="x", py=proj==="xz"?"z":"y";
+  const all=nodes.concat(bg);
+  const xs=all.map(n=>n[px]), ys=all.map(n=>n[py]);
+  let minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  if(maxX-minX<1){minX-=1;maxX+=1;} if(maxY-minY<1){minY-=1;maxY+=1;}
+  const mx=(maxX-minX)*0.06, my=(maxY-minY)*0.06; minX-=mx;maxX+=mx;minY-=my;maxY+=my;
+  const sx=v=>pad+(v-minX)/(maxX-minX)*(W-2*pad);
+  const sy=v=>H-pad-(v-minY)/(maxY-minY)*(H-2*pad);   // invert: +axis up
+  let el='';
+  // faint lattice
+  weak.forEach(e=>{el+=`<line x1="${sx(e.a[px])}" y1="${sy(e.a[py])}" x2="${sx(e.b[px])}" y2="${sy(e.b[py])}" stroke="#2a3a64" stroke-width="1" opacity="0.55"/>`;});
+  // faint background stars (dot + tooltip only, no label)
+  bg.forEach(n=>{el+=`<circle cx="${sx(n[px])}" cy="${sy(n[py])}" r="3.2" fill="${n.color||'#4a5a7a'}" opacity="0.65" stroke="none"><title>${n.name} — ${f(Math.hypot(n.x,n.y,n.z),2)} ly from Sol</title></circle>`;});
+  // route/ordered edges
+  edges.forEach(e=>{
+    const a=nodes[e.a],b=nodes[e.b];
+    const col=e.style==="solid"?getCSS('--mst'):getCSS('--route');
+    el+=`<line x1="${sx(a[px])}" y1="${sy(a[py])}" x2="${sx(b[px])}" y2="${sy(b[py])}" stroke="${col}" stroke-width="2.2" ${e.style==="solid"?'':'stroke-dasharray="6 4"'} opacity="0.9"/>`;
+    if(e.label!==undefined&&e.label!==''){const lx=(sx(a[px])+sx(b[px]))/2, ly=(sy(a[py])+sy(b[py]))/2;
+      el+=`<rect x="${lx-15}" y="${ly-9}" width="30" height="15" rx="3" fill="#0b1020" opacity="0.72"/>`+
+          `<text class="leglbl" x="${lx}" y="${ly+2}" text-anchor="middle">${e.label}</text>`;}
+  });
+  // highlighted nodes
+  nodes.forEach((n,i)=>{
+    const cx=sx(n[px]),cy=sy(n[py]);
+    if(i===startIdx){
+      el+=`<path d="${starPath(cx,cy,8.5,4)}" fill="#FFD700" stroke="#7a5c00" stroke-width="0.6"><title>${n.name} (start)</title></path>`;
+    } else {
+      el+=`<circle cx="${cx}" cy="${cy}" r="5.5" fill="${n.color}" stroke="#05080d" stroke-width="0.6"><title>${n.tip||(n.name+' — '+f(Math.hypot(n.x,n.y,n.z),2)+' ly from Sol')}</title></circle>`;
+    }
+    el+=`<text class="nodelbl" x="${cx+9}" y="${cy+4}">${n.label2||n.name}</text>`;
+  });
+  svg.innerHTML=el;
+}
+/* in-range lattice among a set of CAT-shaped nodes */
+function lattice(set,maxJump){const w=[];for(let i=0;i<set.length;i++)for(let j=i+1;j<set.length;j++){if(dist(set[i],set[j])<=maxJump)w.push({a:set[i],b:set[j]});}return w;}
+
+/* ================= A — OPTIMAL TOUR ================= */
+function tourLen(order,closed){let s=0;for(let i=0;i<order.length-1;i++)s+=dist(order[i],order[i+1]);
+  if(closed&&order.length>1)s+=dist(order[order.length-1],order[0]);return s;}
+function runA(){
+  let names=document.getElementById('a_stops').value.split('\n').map(s=>s.trim()).filter(s=>s!=='');
+  const seen=new Set();names=names.filter(n=>{const k=n.toLowerCase();if(seen.has(k))return false;seen.add(k);return true;});
+  if(names.length<2) return fail('a','Enter at least two stars.');
+  const vel=parseFloat(document.getElementById('a_vel').value);
+  if(!(vel>0)) return fail('a','Velocity must be positive.');
+  const useC=document.getElementById('a_unit').value==='c';
+  const ly_hr=useC? vel/HRS_PER_YR_VEL : vel, times_c=useC? vel : vel*HRS_PER_YR_VEL;
+  const closed=document.getElementById('a_closed').checked;
+  const typed=[];
+  for(const nm of names){const r=resolve(nm);if(!r||r.error) return fail('a',`'${nm}': ${r?r.error:'empty'}`);typed.push(r);}
+  okp('a');
+  const naiveLen=tourLen(typed,closed);
+  // nearest-neighbor seed (start fixed at typed[0])
+  const remaining=typed.slice(1);const order=[typed[0]];
+  while(remaining.length){let bi=0,bd=Infinity;remaining.forEach((c,ci)=>{const d=dist(order[order.length-1],c);if(d<bd){bd=d;bi=ci;}});order.push(remaining.splice(bi,1)[0]);}
+  // 2-opt (start fixed; reorder indices 1..n-1)
+  const n=order.length;let improved=true;
+  while(improved){improved=false;
+    for(let i=1;i<n-1;i++)for(let k=i+1;k<n;k++){
+      const cand=order.slice(0,i).concat(order.slice(i,k+1).reverse(),order.slice(k+1));
+      if(tourLen(cand,closed)+1e-9<tourLen(order,closed)){order.splice(0,order.length,...cand);improved=true;}
+    }
+  }
+  const optLen=tourLen(order,closed);
+  // legs
+  const legPairs=[];for(let i=0;i<order.length-1;i++)legPairs.push([order[i],order[i+1]]);
+  if(closed)legPairs.push([order[order.length-1],order[0]]);
+  let cum=0,rows='';
+  legPairs.forEach((pr,i)=>{const d=dist(pr[0],pr[1]);const hrs=d/ly_hr;cum+=hrs;
+    rows+=`<tr><td class="num">${i+1}</td><td>${pr[0].name}</td><td>${pr[1].name}</td>`+
+      `<td class="num">${f(d,3)}</td><td>${fmtTravel(hrs)}</td><td>${fmtTravel(cum)}</td></tr>`;});
+  const o=document.getElementById('a_out');o.innerHTML=tbl(
+    ['Leg #','From','To','Distance (LY)','Travel Time','Cumulative Time'],rows);o.style.display='block';
+  const saved=naiveLen-optLen;const pct=naiveLen>0?(saved/naiveLen*100):0;
+  const t=document.getElementById('a_tot');
+  t.innerHTML=`Optimized Total: <span>${f(optLen,3)} LY</span> &nbsp;·&nbsp; ${fmtTravel(cum)} &nbsp;·&nbsp; `+
+    `As-typed order: ${f(naiveLen,3)} LY &nbsp;→&nbsp; <span class="imp">saved ${f(Math.max(saved,0),3)} LY (${f(Math.max(pct,0),1)}%)</span>`+
+    (closed?' &nbsp;·&nbsp; closed loop':' &nbsp;·&nbsp; open path');
+  t.style.display='block';
+  document.getElementById('a_mapcard').style.display='block';
+  const mapEdges=[];for(let i=0;i<order.length-1;i++)mapEdges.push({a:i,b:i+1,label:CIRC[i]||(i+1),style:'dashed'});
+  if(closed)mapEdges.push({a:order.length-1,b:0,label:CIRC[order.length-1]||order.length,style:'dashed'});
+  drawMap('a_map',order,mapEdges,document.getElementById('a_proj').value,0);
+}
+
+/* ================= B — JUMP-RANGE PATHFINDING ================= */
+function runB(){
+  const o1=resolve(document.getElementById('b_from').value); if(!o1||o1.error) return fail('b',`Origin: ${o1?o1.error:'empty'}`);
+  const o2=resolve(document.getElementById('b_to').value);   if(!o2||o2.error) return fail('b',`Destination: ${o2?o2.error:'empty'}`);
+  const maxJ=parseFloat(document.getElementById('b_max').value); if(!(maxJ>0)) return fail('b','Max jump must be positive.');
+  if(o1.name===o2.name) return fail('b','Origin and destination are the same star.');
+  okp('b');
+  const optBy=document.getElementById('b_opt').value;
+  const N=CAT.length, s=idxOf(o1.name), t=idxOf(o2.name);
+  // adjacency
+  const adj=Array.from({length:N},()=>[]);
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){const d=dist(CAT[i],CAT[j]);if(d<=maxJ){adj[i].push([j,d]);adj[j].push([i,d]);}}
+  // dijkstra (distance) or BFS (jumps)
+  const distArr=Array(N).fill(Infinity),prev=Array(N).fill(-1),done=Array(N).fill(false);
+  distArr[s]=0;
+  if(optBy==='jumps'){ // BFS layering, cost=1
+    const q=[s];distArr[s]=0;let head=0;
+    while(head<q.length){const u=q[head++];for(const [v] of adj[u]){if(distArr[v]===Infinity){distArr[v]=distArr[u]+1;prev[v]=u;q.push(v);}}}
+  } else { // dijkstra
+    for(let it=0;it<N;it++){let u=-1,bd=Infinity;for(let i=0;i<N;i++)if(!done[i]&&distArr[i]<bd){bd=distArr[i];u=i;}if(u===-1)break;done[u]=true;
+      for(const [v,w] of adj[u]){if(distArr[u]+w<distArr[v]){distArr[v]=distArr[u]+w;prev[v]=u;}}}
+  }
+  const reachable=distArr[t]!==Infinity;
+  const bgAll=CAT.map(c=>({...c,color:SPC[c.cls]||SPC["?"]}));
+  const weak=lattice(CAT,maxJ);
+  if(!reachable){
+    document.getElementById('b_out').style.display='none';
+    const t2=document.getElementById('b_tot');t2.style.display='none';
+    const bn=document.getElementById('b_bad');bn.textContent=`No route from ${o1.name} to ${o2.name} with jumps ≤ ${f(maxJ,2)} ly — destination is unreachable (disconnected from the origin's jump network).`;bn.style.display='block';
+    document.getElementById('b_mapcard').style.display='block';
+    const ends=[{...o1},{...o2,color:o2.color,label2:o2.name+' (dest)',tip:o2.name+' (destination, unreachable)'}];
+    const bg=bgAll.filter(c=>c.name!==o1.name&&c.name!==o2.name);
+    drawMap('b_map',ends,[],document.getElementById('b_proj').value,0,{bg,weak});
+    return;
+  }
+  document.getElementById('b_bad').style.display='none';
+  // reconstruct path
+  const path=[];let cur=t;while(cur!==-1){path.push(cur);cur=prev[cur];}path.reverse();
+  const pnodes=path.map(i=>({...CAT[i],color:SPC[CAT[i].cls]||SPC["?"]}));
+  pnodes[pnodes.length-1].label2=pnodes[pnodes.length-1].name+' (dest)';
+  let cum=0,rows='';
+  for(let i=0;i<pnodes.length-1;i++){const d=dist(pnodes[i],pnodes[i+1]);cum+=d;
+    rows+=`<tr><td class="num">${i+1}</td><td>${pnodes[i].name}</td><td>${pnodes[i+1].name}</td>`+
+      `<td class="num">${f(d,3)}</td><td class="num">${f(cum,3)}</td></tr>`;}
+  const out=document.getElementById('b_out');out.innerHTML=tbl(['Jump #','From','To','Jump Dist (LY)','Cumulative (LY)'],rows);out.style.display='block';
+  const totLen=cum, jumps=pnodes.length-1;
+  const t2=document.getElementById('b_tot');
+  t2.innerHTML=`Route found · <span>${jumps} jump(s)</span> · Total Distance: <span>${f(totLen,3)} LY</span> · `+
+    `direct line ${f(dist(o1,o2),3)} LY · optimized for <b>${optBy==='jumps'?'fewest jumps':'min distance'}</b>`;
+  t2.style.display='block';
+  document.getElementById('b_mapcard').style.display='block';
+  const edges=pnodes.slice(0,-1).map((_,i)=>({a:i,b:i+1,label:f(dist(pnodes[i],pnodes[i+1]),1),style:'dashed'}));
+  const onPath=new Set(path.map(i=>CAT[i].name));
+  const bg=bgAll.filter(c=>!onPath.has(c.name));
+  drawMap('b_map',pnodes,edges,document.getElementById('b_proj').value,0,{bg,weak});
+}
+
+/* ================= C — REACHABILITY / JUMP NETWORK ================= */
+function runC(){
+  const start=resolve(document.getElementById('c_start').value); if(!start||start.error) return fail('c',`Start: ${start?start.error:'empty'}`);
+  const maxJ=parseFloat(document.getElementById('c_max').value); if(!(maxJ>0)) return fail('c','Max jump must be positive.');
+  const capRaw=document.getElementById('c_hops').value.trim();
+  const cap=capRaw===''?Infinity:parseInt(capRaw,10);
+  if(capRaw!==''&&!(cap>=1)) return fail('c','Max jumps must be a positive integer (or blank).');
+  okp('c');
+  const N=CAT.length, s=idxOf(start.name);
+  const adj=Array.from({length:N},()=>[]);
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){if(dist(CAT[i],CAT[j])<=maxJ){adj[i].push(j);adj[j].push(i);}}
+  const tier=Array(N).fill(-1);tier[s]=0;const q=[s];let head=0;
+  while(head<q.length){const u=q[head++];if(tier[u]>=cap)continue;for(const v of adj[u]){if(tier[v]===-1){tier[v]=tier[u]+1;q.push(v);}}}
+  const reached=[];for(let i=0;i<N;i++)if(tier[i]>=0)reached.push(i);
+  reached.sort((a,b)=>tier[a]-tier[b]||Math.hypot(CAT[a].x,CAT[a].y,CAT[a].z)-Math.hypot(CAT[b].x,CAT[b].y,CAT[b].z));
+  // table grouped by tier
+  const maxTier=Math.max(...reached.map(i=>tier[i]));
+  let rows='';let lastT=-1;
+  reached.forEach(i=>{
+    if(tier[i]!==lastT){rows+=`<tr class="tierhdr"><td colspan="5">${tier[i]===0?'Start (0 jumps)':tier[i]+' jump'+(tier[i]>1?'s':'')+' away'}</td></tr>`;lastT=tier[i];}
+    const c=CAT[i];const col=TIERCOL[Math.min(tier[i],TIERCOL.length-1)];
+    rows+=`<tr><td class="tierc" style="color:${col}">${tier[i]}</td><td>${c.name}</td><td>${c.cls}</td>`+
+      `<td class="num">${f(dist(c,start),3)}</td><td class="num">${f(Math.hypot(c.x,c.y,c.z),3)}</td></tr>`;
+  });
+  const out=document.getElementById('c_out');out.innerHTML=tbl(['Jumps','Star Name','Spectral','Dist from Start (LY)','Dist from Sol (LY)'],rows);out.style.display='block';
+  const unreached=N-reached.length;
+  const t=document.getElementById('c_tot');
+  t.innerHTML=`Reachable from <span>${start.name}</span>: <span>${reached.length} of ${N}</span> stars `+
+    `(up to ${maxTier} jump${maxTier>1?'s':''} at ≤ ${f(maxJ,2)} ly/jump)`+
+    (unreached>0?` · <b>${unreached}</b> nearby star${unreached>1?'s':''} out of range`:'');
+  t.style.display='block';
+  // map: reached nodes colored by tier; faint lattice among reached; bg = unreached
+  document.getElementById('c_mapcard').style.display='block';
+  const rnodes=reached.map(i=>({...CAT[i],color:TIERCOL[Math.min(tier[i],TIERCOL.length-1)],tier:tier[i],label2:CAT[i].name,tip:CAT[i].name+` — ${tier[i]} jump(s) from ${start.name}`}));
+  const startLocal=rnodes.findIndex(n=>n.name===start.name);
+  const weak=[];
+  for(let a=0;a<reached.length;a++)for(let b=a+1;b<reached.length;b++){if(dist(CAT[reached[a]],CAT[reached[b]])<=maxJ)weak.push({a:CAT[reached[a]],b:CAT[reached[b]]});}
+  const bg=CAT.filter((c,i)=>tier[i]===-1).map(c=>({...c,color:"#3a4a6a"}));
+  drawMap('c_map',rnodes,[],document.getElementById('c_proj').value,startLocal,{bg,weak});
+  // dynamic legend
+  let leg='';for(let tt=0;tt<=maxTier;tt++){leg+=`<span><i class="dot" style="background:${TIERCOL[Math.min(tt,TIERCOL.length-1)]}"></i>${tt===0?'start':tt+' jump'+(tt>1?'s':'')}</span>`;}
+  leg+='<span><i class="dot" style="background:#3a4a6a"></i>out of range</span><span><i style="border-top:1px solid #2a3a64"></i>in-range link</span>';
+  document.getElementById('c_legend').innerHTML=leg;
+}
+
+/* ================= D — FARTHEST-FIRST COVERAGE ================= */
+function runD(){
+  const start=resolve(document.getElementById('d_start').value); if(!start||start.error) return fail('d',`Start: ${start?start.error:'empty'}`);
+  const stops=parseInt(document.getElementById('d_stops').value,10); if(!(stops>=1)) return fail('d','Stops must be a positive integer.');
+  const maxRaw=document.getElementById('d_max').value.trim();
+  const maxReach=maxRaw===''?Infinity:parseFloat(maxRaw);
+  if(maxRaw!==''&&!(maxReach>0)) return fail('d','Max reach must be positive (or blank).');
+  okp('d');
+  const pool=CAT.map(s=>({...s,color:SPC[s.cls]||SPC["?"]})).filter(s=>dist(s,start)>1e-3);
+  const visited=[{name:start.name,x:start.x,y:start.y,z:start.z,color:start.color||"#FFD700",cls:start.cls}];
+  const chosenIdx=[];const used=new Set();let rows='',stoppedEarly=false;const treeEdges=[];
+  for(let step=1;step<=stops;step++){
+    // for each unused candidate: min dist to visited, and nearest visited index
+    let bestC=-1,bestSpread=-1,bestNear=0;
+    pool.forEach((c,ci)=>{if(used.has(ci))return;
+      let mind=Infinity,nearIdx=0;visited.forEach((v,vi)=>{const d=dist(c,v);if(d<mind){mind=d;nearIdx=vi;}});
+      // reach constraint: nearest visited must be within maxReach
+      if(mind>maxReach)return;
+      if(mind>bestSpread){bestSpread=mind;bestC=ci;bestNear=nearIdx;}
+    });
+    if(bestC===-1){stoppedEarly=true;break;}
+    used.add(bestC);const c=pool[bestC];
+    treeEdges.push({from:bestNear,to:visited.length});
+    visited.push(c);chosenIdx.push(bestC);
+    rows+=`<tr><td class="num">${step}</td><td>${c.name}</td><td>${c.cls}</td>`+
+      `<td class="num">${f(bestSpread,3)}</td><td class="num">${f(dist(c,start),3)}</td><td class="num">${f(Math.hypot(c.x,c.y,c.z),3)}</td></tr>`;
+  }
+  const out=document.getElementById('d_out');
+  if(rows===''){out.innerHTML=tbl(['Step','Star Name','Spectral','Sep to Visited (LY)','Dist from Start (LY)','Dist from Sol (LY)'],
+    '<tr><td colspan="6" style="color:#888">No outpost within reach of the start.</td></tr>');}
+  else{out.innerHTML=tbl(['Step','Star Name','Spectral','Sep to Visited (LY)','Dist from Start (LY)','Dist from Sol (LY)'],rows);}
+  out.style.display='block';
+  const t=document.getElementById('d_tot');
+  const span=visited.length>1?Math.max(...visited.slice(1).map(v=>dist(v,start))):0;
+  t.innerHTML=`${visited.length-1} outpost(s) · widest from start: <span>${f(span,3)} LY</span>`+(maxReach!==Infinity?` · reach ≤ ${f(maxReach,2)} ly`:'');
+  t.style.display='block';
+  const en=document.getElementById('d_early');
+  if(stoppedEarly){en.textContent='No further star within reach of the visited set — coverage ended early.';en.style.display='block';}else en.style.display='none';
+  document.getElementById('d_mapcard').style.display='block';
+  const onSet=new Set(visited.map(v=>v.name));
+  const bg=CAT.filter(c=>!onSet.has(c.name)).map(c=>({...c,color:"#3a4a6a"}));
+  const edges=treeEdges.map((e,i)=>({a:e.from,b:e.to,label:CIRC[i]||(i+1),style:'dashed'}));
+  drawMap('d_map',visited,edges,document.getElementById('d_proj').value,0,{bg});
+}
+
+/* ---------- nav ---------- */
+const RUNNERS={a:runA,b:runB,c:runC,d:runD};
+function showPanel(p){
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  document.getElementById('panel-'+p).classList.add('active');
+  document.querySelectorAll('.nav .item').forEach(x=>x.classList.toggle('active',x.dataset.panel===p));
+  if(RUNNERS[p])RUNNERS[p]();   // (re)draw at correct width
+}
+runA();showPanel('a');
+</script>
+</body>
+</html>

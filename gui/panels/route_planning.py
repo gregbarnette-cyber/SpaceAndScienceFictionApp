@@ -1,9 +1,13 @@
-# gui/panels/route_planning.py — Phase I: Multi-System / Route Planning (GUI-only).
+# gui/panels/route_planning.py — Phase I + I-OPTS: Route Planning (GUI-only).
 #
-# Three panels under the "Route Planning" nav category:
-#   MultiStopJourneyPanel   → core.calculators.compute_multi_stop_journey
-#   NearestNeighborPanel    → core.calculators.compute_nearest_neighbor_chain
-#   TradeRoutePlannerPanel  → core.calculators.compute_trade_route_mst   (stretch)
+# Seven panels under the "Route Planning" nav category:
+#   MultiStopJourneyPanel   → core.calculators.compute_multi_stop_journey      (I1)
+#   OptimalTourPanel        → core.calculators.compute_optimal_tour            (A)
+#   NearestNeighborPanel    → core.calculators.compute_nearest_neighbor_chain  (I2)
+#   FarthestFirstPanel      → core.calculators.compute_farthest_first_chain    (D)
+#   JumpRoutePanel          → core.calculators.compute_jump_route              (B)
+#   JumpNetworkPanel        → core.calculators.compute_jump_network            (C)
+#   TradeRoutePlannerPanel  → core.calculators.compute_trade_route_mst         (I3, stretch)
 #
 # All inherit (DiagramToggleMixin, ResultPanel) and follow the opts-18/19 pattern.
 # Maps reuse the dark-navy GCNS "Star Chart" / "Star Chart 3D" diagrams with the
@@ -13,8 +17,8 @@
 import math
 
 from PySide6.QtWidgets import (
-    QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
-    QPushButton, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
@@ -366,6 +370,371 @@ class TradeRoutePlannerPanel(DiagramToggleMixin, ResultPanel):
         view = self.make_table(
             ["From", "To", "Distance (LY)"],
             [[e["from"], e["to"], f"{e['distance_ly']:.3f}"] for e in edges])
+        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._tables_layout.addWidget(view, 1)
+
+        _add_route_chart_tabs(self, result)
+        self._finish_render()
+
+
+# ── A: Optimal Tour ──────────────────────────────────────────────────────────
+
+class OptimalTourPanel(DiagramToggleMixin, ResultPanel):
+    """Shortest-total-distance visit order for a set of stars (NN + 2-opt)."""
+
+    def build_inputs(self):
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+
+        self._stops = QPlainTextEdit()
+        self._stops.setPlaceholderText("One star per line; first = start, e.g.\nSol\nProcyon\nSirius\nBarnard's Star")
+        self._stops.setFixedHeight(110)
+        self._stops.setMaximumWidth(300)
+        form.addRow("Stars to Visit:", self._stops)
+
+        self._closed = QCheckBox("Closed loop (return to start)")
+        form.addRow("", self._closed)
+
+        self._unit = QComboBox()
+        self._unit.addItems(["× c", "LY/HR"])
+        form.addRow("Velocity Unit:", self._unit)
+
+        self._vel = QLineEdit()
+        self._vel.setPlaceholderText("e.g. 500")
+        form.addRow("Velocity:", self._vel)
+
+        form.addRow("", _button_row(self, "Optimize Tour"))
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        _build_results_area_route(self)
+
+    def _search(self):
+        names = [ln.strip() for ln in self._stops.toPlainText().splitlines() if ln.strip()]
+        self._prepare_render()
+        _clear_tables_layout(self)
+        try:
+            vel = float(self._vel.text().strip())
+            if vel <= 0:
+                raise ValueError
+        except ValueError:
+            _error_label(self, "Velocity must be a positive number.")
+            return
+        use_times_c = self._unit.currentText().startswith("×")
+        self.run_in_background(
+            core.calculators.compute_optimal_tour,
+            names, vel, use_times_c, self._closed.isChecked(),
+            on_result=self._render,
+        )
+
+    def _render(self, result):
+        self._prepare_render()
+        _clear_tables_layout(self)
+        if "error" in result:
+            _error_label(self, result["error"])
+            return
+
+        self._tables_layout.addWidget(QLabel(
+            f"Optimized Total: <b>{result['optimized_total_ly']:.3f} LY</b> &nbsp;·&nbsp; "
+            f"{result['total_time']} &nbsp;·&nbsp; "
+            f"as-typed {result['naive_total_ly']:.3f} LY → "
+            f"<span style='color:#2e8b57'>saved {result['saved_ly']:.3f} LY "
+            f"({result['saved_pct']:.1f}%)</span> &nbsp;·&nbsp; "
+            f"{'closed loop' if result['closed'] else 'open path'}"))
+
+        headers = ["Leg #", "Origin", "Destination", "Distance (LY)", "LY/HR",
+                   "× c", "Travel Time", "Cumulative Time"]
+        rows = [
+            [str(l["leg"]), l["origin"], l["dest"], f"{l['distance_ly']:.3f}",
+             f"{l['ly_hr']:.5f}", f"{l['times_c']:.2f}",
+             l["travel_time"], l["cumulative_time"]]
+            for l in result["legs"]
+        ]
+        view = self.make_table(headers, rows)
+        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._tables_layout.addWidget(view, 1)
+
+        _add_route_chart_tabs(self, result)
+        self._finish_render()
+
+
+# ── D: Farthest-First Coverage ───────────────────────────────────────────────
+
+class FarthestFirstPanel(DiagramToggleMixin, ResultPanel):
+    """De-clustering coverage: each step picks the star farthest from the visited set."""
+
+    def build_inputs(self):
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+
+        self._start = QLineEdit()
+        self._start.setPlaceholderText("e.g. Sol, Alpha Centauri, HIP 27989")
+        form.addRow("Start Star:", self._start)
+
+        self._stops = QSpinBox()
+        self._stops.setRange(1, 50)
+        self._stops.setValue(5)
+        self._stops.setMaximumWidth(300)
+        form.addRow("Number of Stops:", self._stops)
+
+        self._max = QLineEdit()
+        self._max.setPlaceholderText("blank = unlimited")
+        form.addRow("Max Reach (LY):", self._max)
+
+        form.addRow("", _button_row(self, "Build Coverage"))
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        _build_results_area_route(self)
+
+    def _search(self):
+        start = self._start.text().strip()
+        self._prepare_render()
+        _clear_tables_layout(self)
+        if not start:
+            _error_label(self, "Enter a start star.")
+            return
+        raw = self._max.text().strip()
+        max_reach = None
+        if raw:
+            try:
+                max_reach = float(raw)
+                if max_reach <= 0:
+                    raise ValueError
+            except ValueError:
+                _error_label(self, "Max reach must be a positive number (or blank).")
+                return
+        self.run_in_background(
+            core.calculators.compute_farthest_first_chain,
+            start, self._stops.value(), max_reach,
+            on_result=self._render,
+        )
+
+    def _render(self, result):
+        self._prepare_render()
+        _clear_tables_layout(self)
+        if "error" in result:
+            _error_label(self, result["error"])
+            return
+
+        chain = result["chain"]
+        self._tables_layout.addWidget(QLabel(
+            f"{len(chain)} outpost(s) from {result['start_name']} · "
+            f"Widest from start: <b>{result['widest_ly']:.3f} LY</b>"))
+        if result.get("stopped_early"):
+            note = QLabel("No further star within reach of the visited set — coverage ended early.")
+            note.setStyleSheet("color: #b8860b; font-style: italic;")
+            self._tables_layout.addWidget(note)
+
+        headers = ["Step", "Star Name", "Designations", "Spectral Type",
+                   "Sep to Visited (LY)", "Dist from Start (LY)", "Dist from Sol (LY)"]
+        rows = [
+            [str(c["step"]), c["star_name"], c["desig"], c["sp_type"],
+             f"{c['sep_to_visited_ly']:.3f}", f"{c['dist_from_start_ly']:.3f}",
+             f"{c['ly_from_sol']:.3f}"]
+            for c in chain
+        ]
+        view = self.make_table(headers, rows)
+        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._tables_layout.addWidget(view, 1)
+
+        if chain:
+            _add_route_chart_tabs(self, result)
+        self._finish_render()
+
+
+# ── B: Jump-Range Pathfinding ────────────────────────────────────────────────
+
+class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
+    """Route origin→destination over a jump-limited graph (Dijkstra / BFS)."""
+
+    def build_inputs(self):
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+
+        self._origin = QLineEdit()
+        self._origin.setPlaceholderText("e.g. Sol")
+        form.addRow("Origin:", self._origin)
+
+        self._dest = QLineEdit()
+        self._dest.setPlaceholderText("e.g. Procyon")
+        form.addRow("Destination:", self._dest)
+
+        self._max = QLineEdit()
+        self._max.setPlaceholderText("e.g. 9.0")
+        form.addRow("Max Jump (LY):", self._max)
+
+        self._opt = QComboBox()
+        self._opt.addItems(["Min distance", "Fewest jumps"])
+        form.addRow("Optimize For:", self._opt)
+
+        form.addRow("", _button_row(self, "Find Route"))
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        _build_results_area_route(self)
+
+    def _search(self):
+        origin = self._origin.text().strip()
+        dest = self._dest.text().strip()
+        self._prepare_render()
+        _clear_tables_layout(self)
+        if not origin or not dest:
+            _error_label(self, "Enter both an origin and a destination.")
+            return
+        try:
+            max_jump = float(self._max.text().strip())
+            if max_jump <= 0:
+                raise ValueError
+        except ValueError:
+            _error_label(self, "Max jump must be a positive number.")
+            return
+        optimize = "jumps" if self._opt.currentText().startswith("Fewest") else "distance"
+        self.run_in_background(
+            core.calculators.compute_jump_route,
+            origin, dest, max_jump, optimize,
+            on_result=self._render,
+        )
+
+    def _render(self, result):
+        self._prepare_render()
+        _clear_tables_layout(self)
+        if "error" in result:
+            _error_label(self, result["error"])
+            return
+
+        o = result["origin_info"]["name"]
+        d = result["dest_info"]["name"]
+        if not result["reachable"]:
+            note = QLabel(
+                f"No route from {o} to {d} with jumps ≤ {result['max_jump_ly']:.2f} ly — "
+                f"destination unreachable (disconnected from the origin's jump network).")
+            note.setStyleSheet("color: #b8860b; font-weight: 600;")
+            note.setWordWrap(True)
+            self._tables_layout.addWidget(note)
+            _add_route_chart_tabs(self, result)
+            self._finish_render()
+            return
+
+        mode = "fewest jumps" if result["optimize"] == "jumps" else "min distance"
+        self._tables_layout.addWidget(QLabel(
+            f"<b>{result['jumps']} jump(s)</b> · Total Distance: "
+            f"<b>{result['total_ly']:.3f} LY</b> · direct line {result['direct_ly']:.3f} LY · "
+            f"optimized for {mode}"))
+
+        headers = ["Jump #", "From", "To", "Jump Dist (LY)", "Cumulative (LY)"]
+        rows = [
+            [str(r["jump"]), r["from"], r["to"], f"{r['jump_ly']:.3f}",
+             f"{r['cumulative_ly']:.3f}"]
+            for r in result["route"]
+        ]
+        view = self.make_table(headers, rows)
+        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._tables_layout.addWidget(view, 1)
+
+        _add_route_chart_tabs(self, result)
+        self._finish_render()
+
+
+# ── C: Jump Network / Reachability ───────────────────────────────────────────
+
+class JumpNetworkPanel(DiagramToggleMixin, ResultPanel):
+    """BFS reachability tiers from a start star at a jump range."""
+
+    def build_inputs(self):
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+
+        self._start = QLineEdit()
+        self._start.setPlaceholderText("e.g. Sol")
+        form.addRow("Start System:", self._start)
+
+        self._max = QLineEdit()
+        self._max.setPlaceholderText("e.g. 6.0")
+        form.addRow("Max Jump (LY):", self._max)
+
+        self._hops = QLineEdit()
+        self._hops.setPlaceholderText("blank = unlimited")
+        form.addRow("Max Jumps:", self._hops)
+
+        form.addRow("", _button_row(self, "Map Reachable"))
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        _build_results_area_route(self)
+
+    def _search(self):
+        start = self._start.text().strip()
+        self._prepare_render()
+        _clear_tables_layout(self)
+        if not start:
+            _error_label(self, "Enter a start system.")
+            return
+        try:
+            max_jump = float(self._max.text().strip())
+            if max_jump <= 0:
+                raise ValueError
+        except ValueError:
+            _error_label(self, "Max jump must be a positive number.")
+            return
+        raw = self._hops.text().strip()
+        max_jumps = None
+        if raw:
+            try:
+                max_jumps = int(raw)
+                if max_jumps < 1:
+                    raise ValueError
+            except ValueError:
+                _error_label(self, "Max jumps must be a positive integer (or blank).")
+                return
+        self.run_in_background(
+            core.calculators.compute_jump_network,
+            start, max_jump, max_jumps,
+            on_result=self._render,
+        )
+
+    def _render(self, result):
+        self._prepare_render()
+        _clear_tables_layout(self)
+        if "error" in result:
+            _error_label(self, result["error"])
+            return
+
+        self._tables_layout.addWidget(QLabel(
+            f"Reachable from <b>{result['start_name']}</b>: "
+            f"<b>{result['reachable_count']}</b> star(s) "
+            f"(up to {result['max_tier']} jump(s) at ≤ {result['max_jump_ly']:.2f} ly/jump) · "
+            f"<b>{result['unreachable_count']}</b> in-pool star(s) out of range"))
+
+        # Tier colour legend.
+        tier_colors = core.calculators.TIER_COLORS
+        swatches = []
+        for ti in range(0, result["max_tier"] + 1):
+            col = tier_colors[min(ti, len(tier_colors) - 1)]
+            label = "start" if ti == 0 else f"{ti} jump{'s' if ti > 1 else ''}"
+            swatches.append(
+                f"<span style='color:{col}'>●</span> {label}")
+        legend = QLabel(" &nbsp; ".join(swatches))
+        legend.setStyleSheet("font-size: 11px;")
+        self._tables_layout.addWidget(legend)
+
+        headers = ["Jumps", "Star Name", "Designations", "Spectral Type",
+                   "Dist from Start (LY)", "Dist from Sol (LY)"]
+        rows = []
+        for tier in result["tiers"]:
+            for s in tier["stars"]:
+                rows.append([
+                    str(tier["jumps"]), s["star_name"], s["desig"], s["sp_type"],
+                    f"{s['dist_from_start_ly']:.3f}", f"{s['ly_from_sol']:.3f}"])
+        view = self.make_table(headers, rows)
         view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._tables_layout.addWidget(view, 1)
 

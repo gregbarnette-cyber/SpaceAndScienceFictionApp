@@ -224,6 +224,9 @@ def __getattr__(name: str):
 | `HonorverseHyperPanel` | 14 | `panels/honorverse.py` |
 | `HonorverseAccelPanel` | 15 | `panels/honorverse.py` |
 | `HonorverseSpeedPanel` | 16 | `panels/honorverse.py` |
+| `HonorverseHyperTimePanel` | — (GUI-only, Phase K1) | `panels/honorverse.py` |
+| `HonorverseImpellerPanel` | — (GUI-only, Phase K2) | `panels/honorverse.py` |
+| `HonorverseMissilePanel` | — (GUI-only, Phase K3) | `panels/honorverse.py` |
 | `VelocityLyHrPanel` | 31 | `panels/velocity.py` |
 | `VelocityTimesCPanel` | 32 | `panels/velocity.py` |
 | `DistanceLyHrPanel` | 25 | `panels/distance.py` |
@@ -239,11 +242,11 @@ def __getattr__(name: str):
 | `HabZonePanel` | 39 | `panels/habitable_zone_calc.py` |
 | `HabZoneSmaPanel` | 40 | `panels/habitable_zone_calc.py` |
 | `LuminosityPanel` | 41 | `panels/luminosity.py` |
-| `RocheLimitPanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
-| `TidalLockingPanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
-| `HillSpherePanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
-| `BinaryOrbitPanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
-| `AtmosphereRetentionPanel` | — (GUI-only, Phase H) | `panels/worldbuilding.py` |
+| `RocheLimitPanel` | — (GUI + `query.py roche-limit`, Phase H) | `panels/worldbuilding.py` |
+| `TidalLockingPanel` | — (GUI + `query.py tidal-locking`, Phase H) | `panels/worldbuilding.py` |
+| `HillSpherePanel` | — (GUI + `query.py hill-sphere`, Phase H) | `panels/worldbuilding.py` |
+| `BinaryOrbitPanel` | — (GUI + `query.py binary-stability`, Phase H) | `panels/worldbuilding.py` |
+| `AtmosphereRetentionPanel` | — (GUI + `query.py atmosphere-retention`, Phase H) | `panels/worldbuilding.py` |
 | `SimbadPanel` | 1 | `panels/simbad.py` |
 | `StarRegionsAutoPanel` | 8 | `panels/star_regions.py` |
 | `StarRegionsSemiManualPanel` | 9 | `panels/star_regions.py` |
@@ -272,18 +275,22 @@ def __getattr__(name: str):
 | `ImportHonorversePanel` | 56 | `panels/csv_utility.py` |
 | `DbStatusPanel` | 57 (GUI only) | `panels/csv_utility.py` |
 | `ImportGcnsPanel` | 58 | `panels/csv_utility.py` |
-| `StarSystemsSearchPanel` | — (GUI-only, Phase G1) | `panels/search.py` |
-| `HwcSearchPanel` | — (GUI-only, Phase G2) | `panels/search.py` |
-| `NasaExoplanetSearchPanel` | — (GUI-only, Phase G3) | `panels/search.py` |
-| `GcnsCensusBrowserPanel` | — (GUI-only, Phase M1) | `panels/gcns.py` |
-| `GcnsSourceLookupPanel` | — (GUI-only, Phase M2) | `panels/gcns.py` |
-| `GcnsSystemViewerPanel` | — (GUI-only, Phase M3) | `panels/gcns.py` |
-| `GcnsDistancePanel` | — (GUI-only, Phase M4a) | `panels/gcns.py` |
-| `GcnsTravelTimePanel` | — (GUI-only, Phase M4b) | `panels/gcns.py` |
-| `GcnsStarsWithinStarPanel` | — (GUI-only, Phase M4c) | `panels/gcns.py` |
-| `MultiStopJourneyPanel` | — (GUI-only, Phase I1) | `panels/route_planning.py` |
-| `NearestNeighborPanel` | — (GUI-only, Phase I2) | `panels/route_planning.py` |
-| `TradeRoutePlannerPanel` | — (GUI-only, Phase I3, stretch) | `panels/route_planning.py` |
+| `StarSystemsSearchPanel` | — (GUI + `query.py search-star-systems`, Phase G1) | `panels/search.py` |
+| `HwcSearchPanel` | — (GUI + `query.py search-hwc`, Phase G2) | `panels/search.py` |
+| `NasaExoplanetSearchPanel` | — (GUI + `query.py search-exoplanets`, Phase G3) | `panels/search.py` |
+| `GcnsCensusBrowserPanel` | — (GUI + `query.py gcns-within-sol`, Phase M1) | `panels/gcns.py` |
+| `GcnsSourceLookupPanel` | — (GUI + `query.py gcns-source`, Phase M2) | `panels/gcns.py` |
+| `GcnsSystemViewerPanel` | — (GUI + `query.py gcns-system`, Phase M3) | `panels/gcns.py` |
+| `GcnsDistancePanel` | — (GUI + `query.py gcns-distance`, Phase M4a) | `panels/gcns.py` |
+| `GcnsTravelTimePanel` | — (GUI + `query.py gcns-travel-time`, Phase M4b) | `panels/gcns.py` |
+| `GcnsStarsWithinStarPanel` | — (GUI + `query.py gcns-stars-within-star`, Phase M4c) | `panels/gcns.py` |
+| `MultiStopJourneyPanel` | — (GUI + `query.py multi-stop`, Phase I1) | `panels/route_planning.py` |
+| `OptimalTourPanel` | — (GUI + `query.py optimal-tour`, Phase I-OPTS A) | `panels/route_planning.py` |
+| `NearestNeighborPanel` | — (GUI + `query.py nearest-neighbor`, Phase I2) | `panels/route_planning.py` |
+| `FarthestFirstPanel` | — (GUI + `query.py farthest-first`, Phase I-OPTS D) | `panels/route_planning.py` |
+| `JumpRoutePanel` | — (GUI + `query.py jump-route`, Phase I-OPTS B) | `panels/route_planning.py` |
+| `JumpNetworkPanel` | — (GUI + `query.py jump-network`, Phase I-OPTS C) | `panels/route_planning.py` |
+| `TradeRoutePlannerPanel` | — (GUI + `query.py trade-route`, Phase I3, stretch) | `panels/route_planning.py` |
 
 > **Note**: `NasaAllTablesPanel` (opt 2) and `OecPanel` (opt 7) are implemented in `nasa_exoplanet.py` and `catalogs.py` respectively, but are **not exported** from `panels/__init__.py` and do not appear in the GUI nav. Both options remain fully functional in the CLI.
 
@@ -516,8 +523,10 @@ Clicking any body (planet, origin, or destination) on the canvas calls `_show_bo
 | E | Complete | Visualizations embedded in existing panels: star map 2D + 3D (18–19), orbital diagrams (3, 6), HZ diagrams (3–6, 8–10), system regions diagram (8–10), alternate HZ diagram (8–10), solar system travel map 2D (22–23); Show Diagrams/Show Tables toggle on all viz panels; light theme; 3D viewpoint preset buttons (18–19); `azel` rotation style for all 3D views |
 | F | Complete | SQLite migration — all static tables auto-seeded from CSVs on first connect; opt 50 writes to `star_systems` DB table; opts 51–56 added (Export Star Systems to CSV, Import HWC, Import Mission Exocat, Import Main Sequence, Import Solar System, Import Honorverse Hyper Limits); opt 57 `DbStatusPanel` added (GUI only) — displays row counts and populated/empty status for all DB tables via `core.db.get_table_status()`; opts 18–19 migrated from `starSystems.csv` to the `star_systems` DB table in both CLI and GUI |
 | post-F | Complete | **GCNS** (Gaia Catalogue of Nearby Stars): opt 58 `ImportGcnsPanel` / `import_gcns_data` ingests ~331k sources into the isolated `gcns_stars` table (+ `gcns_meta`) via GAVO TAP, plus the Gaia-resolved multiples from `gcns.resolvedss` into `gcns_systems` / `gcns_system_members` / `gcns_system_pairs` (systems = connected components over the resolvedss pairs); exposed only through `query.py` (readers `gcns-within-sol`, `gcns-source`, `gcns-system`; GCNS-backed calculators `gcns-distance`, `gcns-travel-time`, `gcns-stars-within-star`) — no existing option displays it; `get_table_status()` lists GCNS Stars + GCNS Systems + GCNS Meta. See `docs/star-databases.md` (ingest) and `docs/integration.md` (query contract). |
-| G | Complete | **Interactive Search & Filtering** (GUI-only): "Search & Filter" nav category — `StarSystemsSearchPanel` (local `star_systems`), `HwcSearchPanel` (local `hwc`), `NasaExoplanetSearchPanel` (live NASA `pscomppars` TAP). Shared `SpectralClassControl` chips + refine box and inline drill-down detail tabs (`SearchPanelBase`). Core fns `search_star_systems` / `search_hwc` / `search_exoplanets` + `spectral_where` / `spectral_adql`. See `docs/star-databases.md`. |
-| H | Complete | **Worldbuilding Calculators** (GUI-only): "Worldbuilding" nav category — `RocheLimitPanel`, `TidalLockingPanel`, `HillSpherePanel`, `BinaryOrbitPanel`, `AtmosphereRetentionPanel` (pure math, no `DiagramToggleMixin`). Backed by five self-validating `core/equations.py` functions (`compute_roche_limit`, `compute_tidal_locking_time`, `compute_hill_sphere`, `compute_binary_orbit_stability`, `compute_atmosphere_retention`) also exposed as `query.py` subcommands (`roche-limit`, `tidal-locking`, `hill-sphere`, `binary-stability`, `atmosphere-retention`). See `docs/equations.md` (formulas + the two corrections) and `docs/integration.md` (query contract). |
-| I | Complete | **Multi-System / Route Planning** (GUI-only): new "Route Planning" nav category — `MultiStopJourneyPanel` (I1), `NearestNeighborPanel` (I2), `TradeRoutePlannerPanel` (I3, stretch) in `panels/route_planning.py`. Backed by three new self-validating `core/calculators.py` functions (`compute_multi_stop_journey`, `compute_nearest_neighbor_chain`, `compute_trade_route_mst`) + a shared `_resolve_star_position` (DB-first → SIMBAD) and `core.viz.prepare_route_map`. Maps reuse the dark-navy **Star Chart** / **Star Chart 3D** canvases with a new additive `routes=` overlay (shared with Phase O8). No CLI/`query.py`. See `PHASE_I_PLAN.md`, `docs/calculators.md` (Route Planning). Tests: `tests/test_route_planning.py`. |
+| G | Complete | **Interactive Search & Filtering**: "Search & Filter" nav category — `StarSystemsSearchPanel` (local `star_systems`), `HwcSearchPanel` (local `hwc`), `NasaExoplanetSearchPanel` (live NASA `pscomppars` TAP). Shared `SpectralClassControl` chips + refine box and inline drill-down detail tabs (`SearchPanelBase`). Core fns `search_star_systems` / `search_hwc` / `search_exoplanets` + `spectral_where` / `spectral_adql`. GUI panels plus `query.py` subcommands (`search-star-systems` / `search-hwc` / `search-exoplanets`, added later). See `docs/star-databases.md`, `docs/integration.md`. |
+| H | Complete | **Worldbuilding Calculators** (GUI + `query.py`): "Worldbuilding" nav category — `RocheLimitPanel`, `TidalLockingPanel`, `HillSpherePanel`, `BinaryOrbitPanel`, `AtmosphereRetentionPanel` (pure math, no `DiagramToggleMixin`). Backed by five self-validating `core/equations.py` functions (`compute_roche_limit`, `compute_tidal_locking_time`, `compute_hill_sphere`, `compute_binary_orbit_stability`, `compute_atmosphere_retention`) also exposed as `query.py` subcommands (`roche-limit`, `tidal-locking`, `hill-sphere`, `binary-stability`, `atmosphere-retention`). See `docs/equations.md` (formulas + the two corrections) and `docs/integration.md` (query contract). |
+| I | Complete | **Multi-System / Route Planning** (GUI; `query.py` subcommands added later — see I-OPTS): new "Route Planning" nav category — `MultiStopJourneyPanel` (I1), `NearestNeighborPanel` (I2), `TradeRoutePlannerPanel` (I3, stretch) in `panels/route_planning.py`. Backed by three new self-validating `core/calculators.py` functions (`compute_multi_stop_journey`, `compute_nearest_neighbor_chain`, `compute_trade_route_mst`) + a shared `_resolve_star_position` (DB-first → SIMBAD) and `core.viz.prepare_route_map`. Maps reuse the dark-navy **Star Chart** / **Star Chart 3D** canvases with a new additive `routes=` overlay (shared with Phase O8). See `PHASE_I_PLAN.md`, `docs/calculators.md` (Route Planning). Tests: `tests/test_route_planning.py`. *(Later given `query.py` subcommands `multi-stop` / `nearest-neighbor` / `trade-route` alongside the Phase I-OPTS pass — see below.)* |
+| I-OPTS | Complete | **Route Planning — four new options** added alongside I1–I3 (none replaced): `OptimalTourPanel` (A), `FarthestFirstPanel` (D), `JumpRoutePanel` (B), `JumpNetworkPanel` (C) in `panels/route_planning.py`, paired in the nav with their siblings. Backed by four self-validating `core/calculators.py` functions (`compute_optimal_tour` NN+2-opt, `compute_jump_route` Dijkstra/BFS, `compute_jump_network` BFS tiers, `compute_farthest_first_chain`) + helpers `_SpatialGrid`/`_merge_endpoint`/`TIER_COLORS`; `core.viz.prepare_route_map` extended (A dashed+wrap / B dashed route / C tier-coloured nodes / D dashed tree). **All Route Planning options are now `query.py` subcommands**: A/B/C (`optimal-tour`/`jump-route`/`jump-network`) shipped with this pass, and `multi-stop`/`nearest-neighbor`/`farthest-first`/`trade-route` were backfilled afterwards (so the original I1/I2/I3 + D now have JSON surfaces too). No canvas change (C uses tier-coloured nodes, not a lattice — scales to large pools). B/C use a `_SpatialGrid` (not an O(n²) build) to stay usable against the ~238k-row `star_systems` table. See `PHASE_I_OPTS_PLAN.md`, `docs/calculators.md`, `docs/integration.md`. Tests: `tests/test_route_planning_opts.py`, `tests/test_query_route_opts.py`. |
+| K | Complete | **Honorverse Expansion** (GUI-only): three interactive calculators in the existing "Science Fiction" nav category — `HonorverseHyperTimePanel` (K1), `HonorverseImpellerPanel` (K2, live slider), `HonorverseMissilePanel` (K3) in `panels/honorverse.py`. Backed by self-validating `core/science.py` functions (`compute_hyper_translation_time`, `compute_impeller_wedge`) + `core/calculators.py::compute_missile_intercept`, plus a K0 data-centralization refactor (the band/mass tables hoisted to module constants `_HONORVERSE_*` + `get_honorverse_*` accessors, shared by the opt-15/16 display functions — byte-identical output). The 24-band expanded speed table was corrected (Iota → canon 6000× / merchant drift fixed). Pure math, no network/DB-write. See `PHASE_K_PLAN.md`, `docs/science-and-scifi.md`. Tests: `tests/test_honorverse_expansion.py`. |
 | M | Complete | **GCNS Interactive Surfacing** (GUI-only): new "GCNS" nav category — `GcnsCensusBrowserPanel` (M1), `GcnsSourceLookupPanel` (M2), `GcnsSystemViewerPanel` (M3), `GcnsDistancePanel` (M4a), `GcnsTravelTimePanel` (M4b), `GcnsStarsWithinStarPanel` (M4c) in `panels/gcns.py`, all reusing the existing `compute_gcns_*` readers verbatim (no new core code for M1–M4). Dual name/id input with an instant-vs-background branch; M1/M4c reuse the opt-18/19 map tabs and surface the GCNS −σ/+σ distance uncertainty. **M5**: `compute_simbad_lookup` gains a non-fatal top-level `"gcns"` key (`_simbad_gcns_block`); `SimbadPanel` shows it as a "GCNS" tab; `query.py simbad-lookup` emits it with no dispatcher change. See `PHASE_M_PLAN.md`, `docs/star-databases.md` (display surfaces), and `docs/integration.md` (the `"gcns"` key). Tests: `tests/test_simbad_gcns_enrichment.py`. |
 | N | Complete | **query.py Integration Expansion** (integration-surface only — no GUI/CLI/`core/`/DB changes): five new `query.py` subcommands, each a thin verbatim wrapper over an existing `core/` function — `habitable-zone-sma` (`equations.compute_habitable_zone_sma`), `star-luminosity` (`equations.compute_star_luminosity`), `brachistochrone-au` / `brachistochrone-lm` (`calculators.compute_travel_time_system_au` / `_lm`), and `travel-time-solar` (`calculators.compute_travel_time_solar_objects` — the only network-bound one, live JPL Horizons). N1–N4 wrap non-self-validating legacy functions, so out-of-range numerics surface as raw-exception `{"error": str(e)}` (exit 1); `star-luminosity` has no out-of-range error path; only `travel-time-solar` emits curated error dicts. See `PHASE_N_PLAN.md` and `docs/integration.md` ("Integration expansion (Phase N)" + the validation note). Tests: `tests/test_query_phase_n.py`. |

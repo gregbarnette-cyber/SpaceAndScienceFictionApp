@@ -2,6 +2,8 @@
 
 Options 33–41. Planetary equations, rotating habitat equations, and miscellaneous equations. Pure math with no external API dependencies — the most stable feature group.
 
+> **`query.py`:** options 33–38 are also exposed as subcommands — `orbit-distance` (33), `moon-orbital-distance` (34/35), and `gravity-acceleration` / `gravity-distance` / `gravity-rpm` (36/37/38); options 39–41 as `habitable-zone` / `habitable-zone-sma` / `star-luminosity`. These wrap the **non-self-validating** functions below (out-of-range input → raw-exception exit 1 or nonsense exit 0; argparse exit 2 for bad args). See `docs/integration.md`.
+
 ## Planetary Equations
 
 ### Option 33: Planetary Orbit Periastron & Apastron Distance Calculator — `planetary_orbit_periastron_apastron()`

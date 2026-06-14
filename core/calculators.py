@@ -6,8 +6,10 @@
 # Phase D: remaining brachistochrone and travel-time-between-stars functions.
 
 import csv
+import heapq
 import math
 import os
+from collections import deque
 
 from .shared import _make_simbad, _network_error_msg, _timeout_ctx, _with_retries
 
@@ -1559,4 +1561,543 @@ def compute_trade_route_mst(star_names) -> dict:
         "edges": edges,
         "total_ly": total_ly,
         "stars": [_map_node(nd) for nd in nodes],
+    }
+
+
+# ── Phase I-OPTS: four new route planners (A/B/C/D) ──────────────────────────
+#
+# A  compute_optimal_tour          — shortest-total-distance visit order (NN + 2-opt)
+# B  compute_jump_route            — point-to-point over a jump-limited graph
+# C  compute_jump_network          — BFS reachability tiers from a start
+# D  compute_farthest_first_chain  — de-clustering coverage (farthest-from-visited)
+#
+# All self-validate ({"error": str}); each returns a star-map-compatible `stars`
+# list. They reuse _resolve_star_position / _load_star_systems_positions /
+# _map_node and the dark-navy Star Chart routes= overlay (via prepare_route_map).
+
+# Tier colours for the reachability map (tier 0 = start, gold).
+TIER_COLORS = [
+    "#FFD700", "#7fd3ff", "#7fe0a0", "#ffd27f", "#ff9bce",
+    "#c8a2ff", "#9affd0", "#ffec99", "#9db4ff", "#ff8f8f",
+]
+
+
+def _node_dist(a: dict, b: dict) -> float:
+    return math.sqrt((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2
+                     + (a["z"] - b["z"]) ** 2)
+
+
+def _merge_endpoint(pool: list, endpoint: dict) -> int:
+    """Return the index of `endpoint` in `pool`, appending it if not already
+    present (matched by case-insensitive name OR within 1e-3 ly). Mutates pool."""
+    nm = endpoint["name"].strip().lower()
+    for i, p in enumerate(pool):
+        if p["name"].strip().lower() == nm or _node_dist(p, endpoint) <= 1e-3:
+            return i
+    pool.append(endpoint)
+    return len(pool) - 1
+
+
+class _SpatialGrid:
+    """Uniform 3D grid for fast within-radius neighbour queries.
+
+    Cell size = the jump radius, so any two stars within `cell` ly of each other
+    fall in cells differing by at most 1 on each axis — i.e. a candidate's
+    neighbours are confined to the 27 cells around its own. This turns the
+    O(n^2) all-pairs graph build into O(n · neighbours), which is the only way
+    B/C stay usable against the ~238k-row `star_systems` table.
+    """
+
+    def __init__(self, nodes: list, cell: float):
+        self.nodes = nodes
+        self.cell = cell
+        self.cells = {}
+        for i, p in enumerate(nodes):
+            key = (int(math.floor(p["x"] / cell)),
+                   int(math.floor(p["y"] / cell)),
+                   int(math.floor(p["z"] / cell)))
+            self.cells.setdefault(key, []).append(i)
+
+    def neighbors(self, i: int, max_dist: float):
+        """Yield (j, dist_ly) for every node within max_dist of node i (j != i)."""
+        p = self.nodes[i]
+        cell = self.cell
+        cx = int(math.floor(p["x"] / cell))
+        cy = int(math.floor(p["y"] / cell))
+        cz = int(math.floor(p["z"] / cell))
+        px, py, pz = p["x"], p["y"], p["z"]
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for j in self.cells.get((cx + dx, cy + dy, cz + dz), ()):
+                        if j == i:
+                            continue
+                        q = self.nodes[j]
+                        d = math.sqrt((px - q["x"]) ** 2 + (py - q["y"]) ** 2
+                                      + (pz - q["z"]) ** 2)
+                        if d <= max_dist:
+                            yield j, d
+
+
+# ── A: Optimal Tour ──────────────────────────────────────────────────────────
+
+def _tour_len(order: list, closed: bool) -> float:
+    s = 0.0
+    for i in range(len(order) - 1):
+        s += _node_dist(order[i], order[i + 1])
+    if closed and len(order) > 1:
+        s += _node_dist(order[-1], order[0])
+    return s
+
+
+def compute_optimal_tour(star_names, velocity_input: float,
+                         use_times_c: bool, closed: bool = False) -> dict:
+    """Visit a set of stars in the shortest-total-distance order.
+
+    Nearest-neighbor seed from the fixed first stop, then 2-opt local search.
+    `closed=True` returns to the start (adds the wrap leg).
+
+    Returns:
+        {legs:[{leg, origin, dest, distance_ly, ly_hr, times_c, hours,
+                cumulative_hours, travel_time, cumulative_time}],
+         total_ly, total_hours, total_time, naive_total_ly, optimized_total_ly,
+         saved_ly, saved_pct, closed, stars:[map dicts in optimized order]}
+        or {"error": str}
+    """
+    # Dedup case-insensitively, preserving order.
+    seen, names = set(), []
+    for nm in (star_names or []):
+        k = (nm or "").strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            names.append(nm)
+    if len(names) < 2:
+        return {"error": "Enter at least two stars."}
+    if velocity_input is None or velocity_input <= 0:
+        return {"error": "Velocity must be positive."}
+
+    if use_times_c:
+        ly_hr = velocity_input / HOURS_PER_JULIAN_YEAR
+        times_c = velocity_input
+    else:
+        ly_hr = velocity_input
+        times_c = velocity_input * HOURS_PER_JULIAN_YEAR
+
+    typed = []
+    for nm in names:
+        rec = _resolve_star_position(nm)
+        if "error" in rec:
+            return {"error": f"'{nm}': {rec['error']}"}
+        typed.append(rec)
+
+    naive_total_ly = _tour_len(typed, closed)
+
+    # Nearest-neighbor seed from the fixed first stop.
+    remaining = typed[1:]
+    order = [typed[0]]
+    while remaining:
+        bi, bd = 0, float("inf")
+        for ci, c in enumerate(remaining):
+            d = _node_dist(order[-1], c)
+            if d < bd:
+                bd, bi = d, ci
+        order.append(remaining.pop(bi))
+
+    # 2-opt (start fixed at index 0; reverse segments [i..k]).
+    n = len(order)
+    improved = True
+    while improved:
+        improved = False
+        for i in range(1, n - 1):
+            for k in range(i + 1, n):
+                cand = order[:i] + order[i:k + 1][::-1] + order[k + 1:]
+                if _tour_len(cand, closed) + 1e-9 < _tour_len(order, closed):
+                    order = cand
+                    improved = True
+
+    optimized_total_ly = _tour_len(order, closed)
+
+    # Build legs (consecutive; + wrap when closed).
+    pairs = [(order[i], order[i + 1]) for i in range(len(order) - 1)]
+    if closed:
+        pairs.append((order[-1], order[0]))
+
+    legs = []
+    cumulative_hours = 0.0
+    total_ly = 0.0
+    for i, (a, b) in enumerate(pairs):
+        d = _node_dist(a, b)
+        hours = d / ly_hr
+        cumulative_hours += hours
+        total_ly += d
+        legs.append({
+            "leg": i + 1, "origin": a["name"], "dest": b["name"],
+            "distance_ly": d, "ly_hr": ly_hr, "times_c": times_c,
+            "hours": hours, "cumulative_hours": cumulative_hours,
+            "travel_time": format_travel_time(hours),
+            "cumulative_time": format_travel_time(cumulative_hours),
+        })
+
+    saved_ly = max(naive_total_ly - optimized_total_ly, 0.0)
+    saved_pct = (saved_ly / naive_total_ly * 100.0) if naive_total_ly > 0 else 0.0
+
+    return {
+        "legs": legs,
+        "total_ly": total_ly,
+        "total_hours": cumulative_hours,
+        "total_time": format_travel_time(cumulative_hours),
+        "naive_total_ly": naive_total_ly,
+        "optimized_total_ly": optimized_total_ly,
+        "saved_ly": saved_ly,
+        "saved_pct": saved_pct,
+        "closed": closed,
+        "stars": [_map_node(n) for n in order],
+    }
+
+
+# ── B: Jump-Range Pathfinding ────────────────────────────────────────────────
+
+def compute_jump_route(origin: str, destination: str, max_jump_ly: float,
+                       optimize: str = "distance") -> dict:
+    """Route origin→destination through intermediate stars, each jump ≤ max_jump_ly.
+
+    optimize="distance" → Dijkstra (min total ly); "jumps" → BFS (fewest jumps).
+    An unreachable destination is a clear result (reachable=False), not an error.
+
+    Returns:
+        {origin_info, dest_info, reachable, optimize, jumps, total_ly, direct_ly,
+         route:[{jump, from, to, jump_ly, cumulative_ly}], max_jump_ly,
+         stars:[map dicts along the route]}
+        or {"error": str}
+    """
+    if max_jump_ly is None or max_jump_ly <= 0:
+        return {"error": "Max jump distance must be positive."}
+    if optimize not in ("distance", "jumps"):
+        return {"error": "optimize must be 'distance' or 'jumps'."}
+
+    o = _resolve_star_position(origin)
+    if "error" in o:
+        return {"error": f"Origin: {o['error']}"}
+    d = _resolve_star_position(destination)
+    if "error" in d:
+        return {"error": f"Destination: {d['error']}"}
+    if o["name"].strip().lower() == d["name"].strip().lower() or _node_dist(o, d) <= 1e-3:
+        return {"error": "Origin and destination are the same star."}
+
+    pool_res = _load_star_systems_positions()
+    nodes = list(pool_res["stars"]) if "stars" in pool_res else []
+    s = _merge_endpoint(nodes, o)
+    t = _merge_endpoint(nodes, d)
+    grid = _SpatialGrid(nodes, max_jump_ly)
+
+    nn = len(nodes)
+    prev = [-1] * nn
+    if optimize == "jumps":
+        dist_arr = [float("inf")] * nn
+        dist_arr[s] = 0
+        q = deque([s])
+        while q:
+            u = q.popleft()
+            if u == t:
+                break
+            for v, _w in grid.neighbors(u, max_jump_ly):
+                if dist_arr[v] == float("inf"):
+                    dist_arr[v] = dist_arr[u] + 1
+                    prev[v] = u
+                    q.append(v)
+    else:
+        dist_arr = [float("inf")] * nn
+        dist_arr[s] = 0.0
+        pq = [(0.0, s)]
+        done = [False] * nn
+        while pq:
+            du, u = heapq.heappop(pq)
+            if done[u]:
+                continue
+            done[u] = True
+            if u == t:
+                break
+            for v, w in grid.neighbors(u, max_jump_ly):
+                if du + w < dist_arr[v]:
+                    dist_arr[v] = du + w
+                    prev[v] = u
+                    heapq.heappush(pq, (dist_arr[v], v))
+
+    direct_ly = _node_dist(o, d)
+    reachable = dist_arr[t] != float("inf")
+    if not reachable:
+        return {
+            "origin_info": o, "dest_info": d, "reachable": False,
+            "optimize": optimize, "jumps": 0, "total_ly": 0.0,
+            "direct_ly": direct_ly, "route": [], "max_jump_ly": max_jump_ly,
+            "stars": [_map_node(o), _map_node(d)],
+        }
+
+    # Reconstruct the path.
+    path = []
+    cur = t
+    while cur != -1:
+        path.append(cur)
+        cur = prev[cur]
+    path.reverse()
+
+    route = []
+    cumulative_ly = 0.0
+    for i in range(len(path) - 1):
+        a, b = nodes[path[i]], nodes[path[i + 1]]
+        jd = _node_dist(a, b)
+        cumulative_ly += jd
+        route.append({
+            "jump": i + 1, "from": a["name"], "to": b["name"],
+            "jump_ly": jd, "cumulative_ly": cumulative_ly,
+        })
+
+    return {
+        "origin_info": o, "dest_info": d, "reachable": True,
+        "optimize": optimize, "jumps": len(path) - 1, "total_ly": cumulative_ly,
+        "direct_ly": direct_ly, "route": route, "max_jump_ly": max_jump_ly,
+        "stars": [_map_node(nodes[i]) for i in path],
+    }
+
+
+# ── C: Jump Network / Reachability ───────────────────────────────────────────
+
+def compute_jump_network(start: str, max_jump_ly: float,
+                         max_jumps=None) -> dict:
+    """BFS reachability from `start` at jump range `max_jump_ly`.
+
+    Each reachable star gets its minimum jump count (tier); the rest are
+    out-of-range. `max_jumps` caps the frontier.
+
+    Returns:
+        {start_name, max_jump_ly, max_jumps, max_tier, reachable_count,
+         total_in_pool, unreachable_count,
+         tiers:[{jumps, stars:[{star_name, desig, sp_type, dist_from_start_ly,
+                                ly_from_sol}]}],
+         stars:[map dicts, colour overridden per tier; start gold]}
+        or {"error": str}
+    """
+    if max_jump_ly is None or max_jump_ly <= 0:
+        return {"error": "Max jump distance must be positive."}
+    if max_jumps is not None:
+        try:
+            max_jumps = int(max_jumps)
+        except (TypeError, ValueError):
+            return {"error": "Max jumps must be a positive integer."}
+        if max_jumps < 1:
+            return {"error": "Max jumps must be a positive integer."}
+
+    st = _resolve_star_position(start)
+    if "error" in st:
+        return st
+
+    pool_res = _load_star_systems_positions()
+    if "error" in pool_res:
+        return pool_res
+    nodes = list(pool_res["stars"])
+    total_in_pool = len(nodes)          # original star_systems rows (pre-merge)
+    s = _merge_endpoint(nodes, st)
+    start_is_appended = s >= total_in_pool   # start wasn't already a pool row
+    grid = _SpatialGrid(nodes, max_jump_ly)
+
+    nn = len(nodes)
+    tier = [-1] * nn
+    tier[s] = 0
+    q = deque([s])
+    while q:
+        u = q.popleft()
+        if max_jumps is not None and tier[u] >= max_jumps:
+            continue
+        for v, _w in grid.neighbors(u, max_jump_ly):
+            if tier[v] == -1:
+                tier[v] = tier[u] + 1
+                q.append(v)
+
+    reached = [i for i in range(nn) if tier[i] >= 0]
+    reached.sort(key=lambda i: (tier[i], nodes[i].get("ly", 0.0)))
+    max_tier = max((tier[i] for i in reached), default=0)
+
+    # Tier-grouped table.
+    tiers = []
+    for ti in range(0, max_tier + 1):
+        members = [i for i in reached if tier[i] == ti]
+        if not members:
+            continue
+        tiers.append({
+            "jumps": ti,
+            "stars": [{
+                "star_name": nodes[i]["name"], "desig": nodes[i].get("desig", ""),
+                "sp_type": nodes[i].get("sp_type", ""),
+                "dist_from_start_ly": _node_dist(nodes[i], st),
+                "ly_from_sol": nodes[i].get("ly", 0.0),
+            } for i in members],
+        })
+
+    # Map nodes: every reached node, colour overridden per tier.
+    stars = []
+    for i in reached:
+        m = _map_node(nodes[i])
+        m["color"] = TIER_COLORS[min(tier[i], len(TIER_COLORS) - 1)]
+        m["tier"] = tier[i]
+        stars.append(m)
+    # Ensure the start is first (gold ★ at the centred origin).
+    stars.sort(key=lambda m: 0 if m["name"] == st["name"] else 1)
+
+    # reachable_count includes the start node; unreachable_count is over the
+    # original star_systems rows (so it excludes an appended Sol/SIMBAD start).
+    reachable_original = len(reached) - (1 if start_is_appended else 0)
+    unreachable_count = total_in_pool - reachable_original
+
+    return {
+        "start_name": st["name"], "max_jump_ly": max_jump_ly,
+        "max_jumps": max_jumps, "max_tier": max_tier,
+        "reachable_count": len(reached), "total_in_pool": total_in_pool,
+        "unreachable_count": unreachable_count,
+        "tiers": tiers,
+        "stars": stars,
+    }
+
+
+# ── D: Farthest-First Coverage ───────────────────────────────────────────────
+
+def compute_farthest_first_chain(start: str, num_stops: int,
+                                 max_reach_ly=None) -> dict:
+    """De-clustering coverage: each step picks the unvisited star farthest from
+    the visited set (optionally still within max_reach_ly of some visited star).
+
+    Returns:
+        {chain:[{step, star_name, desig, sp_type, sep_to_visited_ly,
+                 dist_from_start_ly, ly_from_sol}],
+         tree_edges:[{from_index, to_index}], stars:[map dicts, start at 0],
+         widest_ly, stopped_early, start_name}
+        or {"error": str}
+    """
+    try:
+        num_stops = int(num_stops)
+    except (TypeError, ValueError):
+        return {"error": "Number of stops must be a positive integer."}
+    if num_stops < 1:
+        return {"error": "Number of stops must be a positive integer."}
+    if max_reach_ly is not None and max_reach_ly <= 0:
+        return {"error": "Max reach must be positive."}
+    reach = float("inf") if max_reach_ly is None else max_reach_ly
+
+    st = _resolve_star_position(start)
+    if "error" in st:
+        return st
+
+    pool_res = _load_star_systems_positions()
+    if "error" in pool_res:
+        return pool_res
+    # Self-exclusion: drop the start's own row (within 1e-3 ly).
+    pool = [p for p in pool_res["stars"] if _node_dist(p, st) > 1e-3]
+
+    # Running farthest-first: mind[ci] = distance from pool[ci] to its nearest
+    # visited node; near[ci] = that node's index in `visited`. Updated against
+    # each newly added node so the loop is O(num_stops · n), not O(num_stops^2 · n).
+    npool = len(pool)
+    mind = [_node_dist(pool[ci], st) for ci in range(npool)]
+    near = [0] * npool
+    used = [False] * npool
+
+    visited = [st]
+    chain = []
+    tree_edges = []
+    stopped_early = False
+    for step in range(1, num_stops + 1):
+        best_i, best_spread = -1, -1.0
+        for ci in range(npool):
+            if used[ci] or mind[ci] > reach:
+                continue
+            if mind[ci] > best_spread:
+                best_spread, best_i = mind[ci], ci
+        if best_i < 0:
+            stopped_early = True
+            break
+        used[best_i] = True
+        c = pool[best_i]
+        new_idx = len(visited)
+        tree_edges.append({"from_index": near[best_i], "to_index": new_idx})
+        visited.append(c)
+        chain.append({
+            "step": step, "star_name": c["name"], "desig": c.get("desig", ""),
+            "sp_type": c.get("sp_type", ""), "sep_to_visited_ly": best_spread,
+            "dist_from_start_ly": _node_dist(c, st),
+            "ly_from_sol": c.get("ly", 0.0),
+        })
+        # Relax running min/near against the just-added node.
+        for cj in range(npool):
+            if used[cj]:
+                continue
+            dj = _node_dist(pool[cj], c)
+            if dj < mind[cj]:
+                mind[cj], near[cj] = dj, new_idx
+
+    widest_ly = max((_node_dist(v, st) for v in visited[1:]), default=0.0)
+
+    return {
+        "chain": chain,
+        "tree_edges": tree_edges,
+        "stars": [_map_node(v) for v in visited],
+        "widest_ly": widest_ly,
+        "stopped_early": stopped_early,
+        "start_name": st["name"],
+    }
+
+
+# ── Phase K — Honorverse missile intercept (K3) ──────────────────────────────
+
+def compute_missile_intercept(launcher_vel_xc, missile_accel_g, missile_delta_v_xc,
+                              target_vel_xc, range_lm) -> dict:
+    """Whether a missile from a moving launcher intercepts a moving target.
+
+    1D head-on, non-relativistic (valid at these ×c scales). target_vel_xc > 0 =
+    receding (same direction as the missile); < 0 = head-on (closing). The missile
+    burns at constant accel until its delta-v budget is spent, then coasts.
+
+    Self-validating (range/accel/delta-v > 0). `intercepts=False` is a normal
+    result. Returns:
+        {intercepts, intercept_phase, time_to_impact_s, time_to_impact_str,
+         v_burnout_xc, v_close_xc, range_at_burnout_lm, burn_duration_s}
+        or {"error": str}
+    """
+    if range_lm is None or range_lm <= 0:
+        return {"error": "Initial range must be positive."}
+    if missile_accel_g is None or missile_accel_g <= 0:
+        return {"error": "Missile acceleration must be positive."}
+    if missile_delta_v_xc is None or missile_delta_v_xc <= 0:
+        return {"error": "Missile delta-v budget must be positive."}
+    if launcher_vel_xc is None or target_vel_xc is None:
+        return {"error": "Launcher and target velocity must be numbers."}
+
+    v_l = launcher_vel_xc * _C_MS
+    v_t = target_vel_xc * _C_MS
+    dv = missile_delta_v_xc * _C_MS
+    accel = missile_accel_g * _G_MS2
+    range_m = range_lm * _M_PER_LM
+
+    t_burn = dv / accel
+    v_bo = v_l + dv
+    d_burn = v_l * t_burn + 0.5 * accel * t_burn ** 2
+    closing_burn = d_burn - v_t * t_burn          # missile's gain on the target during burn
+    v_close = v_bo - v_t
+
+    intercepts, phase, t_impact = False, None, None
+    if closing_burn >= range_m:                   # caught up before burnout
+        intercepts, phase = True, "burn"
+        t_impact = t_burn * (range_m / d_burn) if d_burn > 0 else 0.0
+    elif v_close > 0:                             # closes during the coast phase
+        t_coast = (range_m - closing_burn) / v_close
+        intercepts, phase, t_impact = True, "coast", t_burn + t_coast
+    # else v_close <= 0 and not caught during burn → never intercepts
+
+    return {
+        "intercepts": intercepts,
+        "intercept_phase": phase,
+        "time_to_impact_s": t_impact,
+        "time_to_impact_str": format_travel_time(t_impact / 3600.0) if t_impact is not None else None,
+        "v_burnout_xc": v_bo / _C_MS,
+        "v_close_xc": v_close / _C_MS,
+        "range_at_burnout_lm": (range_m - closing_burn) / _M_PER_LM,
+        "burn_duration_s": t_burn,
     }

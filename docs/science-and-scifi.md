@@ -2,6 +2,8 @@
 
 Options 11–16. All features here display data from local CSV files or hardcoded tables. No external API calls. Lowest change frequency of all feature groups.
 
+> **`query.py`:** options 11–13 are also exposed as subcommands — `solar-system` (11), `main-sequence` (12), and `sol-regions` (13) — see `docs/integration.md`. The Honorverse tables (options 14–16) remain GUI/CLI-only.
+
 ## Science Features
 
 ### Option 11: Solar System Planet/Dwarf Planets/Asteroids — `solar_system_data_tables()`
@@ -36,3 +38,23 @@ Options 11–16. All features here display data from local CSV files or hardcode
 - Hardcoded data; displays two tables.
 - **Table 1 "Effective Speed by Hyper Band"**: Alpha–Iota bands; columns: Band | Translation Bleed-Off | Velocity Multiplier | Warship (xC) | Merchantship (xC). Speeds shown as `{xc} ({xc / 8765.8128:.5f} ly/hr)`. Iota merchantship speed shown as "Currently Unattainable". Footnote about merchantmen not normally using Epsilon–Iota bands.
 - **Table 2 "Effective Speed by Hyper Band (Expanded)"**: Alpha–Omega bands (24 total); columns: Band | Warship (xC) | Merchantship (xC). Same speed format as Table 1.
+
+## Honorverse Expansion (Phase K — GUI-only interactive calculators)
+
+Three interactive Honorverse calculators (panels in `gui/panels/honorverse.py` under the existing "Science Fiction" nav category, alongside the three static tables above). Pure math, no network/DB-write. All three core functions **self-validate** (return `{"error": str}` for bad input). See `PHASE_K_PLAN.md`.
+
+### Data centralization (K0)
+
+The band/mass tables are now module-level constants in `core/science.py` — `_HONORVERSE_ACCEL_BANDS` (6 mass bands, **numeric** g-values + explicit `mass_min`/`mass_max` boundaries), `_HONORVERSE_BANDS` (Table 1, Alpha–Iota), `_HONORVERSE_EXPANDED_BANDS` (Table 2, 24 bands) — the single source of truth shared by the opt-15/16 display functions (`compute_honorverse_acceleration_table` formats the numeric g-values back to the `"550 g"` strings it always returned) and the K calculators. Accessors `get_honorverse_accel_bands()` / `get_honorverse_expanded_bands()` expose them. **Data note:** the 24-band Table 2 was corrected (2026-06-13) — Iota re-anchored to the canon `6000×` multiplier (Pearls of Weber), with `warship = 0.6 × multiplier`, `merchant = 0.5 × multiplier`; a prior −0.3 merchant transcription drift (Pi→Omega) is gone. Table 1's Iota stays "unattainable" (0) by design — Iota is unreachable in canon; bands above Iota are an extrapolation.
+
+### K1 — `compute_hyper_translation_time(distance_ly, ship_type)` (`HonorverseHyperTimePanel`)
+
+Travel time for a distance across all 24 hyper bands. `ship_type ∈ {"warship", "merchantship"}` (case-insensitive). Per band: `speed_ly_hr = speed_xc / 8765.8128`, `travel_hours = distance_ly / speed_ly_hr`, `travel_time = _format_travel_time(...)` (a 0-speed band → `"N/A"`). Returns `{distance_ly, ship_type, bands:[{band, speed_xc, speed_ly_hr, travel_hours, travel_time, note}], footnote}`. The merchant `*` bands (Epsilon onward) are flagged via a footnote, not dropped. Validation: `distance_ly > 0`, valid ship type.
+
+### K2 — `compute_impeller_wedge(ship_mass_tons, ship_type, wedge_power_pct)` (`HonorverseImpellerPanel`)
+
+Effective acceleration + max velocities at a wedge-power setting. Selects the mass band by `mass_min ≤ tons ≤ mass_max` (a mass above the heaviest band **clamps** to it, `clamped=True` — not an error). `effective_accel_g = base_accel_g × power/100`; `max_vel_normal_xc = (0.8 warship | 0.6 merchant) × power/100`; `time_to_max_vel` from `t = max_vel·c / (eff·g)`. Returns `{ship_mass_tons, mass_band, clamped, ship_type, wedge_power_pct, base_accel_g, effective_accel_g, max_vel_normal_xc, max_vel_hyper_xc, time_to_max_vel}`. Validation: mass > 0, `0 < power ≤ 100`, valid ship type. **GUI:** a `QSlider` for power with live recompute (no button).
+
+### K3 — `compute_missile_intercept(launcher_vel_xc, missile_accel_g, missile_delta_v_xc, target_vel_xc, range_lm)` (`HonorverseMissilePanel`)
+
+In **`core/calculators.py`** (reuses `_G_MS2`/`_C_MS`/`_M_PER_LM`). 1D head-on non-relativistic intercept: burn to delta-v exhaustion, then coast. `target_vel_xc > 0` = receding, `< 0` = head-on. `v_close = v_burnout − v_target`; `v_close ≤ 0` (and not caught during burn) → **no intercept** (`intercepts=False`, a normal result). Returns `{intercepts, intercept_phase ("burn"|"coast"|None), time_to_impact_s, time_to_impact_str, v_burnout_xc, v_close_xc, range_at_burnout_lm, burn_duration_s}`. Validation: `range_lm`/`missile_accel_g`/`missile_delta_v_xc > 0`. **GUI:** green/red verdict label + profile table.

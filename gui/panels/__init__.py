@@ -5,7 +5,9 @@
 # ── Phase B panels ────────────────────────────────────────────────────────────
 from gui.panels.science_tables      import SolarSystemPanel, MainSequencePanel
 from gui.panels.sol_regions         import SolRegionsPanel
-from gui.panels.honorverse          import HonorverseHyperPanel, HonorverseAccelPanel, HonorverseSpeedPanel
+from gui.panels.honorverse          import (HonorverseHyperPanel, HonorverseAccelPanel,
+                                         HonorverseSpeedPanel, HonorverseHyperTimePanel,
+                                         HonorverseImpellerPanel, HonorverseMissilePanel)
 from gui.panels.velocity            import VelocityLyHrPanel, VelocityTimesCPanel
 from gui.panels.distance            import DistanceLyHrPanel, DistanceTimesCPanel
 from gui.panels.travel_time         import TravelTimeLyHrPanel, TravelTimeTimesCPanel
@@ -40,7 +42,9 @@ from gui.panels.worldbuilding    import (RocheLimitPanel, TidalLockingPanel,
 from gui.panels.search           import (StarSystemsSearchPanel, HwcSearchPanel,
                                          NasaExoplanetSearchPanel)
 from gui.panels.route_planning    import (MultiStopJourneyPanel, NearestNeighborPanel,
-                                         TradeRoutePlannerPanel)
+                                         TradeRoutePlannerPanel, OptimalTourPanel,
+                                         FarthestFirstPanel, JumpRoutePanel,
+                                         JumpNetworkPanel)
 from gui.panels.gcns             import (GcnsCensusBrowserPanel, GcnsSourceLookupPanel,
                                          GcnsSystemViewerPanel, GcnsDistancePanel,
                                          GcnsTravelTimePanel, GcnsStarsWithinStarPanel)

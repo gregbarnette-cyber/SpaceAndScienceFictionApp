@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase K — Honorverse Expansion (Mockup)</title>
+<style>
+  :root{
+    --bg:#f0f0f0; --panel:#ffffff; --border:#b8b8b8; --border-soft:#d8d8d8;
+    --text:#222; --muted:#6a6a6a; --accent:#4a90d9; --accent-d:#3a73ad;
+    --head:#e9eef5; --zebra:#f7f9fc; --good:#2e8b57; --warn:#b8860b; --bad:#b03030;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+       font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}
+  .topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600}
+  .topbar .sub{color:#9aa3ad;font-weight:400}
+  .notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px;line-height:1.5}
+  .notice b{color:#4d4109}
+  .notice code{background:#f4ead0;padding:0 4px;border-radius:3px}
+  .app{flex:1;display:flex;min-height:0}
+  .nav{width:236px;min-width:236px;background:#fafafa;border-right:1px solid var(--border);overflow:auto;padding:6px 0}
+  .nav .cat{padding:9px 12px 3px;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px}
+  .nav .cat.new{color:var(--accent)}
+  .nav .new-badge{background:var(--accent);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .nav .item{padding:6px 12px 6px 22px;color:#41566f;border-left:3px solid transparent;cursor:pointer}
+  .nav .item:hover{background:#eef4fb}
+  .nav .item.active{background:#e2eefb;border-left-color:var(--accent);color:#13314e;font-weight:600}
+  .nav .item.muted{color:#bbb;cursor:default}
+  .nav .item .new2{font-size:9px;color:#2e6da4;border:1px solid #a9c8e6;border-radius:3px;padding:0 4px;margin-left:5px;font-weight:700}
+  .content{flex:1;overflow:auto;padding:16px 20px}
+  .panel{display:none}
+  .panel.active{display:block}
+  h2.title{margin:0 0 2px;font-size:18px}
+  h2.title .new2{font-size:11px;background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;margin-left:8px;vertical-align:middle}
+  .sub{color:var(--muted);margin:4px 0 12px;font-size:12.5px;max-width:900px;line-height:1.5}
+  details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--border-soft);border-radius:5px;padding:6px 10px;max-width:920px}
+  details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+  details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+  details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.6}
+  .layout{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+  .col-form{flex:0 0 320px;max-width:320px}
+  .col-out{flex:1;min-width:380px}
+  .form{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:13px 15px;margin-bottom:12px}
+  .form h3{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+  .field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+  .field label{font-size:12px;color:#444;font-weight:600}
+  .field input,.field select{height:30px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff}
+  .field .hint{font-size:10.5px;color:#999}
+  .sliderrow{display:flex;align-items:center;gap:10px}
+  .sliderrow input[type=range]{flex:1}
+  .sliderrow .val{font-weight:700;color:var(--accent-d);min-width:48px;text-align:right}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:6px}
+  button.btn{height:30px;padding:0 16px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+  button.btn:hover{background:var(--accent-d)}
+  button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+  button.ghost:hover{background:#f0f0f0}
+  .err{color:var(--bad);font-size:12px;margin:8px 0;display:none;font-weight:600}
+  .tablewrap{border:1px solid var(--border);border-radius:6px;overflow:auto;background:#fff;margin-bottom:8px;display:none}
+  table{border-collapse:collapse;width:100%;font-size:12px}
+  th{background:var(--head);text-align:left;padding:6px 9px;border-bottom:1px solid var(--border);white-space:nowrap;font-size:11px}
+  td{padding:5px 9px;border-bottom:1px solid #eee;white-space:nowrap}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:nth-child(even) td{background:var(--zebra)}
+  tr.muted td{color:#a0a0a0}
+  .note{font-size:11.5px;color:#b8860b;font-style:italic;margin:4px 0 8px;display:none}
+  .verdict{display:none;font-size:15px;font-weight:700;padding:8px 12px;border-radius:5px;margin-bottom:10px}
+  .verdict.ok{background:#e3f4ea;color:var(--good);border:1px solid #a9d8bd}
+  .verdict.no{background:#f7e3e3;color:var(--bad);border:1px solid #e0aaaa}
+  .kv{font-size:13px;margin:6px 0 10px;display:none}
+  .mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:8px 11px;border-radius:5px;font-size:12px;margin:12px 0;max-width:920px;line-height:1.5}
+  .mocknote code{background:#e7ddf5;padding:0 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  Space &amp; Science Fiction App <span class="sub">— GUI mockup (proposal)</span>
+  <span class="tag">Phase K &middot; Honorverse Expansion</span>
+</div>
+<div class="notice">
+  <b>Interactive proposal mockup — not the real app, no code written yet.</b> Three new interactive Honorverse
+  calculators added to the <b>Science Fiction</b> category, alongside the existing three static tables. All panels are
+  live (client-side JS) over the <b>real 24-band speed table</b> and <b>6 mass-acceleration bands</b> already in
+  <code>core/science.py</code>. Physics + validation match <code>PHASE_K_PLAN.md</code>.
+</div>
+
+<div class="app">
+  <div class="nav">
+    <div class="cat">Science Fiction <span class="new-badge">EXISTING</span></div>
+    <div class="item muted">Honorverse Hyper Limits (14)</div>
+    <div class="item muted">Honorverse Acceleration Table (15)</div>
+    <div class="item muted">Honorverse Effective Speed (16)</div>
+    <div class="cat new">Phase K — New Calculators <span class="new-badge">NEW</span></div>
+    <div class="item active" data-panel="k1" onclick="showPanel('k1')">Hyper Translation Time<span class="new2">K1</span></div>
+    <div class="item" data-panel="k2" onclick="showPanel('k2')">Impeller Wedge<span class="new2">K2</span></div>
+    <div class="item" data-panel="k3" onclick="showPanel('k3')">Missile Intercept<span class="new2">K3</span></div>
+  </div>
+
+  <div class="content">
+
+    <!-- ============ K1 ============ -->
+    <div class="panel active" id="panel-k1">
+      <h2 class="title">Hyper Translation Time <span class="new2">K1</span></h2>
+      <p class="sub">Travel time for a distance across all 24 hyper bands (Alpha–Omega), per ship type.
+        Uses the 24-band expanded speed table; merchantmen rows beyond Delta are flagged (the <code>*</code> bands they
+        do not normally use).</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>compute_hyper_translation_time(distance_ly, ship_type)</code> — self-validating (<code>distance_ly &gt; 0</code>; ship type ∈ warship/merchantship).</li>
+          <li>Per band: <code>speed_ly_hr = speed_xc / 8765.8128</code>; <code>travel_hours = distance_ly / speed_ly_hr</code>; <code>format_travel_time</code>.</li>
+          <li>A 0-speed band → <code>"N/A"</code> (a value, not an error). The <code>*</code> footnote marks bands merchantmen don't normally use.</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form"><div class="form"><h3>Journey</h3>
+          <div class="field"><label>Distance (light years):</label><input id="k1_dist" value="11.4"></div>
+          <div class="field"><label>Ship type:</label>
+            <select id="k1_ship"><option value="warship">Warship</option><option value="merchantship">Merchantship</option></select></div>
+          <div class="actions"><button class="btn" onclick="runK1()">Calculate</button>
+            <button class="ghost btn" onclick="clearOut('k1')">Clear</button></div>
+          <div class="err" id="k1_err"></div>
+        </div></div>
+        <div class="col-out">
+          <div class="tablewrap" id="k1_out"></div>
+          <div class="note" id="k1_note"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ K2 ============ -->
+    <div class="panel" id="panel-k2">
+      <h2 class="title">Impeller Wedge Geometry <span class="new2">K2</span></h2>
+      <p class="sub">Effective acceleration and maximum velocities for a ship at a given wedge power, from its mass band.
+        Results update live as you move the slider.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>compute_impeller_wedge(ship_mass_tons, ship_type, wedge_power_pct)</code> — self-validating (mass &gt; 0; 0 &lt; power ≤ 100).</li>
+          <li><code>effective_accel_g = base_accel_g × power/100</code>; max normal-space velocity cap ≈ 0.8c (warship) / 0.6c (merchant) × power.</li>
+          <li>A mass above the heaviest band <b>clamps</b> to it (noted), not an error.</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form"><div class="form"><h3>Ship</h3>
+          <div class="field"><label>Ship mass (tons):</label><input id="k2_mass" value="350000"></div>
+          <div class="field"><label>Ship type:</label>
+            <select id="k2_ship" onchange="runK2()"><option value="warship">Warship</option><option value="merchantship">Merchantship</option></select></div>
+          <div class="field"><label>Wedge power (%):</label>
+            <div class="sliderrow"><input type="range" id="k2_pow" min="1" max="100" value="100" oninput="runK2()">
+              <span class="val" id="k2_powval">100%</span></div></div>
+          <div class="actions"><button class="btn" onclick="runK2()">Calculate</button>
+            <button class="ghost btn" onclick="clearOut('k2')">Clear</button></div>
+          <div class="err" id="k2_err"></div>
+        </div></div>
+        <div class="col-out">
+          <div class="note" id="k2_note"></div>
+          <div class="tablewrap" id="k2_out"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ K3 ============ -->
+    <div class="panel" id="panel-k3">
+      <h2 class="title">Missile Intercept <span class="new2">K3</span></h2>
+      <p class="sub">Whether a missile from a moving launcher can intercept a moving target at a given range.
+        1D head-on, non-relativistic (valid at these ×c scales). Target velocity: <b>+</b> = receding (same direction),
+        <b>−</b> = head-on (closing).</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>compute_missile_intercept(launcher_vel_xc, missile_accel_g, missile_delta_v_xc, target_vel_xc, range_lm)</code> — self-validating (range/accel/delta-v &gt; 0).</li>
+          <li>Burn to delta-v exhaustion, then coast; <code>v_close = v_burnout − v_target</code>. <code>v_close ≤ 0</code> → no intercept.</li>
+          <li><code>intercepts=False</code> is a normal result, not an error.</li>
+        </ul>
+      </details>
+      <div class="layout">
+        <div class="col-form"><div class="form"><h3>Engagement</h3>
+          <div class="field"><label>Launcher velocity (×c):</label><input id="m_lv" value="0.3"></div>
+          <div class="field"><label>Missile acceleration (G):</label><input id="m_acc" value="10000"></div>
+          <div class="field"><label>Missile delta-v budget (×c):</label><input id="m_dv" value="0.5"></div>
+          <div class="field"><label>Target velocity (×c, − = head-on):</label><input id="m_tv" value="-0.2"></div>
+          <div class="field"><label>Initial range (light minutes):</label><input id="m_rng" value="8"></div>
+          <div class="actions"><button class="btn" onclick="runK3()">Calculate</button>
+            <button class="ghost btn" onclick="clearOut('k3')">Clear</button></div>
+          <div class="err" id="k3_err"></div>
+        </div></div>
+        <div class="col-out">
+          <div class="verdict" id="k3_verdict"></div>
+          <div class="tablewrap" id="k3_out"></div>
+        </div>
+      </div>
+      <div class="mocknote">In the real app the verdict is a green/red label and the profile is a <code>make_table()</code>;
+        pure math, no background thread. Bad range / acceleration / delta-v give the red error label.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ---------- real data (from core/science.py) ---------- */
+const HOURS_PER_YEAR = 8765.8128, C_MS = 299792458, G_MS2 = 9.80665, M_PER_LM = 299792458*60;
+
+/* 24-band expanded table: [band, warship_xc, merchant_xc, note] */
+const BANDS = [
+ ["Alpha",37.2,31.0,""],["Beta",460.2,383.5,""],["Gamma",883.8,736.5,""],["Delta",1306.8,1089.0,""],
+ ["Epsilon",1730.4,1442.0,"*"],["Zeta",2153.4,1794.5,"*"],["Eta",2576.4,2147.0,"*"],["Theta",3000.0,2500.0,"*"],
+ ["Iota",3600.0,3000.0,"*"],["Kappa",4023.6,3353.0,"*"],["Lambda",4446.6,3705.5,"*"],["Mu",4870.2,4058.5,"*"],
+ ["Nu",5293.2,4411.0,"*"],["Xi",5716.2,4763.5,"*"],["Omicron",6139.8,5116.5,"*"],["Pi",6562.8,5469.0,"*"],
+ ["Rho",6986.4,5822.0,"*"],["Sigma",7409.4,6174.5,"*"],["Tau",7833.0,6527.5,"*"],["Upsilon",8256.0,6880.0,"*"],
+ ["Phi",8679.0,7232.5,"*"],["Chi",9102.6,7585.5,"*"],["Psi",9525.6,7938.0,"*"],["Omega",9949.2,8291.0,"*"],
+];
+
+/* 6 mass-accel bands: {min,max,label, wn, mn} (normal-space G; hyper omitted from this calc) */
+const ACCEL = [
+ {min:0,        max:79999,   label:"0–79,999 (FG/DD)",          wn:550, mn:253},
+ {min:80000,    max:499999,  label:"80,000–499,999 (CL/CA)",    wn:520, mn:240},
+ {min:500000,   max:1499999, label:"500,000–1,499,999 (BC)",    wn:500, mn:230},
+ {min:1500000,  max:4999999, label:"1,500,000–4,999,999 (BB)",  wn:470, mn:215},
+ {min:5000000,  max:6999999, label:"5,000,000–6,999,999 (DN)",  wn:450, mn:207},
+ {min:7000000,  max:8499999, label:"7,000,000–8,499,999 (SD)",  wn:420, mn:190},
+];
+
+const f=(v,d)=>v.toFixed(d);
+function fmtTravel(hours){
+  if(hours===null) return "N/A";
+  if(hours<=0) return "0 Seconds"; let rem=hours, parts=[];
+  const HY=8765.82, HM=8765.82/12;
+  const yr=Math.floor(rem/HY); rem-=yr*HY; const mo=Math.floor(rem/HM); rem-=mo*HM;
+  const dy=Math.floor(rem/24); rem-=dy*24; const hr=Math.floor(rem); rem-=hr;
+  const mi=Math.floor(rem*60); const se=Math.round((rem*60-mi)*60);
+  if(yr)parts.push(yr+(yr===1?" Year":" Years")); if(mo)parts.push(mo+(mo===1?" Month":" Months"));
+  if(dy)parts.push(dy+(dy===1?" Day":" Days")); if(hr)parts.push(hr+(hr===1?" Hour":" Hours"));
+  if(mi)parts.push(mi+(mi===1?" Minute":" Minutes"));
+  if(!parts.length&&se)parts.push(se+" Seconds");
+  return parts.length?parts.join(", "):"< 1 Minute";
+}
+function tbl(headers,rows){return '<table><thead><tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>'+rows+'</tbody></table>';}
+function fail(p,msg){const e=document.getElementById(p+'_err');e.textContent=msg;e.style.display='block';
+  ['_out','_note','_verdict','_kv'].forEach(s=>{const el=document.getElementById(p+s);if(el)el.style.display='none';});return false;}
+function okp(p){document.getElementById(p+'_err').style.display='none';}
+function clearOut(p){['_out','_note','_verdict','_kv','_err'].forEach(s=>{const el=document.getElementById(p+s);if(el)el.style.display='none';});}
+
+/* ---------- K1 Hyper Translation Time ---------- */
+function runK1(){
+  const dist=parseFloat(document.getElementById('k1_dist').value);
+  if(!(dist>0)) return fail('k1','Distance must be a positive number.');
+  okp('k1');
+  const ship=document.getElementById('k1_ship').value;
+  let rows='',anyStar=false;
+  BANDS.forEach(([band,wxc,mxc,note])=>{
+    const xc = ship==='warship'?wxc:mxc;
+    const isStar = note==='*' && ship==='merchantship';
+    if(isStar) anyStar=true;
+    const lyhr = xc? xc/HOURS_PER_YEAR : 0;
+    const hours = xc? dist/lyhr : null;
+    rows+=`<tr class="${isStar?'muted':''}"><td>${band}${note&&ship==='merchantship'?' *':''}</td>`+
+      `<td class="num">${f(xc,1)}</td><td class="num">${xc?f(lyhr,5):'—'}</td><td>${fmtTravel(hours)}</td></tr>`;
+  });
+  const o=document.getElementById('k1_out');o.innerHTML=tbl(['Band','Speed (×c)','Speed (ly/hr)','Travel Time'],rows);o.style.display='block';
+  const n=document.getElementById('k1_note');
+  if(anyStar){n.textContent='* Bands merchantmen do not normally operate in (Epsilon onward).';n.style.display='block';}else n.style.display='none';
+}
+
+/* ---------- K2 Impeller Wedge ---------- */
+function runK2(){
+  document.getElementById('k2_powval').textContent=document.getElementById('k2_pow').value+'%';
+  const mass=parseFloat(document.getElementById('k2_mass').value);
+  if(!(mass>0)) return fail('k2','Ship mass must be a positive number.');
+  const pow=parseFloat(document.getElementById('k2_pow').value);
+  if(!(pow>0&&pow<=100)) return fail('k2','Wedge power must be 1–100%.');
+  okp('k2');
+  const ship=document.getElementById('k2_ship').value;
+  let band=ACCEL.find(b=>mass>=b.min&&mass<=b.max), clamped=false;
+  if(!band){band=ACCEL[ACCEL.length-1];clamped=true;}
+  const base = ship==='warship'?band.wn:band.mn;
+  const eff = base*pow/100;
+  const maxNorm = (ship==='warship'?0.8:0.6)*pow/100;
+  const maxHyper = maxNorm;
+  const t_s = (maxNorm*C_MS)/(eff*G_MS2);
+  const rows = [
+    ['Mass Band', band.label],
+    ['Base Acceleration', f(base,0)+' g'],
+    ['Effective Acceleration', f(eff,1)+' g'],
+    ['Max Velocity (normal-space)', f(maxNorm,4)+' c'],
+    ['Max Velocity (hyper, at entry)', f(maxHyper,4)+' c'],
+    ['Time to Max Velocity', fmtTravel(t_s/3600)],
+  ].map(([k,v])=>`<tr><td>${k}</td><td class="num">${v}</td></tr>`).join('');
+  const o=document.getElementById('k2_out');o.innerHTML=tbl(['Property','Value'],rows);o.style.display='block';
+  const n=document.getElementById('k2_note');
+  if(clamped){n.textContent='Mass above the heaviest band (SD) — clamped to it.';n.style.display='block';}else n.style.display='none';
+}
+
+/* ---------- K3 Missile Intercept ---------- */
+function runK3(){
+  const lv=parseFloat(document.getElementById('m_lv').value);
+  const acc=parseFloat(document.getElementById('m_acc').value);
+  const dv=parseFloat(document.getElementById('m_dv').value);
+  const tv=parseFloat(document.getElementById('m_tv').value);
+  const rng=parseFloat(document.getElementById('m_rng').value);
+  if(!(rng>0)) return fail('k3','Initial range must be a positive number.');
+  if(!(acc>0)) return fail('k3','Missile acceleration must be a positive number.');
+  if(!(dv>0)) return fail('k3','Delta-v budget must be a positive number.');
+  if(isNaN(lv)||isNaN(tv)) return fail('k3','Launcher / target velocity must be numbers.');
+  okp('k3');
+  const v_l=lv*C_MS, v_t=tv*C_MS, dvms=dv*C_MS, a=acc*G_MS2, range_m=rng*M_PER_LM;
+  const t_burn=dvms/a, v_bo=v_l+dvms;
+  const d_burn=v_l*t_burn+0.5*a*t_burn*t_burn;
+  const closing_burn=d_burn - v_t*t_burn;     // missile closes on target during burn
+  const v_close=v_bo - v_t;
+  let intercepts=false, phase=null, t_impact=null;
+  if(closing_burn>=range_m){ intercepts=true; phase='burn'; t_impact=t_burn*(range_m/Math.max(d_burn,1e-9)); }
+  else if(v_close>0){ const t_coast=(range_m-closing_burn)/v_close; intercepts=true; phase='coast'; t_impact=t_burn+t_coast; }
+  // else v_close<=0 and not caught during burn -> no intercept
+
+  const v=document.getElementById('k3_verdict');
+  v.className='verdict '+(intercepts?'ok':'no');
+  v.textContent=intercepts?`✓ Intercept — ${phase} phase, in ${fmtTravel(t_impact/3600)}`:'✗ No intercept (missile cannot close)';
+  v.style.display='block';
+  const rows=[
+    ['Burnout velocity', f(v_bo/C_MS,4)+' c'],
+    ['Closing velocity (post-burn)', f(v_close/C_MS,4)+' c'],
+    ['Burn duration', fmtTravel(t_burn/3600)+` (${f(t_burn,0)} s)`],
+    ['Range at burnout', f((range_m-closing_burn)/M_PER_LM,4)+' LM'],
+    ['Time to impact', intercepts?fmtTravel(t_impact/3600):'—'],
+    ['Intercept phase', phase||'—'],
+  ].map(([k,val])=>`<tr><td>${k}</td><td class="num">${val}</td></tr>`).join('');
+  const o=document.getElementById('k3_out');o.innerHTML=tbl(['Property','Value'],rows);o.style.display='block';
+}
+
+/* ---------- nav ---------- */
+const RUN={k1:runK1,k2:runK2,k3:runK3};
+function showPanel(p){
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  document.getElementById('panel-'+p).classList.add('active');
+  document.querySelectorAll('.nav .item').forEach(x=>x.classList.toggle('active',x.dataset.panel===p));
+  if(RUN[p])RUN[p]();
+}
+runK1();showPanel('k1');
+</script>
+</body>
+</html>

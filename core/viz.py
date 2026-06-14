@@ -644,11 +644,23 @@ def prepare_exoplanet_system_diagram(planets: list, date_iso: str = None) -> dic
 
 # ── Phase I — Route map overlay ──────────────────────────────────────────────
 
+def _route_edge(a, b, label, style):
+    return {
+        "x1": a["x"], "y1": a["y"], "z1": a["z"],
+        "x2": b["x"], "y2": b["y"], "z2": b["z"],
+        "label": label, "style": style,
+    }
+
+
 def prepare_route_map(result: dict) -> dict:
     """Normalize a route-planning result into star-chart + route-edge geometry.
 
-    Accepts a compute_multi_stop_journey / compute_nearest_neighbor_chain
-    (ordered, dashed) or compute_trade_route_mst (MST, solid) result.
+    Handles every Route Planning result:
+      * I1/I2 (legs/chain) and A (optimal tour, +closed wrap) → dashed ordered.
+      * B (jump route) → dashed consecutive jumps.
+      * D (farthest-first) → dashed exploration-tree edges (non-consecutive).
+      * C (jump network) → nodes only (per-tier colours carried on `stars`); no edges.
+      * I3 (MST) → solid edges.
 
     Returns:
         {"stars": [...], "edges": [{x1,y1,z1,x2,y2,z2,label,style}], "edge_style"}
@@ -660,8 +672,48 @@ def prepare_route_map(result: dict) -> dict:
     stars = result.get("stars", [])
     edges = []
 
+    if "tiers" in result:
+        # C — reachability: tier-coloured nodes, no edges (scales to large pools).
+        return {"stars": stars, "edges": [], "edge_style": "none"}
+
+    if "tree_edges" in result:
+        # D — farthest-first: dashed edges from each node to the visited node it
+        # reached from (indices into `stars`), labelled with the step number.
+        style = "dashed"
+        for i, te in enumerate(result["tree_edges"]):
+            fi, ti = te["from_index"], te["to_index"]
+            if 0 <= fi < len(stars) and 0 <= ti < len(stars):
+                label = _CIRCLED[i] if i < len(_CIRCLED) else str(i + 1)
+                edges.append(_route_edge(stars[fi], stars[ti], label, style))
+        return {"stars": stars, "edges": edges, "edge_style": style}
+
+    if "route" in result:
+        # B — jump route: dashed edges between consecutive route nodes. `stars`
+        # is the route in order; an unreachable result has an empty route (no
+        # edges — the two endpoints are drawn disconnected for context).
+        style = "dashed"
+        route = result.get("route", [])
+        for i in range(len(route)):
+            if i + 1 < len(stars):
+                label = f"{route[i]['jump_ly']:.1f} ly"
+                edges.append(_route_edge(stars[i], stars[i + 1], label, style))
+        return {"stars": stars, "edges": edges, "edge_style": style}
+
+    if "closed" in result:
+        # A — optimal tour: dashed consecutive legs (+ wrap when closed),
+        # labelled with the visit order.
+        style = "dashed"
+        for i in range(len(stars) - 1):
+            label = _CIRCLED[i] if i < len(_CIRCLED) else str(i + 1)
+            edges.append(_route_edge(stars[i], stars[i + 1], label, style))
+        if result.get("closed") and len(stars) > 1:
+            i = len(stars) - 1
+            label = _CIRCLED[i] if i < len(_CIRCLED) else str(i + 1)
+            edges.append(_route_edge(stars[-1], stars[0], label, style))
+        return {"stars": stars, "edges": edges, "edge_style": style}
+
     if "legs" in result or "chain" in result:
-        # Ordered route: dashed edges between consecutive stars.
+        # I1/I2 — ordered route: dashed edges between consecutive stars.
         style = "dashed"
         for i in range(len(stars) - 1):
             a, b = stars[i], stars[i + 1]
@@ -669,25 +721,17 @@ def prepare_route_map(result: dict) -> dict:
                 label = f"{result['legs'][i]['distance_ly']:.1f} ly"
             else:
                 label = _CIRCLED[i] if i < len(_CIRCLED) else str(i + 1)
-            edges.append({
-                "x1": a["x"], "y1": a["y"], "z1": a["z"],
-                "x2": b["x"], "y2": b["y"], "z2": b["z"],
-                "label": label, "style": style,
-            })
-    else:
-        # MST: solid edges mapped from {from,to} names to coordinates.
-        style = "solid"
-        by_name = {s["name"]: s for s in stars}
-        for e in result.get("edges", []):
-            a, b = by_name.get(e["from"]), by_name.get(e["to"])
-            if a is None or b is None:
-                continue
-            edges.append({
-                "x1": a["x"], "y1": a["y"], "z1": a["z"],
-                "x2": b["x"], "y2": b["y"], "z2": b["z"],
-                "label": f"{e['distance_ly']:.1f} ly", "style": style,
-            })
+            edges.append(_route_edge(a, b, label, style))
+        return {"stars": stars, "edges": edges, "edge_style": style}
 
+    # I3 — MST: solid edges mapped from {from,to} names to coordinates.
+    style = "solid"
+    by_name = {s["name"]: s for s in stars}
+    for e in result.get("edges", []):
+        a, b = by_name.get(e["from"]), by_name.get(e["to"])
+        if a is None or b is None:
+            continue
+        edges.append(_route_edge(a, b, f"{e['distance_ly']:.1f} ly", style))
     return {"stars": stars, "edges": edges, "edge_style": style}
 
 

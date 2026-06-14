@@ -41,6 +41,9 @@ NAVIGATION = [
         ("Honorverse Hyper Limits",       "HonorverseHyperPanel"),
         ("Honorverse Acceleration Table", "HonorverseAccelPanel"),
         ("Honorverse Effective Speed",    "HonorverseSpeedPanel"),
+        ("Honorverse Hyper Translation Time", "HonorverseHyperTimePanel"),
+        ("Honorverse Impeller Wedge",     "HonorverseImpellerPanel"),
+        ("Honorverse Missile Intercept",  "HonorverseMissilePanel"),
     ]),
     ("Calculators", [
         ("Distance Between 2 Stars",           "DistanceBetweenStarsPanel"),    # 17
@@ -62,7 +65,11 @@ NAVIGATION = [
     ]),
     ("Route Planning", [
         ("Multi-Stop Journey",        "MultiStopJourneyPanel"),
+        ("Optimal Tour",              "OptimalTourPanel"),
         ("Nearest-Neighbor Chain",    "NearestNeighborPanel"),
+        ("Farthest-First Coverage",   "FarthestFirstPanel"),
+        ("Jump-Range Pathfinding",    "JumpRoutePanel"),
+        ("Jump Network / Reachability", "JumpNetworkPanel"),
         ("Trade-Route Network",       "TradeRoutePlannerPanel"),
     ]),
     ("Planetary Equations", [

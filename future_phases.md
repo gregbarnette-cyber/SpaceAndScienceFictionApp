@@ -11,11 +11,22 @@ The app is a mature Space & Science Fiction CLI/GUI tool that has completed Phas
 
 This document brainstorms future phases in order of likely value and implementation effort.
 
+> **Status (updated 2026-06-13):** of the phases below, **G, H, I (+ the I-OPTS route-planning extension), K, M, and N are ✅ implemented** (see each phase's header note). **J, L, O, P remain** un-built (P is fully spec'd; J/L/O were brought to build-ready depth — validation contract + tests + success criteria — on 2026-06-13; K shipped with a formal `PHASE_K_PLAN.md` + mockup). **Q, R, S** at the end are new brainstorm candidates. `query.py` now carries **48 subcommands** after the Phase N follow-on expansion.
+
 > **Scope — GUI-only.** New feature work targets the PySide6 GUI only. The CLI (`main.py` / `MENU_OPTIONS`) is **frozen at opts 1–58** and is not extended by any phase below. Every new feature is a GUI nav entry backed by a panel class (the precedent set by `DbStatusPanel` and `NasaPlanetarySystemsMapPanel`, which carry no option number), so there are **no menu numbers to assign and nothing to renumber**. The shared `core/` functions each phase specifies are still built — the GUI and `query.py` consume them; only the CLI presentation layer is dropped. Phase M is already written in this GUI-only form; treat it as the template. **Exception:** Phase N is integration-surface-only — it adds `query.py` subcommands over existing `core/` functions and touches neither the GUI nor the CLI menu.
 
 ---
 
-## Phase G — Interactive Data Search & Filtering
+## Phase G — Interactive Data Search & Filtering ✅ IMPLEMENTED (2026-06-10)
+
+> **Implemented**: three core functions in `core/databases.py` (`search_star_systems`,
+> `search_hwc`, `search_exoplanets`) + the shared `spectral_where` / `spectral_adql` in
+> `core/shared.py`; three panels in `gui/panels/search.py` under a "Search & Filter" nav
+> category with the shared `SpectralClassControl` + inline drill-down tabs
+> (`gui/panels/search_common.py`). **Later (2026-06-13) also exposed as `query.py`
+> subcommands** `search-star-systems` / `search-hwc` / `search-exoplanets` (all filters
+> optional). See `docs/star-databases.md` (Phase G), `docs/gui-architecture.md`,
+> `docs/integration.md`. The original brainstorm spec is retained below.
 
 **New panels (GUI-only)**: `StarSystemsSearchPanel`, `HwcSearchPanel`, `NasaExoplanetSearchPanel`
 **Existing options touched**: none
@@ -242,10 +253,23 @@ Determines which atmospheric gases a planet can retain against Jeans escape, giv
 > (dashed ordered legs / solid MST edges; per-segment labels follow the chart's
 > zoom-driven decluttering) — **shared with Phase O8** (Phase I built it first).
 > Stars are free-hand typed (no autocomplete); I3 (`TradeRoutePlannerPanel`) is the
-> stretch goal and ships. **GUI-only — no CLI menu, no `query.py`.** Tests:
-> `tests/test_route_planning.py` (22, offline). Mockups:
+> stretch goal and ships. Tests:
+> `tests/test_route_planning.py` (offline). Mockups:
 > [`mockups/phase-i.html`](mockups/phase-i.html) (light scatter) and
 > [`mockups/phase-i-alt.html`](mockups/phase-i-alt.html) (the chosen GCNS Star-Chart maps).
+>
+> **Phase I-OPTS extension ✅ (2026-06-13)** per [`PHASE_I_OPTS_PLAN.md`](PHASE_I_OPTS_PLAN.md):
+> four more planners added alongside I1–I3 (none replaced) —
+> `compute_optimal_tour` (A, NN-seed + 2-opt), `compute_jump_route` (B, Dijkstra/BFS
+> over a jump-limited graph), `compute_jump_network` (C, BFS reachability tiers), and
+> `compute_farthest_first_chain` (D, de-clustering coverage), in
+> `gui/panels/route_planning.py` (`OptimalTourPanel`, `JumpRoutePanel`, `JumpNetworkPanel`,
+> `FarthestFirstPanel`), nav-paired with their siblings. B/C traverse the ~238k-row
+> `star_systems` table via a `_SpatialGrid` (the naïve O(n²) build was ~3.5 h). **All seven
+> Route Planning options now have `query.py` subcommands** (the four new ones plus the
+> backfilled `multi-stop` / `nearest-neighbor` / `trade-route`). Tests:
+> `tests/test_route_planning_opts.py`, `tests/test_query_route_opts.py`. Mockup:
+> [`mockups/phase-i-opts.html`](mockups/phase-i-opts.html).
 
 **New panels (GUI-only)**: `MultiStopJourneyPanel`, `NearestNeighborPanel`, `TradeRoutePlannerPanel` (stretch)
 **Existing options touched**: opts 17–21 share `compute_lookup_star_for_distance` — no changes needed, just reused; `core/viz.py` and `gui/visualizations/plot_helpers.py` extended for route overlays
@@ -442,6 +466,29 @@ All canvas helpers call `_colors = _DARK if get_pref("dark_mode") == "1" else _L
 
 **Opts with matplotlib diagrams** that gain dark-mode support: 3–6, 8–10, 18–19, 22–23, and all future Phase I/L diagram panels.
 
+### Validation & contract
+
+- **No `{"error"}` contract** — Phase J is GUI/persistence, not a computation phase. `get_pref(key, default)` returns the default for any missing/unreadable key (never raises to the caller); `set_pref` is best-effort. Reads/writes are wrapped so a locked/absent DB degrades to in-memory defaults rather than crashing a panel.
+- **`format_au` / `format_temp`** fall back to the canonical `AU` / `K` formatting when the pref is unset or holds an unrecognized unit string — so a corrupt pref never breaks a render.
+- **Favorites**: `add_favorite` is idempotent (`INSERT OR REPLACE` on `star_name`); `remove_favorite` on an absent name is a no-op; `list_favorites` returns `[]` for an empty/missing table.
+- **Migration**: `user_prefs` / `favorites` are created idempotently in `_migrate_schema` (the `core/db.py` `ALTER TABLE`/`CREATE TABLE IF NOT EXISTS` pattern Phase M used) so existing DBs pick them up with no reset.
+
+### Tests — `tests/test_user_prefs.py` (offline, tmp DB)
+
+Uses the temp-DB swap pattern (`db._DB_PATH`/`db._conn`/`db._auto_seed`, restore in `tearDown`).
+- `get_pref`/`set_pref` round-trip; missing key → default; overwrite updates in place.
+- `add_favorite` idempotency (same star twice → one row); `remove_favorite` of an absent name is a no-op; `list_favorites` ordering + `[]` on empty.
+- `format_au` for `AU`/`LM`/`km` and `format_temp` for `K`/`C`/`F` against hand-computed values (Earth: 1 AU → `8.3167 LM`; 288 K → `14.85 °C` / `58.73 °F`); unrecognized unit → canonical fallback.
+- A render-path test asserting a panel reads its saved field value on rebuild (construct panel, `set_pref`, re-`reset()`, assert the widget text). Dark-mode palette/`apply_theme` is exercised under `QT_QPA_PLATFORM=offscreen` (palette role spot-check only — colors aren't pixel-tested).
+
+### Success criteria
+
+- [ ] Field values persist across an app restart for every panel in the J1 table; clearing a field clears its pref.
+- [ ] Distance/temperature unit toggles change the **primary** unit on the next render across all listed `core/` display helpers (no stale parenthetical secondary); default `AU`/`K` output is byte-identical to today when no pref is set.
+- [ ] Dark mode toggles the Qt palette **and** open matplotlib canvases live (no restart), and is restored on startup from the pref.
+- [ ] Favorites: bookmark from opt 1, list/load/remove from `FavoritesPanel`, survive restart.
+- [ ] No behavior change for any existing panel when prefs are at their defaults; whole suite green.
+
 ### Remaining Steps
 
 - **`gui/panels/__init__.py`** — export `FavoritesPanel`, `SettingsPanel`
@@ -450,7 +497,19 @@ All canvas helpers call `_colors = _DARK if get_pref("dark_mode") == "1" else _L
 
 ---
 
-## Phase K — Honorverse Expansion
+## Phase K — Honorverse Expansion ✅ IMPLEMENTED (2026-06-13)
+
+> **Implemented** per [`PHASE_K_PLAN.md`](PHASE_K_PLAN.md): three interactive calculators — `compute_hyper_translation_time`
+> (K1) and `compute_impeller_wedge` (K2) in `core/science.py`, `compute_missile_intercept` (K3) in `core/calculators.py`,
+> all self-validating; three panels `HonorverseHyperTimePanel` / `HonorverseImpellerPanel` (live slider) /
+> `HonorverseMissilePanel` in `gui/panels/honorverse.py` under the existing **"Science Fiction"** nav category. **K0
+> data-centralization refactor**: the band/mass tables were hoisted to module constants (`_HONORVERSE_ACCEL_BANDS`,
+> `_HONORVERSE_BANDS`, `_HONORVERSE_EXPANDED_BANDS`) + `get_honorverse_*` accessors, shared by the opt-15/16 display
+> functions (byte-identical output, locked by a parity test). The 24-band expanded speed table was corrected — Iota
+> re-anchored to the canon **6000×** multiplier (Pearls of Weber; Iota is unreachable in canon, bands above it are an
+> extrapolation) and a −0.3 merchant transcription drift (Pi→Omega) removed; `merchant = ½ × multiplier` for all 24
+> bands. Pure math, no network/DB-write. Tests: `tests/test_honorverse_expansion.py` (18, offline). Mockup:
+> [`mockups/phase-k.html`](mockups/phase-k.html). **Optional `query.py` subcommands were left for a later call (not built).**
 
 **New panels (GUI-only)**: `HonorverseHyperTimePanel`, `HonorverseImpellerPanel`, `HonorverseMissilePanel`
 **Existing options touched**: opt 15 — mass-band acceleration table extracted into `core/science.py` and reused by K2; opt 16 — 24-band speed table extracted into `core/science.py` and reused by K1. Both opts 15 and 16 are then refactored to call the new core functions rather than using inline data.
@@ -508,6 +567,31 @@ Determines whether a missile fired from a moving launcher can intercept a moving
 - Returns `{"intercepts": bool, "intercept_phase": "burn"|"coast"|None, "time_to_impact_s": float|None, "time_to_impact_str": str|None, "v_burnout_xc": float, "v_close_xc": float, "range_at_burnout_lm": float, "burn_duration_s": float}`
 
 **GUI** — `HonorverseMissilePanel`: five `QLineEdit` inputs. Pure math — no background thread. Results: verdict label (green = intercept, red = no intercept) + profile table via `make_table()`.
+
+### Validation & contract
+
+All three new core functions **self-validate** (the Phase H contract → `{"error": str}`, never an exception leak), so the GUI red-error label and any future `query.py` subcommand both work:
+- `compute_hyper_translation_time`: `distance_ly > 0`; `ship_type ∈ {warship, merchantship}` (case-insensitive). Merchantship bands flagged "Currently Unattainable" return `travel_hours=None` / `travel_time="N/A"` (a value, not an error).
+- `compute_impeller_wedge`: `ship_mass_tons > 0`, `0 < wedge_power_pct ≤ 100`, valid `ship_type`; a mass above the top band clamps to the heaviest band (documented), not an error.
+- `compute_missile_intercept`: `range_lm > 0`, `missile_accel_g > 0`, `missile_delta_v_xc > 0`; `intercepts=False` (with `intercept_phase=None`) is a **normal result**, not an error.
+- **Refactor safety**: extracting the opt-15/16 tables to `core/science.py` constants must be byte-for-byte behavior-preserving — opts 15/16 output is re-anchored by the existing-output test below.
+
+### Tests — `tests/test_honorverse_expansion.py` (offline, pure math)
+
+- **Refactor parity**: `get_honorverse_bands()` / `get_honorverse_accel_bands()` return exactly the data opts 15/16 printed before the extraction (lock the 24 bands + 6 mass rows by value), so the refactor is provably non-destructive.
+- `compute_hyper_translation_time`: a known distance at a known band → hand-checked `speed_ly_hr = speed_xc / 8765.8128` and `travel_hours`; Iota+ merchantship rows carry `None`/`"N/A"`.
+- `compute_impeller_wedge`: band selection at each boundary; `effective_accel_g = base × pct/100`; `max_vel_normal_xc` scaling; `time_to_max_vel` formatting.
+- `compute_missile_intercept`: a clean intercept (closing, range covered) → `intercepts=True` with `intercept_phase ∈ {burn, coast}` and a positive `time_to_impact_s`; a head-on-but-too-short delta-v case and a `v_close ≤ 0` case → `intercepts=False`; burn-phase vs coast-phase boundary.
+- Bad-input matrix for all three (≤ 0 where positive required, bad `ship_type`) → `{"error"}`.
+
+### Success criteria
+
+- [ ] Opts 15 and 16 produce identical output after the table extraction (parity test green).
+- [ ] All three core functions return the documented dict shapes and self-validate; the missile `intercepts=False` path is exercised and never raises.
+- [ ] Three new "Science Fiction" nav entries; the impeller `QSlider` updates results live; the missile panel shows a green/red verdict.
+- [ ] Whole suite green; no network (all pure math).
+
+> **Optional `query.py`**: K's functions are clean factual calculators and fit the established "factual-answer" exposure principle — `honorverse-hyper-time`, `honorverse-impeller`, `honorverse-missile` are easy follow-on subcommands if the downstream repo wants them (decide at build time; not required for the GUI phase).
 
 ### Remaining Steps
 
@@ -676,6 +760,29 @@ CREATE TABLE IF NOT EXISTS hypatia_cache (
 
 **G1 integration**: once `hypatia_cache` is populated, `search_star_systems()` (G1) gains `fe_h_min`/`fe_h_max` filter parameters (the commented-out stub from G1). The filter adds `JOIN hypatia_cache hc ON ss.star_name = hc.star_name WHERE hc.fe_h BETWEEN ? AND ?` to the existing G1 query.
 
+### Validation, Tests & Success Criteria (L1–L4)
+
+**Validation & contract**
+- `compare_stars(names)`: `2 ≤ len(names) ≤ 4` → else `{"error"}`. **Per-star failures never abort** — each star carries its own `"error"` key and missing fields are `None`; the call only top-level-errors on the arg-count check. SIMBAD/Hypatia/NASA-supplement failures are isolated per star.
+- `rank_hwc_by_esi(...)`: `0 ≤ esi_min ≤ 1`; empty `hwc` table → the opt-52 error. Returns `[]` (not an error) when nothing meets the threshold.
+- `compute_stellar_evolution(mass_solar, …)`: self-validating (`0.1 ≤ mass_solar ≤ 20` is the model's stated valid range — outside it, return `{"error"}` naming the range, **don't extrapolate silently**); `current_age_gyr` optional and may exceed total lifetime (`current_stage="Beyond AGB"`, not an error). The `< 0.8 M☉` ("> 13.8 Gyr") and `> 8 M☉` (supergiant→SN) special cases are values, not errors.
+- L4 `import_hypatia_cache`: network, **resumable/idempotent** (`INSERT OR REPLACE`); per-star Hypatia errors are skipped and counted, never fatal; returns the `{inserted, skipped, errors, total_candidates}` summary even on partial completion. `search_hypatia_cache`: empty cache → an error directing the user to run the import.
+
+**Tests — `tests/test_comparison.py` (offline; network paths mocked)**
+- `compute_stellar_evolution`: stage durations against the table formulas for a 1 M☉ star (MS ≈ 10 Gyr); monotonic non-overlapping stage boundaries summing to `total_gyr`; `current_stage` selection for an age inside MS and an age past AGB; both special-case branches (`0.5 M☉` → "> 13.8 Gyr"; `10 M☉` → supergiant note); bad mass (`0` / `50`) → `{"error"}`.
+- `rank_hwc_by_esi`: against a seeded `hwc` (a few rows at known ESI/habitable flags) — threshold filtering, `habitable_only`/`con_hz_only`/`ly_max` combinations, `P_ESI DESC` ordering, `[]` when none qualify.
+- `compare_stars`: monkeypatch `compute_simbad_lookup` + `compute_hypatia_data` to fixtures — 2- and 4-star shapes, a per-star error isolated (one bad name doesn't drop the others), HZ bounds from the Kopparapu path, the `hypatia` sub-dict carried through.
+- L4: `import_hypatia_cache` against a seeded `star_systems` with mocked Hypatia (success + error rows → correct `inserted`/`skipped`/`errors`); `search_hypatia_cache` filter matrix against a seeded `hypatia_cache`; the G1 `fe_h` JOIN activates only when the cache has data. The live Hypatia round-trip is reachability-gated (skips offline), like `tests/test_hypatia_live.py`.
+
+**Success criteria**
+- [ ] `compare_stars` renders a transposed 2–4-column table with per-star error isolation and a Hypatia abundance-comparison diagram tab when ≥ 1 star has abundances.
+- [ ] `rank_hwc_by_esi` ranks correctly and row-drill opens the `HwcPanel` for the system.
+- [ ] `compute_stellar_evolution` matches the stage formulas and special cases; the evolution diagram marks current age.
+- [ ] L4 import is resumable and reports a success/skip/error summary; `search_hypatia_cache` filters correctly; G1 gains a working `fe_h` filter once the cache is populated; the L4 EAV-vs-wide storage decision (per the schema note) is settled before building.
+- [ ] Whole suite green; offline tests mock all network; the storage shape handles the full 104-species set.
+
+> **`query.py`**: `rank_hwc_by_esi` and `compute_stellar_evolution` are clean factual-answer functions — strong follow-on subcommand candidates (`esi-ranking`, `stellar-evolution`). `compare_stars` (multi-star network fan-out) and the L4 cache import are better left GUI-only.
+
 ### Remaining Steps (L4)
 
 - **`gui/panels/comparison.py`** — add `ImportHypatiaPanel`, `HypatiaSearchPanel`
@@ -786,6 +893,18 @@ opt 1 already resolves `designations["Gaia EDR3"]`; M5 reuses that id **for free
 > (offline subprocess contracts + parity + exit-code matrix + mocked `travel-time-solar`
 > wiring; Horizons-gated live round-trip). Companion mockup:
 > [`mockups/phase-n.html`](mockups/phase-n.html) (a CLI/JSON contract preview — no GUI).
+>
+> **Follow-on expansion ✅ (2026-06-13):** a second integration pass exposed **12 more
+> subcommands** over existing `core/` functions (no GUI/CLI/core changes), bringing
+> `query.py` to **48 subcommands**. (1) **Search & Filter** — `search-star-systems`,
+> `search-hwc`, `search-exoplanets` (the Phase G functions; all filters optional). (2)
+> **Reference data** — `main-sequence`, `solar-system`, `sol-regions`. (3)
+> **Planetary / rotating-habitat equations** — `orbit-distance`, `moon-orbital-distance`,
+> `gravity-acceleration` / `gravity-distance` / `gravity-rpm`, and the network-bound
+> `travel-time-custom-thrust` (live JPL Horizons). The equation wrappers are
+> non-self-validating (same caveat as N1–N4). **Open Exoplanet Catalogue was deliberately
+> excluded** (broken — see [`docs/star-databases.md`] / removed from GUI). Tests:
+> `tests/test_query_expanded.py`. See `docs/integration.md`.
 
 **New panels**: none — integration-surface only (no GUI, no CLI menu changes; see the scope-note exception above)
 **Existing options touched**: none — every subcommand wraps an existing `core/` function verbatim. Precedent: Phase M5 already extends `query.py` (the `"gcns"` key on `simbad-lookup`).
@@ -1006,6 +1125,21 @@ The star charts draw distance rings at fixed ly steps. Add an **isochrone mode**
 
 A small `QLineEdit` + "Find" button above the chart tabs: case-insensitive substring match against `Star Name` and `Star Designations` of the rendered stars. On match: center the view on the star at a half-range of `min(current, 15)` ly (so labels become visible per the existing label-visibility rule), call `highlight_star(name)` (reuses O15's ring — **O18 depends on O15's highlight function**), and show `"1 of N matches"` when multiple match (Find again cycles). No match → status-bar message, no view change.
 
+### Validation, Tests & Acceptance
+
+Phase O is **viz-layer only** — the binding constraint is *additivity*, not a computation contract: every item must be **off by default or strictly additive**, so an existing render is byte-identical when the new feature isn't engaged, and every cross-cutting helper change (the star-map `routes=` / `highlight_star` / `on_star_click` / `isochrone` / per-class-collection params) keeps existing callers working with no signature break.
+
+- **What gets unit-tested (offline):** the new `core/viz.py` `prepare_*` data-prep functions — they're pure transforms with `{"error"}` contracts, so each gets a `tests/test_viz_phase_o.py` case asserting output **shape + a hand-checked anchor** and the empty/missing-data `{"error"}` or `skipped`-count path. Examples: `prepare_sky_from_star` (a star at a known offset → its `ra_deg`/`dec_deg`/`mag` from vantage; a NULL-magnitude star lands in `skipped_no_mag`, never fabricated); `prepare_hr_main_sequence` (24 points, color by class); `prepare_mass_radius` (filters null-radius, `skipped` count); `prepare_brachistochrone_profiles` (segment reconstruction matches the `docs/calculators.md` formulas at sampled t); `prepare_toomre` (`uw = √(U²+W²)`; `{"error"}` when any of U/V/W is null); `prepare_transit_geometry` (`b = (a/R★)·cos i`; skip list when `st_rad`/incl missing). The O1/O2b prerequisite — threading `app_magnitude`/`parsecs` through the opts-18/19 rows — gets a test that those keys are present and additive (opts 18/19 results otherwise unchanged).
+- **What is NOT unit-tested:** the `make_*_canvas` matplotlib rendering (no pixel tests anywhere in the suite — same stance as Phases E/I). These are verified through the **per-item HTML mockup** (`mockups/phase-o/o<NN>-<slug>.html`) the maintainer reviews before each item ships, plus a smoke instantiation under `QT_QPA_PLATFORM=offscreen` that the panel builds its viz tab without error.
+- **Per-item acceptance:** each O-item is independently gated on its mockup and may be skipped without blocking the others (the dependencies are only O8↔Phase-I `routes=`, O18→O15 `highlight_star`, O2b/O1 sharing the row-key extension — noted inline). An item is "done" when: its mockup is approved, its `prepare_*` test is green, the viz tab appears only when its data qualifies, and the host panel's pre-existing tabs/output are unchanged.
+
+**Success criteria**
+- [ ] Every new viz tab is **additive** — it appears only when the relevant data is present, and toggling it off (or a panel with no qualifying data) leaves the existing render byte-identical.
+- [ ] The shared star-map/chart param additions (`routes=`, `highlight_star`, `on_star_click`, `isochrone`, per-class collections) are backward-compatible — opts 18/19 + GCNS + Phase I callers still pass their tests / render unchanged.
+- [ ] Each shipped item has an approved mockup and a green `prepare_*` test; skipped items leave no dead code.
+- [ ] O8 reuses (does not re-implement) Phase I's `routes=` overlay; O18 reuses O15's `highlight_star`.
+- [ ] Whole suite green; no computation changes (no existing `core/` numeric output moves).
+
 ### Remaining Steps
 
 - **`core/viz.py`** — add `prepare_sky_from_star`, `prepare_hr_main_sequence`, `prepare_hr_from_stars`, `prepare_mass_radius`, `prepare_solar_system_orbits`, `prepare_brachistochrone_profiles`, `prepare_hyper_limits`, `prepare_toomre`, `prepare_hwc_temps`, `prepare_hwc_esi`, `prepare_transit_geometry`; extend `prepare_system_regions_diagram` (O10b hyper ring)
@@ -1114,6 +1248,76 @@ A static "Alternative Solvents for Life" reference table à la `MainSequencePane
 
 ---
 
+# New phase candidates (beyond P)
+
+> Brainstormed 2026-06-13. Three new phases that build a coherent **worldbuilding workflow** on top of the existing engine — **generate** plausible systems (R), **organize** them into named projects (S), and **export** them as shareable dossiers (Q). Each reuses existing `core/` functions, follows the GUI-only-plus-`query.py` model, and is independently valuable. Mockup-gated like every prior phase. None is spec'd to build-ready depth yet — these are the next brainstorm tier, at the J/K/L level of detail.
+
+## Phase Q — System Dossier Export & Reporting
+
+**New panels (GUI-only)**: `DossierExportPanel`
+**Existing options touched**: none — Q *reads* the result dicts that opts 1/3/6/8 and the GCNS/Hypatia paths already produce; no computation changes.
+
+The app computes rich per-star analyses but can only **display** them, one tab at a time. A worldbuilder (and the downstream `scifiWorldBuilding` repo) wants a single **shareable document** bundling everything known about a system. Q renders the existing result dicts into a self-contained **HTML or Markdown dossier** — no new astronomy, just composition + templating.
+
+**`core/report.py`** (new module) — pure formatting, no I/O beyond returning a string:
+- `build_system_dossier(star: str, sections: list[str] = None, fmt: str = "markdown") -> dict` — orchestrates the existing readers (`compute_simbad_lookup` → `compute_star_system_regions_from_simbad` + `compute_hypatia_data`; optional `compute_hwc`, `compute_planetary_systems_composite`, the GCNS cross-ref) and renders the merged data to one document. `sections` selects among `{"identity", "regions", "habitable_zone", "planets", "hypatia", "gcns"}` (default all available). `fmt ∈ {"markdown", "html", "json"}`.
+- Returns `{"star": str, "fmt": str, "sections": [...], "document": str, "warnings": [str]}` or `{"error": str}`. Per-source failures (e.g. no Hypatia data) become `warnings`, not errors — the dossier still renders with what resolved.
+- HTML output is **self-contained** (inline `<style>`, no external assets); tables mirror the GUI table columns; embeds the existing matplotlib diagrams as inline base64 `<img>` **only when matplotlib is available** (HZ ring, abundance bar chart), otherwise text-only.
+
+**GUI** — `DossierExportPanel`: star name field + section checkboxes + format radio (Markdown / HTML) + "Generate" (background, since it runs the network readers) → preview pane + "Save to file…" (`QFileDialog`). A "Batch" mode takes a newline list of stars and writes one file each (ties into Phase S projects — export a whole project at once).
+
+**`query.py`** — `dossier --star … [--fmt markdown|html|json] [--sections …]`: emits the document on stdout. This is **high value for the downstream repo** — one Bash call returns a complete, citeable system writeup instead of stitching 5+ subcommand outputs together.
+
+**Validation / tests / success**: self-validating (bad star → the SIMBAD error; unknown `fmt`/`section` → `{"error"}`). Tests (`tests/test_report.py`, offline, mocked readers): section selection, the markdown/html/json shapes, per-source-failure-becomes-warning isolation, deterministic output for a fixed fixture. Success: a single call produces a complete, self-contained dossier; missing data degrades to warnings; existing panels/outputs untouched.
+
+## Phase R — Procedural Star System Generation
+
+**New panels (GUI-only)**: `SystemGeneratorPanel`
+**Existing options touched**: none — R is a new consumer of the existing physics (`compute_main_sequence_table`, `compute_habitable_zone`, `compute_star_luminosity`, and the Phase H `compute_hill_sphere` / `compute_roche_limit` / `compute_atmosphere_retention`).
+
+Generate **plausible synthetic star systems** for fiction — the inverse of the app's analysis tools. Given a seed (and optional constraints), build a star, place planets, and attach moons, all grounded in the equations already implemented, with **deterministic, reproducible output** (same seed → same system).
+
+**`core/generate.py`** (new module):
+- `generate_system(seed: int, spectral_class: str = None, n_planets: int = None, require_habitable: bool = False) -> dict` — uses a seeded `random.Random(seed)` (deterministic):
+  1. **Star**: pick/accept a spectral class → interpolate Teff/mass/radius/luminosity from `compute_main_sequence_table()` rows; derive the HZ via `compute_habitable_zone(teff, luminosity)`.
+  2. **Planets**: sample count + semi-major axes (log-spaced with a Titius–Bode-ish jitter), masses, and eccentricities; classify each (rocky/ice/gas) by mass; compute periastron/apastron and equilibrium temperature; flag HZ membership against the star's HZ. `require_habitable=True` re-rolls until ≥ 1 rocky planet lands in the conservative HZ (bounded retries → `{"error"}` if it can't).
+  3. **Moons / rings**: for giants, attach moons within `compute_hill_sphere` and outside `compute_roche_limit`; run `compute_atmosphere_retention` on rocky worlds to annotate "retains N₂/O₂/…".
+- Returns a structured `{"seed", "star": {...}, "planets": [{...}], "warnings": [...]}` — the **same row shapes the analysis panels already render**, so the generated system can flow straight into the HZ/orbit/regions diagrams and a Phase Q dossier with zero new viz.
+- Self-validating: `n_planets` in a sane range, valid `spectral_class`, etc.
+
+**GUI** — `SystemGeneratorPanel`: seed field (+ "Randomize" button that fills a seed — the value is shown so it's reproducible), optional spectral-class chip, planet-count spinner, "require habitable" checkbox → generates and renders an orbit diagram + HZ ring (reusing `make_orbits_canvas` / `make_hz_canvas`) + a planet table. "Send to Dossier" hands the result to Phase Q.
+
+**`query.py`** — `generate-system --seed N [--spectral-class G2V] [--planets 6] [--require-habitable]`: deterministic JSON, so the downstream repo can generate a stable named system from a seed and re-fetch it identically.
+
+**Validation / tests / success**: deterministic (seed-stable) — the headline test is *same seed → identical output* (`tests/test_generate.py`, offline, no `Date.now`/unseeded RNG). Also: HZ flags consistent with `compute_habitable_zone`; moons sit between Roche and Hill; `require_habitable` either delivers a HZ rocky world or errors after bounded retries; bad inputs → `{"error"}`. Success: reproducible plausible systems that render in the existing diagrams and export via Q; physics consistent with the analysis side (a generated system analyzed by opts 8–10 agrees with its generation parameters).
+
+## Phase S — Project Workspaces (Campaign / Novel Manager)
+
+**New panels (GUI-only)**: `ProjectPanel`
+**Existing options touched**: extends Phase J's `favorites` concept; reuses Q for export and R for "add a generated system".
+
+Favorites (J2) is a flat global bookmark list. A worldbuilder works in **named projects** — a novel, a campaign, a setting — each a curated set of systems with freeform notes. Phase S adds a lightweight project workspace so generated (R) and looked-up systems can be **collected, annotated, and exported (Q) as a set**.
+
+**`core/db.py`** — two additive tables (idempotent `_migrate_schema`):
+```sql
+CREATE TABLE IF NOT EXISTS projects (
+    project_id INTEGER PRIMARY KEY, name TEXT UNIQUE, description TEXT, created_date TEXT);
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id INTEGER, star_name TEXT, note TEXT, generated_seed INTEGER, added_date TEXT,
+    PRIMARY KEY (project_id, star_name));
+```
+`generated_seed` is non-null for systems added from Phase R (so a procedural member is reproducible without storing its full body); looked-up real stars store `NULL`.
+
+**`core/projects.py`** (new) — `create_project(name, description="")`, `list_projects()`, `add_member(project, star_name, note="", seed=None)`, `update_note(project, star_name, note)`, `remove_member(project, star_name)`, `delete_project(name)`, `get_project(name) -> {project, members:[...]}`. All self-validating (duplicate name → error; unknown project → error; idempotent membership via `INSERT OR REPLACE`).
+
+**GUI** — `ProjectPanel`: a project list (create/rename/delete) + the selected project's member table (Star | Note | Source [looked-up / generated seed N] | Added) with per-row "Open" (routes to the SIMBAD/analysis panel, or re-runs `generate_system(seed)` for procedural members), inline note editing, and **"Export Project Dossier"** → Phase Q batch mode over all members. An "Add current star" button appears on the SIMBAD panel (like J2's bookmark, but targeting a chosen project).
+
+**`query.py`** — read-only `project-list` and `project-get --name …` (so the downstream repo can drive a whole setting from query.py); mutations stay GUI-only (writes belong to the interactive workspace, consistent with the "no DB-write subcommands" principle).
+
+**Validation / tests / success**: `tests/test_projects.py` (offline, tmp DB) — CRUD round-trips, unique-name enforcement, membership idempotency, `get_project` shape, cascade on `delete_project`, and the generated-seed round-trip (a procedural member re-generates identically via its stored seed). Success: projects persist; members carry notes + reproducible procedural seeds; a project exports as a multi-system dossier; no existing behavior changes.
+
+---
+
 ## Implementation Priority Recommendation
 
 | Phase | Effort | Value | Recommendation |
@@ -1129,4 +1333,8 @@ A static "Alternative Solvents for Life" reference table à la `MainSequencePane
 | N — query.py Expansion | Low | Medium | Anytime — no dependencies on G–M; pure integration-surface work over existing core functions |
 | O — Visualization Expansion | Varies (per-item S–M) | High | Mockup-gated, individually skippable items; small items (O4, O6, O9, O10, O14) are quick wins; O1/O5 carry the most wow. O8 shares the `routes` param with Phase I |
 | P — Snow Lines & Solvent Zones | Low–Medium | Med–High | Grounds + extends an existing app feature. P7/P4 are clean additions (pure math, query.py parity); P1 divisor corrections are gated on scanning the maintainer's Gillett ebook (provided as docx/pdf at build time) + a keep-vs-retune call. Independent of all other phases. |
-| **M — GCNS Surfacing** | **Low–Medium** | **High** | **Strong candidate to do early** — data is already ingested; reuses `compute_gcns_*` verbatim, so it's mostly UI. Surfaces the only major dataset with no interactive surface, and the only one with distance uncertainties. |
+| Q — Dossier Export | Low–Medium | **High** | Pure composition over existing readers — no new astronomy. One `query.py dossier` call returns a complete system writeup; the biggest single win for the downstream repo. |
+| R — Procedural Generation | Medium | **High** | Inverts the analysis tools into a generator; deterministic (seed-stable). High sci-fi worldbuilding value; reuses the Phase H + HZ + main-sequence physics. Pairs with Q (export) and S (collect). |
+| S — Project Workspaces | Medium | Medium–High | Turns the app into a worldbuilding workspace (campaign/novel manager). Builds on J2 favorites; the natural home for R-generated systems and Q batch export. Best after J, Q, R. |
+
+> **Status (2026-06-13):** G, H, I (+ I-OPTS), K, M, N are ✅ implemented; J, L, O, P remain (P is the most fully spec'd). Q/R/S are new brainstorm candidates. The duplicate **M** row above is pre-existing.

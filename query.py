@@ -14,6 +14,7 @@ import core.calculators as calculators
 import core.databases as databases
 import core.equations as equations
 import core.regions as regions
+import core.science as science
 
 
 def _out(result):
@@ -195,6 +196,158 @@ def cmd_travel_time_solar(args):
     _out(calculators.compute_travel_time_solar_objects(
         args.origin, args.destination, args.accel_g,
         v_cap_pct=args.v_cap_pct, departure_date=args.date,
+    ))
+
+
+def cmd_optimal_tour(args):
+    use_times_c = args.times_c is not None
+    velocity = args.times_c if use_times_c else args.ly_hr
+    _out(calculators.compute_optimal_tour(
+        args.stars, velocity, use_times_c, closed=args.closed,
+    ))
+
+
+def cmd_jump_route(args):
+    _out(calculators.compute_jump_route(
+        args.origin, args.destination, args.max_jump, optimize=args.optimize,
+    ))
+
+
+def cmd_jump_network(args):
+    _out(calculators.compute_jump_network(
+        args.start, args.max_jump, max_jumps=args.max_jumps,
+    ))
+
+
+def cmd_multi_stop(args):
+    use_times_c = args.times_c is not None
+    velocity = args.times_c if use_times_c else args.ly_hr
+    _out(calculators.compute_multi_stop_journey(args.stars, velocity, use_times_c))
+
+
+def cmd_nearest_neighbor(args):
+    _out(calculators.compute_nearest_neighbor_chain(
+        args.start, args.hops, args.max_ly,
+    ))
+
+
+def cmd_farthest_first(args):
+    _out(calculators.compute_farthest_first_chain(
+        args.start, args.stops, max_reach_ly=args.max_reach,
+    ))
+
+
+def cmd_trade_route(args):
+    _out(calculators.compute_trade_route_mst(args.stars))
+
+
+# ── Search & Filter (Phase G) ─────────────────────────────────────────────────
+
+def _build_filters(args, simple_keys, bool_keys=(), list_keys=()):
+    """Assemble a filters dict from argparse attrs, omitting unset values."""
+    f = {}
+    for attr, key in simple_keys:
+        v = getattr(args, attr)
+        if v is not None:
+            f[key] = v
+    for attr, key in list_keys:
+        v = getattr(args, attr)
+        if v:
+            f[key] = v
+    for attr, key in bool_keys:
+        if getattr(args, attr):
+            f[key] = True
+    return f
+
+
+def cmd_search_star_systems(args):
+    f = _build_filters(
+        args,
+        simple_keys=[("ly_min", "ly_min"), ("ly_max", "ly_max"),
+                     ("mag_min", "mag_min"), ("mag_max", "mag_max"),
+                     ("spectral_refine", "spectral_refine"),
+                     ("designation_prefix", "designation_prefix")],
+        list_keys=[("spectral_classes", "spectral_classes")],
+    )
+    _out(databases.search_star_systems(f))
+
+
+def cmd_search_hwc(args):
+    f = _build_filters(
+        args,
+        simple_keys=[("esi_min", "esi_min"), ("mass_min", "mass_min"),
+                     ("mass_max", "mass_max"), ("radius_min", "radius_min"),
+                     ("radius_max", "radius_max"), ("temp_min", "temp_min"),
+                     ("temp_max", "temp_max"), ("ly_max", "ly_max"),
+                     ("spectral_refine", "spectral_refine")],
+        bool_keys=[("habitable", "habitable"), ("habzone_con", "habzone_con"),
+                   ("habzone_opt", "habzone_opt")],
+        list_keys=[("spectral_classes", "spectral_classes")],
+    )
+    _out(databases.search_hwc(f))
+
+
+def cmd_search_exoplanets(args):
+    f = _build_filters(
+        args,
+        simple_keys=[("mass_min", "pl_bmasse_min"), ("mass_max", "pl_bmasse_max"),
+                     ("radius_min", "pl_rade_min"), ("radius_max", "pl_rade_max"),
+                     ("period_min", "pl_orbper_min"), ("period_max", "pl_orbper_max"),
+                     ("teff_min", "st_teff_min"), ("teff_max", "st_teff_max"),
+                     ("dist_max_pc", "sy_dist_max"), ("method", "discoverymethod"),
+                     ("spectral_refine", "spectral_refine")],
+        list_keys=[("spectral_classes", "spectral_classes")],
+    )
+    _out(databases.search_exoplanets(f))
+
+
+# ── Reference data ────────────────────────────────────────────────────────────
+
+def cmd_main_sequence(args):
+    _out(science.compute_main_sequence_table())
+
+
+def cmd_solar_system(args):
+    _out(science.compute_solar_system_tables())
+
+
+def cmd_sol_regions(args):
+    _out(regions.compute_sol_regions())
+
+
+# ── Planetary / rotating-habitat equations ────────────────────────────────────
+
+def cmd_orbit_distance(args):
+    _out(equations.compute_orbit_periastron_apastron(args.sma, args.ecc))
+
+
+def cmd_moon_orbital_distance(args):
+    _out(equations.compute_moon_orbital_distance(args.planet_mass_earth, args.day_hours))
+
+
+def cmd_gravity_acceleration(args):
+    _out(equations.compute_centrifugal_gravity_acceleration(args.rpm, args.radius_m))
+
+
+def cmd_gravity_distance(args):
+    _out(equations.compute_centrifugal_gravity_distance(args.rpm, args.accel_ms2))
+
+
+def cmd_gravity_rpm(args):
+    _out(equations.compute_centrifugal_gravity_rpm(args.accel_ms2, args.radius_m))
+
+
+_BURN_UNITS = {"H": ("Hours", 3600.0), "D": ("Days", 86400.0), "W": ("Weeks", 604800.0)}
+
+
+def cmd_travel_time_custom_thrust(args):
+    label, secs_per = _BURN_UNITS[args.burn_unit]
+    burn_duration_s = args.burn_value * secs_per
+    # progress_callback is GUI-only and is deliberately NOT passed.
+    _out(calculators.compute_travel_time_custom_thrust(
+        args.origin, args.destination, args.accel_g, burn_duration_s,
+        v_cap_pct=args.v_cap_pct, burn_value=args.burn_value,
+        burn_unit_label=label, departure_date=args.date,
     ))
 
 
@@ -426,6 +579,197 @@ def main():
                    help="Coast-phase velocity cap as %% of c (default 3.0)")
     p.add_argument("--date", default=None, help="Departure date ISO YYYY-MM-DD (default: today)")
     p.set_defaults(func=cmd_travel_time_solar)
+
+    # ── Route Planning additions (Phase I-OPTS) ──────────────────────────────
+
+    # optimal-tour
+    p = sub.add_parser("optimal-tour",
+                       help="Shortest-total-distance visit order for a set of stars (NN + 2-opt)")
+    p.add_argument("--stars", required=True, nargs="+",
+                   help="Star names to visit (first = fixed start)")
+    p.add_argument("--closed", action="store_true",
+                   help="Closed loop (return to start)")
+    vel = p.add_mutually_exclusive_group(required=True)
+    vel.add_argument("--ly-hr",   dest="ly_hr",   type=float, help="Velocity in light years per hour")
+    vel.add_argument("--times-c", dest="times_c", type=float, help="Velocity as a multiple of c")
+    p.set_defaults(func=cmd_optimal_tour)
+
+    # jump-route
+    p = sub.add_parser("jump-route",
+                       help="Route origin→destination over a jump-limited graph (Dijkstra/BFS)")
+    p.add_argument("--origin",      required=True, help="Origin star name")
+    p.add_argument("--destination", required=True, help="Destination star name")
+    p.add_argument("--max-jump", dest="max_jump", required=True, type=float,
+                   help="Maximum single-jump distance in light years")
+    p.add_argument("--optimize", choices=["distance", "jumps"], default="distance",
+                   help="Minimize total distance (default) or number of jumps")
+    p.set_defaults(func=cmd_jump_route)
+
+    # jump-network
+    p = sub.add_parser("jump-network",
+                       help="BFS reachability tiers from a start star at a jump range")
+    p.add_argument("--start",    required=True, help="Start star name")
+    p.add_argument("--max-jump", dest="max_jump", required=True, type=float,
+                   help="Maximum single-jump distance in light years")
+    p.add_argument("--max-jumps", dest="max_jumps", type=int, default=None,
+                   help="Cap on the number of jumps (optional)")
+    p.set_defaults(func=cmd_jump_network)
+
+    # multi-stop
+    p = sub.add_parser("multi-stop",
+                       help="Cumulative travel time along an ordered list of stops")
+    p.add_argument("--stars", required=True, nargs="+", help="Ordered stop star names")
+    vel = p.add_mutually_exclusive_group(required=True)
+    vel.add_argument("--ly-hr",   dest="ly_hr",   type=float, help="Velocity in light years per hour")
+    vel.add_argument("--times-c", dest="times_c", type=float, help="Velocity as a multiple of c")
+    p.set_defaults(func=cmd_multi_stop)
+
+    # nearest-neighbor
+    p = sub.add_parser("nearest-neighbor",
+                       help="Greedy nearest-unvisited chain from a start star")
+    p.add_argument("--start",  required=True, help="Start star name")
+    p.add_argument("--hops",   required=True, type=int, help="Number of hops")
+    p.add_argument("--max-ly", dest="max_ly", required=True, type=float,
+                   help="Maximum single-hop distance in light years")
+    p.set_defaults(func=cmd_nearest_neighbor)
+
+    # farthest-first
+    p = sub.add_parser("farthest-first",
+                       help="De-clustering coverage chain (farthest-from-visited)")
+    p.add_argument("--start", required=True, help="Start star name")
+    p.add_argument("--stops", required=True, type=int, help="Number of stops")
+    p.add_argument("--max-reach", dest="max_reach", type=float, default=None,
+                   help="Maximum reach from the visited set in light years (optional)")
+    p.set_defaults(func=cmd_farthest_first)
+
+    # trade-route
+    p = sub.add_parser("trade-route",
+                       help="Minimum spanning tree connecting a set of systems")
+    p.add_argument("--stars", required=True, nargs="+", help="System names (≥ 2)")
+    p.set_defaults(func=cmd_trade_route)
+
+    # ── Search & Filter (Phase G) ────────────────────────────────────────────
+
+    # search-star-systems
+    p = sub.add_parser("search-star-systems",
+                       help="Filter the local star_systems table (all filters optional)")
+    p.add_argument("--spectral-classes", dest="spectral_classes", nargs="+",
+                   help="Spectral class chips: O B A F G K M Other")
+    p.add_argument("--spectral-refine", dest="spectral_refine",
+                   help="Case-insensitive contains-match on the rest of the type (e.g. V)")
+    p.add_argument("--ly-min",  dest="ly_min",  type=float)
+    p.add_argument("--ly-max",  dest="ly_max",  type=float)
+    p.add_argument("--mag-min", dest="mag_min", type=float)
+    p.add_argument("--mag-max", dest="mag_max", type=float)
+    p.add_argument("--designation-prefix", dest="designation_prefix")
+    p.set_defaults(func=cmd_search_star_systems)
+
+    # search-hwc
+    p = sub.add_parser("search-hwc",
+                       help="Filter the local Habitable Worlds Catalog (all filters optional)")
+    p.add_argument("--esi-min",   dest="esi_min",   type=float)
+    p.add_argument("--mass-min",  dest="mass_min",  type=float, help="P_MASS (Earth masses)")
+    p.add_argument("--mass-max",  dest="mass_max",  type=float)
+    p.add_argument("--radius-min", dest="radius_min", type=float, help="P_RADIUS (Earth radii)")
+    p.add_argument("--radius-max", dest="radius_max", type=float)
+    p.add_argument("--temp-min",  dest="temp_min",  type=float, help="P_TEMP_EQUIL (K)")
+    p.add_argument("--temp-max",  dest="temp_max",  type=float)
+    p.add_argument("--ly-max",    dest="ly_max",    type=float)
+    p.add_argument("--spectral-classes", dest="spectral_classes", nargs="+")
+    p.add_argument("--spectral-refine",  dest="spectral_refine")
+    p.add_argument("--habitable",   action="store_true", help="P_HABITABLE = 1")
+    p.add_argument("--habzone-con", dest="habzone_con", action="store_true", help="In conservative HZ")
+    p.add_argument("--habzone-opt", dest="habzone_opt", action="store_true", help="In optimistic HZ")
+    p.set_defaults(func=cmd_search_hwc)
+
+    # search-exoplanets
+    p = sub.add_parser("search-exoplanets",
+                       help="Filter live NASA pscomppars (all filters optional)")
+    p.add_argument("--mass-min",   dest="mass_min",   type=float, help="pl_bmasse (Earth masses)")
+    p.add_argument("--mass-max",   dest="mass_max",   type=float)
+    p.add_argument("--radius-min", dest="radius_min", type=float, help="pl_rade (Earth radii)")
+    p.add_argument("--radius-max", dest="radius_max", type=float)
+    p.add_argument("--period-min", dest="period_min", type=float, help="pl_orbper (days)")
+    p.add_argument("--period-max", dest="period_max", type=float)
+    p.add_argument("--teff-min",   dest="teff_min",   type=float, help="st_teff (K)")
+    p.add_argument("--teff-max",   dest="teff_max",   type=float)
+    p.add_argument("--dist-max-pc", dest="dist_max_pc", type=float, help="sy_dist (parsecs)")
+    p.add_argument("--method", dest="method", help="discoverymethod (exact)")
+    p.add_argument("--spectral-classes", dest="spectral_classes", nargs="+")
+    p.add_argument("--spectral-refine",  dest="spectral_refine")
+    p.set_defaults(func=cmd_search_exoplanets)
+
+    # ── Reference data ───────────────────────────────────────────────────────
+
+    # main-sequence
+    p = sub.add_parser("main-sequence",
+                       help="Main-sequence star properties table (spectral class → Teff/mass/radius/lum/…)")
+    p.set_defaults(func=cmd_main_sequence)
+
+    # solar-system
+    p = sub.add_parser("solar-system",
+                       help="Solar system planets / moons / dwarf planets / asteroids data")
+    p.set_defaults(func=cmd_solar_system)
+
+    # sol-regions
+    p = sub.add_parser("sol-regions",
+                       help="Sol's system regions (HZ, snow line, etc.) from hardcoded solar constants")
+    p.set_defaults(func=cmd_sol_regions)
+
+    # ── Planetary / rotating-habitat equations ───────────────────────────────
+
+    # orbit-distance
+    p = sub.add_parser("orbit-distance",
+                       help="Periastron / apastron from semi-major axis and eccentricity")
+    p.add_argument("--sma", required=True, type=float, help="Semi-major axis (AU)")
+    p.add_argument("--ecc", required=True, type=float, help="Eccentricity (0 ≤ e < 1)")
+    p.set_defaults(func=cmd_orbit_distance)
+
+    # moon-orbital-distance
+    p = sub.add_parser("moon-orbital-distance",
+                       help="Orbital distance of an Earth-sized moon for a given day length")
+    p.add_argument("--planet-mass-earth", dest="planet_mass_earth", required=True, type=float)
+    p.add_argument("--day-hours", dest="day_hours", type=float, default=24.0,
+                   help="Day length in hours (default 24)")
+    p.set_defaults(func=cmd_moon_orbital_distance)
+
+    # gravity-acceleration
+    p = sub.add_parser("gravity-acceleration",
+                       help="Centrifugal artificial gravity at a point (m/s^2) from rpm + radius")
+    p.add_argument("--rpm",      required=True, type=float)
+    p.add_argument("--radius-m", dest="radius_m", required=True, type=float)
+    p.set_defaults(func=cmd_gravity_acceleration)
+
+    # gravity-distance
+    p = sub.add_parser("gravity-distance",
+                       help="Radius from the centre of rotation (m) from rpm + target gravity")
+    p.add_argument("--rpm",       required=True, type=float)
+    p.add_argument("--accel-ms2", dest="accel_ms2", required=True, type=float,
+                   help="Target centrifugal gravity (m/s^2)")
+    p.set_defaults(func=cmd_gravity_distance)
+
+    # gravity-rpm
+    p = sub.add_parser("gravity-rpm",
+                       help="Rotation rate (rpm) from target gravity + radius")
+    p.add_argument("--accel-ms2", dest="accel_ms2", required=True, type=float,
+                   help="Target centrifugal gravity (m/s^2)")
+    p.add_argument("--radius-m",  dest="radius_m", required=True, type=float)
+    p.set_defaults(func=cmd_gravity_rpm)
+
+    # travel-time-custom-thrust
+    p = sub.add_parser("travel-time-custom-thrust",
+                       help="Travel time between two solar-system bodies with a custom burn duration (live JPL Horizons)")
+    p.add_argument("--origin",      required=True, help="Origin body name or Horizons ID")
+    p.add_argument("--destination", required=True, help="Destination body name or Horizons ID")
+    p.add_argument("--accel-g", dest="accel_g", required=True, type=float, help="Acceleration in g")
+    p.add_argument("--burn-value", dest="burn_value", required=True, type=float,
+                   help="Accel/decel burn duration value")
+    p.add_argument("--burn-unit", dest="burn_unit", choices=["H", "D", "W"], default="D",
+                   help="Burn duration unit: H=Hours, D=Days (default), W=Weeks")
+    p.add_argument("--v-cap-pct", dest="v_cap_pct", type=float, default=3.0,
+                   help="Coast-phase velocity cap as %% of c (default 3.0)")
+    p.add_argument("--date", default=None, help="Departure date ISO YYYY-MM-DD (default: today)")
+    p.set_defaults(func=cmd_travel_time_custom_thrust)
 
     args = parser.parse_args()
     try:

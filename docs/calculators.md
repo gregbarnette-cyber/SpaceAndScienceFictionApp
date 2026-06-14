@@ -199,12 +199,13 @@ Ambiguous-name detection (`"Multiple major-bodies"` / `"ambiguous"`) in `compute
 - **GUI diagram tab**: identical to option 22 — "Solar System Map" (2D top-down XY ecliptic view) with the same planet map, origin/dest markers, dashed travel line, and click-to-dialog interactivity. Planet positions are fetched at departure epoch `t0_jd`.
 - **Core function**: `core.calculators.compute_travel_time_custom_thrust(origin, destination, accel_g, burn_duration_s, v_cap_pct, burn_value, burn_unit_label, departure_date)` — `departure_date` is an ISO string `"YYYY-MM-DD"`; when `None`, defaults to today. Returns `departure_date`, `origin_xyz`, `dest_xyz`, `origin_id`, `dest_id`, and `planet_positions` in addition to the thrust/phase data.
 
-## Route Planning (Phase I — GUI-only)
+## Route Planning (Phase I)
 
 Three route-planning calculators in `core/calculators.py`, surfaced by the GUI **"Route Planning"** nav category
 (`MultiStopJourneyPanel`, `NearestNeighborPanel`, `TradeRoutePlannerPanel` in `gui/panels/route_planning.py`). New,
 **self-validating** functions (return `{"error": str}` for bad input) reusing the existing distance / Cartesian /
-travel-time helpers. **No CLI menu entry, no `query.py` subcommand.**
+travel-time helpers. **No CLI menu entry**; originally GUI-only, they were later given `query.py` subcommands
+(`multi-stop` / `nearest-neighbor` / `trade-route`) — see `docs/integration.md`.
 
 ### Shared star resolution
 
@@ -250,11 +251,85 @@ Minimum spanning tree connecting a set of systems (Kruskal + `_UnionFind`).
 - Returns `{nodes:[{name,x,y,z,sp_type,desig}], edges:[{from,to,distance_ly}] (N−1, ascending), total_ly, stars:[map dicts]}`.
 - **GUI table**: From | To | Distance (LY); node/edge/total summary label above.
 
+## Route Planning — Additional Options (Phase I-OPTS — GUI + `query.py`)
+
+Four more self-validating route planners in `core/calculators.py`, added **alongside** I1–I3 (none replaced),
+surfaced as four new GUI panels in the same **"Route Planning"** nav category
+(`OptimalTourPanel`, `JumpRoutePanel`, `JumpNetworkPanel`, `FarthestFirstPanel` in `gui/panels/route_planning.py`).
+They reuse the same `_resolve_star_position` (DB-first → SIMBAD), `_load_star_systems_positions` candidate pool,
+`_map_node`, and the dark-navy Star Chart `routes=` overlay. All four are exposed as `query.py` subcommands
+(`optimal-tour` / `jump-route` / `jump-network` / `farthest-first`); the original I1/I2/I3 planners were likewise
+backfilled (`multi-stop` / `nearest-neighbor` / `trade-route`), so **all seven Route Planning options now have both a
+GUI panel and a `query.py` subcommand** — see `docs/integration.md`.
+
+Shared helpers (module-level): `_node_dist(a,b)` (3D Euclidean); `_merge_endpoint(pool, endpoint)` (reuse a pool row
+matched by name or within `1e-3` ly, else append); `_SpatialGrid(nodes, cell)` — a uniform 3D grid (cell = the jump
+radius) giving O(neighbours) within-radius queries via `grid.neighbors(i, max_dist)`, so B/C traverse the **238k-row**
+`star_systems` table in ~2–5 s instead of the O(n²) all-pairs build (which was ~3.5 h — see the note below);
+`TIER_COLORS` (tier 0 = start gold). B's Dijkstra/BFS and C's BFS expand nodes lazily over the grid (Dijkstra/BFS exit
+early once the target pops). B/C still run in a background thread.
+
+> **Scale note:** `star_systems` (option 50, out to ~100 pc) holds ~238k rows, not the "few thousand" first assumed.
+> An all-pairs adjacency build is ~2.8×10¹⁰ pairs (≈3.5 h) and would never complete — hence the spatial grid. The
+> solar neighbourhood is genuinely sparse (only Proxima/α Cen/Barnard's within ~6 ly of Sol), so a small `max_jump_ly`
+> legitimately yields a tiny reachable set / `reachable=False` for a 20-ly target — that is a correct answer, not a bug;
+> raise the jump range to connect more of the catalogue.
+
+### A — Optimal Tour — `compute_optimal_tour(star_names, velocity_input, use_times_c, closed=False)`
+
+Shortest-total-distance visit order for a set of stars (nearest-neighbor seed from the **fixed** first stop, then
+**2-opt** local search; the start never moves). `closed=True` adds the return-to-start leg.
+- Validate: case-insensitive dedup → `>= 2` distinct stars; `velocity_input > 0`; first unresolvable star →
+  `{"error": "'name': <reason>"}`.
+- Returns `{legs:[{leg, origin, dest, distance_ly, ly_hr, times_c, hours, cumulative_hours, travel_time,
+  cumulative_time}], total_ly, total_hours, total_time, naive_total_ly, optimized_total_ly, saved_ly, saved_pct,
+  closed, stars:[map dicts in optimized order]}` (`legs` includes the wrap leg when `closed`).
+- **GUI table**: Leg # | Origin | Destination | Distance (LY) | LY/HR | × c | Travel Time | Cumulative Time; a
+  totals line reports optimized vs as-typed distance and the saved ly / %.
+
+### B — Jump-Range Pathfinding — `compute_jump_route(origin, destination, max_jump_ly, optimize="distance")`
+
+Route origin→destination through intermediate stars, each single jump ≤ `max_jump_ly`. `optimize="distance"` →
+**Dijkstra** (min total ly); `"jumps"` → **BFS** (fewest jumps). Graph = pool ∪ {origin, dest} (deduped).
+- Validate: `max_jump_ly > 0`; `optimize ∈ {distance, jumps}`; both endpoints resolvable; same endpoint (name or
+  within `1e-3` ly) → error.
+- An unreachable destination is a **clear result, not an error**: `reachable=False`, empty `route`,
+  `stars=[origin, dest]`.
+- Returns `{origin_info, dest_info, reachable, optimize, jumps, total_ly, direct_ly,
+  route:[{jump, from, to, jump_ly, cumulative_ly}], max_jump_ly, stars:[map dicts along the route]}`.
+- **GUI table**: Jump # | From | To | Jump Dist (LY) | Cumulative (LY); amber "unreachable" note when `reachable=False`.
+
+### C — Jump Network / Reachability — `compute_jump_network(start, max_jump_ly, max_jumps=None)`
+
+BFS reachability tiers from `start` at jump range `max_jump_ly` (each reachable star → its minimum jump count).
+- Validate: `max_jump_ly > 0`; `max_jumps` is `None` or an int `>= 1`; start resolvable; empty pool → the opt-50 message.
+- Returns `{start_name, max_jump_ly, max_jumps, max_tier, reachable_count, total_in_pool, unreachable_count,
+  tiers:[{jumps, stars:[{star_name, desig, sp_type, dist_from_start_ly, ly_from_sol}]}], stars:[map dicts]}`. `stars`
+  carry a per-tier `color` (overriding spectral colour) so the chart paints reachability tiers; `reachable_count`
+  includes the start, `unreachable_count` is over the original `star_systems` rows.
+- **GUI**: tier-grouped table (Jumps | Star Name | Designations | Spectral | Dist from Start | Dist from Sol) + a tier
+  colour legend; the map is tier-coloured nodes (no edges — scales to large pools).
+
+### D — Farthest-First Coverage — `compute_farthest_first_chain(start, num_stops, max_reach_ly=None)`
+
+De-clustering coverage: each step picks the unvisited star **farthest** from the visited set (optionally still within
+`max_reach_ly` of some visited star). The opposite of the nearest-neighbor chain's clustering.
+- Validate: `num_stops` int `>= 1`; `max_reach_ly` is `None` or `> 0`; start resolvable; empty pool → opt-50 message.
+  The start's own row is self-excluded within `1e-3` ly. No star within reach → `stopped_early=True` (not an error).
+- Returns `{chain:[{step, star_name, desig, sp_type, sep_to_visited_ly, dist_from_start_ly, ly_from_sol}],
+  tree_edges:[{from_index, to_index}], stars:[map dicts, start at 0], widest_ly, stopped_early, start_name}`.
+  `tree_edges` is the exploration tree (each new star links to the nearest visited node) — drawn dashed on the map.
+- **GUI table**: Step | Star Name | Designations | Spectral Type | Sep to Visited (LY) | Dist from Start (LY) |
+  Dist from Sol (LY); amber note when `stopped_early`.
+
 ### Route map overlay — `core.viz.prepare_route_map(result)` + the Star-Chart `routes=` param
 
-`prepare_route_map(result)` normalizes any of the three results into `{stars, edges:[{x1,y1,z1,x2,y2,z2,label,style}],
+`prepare_route_map(result)` normalizes any Route Planning result into `{stars, edges:[{x1,y1,z1,x2,y2,z2,label,style}],
 edge_style}` — `"dashed"` consecutive legs for the ordered routes (I1/I2; label = leg distance / hop ②③…), `"solid"`
-MST edges for I3 (label = edge ly). `{"error"}` passes through.
+MST edges for I3 (label = edge ly). The Phase I-OPTS results are handled too: **A** (optimal tour) → dashed consecutive
++ a wrap edge when `closed`; **B** (jump route) → dashed jumps (no edges when unreachable); **D** (farthest-first) →
+dashed `tree_edges` (non-consecutive, labelled by step); **C** (jump network) → **nodes only** (`edge_style="none"`),
+the per-tier `color` on each star carrying the reachability tiers. `{"error"}` passes through.
 
 The maps are the **dark-navy GCNS "Star Chart" + "Star Chart 3D"** diagrams (`make_star_chart_canvas` /
 `make_star_chart_3d_canvas` in `gui/visualizations/plot_helpers.py`), which gained an optional trailing

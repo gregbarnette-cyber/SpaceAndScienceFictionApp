@@ -62,8 +62,27 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `brachistochrone-au` | `--accel-g --au` | none | `accel_g, distance_au, distance_lm, profiles[]` |
 | `brachistochrone-lm` | `--accel-g --lm` | none | `accel_g, distance_au, distance_lm, profiles[]` |
 | `travel-time-solar` | `--origin --destination --accel-g` [`--v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles[], …` |
+| `optimal-tour` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--closed`] | SIMBAD† (names) | `legs[], total_ly, total_time, naive_total_ly, optimized_total_ly, saved_ly, saved_pct, closed, stars[]` |
+| `jump-route` | `--origin --destination --max-jump` [`--optimize distance\|jumps`] | SIMBAD† (names) | `origin_info, dest_info, reachable, jumps, total_ly, direct_ly, route[], stars[]` |
+| `jump-network` | `--start --max-jump` [`--max-jumps`] | SIMBAD† (names) | `start_name, max_tier, reachable_count, total_in_pool, unreachable_count, tiers[], stars[]` |
+| `multi-stop` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) | SIMBAD† (names) | `legs[], total_ly, total_hours, total_time, stars[]` |
+| `nearest-neighbor` | `--start --hops --max-ly` | SIMBAD† (names) | `chain[], stars[], total_ly, stopped_early, start_name` |
+| `farthest-first` | `--start --stops` [`--max-reach`] | SIMBAD† (names) | `chain[], tree_edges[], stars[], widest_ly, stopped_early, start_name` |
+| `trade-route` | `--stars N [N …]` | SIMBAD† (names) | `nodes[], edges[], total_ly, stars[]` |
+| `search-star-systems` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
+| `search-hwc` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
+| `search-exoplanets` | _(all optional filters)_ | **NASA TAP (live)** | `count, capped, cap, stars[]` |
+| `main-sequence` | _(none)_ | none (local DB) | **list** of 24 spectral-class rows |
+| `solar-system` | _(none)_ | none (local DB) | `planets[], moons[], dwarf_planets[], asteroids[]` |
+| `sol-regions` | _(none)_ | none | flat dict of Sol region values (`hzil, hzol, snowLine, …`) |
+| `orbit-distance` | `--sma --ecc` | none | `sma, ecc, periastron, apastron, ecc_au` |
+| `moon-orbital-distance` | `--planet-mass-earth` [`--day-hours`] | none | `planet_mass_earth, day_hours, orbital_distance_km` |
+| `gravity-acceleration` | `--rpm --radius-m` | none | `rpm, radius_m, accel_ms2` |
+| `gravity-distance` | `--rpm --accel-ms2` | none | `rpm, accel_ms2, radius_m` |
+| `gravity-rpm` | `--accel-ms2 --radius-m` | none | `accel_ms2, radius_m, rpm` |
+| `travel-time-custom-thrust` | `--origin --destination --accel-g --burn-value` [`--burn-unit --v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, distance_au, …, travel_time_str, …` |
 
-† `distance` and `travel-time` skip the SIMBAD call for an endpoint named `"Sol"`/`"Sun"` (treated as the origin at 0,0,0).
+† `distance` and `travel-time` skip the SIMBAD call for an endpoint named `"Sol"`/`"Sun"` (treated as the origin at 0,0,0). The seven Route Planning subcommands (`optimal-tour`, `jump-route`, `jump-network`, `multi-stop`, `nearest-neighbor`, `farthest-first`, `trade-route`) likewise resolve each star **DB-first** (`star_systems.star_name`, offline) then **SIMBAD** for names not in the table; `"Sol"`/`"Sun"` → the origin with no lookup. They read the local `star_systems` table for intermediate/candidate stars (run option 50 to populate it).
 ‡ The `gcns-*` calculators use SIMBAD **only** for `--star` endpoints (to resolve a name to a Gaia id); `--id` endpoints are fully offline. There is **no** `"Sol"`/`"Sun"` special case — Sol is not a GCNS row, so a Sol endpoint returns an error (use `gcns-within-sol` for Sol-centered census queries).
 
 Shared shapes:
@@ -238,6 +257,101 @@ query.py travel-time-solar --origin Earth --destination Mars --accel-g 1.0
 query.py travel-time-solar --origin Earth --destination "Jupiter" --accel-g 0.3 --v-cap-pct 5 --date 2027-03-15
 ```
 Core function: `calculators.compute_travel_time_solar_objects(origin, destination, accel_g, v_cap_pct=3.0, departure_date=None)`. `--v-cap-pct` defaults to `3.0`; `--date` is ISO `YYYY-MM-DD`, defaulting to today (mapped to `departure_date`). The GUI-only `progress_callback` is never passed. Output: `{origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles, origin_xyz, dest_xyz, planet_positions, origin_id, dest_id}` — `profiles` carries the same `{label, hours, travel_time_str, max_vel}` shape as the brachistochrone subcommands; JSON consumers may ignore `origin_xyz`/`dest_xyz`/`planet_positions`/`origin_id`/`dest_id`. Ambiguous Horizons names return the disambiguation error already produced by the core function.
+
+### Route Planning additions (Phase I-OPTS)
+
+The three Phase I-OPTS subcommands below (`optimal-tour`, `jump-route`, `jump-network`) wrap the **self-validating**
+Route Planning functions (so out-of-range numerics return a curated `{"error": str}`, exit 1, unlike the Phase-N legacy
+wrappers; argparse rejects missing/malformed args with exit 2 and a stderr message). Each resolves every star
+**DB-first** (`star_systems.star_name`) then **SIMBAD** for names not in the table; `"Sol"`/`"Sun"` → the origin with no
+lookup. Candidate/intermediate stars come from the local `star_systems` table (run **option 50** to populate it). The
+fourth I-OPTS planner, Farthest-First Coverage (`farthest-first`), is documented with the original I1/I2/I3 planners in
+the next section.
+
+#### `optimal-tour`
+Shortest-total-distance visit order for a set of stars (NN seed + 2-opt; the first star is the fixed start). Supply
+exactly one of `--ly-hr` / `--times-c`; `--closed` adds a return-to-start leg.
+```bash
+query.py optimal-tour --stars Sol "Alpha Centauri" Sirius Procyon --ly-hr 0.01
+query.py optimal-tour --stars Sol Sirius Procyon --times-c 100 --closed
+```
+Core function: `calculators.compute_optimal_tour(star_names, velocity_input, use_times_c, closed=False)`. Output:
+`{legs[], total_ly, total_hours, total_time, naive_total_ly, optimized_total_ly, saved_ly, saved_pct, closed, stars[]}` —
+each leg is `{leg, origin, dest, distance_ly, ly_hr, times_c, hours, cumulative_hours, travel_time, cumulative_time}`
+(includes the wrap leg when `--closed`). `< 2` distinct stars or a non-positive velocity → `{"error"}` exit 1.
+
+#### `jump-route`
+Route origin→destination through intermediate stars, each jump ≤ `--max-jump` ly. `--optimize distance` (default,
+Dijkstra) or `jumps` (BFS).
+```bash
+query.py jump-route --origin Sol --destination Procyon --max-jump 9
+query.py jump-route --origin Sol --destination "Epsilon Indi" --max-jump 7 --optimize jumps
+```
+Core function: `calculators.compute_jump_route(origin, destination, max_jump_ly, optimize="distance")`. Output:
+`{origin_info, dest_info, reachable, optimize, jumps, total_ly, direct_ly, route:[{jump, from, to, jump_ly,
+cumulative_ly}], max_jump_ly, stars[]}`. **An unreachable destination is a normal result** (`reachable=false`, empty
+`route`, **exit 0**) — not an error. Same origin/destination, `max_jump ≤ 0`, or an unresolvable endpoint → `{"error"}`
+exit 1; `--optimize` other than `distance`/`jumps` is an argparse exit 2.
+
+#### `jump-network`
+BFS reachability tiers from a start star at jump range `--max-jump`; optional `--max-jumps` cap.
+```bash
+query.py jump-network --start Sol --max-jump 6
+query.py jump-network --start "Alpha Centauri" --max-jump 5 --max-jumps 3
+```
+Core function: `calculators.compute_jump_network(start, max_jump_ly, max_jumps=None)`. Output: `{start_name,
+max_jump_ly, max_jumps, max_tier, reachable_count, total_in_pool, unreachable_count, tiers:[{jumps, stars:[{star_name,
+desig, sp_type, dist_from_start_ly, ly_from_sol}]}], stars[]}`. `reachable_count` includes the start; `unreachable_count`
+is over the original `star_systems` rows. Each star in `stars[]` carries a per-tier `color` and `tier`. `max_jump ≤ 0`
+or `max_jumps < 1` → `{"error"}` exit 1; empty `star_systems` → the opt-50 message, exit 1.
+
+### Route Planning — original four (Phase I planners, now also via `query.py`)
+
+The original Phase I planners (`compute_multi_stop_journey`, `compute_nearest_neighbor_chain`,
+`compute_trade_route_mst`) plus the Phase I-OPTS Farthest-First Coverage (`compute_farthest_first_chain`, previously
+GUI-only) are exposed here as subcommands — the same self-validating contract (curated `{"error"}` exit 1; argparse
+exit 2 for missing/malformed args). Name resolution is DB-first → SIMBAD, as above.
+
+#### `multi-stop`
+Cumulative travel time along an **ordered** list of stops (you supply the order). One of `--ly-hr` / `--times-c`.
+```bash
+query.py multi-stop --stars Sol "Alpha Centauri" Sirius Procyon --times-c 100
+```
+Core function: `calculators.compute_multi_stop_journey(star_names, velocity_input, use_times_c)`. Output:
+`{legs:[{leg, origin, dest, distance_ly, ly_hr, times_c, hours, cumulative_hours, travel_time, cumulative_time}],
+total_ly, total_hours, total_time, stars[]}`. `< 2` stops or non-positive velocity → `{"error"}` exit 1; the first
+unresolvable stop → `{"error": "Stop N ('name'): …"}`.
+
+#### `nearest-neighbor`
+Greedy nearest-unvisited chain from a start star over the `star_systems` pool.
+```bash
+query.py nearest-neighbor --start Sol --hops 6 --max-ly 6
+```
+Core function: `calculators.compute_nearest_neighbor_chain(start_star, num_hops, max_ly)`. Output:
+`{chain:[{hop, star_name, desig, sp_type, dist_from_prev_ly, cumulative_ly, ly_from_sol}], stars[], total_ly,
+stopped_early, start_name}`. No unvisited star within `--max-ly` → `stopped_early=true` (a normal result, **exit 0**).
+`hops < 1` or `max_ly ≤ 0` → `{"error"}` exit 1; non-integer `--hops` → argparse exit 2; empty `star_systems` → the
+opt-50 message, exit 1.
+
+#### `farthest-first`
+De-clustering coverage chain — each step picks the star **farthest** from the visited set (optional `--max-reach`).
+```bash
+query.py farthest-first --start Sol --stops 5
+query.py farthest-first --start Sol --stops 8 --max-reach 13
+```
+Core function: `calculators.compute_farthest_first_chain(start, num_stops, max_reach_ly=None)`. Output:
+`{chain:[{step, star_name, desig, sp_type, sep_to_visited_ly, dist_from_start_ly, ly_from_sol}], tree_edges[], stars[],
+widest_ly, stopped_early, start_name}`. Nothing within reach → `stopped_early=true` (exit 0). `stops < 1` or
+`max_reach ≤ 0` → `{"error"}` exit 1; empty `star_systems` → the opt-50 message, exit 1.
+
+#### `trade-route`
+Minimum spanning tree connecting a set of systems (Kruskal).
+```bash
+query.py trade-route --stars Sol Sirius Procyon "61 Cygni" "Epsilon Eridani"
+```
+Core function: `calculators.compute_trade_route_mst(star_names)`. Output: `{nodes:[{name,x,y,z,sp_type,desig}],
+edges:[{from,to,distance_ly}] (N−1, ascending), total_ly, stars[]}`. After case-insensitive dedup, `< 2` systems →
+`{"error"}` exit 1; the first unresolvable system → `{"error": "'name': …"}`.
 
 ### Exoplanet archives (network)
 
@@ -445,6 +559,117 @@ query.py gcns-stars-within-star --id 5853498713190525696 --ly 5
 Core function: `databases.compute_gcns_stars_within_star(star=, source_id=, limit_ly=)`
 Output: `{center, center_x, center_y, center_z, limit_ly, count, snapshot_date, gcns_version, stars[]}`. `center` is the resolved center row (with its own `x`/`y`/`z` added). Each star in `stars[]` mirrors `gcns-within-sol`'s row shape (the full GCNS fields + `system_id`/`n_components` + heliocentric `x`/`y`/`z`) **plus** a per-row `Distance` (ly from the center). The center itself is excluded **precisely** by `gaia_source_id` (with a `Distance < 1e-9` exact-self skip for a `missing_10mas` center that has no id), so Gaia-resolved **close companions remain** in the results — unlike the SIMBAD `stars-within-star`, which drops everything within `0.001` ly (~63 AU) of the center.
 
+### Search & Filter (Phase G — local DB, except `search-exoplanets`)
+
+The three interactive-search functions, exposed with **all filters optional** (omitting every filter returns the
+first page up to the cap). Each returns `{count, capped, cap, stars[]}` (`capped=true` means the result hit the cap) or
+`{"error": str}`. Spectral-class filtering uses the friendly **chips + refine** model: `--spectral-classes` takes one
+or more of `O B A F G K M Other` (OR-ed leading-letter matches), and `--spectral-refine` is a case-insensitive
+contains-match on the rest of the type (e.g. `V` for the luminosity class). See `docs/star-databases.md` (Phase G).
+
+#### `search-star-systems`
+Filter the local `star_systems` table (no network). Cap 500; sorted by light years.
+```bash
+query.py search-star-systems --spectral-classes M K --ly-max 20 --mag-max 10
+```
+Core function: `databases.search_star_systems(filters)`. Flags → filter keys: `--spectral-classes`/`--spectral-refine`,
+`--ly-min`/`--ly-max`, `--mag-min`/`--mag-max`, `--designation-prefix`. Each star: `{star_name, designations,
+spectral_type, parallax, parsecs, light_years, app_magnitude, ra, dec}`. Empty `star_systems` → the opt-50 error.
+
+#### `search-hwc`
+Filter the local Habitable Worlds Catalog (no network). Cap 500; sorted by ESI descending.
+```bash
+query.py search-hwc --esi-min 0.8 --habitable --spectral-classes K G
+```
+Core function: `databases.search_hwc(filters)`. Flags: `--esi-min`; `--habitable` / `--habzone-con` / `--habzone-opt`
+(store-true booleans); `--mass-min`/`--mass-max` (`P_MASS`), `--radius-min`/`--max` (`P_RADIUS`),
+`--temp-min`/`--max` (`P_TEMP_EQUIL`); `--spectral-classes`/`--spectral-refine` (`S_TYPE`); `--ly-max`. Empty `hwc` →
+the opt-52 error.
+
+#### `search-exoplanets`
+Filter the **live** NASA `pscomppars` archive via TAP. Cap 200; sorted by `pl_orbsmax`.
+```bash
+query.py search-exoplanets --radius-min 0.5 --radius-max 1.6 --dist-max-pc 15 --method "Transit"
+```
+Core function: `databases.search_exoplanets(filters)`. Flags → ADQL columns: `--mass-min`/`--max` (`pl_bmasse`),
+`--radius-min`/`--max` (`pl_rade`), `--period-min`/`--max` (`pl_orbper`), `--teff-min`/`--max` (`st_teff`),
+`--dist-max-pc` (`sy_dist`, **parsecs**), `--method` (`discoverymethod`, exact), `--spectral-classes`/`--spectral-refine`
+(`st_spectype`). Network failures are classified to `{"error": str}`.
+
+### Reference data (Phase B — local DB / hardcoded, no arguments)
+
+#### `main-sequence`
+Main-sequence star properties table. Returns a **list** of 24 rows, one per spectral class, with the raw CSV columns
+(`Spectral Class, B-V, Teeff(K), AbsMag Vis., AbsMag Bol., Bolo. Corr. (BC), Lum, R, M, p (g/cm3), Lifetime (years)`).
+```bash
+query.py main-sequence
+```
+Core function: `science.compute_main_sequence_table()`.
+
+#### `solar-system`
+Solar-system reference data. Output `{planets[], moons[], dwarf_planets[], asteroids[]}` (raw CSV columns per body).
+```bash
+query.py solar-system
+```
+Core function: `science.compute_solar_system_tables()`.
+
+#### `sol-regions`
+Sol's full system-regions computation from hardcoded solar constants (the opt-13 calculation). Output is the same flat
+region dict as `star-regions` (`hzil, hzol, snowLine, lh2Line, bcLuminosity, stellarMass, distAU, the alternate-
+biochemistry pairs, …`) but for the Sun, with no SIMBAD/Hypatia step.
+```bash
+query.py sol-regions
+```
+Core function: `regions.compute_sol_regions()`.
+
+### Planetary / rotating-habitat equations (Phase B — pure math, no network)
+
+> **Validation:** like the Phase-N pure-compute subcommands, these wrap the project's **older, non-self-validating**
+> equation functions. Argparse rejects missing/non-numeric args (**exit 2**). Out-of-range values do **not** yield a
+> curated error: where the math raises (e.g. `--rpm 0` → division by zero in `gravity-distance`), the top-level handler
+> returns `{"error": str(e)}` (raw message, **exit 1**); where it doesn't (e.g. `orbit-distance --ecc 1.5` just yields a
+> negative periastron), the result is returned as-is with **exit 0**. Validate ranges on the caller side.
+
+#### `orbit-distance`
+Periastron / apastron from semi-major axis + eccentricity (opt 33).
+```bash
+query.py orbit-distance --sma 1.0 --ecc 0.0167
+```
+Core function: `equations.compute_orbit_periastron_apastron(sma, ecc)`. Output: `{sma, ecc, periastron, apastron, ecc_au}`.
+
+#### `moon-orbital-distance`
+Orbital distance of an Earth-sized moon for a given day length (opts 34/35). `--day-hours` defaults to 24.
+```bash
+query.py moon-orbital-distance --planet-mass-earth 1.0 --day-hours 24
+```
+Core function: `equations.compute_moon_orbital_distance(planet_mass_earth, day_hours)`. Output:
+`{planet_mass_earth, day_hours, orbital_distance_km}`.
+
+#### `gravity-acceleration` / `gravity-distance` / `gravity-rpm`
+The three rotating-habitat solves (opts 36/37/38) — each solves for the missing one of {rpm, radius, gravity}.
+```bash
+query.py gravity-acceleration --rpm 2 --radius-m 224     # → accel_ms2
+query.py gravity-distance --rpm 2 --accel-ms2 9.81       # → radius_m
+query.py gravity-rpm --accel-ms2 9.81 --radius-m 224     # → rpm
+```
+Core functions: `equations.compute_centrifugal_gravity_acceleration(rpm, radius_m)` /
+`_distance(rpm, accel_ms2)` / `_rpm(accel_ms2, radius_m)`. Each output echoes all three values
+(`{rpm, radius_m, accel_ms2}`) with the computed one filled in.
+
+#### `travel-time-custom-thrust`
+Travel time between two solar-system bodies with a **custom burn duration** (accelerate for the burn, coast, decelerate
+for the same burn — the opt-23 calculation). **Live JPL Horizons** (the only network entry in this group).
+```bash
+query.py travel-time-custom-thrust --origin Earth --destination Mars --accel-g 1.0 --burn-value 2 --burn-unit D
+```
+Core function: `calculators.compute_travel_time_custom_thrust(origin, destination, accel_g, burn_duration_s,
+v_cap_pct=3.0, burn_value=…, burn_unit_label=…, departure_date=None)`. `--burn-unit` is `H`/`D`/`W` (Hours/Days/Weeks,
+default `D`); the CLI converts `--burn-value` + `--burn-unit` to `burn_duration_s` and passes the value/label through for
+display. `--v-cap-pct` defaults to `3.0`; `--date` is ISO `YYYY-MM-DD` (default today). The GUI-only `progress_callback`
+is never passed. Output: the full phase/burn-profile dict (`travel_time_str, t_total_hours, distance_au, distance_lm,
+eff_burn_s, v_coast_ms, fallback, iterations_done, …`). Ambiguous Horizons names return the disambiguation error from
+the core function.
+
 ## Two-step subcommands
 
 For subcommands that run SIMBAD first (`star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, `hwc`, `hypatia-data`): if the SIMBAD lookup returns `{"error": ...}`, that error is returned immediately and the second core function is never called.
@@ -455,6 +680,6 @@ The `gcns-within-sol`, `gcns-source`, and `gcns-system` subcommands are **local 
 
 - No `sys.path` manipulation — Python prepends the script's own directory automatically when run directly, so `import core.X` works without changes.
 - Unexpected exceptions from core functions are caught by a top-level handler in `main()` and returned as `{"error": str(e)}` with exit code 1.
-- `--ly-hr` and `--times-c` for `travel-time` are a mutually exclusive required group; supplying both or neither is rejected by `argparse` with exit code 2.
+- `--ly-hr` and `--times-c` are a mutually exclusive required group for `travel-time`, `optimal-tour`, and `multi-stop`; supplying both or neither is rejected by `argparse` with exit code 2.
 - The `gcns-*` calculators use one required mutually-exclusive group **per endpoint** (`--star1`/`--id1`, `--star2`/`--id2`, or `--star`/`--id`), plus the `--ly-hr`/`--times-c` group for `gcns-travel-time`. Supplying both or neither within any group is rejected by `argparse` with **exit code 2** and a message on **stderr** — this is the argparse path, **not** the JSON-`{"error"}`/exit-1 path, so do not parse stdout as JSON for those invocations. A resolvable-but-invalid request (e.g. a name not in GCNS, an ambiguous name, or an empty `gcns_stars` table) instead returns `{"error": ...}` on stdout with exit 1.
 - **Phase N validation asymmetry** (see "Integration expansion (Phase N)" above): the pure-compute Phase-N subcommands (`habitable-zone-sma`, `star-luminosity`, `brachistochrone-au`, `brachistochrone-lm`) wrap **non-self-validating** legacy core functions, so out-of-range numerics surface via the generic top-level handler as `{"error": str(e)}` with a **raw exception message** (not a curated sentence), exit 1 — except `star-luminosity`, which has no out-of-range error path (only argparse exit 2). Only `travel-time-solar` returns curated `{"error": ...}` dicts. This is intentional (Phase N adds no `core/` validation); key on `"error"` + exit code, never on the message text.

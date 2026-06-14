@@ -2,6 +2,13 @@ import csv
 import os
 
 from core.db import get_conn
+from core.shared import _format_travel_time
+
+# Physical constants for the Phase K Honorverse calculators (kept local to avoid
+# coupling to core.calculators' private constants; values are universal).
+_C_MS = 299_792_458.0          # speed of light, m/s
+_G_MS2 = 9.80665               # 1 g, m/s²
+_HOURS_PER_JULIAN_YEAR = 8765.8128   # 365.25 × 24 (ly/hr ↔ ×c)
 
 
 def compute_main_sequence_table() -> list:
@@ -131,29 +138,106 @@ def compute_honorverse_hyper_limits() -> list:
     ]
 
 
+# ── Honorverse data tables (single source of truth) ─────────────────────────
+# Shared by the opt 15/16 display functions AND the Phase K calculators. Lifting
+# these to module scope removes the previous duplication between the display
+# functions and (formerly) the CLI.
+
+# Mass-acceleration bands (opt 15). Numeric so K2 can select a band and scale;
+# the display function formats the g-values back to "550 g" strings.
+# Tuple: (mass_min, mass_max, label, warship_normal_g, merchant_normal_g,
+#         warship_hyper_g, merchant_hyper_g). Labels kept verbatim (incl. the
+#         historical "80-499,999" abbreviation) for byte-identical opt-15 output.
+_HONORVERSE_ACCEL_BANDS = [
+    (0,        79999,   "0-79,999 (FG/DD)",         550, 253, 5280, 2429),
+    (80000,    499999,  "80-499,999 (CL/CA)",       520, 240, 5018, 2308),
+    (500000,   1499999, "500,000-1,499,999 (BC)",   500, 230, 4825, 2215),
+    (1500000,  4999999, "1,500,000-4,999,999 (BB)", 470, 215, 4536, 2085),
+    (5000000,  6999999, "5,000,000-6,999,999 (DN)", 450, 207, 4345, 1990),
+    (7000000,  8499999, "7,000,000-8,499,999 (SD)", 420, 190, 4053, 1860),
+]
+
+# Effective speed — Table 1 (Alpha–Iota): band, bleed_off, multiplier,
+# warship_xc, merchant_xc, note. Iota is canon "unattainable" (0).
+_HONORVERSE_BANDS = [
+    ("Alpha",   "92%", 62,   37.2,  31.0,  ""),
+    ("Beta",    "85%", 767,  460.2, 383.5, ""),
+    ("Gamma",   "78%", 1473, 883.8, 736.5, ""),
+    ("Delta",   "72%", 2178, 1306.8, 1089.0, ""),
+    ("Epsilon", "66%", 2884, 1730.4, 1442.0, " *"),
+    ("Zeta",    "61%", 3589, 2153.4, 1794.5, " *"),
+    ("Eta",     "56%", 4294, 2576.4, 2147.0, " *"),
+    ("Theta",   "52%", 5000, 3000.0, 2500.0, " *"),
+    ("Iota",    "48%", 6000, 0,     0,      "*"),
+]
+
+# Effective speed — Table 2 (Alpha–Omega, 24 bands): band, warship_xc,
+# merchant_xc, note. warship = 0.6×multiplier, merchant = 0.5×multiplier.
+# Iota–Omega re-anchored so Iota = 6000× canon (Pearls of Weber); each
+# multiplier above Theta is +295 vs the original smoothed sequence (which also
+# cleared a −0.3 merchant transcription drift that ran from Pi onward). Bands
+# above Iota are an extrapolation — the Iota band is unreachable in canon.
+_HONORVERSE_EXPANDED_BANDS = [
+    ("Alpha",   37.2,   31.0,   ""),
+    ("Beta",    460.2,  383.5,  ""),
+    ("Gamma",   883.8,  736.5,  ""),
+    ("Delta",   1306.8, 1089.0, ""),
+    ("Epsilon", 1730.4, 1442.0, " *"),
+    ("Zeta",    2153.4, 1794.5, " *"),
+    ("Eta",     2576.4, 2147.0, " *"),
+    ("Theta",   3000.0, 2500.0, " *"),
+    ("Iota",    3600.0, 3000.0, " *"),
+    ("Kappa",   4023.6, 3353.0, " *"),
+    ("Lambda",  4446.6, 3705.5, " *"),
+    ("Mu",      4870.2, 4058.5, " *"),
+    ("Nu",      5293.2, 4411.0, " *"),
+    ("Xi",      5716.2, 4763.5, " *"),
+    ("Omicron", 6139.8, 5116.5, " *"),
+    ("Pi",      6562.8, 5469.0, " *"),
+    ("Rho",     6986.4, 5822.0, " *"),
+    ("Sigma",   7409.4, 6174.5, " *"),
+    ("Tau",     7833.0, 6527.5, " *"),
+    ("Upsilon", 8256.0, 6880.0, " *"),
+    ("Phi",     8679.0, 7232.5, " *"),
+    ("Chi",     9102.6, 7585.5, " *"),
+    ("Psi",     9525.6, 7938.0, " *"),
+    ("Omega",   9949.2, 8291.0, " *"),
+]
+
+
+def get_honorverse_accel_bands() -> list:
+    """The mass-acceleration bands as numeric dicts (for the Phase K K2 calculator)."""
+    return [
+        {"mass_min": lo, "mass_max": hi, "label": lbl,
+         "warship_normal_g": wn, "merchant_normal_g": mn,
+         "warship_hyper_g": wh, "merchant_hyper_g": mh}
+        for lo, hi, lbl, wn, mn, wh, mh in _HONORVERSE_ACCEL_BANDS
+    ]
+
+
+def get_honorverse_expanded_bands() -> list:
+    """The 24 expanded speed bands as dicts (for the Phase K K1 calculator)."""
+    return [
+        {"band": b, "warship_xc": w, "merchant_xc": m, "note": n}
+        for b, w, m, n in _HONORVERSE_EXPANDED_BANDS
+    ]
+
+
 def compute_honorverse_acceleration_table() -> list:
     """Return the Honorverse acceleration-by-mass table as a list of dicts.
 
     Each dict has keys: mass_range, warship_normal, merchant_normal,
                         warship_hyper, merchant_hyper.
     """
-    raw = [
-        ("0-79,999 (FG/DD)",           "550 g", "253 g", "5280 g", "2429 g"),
-        ("80-499,999 (CL/CA)",         "520 g", "240 g", "5018 g", "2308 g"),
-        ("500,000-1,499,999 (BC)",     "500 g", "230 g", "4825 g", "2215 g"),
-        ("1,500,000-4,999,999 (BB)",   "470 g", "215 g", "4536 g", "2085 g"),
-        ("5,000,000-6,999,999 (DN)",   "450 g", "207 g", "4345 g", "1990 g"),
-        ("7,000,000-8,499,999 (SD)",   "420 g", "190 g", "4053 g", "1860 g"),
-    ]
     return [
         {
-            "mass_range": mass_range,
-            "warship_normal": w_n,
-            "merchant_normal": m_n,
-            "warship_hyper": w_h,
-            "merchant_hyper": m_h,
+            "mass_range": lbl,
+            "warship_normal": f"{wn} g",
+            "merchant_normal": f"{mn} g",
+            "warship_hyper": f"{wh} g",
+            "merchant_hyper": f"{mh} g",
         }
-        for mass_range, w_n, m_n, w_h, m_h in raw
+        for lo, hi, lbl, wn, mn, wh, mh in _HONORVERSE_ACCEL_BANDS
     ]
 
 
@@ -167,72 +251,108 @@ def compute_honorverse_effective_speed() -> dict:
     Each band dict has keys: band, bleed_off (Table 1 only), multiplier (Table 1 only),
     warship_xc, merchant_xc, merchant_note.
     """
-    HOURS_PER_YEAR = 8765.8128
-
     def _ly_hr(xc):
-        return xc / HOURS_PER_YEAR if xc else 0.0
+        return xc / _HOURS_PER_JULIAN_YEAR if xc else 0.0
 
-    band_data = [
-        ("Alpha",   "92%", 62,   37.2,  31.0,  ""),
-        ("Beta",    "85%", 767,  460.2, 383.5, ""),
-        ("Gamma",   "78%", 1473, 883.8, 736.5, ""),
-        ("Delta",   "72%", 2178, 1306.8, 1089.0, ""),
-        ("Epsilon", "66%", 2884, 1730.4, 1442.0, " *"),
-        ("Zeta",    "61%", 3589, 2153.4, 1794.5, " *"),
-        ("Eta",     "56%", 4294, 2576.4, 2147.0, " *"),
-        ("Theta",   "52%", 5000, 3000.0, 2500.0, " *"),
-        ("Iota",    "48%", 6000, 0,     0,      "*"),
+    bands = [
+        {
+            "band": band, "bleed_off": bleed, "multiplier": mult,
+            "warship_xc": war_xc, "warship_ly_hr": _ly_hr(war_xc),
+            "merchant_xc": mer_xc, "merchant_ly_hr": _ly_hr(mer_xc),
+            "merchant_note": note,
+        }
+        for band, bleed, mult, war_xc, mer_xc, note in _HONORVERSE_BANDS
     ]
 
-    bands = []
-    for band, bleed, mult, war_xc, mer_xc, note in band_data:
-        bands.append({
+    expanded_bands = [
+        {
             "band": band,
-            "bleed_off": bleed,
-            "multiplier": mult,
-            "warship_xc": war_xc,
-            "warship_ly_hr": _ly_hr(war_xc),
-            "merchant_xc": mer_xc,
-            "merchant_ly_hr": _ly_hr(mer_xc),
+            "warship_xc": war_xc, "warship_ly_hr": _ly_hr(war_xc),
+            "merchant_xc": mer_xc, "merchant_ly_hr": _ly_hr(mer_xc),
             "merchant_note": note,
-        })
-
-    expanded_data = [
-        ("Alpha",   37.2,   31.0,   ""),
-        ("Beta",    460.2,  383.5,  ""),
-        ("Gamma",   883.8,  736.5,  ""),
-        ("Delta",   1306.8, 1089.0, ""),
-        ("Epsilon", 1730.4, 1442.0, " *"),
-        ("Zeta",    2153.4, 1794.5, " *"),
-        ("Eta",     2576.4, 2147.0, " *"),
-        ("Theta",   3000.0, 2500.0, " *"),
-        ("Iota",    3423.0, 2852.5, " *"),
-        ("Kappa",   3846.6, 3205.5, " *"),
-        ("Lambda",  4269.6, 3558.0, " *"),
-        ("Mu",      4693.2, 3911.0, " *"),
-        ("Nu",      5116.2, 4263.5, " *"),
-        ("Xi",      5539.2, 4616.0, " *"),
-        ("Omicron", 5962.8, 4969.0, " *"),
-        ("Pi",      6385.8, 5321.2, " *"),
-        ("Rho",     6809.4, 5674.2, " *"),
-        ("Sigma",   7232.4, 6026.7, " *"),
-        ("Tau",     7656.0, 6379.7, " *"),
-        ("Upsilon", 8079.0, 6732.2, " *"),
-        ("Phi",     8502.0, 7084.7, " *"),
-        ("Chi",     8925.6, 7437.7, " *"),
-        ("Psi",     9348.6, 7790.2, " *"),
-        ("Omega",   9772.2, 8143.2, " *"),
+        }
+        for band, war_xc, mer_xc, note in _HONORVERSE_EXPANDED_BANDS
     ]
-
-    expanded_bands = []
-    for band, war_xc, mer_xc, note in expanded_data:
-        expanded_bands.append({
-            "band": band,
-            "warship_xc": war_xc,
-            "warship_ly_hr": _ly_hr(war_xc),
-            "merchant_xc": mer_xc,
-            "merchant_ly_hr": _ly_hr(mer_xc),
-            "merchant_note": note,
-        })
 
     return {"bands": bands, "expanded_bands": expanded_bands}
+
+
+# ── Phase K calculators ──────────────────────────────────────────────────────
+
+def compute_hyper_translation_time(distance_ly, ship_type) -> dict:
+    """Travel time for a distance across all 24 hyper bands, per ship type (K1).
+
+    Self-validating. Returns:
+        {distance_ly, ship_type,
+         bands: [{band, speed_xc, speed_ly_hr, travel_hours, travel_time, note}],
+         footnote: str | None}
+        or {"error": str}
+    """
+    if distance_ly is None or distance_ly <= 0:
+        return {"error": "Distance must be positive."}
+    st = (ship_type or "").strip().lower()
+    if st not in ("warship", "merchantship"):
+        return {"error": "Ship type must be 'warship' or 'merchantship'."}
+
+    out, any_star = [], False
+    for band, war_xc, mer_xc, note in _HONORVERSE_EXPANDED_BANDS:
+        xc = war_xc if st == "warship" else mer_xc
+        starred = bool(note.strip()) and st == "merchantship"
+        any_star = any_star or starred
+        if xc:
+            ly_hr = xc / _HOURS_PER_JULIAN_YEAR
+            hours = distance_ly / ly_hr
+            travel = _format_travel_time(hours)
+        else:
+            ly_hr, hours, travel = 0.0, None, "N/A"
+        out.append({
+            "band": band, "speed_xc": xc, "speed_ly_hr": ly_hr,
+            "travel_hours": hours, "travel_time": travel, "note": note.strip(),
+        })
+    footnote = ("* Bands merchantmen do not normally operate in (Epsilon onward); "
+                "the speeds shown are their maximum theoretical values."
+                if any_star else None)
+    return {"distance_ly": distance_ly, "ship_type": st, "bands": out, "footnote": footnote}
+
+
+def compute_impeller_wedge(ship_mass_tons, ship_type, wedge_power_pct) -> dict:
+    """Effective acceleration and max velocities for a ship at a wedge power (K2).
+
+    Self-validating; a mass above the heaviest band clamps to it (clamped=True).
+    Returns:
+        {ship_mass_tons, mass_band, clamped, ship_type, wedge_power_pct,
+         base_accel_g, effective_accel_g, max_vel_normal_xc, max_vel_hyper_xc,
+         time_to_max_vel}
+        or {"error": str}
+    """
+    if ship_mass_tons is None or ship_mass_tons <= 0:
+        return {"error": "Ship mass must be positive."}
+    if wedge_power_pct is None or not (0 < wedge_power_pct <= 100):
+        return {"error": "Wedge power must be between 0 and 100 percent."}
+    st = (ship_type or "").strip().lower()
+    if st not in ("warship", "merchantship"):
+        return {"error": "Ship type must be 'warship' or 'merchantship'."}
+
+    bands = get_honorverse_accel_bands()
+    band, clamped = None, False
+    for b in bands:
+        if b["mass_min"] <= ship_mass_tons <= b["mass_max"]:
+            band = b
+            break
+    if band is None:                      # above the heaviest band → clamp
+        band = bands[-1]
+        clamped = True
+
+    base = band["warship_normal_g"] if st == "warship" else band["merchant_normal_g"]
+    eff = base * wedge_power_pct / 100.0
+    cap = 0.8 if st == "warship" else 0.6          # canon full-power velocity cap
+    max_norm = cap * wedge_power_pct / 100.0
+    t_s = (max_norm * _C_MS) / (eff * _G_MS2)      # time from rest to max velocity
+
+    return {
+        "ship_mass_tons": ship_mass_tons, "mass_band": band["label"],
+        "clamped": clamped, "ship_type": st, "wedge_power_pct": wedge_power_pct,
+        "base_accel_g": base, "effective_accel_g": eff,
+        "max_vel_normal_xc": max_norm, "max_vel_hyper_xc": max_norm,
+        "time_to_max_vel": _format_travel_time(t_s / 3600.0),
+    }
