@@ -18,6 +18,7 @@ NAVIGATION = [
         ("Star Systems Search",        "StarSystemsSearchPanel"),
         ("HWC Planet Search",          "HwcSearchPanel"),
         ("NASA Exoplanet Quick Search","NasaExoplanetSearchPanel"),
+        ("Hypatia Abundance Search",   "HypatiaSearchPanel"),
     ]),
     ("Comparison", [
         ("Star Comparison",        "StarComparisonPanel"),
@@ -108,6 +109,7 @@ NAVIGATION = [
         ("Import Solar System Data",       "ImportSolarSystemPanel"),
         ("Import Honorverse Hyper Limits", "ImportHonorversePanel"),
         ("Import GCNS Data",               "ImportGcnsPanel"),
+        ("Import Hypatia Cache",           "ImportHypatiaPanel"),
         ("Database Table Status",          "DbStatusPanel"),
     ]),
 ]

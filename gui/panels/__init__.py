@@ -40,7 +40,7 @@ from gui.panels.worldbuilding    import (RocheLimitPanel, TidalLockingPanel,
                                          HillSpherePanel, BinaryOrbitPanel,
                                          AtmosphereRetentionPanel)
 from gui.panels.search           import (StarSystemsSearchPanel, HwcSearchPanel,
-                                         NasaExoplanetSearchPanel)
+                                         NasaExoplanetSearchPanel, HypatiaSearchPanel)
 from gui.panels.route_planning    import (MultiStopJourneyPanel, NearestNeighborPanel,
                                          TradeRoutePlannerPanel, OptimalTourPanel,
                                          FarthestFirstPanel, JumpRoutePanel,
@@ -54,7 +54,7 @@ from gui.panels.csv_utility      import (CsvUtilityPanel, ExportStarSystemsPanel
                                          ImportHwcPanel, ImportMissionExocatPanel,
                                          ImportMainSequencePanel, ImportSolarSystemPanel,
                                          ImportHonorversePanel, ImportGcnsPanel,
-                                         DbStatusPanel)
+                                         ImportHypatiaPanel, DbStatusPanel)
 
 # ── Phase E panels (lazy-loaded to break circular import) ─────────────────────
 # gui/visualizations/*.py imports gui.panels.base, so direct imports here would

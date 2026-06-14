@@ -1445,6 +1445,262 @@ def compute_hypatia_data(simbad_result: dict) -> dict:
     }
 
 
+# ── Hypatia Catalog bulk cache (Phase L4) ─────────────────────────────────────
+#
+# The /star and /composition endpoints are per-star, so cross-star abundance
+# SEARCH ("every star with Fe/H < -0.3 and Mg/H > 0") is impossible against the
+# live API. import_hypatia_cache pulls the WHOLE catalog into a local two-table
+# EAV cache via the bulk GET /data endpoint: one call per axis returns
+# {star_name: value} for every star carrying that quantity (~8 stellar-property
+# axes + 104 element axes). /data carries only the catalog-averaged [X/H] MEAN
+# (the search filter key); the spread (std/min/max/n) and UVW kinematics are NOT
+# bulk-available (the u/v/w /data axes collide with the U/V/W element symbols),
+# so those columns stay NULL — the live per-star compute_hypatia_data still
+# serves the full detail. Import flow mirrors compute_gcns_ingest (validate-
+# before-destroy gate + atomic replace).
+
+_HYPATIA_USER_AGENT = "SpaceAndScienceFictionApp/1.0 (greg.barnette@gmail.com)"
+_HYPATIA_SOURCE = ("Hypatia Catalog (Hinkel et al. 2014, AJ 148, 54; "
+                   "arXiv:1712.04944) via hypatiacatalog.com /data API")
+
+# /data stellar-property axis -> hypatia_cache column.
+_HYPATIA_DATA_PROP_AXES = {
+    "teff":   "teff",
+    "logg":   "logg",
+    "vmag":   "vmag",
+    "bv":     "bv",
+    "dist":   "distance_pc",
+    "disk":   "disk",
+    "pm_ra":  "pm_ra",
+    "pm_dec": "pm_dec",
+}
+
+# Floor below which the Fe pull is treated as truncated/incomplete (catalog is
+# ~6k stars; Fe is the most-measured element). Guards the atomic replace from
+# wiping a good cache with a short download. Sits well under the known count.
+_HYPATIA_MIN_STARS = 1000
+
+# Polite serial inter-request delay (Stage 0a throttle envelope).
+_HYPATIA_REQUEST_DELAY = 0.5
+
+
+def _norm_hypatia_name(name: str) -> str:
+    """Collapse internal whitespace in a Hypatia /data star name.
+
+    /data right-justifies the catalog number ("*   1 Aqr"); collapsing to single
+    spaces ("* 1 Aqr") yields the canonical SIMBAD main_id form, which is also
+    how star_systems stores names — so the G1 fe_h JOIN can match on star_name.
+    """
+    return " ".join((name or "").split())
+
+
+def _hypatia_data_fetch(axis: str) -> dict:
+    """GET /data for one axis; return {normalized_star_name: value}.
+
+    Serial + polite (Stage 0a envelope): a short inter-request delay,
+    _with_retries backoff on failure, and honoring a Retry-After header on
+    429/503. Raises on exhausted retries (caller classifies via
+    _network_error_msg).
+    """
+    import time
+    import requests
+
+    def _get():
+        r = requests.get(
+            f"{_HYPATIA_BASE}/data/",
+            params={"xaxis1": axis},
+            headers={"User-Agent": _HYPATIA_USER_AGENT},
+            timeout=60,
+        )
+        if r.status_code in (429, 503):
+            retry_after = r.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    time.sleep(min(float(retry_after), 30.0))
+                except ValueError:
+                    pass
+        r.raise_for_status()
+        return r.json()
+
+    data = _with_retries(_get)
+    time.sleep(_HYPATIA_REQUEST_DELAY)
+
+    out = {}
+    for v in (data.get("values") or []):
+        name = _norm_hypatia_name(v.get("name", ""))
+        val = v.get("xaxis")
+        if name and val is not None:
+            out[name] = val
+    return out
+
+
+def import_hypatia_cache(progress_callback=None) -> dict:
+    """Pull the whole Hypatia Catalog into the local EAV cache (replace-in-place).
+
+    Flow (mirrors compute_gcns_ingest — a short/truncated download leaves the
+    existing cache intact):
+      1. bulk-fetch every stellar-property axis + every element axis into memory
+      2. Gate 1 (BEFORE any DB write): abort if the [Fe/H] star count is below
+         the floor
+      3. assemble star rows (props + denormalized fe_h + precomputed light_years)
+         and (star, element) abundance rows
+      4. replace-in-place: DELETE + bulk INSERT both tables in ONE transaction
+      5. Gate 2 (post-commit) + provenance into hypatia_meta
+
+    Returns {inserted, abundance_rows, fe_h_count, errors, total_candidates,
+    snapshot_date, source} or {"error": str}.
+    """
+    from datetime import datetime
+    from core.db import get_conn
+    from core.hypatia_elements import HYPATIA_REQUEST_SYMBOLS
+
+    def _progress(msg):
+        if progress_callback:
+            progress_callback(msg)
+
+    star_props = {}   # normalized name -> {column: value}
+
+    def _ensure(name):
+        d = star_props.get(name)
+        if d is None:
+            d = {}
+            star_props[name] = d
+        return d
+
+    n_axes = len(_HYPATIA_DATA_PROP_AXES) + len(HYPATIA_REQUEST_SYMBOLS)
+    done = 0
+
+    # ── 1. Stellar-property axes ─────────────────────────────────────────────
+    for axis, col in _HYPATIA_DATA_PROP_AXES.items():
+        done += 1
+        _progress(f"Fetching star property '{axis}' ({done}/{n_axes})…")
+        try:
+            vals = _hypatia_data_fetch(axis)
+        except Exception as e:
+            return {"error": _network_error_msg(e, f"Hypatia Catalog (/data {axis})")}
+        for name, v in vals.items():
+            _ensure(name)[col] = v
+
+    # ── 1b. Element axes ─────────────────────────────────────────────────────
+    abund = {}   # normalized name -> {element: mean}
+    errors = 0
+    for sym in HYPATIA_REQUEST_SYMBOLS:
+        done += 1
+        _progress(f"Fetching element '{sym}' ({done}/{n_axes})…")
+        try:
+            vals = _hypatia_data_fetch(sym)
+        except Exception:
+            errors += 1   # one element axis failing is non-fatal
+            continue
+        for name, v in vals.items():
+            abund.setdefault(name, {})[sym] = v
+            if sym == "Fe":
+                _ensure(name)["fe_h"] = v
+
+    # ── 2. Gate 1 (before any DB write) ──────────────────────────────────────
+    fe_count = sum(1 for d in star_props.values() if d.get("fe_h") is not None)
+    if fe_count < _HYPATIA_MIN_STARS:
+        return {"error": (f"Hypatia /data returned only {fe_count:,} stars with "
+                          f"[Fe/H] (expected >= {_HYPATIA_MIN_STARS:,}). Likely an "
+                          "incomplete download; aborted before writing. Existing "
+                          "hypatia_cache left intact.")}
+
+    # ── 3. Assemble rows ─────────────────────────────────────────────────────
+    snapshot_date = datetime.now().strftime("%Y-%m-%d")
+    all_names = set(star_props) | set(abund)
+    cache_rows = []
+    for name in all_names:
+        d = star_props.get(name, {})
+        dist_pc = _fval(d.get("distance_pc"))
+        ly = dist_pc * _LY_PER_PC if dist_pc is not None else None
+        disk = d.get("disk")
+        if isinstance(disk, float) and disk.is_integer():
+            disk = int(disk)
+        disk_s = str(disk) if disk is not None else None
+        cache_rows.append((
+            name, None, None,
+            _fval(d.get("teff")), _fval(d.get("logg")), _fval(d.get("vmag")),
+            _fval(d.get("bv")), dist_pc, disk_s,
+            None, None, None,                       # u_vel / v_vel / w_vel
+            _fval(d.get("pm_ra")), _fval(d.get("pm_dec")),
+            _fval(d.get("fe_h")), ly, snapshot_date,
+        ))
+
+    abund_rows = []
+    for name, elems in abund.items():
+        for sym, v in elems.items():
+            fv = _fval(v)
+            if fv is None:
+                continue
+            abund_rows.append((name, sym, fv, None, None, None, None))
+
+    # ── 4. Replace-in-place (one transaction) ────────────────────────────────
+    _progress(f"Writing {len(cache_rows):,} stars / {len(abund_rows):,} abundances…")
+    conn = get_conn()
+    try:
+        with conn:
+            conn.execute("DELETE FROM hypatia_abundance")
+            conn.execute("DELETE FROM hypatia_cache")
+            conn.executemany(
+                "INSERT INTO hypatia_cache (star_name, hip, hd, teff, logg, vmag, "
+                "bv, distance_pc, disk, u_vel, v_vel, w_vel, pm_ra, pm_dec, fe_h, "
+                "light_years, fetched_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                cache_rows,
+            )
+            conn.executemany(
+                "INSERT INTO hypatia_abundance (star_name, element, mean, std, "
+                "min, max, n) VALUES (?,?,?,?,?,?,?)",
+                abund_rows,
+            )
+    except Exception as e:
+        return {"error": f"Could not write Hypatia cache tables: {e}"}
+
+    # ── 5. Gate 2 (post-commit) + provenance ─────────────────────────────────
+    final = conn.execute("SELECT COUNT(*) FROM hypatia_cache").fetchone()[0]
+    if final < _HYPATIA_MIN_STARS:
+        return {"error": (f"Post-commit check failed: hypatia_cache holds {final:,} "
+                          f"rows (expected >= {_HYPATIA_MIN_STARS:,}).")}
+    final_abund = conn.execute("SELECT COUNT(*) FROM hypatia_abundance").fetchone()[0]
+
+    meta = {
+        "snapshot_date":   snapshot_date,
+        "source":          _HYPATIA_SOURCE,
+        "simbad_norm":     "lodders09",
+        "star_count":      str(final),
+        "abundance_count": str(final_abund),
+        "fe_h_count":      str(fe_count),
+        "axis_errors":     str(errors),
+    }
+    with conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO hypatia_meta (key, value) VALUES (?, ?)",
+            list(meta.items()),
+        )
+
+    _progress(f"Done — {final:,} stars, {final_abund:,} abundance rows "
+              f"({fe_count:,} with [Fe/H]).")
+    return {
+        "inserted":         final,
+        "abundance_rows":   final_abund,
+        "fe_h_count":       fe_count,
+        "errors":           errors,
+        "total_candidates": len(all_names),
+        "snapshot_date":    snapshot_date,
+        "source":           _HYPATIA_SOURCE,
+    }
+
+
+def _hypatia_meta_dict() -> dict:
+    """Return the hypatia_meta key/value pairs as a dict (empty if unbuilt)."""
+    from core.db import get_conn
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT key, value FROM hypatia_meta").fetchall()
+        return {r["key"]: r["value"] for r in rows}
+    except Exception:
+        return {}
+
+
 def import_honorverse_hyper_csv(csv_path: str) -> dict:
     """Replace honorverse_hyper table with data from csv_path (headerless CSV).
 
@@ -2550,29 +2806,38 @@ def search_star_systems(filters: dict) -> dict:
     clauses, params = [], []
 
     sp, sp_params = spectral_where(
-        "spectral_type", f.get("spectral_classes"), f.get("spectral_refine", ""))
+        "ss.spectral_type", f.get("spectral_classes"), f.get("spectral_refine", ""))
     if sp:
         clauses.append(sp)
         params.extend(sp_params)
 
-    clauses += _range_clause("light_years",   f.get("ly_min"),  f.get("ly_max"),  params)
-    clauses += _range_clause("app_magnitude", f.get("mag_min"), f.get("mag_max"), params)
+    clauses += _range_clause("ss.light_years",   f.get("ly_min"),  f.get("ly_max"),  params)
+    clauses += _range_clause("ss.app_magnitude", f.get("mag_min"), f.get("mag_max"), params)
 
     prefix = (f.get("designation_prefix") or "").strip()
     if prefix:
         esc = _escape_like(prefix)
         clauses.append(
-            "(star_name LIKE ? ESCAPE '\\' "
-            "OR designations LIKE ? ESCAPE '\\' "
-            "OR designations LIKE ? ESCAPE '\\')"
+            "(ss.star_name LIKE ? ESCAPE '\\' "
+            "OR ss.designations LIKE ? ESCAPE '\\' "
+            "OR ss.designations LIKE ? ESCAPE '\\')"
         )
         params += [f"{esc}%", f"{esc}%", f"%, {esc}%"]
 
+    # Phase L4: an fe_h filter JOINs the Hypatia abundance cache (there is no JOIN
+    # otherwise). An empty/unbuilt cache simply yields no matches for that filter.
+    fe_h_min, fe_h_max = f.get("fe_h_min"), f.get("fe_h_max")
+    join = ""
+    if fe_h_min is not None or fe_h_max is not None:
+        join = " JOIN hypatia_cache hc ON ss.star_name = hc.star_name"
+        clauses += _range_clause("hc.fe_h", fe_h_min, fe_h_max, params)
+
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     sql = (
-        "SELECT star_name, designations, spectral_type, parallax, parsecs, "
-        "light_years, app_magnitude, ra, dec FROM star_systems"
-        f"{where} ORDER BY light_years ASC LIMIT ?"
+        "SELECT ss.star_name, ss.designations, ss.spectral_type, ss.parallax, "
+        "ss.parsecs, ss.light_years, ss.app_magnitude, ss.ra, ss.dec "
+        "FROM star_systems ss"
+        f"{join}{where} ORDER BY ss.light_years ASC LIMIT ?"
     )
     params.append(_SEARCH_CAP + 1)
 
@@ -2710,6 +2975,75 @@ def search_exoplanets(filters: dict) -> dict:
     if capped:
         rows = rows[:_EXO_SEARCH_CAP]
     return {"count": len(rows), "capped": capped, "cap": _EXO_SEARCH_CAP, "stars": rows}
+
+
+def search_hypatia_cache(filters: dict) -> dict:
+    """Filter the local Hypatia abundance cache (Phase L4). No network.
+
+    Filter keys (all optional): fe_h_min/fe_h_max, teff_min/teff_max, ly_max
+    (light_years), disk (exact match), and element + element_min/element_max (an
+    EXISTS subquery on hypatia_abundance for that species' [X/H] mean). Sorted by
+    fe_h DESC (NULL fe_h last), capped at _SEARCH_CAP. Returns
+    {count, capped, cap, stars[]} or {"error": str}. Each star carries the cache
+    columns plus pivoted mg_h / si_h / o_h convenience values.
+    """
+    from core.db import get_conn, table_exists
+
+    if not table_exists("hypatia_cache"):
+        return {"error": "hypatia_cache table is empty — run the Import Hypatia Cache utility first."}
+
+    f = filters or {}
+    clauses, params = [], []
+
+    clauses += _range_clause("fe_h", f.get("fe_h_min"), f.get("fe_h_max"), params)
+    clauses += _range_clause("teff", f.get("teff_min"), f.get("teff_max"), params)
+
+    ly_max = f.get("ly_max")
+    if ly_max is not None:
+        clauses.append("(light_years IS NOT NULL AND light_years <= ?)")
+        params.append(ly_max)
+
+    disk = f.get("disk")
+    if disk is not None and str(disk).strip() != "":
+        clauses.append("disk = ?")
+        params.append(str(disk).strip())
+
+    element = (f.get("element") or "").strip()
+    if element:
+        sub, subp = ["a.star_name = hc.star_name", "a.element = ?"], [element]
+        if f.get("element_min") is not None:
+            sub.append("a.mean >= ?"); subp.append(f.get("element_min"))
+        if f.get("element_max") is not None:
+            sub.append("a.mean <= ?"); subp.append(f.get("element_max"))
+        clauses.append(
+            "EXISTS (SELECT 1 FROM hypatia_abundance a WHERE " + " AND ".join(sub) + ")")
+        params.extend(subp)
+
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = (
+        "SELECT hc.star_name, hc.hip, hc.hd, hc.teff, hc.logg, hc.vmag, hc.bv, "
+        "hc.distance_pc, hc.disk, hc.fe_h, hc.light_years, "
+        "(SELECT mean FROM hypatia_abundance WHERE star_name = hc.star_name AND element = 'Mg') AS mg_h, "
+        "(SELECT mean FROM hypatia_abundance WHERE star_name = hc.star_name AND element = 'Si') AS si_h, "
+        "(SELECT mean FROM hypatia_abundance WHERE star_name = hc.star_name AND element = 'O')  AS o_h "
+        "FROM hypatia_cache hc"
+        f"{where} ORDER BY hc.fe_h IS NULL, hc.fe_h DESC LIMIT ?"
+    )
+    params.append(_SEARCH_CAP + 1)
+
+    try:
+        conn = get_conn()
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    except Exception as e:
+        return {"error": f"Error reading hypatia_cache table: {e}"}
+
+    if not rows and conn.execute("SELECT COUNT(*) FROM hypatia_cache").fetchone()[0] == 0:
+        return {"error": "hypatia_cache table is empty — run the Import Hypatia Cache utility first."}
+
+    capped = len(rows) > _SEARCH_CAP
+    if capped:
+        rows = rows[:_SEARCH_CAP]
+    return {"count": len(rows), "capped": capped, "cap": _SEARCH_CAP, "stars": rows}
 
 
 # ── Star comparison (Phase L1) ───────────────────────────────────────────────

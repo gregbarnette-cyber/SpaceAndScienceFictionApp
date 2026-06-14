@@ -302,9 +302,12 @@ Filters the local `star_systems` table. No network. Filter keys (all optional):
 token — a parameterized `LIKE 'p%'` at the start or after a `", "` separator).
 Default sort `light_years ASC`; capped at `_SEARCH_CAP` (500). Returns
 `{"error": "star_systems table is empty — run option 50 first…"}` when the table is
-empty. (The planned Phase L4 `fe_h_min`/`fe_h_max` JOIN against `hypatia_cache`
-is **not** stubbed here yet — L4 will add the filter + JOIN when it builds the
-`hypatia_cache` table.)
+empty. **Phase L4 metallicity filter:** `fe_h_min` / `fe_h_max` are now wired — when
+either is set, the query gains `JOIN hypatia_cache hc ON ss.star_name = hc.star_name`
+and a `hc.fe_h` range clause (the only JOIN this function ever uses; the base query is
+aliased `star_systems ss`). The JOIN is an inner join, so an fe_h filter returns only
+stars present in the Hypatia cache — with an empty/unbuilt cache it simply matches
+nothing (not an error). See "Phase L4 — Hypatia Abundance Cache & Search" below.
 
 ### G2 — `search_hwc(filters: dict) -> dict`
 
@@ -385,6 +388,10 @@ archive/regions value) → Conservative HZ inner (`rg`) / outer (`mg`) via
   background worker runs `compare_stars`; a **"Abundance Profiles"** diagram tab
   (`DiagramToggleMixin`) shows a grouped [X/H] bar chart via
   `core.viz.prepare_abundance_comparison` → `make_abundance_comparison_canvas`.
+- **query.py:** `compare-stars --stars N [N …]` (2–4) wraps `compare_stars` verbatim
+  — see `docs/integration.md`. (Added after the original L1 build, once the
+  `scifiWorldBuilding-Claude` consumer's need for a bundled multi-star comparison
+  was confirmed.)
 
 ### L2 — ESI Ranking (no new core function)
 
@@ -394,8 +401,103 @@ sorted `P_ESI DESC`, cap 500), prepends a 1-based **Rank** column, and computes
 Distance (LY) = `S_DISTANCE (pc) × 3.26156`. Synchronous local-DB read; a
 double-clicked row opens `HwcPanel` for that `S_NAME`. No new core code and **no
 `esi-ranking` query.py subcommand** — `search-hwc --esi-min …` already covers it.
+The panel is a `DiagramToggleMixin` with a **top-N ESI bar chart** Show-Diagrams
+tab (`core.viz.prepare_esi_bar_chart` → `make_esi_bar_canvas`; bars colored by the
+habitable flag).
 
 ### L3 — Stellar Evolution
 
 `compute_stellar_evolution` (in `core/equations.py` — see `docs/equations.md`)
 backs `StellarEvolutionPanel` and the `stellar-evolution` `query.py` subcommand.
+
+## Phase L4 — Hypatia Abundance Cache & Search
+
+The Hypatia `/star` and `/composition` endpoints are **per-star**, so cross-star
+abundance *search* ("every star with Fe/H < −0.3 and Mg/H > 0") is impossible
+against the live API. L4 pulls the whole catalog into a local two-table EAV cache
+once, then filters it like the other Search & Filter panels. The pre-L4
+verification spike passed (2026-06-14): `hypatiacatalog.com` has no robots.txt /
+WAF / published rate limits and explicitly blesses API access, and the bulk
+`GET /data` endpoint carries a **star identifier** per point (so the cheap
+~112-call import path is viable).
+
+### Storage (`core/db.py`) — EAV, isolated, not auto-seeded
+
+Three tables (declared in `_create_schema` alongside the GCNS tables; empty until
+the import runs, like `gcns_stars`):
+
+- **`hypatia_cache`** — one row per star: `star_name` (PK; SIMBAD main_id with
+  whitespace collapsed), `hip`/`hd` (NULL — not bulk-available), `teff`, `logg`,
+  `vmag`, `bv`, `distance_pc`, `disk` (TEXT code: `0`=thin, `1`=thick),
+  `u_vel`/`v_vel`/`w_vel` (NULL — see below), `pm_ra`, `pm_dec`, `fe_h`
+  (denormalized [Fe/H] mean — the default sort + dominant filter + G1 JOIN key,
+  indexed), `light_years` (= `distance_pc × 3.26156`, precomputed + indexed),
+  `fetched_date`.
+- **`hypatia_abundance`** — one row per `(star_name, element)`: `element` (API
+  casing, e.g. `Fe`, `Mg`, `Ba_II`), `mean` ([X/H], Lodders 2009),
+  `std`/`min`/`max`/`n` (NULL — not bulk-available). PK `(star_name, element)`;
+  indexed on `(element, mean)`.
+- **`hypatia_meta`** (key/value, mirroring `gcns_meta`): `snapshot_date`,
+  `source`, `simbad_norm` (`lodders09`), `star_count`, `abundance_count`,
+  `fe_h_count`, `axis_errors`.
+
+`get_table_status()` lists **Hypatia Cache**.
+
+### Import — `import_hypatia_cache(progress_callback=None)`
+
+Bulk path via `GET /data/?xaxis1=<axis>` — one call per axis returns
+`{star_name: value}` for every star carrying that quantity. Pulls **8 stellar-
+property axes** (`teff`, `logg`, `vmag`, `bv`, `dist`→`distance_pc`, `disk`,
+`pm_ra`, `pm_dec`) + the **104 element species** from `core/hypatia_elements.py`
+(`Fe` also fills the denormalized `fe_h`). Names are whitespace-normalized
+(`_norm_hypatia_name`: `"*   1 Aqr"` → `"* 1 Aqr"`, the SIMBAD/`star_systems`
+form). Flow mirrors `compute_gcns_ingest` (validate-before-destroy): fetch all →
+**Gate 1** (abort before any DB write if the [Fe/H] star count < `_HYPATIA_MIN_STARS`
+= 1000) → assemble → **DELETE + bulk INSERT both tables in ONE transaction** →
+**Gate 2** (post-commit count) → write `hypatia_meta`. A single element axis
+failing is non-fatal (skipped + counted in `errors`). Throttle envelope (Stage
+0a): serial, ~0.5 s inter-request delay, `_with_retries` backoff **+ honors
+`Retry-After`** on 429/503, descriptive `User-Agent` with contact email. Returns
+`{inserted, abundance_rows, fe_h_count, errors, total_candidates, snapshot_date,
+source}` or `{"error": str}`.
+
+> **Bulk-path caveat (mean-only):** `/data` carries the catalog-averaged **[X/H]
+> mean** per element — the search filter key — but **not** the spread
+> (`std`/`min`/`max`/`n`) or the UVW kinematics (the `u`/`v`/`w` `/data` axes
+> collide with the U/V/W *element* symbols). Those columns stay NULL; the live
+> per-star `compute_hypatia_data` (opt 1 / 3–6 / 8 displays) still serves full
+> detail with error bars. Live build (2026-06-14): **14,085 stars / 244,867
+> abundance rows**, all with [Fe/H], 0 axis errors.
+
+### Search — `search_hypatia_cache(filters) -> dict`
+
+Reuses the G1/G2 helpers (`_range_clause`, `_SEARCH_CAP`=500, `get_conn`). Filter
+keys (all optional): `fe_h_min`/`fe_h_max`, `teff_min`/`teff_max`, `ly_max`
+(`light_years`), `disk` (exact), and `element` + `element_min`/`element_max` (an
+`EXISTS` subquery on `hypatia_abundance` for that species' [X/H]). Display columns
+`mg_h`/`si_h`/`o_h` are pivoted via correlated subqueries (Fe/H is the denormalized
+column). Sorted `fe_h DESC` (NULL fe_h last), cap 500, same
+`{count, capped, cap, stars[]}` shape as `search_star_systems`. Empty cache →
+`{"error": "hypatia_cache table is empty — run the Import Hypatia Cache utility first."}`.
+
+### G1 integration
+
+`search_star_systems` gains `fe_h_min`/`fe_h_max` (see G1 above) — the only JOIN
+that function uses, activating only when an fe_h filter is set.
+
+### GUI / `query.py`
+
+- **`ImportHypatiaPanel`** (Utilities nav; `gui/panels/csv_utility.py`) — mirrors
+  `ImportGcnsPanel` (`_HypatiaWorker` on a `QThread`, busy progress bar, status
+  label, completion summary).
+- **`HypatiaSearchPanel`** (Search & Filter nav; `gui/panels/search.py`) — reuses
+  `SearchPanelBase` (inline drill-down detail tabs; "Open star in new tab"
+  embeds a `SimbadPanel`). Form: Fe/H, Teff, Disk combo, Element combo + [X/H]
+  range, Max Distance (LY). No `SpectralClassControl`. The Star Systems Search
+  panel's previously-disabled Fe/H field is now live. A **scatter "Plot" tab**
+  (X/Y axis dropdowns over `core.viz.HYPATIA_SCATTER_AXES` — Fe/H, Teff, log g,
+  distance, V, B–V, Mg/Si/O — `prepare_hypatia_scatter` → `make_scatter_canvas`,
+  with a hover tooltip) plots the current result set; re-plotting rebuilds the
+  single Plot tab.
+- **`query.py search-hypatia`** — local-DB read over `search_hypatia_cache`; same
+  `search-*` contract (see `docs/integration.md`).

@@ -274,6 +274,51 @@ def _create_schema(conn: sqlite3.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_gcns_syspair_system
             ON gcns_system_pairs (system_id);
+
+        -- Hypatia Catalog abundance cache (Phase L4). Two-table EAV: one row per
+        -- star in hypatia_cache, one row per (star, element) in hypatia_abundance.
+        -- Isolated and NOT auto-seeded (like the GCNS tables); populated only by
+        -- the Import Hypatia Cache utility via the bulk GET /data endpoint. /data
+        -- carries the catalog-averaged [X/H] MEAN per element (the search filter
+        -- key); the spread (std/min/max/n) and UVW kinematics are NOT bulk-
+        -- available (the u/v/w /data axes collide with the U/V/W element symbols),
+        -- so those columns stay NULL — the live per-star compute_hypatia_data
+        -- still serves the full detail. fe_h is denormalized from the 'Fe' row;
+        -- light_years is precomputed as distance_pc * 3.26156.
+        CREATE TABLE IF NOT EXISTS hypatia_cache (
+            star_name    TEXT PRIMARY KEY,   -- SIMBAD main_id (whitespace-normalized)
+            hip          TEXT,
+            hd           TEXT,
+            teff         REAL,
+            logg         REAL,
+            vmag         REAL,
+            bv           REAL,
+            distance_pc  REAL,
+            disk         TEXT,               -- Hypatia disk code (0=thin, 1=thick, …)
+            u_vel        REAL,               -- NULL (not bulk-available)
+            v_vel        REAL,               -- NULL (not bulk-available)
+            w_vel        REAL,               -- NULL (not bulk-available)
+            pm_ra        REAL,
+            pm_dec       REAL,
+            fe_h         REAL,               -- denormalized [Fe/H] mean
+            light_years  REAL,               -- distance_pc * 3.26156
+            fetched_date TEXT
+        );
+        CREATE TABLE IF NOT EXISTS hypatia_abundance (
+            star_name TEXT,
+            element   TEXT,                  -- API casing: 'Fe', 'Mg', 'Ba_II'
+            mean      REAL,                  -- [X/H] (Lodders 2009)
+            std       REAL,                  -- NULL (not bulk-available)
+            min       REAL,                  -- NULL (not bulk-available)
+            max       REAL,                  -- NULL (not bulk-available)
+            n         INTEGER,               -- NULL (not bulk-available)
+            PRIMARY KEY (star_name, element)
+        );
+        CREATE TABLE IF NOT EXISTS hypatia_meta (key TEXT PRIMARY KEY, value TEXT);
+        CREATE INDEX IF NOT EXISTS idx_hyp_cache_feh  ON hypatia_cache(fe_h);
+        CREATE INDEX IF NOT EXISTS idx_hyp_cache_teff ON hypatia_cache(teff);
+        CREATE INDEX IF NOT EXISTS idx_hyp_cache_ly   ON hypatia_cache(light_years);
+        CREATE INDEX IF NOT EXISTS idx_hyp_abund_elem ON hypatia_abundance(element, mean);
     """)
     conn.commit()
     _migrate_schema(conn)
@@ -472,6 +517,7 @@ def get_table_status() -> list:
         ("gcns_stars",         "GCNS Stars"),
         ("gcns_systems",       "GCNS Systems"),
         ("gcns_meta",          "GCNS Meta"),
+        ("hypatia_cache",      "Hypatia Cache"),
         ("hwc",                "Habitable Worlds Catalog"),
         ("mission_exocat",     "Mission Exocat"),
         ("main_sequence_stars","Main Sequence Stars"),

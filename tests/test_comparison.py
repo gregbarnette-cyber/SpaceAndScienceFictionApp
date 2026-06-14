@@ -264,5 +264,66 @@ class StellarEvolutionQueryTest(unittest.TestCase):
         self.assertIsNone(payload)
 
 
+class CompareStarsQueryCliTest(unittest.TestCase):
+    """compare-stars query.py subcommand (Phase L1). Offline: Sol/Sun are
+    reference-constant special-cased, so the happy path needs no network; the
+    error paths (arg count, argparse) are likewise offline."""
+
+    def test_happy_sol_sun_offline(self):
+        code, payload, _ = _run("compare-stars", "--stars", "Sol", "Sun")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(payload["stars"]), 2)
+        for s in payload["stars"]:
+            self.assertEqual(s["sp_type"], "G2V")
+            self.assertEqual(s["teff"], 5778.0)
+            self.assertIsNone(s["error"])
+
+    def test_too_few_exit_1(self):
+        code, payload, _ = _run("compare-stars", "--stars", "Sol")
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
+
+    def test_too_many_exit_1(self):
+        code, payload, _ = _run("compare-stars", "--stars", "Sol", "Sun", "a", "b", "c")
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
+
+    def test_missing_arg_exit_2(self):
+        code, payload, _ = _run("compare-stars")
+        self.assertEqual(code, 2)
+        self.assertIsNone(payload)
+
+
+class EsiBarPrepTest(unittest.TestCase):
+    """core.viz.prepare_esi_bar_chart (Phase L2 diagram data)."""
+
+    def setUp(self):
+        import core.viz as viz
+        self.viz = viz
+
+    def test_filters_and_top_n(self):
+        result = {"stars": [
+            {"P_NAME": "b", "P_ESI": "0.91", "P_HABITABLE": "1"},
+            {"P_NAME": "c", "P_ESI": "0.80", "P_HABITABLE": "0"},
+            {"P_NAME": "d", "P_ESI": "",     "P_HABITABLE": "1"},  # blank ESI dropped
+        ]}
+        d = self.viz.prepare_esi_bar_chart(result, top_n=20)
+        self.assertEqual(d["names"], ["b", "c"])
+        self.assertEqual(d["esi"], [0.91, 0.80])
+        self.assertEqual(d["habitable"], [True, False])
+        self.assertEqual((d["shown"], d["total"]), (2, 2))
+
+    def test_top_n_caps(self):
+        result = {"stars": [{"P_NAME": str(i), "P_ESI": str(1 - i * 0.01),
+                             "P_HABITABLE": "0"} for i in range(30)]}
+        d = self.viz.prepare_esi_bar_chart(result, top_n=10)
+        self.assertEqual(d["shown"], 10)
+        self.assertEqual(d["total"], 30)
+
+    def test_error_passthrough_and_empty(self):
+        self.assertIn("error", self.viz.prepare_esi_bar_chart({"error": "x"}))
+        self.assertIn("error", self.viz.prepare_esi_bar_chart({"stars": []}))
+
+
 if __name__ == "__main__":
     unittest.main()

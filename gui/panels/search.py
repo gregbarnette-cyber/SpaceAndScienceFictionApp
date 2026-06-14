@@ -15,7 +15,13 @@ from PySide6.QtCore import Qt
 
 from gui.panels.search_common import SearchPanelBase, SpectralClassControl
 from core.shared import _fval, LY_PER_PC
+from core.hypatia_elements import HYPATIA_SPECIES, display_symbol
 import core.databases
+import core.viz
+from core.viz import HYPATIA_SCATTER_AXES
+from gui.visualizations.plot_helpers import (
+    mpl_available, wrap_scrollable, make_scatter_canvas,
+)
 
 
 # ── small form helpers ───────────────────────────────────────────────────────
@@ -89,11 +95,10 @@ class StarSystemsSearchPanel(SearchPanelBase):
         self._desig.returnPressed.connect(self._search)
         form.addRow("Designation Prefix:", self._desig)
 
-        # Phase L4 stretch: Fe/H filter (needs the Hypatia cache) — disabled stub.
-        feh_w, feh_lo, feh_hi = _range_pair()
-        for e in (feh_lo, feh_hi):
-            e.setEnabled(False)
-        form.addRow("Fe/H  [L4]:", feh_w)
+        # Phase L4: Fe/H filter — JOINs the Hypatia cache (run Import Hypatia
+        # Cache first; with no cache an Fe/H filter simply returns no matches).
+        feh_w, self._feh_min, self._feh_max = _range_pair(self._gate)
+        form.addRow("Fe/H (needs Hypatia cache):", feh_w)
 
         layout.addLayout(form)
 
@@ -117,7 +122,8 @@ class StarSystemsSearchPanel(SearchPanelBase):
     def _has_any_filter(self) -> bool:
         if not self._spectral.is_empty():
             return True
-        for e in (self._ly_min, self._ly_max, self._mag_min, self._mag_max, self._desig):
+        for e in (self._ly_min, self._ly_max, self._mag_min, self._mag_max,
+                  self._desig, self._feh_min, self._feh_max):
             if e.text().strip():
                 return True
         return False
@@ -130,7 +136,8 @@ class StarSystemsSearchPanel(SearchPanelBase):
 
     def _clear_form(self):
         self._spectral.clear()
-        for e in (self._ly_min, self._ly_max, self._mag_min, self._mag_max, self._desig):
+        for e in (self._ly_min, self._ly_max, self._mag_min, self._mag_max,
+                  self._desig, self._feh_min, self._feh_max):
             e.clear()
         self._gate()
 
@@ -143,6 +150,8 @@ class StarSystemsSearchPanel(SearchPanelBase):
             "mag_min":            _fnum(self._mag_min),
             "mag_max":            _fnum(self._mag_max),
             "designation_prefix": self._desig.text().strip() or None,
+            "fe_h_min":           _fnum(self._feh_min),
+            "fe_h_max":           _fnum(self._feh_max),
         }
 
     def _search(self):
@@ -418,3 +427,175 @@ class NasaExoplanetSearchPanel(SearchPanelBase):
         from gui.panels.nasa_exoplanet import NasaPlanetarySystemsPanel
         self.open_detail_tab(("g3", host), f"🪐 {host}",
                              lambda: self._make_detail(NasaPlanetarySystemsPanel, "_name", host))
+
+
+# ── L4: Hypatia Abundance Search ─────────────────────────────────────────────
+
+class HypatiaSearchPanel(SearchPanelBase):
+    """Filter the local Hypatia abundance cache by metallicity, temperature,
+    galactic disk, a specific element's [X/H], and distance (Phase L4). No
+    network — reads the hypatia_cache / hypatia_abundance tables populated by the
+    Import Hypatia Cache utility. Sorted by Fe/H desc."""
+
+    # Hypatia disk codes (0 = thin disk, 1 = thick disk). Label -> stored value.
+    _DISKS = [("Any", None), ("Thin disk (0)", "0"), ("Thick disk (1)", "1")]
+
+    def build_search_ui(self, layout):
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        feh_w, self._feh_min, self._feh_max = _range_pair()
+        form.addRow("Fe/H ([Fe/H]):", feh_w)
+
+        teff_w, self._teff_min, self._teff_max = _range_pair()
+        form.addRow("Teff (K):", teff_w)
+
+        self._disk = QComboBox()
+        for label, _val in self._DISKS:
+            self._disk.addItem(label)
+        form.addRow("Galactic Disk:", self._disk)
+
+        # Element + value range (one species' [X/H]).
+        self._element = QComboBox()
+        self._element.addItem("Any", "")
+        for s in HYPATIA_SPECIES:
+            self._element.addItem(display_symbol(s["symbol"]), s["symbol"])
+        elem_row = QWidget()
+        elem_h = QHBoxLayout(elem_row)
+        elem_h.setContentsMargins(0, 0, 0, 0)
+        elem_h.setSpacing(4)
+        self._elem_min = QLineEdit(); self._elem_min.setPlaceholderText("min")
+        self._elem_max = QLineEdit(); self._elem_max.setPlaceholderText("max")
+        for e in (self._elem_min, self._elem_max):
+            e.setMaximumWidth(90)
+            e.setProperty("no_width_cap", True)
+        elem_h.addWidget(self._element)
+        elem_h.addWidget(QLabel("[X/H]"))
+        elem_h.addWidget(self._elem_min)
+        elem_h.addWidget(QLabel("to"))
+        elem_h.addWidget(self._elem_max)
+        elem_h.addStretch()
+        form.addRow("Element:", elem_row)
+
+        self._ly_max = QLineEdit()
+        self._ly_max.setPlaceholderText("any")
+        self._ly_max.setMaximumWidth(90)
+        self._ly_max.setProperty("no_width_cap", True)
+        self._ly_max.returnPressed.connect(self._search)
+        form.addRow("Max Distance (LY):", self._ly_max)
+
+        layout.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        self.run_btn = QPushButton("Search")
+        self.run_btn.clicked.connect(self._search)
+        clear_btn = QPushButton("Clear")
+        clear_btn.clicked.connect(self._clear_form)
+        hint = QLabel("Sorted by Fe/H (desc) · caps at 500 rows · run Import Hypatia Cache first.")
+        hint.setStyleSheet("color: #999; font-size: 11px;")
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(clear_btn)
+        btn_row.addWidget(hint)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self._build_results_scaffold(layout)
+
+        # Scatter-plot controls — plot the current result set with selectable axes
+        # (opens in a closable "Plot" tab). Disabled until a search has run.
+        self._last_result = None
+        plot_row = QHBoxLayout()
+        plot_row.addWidget(QLabel("Plot:"))
+        self._plot_x = QComboBox()
+        self._plot_y = QComboBox()
+        for key, label in HYPATIA_SCATTER_AXES:
+            self._plot_x.addItem(label, key)
+            self._plot_y.addItem(label, key)
+        self._plot_x.setCurrentIndex(0)   # [Fe/H]
+        self._plot_y.setCurrentIndex(1)   # Teff (K)
+        self._plot_btn = QPushButton("Show Plot")
+        self._plot_btn.setEnabled(False)
+        self._plot_btn.clicked.connect(self._show_plot)
+        plot_row.addWidget(QLabel("X:"))
+        plot_row.addWidget(self._plot_x)
+        plot_row.addWidget(QLabel("Y:"))
+        plot_row.addWidget(self._plot_y)
+        plot_row.addWidget(self._plot_btn)
+        plot_row.addStretch()
+        layout.addLayout(plot_row)
+
+    def _clear_form(self):
+        for e in (self._feh_min, self._feh_max, self._teff_min, self._teff_max,
+                  self._elem_min, self._elem_max, self._ly_max):
+            e.clear()
+        self._disk.setCurrentIndex(0)
+        self._element.setCurrentIndex(0)
+
+    def _filters(self) -> dict:
+        return {
+            "fe_h_min":    _fnum(self._feh_min),
+            "fe_h_max":    _fnum(self._feh_max),
+            "teff_min":    _fnum(self._teff_min),
+            "teff_max":    _fnum(self._teff_max),
+            "disk":        self._DISKS[self._disk.currentIndex()][1],
+            "element":     self._element.currentData() or None,
+            "element_min": _fnum(self._elem_min),
+            "element_max": _fnum(self._elem_max),
+            "ly_max":      _fnum(self._ly_max),
+        }
+
+    def _search(self):
+        self.run_in_background(core.databases.search_hypatia_cache, self._filters(),
+                               on_result=self._render)
+
+    def _render(self, result: dict):
+        self._last_result = result
+        self._plot_btn.setEnabled("error" not in result and bool(result.get("stars")))
+        if "error" in result:
+            self._show_search_error(result["error"])
+            return
+        records = result["stars"]
+        headers = ["Star", "Fe/H", "Mg/H", "Si/H", "O/H", "Teff (K)", "log g",
+                   "Disk", "Distance (LY)"]
+
+        display_rows = [
+            [r.get("star_name") or "N/A", _fmt(r.get("fe_h"), 3),
+             _fmt(r.get("mg_h"), 3), _fmt(r.get("si_h"), 3), _fmt(r.get("o_h"), 3),
+             _fmt(r.get("teff"), 0), _fmt(r.get("logg"), 2),
+             (r.get("disk") if r.get("disk") not in (None, "") else "N/A"),
+             _fmt(r.get("light_years"), 2)]
+            for r in records
+        ]
+        self._render_table(headers, display_rows, records,
+                           "Open star in new tab →", self._open_star, "star")
+        self._set_footer(result.get("capped"), result.get("cap"))
+
+    def _show_plot(self):
+        """Plot the current result set on the selected X/Y axes in a 'Plot' tab."""
+        if not mpl_available() or not self._last_result:
+            return
+        x_key = self._plot_x.currentData()
+        y_key = self._plot_y.currentData()
+        data = core.viz.prepare_hypatia_scatter(self._last_result, x_key, y_key)
+
+        # Rebuild the single Plot tab so an axis change re-renders it.
+        key = ("l4plot",)
+        old = self._open_details.get(key)
+        if old is not None:
+            idx = self._tabs.indexOf(old)
+            if idx != -1:
+                self._on_tab_close(idx)
+
+        def factory():
+            canvas, toolbar = make_scatter_canvas(None, data)
+            return wrap_scrollable(None, canvas, toolbar)
+
+        self.open_detail_tab(key, "📈 Plot", factory)
+
+    def _open_star(self, rec: dict):
+        name = rec.get("star_name") or ""
+        if not name:
+            return
+        from gui.panels.simbad import SimbadPanel
+        self.open_detail_tab(("l4", name), f"★ {name}",
+                             lambda: self._make_detail(SimbadPanel, "_name_input", name))

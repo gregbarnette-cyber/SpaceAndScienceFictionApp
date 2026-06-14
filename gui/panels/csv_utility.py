@@ -543,3 +543,128 @@ class ImportGcnsPanel(ResultPanel):
         self._progress_bar.setFormat("Error")
         self.show_error(msg)
         self.set_status(f"Error: {msg}")
+
+
+class _HypatiaWorker(QObject):
+    """Worker for the Hypatia cache import; relays progress messages to the UI."""
+
+    finished = Signal(object)
+    error    = Signal(str)
+    progress = Signal(str)
+
+    def run(self):
+        def cb(msg):
+            self.progress.emit(msg)
+        try:
+            result = core.databases.import_hypatia_cache(progress_callback=cb)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class ImportHypatiaPanel(ResultPanel):
+    """Import Hypatia Cache panel (Phase L4) — mirrors ImportGcnsPanel.
+
+    Bulk-pulls the whole Hypatia Catalog into the local hypatia_cache /
+    hypatia_abundance tables (~112 throttled GET /data calls), enabling the
+    Hypatia Abundance Search + the Star Systems search Fe/H filter.
+    """
+
+    def build_inputs(self):
+        self._gen_btn = QPushButton("Import Hypatia Cache (download ~6k stars)")
+        self._gen_btn.setFixedHeight(36)
+        self._gen_btn.clicked.connect(self._run)
+        self._layout.addWidget(self._gen_btn)
+
+        info = QLabel(
+            "Downloads the whole Hypatia Catalog of stellar abundances from "
+            "hypatiacatalog.com (~112 throttled requests, a minute or two) and "
+            "replaces the hypatia_cache / hypatia_abundance tables. This powers "
+            "the Hypatia Abundance Search and the Fe/H filter in Star Systems "
+            "Search. Existing data is kept until the new download passes its size "
+            "check. Bulk data carries the [X/H] mean per element; per-star spread "
+            "(σ/min/max) stays in the live SIMBAD Lookup view."
+        )
+        info.setWordWrap(True)
+        self._layout.addWidget(info)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 1)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setTextVisible(True)
+        self._progress_bar.setFormat("Ready")
+        self._layout.addWidget(self._progress_bar)
+
+        self._status_lbl = QLabel("")
+        self._status_lbl.setWordWrap(True)
+        self._layout.addWidget(self._status_lbl)
+
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        pass
+
+    def _run(self):
+        self._gen_btn.setEnabled(False)
+        self._progress_bar.setRange(0, 0)   # busy/indeterminate
+        self._progress_bar.setFormat("Downloading…")
+        self._status_lbl.setText("")
+        self.clear_results()
+        self.set_status("Importing Hypatia cache…")
+
+        self._thread = QThread()
+        self._worker = _HypatiaWorker()
+        self._worker.moveToThread(self._thread)
+
+        self._thread.started.connect(self._worker.run)
+        self._worker.progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
+        self._worker.finished.connect(self._on_done,     Qt.ConnectionType.QueuedConnection)
+        self._worker.error.connect(self._on_error_hyp,   Qt.ConnectionType.QueuedConnection)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._thread.finished.connect(self._thread.deleteLater)
+
+        self._thread.start()
+
+    def _on_progress(self, msg: str):
+        self._status_lbl.setText(msg)
+        self.set_status(msg)
+
+    def _on_done(self, result: dict):
+        try:
+            self._gen_btn.setEnabled(True)
+        except RuntimeError:
+            return
+        self._progress_bar.setRange(0, 1)
+        if "error" in result:
+            self._progress_bar.setValue(0)
+            self._progress_bar.setFormat("Error")
+            self.show_error(result["error"])
+            self.set_status(f"Error: {result['error']}")
+            return
+
+        self._progress_bar.setValue(1)
+        self._progress_bar.setFormat("Done")
+        self.set_status("Hypatia cache import complete.")
+        lbl = QLabel(
+            f"<b>Import complete.</b><br>"
+            f"Snapshot date: {result['snapshot_date']}<br>"
+            f"Stars in hypatia_cache: {result['inserted']:,}<br>"
+            f"Abundance rows: {result['abundance_rows']:,}<br>"
+            f"Stars with [Fe/H]: {result['fe_h_count']:,}<br>"
+            f"Element axes that failed (skipped): {result['errors']}<br>"
+            f"Source: {result['source']}"
+        )
+        lbl.setWordWrap(True)
+        self.add_result_widget(lbl)
+
+    def _on_error_hyp(self, msg: str):
+        try:
+            self._gen_btn.setEnabled(True)
+        except RuntimeError:
+            return
+        self._progress_bar.setRange(0, 1)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setFormat("Error")
+        self.show_error(msg)
+        self.set_status(f"Error: {msg}")

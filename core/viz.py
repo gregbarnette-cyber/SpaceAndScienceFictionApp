@@ -824,3 +824,83 @@ def prepare_abundance_comparison(compare_result: dict) -> dict:
 
     return {"star_names": star_names, "colors": colors,
             "elements": elements, "matrix": matrix}
+
+
+# ── L2 ESI bar chart ──────────────────────────────────────────────────────────
+
+def prepare_esi_bar_chart(result: dict, top_n: int = 20) -> dict:
+    """Top-N planets-by-ESI bar-chart data from a search_hwc result (Phase L2).
+
+    Input is `databases.search_hwc(...)` output (already sorted P_ESI desc).
+    Returns {"names", "esi", "habitable", "shown", "total"} (parallel lists,
+    highest ESI first) or {"error": str}. Only planets with a numeric P_ESI are
+    included; `habitable` is the P_HABITABLE flag as bool.
+    """
+    if not isinstance(result, dict) or "error" in result:
+        return {"error": (result or {}).get("error", "No ranking data")}
+    rows = []
+    for r in (result.get("stars") or []):
+        esi = _ffloat(r.get("P_ESI"))
+        if esi is None:
+            continue
+        rows.append((r.get("P_NAME") or "?", esi,
+                     str(r.get("P_HABITABLE")).strip() == "1"))
+    if not rows:
+        return {"error": "No planets with an ESI value to plot."}
+    total = len(rows)
+    rows = rows[:max(1, int(top_n))]
+    return {
+        "names":     [n for n, _e, _h in rows],
+        "esi":       [e for _n, e, _h in rows],
+        "habitable": [h for _n, _e, h in rows],
+        "shown":     len(rows),
+        "total":     total,
+    }
+
+
+# ── L4 Hypatia abundance scatter ──────────────────────────────────────────────
+
+# Plottable axis key -> axis label. Shared with the panel's X/Y dropdowns so the
+# two never drift; each key is also a column on a search_hypatia_cache result row.
+HYPATIA_SCATTER_AXES = [
+    ("fe_h",        "[Fe/H]"),
+    ("teff",        "Teff (K)"),
+    ("logg",        "log g"),
+    ("light_years", "Distance (ly)"),
+    ("vmag",        "V mag"),
+    ("bv",          "B–V"),
+    ("mg_h",        "[Mg/H]"),
+    ("si_h",        "[Si/H]"),
+    ("o_h",         "[O/H]"),
+]
+_HYPATIA_AXIS_LABELS = dict(HYPATIA_SCATTER_AXES)
+
+
+def prepare_hypatia_scatter(result: dict, x_key: str, y_key: str) -> dict:
+    """Scatter-plot data for the L4 abundance-search results (Phase L4).
+
+    Input is `databases.search_hypatia_cache(...)` output; x_key/y_key are keys
+    from HYPATIA_SCATTER_AXES. Returns {"xs", "ys", "labels", "x_label",
+    "y_label", "count"} (only rows where BOTH axes are numeric) or {"error": str}.
+    """
+    if not isinstance(result, dict) or "error" in result:
+        return {"error": (result or {}).get("error", "No search data")}
+    if x_key not in _HYPATIA_AXIS_LABELS or y_key not in _HYPATIA_AXIS_LABELS:
+        return {"error": "Unknown plot axis."}
+    xs, ys, labels = [], [], []
+    for r in (result.get("stars") or []):
+        x = _ffloat(r.get(x_key))
+        y = _ffloat(r.get(y_key))
+        if x is None or y is None:
+            continue
+        xs.append(x)
+        ys.append(y)
+        labels.append(r.get("star_name") or "?")
+    if not xs:
+        return {"error": "No result rows have both selected quantities measured."}
+    return {
+        "xs": xs, "ys": ys, "labels": labels,
+        "x_label": _HYPATIA_AXIS_LABELS[x_key],
+        "y_label": _HYPATIA_AXIS_LABELS[y_key],
+        "count": len(xs),
+    }

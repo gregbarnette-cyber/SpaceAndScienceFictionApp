@@ -1,6 +1,6 @@
 # Integration Plan: SpaceAndScienceFictionApp → ScienceFictionResearch
 
-> **Historical planning doc — completed.** This describes the original plan for the `query.py` JSON dispatcher, which is now fully implemented. See `docs/integration.md` for the as-built contract.
+> **Historical planning doc — completed.** This describes the original plan for the `query.py` JSON dispatcher, which is now fully implemented. See `docs/integration.md` for the as-built contract. **Consumer note:** "ScienceFictionResearch" throughout this doc is the original consumer repo; the current consumer is **`scifiWorldBuilding-Claude`** (formerly `ScienceFictionResearch-Claude`), which calls in via its `bin/sfq` wrapper.
 
 ## Context
 

@@ -1,6 +1,20 @@
 # Phase L — Exoplanet Comparison Dashboard — Implementation Plan
 
-**Status:** ✅ **L1–L3 IMPLEMENTED (2026-06-13)** — `core/databases.compare_stars`,
+**Status:** ✅ **L1–L4 IMPLEMENTED.** L4 (Hypatia Catalog cache + abundance
+search) shipped **2026-06-14** after the verification spike passed (Step 0a risk
+check + Step 0b `/data` star-identifier probe — confirmed each point carries a
+`name`; Step 0c demand confirmed by the user). Built: `hypatia_cache` /
+`hypatia_abundance` / `hypatia_meta` tables (`core/db.py`),
+`import_hypatia_cache` (bulk `GET /data`, ~112 throttled calls, GCNS-style
+gate/atomic-replace — **mean-only**: `std`/`min`/`max`/`n` + UVW kinematics stay
+NULL because the bulk `/data` u/v/w axes collide with the U/V/W element symbols),
+`search_hypatia_cache`, the `search_star_systems` `fe_h` JOIN (G1 field now live),
+`ImportHypatiaPanel` + `HypatiaSearchPanel`, the `search-hypatia` query.py
+subcommand, and `tests/test_hypatia_cache.py` (17 tests, green). Live build:
+**14,085 stars / 244,867 abundance rows**. Docs updated. See "L4 — DEFERRED"
+(now implemented) for the design that was followed.
+
+**Status (historical):** ✅ **L1–L3 IMPLEMENTED (2026-06-13)** — `core/databases.compare_stars`,
 `core/equations.compute_stellar_evolution`, `EsiRankingPanel` over `search_hwc`,
 the `stellar-evolution` query.py subcommand, three panels in
 `gui/panels/comparison.py` (new "Comparison" nav category), the two `core/viz`
@@ -51,6 +65,11 @@ differ. Three decisions were folded in after validating against the current code
 ## L1 — Side-by-Side Star Comparison
 
 **Panel:** `StarComparisonPanel` (Comparison nav). Network (SIMBAD + Hypatia + optional NASA supplement).
+
+> **query.py (added later):** `compare-stars --stars N [N …]` (2–4) wraps `compare_stars`
+> verbatim — added once the `scifiWorldBuilding-Claude` consumer's need for a bundled
+> multi-star comparison was confirmed. Sol/Sun resolve offline (reference constants).
+> Tests: `CompareStarsQueryCliTest` in `tests/test_comparison.py`. See `docs/integration.md`.
 
 ### Core — `core/databases.py::compare_stars(names: list[str]) -> dict`
 
@@ -175,7 +194,34 @@ for missing/non-numeric args. Add the row to `docs/integration.md`.
 
 ---
 
-## L4 — Hypatia Catalog Cache & Abundance Search — ⛔ DEFERRED (do NOT build yet)
+## L4 — Hypatia Catalog Cache & Abundance Search — ✅ IMPLEMENTED (2026-06-14)
+
+**Built.** The verification spike passed (0a/0b/0c) and L4 was implemented per the
+captured design below, with these deltas finalized during the build:
+- **Bulk `/data` path chosen** (0b confirmed each point carries a `name`). Star
+  properties come from 8 `/data` axes (`teff`, `logg`, `vmag`, `bv`,
+  `dist`→`distance_pc`, `disk`, `pm_ra`, `pm_dec`); abundances from the 104
+  element axes. **Mean-only:** `/data` returns just the catalog-averaged [X/H]
+  mean, so `hypatia_abundance.std`/`min`/`max`/`n` and `hypatia_cache`
+  `u_vel`/`v_vel`/`w_vel`/`hip`/`hd` stay NULL (the u/v/w `/data` axes collide
+  with the U/V/W element symbols). The live per-star `compute_hypatia_data` still
+  serves full detail. This is sufficient because **search filters on the mean**.
+- `_HYPATIA_MIN_STARS` = 1000 floor for Gate 1/2; `Retry-After` honored on
+  429/503; ~0.5 s serial inter-request delay; descriptive User-Agent + contact.
+- `disk` stored as a TEXT code (`0`=thin, `1`=thick — the only values observed).
+- `search-hypatia` query.py subcommand **was** added (the cache now exists), and
+  the `search-star-systems` subcommand gained `--fe-h-min`/`--fe-h-max` too.
+- **Diagrams (follow-up pass):** `HypatiaSearchPanel` gained a selectable-X/Y
+  **scatter "Plot" tab** (`core.viz.prepare_hypatia_scatter` →
+  `make_scatter_canvas`), and — in the same pass — the **L2 `EsiRankingPanel`**
+  gained a top-N **ESI bar chart** (`prepare_esi_bar_chart` → `make_esi_bar_canvas`;
+  panel converted to `DiagramToggleMixin`). L1/L3 already shipped diagrams. Tests:
+  `prepare_hypatia_scatter` in `tests/test_hypatia_cache.py`, `prepare_esi_bar_chart`
+  in `tests/test_comparison.py`.
+
+The original deferral notes + captured design follow (kept for provenance).
+
+### (historical) ⛔ DEFERRED — do NOT build yet
 
 **L4 is out of scope for this pass.** L1–L3 ship without it. L4 builds only after
 the verification spike below passes. This section is the captured design + the

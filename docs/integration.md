@@ -1,6 +1,6 @@
 # Integration Tool Documentation — `query.py`
 
-`query.py` is a thin JSON dispatcher at the repo root. It allows the ScienceFictionResearch repo (and any other caller) to invoke `core/` functions via a Bash command and receive structured JSON on stdout without needing a copy of the core code.
+`query.py` is a thin JSON dispatcher at the repo root. It allows the `scifiWorldBuilding-Claude` repo (the current consumer — it sits alongside this checkout under `.../Claude/` and calls in through its `bin/sfq` wrapper; formerly the `ScienceFictionResearch-Claude` repo) and any other caller to invoke `core/` functions via a Bash command and receive structured JSON on stdout without needing a copy of the core code.
 
 ## Invocation
 
@@ -73,6 +73,8 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `search-star-systems` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
 | `search-hwc` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
 | `search-exoplanets` | _(all optional filters)_ | **NASA TAP (live)** | `count, capped, cap, stars[]` |
+| `search-hypatia` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
+| `compare-stars` | `--stars N [N …]` (2–4) | SIMBAD + NASA + Hypatia | `stars[]` (per-star error isolation) |
 | `main-sequence` | _(none)_ | none (local DB) | **list** of 24 spectral-class rows |
 | `solar-system` | _(none)_ | none (local DB) | `planets[], moons[], dwarf_planets[], asteroids[]` |
 | `sol-regions` | _(none)_ | none | flat dict of Sol region values (`hzil, hzol, snowLine, …`) |
@@ -582,8 +584,10 @@ Filter the local `star_systems` table (no network). Cap 500; sorted by light yea
 query.py search-star-systems --spectral-classes M K --ly-max 20 --mag-max 10
 ```
 Core function: `databases.search_star_systems(filters)`. Flags → filter keys: `--spectral-classes`/`--spectral-refine`,
-`--ly-min`/`--ly-max`, `--mag-min`/`--mag-max`, `--designation-prefix`. Each star: `{star_name, designations,
-spectral_type, parallax, parsecs, light_years, app_magnitude, ra, dec}`. Empty `star_systems` → the opt-50 error.
+`--ly-min`/`--ly-max`, `--mag-min`/`--mag-max`, `--designation-prefix`, and (Phase L4) `--fe-h-min`/`--fe-h-max` (an
+inner JOIN onto `hypatia_cache` — matches nothing when that cache is empty; run **Import Hypatia Cache** first). Each
+star: `{star_name, designations, spectral_type, parallax, parsecs, light_years, app_magnitude, ra, dec}`. Empty
+`star_systems` → the opt-50 error.
 
 #### `search-hwc`
 Filter the local Habitable Worlds Catalog (no network). Cap 500; sorted by ESI descending.
@@ -604,6 +608,41 @@ Core function: `databases.search_exoplanets(filters)`. Flags → ADQL columns: `
 `--radius-min`/`--max` (`pl_rade`), `--period-min`/`--max` (`pl_orbper`), `--teff-min`/`--max` (`st_teff`),
 `--dist-max-pc` (`sy_dist`, **parsecs**), `--method` (`discoverymethod`, exact), `--spectral-classes`/`--spectral-refine`
 (`st_spectype`). Network failures are classified to `{"error": str}`.
+
+#### `search-hypatia`
+Filter the **local Hypatia abundance cache** (Phase L4 — no network; populated by the GUI **Import Hypatia Cache**
+utility / `databases.import_hypatia_cache`). Cap 500; sorted by Fe/H descending (NULL fe_h last).
+```bash
+query.py search-hypatia --fe-h-min 0.3 --ly-max 60 --element Mg --element-min 0.2
+```
+Core function: `databases.search_hypatia_cache(filters)`. Flags → filter keys: `--fe-h-min`/`--fe-h-max` (`[Fe/H]`),
+`--teff-min`/`--teff-max`, `--ly-max` (`light_years`), `--disk` (exact Hypatia disk code, e.g. `0`=thin / `1`=thick),
+`--element` (species symbol in API casing, e.g. `Mg`, `Ba_II`) + `--element-min`/`--element-max` (that species' [X/H],
+via an `EXISTS` subquery). Each star: `{star_name, hip, hd, teff, logg, vmag, bv, distance_pc, disk, fe_h, light_years,
+mg_h, si_h, o_h}` (`mg_h`/`si_h`/`o_h` are pivoted convenience [X/H] values; any may be `null`). Empty cache →
+`{"error": "hypatia_cache table is empty — run the Import Hypatia Cache utility first."}`, exit 1.
+
+> **Bulk-path caveat:** the cache carries the catalog-averaged **[X/H] mean** per element (the filter key) but not the
+> spread (`std`/`min`/`max`/`n`) or UVW kinematics — those come from the live per-star `hypatia-data` subcommand. The
+> Star Systems search also gained `--fe-h-min`/`--fe-h-max` (an inner JOIN onto this cache; matches nothing when the
+> cache is empty).
+
+#### `compare-stars`
+Side-by-side comparison of **2–4 stars** in one structured result (Phase L1). Live network (SIMBAD + an optional NASA
+pscomppars supplement + Hypatia). This is the one call that bundles work an external caller would otherwise have to
+reassemble from `simbad-lookup` + `planetary-systems` + `hypatia-data` per star **and** re-derive itself: the NASA
+radius/mass/(teff/lum) supplement, the photometric mass/radius/luminosity fallback, and the conservative HZ inner/outer
+bounds.
+```bash
+query.py compare-stars --stars "Tau Ceti" Sol "18 Sco" "Delta Pavonis"
+```
+Core function: `databases.compare_stars(names)`. Output: `{stars: [{name, sp_type, teff, luminosity, mass, radius,
+hz_inner_au, hz_outer_au, ly, app_magnitude, hypatia, error}, …]}` — `hypatia` is the raw `hypatia-data` result dict
+(or `null`). **Per-star failures are isolated**: each star carries its own `error` (`null` on success) with missing
+numerics `null`; the **only top-level `{"error"}` (exit 1)** is the arg-count check (< 2 non-blank names, or > 4).
+`"Sol"`/`"Sun"` are injected from reference constants (G2V, 5778 K, 1 M/R/L☉, [X/H]≡0 baseline) with no SIMBAD call, so
+`--stars Sol Sun` resolves fully offline. Missing/non-numeric `--stars` (or fewer than one value) is an argparse
+**exit 2**.
 
 ### Reference data (Phase B — local DB / hardcoded, no arguments)
 

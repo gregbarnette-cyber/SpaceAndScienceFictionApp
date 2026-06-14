@@ -19,7 +19,7 @@ import core.viz
 
 from gui.visualizations.plot_helpers import (
     mpl_available, wrap_scrollable,
-    make_abundance_comparison_canvas, make_evolution_canvas,
+    make_abundance_comparison_canvas, make_evolution_canvas, make_esi_bar_canvas,
 )
 
 
@@ -275,10 +275,15 @@ class StarComparisonPanel(DiagramToggleMixin, ResultPanel):
 # L2 — ESI Ranking (reuses search_hwc; no new core function)
 # ═══════════════════════════════════════════════════════════════════════════
 
-class EsiRankingPanel(ResultPanel):
-    """ESI leaderboard over the local HWC. Presentation-only over search_hwc."""
+class EsiRankingPanel(DiagramToggleMixin, ResultPanel):
+    """ESI leaderboard over the local HWC (presentation over search_hwc), with a
+    top-N ESI bar chart in a Show Diagrams tab."""
 
     def build_inputs(self):
+        self._form_widget = QWidget()
+        outer = QVBoxLayout(self._form_widget)
+        outer.setContentsMargins(0, 0, 0, 0)
+
         form = QFormLayout()
         self._esi = QLineEdit()
         self._esi.setPlaceholderText("e.g. 0.80  (blank = any)")
@@ -295,24 +300,33 @@ class EsiRankingPanel(ResultPanel):
 
         self._lymax = QLineEdit()
         self._lymax.setPlaceholderText("(any)")
+        self._lymax.returnPressed.connect(self._rank)
         form.addRow("Max Distance (LY):", self._lymax)
-        self._layout.addLayout(form)
+        outer.addLayout(form)
 
+        btn_row = QHBoxLayout()
         self.run_btn = QPushButton("Rank")
         self.run_btn.clicked.connect(self._rank)
-        self._layout.addWidget(self.run_btn)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        outer.addLayout(btn_row)
 
-        self._lymax.returnPressed.connect(self._rank)
+        self._layout.addWidget(self._form_widget)
+        self._input_count = self._layout.count()
 
     def build_results_area(self):
-        # The result host fills the space below the inputs (stretch = 1). When
-        # empty it keeps the Rank button hugging the inputs at the top; when
-        # populated the results table is added with its own stretch so it expands
-        # to fill the host and scrolls internally for long result sets (up to 500).
-        self._result_host = QWidget()
-        self._result_container = QVBoxLayout(self._result_host)
+        # Table host fills the space below the inputs (stretch = 1) and scrolls
+        # internally for long result sets (up to 500); the mixin hides it in
+        # diagram mode and shows the ESI-chart tab instead.
+        self._tables_widget = QWidget()
+        self._result_container = QVBoxLayout(self._tables_widget)
         self._result_container.setContentsMargins(0, 0, 0, 0)
-        self._layout.addWidget(self._result_host, 1)
+        self._layout.addWidget(self._tables_widget, 1)
+        self._setup_diagram_view()
 
     def _clear_container(self):
         while self._result_container.count():
@@ -322,6 +336,7 @@ class EsiRankingPanel(ResultPanel):
                 w.deleteLater()
 
     def _rank(self):
+        self._prepare_render()
         filters = {}
         esi = _safe_float(self._esi.text().strip())
         if esi is not None:                 # blank/invalid → no minimum (rank all)
@@ -368,6 +383,16 @@ class EsiRankingPanel(ResultPanel):
         table = self.make_table(headers, rows)
         table.doubleClicked.connect(self._open_hwc)
         self._result_container.addWidget(table, 1)   # stretch → fill host + scroll
+
+        # Top-N ESI bar chart tab.
+        if mpl_available():
+            data = core.viz.prepare_esi_bar_chart(result, top_n=20)
+            if "error" not in data:
+                canvas, toolbar = make_esi_bar_canvas(None, data)
+                if canvas is not None:
+                    self._viz_tabs_widget.addTab(
+                        wrap_scrollable(None, canvas, toolbar), "ESI Chart")
+        self._finish_render()
 
     def _open_hwc(self, index):
         row = index.row()

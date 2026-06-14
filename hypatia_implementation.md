@@ -550,4 +550,7 @@ After opt 8 is validated:
 - **Opt 1** (SimbadPanel): convert plain result area to QTabWidget; add DiagramToggleMixin.
 - **Opt 2** (CLI only): append Hypatia tables to `query_exoplanets()` output.
 - **Full-catalog scatter** (`/data` endpoint): [Fe/H] vs [X/H] with queried star
-  highlighted — deferred until single-star feature is stable.
+  highlighted — deferred until single-star feature is stable. **✅ Realized in Phase
+  L4 (2026-06-14):** the bulk `/data` pull backs the `hypatia_cache` and the
+  Hypatia Abundance Search panel's selectable-X/Y scatter — see
+  `docs/star-databases.md` § "Phase L4".

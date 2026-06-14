@@ -270,7 +270,8 @@ def cmd_search_star_systems(args):
         simple_keys=[("ly_min", "ly_min"), ("ly_max", "ly_max"),
                      ("mag_min", "mag_min"), ("mag_max", "mag_max"),
                      ("spectral_refine", "spectral_refine"),
-                     ("designation_prefix", "designation_prefix")],
+                     ("designation_prefix", "designation_prefix"),
+                     ("fe_h_min", "fe_h_min"), ("fe_h_max", "fe_h_max")],
         list_keys=[("spectral_classes", "spectral_classes")],
     )
     _out(databases.search_star_systems(f))
@@ -303,6 +304,22 @@ def cmd_search_exoplanets(args):
         list_keys=[("spectral_classes", "spectral_classes")],
     )
     _out(databases.search_exoplanets(f))
+
+
+def cmd_search_hypatia(args):
+    f = _build_filters(
+        args,
+        simple_keys=[("fe_h_min", "fe_h_min"), ("fe_h_max", "fe_h_max"),
+                     ("teff_min", "teff_min"), ("teff_max", "teff_max"),
+                     ("ly_max", "ly_max"), ("disk", "disk"),
+                     ("element", "element"), ("element_min", "element_min"),
+                     ("element_max", "element_max")],
+    )
+    _out(databases.search_hypatia_cache(f))
+
+
+def cmd_compare_stars(args):
+    _out(databases.compare_stars(args.stars))
 
 
 # ── Reference data ────────────────────────────────────────────────────────────
@@ -675,6 +692,9 @@ def main():
     p.add_argument("--mag-min", dest="mag_min", type=float)
     p.add_argument("--mag-max", dest="mag_max", type=float)
     p.add_argument("--designation-prefix", dest="designation_prefix")
+    p.add_argument("--fe-h-min", dest="fe_h_min", type=float,
+                   help="[Fe/H] minimum (JOINs the Hypatia cache; needs Import Hypatia Cache)")
+    p.add_argument("--fe-h-max", dest="fe_h_max", type=float, help="[Fe/H] maximum")
     p.set_defaults(func=cmd_search_star_systems)
 
     # search-hwc
@@ -711,6 +731,27 @@ def main():
     p.add_argument("--spectral-classes", dest="spectral_classes", nargs="+")
     p.add_argument("--spectral-refine",  dest="spectral_refine")
     p.set_defaults(func=cmd_search_exoplanets)
+
+    # search-hypatia
+    p = sub.add_parser("search-hypatia",
+                       help="Filter the local Hypatia abundance cache (all filters optional)")
+    p.add_argument("--fe-h-min", dest="fe_h_min", type=float, help="[Fe/H] minimum")
+    p.add_argument("--fe-h-max", dest="fe_h_max", type=float, help="[Fe/H] maximum")
+    p.add_argument("--teff-min", dest="teff_min", type=float)
+    p.add_argument("--teff-max", dest="teff_max", type=float)
+    p.add_argument("--ly-max",   dest="ly_max",   type=float)
+    p.add_argument("--disk",     dest="disk",     help="Hypatia disk code (exact, e.g. 0=thin 1=thick)")
+    p.add_argument("--element",  dest="element",  help="Species symbol (API casing, e.g. Mg, Ba_II)")
+    p.add_argument("--element-min", dest="element_min", type=float, help="[X/H] minimum for --element")
+    p.add_argument("--element-max", dest="element_max", type=float, help="[X/H] maximum for --element")
+    p.set_defaults(func=cmd_search_hypatia)
+
+    # compare-stars
+    p = sub.add_parser("compare-stars",
+                       help="Side-by-side comparison of 2–4 stars (SIMBAD + NASA supplement + HZ + Hypatia)")
+    p.add_argument("--stars", required=True, nargs="+",
+                   help='2–4 star names (e.g. "Tau Ceti" Sol "18 Sco"); Sol/Sun use reference constants')
+    p.set_defaults(func=cmd_compare_stars)
 
     # ── Reference data ───────────────────────────────────────────────────────
 

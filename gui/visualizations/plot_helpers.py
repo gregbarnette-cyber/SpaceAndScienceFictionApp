@@ -2447,3 +2447,152 @@ def make_exoplanet_system_canvas(parent, data: dict, on_planet_click=None):
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
     return canvas, toolbar
+
+
+def make_esi_bar_canvas(parent, data: dict):
+    """Horizontal top-N planets-by-ESI bar chart (Phase L2).
+
+    data: return value of core.viz.prepare_esi_bar_chart(). Bars are colored by
+    the habitable flag (green = habitable, gray = not). Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(8, 2.2), dpi=100, facecolor=_SPACE_BG)
+        cv  = FigureCanvas(fig)
+        ax  = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes,
+                ha="center", va="center", color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No ranking data") if data else "No ranking data")
+
+    names = data["names"]
+    esi   = data["esi"]
+    hab   = data["habitable"]
+    n = len(names)
+
+    # Height scales with bar count so labels never overlap; cap the figure so
+    # very long result sets stay scrollable (wrap_scrollable handles overflow).
+    fig_h = max(2.6, min(0.32 * n + 1.0, 16.0))
+    fig = Figure(figsize=(8.5, fig_h), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.30, right=0.96, top=0.92, bottom=0.10)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(_SPACE_BG)
+
+    y = list(range(n))
+    colors = ["#3a9a4a" if h else "#9aa0a6" for h in hab]
+    ax.barh(y, esi, color=colors, edgecolor=_SPACE_BG, height=0.74)
+    for yi, v in zip(y, esi):
+        ax.text(v + 0.005, yi, f"{v:.3f}", va="center", ha="left",
+                fontsize=7.5, color=_LABEL_CLR)
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(names, fontsize=8, color=_LABEL_CLR)
+    ax.invert_yaxis()                       # highest ESI at the top
+    ax.set_xlim(min(0.5, min(esi) - 0.05) if esi else 0.0, 1.0)
+    ax.set_xlabel("Earth Similarity Index (ESI)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(axis="x", colors=_LABEL_CLR, labelsize=8)
+    ax.tick_params(axis="y", colors=_LABEL_CLR)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    for spine in ("left", "bottom"):
+        ax.spines[spine].set_color(_GRID_CLR)
+    ax.grid(axis="x", color=_GRID_CLR, linewidth=0.6, alpha=0.7)
+    ax.set_axisbelow(True)
+    shown, total = data.get("shown", n), data.get("total", n)
+    title = f"Top {shown} planets by ESI" + (f"  (of {total})" if total > shown else "")
+    ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=8)
+
+    from matplotlib.patches import Patch
+    handles = [Patch(facecolor="#3a9a4a", label="Habitable"),
+               Patch(facecolor="#9aa0a6", label="Not flagged")]
+    leg = ax.legend(handles=handles, loc="lower right", fontsize=7.5,
+                    framealpha=0.9, facecolor=_SPACE_BG, edgecolor=_GRID_CLR)
+    for txt in leg.get_texts():
+        txt.set_color(_LABEL_CLR)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_scatter_canvas(parent, data: dict):
+    """Generic 2D scatter with a hover tooltip (Phase L4 abundance search).
+
+    data: return value of core.viz.prepare_hypatia_scatter() — {xs, ys, labels,
+    x_label, y_label, count}. Hovering a point shows its label at the upper-left.
+    Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(7, 5), dpi=100, facecolor=_SPACE_BG)
+        cv  = FigureCanvas(fig)
+        ax  = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes,
+                ha="center", va="center", color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+
+    xs, ys, labels = data["xs"], data["ys"], data["labels"]
+
+    fig = Figure(figsize=(7.5, 6), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.12, right=0.96, top=0.93, bottom=0.10)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(_SPACE_BG)
+
+    ax.scatter(xs, ys, s=18, c="#3a6ea5", alpha=0.6, edgecolors="none", picker=False)
+    ax.set_xlabel(data.get("x_label", ""), color=_LABEL_CLR, fontsize=9)
+    ax.set_ylabel(data.get("y_label", ""), color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    for spine in ("left", "bottom"):
+        ax.spines[spine].set_color(_GRID_CLR)
+    ax.grid(color=_GRID_CLR, linewidth=0.6, alpha=0.7)
+    ax.set_axisbelow(True)
+    ax.set_title(f"{data.get('y_label','')} vs {data.get('x_label','')}  "
+                 f"({data.get('count', len(xs))} stars)",
+                 color=_LABEL_CLR, fontsize=10, pad=8)
+
+    tip = ax.annotate("", xy=(0, 0), xytext=(0.02, 0.98), textcoords="axes fraction",
+                      ha="left", va="top", fontsize=8, color="#111",
+                      bbox=dict(boxstyle="round", fc="#ffffe0", ec="#888", alpha=0.95),
+                      visible=False)
+
+    def _on_motion(event):
+        if event.inaxes is not ax:
+            if tip.get_visible():
+                tip.set_visible(False)
+                canvas.draw_idle()
+            return
+        # Nearest point in display space.
+        best_i, best_d = None, None
+        for i, (xv, yv) in enumerate(zip(xs, ys)):
+            px, py = ax.transData.transform((xv, yv))
+            d = (px - event.x) ** 2 + (py - event.y) ** 2
+            if best_d is None or d < best_d:
+                best_d, best_i = d, i
+        if best_i is not None and best_d is not None and best_d <= 144:  # within 12 px
+            tip.set_text(f"{labels[best_i]}\n{data.get('x_label','')}={xs[best_i]:g}, "
+                         f"{data.get('y_label','')}={ys[best_i]:g}")
+            tip.set_visible(True)
+        elif tip.get_visible():
+            tip.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar

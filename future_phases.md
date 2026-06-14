@@ -11,7 +11,7 @@ The app is a mature Space & Science Fiction CLI/GUI tool that has completed Phas
 
 This document brainstorms future phases in order of likely value and implementation effort.
 
-> **Status (updated 2026-06-13):** of the phases below, **G, H, I (+ the I-OPTS route-planning extension), K, M, and N are ✅ implemented** (see each phase's header note). **J, O, P remain** un-built (P is fully spec'd; J/O were brought to build-ready depth — validation contract + tests + success criteria — on 2026-06-13). **Phase L's L1–L3 are now ✅ implemented** (2026-06-13) per [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md) + [`mockups/phase-l.html`](mockups/phase-l.html); **L4 (Hypatia cache) stays DEFERRED** behind a verification spike. K shipped with a formal `PHASE_K_PLAN.md` + mockup. **Q, R, S** at the end are new brainstorm candidates. `query.py` now carries **48 subcommands** after the Phase N follow-on expansion.
+> **Status (updated 2026-06-14):** of the phases below, **G, H, I (+ the I-OPTS route-planning extension), K, L, M, and N are ✅ implemented** (see each phase's header note). **J, O, P remain** un-built (P is fully spec'd; J/O were brought to build-ready depth — validation contract + tests + success criteria — on 2026-06-13). **Phase L is now fully implemented** — L1–L3 (2026-06-13) and **L4 (Hypatia cache + abundance search) on 2026-06-14** (the verification spike passed) per [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md) + [`mockups/phase-l.html`](mockups/phase-l.html). K shipped with a formal `PHASE_K_PLAN.md` + mockup. **Q, R, S** at the end are new brainstorm candidates. `query.py` now carries **51 subcommands** (after L4's `search-hypatia` and L1's `compare-stars`).
 
 > **Scope — GUI-only.** New feature work targets the PySide6 GUI only. The CLI (`main.py` / `MENU_OPTIONS`) is **frozen at opts 1–58** and is not extended by any phase below. Every new feature is a GUI nav entry backed by a panel class (the precedent set by `DbStatusPanel` and `NasaPlanetarySystemsMapPanel`, which carry no option number), so there are **no menu numbers to assign and nothing to renumber**. The shared `core/` functions each phase specifies are still built — the GUI and `query.py` consume them; only the CLI presentation layer is dropped. Phase M is already written in this GUI-only form; treat it as the template. **Exception:** Phase N is integration-surface-only — it adds `query.py` subcommands over existing `core/` functions and touches neither the GUI nor the CLI menu.
 
@@ -605,17 +605,22 @@ All three new core functions **self-validate** (the Phase H contract → `{"erro
 
 ## Phase L — Exoplanet Comparison Dashboard
 
-> **✅ L1–L3 IMPLEMENTED (2026-06-13)** per [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md):
-> `core/databases.compare_stars` (L1), `EsiRankingPanel` over the existing
-> `search_hwc` (L2, no new core fn), and `core/equations.compute_stellar_evolution`
+> **✅ FULLY IMPLEMENTED** (L1–L3 2026-06-13, **L4 2026-06-14**) per
+> [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md):
+> `core/databases.compare_stars` (L1) + the `compare-stars` `query.py` subcommand,
+> `EsiRankingPanel` over the existing `search_hwc` (L2, no new core fn; gained a
+> top-N ESI bar chart), and `core/equations.compute_stellar_evolution`
 > (L3) + the `stellar-evolution` `query.py` subcommand; three panels in
 > `gui/panels/comparison.py` under a new **"Comparison"** nav category;
 > `core.viz.prepare_abundance_comparison` / `prepare_evolution_diagram` +
-> `make_abundance_comparison_canvas` / `make_evolution_canvas`. Docs updated in
-> `docs/equations.md`, `docs/star-databases.md`, `docs/integration.md`,
-> `docs/gui-architecture.md`. Tests: `tests/test_comparison.py`. **L4 remains
-> DEFERRED** behind the verification spike (see the L4 section). Original brainstorm
-> retained below.
+> `make_abundance_comparison_canvas` / `make_evolution_canvas`. **L4 shipped**:
+> `hypatia_cache`/`hypatia_abundance`/`hypatia_meta` tables, `import_hypatia_cache`
+> (bulk `/data`), `search_hypatia_cache` + the `search-hypatia` subcommand, the G1
+> `fe_h` JOIN, `ImportHypatiaPanel` + `HypatiaSearchPanel` (with a selectable-X/Y
+> scatter). Docs updated in `docs/equations.md`, `docs/star-databases.md`,
+> `docs/integration.md`, `docs/gui-architecture.md`. Tests:
+> `tests/test_comparison.py`, `tests/test_hypatia_cache.py`. The original brainstorm
+> (incl. the now-satisfied "L4 DEFERRED" notes) is retained below for provenance.
 
 **New panels (GUI-only)**: `StarComparisonPanel`, `EsiRankingPanel`, `StellarEvolutionPanel`, plus `ImportHypatiaPanel` and `HypatiaSearchPanel` (L4)
 **Existing options touched**: opt 1 SIMBAD lookup logic reused by L1; opt 6 `HwcPanel` drill-down target for L2; `core/viz.py` and `gui/visualizations/plot_helpers.py` extended for the evolution diagram in L3
@@ -726,11 +731,16 @@ Special cases:
 
 ### L4: Hypatia Catalog Cache & Abundance Search
 
-> **⛔ DEFERRED (decided 2026-06-13).** L4 is **not** part of the Phase L build pass
-> (which ships L1–L3 only — see [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md)). L1–L3 need no
-> cache. The cache is justified by **one** feature — abundance *search* — which is
-> impossible against the per-star live API. **Two gates must pass before any L4
-> code:**
+> **✅ IMPLEMENTED 2026-06-14.** The verification spike passed (`/data` carries a
+> star identifier → bulk path; rate-limit/acceptable-use cleared) and L4 shipped —
+> see [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md) § "L4 — IMPLEMENTED" and
+> `docs/star-databases.md` § "Phase L4". The original deferral brainstorm below is
+> retained for provenance; its "DEFERRED"/gating language is historical.
+>
+> **(historical) ⛔ DEFERRED (decided 2026-06-13).** L4 was **not** part of the
+> original Phase L build pass (which shipped L1–L3 only). L1–L3 need no cache. The
+> cache is justified by **one** feature — abundance *search* — which is impossible
+> against the per-star live API. **Two gates had to pass before any L4 code:**
 > 1. **Bulk import path** — verify the `GET /data` endpoint (catalog-wide scatter
 >    data, e.g. `?xaxis1=Fe&yaxis1=Si`) returns a **star identifier per point**. If
 >    so, the import is ~50–104 element-keyed calls over the whole catalog instead of
@@ -975,7 +985,8 @@ opt 1 already resolves `designations["Gaia EDR3"]`; M5 reuses that id **for free
 >
 > **Follow-on expansion ✅ (2026-06-13):** a second integration pass exposed **12 more
 > subcommands** over existing `core/` functions (no GUI/CLI/core changes), bringing
-> `query.py` to **48 subcommands**. (1) **Search & Filter** — `search-star-systems`,
+> `query.py` to **48 subcommands** (now **51** after Phase L4's `search-hypatia` and
+> L1's `compare-stars`). (1) **Search & Filter** — `search-star-systems`,
 > `search-hwc`, `search-exoplanets` (the Phase G functions; all filters optional). (2)
 > **Reference data** — `main-sequence`, `solar-system`, `sol-regions`. (3)
 > **Planetary / rotating-habitat equations** — `orbit-distance`, `moon-orbital-distance`,
@@ -988,7 +999,7 @@ opt 1 already resolves `designations["Gaia EDR3"]`; M5 reuses that id **for free
 **New panels**: none — integration-surface only (no GUI, no CLI menu changes; see the scope-note exception above)
 **Existing options touched**: none — every subcommand wraps an existing `core/` function verbatim. Precedent: Phase M5 already extends `query.py` (the `"gcns"` key on `simbad-lookup`).
 
-The ScienceFictionResearch repo consumes this app exclusively through `query.py` (see `docs/integration.md`). A 2026-06-10 audit found ~24 `core/` `compute_*` functions with no subcommand; this phase exposes the **curated five** with real integration value and records why the rest were excluded.
+The consumer repo (`scifiWorldBuilding-Claude`; formerly `ScienceFictionResearch-Claude`) consumes this app exclusively through `query.py` (see `docs/integration.md`). A 2026-06-10 audit found ~24 `core/` `compute_*` functions with no subcommand; this phase exposes the **curated five** with real integration value and records why the rest were excluded.
 
 **Shared conventions** (same contract as every existing subcommand — see `docs/integration.md` "Implementation notes"):
 - Malformed/missing args → argparse rejection, **exit 2**, message on stderr (not JSON).
