@@ -133,7 +133,7 @@ All stars in the `star_systems` DB table within N light years of Sol. No network
 query.py stars-within-sol --ly 15
 ```
 Core function: `calculators.compute_stars_within_distance_of_sol(ly)`
-Output: `{limit_ly, count, stars[]}`. Each star: `{"Star Name", "Star Designations", "Spectral Type", "Light Years", x, y, z}` (x/y/z are heliocentric light-year coords, may be `null`). Sorted ascending by Light Years.
+Output: `{limit_ly, count, stars[]}`. Each star: `{"Star Name", "Star Designations", "Spectral Type", "Light Years", app_magnitude, parsecs, x, y, z}` (x/y/z are heliocentric light-year coords, may be `null`; `app_magnitude` = Johnson V, `parsecs` = stored distance — both may be `null`). Sorted ascending by Light Years. *(Phase O F1 added `app_magnitude`/`parsecs` — additive.)*
 
 #### `stars-within-star`
 All stars in the `star_systems` DB table within N light years of a named star. Queries SIMBAD for the center star.
@@ -141,7 +141,7 @@ All stars in the `star_systems` DB table within N light years of a named star. Q
 query.py stars-within-star --star "Epsilon Eridani" --ly 5
 ```
 Core function: `calculators.compute_stars_within_distance_of_star(star, ly)`
-Output: `{center, center_x, center_y, center_z, limit_ly, count, stars[]}`. Each star: `{"Star Name", "Star Designations", "Spectral Type", "Distance", x, y, z}` (`Distance` in ly from the center star). Sorted ascending by Distance.
+Output: `{center, center_x, center_y, center_z, limit_ly, count, stars[]}`. Each star: `{"Star Name", "Star Designations", "Spectral Type", "Distance", app_magnitude, parsecs, x, y, z}` (`Distance` in ly from the center star; `app_magnitude` = Johnson V, `parsecs` = `1000/parallax` — both may be `null`). Sorted ascending by Distance. *(Phase O F1 added `app_magnitude`/`parsecs` — additive.)*
 
 ### Travel time
 

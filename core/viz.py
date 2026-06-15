@@ -904,3 +904,205 @@ def prepare_hypatia_scatter(result: dict, x_key: str, y_key: str) -> dict:
         "y_label": _HYPATIA_AXIS_LABELS[y_key],
         "count": len(xs),
     }
+
+
+# ── Phase O O-2: Star-Map Data Products ───────────────────────────────────────
+
+def _num(v):
+    """Parse a possibly comma-formatted numeric string/value to float, else None."""
+    if v is None:
+        return None
+    try:
+        return _ffloat(str(v).replace(",", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _sp_color(sp_type: str) -> str:
+    letter = (sp_type or "").strip()[:1].upper()
+    return _SPECTRAL_COLORS.get(letter, "#AAAAAA")
+
+
+def prepare_sky_from_star(result: dict, mag_limit: float = 6.5) -> dict:
+    """Night-sky (celestial-sphere) view from the queried centre star (Phase O · O1).
+
+    Input is a `compute_stars_within_distance_of_star` result: each star carries
+    absolute heliocentric x/y/z (ly) + the F1 `app_magnitude`/`parsecs` keys, and the
+    centre is given by `center_x/y/z`. For each star the vector FROM the vantage
+    (centre) is `(x-cx, y-cy, z-cz)`; Sol is added at `-(cx,cy,cz)` with M_V 4.83.
+
+    Apparent magnitude from the vantage: `M = V + 5 − 5·log₁₀(parsecs)` (absolute mag
+    from the Sol-centric values), then `m' = M − 5 + 5·log₁₀(d_ly/3.26156)`. Stars with
+    no V magnitude are skipped and counted in `skipped_no_mag` (never fabricated).
+
+    Returns {"vantage_name", "mag_limit", "skipped_no_mag",
+             "stars": [{name, ra_deg, dec_deg, mag, sp_class, color}]} or {"error": str}.
+    """
+    if not isinstance(result, dict) or "error" in result:
+        return {"error": (result or {}).get("error", "No star-list data")}
+
+    cx = result.get("center_x", 0.0) or 0.0
+    cy = result.get("center_y", 0.0) or 0.0
+    cz = result.get("center_z", 0.0) or 0.0
+    vantage = result.get("center", "Sol")   # opt-18 Sol-centric result has no "center"
+
+    sky, skipped = [], 0
+    for s in result.get("stars", []):
+        x, y, z = s.get("x"), s.get("y"), s.get("z")
+        if x is None or y is None or z is None:
+            continue
+        vx, vy, vz = x - cx, y - cy, z - cz
+        d = math.sqrt(vx * vx + vy * vy + vz * vz)
+        if d < 1e-9:
+            continue
+        vmag = _num(s.get("app_magnitude"))
+        pc = _num(s.get("parsecs"))
+        if vmag is None or pc is None or pc <= 0:
+            skipped += 1
+            continue
+        abs_m = vmag + 5.0 - 5.0 * math.log10(pc)
+        m_prime = abs_m - 5.0 + 5.0 * math.log10(d / 3.26156)
+        if m_prime > mag_limit:
+            continue
+        sp = (s.get("Spectral Type") or "").strip()
+        sky.append({
+            "name": s.get("Star Name", ""),
+            "ra_deg": math.degrees(math.atan2(vy, vx)) % 360.0,
+            "dec_deg": math.degrees(math.asin(max(-1.0, min(1.0, vz / d)))),
+            "mag": m_prime,
+            "sp_class": sp[:1].upper(),
+            "color": _sp_color(sp),
+        })
+
+    # Sol as seen from the vantage (vector back toward the origin).
+    d_sol = math.sqrt(cx * cx + cy * cy + cz * cz)
+    if d_sol > 1e-9:
+        m_sol = 4.83 - 5.0 + 5.0 * math.log10(d_sol / 3.26156)
+        if m_sol <= mag_limit:
+            sky.append({
+                "name": "Sol",
+                "ra_deg": math.degrees(math.atan2(-cy, -cx)) % 360.0,
+                "dec_deg": math.degrees(math.asin(max(-1.0, min(1.0, -cz / d_sol)))),
+                "mag": m_sol, "sp_class": "G", "color": _SPECTRAL_COLORS["G"],
+            })
+
+    return {
+        "vantage_name": vantage,
+        "mag_limit": mag_limit,
+        "skipped_no_mag": skipped,
+        "stars": sky,
+    }
+
+
+def prepare_hr_main_sequence() -> dict:
+    """Main-sequence reference points for an HR diagram (Phase O · O2a).
+
+    Reads the local `main_sequence_stars` table. Returns
+    {"points": [{label, teff, abs_mag, bv, lum, color}]} (sorted hot→cool) or
+    {"error": str} when the table is empty / unusable.
+    """
+    from core.db import get_conn
+    try:
+        rows = get_conn().execute(
+            "SELECT spectral_class, b_v, teff_k, abs_mag_vis, lum FROM main_sequence_stars"
+        ).fetchall()
+    except Exception as e:
+        return {"error": f"Error reading main_sequence_stars table: {e}"}
+    if not rows:
+        return {"error": "main_sequence_stars table is empty — run option 54 to import it."}
+
+    points = []
+    for r in rows:
+        teff = _num(r["teff_k"])
+        abs_mag = _num(r["abs_mag_vis"])
+        if teff is None or abs_mag is None or teff <= 0:
+            continue
+        sc = (r["spectral_class"] or "").strip()
+        points.append({
+            "label": sc, "teff": teff, "abs_mag": abs_mag,
+            "bv": _num(r["b_v"]), "lum": _num(r["lum"]),
+            "color": _sp_color(sc),
+        })
+    if not points:
+        return {"error": "No usable main-sequence rows (need Teff + abs visual mag)."}
+    points.sort(key=lambda p: -p["teff"])   # hot (left) → cool (right)
+    return {"points": points}
+
+
+def prepare_hr_from_stars(result: dict) -> dict:
+    """Overlay points for an HR diagram from a stars-within result (Phase O · O2b).
+
+    Per result star: `M_V = app_magnitude + 5 − 5·log₁₀(parsecs)` (uses the F1 keys);
+    Teff from the canonical `core.regions._lookup_spectral_type` ceiling rule. Stars
+    missing a V magnitude/parsecs or without a parseable OBAFGKM Teff are skipped and
+    counted. Returns {"points": [{name, teff, abs_mag, color, sp_type}], "skipped": int}
+    or {"error": str}.
+    """
+    if not isinstance(result, dict) or "error" in result:
+        return {"error": (result or {}).get("error", "No star-list data")}
+    from core.regions import _lookup_spectral_type
+
+    pts, skipped = [], 0
+    for s in result.get("stars", []):
+        vmag = _num(s.get("app_magnitude"))
+        pc = _num(s.get("parsecs"))
+        sp = (s.get("Spectral Type") or "").strip()
+        if vmag is None or pc is None or pc <= 0:
+            skipped += 1
+            continue
+        row, _key = _lookup_spectral_type(sp)
+        teff = _num(row.get("Teeff(K)")) if row else None
+        if teff is None or teff <= 0:
+            skipped += 1
+            continue
+        pts.append({
+            "name": s.get("Star Name", ""),
+            "teff": teff,
+            "abs_mag": vmag + 5.0 - 5.0 * math.log10(pc),
+            "color": _sp_color(sp),
+            "sp_type": sp,
+        })
+
+    # Reference anchor (drawn as a gold ★ by make_hr_canvas): Sol for the opt-18
+    # Sol-centric result, or the queried centre star for opt 19 (best-effort DB
+    # lookup — skipped if the centre isn't in the catalog).
+    if "center" in result:
+        ref = _hr_center_point(result.get("center", ""))
+        if ref:
+            pts.append(ref)
+    else:
+        pts.append({"name": "Sun", "teff": 5778.0, "abs_mag": 4.83,
+                    "color": "#FFD700", "sp_type": "G2V", "highlight": True})
+    return {"points": pts, "skipped": skipped}
+
+
+def _hr_center_point(name: str):
+    """Best-effort HR point for an opt-19 centre star, looked up in `star_systems`.
+
+    Returns a highlight point dict (gold ★), or None when the star isn't in the
+    catalog / lacks a V magnitude, parsecs, or a parseable OBAFGKM Teff.
+    """
+    if not name:
+        return None
+    from core.db import get_conn
+    from core.regions import _lookup_spectral_type
+    try:
+        row = get_conn().execute(
+            "SELECT spectral_type, app_magnitude, parsecs FROM star_systems "
+            "WHERE LOWER(star_name) = LOWER(?) LIMIT 1", (name,)
+        ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    vmag = _num(row["app_magnitude"])
+    pc = _num(row["parsecs"])
+    sp = (row["spectral_type"] or "").strip()
+    if vmag is None or pc is None or pc <= 0:
+        return None
+    r2, _k = _lookup_spectral_type(sp)
+    teff = _num(r2.get("Teeff(K)")) if r2 else None
+    if teff is None or teff <= 0:
+        return None
+    return {"name": name, "teff": teff, "abs_mag": vmag + 5.0 - 5.0 * math.log10(pc),
+            "color": "#FFD700", "sp_type": sp, "highlight": True}

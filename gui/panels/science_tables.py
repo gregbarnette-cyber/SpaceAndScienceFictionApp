@@ -1,10 +1,14 @@
 # gui/panels/science_tables.py — Options 12 (Solar System Bodies) and 13 (Main Sequence Stars).
 # Each option has its own independent panel class.
 
-from PySide6.QtWidgets import QTabWidget, QWidget, QVBoxLayout
+from PySide6.QtWidgets import (
+    QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+)
 
-from gui.panels.base import ResultPanel
+from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.science
+import core.viz
+from gui.visualizations.plot_helpers import mpl_available, make_hr_canvas
 
 
 def _au_lm(val_str: str) -> str:
@@ -129,13 +133,33 @@ class SolarSystemPanel(ResultPanel):
         tabs.addTab(view, "Asteroids")
 
 
-class MainSequencePanel(ResultPanel):
-    """Option 13 — Main Sequence Star Properties from propertiesOfMainSequenceStars.csv."""
+class MainSequencePanel(DiagramToggleMixin, ResultPanel):
+    """Option 12 — Main Sequence Star Properties from propertiesOfMainSequenceStars.csv.
+
+    Phase O · O2a: gains an "HR Diagram" viz tab (Teff vs absolute visual magnitude)
+    via the Show Diagrams toggle. No inputs — the table + diagram are built once.
+    """
 
     def build_inputs(self):
-        self._input_count = 0
+        # No inputs; just a Show Diagrams button (revealed after the HR tab is built).
+        form_widget = QWidget()
+        row = QHBoxLayout(form_widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        row.addWidget(self._show_diagrams_btn)
+        row.addStretch()
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
 
     def build_results_area(self):
+        # ── Data table ────────────────────────────────────────────────────────
+        self._tables_widget = QWidget()
+        tlay = QVBoxLayout(self._tables_widget)
+        tlay.setContentsMargins(0, 0, 0, 0)
+
         rows_data = core.science.compute_main_sequence_table()
         col_keys = [
             "Spectral Class", "B-V", "Teeff(K)", "AbsMag Vis.", "AbsMag Bol.",
@@ -148,4 +172,19 @@ class MainSequencePanel(ResultPanel):
         table_rows = [[row.get(k, "") for k in col_keys] for row in rows_data]
         view = self.make_table(headers, table_rows)
         view.setSortingEnabled(False)  # preserve spectral order
-        self._layout.addWidget(view)
+        tlay.addWidget(view)
+        self._layout.addWidget(self._tables_widget, 1)
+
+        # ── HR Diagram viz tab (O2a) ──────────────────────────────────────────
+        self._setup_diagram_view()
+        if mpl_available():
+            ref = core.viz.prepare_hr_main_sequence()
+            if "error" not in ref:
+                canvas, toolbar = make_hr_canvas(self, ref)
+                w = QWidget()
+                wl = QVBoxLayout(w)
+                wl.setContentsMargins(4, 4, 4, 4)
+                wl.addWidget(toolbar)
+                wl.addWidget(canvas)
+                self._viz_tabs_widget.addTab(w, "HR Diagram")
+        self._finish_render()

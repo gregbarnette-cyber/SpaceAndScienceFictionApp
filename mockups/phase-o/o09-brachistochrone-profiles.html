@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O9 — Brachistochrone Profile Charts (Phase O mockup)</title>
+<style>
+:root{
+  --bg:#f0f0f0;--panel:#fff;--border:#b8b8b8;--soft:#d8d8d8;--text:#222;--muted:#6a6a6a;
+  --accent:#4a90d9;--accent-d:#3a73ad;--head:#e9eef5;--zebra:#f7f9fc;
+  --good:#2e8b57;--warn:#b8860b;--bad:#b03030;--space:#0b1020;--ring:#22345a;--ringlbl:#3a5a8a;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:var(--text);background:var(--bg)}
+.topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;display:flex;align-items:center;gap:10px}
+.topbar .sub{color:#9aa3ad;font-weight:400}
+.topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px}
+.notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px;line-height:1.5}
+.notice b{color:#4d4109}.notice code{background:#f4ead0;padding:0 4px;border-radius:3px}
+.wrap{max-width:1000px;margin:0 auto;padding:14px 20px 40px}
+.hostbar{font-size:12px;color:#41566f;background:#eef4fb;border:1px solid #cfe0f4;border-radius:5px;padding:6px 11px;margin-bottom:12px}
+.hostbar b{color:#13314e}.hostbar code{background:#dde9f7;padding:0 4px;border-radius:3px}
+.hostbar .tab{display:inline-block;background:#fff;border:1px solid #cfe0f4;border-bottom:2px solid var(--accent);border-radius:4px 4px 0 0;padding:1px 8px;margin-left:4px;font-weight:600;color:#13314e}
+h2.title{margin:0 0 2px;font-size:18px}
+p.sub{color:var(--muted);margin:4px 0 12px;font-size:12.5px;line-height:1.5}
+details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--soft);border-radius:5px;padding:6px 10px}
+details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.6}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:11px 13px;margin-bottom:12px}
+.card h3{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+.ctl{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
+.ctl .field{display:flex;flex-direction:column;gap:3px}
+.ctl label{font-size:11.5px;color:#444;font-weight:600}
+.ctl input,.ctl select{height:28px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff}
+.ctl input[type=range]{padding:0;width:260px}
+button.btn{height:28px;padding:0 14px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+button.btn:hover{background:var(--accent-d)}
+button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+label.chk{font-size:12.5px;color:#333;display:flex;align-items:center;gap:6px;font-weight:600}
+.tabstrip{display:flex;gap:2px;margin-bottom:0}
+.tabstrip .t{background:#e7ecf2;border:1px solid var(--border);border-bottom:none;border-radius:5px 5px 0 0;padding:5px 12px;font-size:12px;cursor:pointer;color:#555}
+.tabstrip .t.active{background:#fff;color:#13314e;font-weight:600;position:relative;top:1px}
+.tabbody{background:#fff;border:1px solid var(--border);border-radius:0 6px 6px 6px;padding:12px}
+.tabpane{display:none}.tabpane.active{display:block}
+svg.diagram{width:100%;display:block;background:#f5f5f5;border:1px solid #ddd;border-radius:5px}
+svg.dark{background:var(--space);border:1px solid #233}
+.legend{font-size:11px;color:#777;margin-top:7px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.legend i{display:inline-block;width:13px;height:13px;border-radius:50%;vertical-align:middle;margin-right:4px}
+.legend i.line{height:0;width:18px;border-top-width:2px;border-radius:0}
+.foot{font-size:11px;color:var(--warn);font-style:italic;margin-top:6px}
+.readout{font-size:12.5px;font-weight:600;color:var(--accent-d);margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{background:var(--head);text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px;white-space:nowrap}
+td{padding:4px 8px;border-bottom:1px solid #eee;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:nth-child(even) td{background:var(--zebra)}
+tr.sel td{background:#fff3c4 !important}
+.mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:8px 11px;border-radius:5px;font-size:12px;margin-top:14px;line-height:1.5}
+.mocknote code{background:#e7ddf5;padding:0 4px;border-radius:3px}
+.tip{position:fixed;pointer-events:none;background:#11203a;color:#cfe3ff;border:1px solid #2a4a72;font-size:11px;padding:3px 7px;border-radius:4px;display:none;z-index:9}
+.modal{position:fixed;inset:0;background:rgba(10,14,25,.55);display:none;align-items:center;justify-content:center;z-index:50}
+.modal.open{display:flex}
+.modalbox{background:#fff;max-width:680px;max-height:84vh;overflow:auto;border-radius:8px;border:1px solid #b8b8b8;box-shadow:0 12px 44px rgba(0,0,0,.32);padding:18px 22px}
+.modalbox h3{margin:0 0 2px;font-size:16px}
+.modalbox h4{margin:14px 0 3px;font-size:11.5px;color:#3a73ad;text-transform:uppercase;letter-spacing:.4px}
+.modalbox p{margin:5px 0;line-height:1.55;font-size:12.5px}
+.modalbox table{margin:8px 0}
+.modalbox .x{float:right;cursor:pointer;color:#999;font-size:20px;font-weight:700;line-height:.8}
+.modalbox code{background:#eef;padding:0 4px;border-radius:3px}
+</style></head>
+<body>
+<div class="topbar">Space &amp; Science Fiction App <span class="sub">— GUI mockup</span>
+  <span class="tag">Phase O · O9 · Brachistochrone</span></div>
+<div class="notice"><b>Interactive viz mockup — not the real app.</b> The three brachistochrone profiles are ideal line charts — currently tables only.
+  This page renders the proposed diagram client-side over representative data so the look can be reviewed; the real app draws it with matplotlib via the noted helpers.</div>
+<div class="wrap">
+  <div class="hostbar">Adds <span class="tab">Acceleration Profiles</span> to <b>opts 22, 23, 24, 29, 30</b>.</div>
+  <h2 class="title">O9 · Brachistochrone Profile Charts</h2>
+  <p class="sub">Reconstructs v(t)/d(t) for each profile from accel_g + total time + profile type. Two stacked subplots sharing the time axis.</p>
+  <details class="spec"><summary>Plan details (from <code>future_phases.md</code>)</summary><ul><li><code>prepare_brachistochrone_profiles(result)</code> — piecewise segments from the formulas in docs/calculators.md; ~200 samples/profile.</li><li>Returns <code>{profiles:[{label,color,t_hours,v_kms,d_au}],accel_g}</code>; colours fixed per profile index.</li><li><code>make_profile_canvas</code> — top velocity (km/s, 2nd axis %c), bottom cumulative distance (AU, 2nd axis LM).</li></ul></details>
+  
+  <div class="card">
+   <div class="ctl"><div class="field"><label>Acceleration (g)</label><input id="g" value="1.0" style="width:80px"></div>
+     <div class="field"><label>Distance (AU)</label><input id="d" value="5.2" style="width:90px"></div>
+     <button class="btn" onclick="draw()">Plot</button></div>
+   <svg class="diagram" id="v" viewBox="0 0 640 220" style="height:220px"></svg>
+   <svg class="diagram" id="dd" viewBox="0 0 640 220" style="height:220px;margin-top:8px"></svg>
+   <div class="legend"><span><i class="line" style="border-top:2px solid #c0392b"></i>P1 to-halfway</span><span><i class="line" style="border-top:2px solid #2980b9"></i>P2 accel/coast/decel</span><span><i class="line" style="border-top:2px solid #27ae60"></i>P3 to 3% c</span></div>
+  </div>
+  <div class="mocknote">Real app: light-theme two-subplot chart added as a viz tab on 24/29/30 and to the existing tabs of 22/23 (opt 23 plots its single custom-thrust profile).</div>
+</div>
+<script>
+const SPC={O:"#9bb0ff",B:"#aabfff",A:"#cad7ff",F:"#f8f7ff",G:"#fff4c2",K:"#ffd2a1",M:"#ff9d6c",D:"#dfe6ff","?":"#cccccc"};
+const $=id=>document.getElementById(id);
+const f=(v,d)=>Number(v).toFixed(d);
+const lin=(v,a,b,p,q)=>p+(v-a)/(b-a)*(q-p);
+const L10=Math.log10;
+function setsvg(id,inner,vb){const e=$(id);if(vb)e.setAttribute('viewBox',vb);e.innerHTML=inner;}
+function tip(){let t=$('__tip');if(!t){t=document.createElement('div');t.id='__tip';t.className='tip';document.body.appendChild(t);}return t;}
+function bindTip(svgId){const s=$(svgId);s.addEventListener('mousemove',e=>{const el=document.elementFromPoint(e.clientX,e.clientY);const tt=el&&el.getAttribute&&el.getAttribute('data-tip');const t=tip();if(tt){t.textContent=tt;t.style.display='block';t.style.left=(e.clientX+12)+'px';t.style.top=(e.clientY+12)+'px';}else t.style.display='none';});s.addEventListener('mouseleave',()=>tip().style.display='none');}
+function tabs(){document.querySelectorAll('.tabstrip .t').forEach(t=>t.onclick=()=>{const g=t.dataset.group,n=t.dataset.tab;document.querySelectorAll('.tabstrip .t[data-group="'+g+'"]').forEach(x=>x.classList.toggle('active',x===t));document.querySelectorAll('.tabpane[data-group="'+g+'"]').forEach(p=>p.classList.toggle('active',p.dataset.tab===n));window.dispatchEvent(new Event('resize'));});}
+const star=(cx,cy,r,fill,t)=>`<path d="M${cx},${cy-r} L${cx+r*0.3},${cy-r*0.3} L${cx+r},${cy-r*0.3} L${cx+r*0.42},${cy+r*0.12} L${cx+r*0.62},${cy+r*0.9} L${cx},${cy+r*0.4} L${cx-r*0.62},${cy+r*0.9} L${cx-r*0.42},${cy+r*0.12} L${cx-r},${cy-r*0.3} L${cx-r*0.3},${cy-r*0.3} Z" fill="${fill}" stroke="#7a5c00" stroke-width="0.5"${t?` data-tip="${t}"`:''}/>`;
+
+
+const G=9.80665,C=299792458,AU=1.495978707e11,VCAP=0.03*C;
+function profile(kind,a,D){ // returns {t:[h],v:[km/s],d:[AU]}
+ let T;if(kind===1)T=2*Math.sqrt(D/a);else if(kind===2)T=Math.sqrt(16*D/(3*a));else{const tc=VCAP/a;T=(a*tc*tc>=D)?2*Math.sqrt(D/a):2*tc+(D-a*tc*tc)/VCAP;}
+ const t=[],v=[],d=[];for(let i=0;i<=160;i++){const tt=T*i/160;let vv,dd;
+  if(kind===1){if(tt<T/2){vv=a*tt;dd=0.5*a*tt*tt;}else{const td=tt-T/2,vmax=a*T/2;vv=vmax-a*td;dd=0.5*a*(T/2)*(T/2)+vmax*td-0.5*a*td*td;}}
+  else if(kind===2){const q=T/4;const vmax=a*q;if(tt<q){vv=a*tt;dd=0.5*a*tt*tt;}else if(tt<3*q){vv=vmax;dd=0.5*a*q*q+vmax*(tt-q);}else{const td=tt-3*q;vv=vmax-a*td;dd=0.5*a*q*q+vmax*2*q+vmax*td-0.5*a*td*td;}}
+  else{const tc=Math.min(VCAP/a,T/2);const vmax=a*tc;if(tt<tc){vv=a*tt;dd=0.5*a*tt*tt;}else if(tt<T-tc){vv=vmax;dd=0.5*a*tc*tc+vmax*(tt-tc);}else{const td=tt-(T-tc);vv=vmax-a*td;dd=0.5*a*tc*tc+vmax*(T-2*tc)+vmax*td-0.5*a*td*td;}}
+  t.push(tt/3600);v.push(vv/1000);d.push(dd/AU);}
+ return {t,v,d,T};
+}
+function axis(id,series,key,ylab){const x0=52,x1=626,y0=16,y1=186;const tmax=Math.max(...series.map(s=>s.t[s.t.length-1]));const ymax=Math.max(...series.flatMap(s=>s[key]))*1.05;
+ const sx=t=>lin(t,0,tmax,x0,x1),sy=y=>lin(y,0,ymax,y1,y0);let g=`<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#fff" stroke="#c9c9c9"/>`;
+ for(let i=0;i<=4;i++){const Y=lin(i,0,4,y1,y0),val=ymax*i/4;g+=`<line x1="${x0}" y1="${Y}" x2="${x1}" y2="${Y}" stroke="#f0f0f0"/><text x="${x0-4}" y="${Y+3}" fill="#555" font-size="8" text-anchor="end">${val<10?val.toFixed(1):Math.round(val)}</text>`;}
+ const cols=["#c0392b","#2980b9","#27ae60"];series.forEach((s,i)=>{let p=s.t.map((tt,j)=>`${j?'L':'M'}${f(sx(tt),1)},${f(sy(s[key][j]),1)}`).join(' ');g+=`<path d="${p}" fill="none" stroke="${cols[i]}" stroke-width="1.8"/>`;});
+ g+=`<text x="${x0-44}" y="${(y0+y1)/2}" fill="#444" font-size="9" transform="rotate(-90 ${x0-40} ${(y0+y1)/2})" text-anchor="middle">${ylab}</text>`;
+ g+=`<text x="${(x0+x1)/2}" y="${y1+18}" fill="#444" font-size="9" text-anchor="middle">time (hours)</text>`;setsvg(id,g);}
+function draw(){const a=(parseFloat($('g').value)||1)*G,D=(parseFloat($('d').value)||5.2)*AU;const S=[profile(1,a,D),profile(2,a,D),profile(3,a,D)];axis('v',S,'v','velocity (km/s)');axis('dd',S,'d','distance (AU)');}
+draw();</script>
+</body></html>

@@ -316,7 +316,8 @@ def compute_stars_within_distance_of_sol(limit_ly: float) -> dict:
     try:
         conn = get_conn()
         db_rows = conn.execute(
-            "SELECT star_name, designations, spectral_type, light_years, ra, dec "
+            "SELECT star_name, designations, spectral_type, light_years, "
+            "parsecs, app_magnitude, ra, dec "
             "FROM star_systems WHERE light_years <= ?",
             (limit_ly,),
         ).fetchall()
@@ -342,6 +343,9 @@ def compute_stars_within_distance_of_sol(limit_ly: float) -> dict:
             "Star Designations": row["designations"] or "",
             "Spectral Type":     row["spectral_type"] or "",
             "Light Years":       ly,
+            # Phase O F1 — additive keys consumed by O1 (night sky) / O2b (HR overlay).
+            "app_magnitude":     row["app_magnitude"],
+            "parsecs":           row["parsecs"],
             "x": x, "y": y, "z": z,
         })
 
@@ -371,7 +375,8 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
         if count == 0:
             return {"error": "star_systems table is empty — run option 50 first to populate it."}
         db_rows = conn.execute(
-            "SELECT star_name, designations, spectral_type, parallax, light_years, ra, dec "
+            "SELECT star_name, designations, spectral_type, parallax, light_years, "
+            "app_magnitude, ra, dec "
             "FROM star_systems"
         ).fetchall()
     except Exception as e:
@@ -410,6 +415,9 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
                 "Star Designations": row["designations"] or "",
                 "Spectral Type":     row["spectral_type"] or "",
                 "Distance":          dist,
+                # Phase O F1 — additive keys consumed by O1 (night sky) / O2b (HR overlay).
+                "app_magnitude":     row["app_magnitude"],
+                "parsecs":           1000.0 / plx,
                 "x": x, "y": y, "z": z,
             })
 

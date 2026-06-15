@@ -2596,3 +2596,208 @@ def make_scatter_canvas(parent, data: dict):
 
     toolbar = NavToolbar(canvas, parent)
     return canvas, toolbar
+
+
+# ── Phase O O-2: Star-Map Data Products ───────────────────────────────────────
+
+# Dark-navy sky palette (the Star-Chart look, per the Phase-O star-map convention).
+_SKY_FIG = "#070b18"
+_SKY_BG  = "#0b1020"
+_SKY_GRID = "#1a2448"
+_SKY_TXT = "#cfe3ff"
+
+
+def make_hr_canvas(parent, data: dict, overlay_points=None):
+    """HR / colour–magnitude diagram (Phase O · O2).
+
+    data: core.viz.prepare_hr_main_sequence() → {points:[{label,teff,abs_mag,...}]}.
+    overlay_points: optional list from core.viz.prepare_hr_from_stars()["points"]
+      (result stars) drawn as scatter over the main-sequence reference line.
+    x = Teff (K, log, inverted — hot left); y = absolute visual mag (inverted — bright
+    top); a secondary top axis labels spectral-class letters at their Teff. Light theme.
+    Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(7, 5), dpi=100, facecolor=_SPACE_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+    points = data.get("points") or []
+    if not points:
+        return _error_canvas("No main-sequence points to plot.")
+
+    fig = Figure(figsize=(7.5, 6), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.11, right=0.96, top=0.88, bottom=0.10)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(_SPACE_BG)
+
+    teffs = [p["teff"] for p in points]
+    mags = [p["abs_mag"] for p in points]
+
+    # Main-sequence reference line + colored points.
+    ax.plot(teffs, mags, color="#4a6a55", linewidth=1.6, zorder=2)
+    ax.scatter(teffs, mags, s=26, c=[p["color"] for p in points],
+               edgecolors="#444", linewidths=0.4, zorder=3)
+    for i, p in enumerate(points):
+        if i % 2 == 0 and p["label"]:
+            ax.annotate(p["label"], (p["teff"], p["abs_mag"]),
+                        textcoords="offset points", xytext=(4, -2),
+                        fontsize=6.5, color="#789", zorder=4)
+
+    # Overlay (O2b): result stars as red dots; the reference anchor (Sol / the queried
+    # centre star, flagged "highlight") as a gold ★ so it's easy to locate.
+    overlay_points = overlay_points or []
+    _normal = [p for p in overlay_points if not p.get("highlight")]
+    _refs = [p for p in overlay_points if p.get("highlight")]
+    if _normal:
+        ax.scatter([p["teff"] for p in _normal], [p["abs_mag"] for p in _normal],
+                   s=42, marker="o", c="#b03030", edgecolors="#fff", linewidths=0.5,
+                   zorder=5, label="result stars")
+        for p in _normal:
+            ax.annotate(p.get("name", ""), (p["teff"], p["abs_mag"]),
+                        textcoords="offset points", xytext=(6, 3),
+                        fontsize=7, color="#7a1414", zorder=6)
+    for p in _refs:
+        ax.scatter([p["teff"]], [p["abs_mag"]], s=240, marker="*", c="#FFD700",
+                   edgecolors="#7a5c00", linewidths=0.8, zorder=7,
+                   label=p.get("name", "reference"))
+        ax.annotate(p.get("name", ""), (p["teff"], p["abs_mag"]),
+                    textcoords="offset points", xytext=(8, 4), fontsize=8,
+                    fontweight="bold", color="#7a5c00", zorder=8)
+
+    ax.set_xscale("log")
+    ax.set_xlim(max(teffs) * 1.15, min(teffs) * 0.87)   # inverted: hot left
+    ax.invert_yaxis()                                    # bright top
+    ax.set_xlabel("Effective temperature (K) — hot left, log", color=_LABEL_CLR, fontsize=9)
+    ax.set_ylabel("Absolute visual magnitude — bright up", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+    ax.grid(color=_GRID_CLR, linewidth=0.6, alpha=0.7)
+    ax.set_axisbelow(True)
+    ax.set_title("HR / Colour–Magnitude Diagram", color=_LABEL_CLR, fontsize=10, pad=22)
+    if overlay_points:
+        ax.legend(loc="lower left", fontsize=8)
+
+    # Secondary top axis: spectral-class letters at their Teff positions.
+    anchors, seen = [], set()
+    for p in points:
+        letter = (p["label"][:1].upper() if p["label"] else "")
+        if letter and letter not in seen:
+            seen.add(letter)
+            anchors.append((p["teff"], letter))
+    trans = ax.get_xaxis_transform()  # x in data coords, y in axes fraction
+    for teff, letter in anchors:
+        ax.text(teff, 1.02, letter, transform=trans, ha="center", va="bottom",
+                fontsize=8, color="#3a73ad", clip_on=False)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_sky_canvas(parent, data: dict):
+    """Night-sky (RA/Dec) view from a vantage star (Phase O · O1).
+
+    data: core.viz.prepare_sky_from_star() → {vantage_name, mag_limit, skipped_no_mag,
+    stars:[{name, ra_deg, dec_deg, mag, sp_class, color}]}. Rectangular RA/Dec plot
+    (RA reversed, sky convention), dark-navy Star-Chart palette; marker size by
+    brightness; hover shows name + apparent magnitude. Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg, bg=_SPACE_BG, fg=_LABEL_CLR):
+        fig = Figure(figsize=(7, 4.6), dpi=100, facecolor=bg)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(bg)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=fg, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+    stars = data.get("stars") or []
+    if not stars:
+        return _error_canvas("No stars above the magnitude limit in range.",
+                             bg=_SKY_FIG, fg=_SKY_TXT)
+
+    fig = Figure(figsize=(8, 4.8), dpi=100, facecolor=_SKY_FIG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.08, right=0.97, top=0.90, bottom=0.12)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(_SKY_BG)
+
+    ras = [s["ra_deg"] for s in stars]
+    decs = [s["dec_deg"] for s in stars]
+    mags = [s["mag"] for s in stars]
+    mmin = min(mags)
+    sizes = [max(4.0, min(180.0, 60.0 * (10.0 ** (-0.4 * (m - mmin))))) for m in mags]
+    colors = [s["color"] for s in stars]
+
+    ax.scatter(ras, decs, s=sizes, c=colors, edgecolors="#05080d",
+               linewidths=0.4, zorder=3)
+    for s, sz in zip(stars, sizes):
+        if sz > 28:
+            ax.annotate(s["name"], (s["ra_deg"], s["dec_deg"]),
+                        textcoords="offset points", xytext=(5, 3),
+                        fontsize=7, color="#9fb8d8", zorder=4)
+
+    ax.set_xlim(360, 0)   # RA reversed (sky convention)
+    ax.set_ylim(-90, 90)
+    ax.set_xticks(range(0, 361, 60))
+    ax.set_yticks(range(-90, 91, 30))
+    ax.set_xlabel("Right ascension (°)", color=_SKY_TXT, fontsize=9)
+    ax.set_ylabel("Declination (°)", color=_SKY_TXT, fontsize=9)
+    ax.tick_params(colors=_SKY_TXT, labelsize=8)
+    for spine in ax.spines.values():
+        spine.set_color(_SKY_GRID)
+    ax.grid(color=_SKY_GRID, linewidth=0.6, alpha=0.8)
+    ax.set_axisbelow(True)
+    title = f"Night sky from {data.get('vantage_name', '?')} (to m={data.get('mag_limit', 6.5):g})"
+    if data.get("skipped_no_mag"):
+        title += f"   ·   {data['skipped_no_mag']} omitted (no V mag)"
+    ax.set_title(title, color=_SKY_TXT, fontsize=10, pad=8)
+
+    # Hover tooltip anchored to the hovered star (follows the point, like the 2D maps).
+    annot = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0", ec="#2266cc", lw=0.8, alpha=0.95),
+        arrowprops=dict(arrowstyle="->", color="#2266cc", lw=0.8),
+        color="#222", fontsize=8, zorder=10, visible=False,
+    )
+
+    def _on_motion(event):
+        if event.inaxes is not ax:
+            if annot.get_visible():
+                annot.set_visible(False)
+                canvas.draw_idle()
+            return
+        best_i, best_d = None, None
+        for i, (rv, dv) in enumerate(zip(ras, decs)):
+            px, py = ax.transData.transform((rv, dv))
+            d = (px - event.x) ** 2 + (py - event.y) ** 2
+            if best_d is None or d < best_d:
+                best_d, best_i = d, i
+        if best_i is not None and best_d <= 144:
+            s = stars[best_i]
+            annot.xy = (ras[best_i], decs[best_i])
+            annot.set_text(f"{s['name']}\nm'={s['mag']:.2f}")
+            annot.set_visible(True)
+        elif annot.get_visible():
+            annot.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar

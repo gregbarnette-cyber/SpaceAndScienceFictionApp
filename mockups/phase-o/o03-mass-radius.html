@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O3 — Mass–Radius Diagram (Phase O mockup)</title>
+<style>
+:root{
+  --bg:#f0f0f0;--panel:#fff;--border:#b8b8b8;--soft:#d8d8d8;--text:#222;--muted:#6a6a6a;
+  --accent:#4a90d9;--accent-d:#3a73ad;--head:#e9eef5;--zebra:#f7f9fc;
+  --good:#2e8b57;--warn:#b8860b;--bad:#b03030;--space:#0b1020;--ring:#22345a;--ringlbl:#3a5a8a;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:var(--text);background:var(--bg)}
+.topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;display:flex;align-items:center;gap:10px}
+.topbar .sub{color:#9aa3ad;font-weight:400}
+.topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px}
+.notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px;line-height:1.5}
+.notice b{color:#4d4109}.notice code{background:#f4ead0;padding:0 4px;border-radius:3px}
+.wrap{max-width:1000px;margin:0 auto;padding:14px 20px 40px}
+.hostbar{font-size:12px;color:#41566f;background:#eef4fb;border:1px solid #cfe0f4;border-radius:5px;padding:6px 11px;margin-bottom:12px}
+.hostbar b{color:#13314e}.hostbar code{background:#dde9f7;padding:0 4px;border-radius:3px}
+.hostbar .tab{display:inline-block;background:#fff;border:1px solid #cfe0f4;border-bottom:2px solid var(--accent);border-radius:4px 4px 0 0;padding:1px 8px;margin-left:4px;font-weight:600;color:#13314e}
+h2.title{margin:0 0 2px;font-size:18px}
+p.sub{color:var(--muted);margin:4px 0 12px;font-size:12.5px;line-height:1.5}
+details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--soft);border-radius:5px;padding:6px 10px}
+details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.6}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:11px 13px;margin-bottom:12px}
+.card h3{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+.ctl{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
+.ctl .field{display:flex;flex-direction:column;gap:3px}
+.ctl label{font-size:11.5px;color:#444;font-weight:600}
+.ctl input,.ctl select{height:28px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff}
+.ctl input[type=range]{padding:0;width:260px}
+button.btn{height:28px;padding:0 14px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+button.btn:hover{background:var(--accent-d)}
+button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+label.chk{font-size:12.5px;color:#333;display:flex;align-items:center;gap:6px;font-weight:600}
+.tabstrip{display:flex;gap:2px;margin-bottom:0}
+.tabstrip .t{background:#e7ecf2;border:1px solid var(--border);border-bottom:none;border-radius:5px 5px 0 0;padding:5px 12px;font-size:12px;cursor:pointer;color:#555}
+.tabstrip .t.active{background:#fff;color:#13314e;font-weight:600;position:relative;top:1px}
+.tabbody{background:#fff;border:1px solid var(--border);border-radius:0 6px 6px 6px;padding:12px}
+.tabpane{display:none}.tabpane.active{display:block}
+svg.diagram{width:100%;display:block;background:#f5f5f5;border:1px solid #ddd;border-radius:5px}
+svg.dark{background:var(--space);border:1px solid #233}
+.legend{font-size:11px;color:#777;margin-top:7px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.legend i{display:inline-block;width:13px;height:13px;border-radius:50%;vertical-align:middle;margin-right:4px}
+.legend i.line{height:0;width:18px;border-top-width:2px;border-radius:0}
+.foot{font-size:11px;color:var(--warn);font-style:italic;margin-top:6px}
+.readout{font-size:12.5px;font-weight:600;color:var(--accent-d);margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{background:var(--head);text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px;white-space:nowrap}
+td{padding:4px 8px;border-bottom:1px solid #eee;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:nth-child(even) td{background:var(--zebra)}
+tr.sel td{background:#fff3c4 !important}
+.mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:8px 11px;border-radius:5px;font-size:12px;margin-top:14px;line-height:1.5}
+.mocknote code{background:#e7ddf5;padding:0 4px;border-radius:3px}
+.tip{position:fixed;pointer-events:none;background:#11203a;color:#cfe3ff;border:1px solid #2a4a72;font-size:11px;padding:3px 7px;border-radius:4px;display:none;z-index:9}
+.modal{position:fixed;inset:0;background:rgba(10,14,25,.55);display:none;align-items:center;justify-content:center;z-index:50}
+.modal.open{display:flex}
+.modalbox{background:#fff;max-width:680px;max-height:84vh;overflow:auto;border-radius:8px;border:1px solid #b8b8b8;box-shadow:0 12px 44px rgba(0,0,0,.32);padding:18px 22px}
+.modalbox h3{margin:0 0 2px;font-size:16px}
+.modalbox h4{margin:14px 0 3px;font-size:11.5px;color:#3a73ad;text-transform:uppercase;letter-spacing:.4px}
+.modalbox p{margin:5px 0;line-height:1.55;font-size:12.5px}
+.modalbox table{margin:8px 0}
+.modalbox .x{float:right;cursor:pointer;color:#999;font-size:20px;font-weight:700;line-height:.8}
+.modalbox code{background:#eef;padding:0 4px;border-radius:3px}
+</style></head>
+<body>
+<div class="topbar">Space &amp; Science Fiction App <span class="sub">— GUI mockup</span>
+  <span class="tag">Phase O · O3 · Mass–Radius</span></div>
+<div class="notice"><b>Interactive viz mockup — not the real app.</b> A planet mass–radius diagram with composition reference curves.
+  This page renders the proposed diagram client-side over representative data so the look can be reviewed; the real app draws it with matplotlib via the noted helpers.</div>
+<div class="wrap">
+  <div class="hostbar">New <span class="tab">Mass–Radius</span> tab on <b>opts 3, 6</b> and the Map panel.</div>
+  <h2 class="title">O3 · Mass–Radius Diagram</h2>
+  <p class="sub">Log–log scatter of system planets against constant-density composition curves and the eight Solar-System reference points.</p>
+  <details class="spec"><summary>Plan details (from <code>future_phases.md</code>)</summary><ul><li><code>prepare_mass_radius(planets, mass_key, radius_key, name_key)</code> — generic over NASA (<code>pl_bmasse/pl_rade</code>) &amp; HWC (<code>P_MASS/P_RADIUS</code>); filters to planets with both values.</li><li>Curves: <code>R = (M/(ρ/ρ⊕))^(1/3)</code>, ρ⊕=5.51 — iron 7.9, rock 5.51, water 1.0, Jupiter 1.33. Deliberately constant-density, <b>not</b> Zeng models.</li><li>Tab added only when ≥ 1 planet has both mass &amp; radius.</li></ul></details>
+  
+  <div class="card">
+   <svg class="diagram" id="mr" viewBox="0 0 640 420" style="height:420px"></svg>
+   <div class="legend"><span><i class="line" style="border-top:2px dashed #999"></i>density curves</span><span><i style="background:#9aa"></i>Solar System</span><span><i style="background:#4a90d9"></i>system planet</span></div>
+  </div>
+  <div class="mocknote">Real app: <code>make_mass_radius_canvas</code>; the curve set is labelled "constant density" in the legend so it is not mistaken for an interior model.</div>
+</div>
+<script>
+const SPC={O:"#9bb0ff",B:"#aabfff",A:"#cad7ff",F:"#f8f7ff",G:"#fff4c2",K:"#ffd2a1",M:"#ff9d6c",D:"#dfe6ff","?":"#cccccc"};
+const $=id=>document.getElementById(id);
+const f=(v,d)=>Number(v).toFixed(d);
+const lin=(v,a,b,p,q)=>p+(v-a)/(b-a)*(q-p);
+const L10=Math.log10;
+function setsvg(id,inner,vb){const e=$(id);if(vb)e.setAttribute('viewBox',vb);e.innerHTML=inner;}
+function tip(){let t=$('__tip');if(!t){t=document.createElement('div');t.id='__tip';t.className='tip';document.body.appendChild(t);}return t;}
+function bindTip(svgId){const s=$(svgId);s.addEventListener('mousemove',e=>{const el=document.elementFromPoint(e.clientX,e.clientY);const tt=el&&el.getAttribute&&el.getAttribute('data-tip');const t=tip();if(tt){t.textContent=tt;t.style.display='block';t.style.left=(e.clientX+12)+'px';t.style.top=(e.clientY+12)+'px';}else t.style.display='none';});s.addEventListener('mouseleave',()=>tip().style.display='none');}
+function tabs(){document.querySelectorAll('.tabstrip .t').forEach(t=>t.onclick=()=>{const g=t.dataset.group,n=t.dataset.tab;document.querySelectorAll('.tabstrip .t[data-group="'+g+'"]').forEach(x=>x.classList.toggle('active',x===t));document.querySelectorAll('.tabpane[data-group="'+g+'"]').forEach(p=>p.classList.toggle('active',p.dataset.tab===n));window.dispatchEvent(new Event('resize'));});}
+const star=(cx,cy,r,fill,t)=>`<path d="M${cx},${cy-r} L${cx+r*0.3},${cy-r*0.3} L${cx+r},${cy-r*0.3} L${cx+r*0.42},${cy+r*0.12} L${cx+r*0.62},${cy+r*0.9} L${cx},${cy+r*0.4} L${cx-r*0.62},${cy+r*0.9} L${cx-r*0.42},${cy+r*0.12} L${cx-r},${cy-r*0.3} L${cx-r*0.3},${cy-r*0.3} Z" fill="${fill}" stroke="#7a5c00" stroke-width="0.5"${t?` data-tip="${t}"`:''}/>`;
+
+
+bindTip('mr');
+const x0=54,x1=620,y0=20,y1=372;
+const mmin=0.05,mmax=4000,rmin=0.3,rmax=25;
+const sx=m=>lin(L10(m),L10(mmin),L10(mmax),x0,x1), sy=r=>lin(L10(r),L10(rmin),L10(rmax),y1,y0);
+const SS=[["Mercury",0.055,0.383],["Mars",0.107,0.532],["Venus",0.815,0.95],["Earth",1,1],["Uranus",14.5,4.01],["Neptune",17.1,3.88],["Saturn",95.2,9.45],["Jupiter",317.8,11.21]];
+const SYS=[["b",4.8,1.9],["c",2.0,1.25],["d",11.0,3.1],["e",0.9,0.98],["f",46,4.6]];
+const curves=[["iron",7.9,"#b06a4a"],["rock",5.51,"#7a8a55"],["water",1.0,"#4a7fa8"],["Jupiter ρ",1.33,"#a08a4a"]];
+function draw(){
+ let g=`<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#fff" stroke="#c9c9c9"/>`;
+ for(const m of [0.1,1,10,100,1000]){const X=sx(m);g+=`<line x1="${X}" y1="${y0}" x2="${X}" y2="${y1}" stroke="#f0f0f0"/><text x="${X}" y="${y1+14}" fill="#555" font-size="9" text-anchor="middle">${m}</text>`;}
+ for(const r of [0.5,1,2,5,10,20]){const Y=sy(r);g+=`<line x1="${x0}" y1="${Y}" x2="${x1}" y2="${Y}" stroke="#f0f0f0"/><text x="${x0-5}" y="${Y+3}" fill="#555" font-size="9" text-anchor="end">${r}</text>`;}
+ curves.forEach(([nm,rho,col])=>{let p='';for(let i=0;i<=60;i++){const m=mmin*Math.pow(mmax/mmin,i/60);const r=Math.pow(m/(rho/5.51),1/3);if(r<rmin||r>rmax)continue;p+=`${p?'L':'M'}${f(sx(m),1)},${f(sy(r),1)} `;}g+=`<path d="${p}" fill="none" stroke="${col}" stroke-width="1.3" stroke-dasharray="5 4" opacity="0.8"/>`;const lm=2000,lr=Math.pow(lm/(rho/5.51),1/3);if(lr<=rmax)g+=`<text x="${sx(lm)}" y="${sy(lr)-2}" fill="${col}" font-size="8.5">${nm}</text>`;});
+ SS.forEach(([nm,m,r])=>{g+=`<circle cx="${sx(m)}" cy="${sy(r)}" r="3" fill="#9aa" data-tip="${nm} (Solar System)"/><text x="${sx(m)+4}" y="${sy(r)+3}" fill="#778" font-size="8">${nm}</text>`;});
+ SYS.forEach(([nm,m,r])=>{g+=`<circle cx="${sx(m)}" cy="${sy(r)}" r="5" fill="#4a90d9" stroke="#fff" data-tip="planet ${nm}: ${m} M⊕, ${r} R⊕"/><text x="${sx(m)+6}" y="${sy(r)+3}" fill="#26537d" font-size="9">${nm}</text>`;});
+ g+=`<text x="${(x0+x1)/2}" y="${y1+30}" fill="#444" font-size="10" text-anchor="middle">Mass (M⊕, log)</text>`;
+ g+=`<text x="14" y="${(y0+y1)/2}" fill="#444" font-size="10" text-anchor="middle" transform="rotate(-90 14 ${(y0+y1)/2})">Radius (R⊕, log)</text>`;
+ setsvg('mr',g);
+}
+draw();</script>
+</body></html>

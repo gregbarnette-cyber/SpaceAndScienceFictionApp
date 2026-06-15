@@ -13,6 +13,7 @@ import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_star_map_canvas, make_star_map_3d_canvas,
     make_star_chart_canvas, make_star_chart_3d_canvas,
+    make_hr_canvas, make_sky_canvas,
 )
 
 
@@ -158,6 +159,69 @@ def _build_star_chart_3d_tab(panel, map_stars, limit_ly):
     chart3d_l.addWidget(toolbar3d)
     chart3d_l.addWidget(canvas3d)
     return chart3d_w
+
+
+def _add_hr_tab(panel, result):
+    """Phase O · O2b — add an 'HR Diagram' viz tab: the main-sequence reference line
+    plus this result's stars overlaid. Silently skipped if the MS table is empty."""
+    ref = core.viz.prepare_hr_main_sequence()
+    if not isinstance(ref, dict) or "error" in ref:
+        return
+    overlay = core.viz.prepare_hr_from_stars(result)
+    ov_points = overlay.get("points") if isinstance(overlay, dict) else None
+    canvas, toolbar = make_hr_canvas(panel, ref, overlay_points=ov_points)
+    w = QWidget()
+    wl = QVBoxLayout(w)
+    wl.setContentsMargins(4, 4, 4, 4)
+    wl.addWidget(toolbar)
+    wl.addWidget(canvas)
+    panel._viz_tabs_widget.addTab(w, "HR Diagram")
+
+
+def _add_night_sky_tab(panel, result):
+    """Phase O · O1 — add a 'Night Sky' viz tab (opts 18 & 19) with a re-runnable
+    magnitude limit; recomputes prepare_sky_from_star on the cached result (no new
+    query). Vantage = the queried centre star (opt 19) or Sol (opt 18)."""
+    panel._sky_result = result
+    w = QWidget()
+    wl = QVBoxLayout(w)
+    wl.setContentsMargins(4, 4, 4, 4)
+    wl.setSpacing(4)
+
+    ctl = QHBoxLayout()
+    ctl.addWidget(QLabel("Limiting magnitude m′:"))
+    panel._sky_mag = QLineEdit("6.5")
+    panel._sky_mag.setMaximumWidth(80)
+    ctl.addWidget(panel._sky_mag)
+    apply_btn = QPushButton("Apply")
+    ctl.addWidget(apply_btn)
+    ctl.addStretch()
+    wl.addLayout(ctl)
+
+    holder = QWidget()
+    holder_l = QVBoxLayout(holder)
+    holder_l.setContentsMargins(0, 0, 0, 0)
+    wl.addWidget(holder, 1)
+
+    def _redraw():
+        try:
+            mag = float(panel._sky_mag.text().strip())
+        except ValueError:
+            mag = 6.5
+        while holder_l.count():
+            item = holder_l.takeAt(0)
+            ww = item.widget()
+            if ww:
+                ww.deleteLater()
+        data = core.viz.prepare_sky_from_star(panel._sky_result, mag_limit=mag)
+        canvas, toolbar = make_sky_canvas(panel, data)
+        holder_l.addWidget(toolbar)
+        holder_l.addWidget(canvas)
+
+    apply_btn.clicked.connect(_redraw)
+    panel._sky_mag.returnPressed.connect(_redraw)
+    _redraw()
+    panel._viz_tabs_widget.addTab(w, "Night Sky")
 
 
 # ── Option 18: Stars Within Distance of Sol ───────────────────────────────────
@@ -322,6 +386,11 @@ class StarsWithinDistanceSolPanel(DiagramToggleMixin, ResultPanel):
                     _build_star_chart_3d_tab(self, map_data["stars"], limit),
                     "Star Chart 3D",
                 )
+
+                # Phase O — HR Diagram (O2b) + Night Sky (O1, opt 19 only), placed to
+                # the RIGHT of the map/chart tabs.
+                _add_hr_tab(self, result)
+                _add_night_sky_tab(self, result)
 
         self._finish_render()
 
@@ -496,5 +565,10 @@ class StarsWithinDistanceStarPanel(DiagramToggleMixin, ResultPanel):
                     _build_star_chart_3d_tab(self, map_data["stars"], limit),
                     "Star Chart 3D",
                 )
+
+                # Phase O — HR Diagram (O2b) + Night Sky (O1, opt 19 only), placed to
+                # the RIGHT of the map/chart tabs.
+                _add_hr_tab(self, result)
+                _add_night_sky_tab(self, result)
 
         self._finish_render()

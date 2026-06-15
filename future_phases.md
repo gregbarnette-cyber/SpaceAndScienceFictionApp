@@ -11,7 +11,7 @@ The app is a mature Space & Science Fiction CLI/GUI tool that has completed Phas
 
 This document brainstorms future phases in order of likely value and implementation effort.
 
-> **Status (updated 2026-06-14):** of the phases below, **G, H, I (+ the I-OPTS route-planning extension), K, L, M, and N are ✅ implemented** (see each phase's header note). **J, O, P remain** un-built (P is fully spec'd; J/O were brought to build-ready depth — validation contract + tests + success criteria — on 2026-06-13). **Phase L is now fully implemented** — L1–L3 (2026-06-13) and **L4 (Hypatia cache + abundance search) on 2026-06-14** (the verification spike passed) per [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md) + [`mockups/phase-l.html`](mockups/phase-l.html). K shipped with a formal `PHASE_K_PLAN.md` + mockup. **Q, R, S** at the end are new brainstorm candidates. `query.py` now carries **51 subcommands** (after L4's `search-hypatia` and L1's `compare-stars`).
+> **Status (updated 2026-06-14):** of the phases below, **G, H, I (+ the I-OPTS route-planning extension), K, L, M, and N are ✅ implemented** (see each phase's header note). **O, P remain** un-built. **Phase O is ✅ approved, planned &amp; in progress** (2026-06-14 — all 18 items planned in [`PHASE_O_PLAN.md`](PHASE_O_PLAN.md); **sub-phases O-1 + O-2 implemented**, O-3…O-8 pending per-sub-phase "go"); P is fully spec'd. **Phase J is ❌ DECLINED** (2026-06-14 — none of J1–J4 are wanted; see its header note). **Phase L is now fully implemented** — L1–L3 (2026-06-13) and **L4 (Hypatia cache + abundance search) on 2026-06-14** (the verification spike passed) per [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md) + [`mockups/phase-l.html`](mockups/phase-l.html). K shipped with a formal `PHASE_K_PLAN.md` + mockup. **Q, R, S** at the end are new brainstorm candidates. `query.py` now carries **51 subcommands** (after L4's `search-hypatia` and L1's `compare-stars`).
 
 > **Scope — GUI-only.** New feature work targets the PySide6 GUI only. The CLI (`main.py` / `MENU_OPTIONS`) is **frozen at opts 1–58** and is not extended by any phase below. Every new feature is a GUI nav entry backed by a panel class (the precedent set by `DbStatusPanel` and `NasaPlanetarySystemsMapPanel`, which carry no option number), so there are **no menu numbers to assign and nothing to renumber**. The shared `core/` functions each phase specifies are still built — the GUI and `query.py` consume them; only the CLI presentation layer is dropped. Phase M is already written in this GUI-only form; treat it as the template. **Exception:** Phase N is integration-surface-only — it adds `query.py` subcommands over existing `core/` functions and touches neither the GUI nor the CLI menu.
 
@@ -335,7 +335,19 @@ Given a set of "important" star systems, find the minimum-cost network (minimum 
 
 ---
 
-## Phase J — User Preferences & Settings
+## Phase J — User Preferences & Settings ❌ DECLINED (2026-06-14)
+
+> **❌ DECLINED — will not be built.** The maintainer reviewed all four sub-features
+> and wants none of them:
+> - **J1 (persistent field values)** — not wanted; lookups are one-off (you rarely
+>   re-query the same star), so pre-filling input fields has no value.
+> - **J2 (saved favorites)** — not needed.
+> - **J3 (unit-system toggle)** — not needed.
+> - **J4 (dark mode)** — not needed.
+>
+> The original brainstorm/spec is retained below **for provenance only** — do not
+> implement it. (If this section should be removed entirely rather than kept as a
+> declined stub, delete from this header through the `---` before Phase K.)
 
 **New panels (GUI-only)**: `SettingsPanel`, `FavoritesPanel`
 **Existing panels touched**: all network-bound panels gain persistent field values (J1); the SIMBAD panel (opt 1) gains a bookmark button (J2); all panels outputting AU or temperature gain unit-toggle support (J3); all matplotlib panels gain dark-mode canvas colors (J4)
@@ -1063,6 +1075,18 @@ When Phase H's five equation functions are built (`compute_roche_limit`, `comput
 ---
 
 ## Phase O — Visualization Expansion
+
+> **✅ APPROVED & IN PROGRESS, 2026-06-14.** All 18 items approved by the maintainer.
+> **Sub-phases O-1 (Shared Foundations) and O-2 (Star-Map Data Products) are
+> implemented** (F1/F2/F3 + O1 night sky + O2 HR diagram; opts 12/18/19; 16 tests
+> green). O-3…O-8 remain planned, built per sub-phase on the maintainer's "go". Build-ready multi-phase plan: [`PHASE_O_PLAN.md`](PHASE_O_PLAN.md)
+> (one shared-foundations sub-phase O-1 + seven feature sub-phases O-2…O-8, with a
+> Master Tracking Matrix + per-item clean-removal notes so any item can be dropped
+> later). Mockups built &amp; reviewed: [`mockups/phase-o/`](mockups/phase-o/)
+> (`o01…o18-*.html`; generator `_gen.py`). **Added requirement:** O11 (Toomre) ships
+> an **"ℹ What is this?"** button opening the explanation as a dialog (a small reusable
+> help-dialog component, plan item F2) in every host panel (opts 1, 3–6, 8). The
+> original audit brainstorm is retained below; the plan supersedes it for build order.
 
 **New panels (GUI-only)**: none — every item adds viz tabs, canvases, or interactivity to *existing* panels
 **Existing options touched (viz layer only — no computation changes)**: 1, 3–6, 8–14, 17–24, 29–30, plus `NasaPlanetarySystemsMapPanel`

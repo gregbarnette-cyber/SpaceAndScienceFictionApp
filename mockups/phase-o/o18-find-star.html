@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O18 — Find-Star-on-Map Search Box (Phase O mockup)</title>
+<style>
+:root{
+  --bg:#f0f0f0;--panel:#fff;--border:#b8b8b8;--soft:#d8d8d8;--text:#222;--muted:#6a6a6a;
+  --accent:#4a90d9;--accent-d:#3a73ad;--head:#e9eef5;--zebra:#f7f9fc;
+  --good:#2e8b57;--warn:#b8860b;--bad:#b03030;--space:#0b1020;--ring:#22345a;--ringlbl:#3a5a8a;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:var(--text);background:var(--bg)}
+.topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;display:flex;align-items:center;gap:10px}
+.topbar .sub{color:#9aa3ad;font-weight:400}
+.topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px}
+.notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px;line-height:1.5}
+.notice b{color:#4d4109}.notice code{background:#f4ead0;padding:0 4px;border-radius:3px}
+.wrap{max-width:1000px;margin:0 auto;padding:14px 20px 40px}
+.hostbar{font-size:12px;color:#41566f;background:#eef4fb;border:1px solid #cfe0f4;border-radius:5px;padding:6px 11px;margin-bottom:12px}
+.hostbar b{color:#13314e}.hostbar code{background:#dde9f7;padding:0 4px;border-radius:3px}
+.hostbar .tab{display:inline-block;background:#fff;border:1px solid #cfe0f4;border-bottom:2px solid var(--accent);border-radius:4px 4px 0 0;padding:1px 8px;margin-left:4px;font-weight:600;color:#13314e}
+h2.title{margin:0 0 2px;font-size:18px}
+p.sub{color:var(--muted);margin:4px 0 12px;font-size:12.5px;line-height:1.5}
+details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--soft);border-radius:5px;padding:6px 10px}
+details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.6}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:11px 13px;margin-bottom:12px}
+.card h3{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+.ctl{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
+.ctl .field{display:flex;flex-direction:column;gap:3px}
+.ctl label{font-size:11.5px;color:#444;font-weight:600}
+.ctl input,.ctl select{height:28px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff}
+.ctl input[type=range]{padding:0;width:260px}
+button.btn{height:28px;padding:0 14px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+button.btn:hover{background:var(--accent-d)}
+button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+label.chk{font-size:12.5px;color:#333;display:flex;align-items:center;gap:6px;font-weight:600}
+.tabstrip{display:flex;gap:2px;margin-bottom:0}
+.tabstrip .t{background:#e7ecf2;border:1px solid var(--border);border-bottom:none;border-radius:5px 5px 0 0;padding:5px 12px;font-size:12px;cursor:pointer;color:#555}
+.tabstrip .t.active{background:#fff;color:#13314e;font-weight:600;position:relative;top:1px}
+.tabbody{background:#fff;border:1px solid var(--border);border-radius:0 6px 6px 6px;padding:12px}
+.tabpane{display:none}.tabpane.active{display:block}
+svg.diagram{width:100%;display:block;background:#f5f5f5;border:1px solid #ddd;border-radius:5px}
+svg.dark{background:var(--space);border:1px solid #233}
+.legend{font-size:11px;color:#777;margin-top:7px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.legend i{display:inline-block;width:13px;height:13px;border-radius:50%;vertical-align:middle;margin-right:4px}
+.legend i.line{height:0;width:18px;border-top-width:2px;border-radius:0}
+.foot{font-size:11px;color:var(--warn);font-style:italic;margin-top:6px}
+.readout{font-size:12.5px;font-weight:600;color:var(--accent-d);margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{background:var(--head);text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px;white-space:nowrap}
+td{padding:4px 8px;border-bottom:1px solid #eee;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:nth-child(even) td{background:var(--zebra)}
+tr.sel td{background:#fff3c4 !important}
+.mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:8px 11px;border-radius:5px;font-size:12px;margin-top:14px;line-height:1.5}
+.mocknote code{background:#e7ddf5;padding:0 4px;border-radius:3px}
+.tip{position:fixed;pointer-events:none;background:#11203a;color:#cfe3ff;border:1px solid #2a4a72;font-size:11px;padding:3px 7px;border-radius:4px;display:none;z-index:9}
+.modal{position:fixed;inset:0;background:rgba(10,14,25,.55);display:none;align-items:center;justify-content:center;z-index:50}
+.modal.open{display:flex}
+.modalbox{background:#fff;max-width:680px;max-height:84vh;overflow:auto;border-radius:8px;border:1px solid #b8b8b8;box-shadow:0 12px 44px rgba(0,0,0,.32);padding:18px 22px}
+.modalbox h3{margin:0 0 2px;font-size:16px}
+.modalbox h4{margin:14px 0 3px;font-size:11.5px;color:#3a73ad;text-transform:uppercase;letter-spacing:.4px}
+.modalbox p{margin:5px 0;line-height:1.55;font-size:12.5px}
+.modalbox table{margin:8px 0}
+.modalbox .x{float:right;cursor:pointer;color:#999;font-size:20px;font-weight:700;line-height:.8}
+.modalbox code{background:#eef;padding:0 4px;border-radius:3px}
+</style></head>
+<body>
+<div class="topbar">Space &amp; Science Fiction App <span class="sub">— GUI mockup</span>
+  <span class="tag">Phase O · O18 · Find Star</span></div>
+<div class="notice"><b>Interactive viz mockup — not the real app.</b> A find-on-map search box (depends on O15's highlight function).
+  This page renders the proposed diagram client-side over representative data so the look can be reviewed; the real app draws it with matplotlib via the noted helpers.</div>
+<div class="wrap">
+  <div class="hostbar">Adds a Find box above the <b>opts 18, 19</b> chart tabs.</div>
+  <h2 class="title">O18 · Find-Star-on-Map Search Box</h2>
+  <p class="sub">Substring match on name + designations; on match, centre + gold-ring the star (reuses O15's highlight). Find again cycles multiple matches.</p>
+  <details class="spec"><summary>Plan details (from <code>future_phases.md</code>)</summary><ul><li>Case-insensitive substring on Star Name &amp; Star Designations of the rendered stars.</li><li>On match: centre the view at half-range min(current,15) ly (labels appear), call <code>highlight_star(name)</code>; show <code>1 of N matches</code> when multiple.</li><li><b>Depends on O15's <code>highlight_star</code></b>. No match → status-bar message, no view change.</li></ul></details>
+  
+  <div class="card">
+   <div class="ctl"><div class="field"><label>Find star</label><input id="q" value="cen" style="width:160px" onkeydown="if(event.key==='Enter')find()"></div>
+     <button class="btn" onclick="find()">Find</button><div class="readout" id="ro"></div></div>
+   <svg class="diagram dark" id="map" viewBox="0 0 600 380" style="height:380px"></svg>
+  </div>
+  <div class="mocknote">Real app: reuses O15's ring; cycling Find steps through matches; no match → status-bar message only.</div>
+</div>
+<script>
+const SPC={O:"#9bb0ff",B:"#aabfff",A:"#cad7ff",F:"#f8f7ff",G:"#fff4c2",K:"#ffd2a1",M:"#ff9d6c",D:"#dfe6ff","?":"#cccccc"};
+const $=id=>document.getElementById(id);
+const f=(v,d)=>Number(v).toFixed(d);
+const lin=(v,a,b,p,q)=>p+(v-a)/(b-a)*(q-p);
+const L10=Math.log10;
+function setsvg(id,inner,vb){const e=$(id);if(vb)e.setAttribute('viewBox',vb);e.innerHTML=inner;}
+function tip(){let t=$('__tip');if(!t){t=document.createElement('div');t.id='__tip';t.className='tip';document.body.appendChild(t);}return t;}
+function bindTip(svgId){const s=$(svgId);s.addEventListener('mousemove',e=>{const el=document.elementFromPoint(e.clientX,e.clientY);const tt=el&&el.getAttribute&&el.getAttribute('data-tip');const t=tip();if(tt){t.textContent=tt;t.style.display='block';t.style.left=(e.clientX+12)+'px';t.style.top=(e.clientY+12)+'px';}else t.style.display='none';});s.addEventListener('mouseleave',()=>tip().style.display='none');}
+function tabs(){document.querySelectorAll('.tabstrip .t').forEach(t=>t.onclick=()=>{const g=t.dataset.group,n=t.dataset.tab;document.querySelectorAll('.tabstrip .t[data-group="'+g+'"]').forEach(x=>x.classList.toggle('active',x===t));document.querySelectorAll('.tabpane[data-group="'+g+'"]').forEach(p=>p.classList.toggle('active',p.dataset.tab===n));window.dispatchEvent(new Event('resize'));});}
+const star=(cx,cy,r,fill,t)=>`<path d="M${cx},${cy-r} L${cx+r*0.3},${cy-r*0.3} L${cx+r},${cy-r*0.3} L${cx+r*0.42},${cy+r*0.12} L${cx+r*0.62},${cy+r*0.9} L${cx},${cy+r*0.4} L${cx-r*0.62},${cy+r*0.9} L${cx-r*0.42},${cy+r*0.12} L${cx-r},${cy-r*0.3} L${cx-r*0.3},${cy-r*0.3} Z" fill="${fill}" stroke="#7a5c00" stroke-width="0.5"${t?` data-tip="${t}"`:''}/>`;
+
+/* nearby-star catalog (approx heliocentric ly) + V mag + parsecs for vantage/HR maths */
+const CAT=[
+ {name:"Sol",x:0,y:0,z:0,cls:"G",mag:-26.74,pc:0},
+ {name:"Proxima Cen",x:-1.53,y:-1.20,z:-3.77,cls:"M",mag:11.13,pc:1.30},
+ {name:"Alpha Cen A",x:-1.61,y:-1.31,z:-3.81,cls:"G",mag:-0.01,pc:1.34},
+ {name:"Alpha Cen B",x:-1.62,y:-1.30,z:-3.80,cls:"K",mag:1.33,pc:1.34},
+ {name:"Barnard's Star",x:-0.06,y:5.94,z:0.49,cls:"M",mag:9.53,pc:1.83},
+ {name:"Wolf 359",x:-7.42,y:2.10,z:1.02,cls:"M",mag:13.44,pc:2.41},
+ {name:"Lalande 21185",x:-6.28,y:1.72,z:4.78,cls:"M",mag:7.52,pc:2.55},
+ {name:"Sirius",x:-1.61,y:8.07,z:-2.45,cls:"A",mag:-1.46,pc:2.64},
+ {name:"Luyten 726-8",x:7.20,y:3.02,z:-2.88,cls:"M",mag:12.10,pc:2.68},
+ {name:"Ross 154",x:1.87,y:-8.46,z:-1.70,cls:"M",mag:10.44,pc:2.98},
+ {name:"Epsilon Eridani",x:7.20,y:-6.48,z:-2.51,cls:"K",mag:3.73,pc:3.21},
+ {name:"Procyon",x:-0.46,y:11.40,z:1.10,cls:"F",mag:0.34,pc:3.51},
+ {name:"61 Cygni A",x:6.50,y:6.13,z:7.13,cls:"K",mag:5.21,pc:3.50},
+ {name:"Tau Ceti",x:10.22,y:-4.97,z:-3.27,cls:"G",mag:3.50,pc:3.65},
+ {name:"Epsilon Indi",x:5.74,y:-3.07,z:-10.28,cls:"K",mag:4.69,pc:3.62},
+ {name:"Gliese 581",x:-15.1,y:8.3,z:-6.2,cls:"M",mag:10.57,pc:6.30},
+ {name:"Vega",x:5.0,y:24.3,z:7.9,cls:"A",mag:0.03,pc:7.68},
+ {name:"Altair",x:8.6,y:13.8,z:2.8,cls:"A",mag:0.76,pc:5.13},
+];
+CAT.forEach(s=>s.color=SPC[s.cls]||SPC["?"]);
+
+
+const pool=CAT.filter(s=>s.name!=="Sol").map(s=>({...s,ly:Math.hypot(s.x,s.y,s.z)}));
+let matches=[],mi=0,center=null;
+function map(){const cx=300,cy=190;const ox=center?center.x:0,oy=center?center.y:0;let R=0.5;pool.forEach(s=>R=Math.max(R,Math.hypot(s.x-ox,s.y-oy)));if(center)R=Math.min(R,15);const sc=160/R;const sx=x=>cx+(x-ox)*sc,sy=y=>cy-(y-oy)*sc;
+ let g='';const step=R>16?5:R>8?2:1;for(let rr=Math.ceil(R/step)*step;rr>0;rr-=step){if(rr*sc<8)continue;g+=`<circle cx="${cx}" cy="${cy}" r="${rr*sc}" fill="none" stroke="#22345a"/>`;}
+ pool.forEach(s=>{const X=sx(s.x),Y=sy(s.y);g+=`<circle cx="${X}" cy="${Y}" r="5" fill="${s.color}" data-tip="${s.name}"/><text x="${X+7}" y="${Y+3}" fill="#9fb8d8" font-size="8">${s.name}</text>`;if(center&&s.name===center.name)g+=`<circle cx="${X}" cy="${Y}" r="9" fill="none" stroke="#FFD700" stroke-width="2"/>`;});
+ const SX=sx(0),SY=sy(0);if(Math.abs(SX-cx)<400)g+=star(SX,SY,6,"#FFD700","Sol");setsvg('map',g);}
+function find(){const q=$('q').value.trim().toLowerCase();if(!q){return;}
+ const newM=pool.filter(s=>s.name.toLowerCase().includes(q));
+ if(newM.length===0){$('ro').textContent="No match — no view change.";return;}
+ if(JSON.stringify(newM.map(m=>m.name))!==JSON.stringify(matches.map(m=>m.name))){matches=newM;mi=0;}else{mi=(mi+1)%matches.length;}
+ center=matches[mi];$('ro').textContent= matches.length>1? `${mi+1} of ${matches.length} matches — ${center.name}` : `Found: ${center.name}`;map();}
+map();find();bindTip('map');</script>
+</body></html>
