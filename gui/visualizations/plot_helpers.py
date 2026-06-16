@@ -533,10 +533,147 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
 
 # ── Star Map ───────────────────────────────────────────────────────────────────
 
+# ── O-3 capability layer (additive): highlight_star + on_star_click ────────────
+# Gives the opt-18/19 panels a way to (a) ring a star from a table-row selection
+# and (b) be notified when a star is clicked on the map. Strictly additive: no
+# ring artist exists until highlight_star is called, and callers that pass no
+# on_star_click keep the inline info box — so opts 18/19 / GCNS / Phase-I renders
+# are byte-identical until a panel opts in. The legend-filter split (O16) and
+# isochrone rings (O17) land in their own later steps.
+_HL_GOLD = "#FFD700"
+
+
+def _attach_highlight_2d(canvas, ax, coord_map):
+    """Attach canvas.highlight_star(name|None) → hollow gold ring at the named
+    star on a 2D axes. coord_map maps name → (x, y); an unknown name or None
+    clears the ring. The ring is (re)created lazily, so a canvas that is never
+    asked to highlight draws no extra artist (default render unchanged)."""
+    holder = {"ring": None, "name": None}
+
+    def _highlight(name):
+        holder["name"] = name
+        if holder["ring"] is not None:
+            holder["ring"].remove()
+            holder["ring"] = None
+        xy = coord_map.get(name) if name else None
+        if xy is not None:
+            holder["ring"] = ax.scatter(
+                [xy[0]], [xy[1]], s=260, facecolors="none",
+                edgecolors=_HL_GOLD, linewidths=2.0, zorder=30)
+        canvas.draw_idle()
+
+    canvas.highlight_star = _highlight
+    canvas.highlighted_star = lambda: holder["name"]
+
+
+def _attach_highlight_3d(canvas, ax, coord_map):
+    """3D companion to _attach_highlight_2d. coord_map maps name → (x, y, z).
+    The ring is recreated on each call (3D collections lack a clean offset
+    setter); none exists until highlight_star is first called."""
+    holder = {"ring": None, "name": None}
+
+    def _highlight(name):
+        holder["name"] = name
+        if holder["ring"] is not None:
+            holder["ring"].remove()
+            holder["ring"] = None
+        xyz = coord_map.get(name) if name else None
+        if xyz is not None:
+            holder["ring"] = ax.scatter(
+                [xyz[0]], [xyz[1]], [xyz[2]], s=320, facecolors="none",
+                edgecolors=_HL_GOLD, linewidths=2.0, depthshade=False, zorder=30)
+        canvas.draw_idle()
+
+    canvas.highlight_star = _highlight
+    canvas.highlighted_star = lambda: holder["name"]
+
+
+# ── O16 capability: opt-in per-spectral-class split + pickable legend filter ──
+# Engaged only when a caller passes legend_filter=True (opts 18/19). GCNS / Phase-I
+# pass the default False and keep the single-scatter path, so their render is
+# unchanged (guarded by the O3 structural-regression test). When on, the body
+# scatter becomes one PathCollection per spectral class; clicking a legend entry
+# toggles that class (dots + labels) and dims the entry; the returned hit-test
+# skips hidden classes so a filtered-out star can't be hovered/clicked.
+def _legend_filter_2d(canvas, ax, xs, ys, colors, sp_types, sizes,
+                      scatter_kw, legend_kw, hidden,
+                      label_groups=None, label_state=None):
+    """Draw per-class scatters + a pickable legend; return hit(event)->index|None.
+
+    `hidden` is a shared set the caller's zoom/label logic also reads. The "?"
+    (unknown-type) class is drawn but gets no legend entry — it is never
+    filterable and stays visible, per the O-3 edge-case decisions."""
+    from matplotlib.lines import Line2D
+
+    groups = {}
+    for i, sp in enumerate(sp_types):
+        cls = (sp[0].upper() if sp else "?")
+        groups.setdefault(cls, []).append(i)
+
+    all_colls, index_maps, toggle = {}, {}, []
+    for cls in sorted(groups):
+        idxs = groups[cls]
+        coll = ax.scatter([xs[i] for i in idxs], [ys[i] for i in idxs],
+                          c=[colors[i] for i in idxs],
+                          s=[sizes[i] for i in idxs], **scatter_kw)
+        all_colls[cls] = coll
+        index_maps[cls] = idxs
+        if cls != "?":
+            toggle.append(cls)
+
+    handles = [Line2D([], [], marker="o", linestyle="", markersize=6,
+                      markerfacecolor=colors[index_maps[cls][0]],
+                      markeredgecolor="none", label=f"Class {cls}")
+               for cls in toggle]
+    legend = ax.legend(handles=handles, **legend_kw) if handles else None
+    art2cls = {}
+    if legend is not None:
+        for legline, cls in zip(legend.legend_handles, toggle):
+            legline.set_picker(6)
+            art2cls[legline] = cls
+
+    def _apply_labels(cls):
+        if label_groups is None:
+            return
+        shown = (label_state or {}).get("shown", True)
+        for txt in label_groups.get(cls, ()):
+            txt.set_visible(shown and cls not in hidden)
+
+    def _on_pick(event):
+        cls = art2cls.get(event.artist)
+        if cls is None:
+            return
+        coll = all_colls[cls]
+        vis = not coll.get_visible()
+        coll.set_visible(vis)
+        event.artist.set_alpha(1.0 if vis else 0.3)
+        for txt, h in zip(legend.get_texts(), legend.legend_handles):
+            if h is event.artist:
+                txt.set_alpha(1.0 if vis else 0.3)
+        hidden.discard(cls) if vis else hidden.add(cls)
+        _apply_labels(cls)
+        canvas.draw_idle()
+
+    if legend is not None:
+        canvas.mpl_connect("pick_event", _on_pick)
+
+    def _hit(event):
+        for cls, coll in all_colls.items():
+            if not coll.get_visible():
+                continue
+            cont, ind = coll.contains(event)
+            if cont:
+                return index_maps[cls][ind["ind"][0]]
+        return None
+
+    return _hit
+
+
 def make_star_map_canvas(parent, stars: list, title: str = "",
                          xk: str = "x", yk: str = "y",
                          xlabel: str = "X (ly)", ylabel: str = "Y (ly)",
-                         bg: str = _SPACE_BG):
+                         bg: str = _SPACE_BG, on_star_click=None,
+                         legend_filter=False):
     """2D scatter star map.
 
     stars: list of dicts {name, color, ly, x, y, z}.
@@ -553,8 +690,25 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
     canvas = FigureCanvas(fig)
     ax = fig.add_subplot(111, facecolor=bg)
 
-    sc = ax.scatter(xs, ys, c=colors, s=sizes, linewidths=0, alpha=0.85,
-                    picker=True, pickradius=4, zorder=3)
+    hidden = set()
+    if legend_filter:
+        sc = None
+        hit = _legend_filter_2d(
+            canvas, ax, xs, ys, colors,
+            [s.get("sp_type", "") for s in stars], sizes,
+            scatter_kw=dict(linewidths=0, alpha=0.85, zorder=3),
+            legend_kw=dict(loc="upper right", fontsize=7, framealpha=0.85,
+                           labelcolor="#333333", facecolor="#ffffff",
+                           edgecolor="#aaaaaa"),
+            hidden=hidden,
+        )
+    else:
+        sc = ax.scatter(xs, ys, c=colors, s=sizes, linewidths=0, alpha=0.85,
+                        picker=True, pickradius=4, zorder=3)
+
+        def hit(event):
+            cont, ind = sc.contains(event)
+            return ind["ind"][0] if cont else None
 
     # Highlight center star
     ax.scatter([xs[0]], [ys[0]], c=[colors[0]], s=90, marker="*",
@@ -568,18 +722,20 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
     ax.grid(True, color=_GRID_CLR, linewidth=0.5, linestyle=":")
     ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=8)
 
-    # Spectral class legend
-    seen = {}
-    for s in stars:
-        cls = (s["sp_type"][0].upper() if s.get("sp_type") else "?")
-        if cls not in seen:
-            seen[cls] = s["color"]
-    handles = [mpatches.Patch(color=c, label=f"Class {k}")
-               for k, c in sorted(seen.items()) if k != "?"]
-    if handles:
-        ax.legend(handles=handles, loc="upper right", fontsize=7,
-                  framealpha=0.85, labelcolor="#333333",
-                  facecolor="#ffffff", edgecolor="#aaaaaa")
+    # Spectral class legend — default path only (legend_filter builds its own
+    # pickable legend inside _legend_filter_2d).
+    if not legend_filter:
+        seen = {}
+        for s in stars:
+            cls = (s["sp_type"][0].upper() if s.get("sp_type") else "?")
+            if cls not in seen:
+                seen[cls] = s["color"]
+        handles = [mpatches.Patch(color=c, label=f"Class {k}")
+                   for k, c in sorted(seen.items()) if k != "?"]
+        if handles:
+            ax.legend(handles=handles, loc="upper right", fontsize=7,
+                      framealpha=0.85, labelcolor="#333333",
+                      facecolor="#ffffff", edgecolor="#aaaaaa")
 
     # Hover tooltip
     annot = ax.annotate(
@@ -597,9 +753,8 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
                 annot.set_visible(False)
                 canvas.draw_idle()
             return
-        cont, ind = sc.contains(event)
-        if cont:
-            idx = ind["ind"][0]
+        idx = hit(event)
+        if idx is not None:
             annot.xy = (xs[idx], ys[idx])
             ly_val = stars[idx].get("ly", 0)
             annot.set_text(f"{names[idx]}\n{ly_val:.2f} ly")
@@ -619,9 +774,10 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
                 _sm_box.set_visible(False)
                 canvas.draw_idle()
             return
-        cont, ind = sc.contains(event)
-        if cont:
-            idx  = ind["ind"][0]
+        idx = hit(event)
+        if idx is not None:
+            if on_star_click is not None:
+                on_star_click(names[idx])
             s    = stars[idx]
             desig = (s.get("desig") or "").strip()
             sp    = (s.get("sp_type") or "").strip()
@@ -640,6 +796,10 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
 
     canvas.mpl_connect("button_press_event", _on_sm_click)
 
+    coord_map = {s["name"]: (s[xk], s[yk]) for s in stars
+                 if s.get(xk) is not None and s.get(yk) is not None}
+    _attach_highlight_2d(canvas, ax, coord_map)
+
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
     return canvas, toolbar
@@ -648,7 +808,7 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
 # ── Star Map 3D ────────────────────────────────────────────────────────────────
 
 def make_star_map_3d_canvas(parent, stars: list, title: str = "",
-                            bg: str = _SPACE_BG):
+                            bg: str = _SPACE_BG, on_star_click=None):
     """3D scatter star map with drag-to-rotate.
 
     stars: list of dicts {name, color, ly, x, y, z}.
@@ -759,6 +919,8 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
         cont, ind = sc.contains(event)
         if cont:
             idx   = ind["ind"][0]
+            if on_star_click is not None:
+                on_star_click(names[idx])
             s     = stars[idx]
             desig = (s.get("desig") or "").strip()
             sp    = (s.get("sp_type") or "").strip()
@@ -777,6 +939,11 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
         canvas.draw_idle()
 
     canvas.mpl_connect("button_press_event", _on_click)
+
+    coord_map = {s["name"]: (s["x"], s["y"], s["z"]) for s in stars
+                 if s.get("x") is not None and s.get("y") is not None
+                 and s.get("z") is not None}
+    _attach_highlight_3d(canvas, ax, coord_map)
 
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
@@ -819,7 +986,8 @@ def _star_chart_steps(limit_ly: float):
     return minor, major
 
 
-def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
+def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
+                           on_star_click=None, legend_filter=False):
     """Labeled 2D X-Y star chart in the dark navy style of stars_within_15ly.html.
 
     stars:     list of dicts {name, color, sp_type, ly, x, y, z, desig}.
@@ -916,6 +1084,7 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
 
     if not plotted:
         fig.subplots_adjust(left=0.04, right=0.96, top=0.96, bottom=0.04)
+        _attach_highlight_2d(canvas, ax, {})
         return canvas, NavToolbar(canvas, parent)
 
     xs     = [s["x"]     for s in plotted]
@@ -949,10 +1118,11 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
         body_stars, body_xs, body_ys = plotted, xs, ys
         body_cols, body_names = colors, names
 
-    # Scatter for the remaining stars (used for hover/click hit-testing).
-    sc = ax.scatter(body_xs, body_ys, c=body_cols, s=36,
-                    edgecolors="#000000", linewidths=0.4,
-                    picker=True, pickradius=5, zorder=5)
+    # O16: per-class split state (shared with the legend pick handler + the
+    # zoom-driven label logic below). Empty/unused on the default path.
+    hidden = set()
+    _label_state = {"shown": initial_show_labels}
+    label_groups = {}   # spectral class -> [label artists], for legend filtering
 
     # Per-star labels "Name (Z=±X.XXX)". Anchored to each star with a fixed
     # PIXEL offset (textcoords="offset points") so the label stays glued to its
@@ -987,6 +1157,9 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
         )
         txt.set_path_effects([_path_stroke(linewidth=2.5, color=_SC_PLOT_BG)])
         txt.set_visible(initial_show_labels)
+        cls = (s.get("sp_type") or "")[:1].upper() or "?"
+        txt._o16_cls = cls
+        label_groups.setdefault(cls, []).append(txt)
         star_labels.append(txt)
 
     # Route overlay (Phase I) — dashed ordered legs (I1/I2) or solid MST edges
@@ -1017,6 +1190,31 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
         spine.set_edgecolor(_SC_GRID_MAJOR)
         spine.set_linewidth(0.8)
 
+    # Body-star scatter + hit-test. On the default path a single scatter; with
+    # legend_filter, one PathCollection per spectral class + a pickable dark-theme
+    # legend (O16). `hit(event)` returns the body-index under the cursor, skipping
+    # legend-hidden classes.
+    if legend_filter:
+        sc = None
+        hit = _legend_filter_2d(
+            canvas, ax, body_xs, body_ys, body_cols,
+            [s.get("sp_type", "") for s in body_stars],
+            [36] * len(body_stars),
+            scatter_kw=dict(edgecolors="#000000", linewidths=0.4, zorder=5),
+            legend_kw=dict(loc="upper right", fontsize=7, framealpha=0.85,
+                           labelcolor=_SC_STAR_LBL, facecolor=_SC_PLOT_BG,
+                           edgecolor=_SC_GRID_MAJOR),
+            hidden=hidden, label_groups=label_groups, label_state=_label_state,
+        )
+    else:
+        sc = ax.scatter(body_xs, body_ys, c=body_cols, s=36,
+                        edgecolors="#000000", linewidths=0.4,
+                        picker=True, pickradius=5, zorder=5)
+
+        def hit(event):
+            cont, ind = sc.contains(event)
+            return ind["ind"][0] if cont else None
+
     # Hover tooltip (offset annotation, follows the cursor).
     annot = ax.annotate(
         "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
@@ -1033,9 +1231,8 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
                 annot.set_visible(False)
                 canvas.draw_idle()
             return
-        cont, ind = sc.contains(event)
-        if cont:
-            idx = ind["ind"][0]
+        idx = hit(event)
+        if idx is not None:
             s = body_stars[idx]
             annot.xy = (body_xs[idx], body_ys[idx])
             annot.set_text(f"{body_names[idx]}\n{s.get('ly', 0):.3f} ly")
@@ -1063,9 +1260,10 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
                 info_box.set_visible(False)
                 canvas.draw_idle()
             return
-        cont, ind = sc.contains(event)
-        if cont:
-            idx   = ind["ind"][0]
+        idx = hit(event)
+        if idx is not None:
+            if on_star_click is not None:
+                on_star_click(body_names[idx])
             s     = body_stars[idx]
             desig = (s.get("desig") or "").strip()
             sp    = (s.get("sp_type") or "").strip()
@@ -1100,9 +1298,9 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
     canvas.mpl_connect("scroll_event", _on_scroll)
 
     # Zoom-driven label visibility — recomputed on every xlim/ylim change
-    # (covers toolbar zoom, scroll-wheel zoom, pan, and Home reset).
-    _label_state = {"shown": initial_show_labels}
-
+    # (covers toolbar zoom, scroll-wheel zoom, pan, and Home reset). A label whose
+    # class is legend-hidden (O16) stays hidden even when zoomed in. `_label_state`
+    # is defined above (shared with the legend pick handler).
     def _refresh_label_visibility(_event_ax=None):
         x0, x1 = ax.get_xlim()
         y0, y1 = ax.get_ylim()
@@ -1112,13 +1310,17 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
             return
         _label_state["shown"] = should_show
         for txt in star_labels:
-            txt.set_visible(should_show)
+            cls = getattr(txt, "_o16_cls", None)
+            txt.set_visible(should_show and (cls is None or cls not in hidden))
         if sol_label is not None:
             sol_label.set_visible(should_show)
         canvas.draw_idle()
 
     ax.callbacks.connect("xlim_changed", _refresh_label_visibility)
     ax.callbacks.connect("ylim_changed", _refresh_label_visibility)
+
+    coord_map = {s["name"]: (s["x"], s["y"]) for s in plotted}
+    _attach_highlight_2d(canvas, ax, coord_map)
 
     # Symmetric margins keep the (aspect=equal, anchor=C) square axes truly
     # centered in the figure horizontally and vertically.
@@ -1131,7 +1333,8 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None):
 
 # ── Star Chart 3D (labeled 3D scatter, dark theme) ────────────────────────────
 
-def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None):
+def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
+                              on_star_click=None):
     """3D companion to make_star_chart_canvas.
 
     Same dark navy palette, spectral-class star dots, gold ★ origin marker,
@@ -1215,6 +1418,7 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None)
         plotted.append(s)
 
     if not plotted:
+        _attach_highlight_3d(canvas, ax, {})
         toolbar = NavToolbar(canvas, parent)
         _shrink_toolbar(toolbar)
         _disable_zoom_rect(toolbar)
@@ -1338,6 +1542,8 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None)
         cont, ind = sc.contains(event)
         if cont:
             idx   = ind["ind"][0]
+            if on_star_click is not None:
+                on_star_click(body_names[idx])
             s     = body_stars[idx]
             desig = (s.get("desig") or "").strip()
             sp    = (s.get("sp_type") or "").strip()
@@ -1397,6 +1603,9 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None)
     # Very tight subplot margins — the axes-pane "cube" is hidden so we can
     # safely push the axes nearly to the figure edges; axis labels still fit
     # because matplotlib places them inside the axes rect, not outside.
+    coord_map = {s["name"]: (s["x"], s["y"], s["z"]) for s in plotted}
+    _attach_highlight_3d(canvas, ax, coord_map)
+
     fig.subplots_adjust(left=0.0, right=1.0, top=1.0, bottom=0.0)
     toolbar = NavToolbar(canvas, parent)
     _shrink_toolbar(toolbar)

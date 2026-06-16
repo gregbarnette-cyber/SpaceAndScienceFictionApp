@@ -1,8 +1,13 @@
 # PHASE O — Visualization Expansion · Implementation Plan
 
-> **Status: O-1 (Shared Foundations) ✅ and O-2 (Star-Map Data Products) ✅
-> IMPLEMENTED 2026-06-14 — F1/F2/F3 + O1/O2 shipped, 16 tests green. O-3…O-8 are
-> PLAN ONLY — implement per sub-phase only on the maintainer's "go".**
+> **Status: O-1 ✅ and O-2 ✅ IMPLEMENTED 2026-06-14. O-3 IN PROGRESS (2026-06-15):
+> the capability layer (CP0), O15 row↔map linking (CP1), and O16 2D legend filtering
+> (CP2) are landed + maintainer-verified. **Next: CP3 = O16 3D legend filtering**
+> (Map 3D + Star Chart 3D), then CP4 = O17 isochrones, CP5 = O18 find box.
+> `tests/test_viz_phase_o.py` = 32 green; full suite 395 (the only 3 failures are
+> pre-existing live-network tests — JPL Horizons / NASA TAP). O-4…O-8 are PLAN ONLY.
+> Build proceeds one checkpoint at a time; stop + wait for "go" at each. Working tree
+> is uncommitted.**
 > This document is the build-ready, multi-phase plan for Phase O (the 18-item
 > visualization audit in `future_phases.md`). All 18 items are **maintainer-approved**
 > (2026-06-14). Mockups are built and reviewed: `mockups/phase-o/o01..o18-*.html`
@@ -73,10 +78,10 @@ brachistochrone profiles, HWC temp/ESI, transit geometry, and the size strip.
 | F3 | Test scaffold `tests/test_viz_phase_o.py` + offscreen smoke harness | O-1 | tests | — | — | — | ☑ Done (2026-06-14) |
 | O1 | Night Sky From Another Star (+ from Sol) | O-2 | 18, 19 | F1 | `prepare_sky_from_star` | `make_sky_canvas` (new) | ☑ Done (2026-06-14) |
 | O2 | HR / Colour–Magnitude Diagram | O-2 | 12, 18, 19 | F1 | `prepare_hr_main_sequence`, `prepare_hr_from_stars` | `make_hr_canvas` (new) | ☑ Done (2026-06-14) |
-| O15 | Table-Row ↔ Map Linking | O-3 | 18, 19 | — (introduces capability layer) | — | star-map/chart: `highlight_star`, `on_star_click` | ☐ Planned |
-| O16 | Clickable Legend Filtering | O-3 | 18, 19 | O-3 capability layer | — | star-map/chart: per-class collections + legend pick | ☐ Planned |
-| O17 | Travel-Time Isochrone Rings | O-3 | 18, 19 | O-3 capability layer | — | star-chart: `isochrone=` param | ☐ Planned |
-| O18 | Find-Star-on-Map Box | O-3 | 18, 19 | **O15** (`highlight_star`) | — | — (reuses O15) | ☐ Planned |
+| O15 | Table-Row ↔ Map Linking | O-3 | 18, 19 | — (introduces capability layer) | — | star-map/chart: `highlight_star`, `on_star_click` | ☑ Done (CP1, 2026-06-15) |
+| O16 | Clickable Legend Filtering | O-3 | 18, 19 | O-3 capability layer | — | star-map/chart: per-class collections + legend pick | ◐ 2D done (CP2); 3D = CP3 |
+| O17 | Travel-Time Isochrone Rings | O-3 | 18, 19 | O-3 capability layer | — | star-chart: `isochrone=` param | ☐ Planned (CP4) |
+| O18 | Find-Star-on-Map Box | O-3 | 18, 19 | **O15** (`highlight_star`) | — | — (reuses O15) | ☐ Planned (CP5) |
 | O3 | Mass–Radius Diagram | O-4 | 3, 6, Map panel | — | `prepare_mass_radius` | `make_mass_radius_canvas` (new) | ☐ Planned |
 | O4 | Solar System Reference Overlay | O-4 | 3, 6, Map panel | — | — | `make_orbits_canvas` (extend: `solar_overlay`) | ☐ Planned |
 | O13 | Transit Geometry View | O-4 | 3, Map panel | — | `prepare_transit_geometry` | `make_transit_canvas` (new) | ☐ Planned |
@@ -224,10 +229,40 @@ the four shared canvases — `make_star_map_canvas`, `make_star_map_3d_canvas`,
 `make_star_chart_canvas`, `make_star_chart_3d_canvas` — so existing opts-18/19 / GCNS /
 Phase-I callers are unaffected (covered by F3's regression guard):
 - `canvas.highlight_star(name|None)` **attribute** (no signature change) — a hollow
-  gold ring at the named star, or removed for `None`; `draw_idle()`.
+  gold ring at the named star, or removed for `None`; `draw_idle()`. Pure overlay —
+  additive for every caller.
 - optional `on_star_click(name)` kwarg (default `None` → current inline info box).
-- per-spectral-class `PathCollection`s + `legend_handle.set_picker(5)` (O16 prereq).
-- `isochrone={"ly_hr":float,"label_unit":str}|None` kwarg on the two chart canvases (O17).
+- **Opt-in per-class split (decision 2026-06-15) — the one risky edit, neutralised.**
+  O16 needs per-spectral-class `PathCollection`s so a class can be hidden, but that
+  rewrites the *base* dot-drawing on canvases GCNS (M1/M4c) and the seven Phase-I panels
+  also call. Today `make_star_map_canvas` draws **all stars in one `ax.scatter`** (the
+  single `sc` that hover/click hang off) with a proxy-`Patch` legend; splitting that into
+  N per-class scatters is exactly what would silently regress a foreign panel — and the
+  suite has **no pixel tests** to catch it. So gate the split behind a default-off
+  `legend_filter=False` kwarg: `False` runs today's exact single-`ax.scatter` path →
+  **GCNS/Phase-I are byte-identical by construction** (they never enter the new branch);
+  only opts 18/19 pass `legend_filter=True` to take the per-class branch (one scatter per
+  class + `legend_handle.set_picker(5)`). The hover/click/`highlight_star` logic must
+  handle both "one collection" and "list of collections". Cost: a second branch in each
+  helper — cleanly removable (drop O16 → delete the branch; the default path *is* the
+  original).
+- `isochrone={"ly_hr":float,"label_unit":str}|None` kwarg on the two chart canvases
+  (O17) — pure overlay, default `None` → distance rings as today.
+
+**Structural-regression test (improvement, 2026-06-15) — partial cover for the
+no-pixel-test gap.** F3's guard proves the canvases *build*; it does **not** prove they
+*render identically*. Add a structural-snapshot test to `tests/test_viz_phase_o.py`:
+build each of the four shared canvases the **default way** (no O-3 kwargs,
+`legend_filter=False`) and assert a set of structural invariants is unchanged — axes
+count, `PathCollection`/`Line2D` counts, the scatter's face-colours, axis limits, ring
+count, legend-entry count. This catches the *single-scatter-vs-split* class of bug (and
+any accidental z-order / colour drift) on the **foreign-caller default path**, which F3
+alone cannot. The opt-18/19 `legend_filter=True` path is allowed to differ (change is
+expected there). Runs at CP0 and stays green through CP2/CP3. The fixture **must
+include the edge rows** that exercise the classifier — a composite `+`-type (`G2V+K1V`),
+a `dM`-prefixed dwarf (`dM6`), a null/empty `sp_type`, the white dwarf (`DA1.9`), and two
+coincident-coordinate stars — or a grouping regression would slip through clean G/K/M
+data.
 
 **Scope decision (maintainer, 2026-06-14): the interactivity covers ALL opts-18/19 map
 tabs** — the light-gray **Map X–Y / X–Z / 3D** (`make_star_map_canvas`/`_3d`) *and* the
@@ -237,6 +272,107 @@ canvases draw; the plain Map tabs have no ring system, so O17 stays on the Star 
 (adding rings to the scatter Maps is out of scope). **Build order for the 3D-capable
 items (O16): all 2D variants first, then the 3D variants** (3D visibility toggling is
 fiddlier — best-effort).
+
+### O-3 risk-mitigation strategy & checkpoints  *(decision 2026-06-15)*
+
+The O-3 risk is concentrated in the **capability-layer edits to the four shared
+canvases**, which three families call: opts 18/19 (being edited), **GCNS M1/M4c**, and
+**all seven Phase-I route planners** (unedited — must stay identical). Mitigations:
+(1) build + test the capability layer in isolation **before** any panel wiring;
+(2) default-off additivity on every new kwarg/attribute; (3) the **opt-in per-class
+split** above (foreign-caller regression structurally impossible); (4) **2D before 3D,
+one canvas at a time**, F3 guard after each; (5) per-item clean-removal notes.
+
+Because canvas *rendering* has no automated coverage anywhere in the suite, each step
+ends at a **checkpoint**: I run the automated gate, report what landed, and give the
+exact click-path + values below — then **stop until you say continue**. **CP0 and CP2
+matter most** — they're where a foreign-panel regression could hide.
+
+**Prerequisites for the manual checks:** `star_systems` populated (**option 50**) and
+GCNS imported (**option 58**) so the regression-sweep panels have data. All values below
+are from the **current build** (`stars-within-sol --ly 15` → **53 stars**). Useful
+ground-truth rows (the table shows the SIMBAD `main_id`, *not* the common name):
+
+| What you'll look for | Row name as stored | Class | Dist (ly) |
+|---|---|---|---|
+| Proxima Centauri | `NAME Proxima Centauri` | M5.5Ve → **M** | 4.2 |
+| α Cen A | `* alf Cen A` | G2V → **G** | 4.4 |
+| α Cen B | `* alf Cen B` | K1V → **K** | 4.4 |
+| Barnard's Star | `NAME Barnard's star` | M4V → **M** | 6.0 |
+| Sirius A | `* alf CMa` | A0… → **A** (the only A at 15 ly) | 8.6 |
+| Sirius B | `* alf CMa B` | DA1.9 → **D** (white dwarf) | 8.6 |
+| ε Eridani | `* eps Eri` | K2V → **K** | 10.5 |
+| 61 Cyg A / B | `*  61 Cyg A` / `*  61 Cyg B` | K5V / K7V → **K** | 11.4 |
+
+Class mix at 15 ly: **M dominates** (toggling M removes most dots — a very visible
+legend-filter effect); **G** = α Cen A; **K** = α Cen B / ε Eri / 61 Cyg A&B; **A** =
+Sirius A alone; plus exotic singletons (**L** Luhman 16, **Y** WISEA J0855, **D** Sirius B).
+
+| CP | After | Automated gate (I run) | Manual verify — concrete inputs & expected result | Regression sweep |
+|----|-------|------------------------|----------------------------------------------------|------------------|
+| **CP0** | Capability layer | full suite + F3 guard + new structural-regression test green | **Opt 18, limit `15`** → open all five map tabs (Map X–Y, Map X–Z, Map 3D, Star Chart, Star Chart 3D); every dot / label / distance ring / legend looks exactly as before (nothing is wired yet) | **GCNS Census Browser `15`** (M1) **and** **Nearest-Neighbor: start `Sol`, hops `6`, max-ly `9`** (Phase-I): Star Chart dots, distance rings, and the route line all unchanged |
+| **CP1** | O15 linking | capability smoke + panel-wiring smoke | **Opt 18, limit `15`** → select the **`NAME Barnard's star`** row → a gold ring appears on Barnard's on **every** map tab; click the **`NAME Proxima Centauri`** dot on any map → its row selects + scrolls into view; switch Star Chart → Map 3D → selection + ring persist. **Edge:** click an **overlapping** dot (`* alf Cen` / `A` / `B`, all ~4.4 ly) → selection is deterministic, no crash | — (no foreign-panel change since CP0) |
+| **CP2** | O16 2D filter | per-class pick-toggle smoke + structural test still green | **Opt 18, limit `15`** on Star Chart + Map X–Y + Map X–Z: click the **M** legend entry → most dots vanish, "Class M" text dims to ~0.3 α; click again → they return; click **G** → only `* alf Cen A` drops; click **A** → only `* alf CMa` (Sirius A) drops. **Edge:** click **D** → Sirius B **and** Wolf 359 + Ross 128 drop together (`dM`→D bucket — expected, not a bug); hover where a hidden dot was → **no** tooltip | **Re-open GCNS Census `15` + the Nearest-Neighbor route**: both still draw **all** classes (they pass `legend_filter=False`) — no filtering, no visual change |
+| **CP3** | O16 3D filter | 3D pick smoke (best-effort) | **Opt 18, limit `15`** on Map 3D + Star Chart 3D: toggling **M** hides/shows its dots (labels follow); rotate to confirm hidden dots stay hidden | same GCNS / Phase-I sweep as CP2 |
+| **CP4** | O17 isochrones | `isochrone=` branch smoke | **Opt 18, limit `15`**, Star Chart: enter **`10` ×c**, Apply → distance rings replaced by time rings. **Hand anchor:** at N×c, ring radius (ly) = N × time (yr) → a **"6 months" ring sits at 5 ly** and a **"1 year" ring at 10 ly**. Then **`0.01` ly/hr** → weekly/monthly rings (**1 month ≈ 7.3 ly**, 1 week ≈ 1.68 ly). Clear the field → distance rings return. **Edge:** highlight a star first (per CP1), then Apply velocity → the gold ring **survives** the rebuild; zoom in, then clear → distance rings redraw correctly anchored | GCNS / Phase-I Star Charts still show plain **distance** rings (no isochrone control exists there) |
+| **CP5** | O18 find box | panel smoke | **Opt 18, limit `15`**: type **`Barnard`** → 1 match, map centres + rings Barnard's Star, "1 of 1"; type **`61 Cyg`** → 2 matches (A & B), "1 of 2", Find-again cycles; type **`GJ`** → many matches, cycles through them; type **`zzzzz`** → no match → status-bar message | — |
+
+> **Opt 19 variant** (network — SIMBAD-resolves the centre): same checks with e.g. centre
+> **`Sirius`**, limit **`9`** (gold ★ = Sirius at origin; α CMa B + Procyon nearby). Run it
+> once per CP to confirm the centre-star path behaves like the Sol-centric opt-18 path.
+
+### O-3 edge cases, decisions & targeted unit tests  *(2026-06-15)*
+
+Hardening list beyond the happy-path checkpoints — most fall out of the **real**
+`star_systems` data (the 15-ly pull) and won't appear with clean G/K/M fixtures.
+
+**Data-derived gotchas (all real at 15 ly):**
+- **Heterogeneous "Class D".** `_star_map_color` (`core/calculators.py`) *and* the legend
+  both classify on `sp_type[0].upper()`, so the old Yerkes **`dM6` (Wolf 359) / `dM4`
+  (Ross 128)** are bucketed as **D** with the white-dwarf colour, alongside Sirius B
+  **`DA1.9`**. O16 must **reproduce** this (group by the same key → additive); "correcting"
+  it would break additivity. **Decision: reproduce, don't fix.** CP2 expects toggling **D**
+  to hide Sirius B + Wolf 359 + Ross 128 together.
+- **Double-space stored names** (`*  61 Cyg A`, `Wolf  359`, `HD  95735`, `Ross  248`).
+  O18 find must **collapse whitespace** on both query and target, else `61 Cyg A` (single
+  space) misses `*  61 Cyg A`. **Decision: normalize whitespace + case-insensitive, match
+  name OR designations.**
+- **Coincident points** — `* alf Cen` (composite `G2V+K1V`, empty designations) + `* alf
+  Cen A` + `* alf Cen B`, plus Sirius A/B and the G 272-61 triple, share a position.
+  Hit-test returns the first index **deterministically**; **find `alf Cen` → 3 matches →
+  must cycle**; highlight rings the matched name only.
+- **Null/empty `sp_type` → class `"?"`** has no legend entry → **unfilterable, always
+  visible** (decision: by design). **Null `x/y/z`** rows have a table row but no map point
+  → highlight/find/link **no-op gracefully** (same path as a clipped star).
+- **Clipped-from-2D stars.** The Star Chart excludes stars whose |x| or |y| exceeds the
+  limit (projection-square rule) though they exist in 3D → highlight/find **no-op on the
+  tab where the star isn't drawn**, still work on the others. The **center ★** (Sol /
+  queried star) is a separate artist → excluded from filtering, never selects a phantom row.
+
+**Behavior decisions to lock (so the build isn't ambiguous):**
+- Highlight **survives a canvas rebuild** (O17 velocity-Apply / O1 mag-limit-Apply re-run
+  prep) — re-apply the ring after rebuild, don't drop it.
+- **Filter state resets on rebuild** (simplest; document it) — re-toggling is cheap.
+- **Find into a hidden class** → un-hide that class, then center + ring (never center on an
+  invisible dot).
+- **Multi-row drag-select** → highlight the **last** selected row only.
+
+**Targeted offline unit tests (add to `tests/test_viz_phase_o.py`):**
+- **Class-grouping key:** `dM6`/`dM4` → `"D"` (same bucket as `DA1.9`); composite `G2V+K1V`
+  → `"G"`; null/empty → `"?"` (asserts O16 groups exactly as the legend/colour).
+- **Whitespace-normalized find:** `61 Cyg A` matches `*  61 Cyg A`; case-insensitive;
+  designation hit (`GJ 699` → Barnard's); empty query → no match; no-match → no stale
+  highlight.
+- **Isochrone ring math:** `10×c` and `0.0011408 ly/hr` give **identical** radii (the
+  8765.8128 factor); the 1-yr ring = N ly at N×c; zero/negative/non-numeric → validation,
+  no rings.
+- **Hidden-collection hit-test guard:** hover/click logic skips a collection with
+  `get_visible() is False` (don't pop a hidden star's tooltip).
+- **Clipped / null-coord highlight no-op:** returns cleanly (no exception, no ring) on the
+  tab lacking that point.
+- **Large-N structural/perf smoke:** a ~2000-node canvas (Phase-I `legend_filter=False`)
+  builds without error and holds the structural invariants — guards the shared-canvas
+  callers at scale.
 
 ### O15 — Table-Row ↔ Map Linking  *(all 5 map tabs)*
 Panels keep refs to **every** created canvas — Map X–Y, Map X–Z, Map 3D, Star Chart,
@@ -500,3 +636,12 @@ panel builds its viz tab without error.
    standard render pattern (data tabs must not change either way).
 4. *(Resolved 2026-06-14 — the two-star map for opts 17/20/21 is build item **O8** in
    O-5; those panels are text-only today and get a "Map" tab reusing Phase I's `routes=`.)*
+
+## Deferred tweaks (post-O-3, maintainer-approved 2026-06-15)
+- **3D hover tooltip should follow the cursor**, not sit in the fixed upper-right corner.
+  Today the 3D canvases place the hover label as a `text2D` at `(0.98, 0.97)` in
+  `make_star_map_3d_canvas` / `make_star_chart_3d_canvas` (chosen so it stays put under
+  drag-rotation and clears the legend); the 2D canvases anchor it to the star. Direction:
+  make the 3D label **follow the mouse pixel position**. Touches the two shared 3D canvases
+  (GCNS / Phase-I also call them) → run through the structural guard + a checkpoint.
+  **Deferred until after O-3.**

@@ -123,9 +123,10 @@ def _add_chart_tabs(panel, map_stars, limit_ly):
     chart_l.addWidget(canvas_sc)
     panel._viz_tabs_widget.addTab(chart_w, "Star Chart")
 
-    # Star Chart 3D — labeled 3D companion with Top/Side/Perspective presets
-    panel._viz_tabs_widget.addTab(
-        _build_star_chart_3d_tab(panel, map_stars, limit_ly), "Star Chart 3D")
+    # Star Chart 3D — labeled 3D companion with Top/Side/Perspective presets.
+    # _build_star_chart_3d_tab returns (widget, canvas); GCNS uses only the widget.
+    chart3d_w, _ = _build_star_chart_3d_tab(panel, map_stars, limit_ly)
+    panel._viz_tabs_widget.addTab(chart3d_w, "Star Chart 3D")
 
 
 # ── shared scaffold for the non-map GCNS panels (M2, M3, M4a, M4b) ────────────

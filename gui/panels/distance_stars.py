@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel, QSizePolicy,
     QTabWidget, QWidget, QVBoxLayout,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QItemSelectionModel
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.calculators
@@ -110,18 +110,19 @@ def _clear_tables_layout(panel):
             w.deleteLater()
 
 
-def _build_star_chart_3d_tab(panel, map_stars, limit_ly):
+def _build_star_chart_3d_tab(panel, map_stars, limit_ly, on_star_click=None):
     """Build a "Star Chart 3D" tab widget with preset viewpoint buttons.
 
     Mirrors the Map 3D tab pattern but uses the dark-themed
-    make_star_chart_3d_canvas helper.
+    make_star_chart_3d_canvas helper. Returns (widget, canvas) so the caller can
+    keep the canvas ref for O15 row↔map linking.
     """
     chart3d_w = QWidget()
     chart3d_l = QVBoxLayout(chart3d_w)
     chart3d_l.setContentsMargins(4, 4, 4, 4)
     chart3d_l.setSpacing(0)
     canvas3d, toolbar3d, ax3d = make_star_chart_3d_canvas(
-        panel, map_stars, limit_ly=limit_ly,
+        panel, map_stars, limit_ly=limit_ly, on_star_click=on_star_click,
     )
     preset_bar = QWidget()
     preset_bar.setFixedHeight(18)
@@ -158,7 +159,156 @@ def _build_star_chart_3d_tab(panel, map_stars, limit_ly):
     chart3d_l.addWidget(preset_bar)
     chart3d_l.addWidget(toolbar3d)
     chart3d_l.addWidget(canvas3d)
-    return chart3d_w
+    return chart3d_w, canvas3d
+
+
+# ── O15 — Table-Row ↔ Map Linking (opts 18/19, all five map tabs) ─────────────
+
+def _selected_star_name(view):
+    """The Star-Name (column 0) of the table's current/last-selected row, or None.
+
+    Multi-row drag-select → the current (last-interacted) row wins; an empty
+    selection → None (clears the highlight). Robust to interactive column sorting
+    because it reads the model cell at the current visual row."""
+    model = view.model() if view is not None else None
+    sel = view.selectionModel() if view is not None else None
+    if model is None or sel is None or not sel.selectedRows():
+        return None
+    idx = sel.currentIndex()
+    row = idx.row() if idx.isValid() else sel.selectedRows()[-1].row()
+    item = model.item(row, 0)
+    return item.text() if item is not None else None
+
+
+def _on_link_selection(panel):
+    """Table selection changed → ring that star on every map canvas (O15)."""
+    name = _selected_star_name(getattr(panel, "_link_view", None))
+    for canvas in getattr(panel, "_link_canvases", ()):
+        try:
+            canvas.highlight_star(name)
+        except Exception:
+            pass
+
+
+def _star_click_select(panel, name):
+    """Map star clicked → select + scroll to the matching table row (O15).
+
+    The selection change then rings the star on every canvas via
+    _on_link_selection. A click on the centre ★ (Sol / queried star, which has no
+    table row) matches nothing and is a graceful no-op."""
+    view = getattr(panel, "_link_view", None)
+    model = view.model() if view is not None else None
+    if model is None or not name:
+        return
+    for r in range(model.rowCount()):
+        item = model.item(r, 0)
+        if item is not None and item.text() == name:
+            idx = model.index(r, 0)
+            view.selectionModel().setCurrentIndex(
+                idx,
+                QItemSelectionModel.SelectionFlag.ClearAndSelect
+                | QItemSelectionModel.SelectionFlag.Rows,
+            )
+            view.scrollTo(idx)
+            return
+
+
+def _wire_row_map_linking(panel, view, canvases):
+    """Connect a result table to its map canvases, both directions (O15)."""
+    panel._link_view = view
+    panel._link_canvases = canvases
+    sm = view.selectionModel() if view is not None else None
+    if sm is not None:
+        sm.selectionChanged.connect(lambda *a: _on_link_selection(panel))
+
+
+def _add_map_tabs(panel, map_stars, limit, title):
+    """Build the five opt-18/19 map tabs (Map X–Y/X–Z/3D, Star Chart, Star Chart
+    3D) and wire O15 row↔map linking. Appends tabs to panel._viz_tabs_widget and
+    expects panel._link_view to already hold the result table."""
+    canvases = []
+    click_cb = lambda nm: _star_click_select(panel, nm)
+
+    # Map X–Y / X–Z (light-gray 2D scatter).
+    for proj, xk, yk, xl, yl in [
+        ("X–Y (top-down)", "x", "y", "X (ly)", "Y (ly)"),
+        ("X–Z (edge-on)",  "x", "z", "X (ly)", "Z (ly)"),
+    ]:
+        map_w = QWidget()
+        map_l = QVBoxLayout(map_w)
+        map_l.setContentsMargins(4, 4, 4, 4)
+        canvas, toolbar = make_star_map_canvas(
+            panel, map_stars, title=title,
+            xk=xk, yk=yk, xlabel=xl, ylabel=yl, bg="#ebebeb",
+            on_star_click=click_cb, legend_filter=True,
+        )
+        map_l.addWidget(toolbar)
+        map_l.addWidget(canvas)
+        panel._viz_tabs_widget.addTab(map_w, f"Map {proj}")
+        canvases.append(canvas)
+
+    # Map 3D with viewpoint preset buttons.
+    map3d_w = QWidget()
+    map3d_l = QVBoxLayout(map3d_w)
+    map3d_l.setContentsMargins(4, 4, 4, 4)
+    map3d_l.setSpacing(0)
+    canvas3d, toolbar3d, ax3d = make_star_map_3d_canvas(
+        panel, map_stars, title=title, bg="#ebebeb", on_star_click=click_cb,
+    )
+    preset_bar = QWidget()
+    preset_bar.setFixedHeight(24)
+    preset_row = QHBoxLayout(preset_bar)
+    preset_row.setContentsMargins(0, 0, 0, 0)
+    preset_row.setSpacing(6)
+    for lbl, elev, azim in [
+        ("Top View", 90, 0),
+        ("Side View", 0, 0),
+        ("3D Perspective", 30, -60),
+    ]:
+        btn = QPushButton(lbl)
+        btn.setFixedHeight(24)
+        def _make_cb(e=elev, a=azim):
+            def _cb():
+                try:
+                    if toolbar3d.mode:
+                        if "zoom rect" in str(toolbar3d.mode):
+                            toolbar3d.zoom()
+                        else:
+                            toolbar3d.pan()
+                except Exception:
+                    pass
+                ax3d.view_init(elev=e, azim=a)
+                canvas3d.draw_idle()
+            return _cb
+        btn.clicked.connect(_make_cb())
+        preset_row.addWidget(btn)
+    preset_row.addStretch()
+    map3d_l.addWidget(preset_bar)
+    map3d_l.addWidget(toolbar3d)
+    map3d_l.addWidget(canvas3d)
+    panel._viz_tabs_widget.addTab(map3d_w, "Map 3D")
+    canvases.append(canvas3d)
+
+    # Labeled X-Y star chart (dark theme).
+    chart_w = QWidget()
+    chart_l = QVBoxLayout(chart_w)
+    chart_l.setContentsMargins(4, 4, 4, 4)
+    canvas_sc, toolbar_sc = make_star_chart_canvas(
+        panel, map_stars, limit_ly=limit, on_star_click=click_cb,
+        legend_filter=True,
+    )
+    chart_l.addWidget(toolbar_sc)
+    chart_l.addWidget(canvas_sc)
+    panel._viz_tabs_widget.addTab(chart_w, "Star Chart")
+    canvases.append(canvas_sc)
+
+    # Star Chart 3D — labeled 3D companion.
+    chart3d_w, canvas_sc3d = _build_star_chart_3d_tab(
+        panel, map_stars, limit, on_star_click=click_cb)
+    panel._viz_tabs_widget.addTab(chart3d_w, "Star Chart 3D")
+    canvases.append(canvas_sc3d)
+
+    _wire_row_map_linking(panel, panel._link_view, canvases)
 
 
 def _add_hr_tab(panel, result):
@@ -310,85 +460,14 @@ class StarsWithinDistanceSolPanel(DiagramToggleMixin, ResultPanel):
         if mpl_available():
             map_data = core.viz.prepare_star_map_from_result(result)
             if "stars" in map_data and map_data["stars"]:
-                for proj, xk, yk, xl, yl in [
-                    ("X–Y (top-down)", "x", "y", "X (ly)", "Y (ly)"),
-                    ("X–Z (edge-on)",  "x", "z", "X (ly)", "Z (ly)"),
-                ]:
-                    map_w = QWidget()
-                    map_l = QVBoxLayout(map_w)
-                    map_l.setContentsMargins(4, 4, 4, 4)
-                    canvas, toolbar = make_star_map_canvas(
-                        self, map_data["stars"],
-                        title=f"Stars within {limit} ly of Sol  ({count} stars)",
-                        xk=xk, yk=yk, xlabel=xl, ylabel=yl,
-                        bg="#ebebeb",
-                    )
-                    map_l.addWidget(toolbar)
-                    map_l.addWidget(canvas)
-                    self._viz_tabs_widget.addTab(map_w, f"Map {proj}")
-
-                # 3D tab with viewpoint preset buttons
-                map3d_w = QWidget()
-                map3d_l = QVBoxLayout(map3d_w)
-                map3d_l.setContentsMargins(4, 4, 4, 4)
-                map3d_l.setSpacing(0)
-                canvas3d, toolbar3d, ax3d = make_star_map_3d_canvas(
-                    self, map_data["stars"],
-                    title=f"Stars within {limit} ly of Sol  ({count} stars)",
-                    bg="#ebebeb",
-                )
-                preset_bar = QWidget()
-                preset_bar.setFixedHeight(24)
-                preset_row = QHBoxLayout(preset_bar)
-                preset_row.setContentsMargins(0, 0, 0, 0)
-                preset_row.setSpacing(6)
-                for lbl, elev, azim in [
-                    ("Top View", 90, 0),
-                    ("Side View", 0, 0),
-                    ("3D Perspective", 30, -60),
-                ]:
-                    btn = QPushButton(lbl)
-                    btn.setFixedHeight(24)
-                    def _make_cb(e=elev, a=azim):
-                        def _cb():
-                            try:
-                                if toolbar3d.mode:
-                                    if "zoom rect" in str(toolbar3d.mode):
-                                        toolbar3d.zoom()
-                                    else:
-                                        toolbar3d.pan()
-                            except Exception:
-                                pass
-                            ax3d.view_init(elev=e, azim=a)
-                            canvas3d.draw_idle()
-                        return _cb
-                    btn.clicked.connect(_make_cb())
-                    preset_row.addWidget(btn)
-                preset_row.addStretch()
-                map3d_l.addWidget(preset_bar)
-                map3d_l.addWidget(toolbar3d)
-                map3d_l.addWidget(canvas3d)
-                self._viz_tabs_widget.addTab(map3d_w, "Map 3D")
-
-                # Labeled X-Y star chart (dark theme, mirrors stars_within_15ly.html)
-                chart_w = QWidget()
-                chart_l = QVBoxLayout(chart_w)
-                chart_l.setContentsMargins(4, 4, 4, 4)
-                canvas_sc, toolbar_sc = make_star_chart_canvas(
-                    self, map_data["stars"], limit_ly=limit,
-                )
-                chart_l.addWidget(toolbar_sc)
-                chart_l.addWidget(canvas_sc)
-                self._viz_tabs_widget.addTab(chart_w, "Star Chart")
-
-                # Star Chart 3D — labeled 3D companion (dark theme + reference spheres)
-                self._viz_tabs_widget.addTab(
-                    _build_star_chart_3d_tab(self, map_data["stars"], limit),
-                    "Star Chart 3D",
+                self._link_view = view
+                _add_map_tabs(
+                    self, map_data["stars"], limit,
+                    f"Stars within {limit} ly of Sol  ({count} stars)",
                 )
 
-                # Phase O — HR Diagram (O2b) + Night Sky (O1, opt 19 only), placed to
-                # the RIGHT of the map/chart tabs.
+                # Phase O — HR Diagram (O2b) + Night Sky (O1), placed to the
+                # RIGHT of the map/chart tabs.
                 _add_hr_tab(self, result)
                 _add_night_sky_tab(self, result)
 
@@ -489,85 +568,14 @@ class StarsWithinDistanceStarPanel(DiagramToggleMixin, ResultPanel):
         if mpl_available():
             map_data = core.viz.prepare_star_map_from_result(result)
             if "stars" in map_data and map_data["stars"]:
-                for proj, xk, yk, xl, yl in [
-                    ("X–Y (top-down)", "x", "y", "X (ly)", "Y (ly)"),
-                    ("X–Z (edge-on)",  "x", "z", "X (ly)", "Z (ly)"),
-                ]:
-                    map_w = QWidget()
-                    map_l = QVBoxLayout(map_w)
-                    map_l.setContentsMargins(4, 4, 4, 4)
-                    canvas, toolbar = make_star_map_canvas(
-                        self, map_data["stars"],
-                        title=f"Stars within {limit} ly of {center}  ({count} stars)",
-                        xk=xk, yk=yk, xlabel=xl, ylabel=yl,
-                        bg="#ebebeb",
-                    )
-                    map_l.addWidget(toolbar)
-                    map_l.addWidget(canvas)
-                    self._viz_tabs_widget.addTab(map_w, f"Map {proj}")
-
-                # 3D tab with viewpoint preset buttons
-                map3d_w = QWidget()
-                map3d_l = QVBoxLayout(map3d_w)
-                map3d_l.setContentsMargins(4, 4, 4, 4)
-                map3d_l.setSpacing(0)
-                canvas3d, toolbar3d, ax3d = make_star_map_3d_canvas(
-                    self, map_data["stars"],
-                    title=f"Stars within {limit} ly of {center}  ({count} stars)",
-                    bg="#ebebeb",
-                )
-                preset_bar = QWidget()
-                preset_bar.setFixedHeight(24)
-                preset_row = QHBoxLayout(preset_bar)
-                preset_row.setContentsMargins(0, 0, 0, 0)
-                preset_row.setSpacing(6)
-                for lbl, elev, azim in [
-                    ("Top View", 90, 0),
-                    ("Side View", 0, 0),
-                    ("3D Perspective", 30, -60),
-                ]:
-                    btn = QPushButton(lbl)
-                    btn.setFixedHeight(24)
-                    def _make_cb(e=elev, a=azim):
-                        def _cb():
-                            try:
-                                if toolbar3d.mode:
-                                    if "zoom rect" in str(toolbar3d.mode):
-                                        toolbar3d.zoom()
-                                    else:
-                                        toolbar3d.pan()
-                            except Exception:
-                                pass
-                            ax3d.view_init(elev=e, azim=a)
-                            canvas3d.draw_idle()
-                        return _cb
-                    btn.clicked.connect(_make_cb())
-                    preset_row.addWidget(btn)
-                preset_row.addStretch()
-                map3d_l.addWidget(preset_bar)
-                map3d_l.addWidget(toolbar3d)
-                map3d_l.addWidget(canvas3d)
-                self._viz_tabs_widget.addTab(map3d_w, "Map 3D")
-
-                # Labeled X-Y star chart (dark theme, mirrors stars_within_15ly.html)
-                chart_w = QWidget()
-                chart_l = QVBoxLayout(chart_w)
-                chart_l.setContentsMargins(4, 4, 4, 4)
-                canvas_sc, toolbar_sc = make_star_chart_canvas(
-                    self, map_data["stars"], limit_ly=limit,
-                )
-                chart_l.addWidget(toolbar_sc)
-                chart_l.addWidget(canvas_sc)
-                self._viz_tabs_widget.addTab(chart_w, "Star Chart")
-
-                # Star Chart 3D — labeled 3D companion (dark theme + reference spheres)
-                self._viz_tabs_widget.addTab(
-                    _build_star_chart_3d_tab(self, map_data["stars"], limit),
-                    "Star Chart 3D",
+                self._link_view = view
+                _add_map_tabs(
+                    self, map_data["stars"], limit,
+                    f"Stars within {limit} ly of {center}  ({count} stars)",
                 )
 
-                # Phase O — HR Diagram (O2b) + Night Sky (O1, opt 19 only), placed to
-                # the RIGHT of the map/chart tabs.
+                # Phase O — HR Diagram (O2b) + Night Sky (O1), placed to the
+                # RIGHT of the map/chart tabs.
                 _add_hr_tab(self, result)
                 _add_night_sky_tab(self, result)
 
