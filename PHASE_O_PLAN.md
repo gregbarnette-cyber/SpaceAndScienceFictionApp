@@ -1,13 +1,18 @@
 # PHASE O — Visualization Expansion · Implementation Plan
 
-> **Status: O-1 ✅ and O-2 ✅ IMPLEMENTED 2026-06-14. O-3 IN PROGRESS (2026-06-15):
-> the capability layer (CP0), O15 row↔map linking (CP1), and O16 2D legend filtering
-> (CP2) are landed + maintainer-verified. **Next: CP3 = O16 3D legend filtering**
-> (Map 3D + Star Chart 3D), then CP4 = O17 isochrones, CP5 = O18 find box.
-> `tests/test_viz_phase_o.py` = 32 green; full suite 395 (the only 3 failures are
-> pre-existing live-network tests — JPL Horizons / NASA TAP). O-4…O-8 are PLAN ONLY.
-> Build proceeds one checkpoint at a time; stop + wait for "go" at each. Working tree
-> is uncommitted.**
+> **Status: O-1 ✅, O-2 ✅, O-3 ✅ COMPLETE + maintainer-approved (2026-06-16).** O-3
+> shipped all checkpoints: CP0 capability layer, CP1 O15 row↔map linking, CP2 O16 2D
+> legend filtering, CP3 O16 3D legend filtering, CP4 O17 travel-time isochrone rings
+> (Star Chart 2D+3D), CP5 O18 find-star box. Post-CP polish also landed: selection ring
+> hides with its legend-filtered class + clears on empty-space click / Find Clear;
+> isochrone ladder extended with hour/day steps (fixed "nothing happens" for fast
+> velocities like 0.1 ly/hr) + min-ring filter + out-of-range status message; Route
+> Planning panels submit on Enter; Find Clear re-centres the maps.
+> `tests/test_viz_phase_o.py` = 57 green; full offline suite 417 passed (the only 3
+> failures are pre-existing live-network tests — JPL Horizons / NASA TAP). **Next: O-4
+> (Planet & System Diagrams — opts 3/6/Map).** O-4…O-8 are PLAN ONLY; lower risk than
+> O-3 (self-contained diagram tabs, not shared-canvas edits). Build proceeds one
+> checkpoint/item at a time; stop + wait for "go" at each. Working tree is uncommitted.**
 > This document is the build-ready, multi-phase plan for Phase O (the 18-item
 > visualization audit in `future_phases.md`). All 18 items are **maintainer-approved**
 > (2026-06-14). Mockups are built and reviewed: `mockups/phase-o/o01..o18-*.html`

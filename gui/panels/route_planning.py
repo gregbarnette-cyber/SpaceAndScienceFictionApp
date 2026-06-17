@@ -49,13 +49,20 @@ def _clear_tables_layout(panel):
             w.deleteLater()
 
 
-def _button_row(panel, run_label):
-    """Standard run + Show Diagrams button row; sets panel.run_btn / _show_diagrams_btn."""
+def _button_row(panel, run_label, enter_fields=()):
+    """Standard run + Show Diagrams button row; sets panel.run_btn / _show_diagrams_btn.
+
+    enter_fields: QLineEdits whose Enter/Return key triggers panel._search, so the
+    Route Planning panels submit on Enter like the other option panels. (Multi-line
+    QPlainTextEdit fields are intentionally not wired — there Enter means newline.)
+    """
     btn_widget = QWidget()
     row = QHBoxLayout(btn_widget)
     row.setContentsMargins(0, 0, 0, 0)
     panel.run_btn = QPushButton(run_label)
     panel.run_btn.clicked.connect(panel._search)
+    for f in enter_fields:
+        f.returnPressed.connect(panel._search)
     panel._show_diagrams_btn = QPushButton("Show Diagrams")
     panel._show_diagrams_btn.clicked.connect(panel._enter_diagram_mode)
     panel._show_diagrams_btn.setVisible(False)
@@ -184,7 +191,7 @@ class MultiStopJourneyPanel(DiagramToggleMixin, ResultPanel):
         self._vel.setPlaceholderText("e.g. 100")
         form.addRow("Velocity:", self._vel)
 
-        form.addRow("", _button_row(self, "Plan Journey"))
+        form.addRow("", _button_row(self, "Plan Journey", enter_fields=(self._vel,)))
         self._form_widget = form_widget
         self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()
@@ -260,7 +267,8 @@ class NearestNeighborPanel(DiagramToggleMixin, ResultPanel):
         self._max.setPlaceholderText("e.g. 6.0")
         form.addRow("Max Hop Distance (LY):", self._max)
 
-        form.addRow("", _button_row(self, "Build Chain"))
+        form.addRow("", _button_row(self, "Build Chain",
+                                    enter_fields=(self._start, self._max)))
         self._form_widget = form_widget
         self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()
@@ -403,7 +411,7 @@ class OptimalTourPanel(DiagramToggleMixin, ResultPanel):
         self._vel.setPlaceholderText("e.g. 500")
         form.addRow("Velocity:", self._vel)
 
-        form.addRow("", _button_row(self, "Optimize Tour"))
+        form.addRow("", _button_row(self, "Optimize Tour", enter_fields=(self._vel,)))
         self._form_widget = form_widget
         self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()
@@ -483,7 +491,8 @@ class FarthestFirstPanel(DiagramToggleMixin, ResultPanel):
         self._max.setPlaceholderText("blank = unlimited")
         form.addRow("Max Reach (LY):", self._max)
 
-        form.addRow("", _button_row(self, "Build Coverage"))
+        form.addRow("", _button_row(self, "Build Coverage",
+                                    enter_fields=(self._start, self._max)))
         self._form_widget = form_widget
         self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()
@@ -572,7 +581,8 @@ class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
         self._opt.addItems(["Min distance", "Fewest jumps"])
         form.addRow("Optimize For:", self._opt)
 
-        form.addRow("", _button_row(self, "Find Route"))
+        form.addRow("", _button_row(self, "Find Route",
+                                    enter_fields=(self._origin, self._dest, self._max)))
         self._form_widget = form_widget
         self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()
@@ -663,7 +673,8 @@ class JumpNetworkPanel(DiagramToggleMixin, ResultPanel):
         self._hops.setPlaceholderText("blank = unlimited")
         form.addRow("Max Jumps:", self._hops)
 
-        form.addRow("", _button_row(self, "Map Reachable"))
+        form.addRow("", _button_row(self, "Map Reachable",
+                                    enter_fields=(self._start, self._max, self._hops)))
         self._form_widget = form_widget
         self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()

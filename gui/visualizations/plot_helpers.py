@@ -543,12 +543,23 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
 _HL_GOLD = "#FFD700"
 
 
-def _attach_highlight_2d(canvas, ax, coord_map):
+def _attach_highlight_2d(canvas, ax, coord_map, hidden=None, name_cls=None):
     """Attach canvas.highlight_star(name|None) → hollow gold ring at the named
     star on a 2D axes. coord_map maps name → (x, y); an unknown name or None
     clears the ring. The ring is (re)created lazily, so a canvas that is never
-    asked to highlight draws no extra artist (default render unchanged)."""
+    asked to highlight draws no extra artist (default render unchanged).
+
+    When `hidden` (the shared legend-filter set) and `name_cls` (name → spectral
+    class) are supplied, the ring tracks its star's class visibility: it is
+    hidden while that class is legend-filtered off, and canvas.refresh_highlight()
+    re-applies that rule after a legend toggle so the ring never lingers over a
+    hidden dot."""
     holder = {"ring": None, "name": None}
+
+    def _ring_visible(name):
+        if not hidden or name_cls is None:
+            return True
+        return name_cls.get(name) not in hidden
 
     def _highlight(name):
         holder["name"] = name
@@ -560,17 +571,63 @@ def _attach_highlight_2d(canvas, ax, coord_map):
             holder["ring"] = ax.scatter(
                 [xy[0]], [xy[1]], s=260, facecolors="none",
                 edgecolors=_HL_GOLD, linewidths=2.0, zorder=30)
+            holder["ring"].set_visible(_ring_visible(name))
         canvas.draw_idle()
+
+    def _refresh_highlight():
+        if holder["ring"] is not None:
+            holder["ring"].set_visible(_ring_visible(holder["name"]))
+            canvas.draw_idle()
+
+    view0 = {"lims": None}   # view captured just before the first find-centering
+
+    def _center_on(name):
+        """O18: centre the 2D view on `name` at half-range min(current, 15) ly so
+        labels appear. No-op (returns False) for an unknown / null-coord star."""
+        xy = coord_map.get(name)
+        if xy is None:
+            return False
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        if view0["lims"] is None:
+            view0["lims"] = ((x0, x1), (y0, y1))   # remember the pre-find view
+        half = min(max(abs(x1 - x0), abs(y1 - y0)) / 2.0, 15.0) or 15.0
+        ax.set_xlim(xy[0] - half, xy[0] + half)
+        ax.set_ylim(xy[1] - half, xy[1] + half)
+        canvas.draw_idle()
+        return True
+
+    def _reset_view():
+        """O18 Clear: restore the view captured before the first center_on."""
+        if view0["lims"] is None:
+            return False
+        (x0, x1), (y0, y1) = view0["lims"]
+        view0["lims"] = None
+        ax.set_xlim(x0, x1)
+        ax.set_ylim(y0, y1)
+        canvas.draw_idle()
+        return True
 
     canvas.highlight_star = _highlight
     canvas.highlighted_star = lambda: holder["name"]
+    canvas.refresh_highlight = _refresh_highlight
+    canvas.center_on = _center_on
+    canvas.reset_view = _reset_view
+    canvas._o16_name_cls = name_cls or {}
 
 
-def _attach_highlight_3d(canvas, ax, coord_map):
+def _attach_highlight_3d(canvas, ax, coord_map, hidden=None, name_cls=None):
     """3D companion to _attach_highlight_2d. coord_map maps name → (x, y, z).
     The ring is recreated on each call (3D collections lack a clean offset
-    setter); none exists until highlight_star is first called."""
+    setter); none exists until highlight_star is first called. `hidden` /
+    `name_cls` give the ring the same legend-filter awareness as the 2D version
+    (hidden while its class is filtered off; canvas.refresh_highlight() re-applies)."""
     holder = {"ring": None, "name": None}
+
+    def _ring_visible(name):
+        if not hidden or name_cls is None:
+            return True
+        return name_cls.get(name) not in hidden
 
     def _highlight(name):
         holder["name"] = name
@@ -582,10 +639,52 @@ def _attach_highlight_3d(canvas, ax, coord_map):
             holder["ring"] = ax.scatter(
                 [xyz[0]], [xyz[1]], [xyz[2]], s=320, facecolors="none",
                 edgecolors=_HL_GOLD, linewidths=2.0, depthshade=False, zorder=30)
+            holder["ring"].set_visible(_ring_visible(name))
         canvas.draw_idle()
+
+    def _refresh_highlight():
+        if holder["ring"] is not None:
+            holder["ring"].set_visible(_ring_visible(holder["name"]))
+            canvas.draw_idle()
+
+    view0 = {"lims": None}   # view captured just before the first find-centering
+
+    def _center_on(name):
+        """O18: centre the 3D view on `name` at half-range min(current, 15) ly.
+        No-op (returns False) for an unknown / null-coord star."""
+        xyz = coord_map.get(name)
+        if xyz is None:
+            return False
+        x0, x1 = ax.get_xlim3d()
+        y0, y1 = ax.get_ylim3d()
+        z0, z1 = ax.get_zlim3d()
+        if view0["lims"] is None:
+            view0["lims"] = ((x0, x1), (y0, y1), (z0, z1))
+        half = min(max(abs(x1 - x0), abs(y1 - y0), abs(z1 - z0)) / 2.0, 15.0) or 15.0
+        ax.set_xlim3d(xyz[0] - half, xyz[0] + half)
+        ax.set_ylim3d(xyz[1] - half, xyz[1] + half)
+        ax.set_zlim3d(xyz[2] - half, xyz[2] + half)
+        canvas.draw_idle()
+        return True
+
+    def _reset_view():
+        """O18 Clear: restore the view captured before the first center_on."""
+        if view0["lims"] is None:
+            return False
+        (x0, x1), (y0, y1), (z0, z1) = view0["lims"]
+        view0["lims"] = None
+        ax.set_xlim3d(x0, x1)
+        ax.set_ylim3d(y0, y1)
+        ax.set_zlim3d(z0, z1)
+        canvas.draw_idle()
+        return True
 
     canvas.highlight_star = _highlight
     canvas.highlighted_star = lambda: holder["name"]
+    canvas.refresh_highlight = _refresh_highlight
+    canvas.center_on = _center_on
+    canvas.reset_view = _reset_view
+    canvas._o16_name_cls = name_cls or {}
 
 
 # ── O16 capability: opt-in per-spectral-class split + pickable legend filter ──
@@ -652,10 +751,151 @@ def _legend_filter_2d(canvas, ax, xs, ys, colors, sp_types, sizes,
                 txt.set_alpha(1.0 if vis else 0.3)
         hidden.discard(cls) if vis else hidden.add(cls)
         _apply_labels(cls)
+        # Hide/show the selection ring too if it sits on this class (O15 highlight
+        # must not linger over a now-hidden dot). refresh_highlight is attached
+        # later in the canvas builder, so resolve it lazily.
+        refresh = getattr(canvas, "refresh_highlight", None)
+        if refresh is not None:
+            refresh()
         canvas.draw_idle()
 
     if legend is not None:
         canvas.mpl_connect("pick_event", _on_pick)
+
+    def _reveal_class(cls):
+        """O18: un-hide a legend-filtered class so find never centres on an
+        invisible dot. No-op when the class is already shown / not filterable."""
+        if cls not in hidden:
+            return
+        coll = all_colls.get(cls)
+        if coll is not None:
+            coll.set_visible(True)
+        hidden.discard(cls)
+        if legend is not None:
+            for legline, txt, c in zip(legend.legend_handles,
+                                       legend.get_texts(), toggle):
+                if c == cls:
+                    legline.set_alpha(1.0)
+                    txt.set_alpha(1.0)
+        _apply_labels(cls)
+        refresh = getattr(canvas, "refresh_highlight", None)
+        if refresh is not None:
+            refresh()
+        canvas.draw_idle()
+
+    canvas._o16_reveal_class = _reveal_class
+
+    def _hit(event):
+        for cls, coll in all_colls.items():
+            if not coll.get_visible():
+                continue
+            cont, ind = coll.contains(event)
+            if cont:
+                return index_maps[cls][ind["ind"][0]]
+        return None
+
+    return _hit
+
+
+# ── O16 (CP3) capability: per-spectral-class split + pickable legend in 3D ─────
+# 3D companion to _legend_filter_2d. Same opt-in contract (engaged only when a
+# caller passes legend_filter=True; GCNS / Phase-I keep the single-scatter path,
+# so their render is unchanged — guarded by the structural-regression test). The
+# only differences are the z coordinate on each scatter and that the per-class
+# PathCollections live on a 3D axes. Toggling visibility on 3D collections is
+# best-effort (depthshade ordering aside), but set_visible / get_visible behave
+# the same, so the pick-toggle + hidden-class hit guard work as in 2D.
+def _legend_filter_3d(canvas, ax, xs, ys, zs, colors, sp_types, sizes,
+                      scatter_kw, legend_kw, hidden,
+                      label_groups=None, label_state=None):
+    """Draw per-class 3D scatters + a pickable legend; return hit(event)->index|None.
+
+    `hidden` is a shared set the caller's zoom/label logic also reads. The "?"
+    (unknown-type) class is drawn but gets no legend entry — never filterable,
+    always visible — matching the 2D helper and the O-3 edge-case decisions."""
+    from matplotlib.lines import Line2D
+
+    groups = {}
+    for i, sp in enumerate(sp_types):
+        cls = (sp[0].upper() if sp else "?")
+        groups.setdefault(cls, []).append(i)
+
+    all_colls, index_maps, toggle = {}, {}, []
+    for cls in sorted(groups):
+        idxs = groups[cls]
+        coll = ax.scatter([xs[i] for i in idxs], [ys[i] for i in idxs],
+                          [zs[i] for i in idxs],
+                          c=[colors[i] for i in idxs],
+                          s=[sizes[i] for i in idxs], **scatter_kw)
+        all_colls[cls] = coll
+        index_maps[cls] = idxs
+        if cls != "?":
+            toggle.append(cls)
+
+    handles = [Line2D([], [], marker="o", linestyle="", markersize=6,
+                      markerfacecolor=colors[index_maps[cls][0]],
+                      markeredgecolor="none", label=f"Class {cls}")
+               for cls in toggle]
+    legend = ax.legend(handles=handles, **legend_kw) if handles else None
+    art2cls = {}
+    if legend is not None:
+        for legline, cls in zip(legend.legend_handles, toggle):
+            legline.set_picker(6)
+            art2cls[legline] = cls
+
+    def _apply_labels(cls):
+        if label_groups is None:
+            return
+        shown = (label_state or {}).get("shown", True)
+        for txt in label_groups.get(cls, ()):
+            txt.set_visible(shown and cls not in hidden)
+
+    def _on_pick(event):
+        cls = art2cls.get(event.artist)
+        if cls is None:
+            return
+        coll = all_colls[cls]
+        vis = not coll.get_visible()
+        coll.set_visible(vis)
+        event.artist.set_alpha(1.0 if vis else 0.3)
+        for txt, h in zip(legend.get_texts(), legend.legend_handles):
+            if h is event.artist:
+                txt.set_alpha(1.0 if vis else 0.3)
+        hidden.discard(cls) if vis else hidden.add(cls)
+        _apply_labels(cls)
+        # Hide/show the selection ring too if it sits on this class (O15 highlight
+        # must not linger over a now-hidden dot). refresh_highlight is attached
+        # later in the canvas builder, so resolve it lazily.
+        refresh = getattr(canvas, "refresh_highlight", None)
+        if refresh is not None:
+            refresh()
+        canvas.draw_idle()
+
+    if legend is not None:
+        canvas.mpl_connect("pick_event", _on_pick)
+
+    def _reveal_class(cls):
+        """O18: un-hide a legend-filtered class so find never centres on an
+        invisible dot. No-op when the class is already shown / not filterable."""
+        if cls not in hidden:
+            return
+        coll = all_colls.get(cls)
+        if coll is not None:
+            coll.set_visible(True)
+        hidden.discard(cls)
+        if legend is not None:
+            for legline, txt, c in zip(legend.legend_handles,
+                                       legend.get_texts(), toggle):
+                if c == cls:
+                    legline.set_alpha(1.0)
+                    txt.set_alpha(1.0)
+        _apply_labels(cls)
+        refresh = getattr(canvas, "refresh_highlight", None)
+        if refresh is not None:
+            refresh()
+        canvas.draw_idle()
+
+    canvas._o16_reveal_class = _reveal_class
 
     def _hit(event):
         for cls, coll in all_colls.items():
@@ -790,15 +1030,22 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
             lines.append(f"  Distance     : {ly_val:.4f} ly")
             _sm_box.set_text("\n".join(lines))
             _sm_box.set_visible(True)
-        elif _sm_box.get_visible():
-            _sm_box.set_visible(False)
+        else:
+            # Clicked empty space inside the chart → clear the table selection
+            # (deselect), which clears the ring on every canvas.
+            if on_star_click is not None:
+                on_star_click(None)
+            if _sm_box.get_visible():
+                _sm_box.set_visible(False)
         canvas.draw_idle()
 
     canvas.mpl_connect("button_press_event", _on_sm_click)
 
     coord_map = {s["name"]: (s[xk], s[yk]) for s in stars
                  if s.get(xk) is not None and s.get(yk) is not None}
-    _attach_highlight_2d(canvas, ax, coord_map)
+    name_cls = {s["name"]: ((s.get("sp_type") or "")[:1].upper() or "?")
+                for s in stars}
+    _attach_highlight_2d(canvas, ax, coord_map, hidden=hidden, name_cls=name_cls)
 
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
@@ -808,7 +1055,8 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
 # ── Star Map 3D ────────────────────────────────────────────────────────────────
 
 def make_star_map_3d_canvas(parent, stars: list, title: str = "",
-                            bg: str = _SPACE_BG, on_star_click=None):
+                            bg: str = _SPACE_BG, on_star_click=None,
+                            legend_filter=False):
     """3D scatter star map with drag-to-rotate.
 
     stars: list of dicts {name, color, ly, x, y, z}.
@@ -832,8 +1080,28 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
     ax.set_facecolor(bg)
     fig.patch.set_facecolor(bg)
 
-    sc = ax.scatter(xs, ys, zs, c=colors, s=sizes, alpha=0.85,
-                    depthshade=True, picker=True, pickradius=5, zorder=3)
+    # Body scatter + hit-test. Default: a single scatter (all stars, incl. the
+    # centre at index 0). With legend_filter (O16/CP3), one PathCollection per
+    # spectral class + a pickable legend; hit(event) skips legend-hidden classes.
+    hidden = set()
+    if legend_filter:
+        sc = None
+        hit = _legend_filter_3d(
+            canvas, ax, xs, ys, zs, colors,
+            [s.get("sp_type", "") for s in stars], sizes,
+            scatter_kw=dict(alpha=0.85, depthshade=True, zorder=3),
+            legend_kw=dict(loc="upper left", fontsize=7, framealpha=0.85,
+                           labelcolor="#333333", facecolor="#ffffff",
+                           edgecolor="#aaaaaa"),
+            hidden=hidden,
+        )
+    else:
+        sc = ax.scatter(xs, ys, zs, c=colors, s=sizes, alpha=0.85,
+                        depthshade=True, picker=True, pickradius=5, zorder=3)
+
+        def hit(event):
+            cont, ind = sc.contains(event)
+            return ind["ind"][0] if cont else None
 
     # Highlight center star with a star marker
     ax.scatter([xs[0]], [ys[0]], [zs[0]], c=[colors[0]], s=100,
@@ -854,18 +1122,20 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
     ax.grid(True, color=_GRID_CLR, linewidth=0.4, linestyle=":")
     ax.view_init(elev=30, azim=-60)
 
-    # Spectral class legend
-    seen = {}
-    for s in stars:
-        cls = (s["sp_type"][0].upper() if s.get("sp_type") else "?")
-        if cls not in seen:
-            seen[cls] = s["color"]
-    handles = [mpatches.Patch(color=c, label=f"Class {k}")
-               for k, c in sorted(seen.items()) if k != "?"]
-    if handles:
-        ax.legend(handles=handles, loc="upper left", fontsize=7,
-                  framealpha=0.85, labelcolor="#333333",
-                  facecolor="#ffffff", edgecolor="#aaaaaa")
+    # Spectral class legend — default path only (legend_filter builds its own
+    # pickable legend inside _legend_filter_3d).
+    if not legend_filter:
+        seen = {}
+        for s in stars:
+            cls = (s["sp_type"][0].upper() if s.get("sp_type") else "?")
+            if cls not in seen:
+                seen[cls] = s["color"]
+        handles = [mpatches.Patch(color=c, label=f"Class {k}")
+                   for k, c in sorted(seen.items()) if k != "?"]
+        if handles:
+            ax.legend(handles=handles, loc="upper left", fontsize=7,
+                      framealpha=0.85, labelcolor="#333333",
+                      facecolor="#ffffff", edgecolor="#aaaaaa")
 
     # Hover tooltip — fixed top-right so it doesn't overlap the upper-left legend
     hover_text = ax.text2D(0.98, 0.97, "", transform=ax.transAxes,
@@ -880,9 +1150,8 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
                 hover_text.set_visible(False)
                 canvas.draw_idle()
             return
-        cont, ind = sc.contains(event)
-        if cont:
-            idx    = ind["ind"][0]
+        idx = hit(event)
+        if idx is not None:
             ly_val = stars[idx].get("ly", 0)
             hover_text.set_text(f"{names[idx]}\n{ly_val:.2f} ly")
             hover_text.set_visible(True)
@@ -910,15 +1179,21 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
                                     ec=_GRID_CLR, lw=0.8, alpha=0.9),
                           visible=False, zorder=10)
 
+    # Press tracking so a deselect (empty-space click) is distinguished from a
+    # rotate-drag: clearing happens on release only when the pointer didn't move.
+    _press = {"xy": None, "empty": False}
+
     def _on_click(event):
         if event.inaxes is not ax or event.xdata is None:
+            _press["xy"] = None
             if info_text.get_visible():
                 info_text.set_visible(False)
                 canvas.draw_idle()
             return
-        cont, ind = sc.contains(event)
-        if cont:
-            idx   = ind["ind"][0]
+        _press["xy"] = (event.x, event.y)
+        idx = hit(event)
+        _press["empty"] = idx is None
+        if idx is not None:
             if on_star_click is not None:
                 on_star_click(names[idx])
             s     = stars[idx]
@@ -938,12 +1213,28 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
             info_text.set_visible(False)
         canvas.draw_idle()
 
+    def _on_release(event):
+        # Empty-space click (not a rotate-drag) → clear the table selection
+        # (deselect). A drag moves the pointer, so compare press vs release px.
+        press = _press["xy"]
+        empty = _press["empty"]
+        _press["xy"] = None
+        if press is None or not empty or on_star_click is None:
+            return
+        if (event.x is not None and abs(event.x - press[0]) <= 3
+                and abs(event.y - press[1]) <= 3):
+            on_star_click(None)
+
+    canvas.mpl_connect("button_release_event", _on_release)
+
     canvas.mpl_connect("button_press_event", _on_click)
 
     coord_map = {s["name"]: (s["x"], s["y"], s["z"]) for s in stars
                  if s.get("x") is not None and s.get("y") is not None
                  and s.get("z") is not None}
-    _attach_highlight_3d(canvas, ax, coord_map)
+    name_cls = {s["name"]: ((s.get("sp_type") or "")[:1].upper() or "?")
+                for s in stars}
+    _attach_highlight_3d(canvas, ax, coord_map, hidden=hidden, name_cls=name_cls)
 
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
@@ -986,8 +1277,56 @@ def _star_chart_steps(limit_ly: float):
     return minor, major
 
 
+# ── O17: travel-time isochrone rings (Star Chart 2D + 3D) ─────────────────────
+# When a caller passes isochrone={"ly_hr": float, "label_unit": str} the chart's
+# distance rings are replaced by travel-time contours at d = ly_hr × t for the
+# nice time steps below (week … 50 yr). ×c → ly/hr uses the canonical hours/year.
+_ISO_HOURS_PER_YEAR  = 8765.8128            # Julian year (365.25 × 24)
+_ISO_HOURS_PER_DAY   = 24.0
+_ISO_HOURS_PER_WEEK  = 168.0
+_ISO_HOURS_PER_MONTH = _ISO_HOURS_PER_YEAR / 12.0
+# Hour/day steps at the fine end so fast velocities (where even "1 week" overshoots
+# a small chart) still get rings; year steps at the coarse end for slow velocities.
+_ISO_STEPS = [
+    ("1 hour",   1.0),
+    ("6 hours",  6.0),
+    ("1 day",    _ISO_HOURS_PER_DAY),
+    ("3 days",   3 * _ISO_HOURS_PER_DAY),
+    ("1 week",   _ISO_HOURS_PER_WEEK),
+    ("1 month",  _ISO_HOURS_PER_MONTH),
+    ("3 months", 3 * _ISO_HOURS_PER_MONTH),
+    ("6 months", 6 * _ISO_HOURS_PER_MONTH),
+    ("1 year",   _ISO_HOURS_PER_YEAR),
+    ("2 years",  2 * _ISO_HOURS_PER_YEAR),
+    ("5 years",  5 * _ISO_HOURS_PER_YEAR),
+    ("10 years", 10 * _ISO_HOURS_PER_YEAR),
+    ("25 years", 25 * _ISO_HOURS_PER_YEAR),
+    ("50 years", 50 * _ISO_HOURS_PER_YEAR),
+]
+_ISO_MIN_RING_FRAC = 0.05                   # drop rings smaller than 5% of the range
+
+
+def _isochrone_rings(ly_hr, limit_ly):
+    """Travel-time rings for a velocity in ly/hr → [(radius_ly, duration_label), …].
+
+    Rings are the nice time steps (`_ISO_STEPS`) whose radius (= ly_hr × hours)
+    fits within limit_ly; rings smaller than 5% of the range are dropped (too
+    small to read / clutter the centre) and if more than 6 remain the 6 largest
+    are kept. A non-positive / non-finite velocity — or a velocity so fast that
+    even the 1-hour ring overshoots the range — yields no rings (the panel then
+    shows distance rings and flags the out-of-range velocity in the status bar)."""
+    if ly_hr is None or not math.isfinite(ly_hr) or ly_hr <= 0 or limit_ly <= 0:
+        return []
+    min_r = limit_ly * _ISO_MIN_RING_FRAC
+    rings = [(ly_hr * hrs, lbl) for lbl, hrs in _ISO_STEPS
+             if min_r <= ly_hr * hrs <= limit_ly * 1.02]
+    if len(rings) > 6:
+        rings = rings[-6:]
+    return rings
+
+
 def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
-                           on_star_click=None, legend_filter=False):
+                           on_star_click=None, legend_filter=False, isochrone=None):
     """Labeled 2D X-Y star chart in the dark navy style of stars_within_15ly.html.
 
     stars:     list of dicts {name, color, sp_type, ly, x, y, z, desig}.
@@ -1061,16 +1400,30 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
             color=_SC_AXIS_TITLE, fontsize=9, ha="left", va="top", zorder=4,
             clip_on=True)
 
-    # Distance rings every `major_step` ly out to limit.
-    n_rings = int(math.floor(limit_ly / major_step))
-    for i in range(1, n_rings + 1):
-        r = i * major_step
-        ax.add_patch(Circle((0, 0), r, fill=False,
-                            edgecolor=_SC_RING, linewidth=0.6,
-                            linestyle=(0, (4, 6)), alpha=0.85, zorder=2))
-        ax.text(r - limit_ly * 0.005, -limit_ly * 0.008, f"{int(r)} ly",
-                color=_SC_RING_LBL, fontsize=7, ha="right", va="top", zorder=3,
-                clip_on=True)
+    # Rings: distance rings every `major_step` ly out to limit (default), OR
+    # travel-time isochrone rings when isochrone={"ly_hr","label_unit"} is given
+    # (O17). Same dashed-circle styling; isochrone labels read "6 months @ …".
+    iso_rings = (_isochrone_rings(isochrone.get("ly_hr"), limit_ly)
+                 if isochrone else [])
+    if iso_rings:
+        iso_unit = isochrone.get("label_unit") or f"{isochrone['ly_hr']:.4f} ly/hr"
+        for r, dur in iso_rings:
+            ax.add_patch(Circle((0, 0), r, fill=False,
+                                edgecolor=_SC_RING, linewidth=0.6,
+                                linestyle=(0, (4, 6)), alpha=0.85, zorder=2))
+            ax.text(r - limit_ly * 0.005, -limit_ly * 0.008, f"{dur} @ {iso_unit}",
+                    color=_SC_RING_LBL, fontsize=7, ha="right", va="top", zorder=3,
+                    clip_on=True)
+    else:
+        n_rings = int(math.floor(limit_ly / major_step))
+        for i in range(1, n_rings + 1):
+            r = i * major_step
+            ax.add_patch(Circle((0, 0), r, fill=False,
+                                edgecolor=_SC_RING, linewidth=0.6,
+                                linestyle=(0, (4, 6)), alpha=0.85, zorder=2))
+            ax.text(r - limit_ly * 0.005, -limit_ly * 0.008, f"{int(r)} ly",
+                    color=_SC_RING_LBL, fontsize=7, ha="right", va="top", zorder=3,
+                    clip_on=True)
 
     # Star plot — exclude points outside the projected square.
     plotted = []
@@ -1277,8 +1630,13 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
                          f"{s['x']:+.3f}, {s['y']:+.3f}, {s.get('z', 0.0):+.3f} ly")
             info_box.set_text("\n".join(lines))
             info_box.set_visible(True)
-        elif info_box.get_visible():
-            info_box.set_visible(False)
+        else:
+            # Clicked empty space inside the chart → clear the table selection
+            # (deselect), which clears the ring on every canvas.
+            if on_star_click is not None:
+                on_star_click(None)
+            if info_box.get_visible():
+                info_box.set_visible(False)
         canvas.draw_idle()
 
     canvas.mpl_connect("button_press_event", _on_click)
@@ -1320,7 +1678,9 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
     ax.callbacks.connect("ylim_changed", _refresh_label_visibility)
 
     coord_map = {s["name"]: (s["x"], s["y"]) for s in plotted}
-    _attach_highlight_2d(canvas, ax, coord_map)
+    name_cls = {s["name"]: ((s.get("sp_type") or "")[:1].upper() or "?")
+                for s in plotted}
+    _attach_highlight_2d(canvas, ax, coord_map, hidden=hidden, name_cls=name_cls)
 
     # Symmetric margins keep the (aspect=equal, anchor=C) square axes truly
     # centered in the figure horizontally and vertically.
@@ -1334,7 +1694,7 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
 # ── Star Chart 3D (labeled 3D scatter, dark theme) ────────────────────────────
 
 def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
-                              on_star_click=None):
+                              on_star_click=None, legend_filter=False, isochrone=None):
     """3D companion to make_star_chart_canvas.
 
     Same dark navy palette, spectral-class star dots, gold ★ origin marker,
@@ -1388,10 +1748,15 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
     ax.set_zlabel("Z (ly)", color=_SC_AXIS_TITLE, fontsize=9)
     ax.view_init(elev=30, azim=-60)
 
-    # Faint wireframe reference spheres at every `major_step` ly out to limit.
+    # Faint wireframe reference spheres: distance spheres every `major_step` ly
+    # (default), OR travel-time isochrone spheres when isochrone={"ly_hr",…} is
+    # given (O17). Each isochrone sphere gets a "6 months @ …" label on the +X axis.
     import numpy as _np
-    n_rings = int(math.floor(limit_ly / major_step))
-    if n_rings > 0:
+    iso_rings = (_isochrone_rings(isochrone.get("ly_hr"), limit_ly)
+                 if isochrone else [])
+    sphere_radii = [r for r, _dur in iso_rings] if iso_rings else [
+        i * major_step for i in range(1, int(math.floor(limit_ly / major_step)) + 1)]
+    if sphere_radii:
         _u = _np.linspace(0, 2 * _np.pi, 28)
         _v = _np.linspace(0, _np.pi, 14)
         _su = _np.sin(_v)
@@ -1399,12 +1764,16 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
         _x_unit = _np.outer(_np.cos(_u), _su)
         _y_unit = _np.outer(_np.sin(_u), _su)
         _z_unit = _np.outer(_np.ones_like(_u), _cu)
-        for i in range(1, n_rings + 1):
-            r = i * major_step
+        for r in sphere_radii:
             ax.plot_wireframe(
                 _x_unit * r, _y_unit * r, _z_unit * r,
                 color=_SC_RING, linewidth=0.4, alpha=0.18, zorder=1,
             )
+    if iso_rings:
+        iso_unit = isochrone.get("label_unit") or f"{isochrone['ly_hr']:.4f} ly/hr"
+        for r, dur in iso_rings:
+            ax.text(r, 0, 0, f"{dur} @ {iso_unit}", color=_SC_RING_LBL,
+                    fontsize=6, ha="left", va="bottom", zorder=3)
 
     # Filter stars to within the cubic axis range (a star may be inside the
     # sphere but outside one of the axis ranges — match the 2D chart's rule).
@@ -1457,14 +1826,42 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
         body_xs, body_ys, body_zs = xs, ys, zs
         body_cols, body_names = colors, names
 
-    sc = ax.scatter(body_xs, body_ys, body_zs, c=body_cols, s=28,
-                    edgecolors="#000000", linewidths=0.4, alpha=0.92,
-                    depthshade=True, picker=True, pickradius=5, zorder=5)
+    # O16/CP3 per-class split state (shared with the legend pick handler + the
+    # zoom-driven label logic below). Empty/unused on the default path.
+    hidden = set()
+    _label_state = {"shown": initial_show_labels}
+    label_groups = {}   # spectral class -> [label artists], for legend filtering
+
+    # Body scatter + hit-test. Default: a single scatter. With legend_filter
+    # (O16/CP3), one PathCollection per spectral class + a pickable legend;
+    # hit(event) returns the body-index under the cursor, skipping hidden classes.
+    if legend_filter:
+        sc = None
+        hit = _legend_filter_3d(
+            canvas, ax, body_xs, body_ys, body_zs, body_cols,
+            [s.get("sp_type", "") for s in body_stars],
+            [28] * len(body_stars),
+            scatter_kw=dict(edgecolors="#000000", linewidths=0.4, alpha=0.92,
+                            depthshade=True, zorder=5),
+            legend_kw=dict(loc="upper left", fontsize=7, framealpha=0.85,
+                           labelcolor=_SC_STAR_LBL, facecolor=_SC_PLOT_BG,
+                           edgecolor=_SC_GRID_MAJOR),
+            hidden=hidden, label_groups=label_groups, label_state=_label_state,
+        )
+    else:
+        sc = ax.scatter(body_xs, body_ys, body_zs, c=body_cols, s=28,
+                        edgecolors="#000000", linewidths=0.4, alpha=0.92,
+                        depthshade=True, picker=True, pickradius=5, zorder=5)
+
+        def hit(event):
+            cont, ind = sc.contains(event)
+            return ind["ind"][0] if cont else None
 
     # Per-star labels anchored at each star's exact 3D point (left/bottom
     # aligned) so the label tracks its dot precisely on rotation and zoom — a
     # fixed data-space offset drifts off the dot when the view changes.
-    # Visibility is toggled by the zoom callback.
+    # Visibility is toggled by the zoom callback; a legend-hidden class (O16)
+    # keeps its labels hidden via the `_o16_cls` tag + the `hidden` set.
     star_labels = []
     for s, x, y, z in zip(body_stars, body_xs, body_ys, body_zs):
         nm = s["name"]
@@ -1477,6 +1874,9 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
                       ha="left", va="bottom")
         txt.set_path_effects([_path_stroke(linewidth=2.0, color=_SC_PLOT_BG)])
         txt.set_visible(initial_show_labels)
+        cls = (s.get("sp_type") or "")[:1].upper() or "?"
+        txt._o16_cls = cls
+        label_groups.setdefault(cls, []).append(txt)
         star_labels.append(txt)
 
     # Route overlay (Phase I) — dashed ordered legs / solid MST edges in 3D.
@@ -1511,9 +1911,8 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
                 hover_text.set_visible(False)
                 canvas.draw_idle()
             return
-        cont, ind = sc.contains(event)
-        if cont:
-            idx = ind["ind"][0]
+        idx = hit(event)
+        if idx is not None:
             s = body_stars[idx]
             hover_text.set_text(f"{body_names[idx]}\n{s.get('ly', 0):.3f} ly")
             hover_text.set_visible(True)
@@ -1533,15 +1932,21 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
         visible=False, zorder=11,
     )
 
+    # Press tracking so a deselect (empty-space click) is distinguished from a
+    # rotate-drag: clearing happens on release only when the pointer didn't move.
+    _press = {"xy": None, "empty": False}
+
     def _on_click(event):
         if event.inaxes is not ax or event.xdata is None:
+            _press["xy"] = None
             if info_box.get_visible():
                 info_box.set_visible(False)
                 canvas.draw_idle()
             return
-        cont, ind = sc.contains(event)
-        if cont:
-            idx   = ind["ind"][0]
+        _press["xy"] = (event.x, event.y)
+        idx = hit(event)
+        _press["empty"] = idx is None
+        if idx is not None:
             if on_star_click is not None:
                 on_star_click(body_names[idx])
             s     = body_stars[idx]
@@ -1561,7 +1966,20 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
             info_box.set_visible(False)
         canvas.draw_idle()
 
+    def _on_release(event):
+        # Empty-space click (not a rotate-drag) → clear the table selection
+        # (deselect). A drag moves the pointer, so compare press vs release px.
+        press = _press["xy"]
+        empty = _press["empty"]
+        _press["xy"] = None
+        if press is None or not empty or on_star_click is None:
+            return
+        if (event.x is not None and abs(event.x - press[0]) <= 3
+                and abs(event.y - press[1]) <= 3):
+            on_star_click(None)
+
     canvas.mpl_connect("button_press_event", _on_click)
+    canvas.mpl_connect("button_release_event", _on_release)
 
     # Scroll-wheel zoom — matches Map 3D's behaviour (matplotlib 3.10+ removed
     # the native Axes3D scroll handler).
@@ -1576,9 +1994,9 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
 
     # Zoom-driven label visibility — for 3D we drive off the largest visible
     # half-range across X/Y/Z so any kind of zoom-in (toolbar, scroll wheel,
-    # Home reset) reliably toggles the labels.
-    _label_state = {"shown": initial_show_labels}
-
+    # Home reset) reliably toggles the labels. A label whose class is
+    # legend-hidden (O16) stays hidden even when zoomed in. `_label_state` /
+    # `hidden` are defined above (shared with the legend pick handler).
     def _refresh_label_visibility(_event_ax=None):
         x0, x1 = ax.get_xlim3d()
         y0, y1 = ax.get_ylim3d()
@@ -1591,7 +2009,8 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
             return
         _label_state["shown"] = should_show
         for txt in star_labels:
-            txt.set_visible(should_show)
+            cls = getattr(txt, "_o16_cls", None)
+            txt.set_visible(should_show and (cls is None or cls not in hidden))
         if sol_label is not None:
             sol_label.set_visible(should_show)
         canvas.draw_idle()
@@ -1604,7 +2023,9 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
     # safely push the axes nearly to the figure edges; axis labels still fit
     # because matplotlib places them inside the axes rect, not outside.
     coord_map = {s["name"]: (s["x"], s["y"], s["z"]) for s in plotted}
-    _attach_highlight_3d(canvas, ax, coord_map)
+    name_cls = {s["name"]: ((s.get("sp_type") or "")[:1].upper() or "?")
+                for s in plotted}
+    _attach_highlight_3d(canvas, ax, coord_map, hidden=hidden, name_cls=name_cls)
 
     fig.subplots_adjust(left=0.0, right=1.0, top=1.0, bottom=0.0)
     toolbar = NavToolbar(canvas, parent)

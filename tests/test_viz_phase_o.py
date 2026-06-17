@@ -616,6 +616,26 @@ class O15RowMapLinkingTest(unittest.TestCase):
         _star_click_select(p, "Sol")
         self.assertFalse(view.selectionModel().hasSelection())
 
+    def test_empty_space_click_clears_selection_and_rings(self):
+        # The deselect gesture: an empty-space click calls on_star_click(None) →
+        # _star_click_select(panel, None) clears the table selection, which clears
+        # the ring on every canvas.
+        from PySide6.QtCore import QItemSelectionModel
+        from gui.panels.distance_stars import _star_click_select
+        p, view = self._panel_with_maps()
+        idx = view.model().index(0, 0)   # Wolf 359
+        view.selectionModel().setCurrentIndex(
+            idx,
+            QItemSelectionModel.SelectionFlag.ClearAndSelect
+            | QItemSelectionModel.SelectionFlag.Rows,
+        )
+        for c in p._link_canvases:
+            self.assertEqual(c.highlighted_star(), "Wolf 359")
+        _star_click_select(p, None)      # empty-space click → deselect
+        self.assertFalse(view.selectionModel().hasSelection())
+        for c in p._link_canvases:
+            self.assertIsNone(c.highlighted_star())
+
 
 @unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
 class O3SharedHelperReuseTest(unittest.TestCase):
@@ -728,6 +748,455 @@ class O16LegendFilterTest(unittest.TestCase):
         self.assertFalse(d_coll.get_visible())             # class hidden
         d_labels = [t for t in ax.texts if getattr(t, "_o16_cls", None) == "D"]
         self.assertTrue(d_labels and not d_labels[0].get_visible())  # labels follow
+
+    def test_highlight_ring_follows_class_visibility(self):
+        # A selection ring on a star whose class is then legend-hidden must hide
+        # too (and reappear when the class is shown again) — no ring lingering
+        # over a filtered-out dot.
+        from matplotlib.backend_bases import PickEvent, MouseEvent
+        from gui.visualizations.plot_helpers import make_star_chart_canvas
+        c, _ = make_star_chart_canvas(None, self._stars(), 15.0, legend_filter=True)
+        ax = c.figure.axes[0]; c.draw()
+        c.highlight_star("Wolf 359")               # D-class star → ring appended
+        ring = ax.collections[-1]
+        self.assertTrue(ring.get_visible())
+        leg = ax.get_legend()
+        texts = [t.get_text() for t in leg.get_texts()]
+        d_handle = leg.legend_handles[texts.index("Class D")]
+        me = MouseEvent("button_press_event", c, 0, 0)
+        c.callbacks.process("pick_event", PickEvent("pick_event", c, me, d_handle))
+        self.assertFalse(ring.get_visible())       # ring hidden with its class
+        c.callbacks.process("pick_event", PickEvent("pick_event", c, me, d_handle))
+        self.assertTrue(ring.get_visible())        # and back when re-shown
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O16LegendFilter3DTest(unittest.TestCase):
+    """O16/CP3 — opt-in per-class split + pickable legend on the two 3D canvases
+    (Map 3D, Star Chart 3D). Best-effort: asserts the per-class split, legend
+    entries, default-path invariance, and pick-driven visibility/label toggling."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _stars(self):
+        return [
+            {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
+             "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
+            {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "dM6",      # dM → D
+             "color": "#dfe6ff", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
+            {"name": "alf Cen B", "desig": "", "sp_type": "K1V",
+             "color": "#ffd2a1", "ly": 4.37, "x": -1.6, "y": -1.3, "z": -3.8},
+            {"name": "Sirius", "desig": "", "sp_type": "A0",
+             "color": "#cad7ff", "ly": 8.6, "x": -1.6, "y": 8.2, "z": -2.5},
+            {"name": "NoType", "desig": "", "sp_type": "",                 # ? → no legend
+             "color": "#cccccc", "ly": 9.0, "x": 2.0, "y": -3.0, "z": 1.0},
+        ]
+
+    def test_map3d_filter_splits_classes_excludes_unknown(self):
+        from gui.visualizations.plot_helpers import make_star_map_3d_canvas
+        # Body scatter includes the centre (index 0), so Sol's G is a togglable
+        # entry — matches the 2D Map.
+        c = make_star_map_3d_canvas(None, self._stars(), legend_filter=True)[0]
+        entries = {t.get_text() for t in c.figure.axes[0].get_legend().get_texts()}
+        self.assertEqual(entries, {"Class A", "Class D", "Class G", "Class K"})
+        # Default path: single body scatter + centre ★ = 2 collections.
+        c2 = make_star_map_3d_canvas(None, self._stars())[0]
+        self.assertEqual(len(c2.figure.axes[0].collections), 2)
+
+    def test_chart3d_filter_adds_legend_default_has_none(self):
+        from gui.visualizations.plot_helpers import make_star_chart_3d_canvas
+        c = make_star_chart_3d_canvas(None, self._stars(), 15.0, legend_filter=True)[0]
+        leg = c.figure.axes[0].get_legend()
+        self.assertIsNotNone(leg)
+        # Body excludes the Sol (G) centre ★; ? excluded from the legend.
+        self.assertEqual({t.get_text() for t in leg.get_texts()},
+                         {"Class A", "Class D", "Class K"})
+        c2 = make_star_chart_3d_canvas(None, self._stars(), 15.0)[0]
+        self.assertIsNone(c2.figure.axes[0].get_legend())
+
+    def test_legend_pick_toggles_class_and_labels_3d(self):
+        # 3D Path3DCollection offsets are projected, not data-space, so identify
+        # the toggled class by counting hidden collections (+1) and by the
+        # labels following — both robust to the 3D projection.
+        from matplotlib.backend_bases import PickEvent, MouseEvent
+        from gui.visualizations.plot_helpers import make_star_chart_3d_canvas
+        c = make_star_chart_3d_canvas(None, self._stars(), 15.0, legend_filter=True)[0]
+        ax = c.figure.axes[0]; c.draw()
+        leg = ax.get_legend()
+        texts = [t.get_text() for t in leg.get_texts()]
+        d_handle = leg.legend_handles[texts.index("Class D")]
+        d_labels = [t for t in ax.texts if getattr(t, "_o16_cls", None) == "D"]
+        self.assertTrue(d_labels and d_labels[0].get_visible())   # initially shown
+        hidden_before = sum(1 for coll in ax.collections if not coll.get_visible())
+        me = MouseEvent("button_press_event", c, 0, 0)
+        c.callbacks.process("pick_event", PickEvent("pick_event", c, me, d_handle))
+        hidden_after = sum(1 for coll in ax.collections if not coll.get_visible())
+        self.assertEqual(hidden_after, hidden_before + 1)         # one class hidden
+        self.assertFalse(d_labels[0].get_visible())               # labels follow
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O17IsochroneTest(unittest.TestCase):
+    """O17/CP4 — travel-time isochrone rings on the Star Chart 2D + 3D canvases."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    # ── ring math ────────────────────────────────────────────────────────────
+    def test_ring_math_anchors(self):
+        from gui.visualizations.plot_helpers import _isochrone_rings
+        # 10×c → ly_hr = 10/8765.8128; the 1-year ring sits at exactly N ly = 10 ly,
+        # the 6-month ring at 5 ly (the CP4 hand anchors).
+        rings = dict((d, r) for r, d in _isochrone_rings(10 / 8765.8128, 15.0))
+        self.assertAlmostEqual(rings["1 year"], 10.0, places=6)
+        self.assertAlmostEqual(rings["6 months"], 5.0, places=6)
+        # 0.01 ly/hr → 1 week ≈ 1.68 ly, 1 month ≈ 7.305 ly (only those two fit 15 ly).
+        slow = dict((d, r) for r, d in _isochrone_rings(0.01, 15.0))
+        self.assertAlmostEqual(slow["1 week"], 1.68, places=3)
+        self.assertAlmostEqual(slow["1 month"], 7.305, places=2)
+
+    def test_xc_and_lyhr_give_identical_radii(self):
+        from gui.visualizations.plot_helpers import _isochrone_rings
+        a = _isochrone_rings(10 / 8765.8128, 15.0)
+        b = _isochrone_rings(0.0011408, 15.0)    # ≈ the same velocity in ly/hr
+        self.assertEqual([d for _, d in a], [d for _, d in b])
+        for (ra, _), (rb, _) in zip(a, b):
+            self.assertAlmostEqual(ra, rb, places=2)
+
+    def test_invalid_velocity_yields_no_rings(self):
+        from gui.visualizations.plot_helpers import _isochrone_rings
+        for bad in (0, -1, None, float("nan"), float("inf")):
+            self.assertEqual(_isochrone_rings(bad, 15.0), [])
+        self.assertEqual(_isochrone_rings(0.01, 0), [])    # non-positive limit
+
+    def test_fast_velocity_uses_hour_day_steps(self):
+        # Regression: 0.1 ly/hr overshoots "1 week" (16.8 ly) at limit 15 — the
+        # hour/day steps must still produce rings (previously: silent no-rings).
+        from gui.visualizations.plot_helpers import _isochrone_rings
+        rings = dict((d, r) for r, d in _isochrone_rings(0.1, 15.0))
+        self.assertTrue(rings)                              # not empty
+        self.assertAlmostEqual(rings["1 day"], 2.4, places=3)
+        self.assertAlmostEqual(rings["3 days"], 7.2, places=3)
+
+    def test_tiny_rings_dropped_and_count_bounded(self):
+        from gui.visualizations.plot_helpers import _isochrone_rings
+        # Every ring is ≥ 5% of the range (no sub-pixel clutter) and ≤ 6 rings.
+        for v in (0.001, 0.01, 0.1, 1.0, 10 / 8765.8128):
+            rings = _isochrone_rings(v, 15.0)
+            self.assertLessEqual(len(rings), 6)
+            for r, _d in rings:
+                self.assertGreaterEqual(r, 15.0 * 0.05 - 1e-9)
+
+    def test_too_fast_velocity_yields_no_rings(self):
+        # 20 ly/hr at limit 15: even the 1-hour ring (20 ly) overshoots → none.
+        from gui.visualizations.plot_helpers import _isochrone_rings
+        self.assertEqual(_isochrone_rings(20.0, 15.0), [])
+
+    # ── canvas integration ───────────────────────────────────────────────────
+    def _stars(self):
+        return [
+            {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
+             "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
+            {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "M6",
+             "color": "#ff9d6c", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
+        ]
+
+    def test_chart_isochrone_relabels_rings(self):
+        from gui.visualizations.plot_helpers import make_star_chart_canvas
+        iso = {"ly_hr": 0.01, "label_unit": "0.0100 ly/hr"}
+        c, _ = make_star_chart_canvas(None, self._stars(), 15.0, isochrone=iso)
+        c.draw()
+        labels = [t.get_text() for t in c.figure.axes[0].texts
+                  if "@" in t.get_text() and "ly/hr" in t.get_text()]
+        self.assertTrue(any(t.startswith("1 week @") for t in labels))
+        self.assertTrue(any(t.startswith("1 month @") for t in labels))
+        # default (no isochrone) → distance rings: 3 ring patches at limit 15.
+        c2, _ = make_star_chart_canvas(None, self._stars(), 15.0)
+        self.assertEqual(len(c2.figure.axes[0].patches), 3)
+        self.assertFalse([t for t in c2.figure.axes[0].texts
+                          if "@" in t.get_text()])
+
+    def test_chart_3d_isochrone_builds_with_labels(self):
+        from gui.visualizations.plot_helpers import make_star_chart_3d_canvas
+        iso = {"ly_hr": 10 / 8765.8128, "label_unit": "0.0011 ly/hr"}
+        c, _, _ = make_star_chart_3d_canvas(None, self._stars(), 15.0, isochrone=iso)
+        c.draw()
+        labels = [t.get_text() for t in c.figure.axes[0].texts
+                  if "@" in t.get_text() and "ly/hr" in t.get_text()]
+        self.assertTrue(any("6 months @" in t for t in labels))
+        self.assertTrue(any("1 year @" in t for t in labels))
+
+    # ── panel control: Apply / Clear + highlight survival ────────────────────
+    class _StubWindow:
+        def __init__(self):
+            from PySide6.QtWidgets import QWidget
+            self.nav_tree = QWidget()
+
+        def statusBar(self):
+            return None
+
+    def _panel_with_maps(self):
+        import gui.panels as panels
+        from gui.panels.distance_stars import _add_map_tabs
+        p = panels.StarsWithinDistanceSolPanel(self._StubWindow())
+        view = p.make_table(
+            ["Star Name", "Star Designations", "Spectral Type", "Distance (LY)"],
+            [["Wolf 359", "GJ 406", "M6", "7.860"],
+             ["* alf Cen B", "GJ 559 B", "K1V", "4.370"]])
+        p._link_view = view
+        map_stars = [
+            {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
+             "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
+            {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "M6",
+             "color": "#ff9d6c", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
+            {"name": "* alf Cen B", "desig": "GJ 559 B", "sp_type": "K1V",
+             "color": "#ffd2a1", "ly": 4.37, "x": -1.6, "y": -1.3, "z": -3.8},
+        ]
+        _add_map_tabs(p, map_stars, 15.0, "title")
+        return p, view
+
+    def _chart_iso_controls(self, panel, tab_text):
+        from PySide6.QtWidgets import QLineEdit, QComboBox, QPushButton
+        tabs = panel._viz_tabs_widget
+        idx = [i for i in range(tabs.count()) if tabs.tabText(i) == tab_text][0]
+        tab = tabs.widget(idx)
+        vel = tab.findChild(QLineEdit)
+        unit = tab.findChild(QComboBox)
+        btns = {b.text(): b for b in tab.findChildren(QPushButton)}
+        return vel, unit, btns
+
+    def _iso_labels(self, panel):
+        return [t.get_text() for c in panel._link_canvases
+                for t in c.figure.axes[0].texts
+                if "@" in t.get_text() and "ly/hr" in t.get_text()]
+
+    def test_panel_control_present_and_starts_with_distance_rings(self):
+        p, _ = self._panel_with_maps()
+        self.assertEqual(len(p._link_canvases), 5)
+        vel, unit, btns = self._chart_iso_controls(p, "Star Chart")
+        self.assertIsNotNone(vel)
+        self.assertIn("Apply", btns)
+        self.assertIn("Clear", btns)
+        self.assertFalse(self._iso_labels(p))        # distance rings initially
+
+    def test_apply_then_clear_with_highlight_survival(self):
+        from PySide6.QtCore import QItemSelectionModel
+        p, view = self._panel_with_maps()
+        # Select Wolf 359 → gold ring on every canvas.
+        view.selectionModel().setCurrentIndex(
+            view.model().index(0, 0),
+            QItemSelectionModel.SelectionFlag.ClearAndSelect
+            | QItemSelectionModel.SelectionFlag.Rows)
+        self.assertTrue(all(c.highlighted_star() == "Wolf 359"
+                            for c in p._link_canvases))
+        # Apply 10 ×c on the 2D Star Chart → isochrone rings; highlight survives.
+        vel, unit, btns = self._chart_iso_controls(p, "Star Chart")
+        unit.setCurrentIndex(0)                       # "× c"
+        vel.setText("10")
+        btns["Apply"].click()
+        self.assertEqual(len(p._link_canvases), 5)    # rebuilt, not leaked
+        self.assertTrue(self._iso_labels(p))          # isochrone rings present
+        self.assertTrue(all(c.highlighted_star() == "Wolf 359"
+                            for c in p._link_canvases))
+        # Clear → distance rings return, no isochrone labels remain.
+        btns["Clear"].click()
+        self.assertFalse(self._iso_labels(p))
+        self.assertEqual(len(p._link_canvases), 5)
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O18FindTest(unittest.TestCase):
+    """O18/CP5 — Find-Star-on-Map box: substring match on name + designations,
+    cycling, centre + ring (reuses O15), no-match status, hidden-class reveal."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_norm_find_collapses_whitespace_and_case(self):
+        from gui.panels.distance_stars import _norm_find
+        self.assertEqual(_norm_find("*  61 Cyg A"), "* 61 cyg a")
+        self.assertEqual(_norm_find("  Wolf   359 "), "wolf 359")
+        self.assertEqual(_norm_find(None), "")
+
+    class _StubWindow:
+        def __init__(self):
+            from PySide6.QtWidgets import QWidget
+            self.nav_tree = QWidget()
+            self._status = ""
+
+        def statusBar(self):
+            outer = self
+
+            class _S:
+                def showMessage(self, m):
+                    outer._status = m
+            return _S()
+
+    def _panel(self):
+        import gui.panels as panels
+        from gui.panels.distance_stars import _add_map_tabs
+        p = panels.StarsWithinDistanceSolPanel(self._StubWindow())
+        view = p.make_table(
+            ["Star Name", "Star Designations", "Spectral Type", "Distance (LY)"],
+            [["*  61 Cyg A", "GJ 820 A", "K5V", "11.40"],     # double-space name
+             ["*  61 Cyg B", "GJ 820 B", "K7V", "11.40"],
+             ["NAME Barnard's star", "GJ 699", "M4V", "5.96"],
+             ["Wolf  359", "GJ 406", "M6", "7.86"]])
+        p._link_view = view
+        map_stars = [
+            {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
+             "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
+            {"name": "*  61 Cyg A", "desig": "GJ 820 A", "sp_type": "K5V",
+             "color": "#ffd2a1", "ly": 11.4, "x": 6.5, "y": 6.1, "z": 7.1},
+            {"name": "*  61 Cyg B", "desig": "GJ 820 B", "sp_type": "K7V",
+             "color": "#ffd2a1", "ly": 11.4, "x": 6.5, "y": 6.1, "z": 7.2},
+            {"name": "NAME Barnard's star", "desig": "GJ 699", "sp_type": "M4V",
+             "color": "#ff9d6c", "ly": 5.96, "x": -0.06, "y": 5.94, "z": 0.49},
+            {"name": "Wolf  359", "desig": "GJ 406", "sp_type": "M6",
+             "color": "#dfe6ff", "ly": 7.86, "x": -7.42, "y": 2.1, "z": 1.02},
+        ]
+        _add_map_tabs(p, map_stars, 15.0, "title")
+        return p
+
+    def _find(self, p, q):
+        from gui.panels.distance_stars import _find_on_map
+        p._find_input.setText(q)
+        _find_on_map(p)
+
+    def test_find_box_present_after_render(self):
+        p = self._panel()
+        self.assertEqual(len(p._link_canvases), 5)
+        self.assertIsNotNone(getattr(p, "_find_widget", None))
+        self.assertIsNotNone(getattr(p, "_find_input", None))
+
+    def test_whitespace_normalized_name_and_designation(self):
+        p = self._panel()
+        # single-space query matches the double-space stored name
+        self._find(p, "61 Cyg A")
+        self.assertEqual(p._find_readout.text(), "Found: *  61 Cyg A")
+        self.assertTrue(all(c.highlighted_star() == "*  61 Cyg A"
+                            for c in p._link_canvases))
+        # designation hit (case-insensitive)
+        self._find(p, "gj 699")
+        self.assertTrue(all(c.highlighted_star() == "NAME Barnard's star"
+                            for c in p._link_canvases))
+
+    def test_multiple_matches_cycle(self):
+        p = self._panel()
+        self._find(p, "61 Cyg")
+        self.assertIn("1 of 2", p._find_readout.text())
+        first = {c.highlighted_star() for c in p._link_canvases}
+        self._find(p, "61 Cyg")
+        self.assertIn("2 of 2", p._find_readout.text())
+        second = {c.highlighted_star() for c in p._link_canvases}
+        self.assertNotEqual(first, second)
+        self._find(p, "61 Cyg")                      # wraps back to the first
+        self.assertIn("1 of 2", p._find_readout.text())
+
+    def test_no_match_keeps_highlight_and_sets_status(self):
+        p = self._panel()
+        self._find(p, "barnard")
+        before = {c.highlighted_star() for c in p._link_canvases}
+        self._find(p, "zzzzz")
+        self.assertEqual(p._find_readout.text(), "No match")
+        self.assertIn("No star matching", p.window._status)
+        after = {c.highlighted_star() for c in p._link_canvases}
+        self.assertEqual(before, after)              # no stale-highlight change
+
+    def test_empty_query_is_noop(self):
+        p = self._panel()
+        self._find(p, "barnard")
+        ro = p._find_readout.text()
+        self._find(p, "   ")                          # blank → no-op
+        self.assertEqual(p._find_readout.text(), ro)
+
+    def test_clear_button_resets_box_and_highlight(self):
+        from gui.panels.distance_stars import _clear_find
+        p = self._panel()
+        self._find(p, "61 Cyg")
+        self.assertTrue(p._find_input.text())
+        self.assertIn("of 2", p._find_readout.text())
+        self.assertTrue(any(c.highlighted_star() for c in p._link_canvases))
+        _clear_find(p)                                # the Find-box Clear button
+        self.assertEqual(p._find_input.text(), "")
+        self.assertEqual(p._find_readout.text(), "")
+        self.assertEqual(p._find_matches, [])
+        self.assertTrue(all(c.highlighted_star() is None
+                            for c in p._link_canvases))
+
+    def test_clear_recenters_map(self):
+        from gui.panels.distance_stars import _clear_find
+        # A 2D star chart starts centred on the origin (±limit); find shifts it,
+        # Clear restores the original view.
+        sc = None
+        p = self._panel()
+        for c in p._link_canvases:
+            ax = c.figure.axes[0]
+            if (c.figure.axes[0].get_facecolor()[0] < 0.1
+                    and "3d" not in type(ax).__name__.lower()):
+                sc = c
+                break
+        self.assertIsNotNone(sc)
+        before = (sc.figure.axes[0].get_xlim(), sc.figure.axes[0].get_ylim())
+        self._find(p, "61 Cyg A")                     # shifts the view off-origin
+        self.assertNotEqual((sc.figure.axes[0].get_xlim(),
+                             sc.figure.axes[0].get_ylim()), before)
+        _clear_find(p)
+        self.assertEqual((sc.figure.axes[0].get_xlim(),
+                          sc.figure.axes[0].get_ylim()), before)
+
+    def test_center_on_capability_moves_view(self):
+        from gui.visualizations.plot_helpers import make_star_chart_canvas
+        stars = [
+            {"name": "Sol", "sp_type": "G2V", "color": "#fff4c2", "ly": 0.0,
+             "x": 0.0, "y": 0.0, "z": 0.0, "desig": ""},
+            {"name": "Barnard", "sp_type": "M4V", "color": "#ff9d6c", "ly": 6.0,
+             "x": 0.0, "y": 6.0, "z": 0.0, "desig": ""},
+        ]
+        c, _ = make_star_chart_canvas(None, stars, 15.0)
+        self.assertTrue(callable(getattr(c, "center_on", None)))
+        self.assertTrue(c.center_on("Barnard"))
+        y0, y1 = c.figure.axes[0].get_ylim()
+        self.assertAlmostEqual((y0 + y1) / 2.0, 6.0, places=6)   # centred on star
+        self.assertFalse(c.center_on("DoesNotExist"))            # graceful no-op
+
+    def test_find_reveals_hidden_class(self):
+        from matplotlib.backend_bases import PickEvent, MouseEvent
+        p = self._panel()
+        # Hide class M on the Star Chart canvas via a legend pick.
+        sc = next(c for c in p._link_canvases
+                  if c.figure.axes[0].get_facecolor()[0] < 0.1
+                  and c.figure.axes[0].get_legend() is not None
+                  and "3d" not in type(c.figure.axes[0]).__name__.lower())
+        ax = sc.figure.axes[0]
+        leg = ax.get_legend()
+        texts = [t.get_text() for t in leg.get_texts()]
+        m_handle = leg.legend_handles[texts.index("Class M")]
+        me = MouseEvent("button_press_event", sc, 0, 0)
+        sc.callbacks.process("pick_event", PickEvent("pick_event", sc, me, m_handle))
+        self.assertIn("M", _hidden_classes(ax))
+        # Finding an M star un-hides class M on that canvas.
+        self._find(p, "barnard")
+        self.assertNotIn("M", _hidden_classes(ax))
+
+
+def _hidden_classes(ax):
+    """The set of spectral classes whose per-class scatter is currently hidden."""
+    out = set()
+    leg = ax.get_legend()
+    if leg is None:
+        return out
+    for txt in leg.get_texts():
+        if txt.get_alpha() not in (None, 1.0):
+            out.add(txt.get_text().replace("Class ", ""))
+    return out
 
 
 if __name__ == "__main__":
