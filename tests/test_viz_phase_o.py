@@ -1199,5 +1199,361 @@ def _hidden_classes(ax):
     return out
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# O-4 — Planet & System Diagrams
+#   O3 Mass–Radius: prepare_mass_radius (null filter + skipped, key genericity,
+#   density-curve anchor) + the canvas smoke + panel-tab wiring (opts 3, 6, Map).
+# ─────────────────────────────────────────────────────────────────────────────
+class O3MassRadiusPrepTest(unittest.TestCase):
+    """core.viz.prepare_mass_radius — generic key filtering + skipped count."""
+
+    def test_nasa_keys_filter_and_skip(self):
+        planets = [
+            {"pl_name": "b", "pl_bmasse": "4.8", "pl_rade": "1.9"},
+            {"pl_name": "c", "pl_bmasse": "2.0", "pl_rade": None},      # no radius
+            {"pl_name": "d", "pl_bmasse": None,  "pl_rade": "3.1"},     # no mass
+            {"pl_name": "e", "pl_bmasse": "0",   "pl_rade": "0.9"},     # non-positive mass
+        ]
+        res = viz.prepare_mass_radius(planets, "pl_bmasse", "pl_rade", "pl_name")
+        self.assertNotIn("error", res)
+        self.assertEqual(len(res["planets"]), 1)
+        self.assertEqual(res["skipped"], 3)
+        self.assertEqual(res["planets"][0]["name"], "b")
+        self.assertAlmostEqual(res["planets"][0]["mass_e"], 4.8)
+        self.assertAlmostEqual(res["planets"][0]["radius_e"], 1.9)
+
+    def test_hwc_keys_generic(self):
+        rows = [{"P_NAME": "HWC b", "P_MASS": "1.2", "P_RADIUS": "1.05"}]
+        res = viz.prepare_mass_radius(rows, "P_MASS", "P_RADIUS", "P_NAME")
+        self.assertNotIn("error", res)
+        self.assertEqual(res["planets"][0]["name"], "HWC b")
+        self.assertAlmostEqual(res["planets"][0]["mass_e"], 1.2)
+
+    def test_none_qualify_is_error(self):
+        rows = [{"pl_name": "x", "pl_bmasse": None, "pl_rade": None}]
+        self.assertIn("error", viz.prepare_mass_radius(rows, "pl_bmasse", "pl_rade", "pl_name"))
+        self.assertIn("error", viz.prepare_mass_radius([], "pl_bmasse", "pl_rade", "pl_name"))
+
+    def test_comma_formatted_value_parses(self):
+        rows = [{"pl_name": "big", "pl_bmasse": "1,234", "pl_rade": "11.2"}]
+        res = viz.prepare_mass_radius(rows, "pl_bmasse", "pl_rade", "pl_name")
+        self.assertAlmostEqual(res["planets"][0]["mass_e"], 1234.0)
+
+    def test_rock_density_curve_anchor(self):
+        # The "rock" reference curve uses ρ = ρ⊕ = 5.51, so R=(M/1)^(1/3): Earth
+        # (M=1) lands at R=1 — the canvas's composition-curve anchor.
+        from gui.visualizations.plot_helpers import _MR_CURVES, _RHO_EARTH
+        rho = dict((nm, r) for nm, r, _c in _MR_CURVES)["rock"]
+        self.assertEqual(rho, _RHO_EARTH)
+        r_at_earth = (1.0 / (rho / _RHO_EARTH)) ** (1.0 / 3.0)
+        self.assertAlmostEqual(r_at_earth, 1.0)
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O3MassRadiusCanvasSmokeTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_canvas_builds(self):
+        from gui.visualizations.plot_helpers import make_mass_radius_canvas
+        data = {"planets": [
+            {"name": "b", "mass_e": 4.8, "radius_e": 1.9},
+            {"name": "c", "mass_e": 317.8, "radius_e": 11.21},
+        ], "skipped": 2}
+        build_canvas_ok(self, make_mass_radius_canvas, None, data)
+
+    def test_canvas_error_passthrough(self):
+        from gui.visualizations.plot_helpers import make_mass_radius_canvas
+        build_canvas_ok(self, make_mass_radius_canvas, None, {"error": "none qualify"})
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O3PanelWiringSmokeTest(unittest.TestCase):
+    """Mass–Radius tab builder adds a tab on opts 3/Map (NASA keys) and not when empty."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _StubWindow:
+        pass
+
+    def test_nasa_tab_builder(self):
+        import gui.panels as panels
+        from gui.panels.nasa_exoplanet import _make_mass_radius_tab
+        p = panels.NasaPlanetarySystemsPanel(self._StubWindow())
+        planets = [{"pl_name": "b", "pl_bmasse": 4.8, "pl_rade": 1.9}]
+        self.assertIsNotNone(_make_mass_radius_tab(p, planets))
+        # No qualifying planet → no tab.
+        self.assertIsNone(_make_mass_radius_tab(
+            p, [{"pl_name": "x", "pl_bmasse": None, "pl_rade": None}]))
+
+    def test_hwc_panel_constructs(self):
+        import gui.panels as panels
+        p = panels.HwcPanel(self._StubWindow())
+        self.assertIsNotNone(p)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-4 — O4 Solar System Reference Overlay (additive solar_overlay param + the
+#   "Show Solar System reference" checkbox that rebuilds the orbits canvas).
+# ─────────────────────────────────────────────────────────────────────────────
+def _simple_orbit(sma=1.0, name="b", color="#4fc3f7"):
+    th = [2 * math.pi * i / 36 for i in range(37)]
+    return {"name": name, "sma": sma, "peri": sma, "apo": sma, "ecc": 0.0,
+            "x_pts": [sma * math.cos(t) for t in th],
+            "y_pts": [sma * math.sin(t) for t in th], "color": color}
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O4SolarOverlayCanvasTest(unittest.TestCase):
+    """make_orbits_canvas solar_overlay: default-off additivity + overlay circles."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _circle_count(canvas):
+        from matplotlib.patches import Circle
+        ax = canvas.figure.axes[0]
+        return sum(1 for p in ax.patches if isinstance(p, Circle))
+
+    def test_default_off_is_additive(self):
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        orbits = [_simple_orbit()]
+        c_default, _ = make_orbits_canvas(None, orbits, [], 35.0)
+        c_off, _ = make_orbits_canvas(None, orbits, [], 35.0, solar_overlay=False)
+        # Default (param absent) draws exactly the same circles as explicit off.
+        self.assertEqual(self._circle_count(c_default), self._circle_count(c_off))
+
+    def test_overlay_adds_all_eight_when_in_frame(self):
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        orbits = [_simple_orbit()]
+        base = self._circle_count(make_orbits_canvas(None, orbits, [], 35.0)[0])
+        on, _ = make_orbits_canvas(None, orbits, [], 35.0, solar_overlay=True)
+        # max_au×1.1 = 38.5 ≥ Neptune (30.069) → all 8 reference circles added.
+        self.assertEqual(self._circle_count(on), base + 8)
+
+    def test_overlay_respects_max_au_filter(self):
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        orbits = [_simple_orbit()]
+        base = self._circle_count(make_orbits_canvas(None, orbits, [], 2.0)[0])
+        on, _ = make_orbits_canvas(None, orbits, [], 2.0, solar_overlay=True)
+        # max_au×1.1 = 2.2 → only Mercury/Venus/Earth/Mars fit (Jupiter 5.203 out).
+        self.assertEqual(self._circle_count(on), base + 4)
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O4OrbitsToggleWiringTest(unittest.TestCase):
+    """The Orbital Diagram tab carries a checkbox that rebuilds the canvas."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _StubWindow:
+        pass
+
+    def test_orbits_tab_has_checkbox_and_rebuilds(self):
+        import gui.panels as panels
+        from gui.panels.nasa_exoplanet import _make_orbits_tab
+        from PySide6.QtWidgets import QCheckBox
+        p = panels.NasaPlanetarySystemsPanel(self._StubWindow())
+        planets = [{"pl_name": "b", "pl_orbsmax": "1.0", "pl_orbeccen": "0.0",
+                    "st_teff": "5778", "st_rad": "1.0", "hostname": "Test"}]
+        w = _make_orbits_tab(p, planets)
+        self.assertIsNotNone(w)
+        chk = w.findChild(QCheckBox)
+        self.assertIsNotNone(chk)
+        self.assertFalse(chk.isChecked())          # default unchecked
+        chk.setChecked(True)                        # rebuild w/ overlay
+        chk.setChecked(False)                       # rebuild back — no exception
+
+    def test_wrapper_returns_none_when_canvas_fails(self):
+        from gui.visualizations.plot_helpers import wrap_orbits_with_solar_toggle
+        # A builder that yields no canvas → wrapper returns None (no empty tab).
+        self.assertIsNone(wrap_orbits_with_solar_toggle(None, lambda _ov: (None, None)))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-4 — O13 Transit Geometry: prepare_transit_geometry (b = (a/R★)·cos i anchor,
+#   skip list, error gates) + the canvas smoke + panel-tab wiring (opts 3, Map).
+# ─────────────────────────────────────────────────────────────────────────────
+class O13TransitGeometryPrepTest(unittest.TestCase):
+
+    def test_b_formula_anchor(self):
+        # st_rad=1 R☉ → R★ = 0.00465 AU. a = R★, i = 0 → b = (1)·cos0 = 1.0 (limb).
+        planets = [
+            {"pl_name": "edge", "st_rad": "1.0", "pl_orbsmax": str(viz._R_SUN_AU),
+             "pl_orbincl": "0"},
+            {"pl_name": "central", "st_rad": "1.0", "pl_orbsmax": "0.5",
+             "pl_orbincl": "90"},   # cos 90° = 0 → b = 0 (dead-centre transit)
+        ]
+        res = viz.prepare_transit_geometry(planets)
+        self.assertNotIn("error", res)
+        self.assertAlmostEqual(res["star_radius_au"], 0.00465)
+        by_name = {p["name"]: p for p in res["planets"]}
+        self.assertAlmostEqual(by_name["edge"]["b"], 1.0, places=6)
+        self.assertAlmostEqual(by_name["central"]["b"], 0.0, places=6)
+
+    def test_skip_missing_inclination_and_sma(self):
+        planets = [
+            {"pl_name": "ok", "st_rad": "0.8", "pl_orbsmax": "0.1", "pl_orbincl": "89"},
+            {"pl_name": "no_incl", "st_rad": "0.8", "pl_orbsmax": "0.2",
+             "pl_orbincl": None},                                   # skipped
+            {"pl_name": "no_sma", "st_rad": "0.8", "pl_orbsmax": None,
+             "pl_orbincl": "88"},                                   # skipped
+        ]
+        res = viz.prepare_transit_geometry(planets)
+        self.assertEqual(len(res["planets"]), 1)
+        self.assertEqual(res["planets"][0]["name"], "ok")
+        self.assertEqual(res["skipped"], 2)
+
+    def test_error_when_no_stellar_radius(self):
+        planets = [{"pl_name": "x", "pl_orbsmax": "0.1", "pl_orbincl": "89"}]
+        self.assertIn("error", viz.prepare_transit_geometry(planets))
+        planets2 = [{"pl_name": "x", "st_rad": "0", "pl_orbsmax": "0.1", "pl_orbincl": "89"}]
+        self.assertIn("error", viz.prepare_transit_geometry(planets2))
+
+    def test_error_when_no_inclination_at_all(self):
+        planets = [{"pl_name": "x", "st_rad": "1.0", "pl_orbsmax": "0.1",
+                    "pl_orbincl": None}]
+        self.assertIn("error", viz.prepare_transit_geometry(planets))
+        self.assertIn("error", viz.prepare_transit_geometry([]))
+
+    def test_stellar_radius_found_on_later_row(self):
+        # st_rad absent on the first row but present on a later one → still resolves.
+        planets = [
+            {"pl_name": "a", "pl_orbsmax": "0.1", "pl_orbincl": "89"},
+            {"pl_name": "b", "st_rad": "1.2", "pl_orbsmax": "0.2", "pl_orbincl": "88"},
+        ]
+        res = viz.prepare_transit_geometry(planets)
+        self.assertNotIn("error", res)
+        self.assertAlmostEqual(res["star_radius_au"], 1.2 * viz._R_SUN_AU)
+        self.assertEqual(len(res["planets"]), 2)
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O13TransitCanvasSmokeTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_canvas_builds(self):
+        from gui.visualizations.plot_helpers import make_transit_canvas
+        data = {"star_radius_au": 0.00465, "skipped": 1, "planets": [
+            {"name": "b", "a_au": 0.05, "incl_deg": 89.6, "b": 0.4},     # transiting
+            {"name": "e", "a_au": 1.1, "incl_deg": 87.2, "b": 7.4},      # misses (clamped)
+        ]}
+        build_canvas_ok(self, make_transit_canvas, None, data)
+
+    def test_canvas_error_passthrough(self):
+        from gui.visualizations.plot_helpers import make_transit_canvas
+        build_canvas_ok(self, make_transit_canvas, None, {"error": "no inclination"})
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O13PanelWiringSmokeTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _StubWindow:
+        pass
+
+    def test_transit_tab_builder(self):
+        import gui.panels as panels
+        from gui.panels.nasa_exoplanet import _make_transit_tab
+        p = panels.NasaPlanetarySystemsPanel(self._StubWindow())
+        planets = [{"pl_name": "b", "st_rad": "1.0", "pl_orbsmax": "0.05",
+                    "pl_orbincl": "89.6"}]
+        self.assertIsNotNone(_make_transit_tab(p, planets))
+        # No inclination → no tab (additive).
+        self.assertIsNone(_make_transit_tab(
+            p, [{"pl_name": "x", "st_rad": "1.0", "pl_orbsmax": "0.1",
+                 "pl_orbincl": None}]))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-4 — O14 Planet Size-Comparison Strip (canvas-only, no prepare_*): qualifies
+#   when ≥1 planet has a radius; radius-less planets footnoted; (None,None) when
+#   none qualify; generic over NASA/HWC keys + panel-tab wiring (opts 3, 6, Map).
+# ─────────────────────────────────────────────────────────────────────────────
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O14SizeStripCanvasTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_builds_with_nasa_keys_and_footnote(self):
+        from gui.visualizations.plot_helpers import make_size_comparison_canvas
+        planets = [
+            {"pl_name": "b", "pl_rade": "1.9"},
+            {"pl_name": "c", "pl_rade": "0.0"},      # non-positive → footnoted
+            {"pl_name": "g", "pl_rade": None},        # missing → footnoted
+        ]
+        canvas, _ = make_size_comparison_canvas(None, planets, "pl_rade", "pl_name")
+        self.assertIsNotNone(canvas)
+        ax = canvas.figure.axes[0]
+        # Earth + Jupiter anchors are always present → ≥3 circles (1 planet + 2).
+        from matplotlib.patches import Circle
+        n_circles = sum(1 for p in ax.patches if isinstance(p, Circle))
+        self.assertEqual(n_circles, 3)
+        # Footnote lists the radius-less planets.
+        foot = " ".join(t.get_text() for t in canvas.figure.texts)
+        self.assertIn("No radius", foot)
+        self.assertIn("g", foot)
+        self.assertIn("c", foot)
+
+    def test_builds_with_hwc_keys(self):
+        from gui.visualizations.plot_helpers import make_size_comparison_canvas
+        rows = [{"P_NAME": "HWC b", "P_RADIUS": "2.4"}]
+        canvas, _ = make_size_comparison_canvas(None, rows, "P_RADIUS", "P_NAME")
+        self.assertIsNotNone(canvas)
+
+    def test_none_when_no_radius(self):
+        from gui.visualizations.plot_helpers import make_size_comparison_canvas
+        rows = [{"pl_name": "x", "pl_rade": None}, {"pl_name": "y", "pl_rade": ""}]
+        canvas, toolbar = make_size_comparison_canvas(None, rows, "pl_rade", "pl_name")
+        self.assertIsNone(canvas)
+        self.assertIsNone(toolbar)
+        # Empty list → also (None, None).
+        self.assertEqual(make_size_comparison_canvas(None, [], "pl_rade", "pl_name"),
+                         (None, None))
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O14PanelWiringSmokeTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _StubWindow:
+        pass
+
+    def test_nasa_size_tab_builder(self):
+        import gui.panels as panels
+        from gui.panels.nasa_exoplanet import _make_size_tab
+        p = panels.NasaPlanetarySystemsPanel(self._StubWindow())
+        self.assertIsNotNone(_make_size_tab(p, [{"pl_name": "b", "pl_rade": "1.9"}]))
+        # No radius anywhere → no tab.
+        self.assertIsNone(_make_size_tab(p, [{"pl_name": "x", "pl_rade": None}]))
+
+
 if __name__ == "__main__":
     unittest.main()

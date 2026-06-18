@@ -21,7 +21,9 @@ import core.databases
 import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas,
-    make_exoplanet_system_canvas, log_viz_error, wrap_scrollable,
+    make_exoplanet_system_canvas, make_mass_radius_canvas, make_transit_canvas,
+    make_size_comparison_canvas, log_viz_error, wrap_scrollable,
+    wrap_orbits_with_solar_toggle,
 )
 
 
@@ -468,22 +470,89 @@ def _make_hz_tab_exocat(panel, row):
 
 
 def _make_orbits_tab(panel, planets, star_name=""):
-    """Return a QWidget with an embedded orbital diagram, or None if insufficient data."""
+    """Return a QWidget with an embedded orbital diagram, or None if insufficient data.
+
+    The diagram carries a "Show Solar System reference" overlay checkbox (Phase O · O4).
+    """
     if not mpl_available():
         return None
     orbit_data = core.viz.prepare_system_orbits(planets)
     if "error" in orbit_data:
         return None
+
+    def _build(solar_overlay):
+        return make_orbits_canvas(
+            panel,
+            orbit_data["orbits"],
+            orbit_data["hz_zones"],
+            orbit_data["max_au"],
+            star_name=star_name,
+            solar_overlay=solar_overlay,
+        )
+
+    return wrap_orbits_with_solar_toggle(panel, _build)
+
+
+def _make_mass_radius_tab(panel, planets, mass_key="pl_bmasse",
+                          radius_key="pl_rade", name_key="pl_name"):
+    """Return a QWidget with an embedded Mass–Radius diagram, or None (Phase O · O3).
+
+    Added only when ≥1 planet carries both a positive mass and radius. Generic over
+    NASA (pl_bmasse/pl_rade/pl_name — the defaults) and HWC (P_MASS/P_RADIUS/P_NAME)
+    rows via the column keys.
+    """
+    if not mpl_available():
+        return None
+    mr_data = core.viz.prepare_mass_radius(planets, mass_key, radius_key, name_key)
+    if "error" in mr_data:
+        return None
+    canvas, toolbar = make_mass_radius_canvas(panel, mr_data)
+    if canvas is None:
+        return None
     w = QWidget()
     lay = QVBoxLayout(w)
     lay.setContentsMargins(4, 4, 4, 4)
-    canvas, toolbar = make_orbits_canvas(
-        panel,
-        orbit_data["orbits"],
-        orbit_data["hz_zones"],
-        orbit_data["max_au"],
-        star_name=star_name,
-    )
+    lay.addWidget(toolbar)
+    lay.addWidget(canvas)
+    return w
+
+
+def _make_transit_tab(panel, planets):
+    """Return a QWidget with an embedded Transit Geometry diagram, or None (Phase O · O13).
+
+    Added on opts 3 + Map only when ≥1 planet has a host stellar radius and a
+    measured orbital inclination (NASA `st_rad`/`pl_orbsmax`/`pl_orbincl`).
+    """
+    if not mpl_available():
+        return None
+    tg_data = core.viz.prepare_transit_geometry(planets)
+    if "error" in tg_data:
+        return None
+    canvas, toolbar = make_transit_canvas(panel, tg_data)
+    if canvas is None:
+        return None
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
+    lay.addWidget(toolbar)
+    lay.addWidget(canvas)
+    return w
+
+
+def _make_size_tab(panel, planets, radius_key="pl_rade", name_key="pl_name"):
+    """Return a QWidget with a Planet Size-Comparison strip, or None (Phase O · O14).
+
+    Added on opts 3/6/Map only when ≥1 planet carries a radius. Generic over NASA
+    (pl_rade/pl_name — the defaults) and HWC (P_RADIUS/P_NAME) via the column keys.
+    """
+    if not mpl_available():
+        return None
+    canvas, toolbar = make_size_comparison_canvas(panel, planets, radius_key, name_key)
+    if canvas is None:
+        return None
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
     lay.addWidget(toolbar)
     lay.addWidget(canvas)
     return w
@@ -653,6 +722,15 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
         hz_w = _make_hz_tab(self, planets)
         if hz_w:
             self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
+        mr_w = _make_mass_radius_tab(self, planets)
+        if mr_w:
+            self._viz_tabs_widget.addTab(mr_w, "Mass–Radius")
+        tg_w = _make_transit_tab(self, planets)
+        if tg_w:
+            self._viz_tabs_widget.addTab(tg_w, "Transit Geometry")
+        sz_w = _make_size_tab(self, planets)
+        if sz_w:
+            self._viz_tabs_widget.addTab(sz_w, "Size Comparison")
 
         if hypatia and "error" not in hypatia:
             try:
@@ -1131,6 +1209,15 @@ class NasaPlanetarySystemsMapPanel(_StarSearchPanel):
         hz_w = _make_hz_tab(self, planets)
         if hz_w:
             self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
+        mr_w = _make_mass_radius_tab(self, planets)
+        if mr_w:
+            self._viz_tabs_widget.addTab(mr_w, "Mass–Radius")
+        tg_w = _make_transit_tab(self, planets)
+        if tg_w:
+            self._viz_tabs_widget.addTab(tg_w, "Transit Geometry")
+        sz_w = _make_size_tab(self, planets)
+        if sz_w:
+            self._viz_tabs_widget.addTab(sz_w, "Size Comparison")
 
         if hypatia and "error" not in hypatia:
             try:

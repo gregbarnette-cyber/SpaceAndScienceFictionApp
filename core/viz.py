@@ -1106,3 +1106,71 @@ def _hr_center_point(name: str):
         return None
     return {"name": name, "teff": teff, "abs_mag": vmag + 5.0 - 5.0 * math.log10(pc),
             "color": "#FFD700", "sp_type": sp, "highlight": True}
+
+
+# ── Phase O O-4: Planet & System Diagrams ─────────────────────────────────────
+
+def prepare_mass_radius(planets: list, mass_key: str, radius_key: str,
+                        name_key: str) -> dict:
+    """Mass–radius scatter data for a planet set (Phase O · O3).
+
+    Generic over NASA (`pl_bmasse`/`pl_rade`/`pl_name`) and HWC
+    (`P_MASS`/`P_RADIUS`/`P_NAME`) planet rows — the caller passes the column keys.
+    Filters to planets carrying BOTH a positive mass and radius (Earth units); the
+    rest are counted in `skipped`. Returns {"planets": [{name, mass_e, radius_e}],
+    "skipped": int} or {"error": str} when none qualify.
+    """
+    if not planets:
+        return {"error": "No planets to plot."}
+    out, skipped = [], 0
+    for p in planets:
+        m = _num(p.get(mass_key))
+        r = _num(p.get(radius_key))
+        if m is None or r is None or m <= 0 or r <= 0:
+            skipped += 1
+            continue
+        out.append({"name": str(p.get(name_key) or "?"), "mass_e": m, "radius_e": r})
+    if not out:
+        return {"error": "No planets with both mass and radius to plot."}
+    return {"planets": out, "skipped": skipped}
+
+
+# Solar radius expressed in AU (R☉ = 0.00465047 AU) — converts st_rad (R☉) → R★ (AU).
+_R_SUN_AU = 0.00465
+
+
+def prepare_transit_geometry(planets: list) -> dict:
+    """Transit-geometry (impact-parameter) data for a planet set (Phase O · O13).
+
+    Needs the host stellar radius (`st_rad`, R☉) plus, per planet, `pl_orbsmax` (AU)
+    and `pl_orbincl` (deg). `R★ = st_rad × 0.00465 AU`; the impact parameter is
+    `b = (a/R★)·cos i`. Planets missing an inclination (or SMA) are counted in
+    `skipped`. Returns {"star_radius_au", "planets":[{name, a_au, incl_deg, b}],
+    "skipped": int} or {"error": str} when `st_rad` is missing/≤0 or no planet has a
+    usable inclination. (Note: `b` uses the inclination only — the ascending node is
+    unknown, so a transiting `|b|≤1` is necessary but not on its own sufficient.)
+    """
+    if not planets:
+        return {"error": "No planet data to plot."}
+    st_rad = None
+    for p in planets:
+        st_rad = _num(p.get("st_rad"))
+        if st_rad is not None and st_rad > 0:
+            break
+    if st_rad is None or st_rad <= 0:
+        return {"error": "Transit geometry needs a stellar radius (st_rad)."}
+    r_star_au = st_rad * _R_SUN_AU
+
+    out, skipped = [], 0
+    for p in planets:
+        a = _num(p.get("pl_orbsmax"))
+        incl = _num(p.get("pl_orbincl"))
+        if a is None or a <= 0 or incl is None:
+            skipped += 1
+            continue
+        b = (a / r_star_au) * math.cos(math.radians(incl))
+        out.append({"name": str(p.get("pl_name") or "?"), "a_au": a,
+                    "incl_deg": incl, "b": b})
+    if not out:
+        return {"error": "No planets have a measured orbital inclination."}
+    return {"star_radius_au": r_star_au, "planets": out, "skipped": skipped}

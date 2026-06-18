@@ -74,6 +74,45 @@ def wrap_scrollable(parent, canvas, toolbar):
     return container
 
 
+def wrap_orbits_with_solar_toggle(parent, build_canvas):
+    """Wrap an orbital-diagram canvas in a tab with a Solar-System overlay checkbox.
+
+    `build_canvas(solar_overlay: bool) -> (canvas, toolbar)` is called to (re)build the
+    canvas; toggling the "Show Solar System reference" checkbox rebuilds it in place
+    (cheap — same prepared data, just the additive `solar_overlay` flag). Shared by the
+    Orbital Diagram tabs on opts 3, 6, and the Map panel (Phase O · O4). Returns the
+    container QWidget, or None if the canvas can't build.
+    """
+    from PySide6.QtWidgets import QWidget, QVBoxLayout, QCheckBox
+
+    container = QWidget(parent)
+    lay = QVBoxLayout(container)
+    lay.setContentsMargins(4, 4, 4, 4)
+    chk = QCheckBox("Show Solar System reference")
+    lay.addWidget(chk)
+
+    state = {"toolbar": None, "canvas": None}
+
+    def _rebuild():
+        if state["canvas"] is not None:
+            lay.removeWidget(state["toolbar"])
+            state["toolbar"].deleteLater()
+            lay.removeWidget(state["canvas"])
+            state["canvas"].deleteLater()
+        canvas, toolbar = build_canvas(chk.isChecked())
+        state["toolbar"], state["canvas"] = toolbar, canvas
+        if toolbar is not None:
+            lay.addWidget(toolbar)
+        if canvas is not None:
+            lay.addWidget(canvas)
+
+    chk.toggled.connect(lambda _checked: _rebuild())
+    _rebuild()
+    if state["canvas"] is None:
+        return None
+    return container
+
+
 def _disable_zoom_rect(toolbar):
     """Remove the rectangle-zoom tool from a 3D toolbar.
 
@@ -302,12 +341,17 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
 
 def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                        max_au: float, star_name: str = "",
-                       eeid_au: float = None, markers: list = None):
+                       eeid_au: float = None, markers: list = None,
+                       solar_overlay: bool = False):
     """Keplerian ellipse orbital diagram with HZ annulus overlay.
 
     orbits:  list of dicts {name, x_pts, y_pts, color, peri, sma, apo, ecc}.
     hz_zones: list of dicts {label, outer, color} ordered inner→outer.
     markers: optional list of {label, au, color, body} for extra named circles.
+    solar_overlay: when True (Phase O · O4), draw dashed grey reference circles at
+      the Solar-System planet semi-major axes (`core.viz._PLANET_SMAS`) for those
+      that fit inside `max_au × 1.1`, with an end-of-orbit label. Default False →
+      the render is byte-identical to before.
     Returns (canvas, toolbar).
     """
     valid_markers = [m for m in (markers or []) if m.get("au") and m["au"] > 0]
@@ -345,6 +389,19 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                 f"{m['label']}\n{m['au']:.3f} AU",
                 color=m["color"], fontsize=6.5, ha="right", va="top",
                 alpha=0.9, zorder=4)
+
+    # Solar-System reference orbits (Phase O · O4): dashed grey circles at the
+    # Solar planets' SMAs that fit the current frame; drawn under the planet orbits.
+    if solar_overlay:
+        from core.viz import _PLANET_SMAS
+        for _pname, _psma in _PLANET_SMAS.items():
+            if _psma <= max_au * 1.1:
+                ax.add_patch(Circle((0, 0), _psma, fill=False, edgecolor="#222222",
+                                    linewidth=1.0, linestyle=(0, (4, 4)),
+                                    alpha=0.9, zorder=2.5))
+                ax.text(0, _psma, _pname, color="#1a1a1a", fontsize=6.5,
+                        fontweight="bold", ha="center", va="bottom", alpha=0.95,
+                        zorder=2.5)
 
     # Planet orbits
     for orb in orbits:
@@ -3426,6 +3483,387 @@ def make_sky_canvas(parent, data: dict):
             annot.set_visible(True)
         elif annot.get_visible():
             annot.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+# ── Phase O O-4: Planet & System Diagrams ─────────────────────────────────────
+
+# Constant-density composition curves: (label, density g/cm³, colour). Deliberately
+# constant-density (R=(M/(ρ/ρ⊕))^(1/3)), NOT Zeng-style interior models — labelled
+# "constant density" in the legend so they aren't mistaken for one.
+_RHO_EARTH = 5.51
+_MR_CURVES = [
+    ("iron",      7.9,  "#b06a4a"),
+    ("rock",      5.51, "#7a8a55"),
+    ("water",     1.0,  "#4a7fa8"),
+    ("Jupiter ρ", 1.33, "#a08a4a"),
+]
+# 8 Solar-System reference points: (name, mass M⊕, radius R⊕).
+_MR_SOLAR = [
+    ("Mercury", 0.055, 0.383), ("Mars",    0.107, 0.532),
+    ("Venus",   0.815, 0.95),  ("Earth",   1.0,   1.0),
+    ("Uranus",  14.5,  4.01),  ("Neptune", 17.1,  3.88),
+    ("Saturn",  95.2,  9.45),  ("Jupiter", 317.8, 11.21),
+]
+
+
+def make_mass_radius_canvas(parent, data: dict):
+    """Mass–radius diagram (Phase O · O3).
+
+    data: core.viz.prepare_mass_radius() → {planets:[{name,mass_e,radius_e}], skipped}.
+    Log–log mass (M⊕) vs radius (R⊕) with constant-density composition curves
+    (`R=(M/(ρ/ρ⊕))^(1/3)`, ρ⊕=5.51), the 8 Solar-System reference points, and the
+    system planets (blue, hover shows name + mass/radius). Light theme.
+    Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(7, 5), dpi=100, facecolor=_SPACE_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+    planets = data.get("planets") or []
+    if not planets:
+        return _error_canvas("No planets with both mass and radius to plot.")
+
+    fig = Figure(figsize=(7.5, 6), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.10, right=0.96, top=0.93, bottom=0.10)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#ffffff")
+
+    # Axis range: span the data + Solar-System anchors with a little padding.
+    masses = [p["mass_e"] for p in planets] + [m for _n, m, _r in _MR_SOLAR]
+    radii  = [p["radius_e"] for p in planets] + [r for _n, _m, r in _MR_SOLAR]
+    m_lo, m_hi = min(masses) * 0.5, max(masses) * 2.0
+    r_lo, r_hi = min(radii) * 0.7,  max(radii) * 1.4
+
+    # Constant-density composition curves (dashed), sampled across the mass range.
+    n = 60
+    curve_ms = [m_lo * (m_hi / m_lo) ** (i / n) for i in range(n + 1)]
+    for nm, rho, col in _MR_CURVES:
+        cr = [(m / (rho / _RHO_EARTH)) ** (1.0 / 3.0) for m in curve_ms]
+        ax.plot(curve_ms, cr, ls="--", color=col, lw=1.3, alpha=0.85, zorder=2)
+        # Label the curve near the high-mass end if it stays in frame.
+        lr = (m_hi / (rho / _RHO_EARTH)) ** (1.0 / 3.0)
+        if r_lo <= lr <= r_hi:
+            ax.annotate(nm, (m_hi, lr), textcoords="offset points", xytext=(-2, 3),
+                        ha="right", fontsize=7.5, color=col, zorder=2)
+
+    # Solar-System reference points (grey).
+    ax.scatter([m for _n, m, _r in _MR_SOLAR], [r for _n, _m, r in _MR_SOLAR],
+               s=24, c="#99a0aa", edgecolors="#6a6a6a", linewidths=0.4, zorder=3)
+    for nm, m, r in _MR_SOLAR:
+        ax.annotate(nm, (m, r), textcoords="offset points", xytext=(4, 2),
+                    fontsize=7, color="#778", zorder=3)
+
+    # System planets (blue, on top) + per-planet labels.
+    pms = [p["mass_e"] for p in planets]
+    prs = [p["radius_e"] for p in planets]
+    ax.scatter(pms, prs, s=48, c="#4a90d9", edgecolors="#ffffff", linewidths=0.7,
+               zorder=5)
+    for p in planets:
+        ax.annotate(p["name"], (p["mass_e"], p["radius_e"]),
+                    textcoords="offset points", xytext=(6, 3), fontsize=8,
+                    color="#26537d", zorder=6)
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlim(m_lo, m_hi)
+    ax.set_ylim(r_lo, r_hi)
+    ax.set_xlabel("Mass (M⊕, log)", color=_LABEL_CLR, fontsize=9)
+    ax.set_ylabel("Radius (R⊕, log)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+    ax.grid(color=_GRID_CLR, linewidth=0.6, alpha=0.7)
+    ax.set_axisbelow(True)
+    skipped = data.get("skipped", 0)
+    title = f"Mass–Radius Diagram  ({len(planets)} planet{'s' if len(planets) != 1 else ''})"
+    if skipped:
+        title += f"  ·  {skipped} without both M & R"
+    ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=8)
+
+    legend_handles = [
+        Line2D([0], [0], ls="--", color="#888", lw=1.3, label="constant density"),
+        Line2D([0], [0], marker="o", ls="", mfc="#99a0aa", mec="#6a6a6a",
+               markersize=6, label="Solar System"),
+        Line2D([0], [0], marker="o", ls="", mfc="#4a90d9", mec="#fff",
+               markersize=7, label="system planet"),
+    ]
+    ax.legend(handles=legend_handles, loc="upper left", fontsize=8, framealpha=0.9)
+
+    # Hover tooltip anchored to the hovered planet (follows the dot, with an arrow).
+    tip = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#ffffe0", ec="#888", lw=0.8, alpha=0.97),
+        arrowprops=dict(arrowstyle="->", color="#888", lw=0.8),
+        color="#111", fontsize=8, zorder=10, visible=False)
+
+    def _on_motion(event):
+        if event.inaxes is not ax:
+            if tip.get_visible():
+                tip.set_visible(False)
+                canvas.draw_idle()
+            return
+        best_i, best_d = None, None
+        for i, (xv, yv) in enumerate(zip(pms, prs)):
+            px, py = ax.transData.transform((xv, yv))
+            d = (px - event.x) ** 2 + (py - event.y) ** 2
+            if best_d is None or d < best_d:
+                best_d, best_i = d, i
+        if best_i is not None and best_d is not None and best_d <= 144:  # within 12 px
+            p = planets[best_i]
+            tip.xy = (pms[best_i], prs[best_i])
+            tip.set_text(f"{p['name']}\n{p['mass_e']:g} M⊕, {p['radius_e']:g} R⊕")
+            tip.set_visible(True)
+        elif tip.get_visible():
+            tip.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_transit_canvas(parent, data: dict):
+    """Transit-geometry (impact-parameter) diagram (Phase O · O13).
+
+    data: core.viz.prepare_transit_geometry() → {star_radius_au, planets:[{name,
+    a_au, incl_deg, b}], skipped}. x = semi-major axis (AU, log); y = impact
+    parameter b (in R★ units). The `|b| ≤ 1` band is shaded "transiting" (the
+    stellar disk); planets green inside it / red outside; hover shows a/i/b. A
+    caveat notes the node is unknown, and a footnote counts inclination-less skips.
+    Light theme. Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(7, 5), dpi=100, facecolor=_SPACE_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+    planets = data.get("planets") or []
+    if not planets:
+        return _error_canvas("No planets with a measured inclination to plot.")
+
+    fig = Figure(figsize=(7.5, 5.4), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.11, right=0.96, top=0.91, bottom=0.16)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#ffffff")
+
+    a_vals = [p["a_au"] for p in planets]
+    b_vals = [p["b"] for p in planets]
+    a_lo, a_hi = min(a_vals) * 0.5, max(a_vals) * 2.0
+    # Symmetric y-range covering the |b|≤1 band with headroom, capped so a far
+    # planet's huge b doesn't crush the band; out-of-range points clamp to the edge.
+    y_cap = max(3.0, min(15.0, max(abs(b) for b in b_vals) * 1.1))
+
+    # Transiting band |b| ≤ 1 (the stellar disk) + limb lines + centre line.
+    ax.axhspan(-1, 1, color="#bcd6f0", alpha=0.45, zorder=1)
+    ax.axhline(0, color="#caa84a", lw=0.8, ls="-", alpha=0.7, zorder=2)
+    for limb in (-1, 1):
+        ax.axhline(limb, color="#caa84a", lw=1.0, ls="--", alpha=0.8, zorder=2)
+    ax.text(a_hi, 0.0, " R★ disk  (|b| ≤ 1 transits)", color="#3a73ad", fontsize=8,
+            ha="right", va="bottom", zorder=3)
+
+    # Planets, clamped to the frame; green = transiting, red = misses the disk.
+    pys, colors = [], []
+    for p in planets:
+        pys.append(max(-y_cap, min(y_cap, p["b"])))
+        colors.append("#2e8b57" if abs(p["b"]) <= 1 else "#b03030")
+    ax.scatter(a_vals, pys, s=60, c=colors, edgecolors="#ffffff", linewidths=0.7,
+               zorder=5)
+    for p, yv in zip(planets, pys):
+        ax.annotate(p["name"], (p["a_au"], yv), textcoords="offset points",
+                    xytext=(7, 3), fontsize=8, color="#444", zorder=6)
+
+    ax.set_xscale("log")
+    ax.set_xlim(a_lo, a_hi)
+    ax.set_ylim(-y_cap, y_cap)
+    ax.set_xlabel("Semi-major axis (AU, log)", color=_LABEL_CLR, fontsize=9)
+    ax.set_ylabel("Impact parameter b  (R★)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+    ax.grid(color=_GRID_CLR, linewidth=0.6, alpha=0.6)
+    ax.set_axisbelow(True)
+    r_star = data.get("star_radius_au")
+    title = "Transit Geometry"
+    if r_star:
+        title += f"  (R★ = {r_star:.4f} AU)"
+    ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=8)
+
+    legend_handles = [
+        mpatches.Patch(facecolor="#bcd6f0", alpha=0.6, label="transiting band |b| ≤ 1"),
+        Line2D([0], [0], marker="o", ls="", mfc="#2e8b57", mec="#fff",
+               markersize=7, label="transiting"),
+        Line2D([0], [0], marker="o", ls="", mfc="#b03030", mec="#fff",
+               markersize=7, label="misses disk"),
+    ]
+    ax.legend(handles=legend_handles, loc="upper left", fontsize=8, framealpha=0.9)
+
+    # Caveat (always) + skip footnote (when any planet lacked an inclination).
+    caveat = "geometry from inclination only; ascending node unknown"
+    skipped = data.get("skipped", 0)
+    if skipped:
+        caveat += (f"  ·  {skipped} planet{'s' if skipped != 1 else ''} skipped "
+                   "(no measured inclination)")
+    fig.text(0.11, 0.03, caveat, color="#b8860b", fontsize=7.5, fontstyle="italic",
+             ha="left", va="bottom")
+
+    # Hover tooltip anchored to the hovered planet (follows the dot, with an arrow).
+    tip = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#ffffe0", ec="#888", lw=0.8, alpha=0.97),
+        arrowprops=dict(arrowstyle="->", color="#888", lw=0.8),
+        color="#111", fontsize=8, zorder=10, visible=False)
+
+    def _on_motion(event):
+        if event.inaxes is not ax:
+            if tip.get_visible():
+                tip.set_visible(False)
+                canvas.draw_idle()
+            return
+        best_i, best_d = None, None
+        for i, (xv, yv) in enumerate(zip(a_vals, pys)):
+            px, py = ax.transData.transform((xv, yv))
+            d = (px - event.x) ** 2 + (py - event.y) ** 2
+            if best_d is None or d < best_d:
+                best_d, best_i = d, i
+        if best_i is not None and best_d is not None and best_d <= 144:  # within 12 px
+            p = planets[best_i]
+            tip.xy = (a_vals[best_i], pys[best_i])
+            tip.set_text(f"{p['name']}\na={p['a_au']:g} AU, i={p['incl_deg']:g}°, "
+                         f"b={p['b']:.2f}")
+            tip.set_visible(True)
+        elif tip.get_visible():
+            tip.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_size_comparison_canvas(parent, planets, radius_key, name_key):
+    """Planet size-comparison strip (Phase O · O14).
+
+    A single row of to-scale circles (radius ∝ R⊕): the system planets that carry a
+    radius (`radius_key`) plus grey **Earth (1 R⊕)** and **Jupiter (11.21 R⊕)**
+    reference anchors, sorted small→large and labelled name + radius. Planets without
+    a radius are listed in a footnote (never drawn). Generic over NASA (`pl_rade`) and
+    HWC (`P_RADIUS`); takes the raw rows + keys (no `prepare_*`). Returns
+    (canvas, toolbar), or **(None, None)** when no planet has a radius (so the host
+    panel can skip the tab). Hover shows name + radius.
+    """
+    if not _MPL_OK:
+        return None, None
+    from core.viz import _num
+
+    drawn, missing = [], []
+    for p in (planets or []):
+        nm = str(p.get(name_key) or "?")
+        r = _num(p.get(radius_key))
+        if r is None or r <= 0:
+            missing.append(nm)
+        else:
+            drawn.append({"name": nm, "r": r, "anchor": False, "color": "#4a90d9"})
+    if not drawn:
+        return None, None
+
+    # Earth + Jupiter reference anchors are always shown (grey, semi-transparent).
+    objs = drawn + [
+        {"name": "Earth",   "r": 1.0,   "anchor": True, "color": "#9aa0aa"},
+        {"name": "Jupiter", "r": 11.21, "anchor": True, "color": "#9aa0aa"},
+    ]
+    objs.sort(key=lambda o: o["r"])
+    max_r = max(o["r"] for o in objs)
+    gap = max_r * 0.18
+
+    fig = Figure(figsize=(7.6, 4.4), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.03, right=0.97, top=0.90, bottom=0.10)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#ffffff")
+
+    centers, x = [], 0.0
+    for o in objs:
+        r = o["r"]
+        cx = x + r
+        ax.add_patch(Circle((cx, r), r, facecolor=o["color"],
+                            alpha=0.5 if o["anchor"] else 0.95,
+                            edgecolor="#777777", linewidth=0.8, zorder=3))
+        ax.text(cx, -0.05 * max_r, o["name"], ha="center", va="top", fontsize=8,
+                color="#444", fontweight="bold" if o["anchor"] else "normal", zorder=4)
+        ax.text(cx, -0.12 * max_r, f"{r:g} R⊕", ha="center", va="top", fontsize=7,
+                color="#888", zorder=4)
+        centers.append((cx, r, o))
+        x += 2 * r + gap
+    total_x = x - gap
+
+    # Common baseline the circles rest on.
+    ax.plot([-gap * 0.5, total_x + gap * 0.5], [0, 0], color="#bbbbbb",
+            linewidth=0.8, zorder=1)
+
+    ax.set_xlim(-gap, total_x + gap)
+    ax.set_ylim(-0.20 * max_r, 2.0 * max_r + 0.12 * max_r)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_title(f"Planet Size Comparison  ({len(drawn)} planet"
+                 f"{'s' if len(drawn) != 1 else ''}, to scale)",
+                 color=_LABEL_CLR, fontsize=10, pad=6)
+
+    if missing:
+        shown = ", ".join(missing[:8]) + (" …" if len(missing) > 8 else "")
+        fig.text(0.03, 0.02, f"No radius (not drawn): {shown}", color="#b8860b",
+                 fontsize=7.5, fontstyle="italic", ha="left", va="bottom")
+
+    # Hover tooltip anchored to the hovered circle (with an arrow).
+    tip = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#ffffe0", ec="#888", lw=0.8, alpha=0.97),
+        arrowprops=dict(arrowstyle="->", color="#888", lw=0.8),
+        color="#111", fontsize=8, zorder=10, visible=False)
+
+    def _on_motion(event):
+        if event.inaxes is not ax:
+            if tip.get_visible():
+                tip.set_visible(False)
+                canvas.draw_idle()
+            return
+        best_i, best_d = None, None
+        for i, (cx, cy, _o) in enumerate(centers):
+            px, py = ax.transData.transform((cx, cy))
+            d = (px - event.x) ** 2 + (py - event.y) ** 2
+            if best_d is None or d < best_d:
+                best_d, best_i = d, i
+        if best_i is not None and best_d is not None and best_d <= 400:  # within 20 px
+            cx, cy, o = centers[best_i]
+            tip.xy = (cx, cy)
+            tag = "  (reference)" if o["anchor"] else ""
+            tip.set_text(f"{o['name']}{tag}\n{o['r']:g} R⊕")
+            tip.set_visible(True)
+        elif tip.get_visible():
+            tip.set_visible(False)
         canvas.draw_idle()
 
     canvas.mpl_connect("motion_notify_event", _on_motion)

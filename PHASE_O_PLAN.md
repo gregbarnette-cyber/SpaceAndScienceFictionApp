@@ -1,18 +1,22 @@
 # PHASE O — Visualization Expansion · Implementation Plan
 
-> **Status: O-1 ✅, O-2 ✅, O-3 ✅ COMPLETE + maintainer-approved (2026-06-16).** O-3
-> shipped all checkpoints: CP0 capability layer, CP1 O15 row↔map linking, CP2 O16 2D
+> **Status: O-1 ✅, O-2 ✅, O-3 ✅, O-4 ✅ COMPLETE + maintainer-approved (2026-06-17).**
+> O-3 shipped all checkpoints: CP0 capability layer, CP1 O15 row↔map linking, CP2 O16 2D
 > legend filtering, CP3 O16 3D legend filtering, CP4 O17 travel-time isochrone rings
-> (Star Chart 2D+3D), CP5 O18 find-star box. Post-CP polish also landed: selection ring
-> hides with its legend-filtered class + clears on empty-space click / Find Clear;
-> isochrone ladder extended with hour/day steps (fixed "nothing happens" for fast
-> velocities like 0.1 ly/hr) + min-ring filter + out-of-range status message; Route
-> Planning panels submit on Enter; Find Clear re-centres the maps.
-> `tests/test_viz_phase_o.py` = 57 green; full offline suite 417 passed (the only 3
-> failures are pre-existing live-network tests — JPL Horizons / NASA TAP). **Next: O-4
-> (Planet & System Diagrams — opts 3/6/Map).** O-4…O-8 are PLAN ONLY; lower risk than
-> O-3 (self-contained diagram tabs, not shared-canvas edits). Build proceeds one
-> checkpoint/item at a time; stop + wait for "go" at each. Working tree is uncommitted.**
+> (Star Chart 2D+3D), CP5 O18 find-star box. **O-4 (Planet & System Diagrams — opts
+> 3/6/Map)** shipped all four items: O3 Mass–Radius (`prepare_mass_radius` +
+> `make_mass_radius_canvas`), O4 Solar-System reference overlay (additive
+> `make_orbits_canvas(solar_overlay=)` + the `wrap_orbits_with_solar_toggle` checkbox),
+> O13 Transit Geometry (`prepare_transit_geometry` + `make_transit_canvas`), O14 Planet
+> Size-Comparison strip (`make_size_comparison_canvas`, no `prepare_*`). All four tabs are
+> additive (shown only with qualifying planets); the O3/O13/O14 hover tooltips anchor to
+> the dot (an early fixed-corner placement made them appear invisible). `tests/test_viz_phase_o.py`
+> = 83 green; full offline suite 443 passed (the only 3 failures are flaky live-network
+> tests — JPL Horizons / NASA TAP — reachable-but-throttled under the suite's back-to-back
+> call pattern; the features themselves work). **Next: O-5 (Travel & Motion — opts 17, 20,
+> 21, 22, 23, 24, 29, 30 + Map: O9 brachistochrone profiles, O5 date scrubber, O8 two-star
+> map).** O-5…O-8 are PLAN ONLY. Build proceeds one checkpoint/item at a time; stop + wait
+> for "go" at each. Working tree is uncommitted.**
 > This document is the build-ready, multi-phase plan for Phase O (the 18-item
 > visualization audit in `future_phases.md`). All 18 items are **maintainer-approved**
 > (2026-06-14). Mockups are built and reviewed: `mockups/phase-o/o01..o18-*.html`
@@ -87,10 +91,10 @@ brachistochrone profiles, HWC temp/ESI, transit geometry, and the size strip.
 | O16 | Clickable Legend Filtering | O-3 | 18, 19 | O-3 capability layer | — | star-map/chart: per-class collections + legend pick | ◐ 2D done (CP2); 3D = CP3 |
 | O17 | Travel-Time Isochrone Rings | O-3 | 18, 19 | O-3 capability layer | — | star-chart: `isochrone=` param | ☐ Planned (CP4) |
 | O18 | Find-Star-on-Map Box | O-3 | 18, 19 | **O15** (`highlight_star`) | — | — (reuses O15) | ☐ Planned (CP5) |
-| O3 | Mass–Radius Diagram | O-4 | 3, 6, Map panel | — | `prepare_mass_radius` | `make_mass_radius_canvas` (new) | ☐ Planned |
-| O4 | Solar System Reference Overlay | O-4 | 3, 6, Map panel | — | — | `make_orbits_canvas` (extend: `solar_overlay`) | ☐ Planned |
-| O13 | Transit Geometry View | O-4 | 3, Map panel | — | `prepare_transit_geometry` | `make_transit_canvas` (new) | ☐ Planned |
-| O14 | Planet Size-Comparison Strip | O-4 | 3, 6, Map panel | — | — | `make_size_comparison_canvas` (new) | ☐ Planned |
+| O3 | Mass–Radius Diagram | O-4 | 3, 6, Map panel | — | `prepare_mass_radius` | `make_mass_radius_canvas` (new) | ☑ Done (2026-06-17) |
+| O4 | Solar System Reference Overlay | O-4 | 3, 6, Map panel | — | — | `make_orbits_canvas` (extend: `solar_overlay`) | ☑ Done (2026-06-17) |
+| O13 | Transit Geometry View | O-4 | 3, Map panel | — | `prepare_transit_geometry` | `make_transit_canvas` (new) | ☑ Done (2026-06-17) |
+| O14 | Planet Size-Comparison Strip | O-4 | 3, 6, Map panel | — | — | `make_size_comparison_canvas` (new) | ☑ Done (2026-06-17) |
 | O9 | Brachistochrone Profile Charts | O-5 | 22, 23, 24, 29, 30 | — | `prepare_brachistochrone_profiles` | `make_profile_canvas` (new) | ☐ Planned |
 | O5 | Date Scrubber / Orbital Animation | O-5 | Map panel, 22, 23 | — (reuses `prepare_exoplanet_system_diagram`) | — | panel-side slider/timer + `set_offsets` | ☐ Planned |
 | O8 | Two-Star Map (Distance / Travel-Time) | O-5 | 17, 20, 21 | Phase I `routes=` (already shipped) | — | reuse `make_star_chart_canvas`/`_3d` — "Star Chart" + "Star Chart 3D" tabs (`routes=`) | ☐ Planned |

@@ -18,6 +18,7 @@ import core.databases
 import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas, wrap_scrollable,
+    make_mass_radius_canvas, make_size_comparison_canvas, wrap_orbits_with_solar_toggle,
     log_viz_error,
 )
 
@@ -380,20 +381,19 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         markers_arg = hwc_markers if hwc_markers else None
 
         if "orbits" in orbit_data:
-            orb_w = QWidget()
-            orb_l = QVBoxLayout(orb_w)
-            orb_l.setContentsMargins(4, 4, 4, 4)
-            canvas, toolbar = make_orbits_canvas(
-                self,
-                orbit_data["orbits"],
-                orbit_data.get("hz_zones", []),
-                orbit_data["max_au"],
-                star_name=str(star_row.get("S_NAME", "")),
-                markers=markers_arg,
-            )
-            orb_l.addWidget(toolbar)
-            orb_l.addWidget(canvas)
-            self._viz_tabs_widget.addTab(orb_w, "Orbital Diagram")
+            def _build_orbits(solar_overlay):
+                return make_orbits_canvas(
+                    self,
+                    orbit_data["orbits"],
+                    orbit_data.get("hz_zones", []),
+                    orbit_data["max_au"],
+                    star_name=str(star_row.get("S_NAME", "")),
+                    markers=markers_arg,
+                    solar_overlay=solar_overlay,
+                )
+            orb_w = wrap_orbits_with_solar_toggle(self, _build_orbits)
+            if orb_w is not None:
+                self._viz_tabs_widget.addTab(orb_w, "Orbital Diagram")
 
         if "zones" in hz_data_viz:
             hz_w = QWidget()
@@ -409,6 +409,32 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
             hz_l.addWidget(toolbar)
             hz_l.addWidget(canvas)
             self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
+
+        # Mass–Radius diagram (Phase O · O3) — only when ≥1 planet has M and R.
+        if mpl_available():
+            mr_data = core.viz.prepare_mass_radius(
+                planet_rows, "P_MASS", "P_RADIUS", "P_NAME")
+            if "error" not in mr_data:
+                mr_canvas, mr_toolbar = make_mass_radius_canvas(self, mr_data)
+                if mr_canvas is not None:
+                    mr_w = QWidget()
+                    mr_l = QVBoxLayout(mr_w)
+                    mr_l.setContentsMargins(4, 4, 4, 4)
+                    mr_l.addWidget(mr_toolbar)
+                    mr_l.addWidget(mr_canvas)
+                    self._viz_tabs_widget.addTab(mr_w, "Mass–Radius")
+
+        # Planet Size-Comparison strip (Phase O · O14) — only when ≥1 planet has R.
+        if mpl_available():
+            sz_canvas, sz_toolbar = make_size_comparison_canvas(
+                self, planet_rows, "P_RADIUS", "P_NAME")
+            if sz_canvas is not None:
+                sz_w = QWidget()
+                sz_l = QVBoxLayout(sz_w)
+                sz_l.setContentsMargins(4, 4, 4, 4)
+                sz_l.addWidget(sz_toolbar)
+                sz_l.addWidget(sz_canvas)
+                self._viz_tabs_widget.addTab(sz_w, "Size Comparison")
 
         if hypatia and "error" not in hypatia:
             try:
