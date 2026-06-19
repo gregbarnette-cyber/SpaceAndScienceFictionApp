@@ -2,12 +2,14 @@
 
 ## Requirements
 
-- **Python 3.10+** (developed and tested on Python 3.12.3)
-- **libxcb-cursor0** (Linux only — required by PySide6/Qt for the GUI):
+- **Python 3.10+** (developed and tested on Python 3.12–3.14)
+- **libxcb-cursor0** (Linux only — required by PySide6/Qt for the GUI). **Not needed on macOS or Windows:**
 
 ```bash
 sudo apt install libxcb-cursor0
 ```
+
+> **macOS / Apple Silicon:** no extra system packages are required — all dependencies ship native arm64 wheels and install cleanly via pip. Use `python3` (not `python`) in the commands below, since macOS does not put `python` on the PATH by default.
 
 ## Python Libraries
 
@@ -19,17 +21,25 @@ sudo apt install libxcb-cursor0
 | `PySide6` | 6.11.0 | Qt-based GUI (`gui_main.py`) |
 | `matplotlib` | 3.10.8 | Embedded visualizations in the GUI (HZ diagrams, orbital maps, star maps, abundance charts) |
 | `numpy` | 2.4.4 | Numeric arrays for the 3D star-map and abundance visualizations (imported directly by `gui/visualizations/plot_helpers.py`) |
+| `pyvo` | 1.8.1 | GAVO TAP async jobs for the GCNS import (option 58 — Gaia Catalogue of Nearby Stars) |
+
+> Versions above are the tested baseline; `requirements.txt` pins only the matplotlib range (`>=3.6,<4`) and otherwise installs the latest compatible release of each library.
 
 ## Installation
 
-1. **Clone or download** the repository to your local machine.
+1. **Clone or download** the repository to your local machine:
+
+```bash
+git clone https://github.com/gregbarnette-cyber/SpaceAndScienceFictionApp.git
+cd SpaceAndScienceFictionApp
+```
 
 2. **Create and activate a virtual environment:**
 
 ```bash
-python -m venv venv
-source venv/bin/activate   # Linux/macOS
-venv\Scripts\activate      # Windows
+python3 -m venv venv         # use python3 on macOS/Linux
+source venv/bin/activate     # macOS/Linux
+# venv\Scripts\activate      # Windows (PowerShell/cmd)
 ```
 
 3. **Install dependencies** using pip:
@@ -73,6 +83,24 @@ The following CSV files must be present in the project directory. They are auto-
 | `asteroidsInfo.csv` | Option 11 — Major Asteroids |
 
 > **Note:** The `star_systems` database table is populated by running **Option 50 (Star Systems DB Query)** from the menu. Options 18 and 19 (Stars within a Distance) require this table to have data. Option 51 can export the table to `starSystems.csv` if needed.
+
+## Migrating to a New Machine
+
+The code comes down with `git clone`, but the **local SQLite database (`data/space_app.db`) is gitignored and does not transfer with the repo**. Rebuilding it from scratch is slow:
+
+- **Option 50 (Star Systems DB Query)** runs 17 sequential SIMBAD criteria queries (several minutes, network-bound).
+- **Option 58 (Import GCNS Data)** pulls ~331k rows from GAVO TAP (~55–65 MB added to the DB).
+- **Import Hypatia Cache** (GUI utility) makes ~112 throttled API calls (~14k stars / ~245k abundance rows).
+
+To skip all of that, **copy the database file from the old machine to the new one** after cloning:
+
+```bash
+# On the new Mac, from the repo root, after `git clone` and the venv/pip steps:
+mkdir -p data
+# then copy the old data/space_app.db into ./data/ (via USB, scp, AirDrop, etc.)
+```
+
+The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** travel with the repo and auto-seed on first run, so only the three network-built tables above are worth migrating. If you don't copy the DB, the app still works — you just re-run opts 50/58 and the Hypatia import when you need those features.
 
 ## Notes
 
