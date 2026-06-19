@@ -1076,17 +1076,21 @@ When Phase H's five equation functions are built (`compute_roche_limit`, `comput
 
 ## Phase O — Visualization Expansion
 
-> **✅ APPROVED & IN PROGRESS, 2026-06-14.** All 18 items approved by the maintainer.
-> **Sub-phases O-1 (Shared Foundations) and O-2 (Star-Map Data Products) are
-> implemented** (F1/F2/F3 + O1 night sky + O2 HR diagram; opts 12/18/19; 16 tests
-> green). O-3…O-8 remain planned, built per sub-phase on the maintainer's "go". Build-ready multi-phase plan: [`PHASE_O_PLAN.md`](PHASE_O_PLAN.md)
-> (one shared-foundations sub-phase O-1 + seven feature sub-phases O-2…O-8, with a
-> Master Tracking Matrix + per-item clean-removal notes so any item can be dropped
-> later). Mockups built &amp; reviewed: [`mockups/phase-o/`](mockups/phase-o/)
-> (`o01…o18-*.html`; generator `_gen.py`). **Added requirement:** O11 (Toomre) ships
-> an **"ℹ What is this?"** button opening the explanation as a dialog (a small reusable
-> help-dialog component, plan item F2) in every host panel (opts 1, 3–6, 8). The
-> original audit brainstorm is retained below; the plan supersedes it for build order.
+> **✅ COMPLETE & maintainer-approved, 2026-06-18.** All 18 items + the F1–F3 shared
+> foundations are implemented and approved across all eight sub-phases (O-1 Shared
+> Foundations, O-2 Star-Map Data Products, O-3 Star-Chart Interactivity, O-4 Planet &
+> System Diagrams, O-5 Travel & Motion, O-6 Region & Reference Diagrams, O-7 Hypatia
+> Kinematics, O-8 HWC Habitability Visuals). `tests/test_viz_phase_o.py` = 152 green;
+> full offline suite 512 passed (only the 3 flaky live-network baselines fail). The
+> Master Tracking Matrix in [`PHASE_O_PLAN.md`](PHASE_O_PLAN.md) is the per-item source
+> of truth (all rows ☑). Mockups built &amp; reviewed: [`mockups/phase-o/`](mockups/phase-o/)
+> (`o01…o18-*.html`; generator `_gen.py`). **Resolutions worth noting:** O11 (Toomre)
+> ships the F2 **"ℹ What is this?"** Explain dialog in every host panel (opts 1, 3–6, 8),
+> and its U/V/W are **LSR-corrected** (Open Decision #2 — Hypatia returns heliocentric
+> velocities; `core.viz._SOLAR_MOTION_UVW`); O10b became an **opt-in checkbox** (not an
+> always-on ring) and was extended to the opts-3/6/Map Orbital Diagrams + opt-13 Sol. The
+> original audit brainstorm is retained below; the plan superseded it for build order and
+> the resolved decisions.
 
 **New panels (GUI-only)**: none — every item adds viz tabs, canvases, or interactivity to *existing* panels
 **Existing options touched (viz layer only — no computation changes)**: 1, 3–6, 8–14, 17–24, 29–30, plus `NasaPlanetarySystemsMapPanel`

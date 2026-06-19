@@ -138,6 +138,65 @@ def compute_honorverse_hyper_limits() -> list:
     ]
 
 
+_HYPER_LETTER_SEQUENCE = ["O", "B", "A", "F", "G", "K", "M"]
+
+
+def compute_hyper_limit_for_spectral_type(sp_type: str):
+    """Resolve a star's Honorverse hyper limit from its spectral type (Phase O · O10b).
+
+    Ceiling-rule lookup over the honorverse_hyper table (mirrors
+    regions._lookup_spectral_type): O/B/A are single-entry letters (any subtype →
+    that row); F/G/K/M are subtyped F0–M9 (smallest subtype ≥ the requested one,
+    falling through to the next cooler letter's hottest entry if it exceeds the
+    class; clamped to M9 past the coolest). Returns {lm, au, matched_class} or
+    None (no OBAFGKM class — e.g. a white dwarf `DA…` or an unparseable/empty
+    type — or an empty table). Used by core.viz.prepare_system_regions_diagram.
+    """
+    import re
+    if not sp_type:
+        return None
+    m = re.search(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)?", sp_type)
+    if not m:
+        return None
+    letter = m.group(1)
+    sub = float(m.group(2)) if m.group(2) else 0.0
+
+    rows = compute_honorverse_hyper_limits()
+    singles, subtyped = {}, {}
+    for r in rows:
+        rm = re.match(r"^([OBAFGKM])(\d+(?:\.\d+)?)?$", r["spectral_class"])
+        if not rm:
+            continue  # "Red Giant" etc. — not main-sequence-addressable
+        rl, rs = rm.group(1), rm.group(2)
+        if rs is None:
+            singles[rl] = r
+        else:
+            subtyped.setdefault(rl, []).append((float(rs), r))
+    for lst in subtyped.values():
+        lst.sort(key=lambda t: t[0])
+
+    start = _HYPER_LETTER_SEQUENCE.index(letter)
+    for li in range(start, len(_HYPER_LETTER_SEQUENCE)):
+        L = _HYPER_LETTER_SEQUENCE[li]
+        want = sub if li == start else 0.0   # ceiling only within the requested letter
+        if L in singles:                     # O/B/A → any subtype matches
+            r = singles[L]
+            return {"lm": r["lm"], "au": r["lm"] / 8.3167,
+                    "matched_class": r["spectral_class"]}
+        for st, r in subtyped.get(L, []):
+            if st >= want:
+                return {"lm": r["lm"], "au": r["lm"] / 8.3167,
+                        "matched_class": r["spectral_class"]}
+        # none ≥ want in this letter → fall through to the next cooler letter
+    # Past the coolest available subtype → clamp to the coolest M entry.
+    m_entries = subtyped.get("M", [])
+    if m_entries:
+        r = m_entries[-1][1]
+        return {"lm": r["lm"], "au": r["lm"] / 8.3167,
+                "matched_class": r["spectral_class"]}
+    return None
+
+
 # ── Honorverse data tables (single source of truth) ─────────────────────────
 # Shared by the opt 15/16 display functions AND the Phase K calculators. Lifting
 # these to module scope removes the previous duplication between the display

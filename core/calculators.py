@@ -555,8 +555,7 @@ def fetch_body_properties(horizons_id: str) -> dict:
     Cached per horizons_id for the session.
     """
     import re
-    import urllib.request
-    import urllib.parse
+    import requests
 
     if horizons_id in _BODY_PROPS_CACHE:
         return _BODY_PROPS_CACHE[horizons_id]
@@ -568,12 +567,16 @@ def fetch_body_properties(horizons_id: str) -> dict:
             "OBJ_DATA": "YES",
             "MAKE_EPHEM": "NO",
         }
-        url = ("https://ssd.jpl.nasa.gov/api/horizons.api?"
-               + urllib.parse.urlencode(params))
 
+        # Use requests (certifi CA bundle) rather than urllib.request: on networks
+        # with a TLS-intercepting proxy / self-signed CA chain, raw urllib fails
+        # SSL verification ("Network Error") while requests — like every other
+        # network call in this project — succeeds.
         def _do_fetch():
-            with urllib.request.urlopen(url, timeout=15) as resp:
-                return resp.read().decode("utf-8")
+            resp = requests.get("https://ssd.jpl.nasa.gov/api/horizons.api",
+                                params=params, timeout=15)
+            resp.raise_for_status()
+            return resp.text
 
         text = _with_retries(_do_fetch)
     except Exception as e:
@@ -1193,6 +1196,77 @@ def compute_travel_time_custom_thrust(
         "origin_id":        origin_id,
         "dest_id":          dest_id,
     }
+
+
+def compute_solar_ephemeris_track(body_ids, start_date_iso: str,
+                                  stop_date_iso: str, n_steps: int = 300) -> dict:
+    """Batch heliocentric ephemeris for several bodies over a date range (Phase O O5b).
+
+    One JPL Horizons *range* query per body (epochs start/stop/step) returns the
+    body's position at every sample epoch in a single round-trip, so the GUI solar
+    map can animate over time with NO per-frame network call. Bodies share the
+    same epoch grid; the returned `jds`/`dates` come from the first body queried.
+
+    Args:
+        body_ids: iterable of Horizons ids (deduped internally; falsy ids skipped).
+        start_date_iso / stop_date_iso: ISO "YYYY-MM-DD".
+        n_steps: target number of sample steps across the range (caps the table).
+
+    Returns:
+        {"dates": [iso…], "jds": [float…], "bodies": {id: {"x":[…],"y":[…],"z":[…]}}}
+        or {"error": str}.
+    """
+    import warnings
+    import astropy.time
+    from astroquery.jplhorizons import Horizons
+    try:
+        from erfa import ErfaWarning
+    except ImportError:  # pragma: no cover — fallback for older astropy bundling
+        try:
+            from astropy.utils.exceptions import ErfaWarning
+        except ImportError:
+            ErfaWarning = Warning
+
+    # A multi-decade span reaches years past the leap-second table, so every
+    # ISO↔JD conversion emits an ERFA "dubious year" warning. The leap-second
+    # uncertainty is sub-second — irrelevant to AU-level positions — so silence
+    # just that category around the time conversions / Horizons calls.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ErfaWarning)
+
+        t0 = astropy.time.Time(f"{start_date_iso}T12:00:00").jd
+        t1 = astropy.time.Time(f"{stop_date_iso}T12:00:00").jd
+        total_days = max(1.0, t1 - t0)
+        step_days = max(1, int(round(total_days / max(1, n_steps))))
+        epochs = {"start": start_date_iso, "stop": stop_date_iso,
+                  "step": f"{step_days}d"}
+
+        bodies = {}
+        jds = None
+        for bid in body_ids:
+            if not bid or bid in bodies:
+                continue
+
+            def _do_query(bid=bid):
+                with _timeout_ctx(60):
+                    return Horizons(id=bid, location="@sun", epochs=epochs).vectors()
+
+            try:
+                vec = _with_retries(_do_query)
+            except Exception as e:
+                return {"error": _network_error_msg(e, f"JPL Horizons (body {bid})")}
+            bodies[bid] = {
+                "x": [float(v) for v in vec["x"]],
+                "y": [float(v) for v in vec["y"]],
+                "z": [float(v) for v in vec["z"]],
+            }
+            if jds is None:
+                jds = [float(v) for v in vec["datetime_jd"]]
+
+        if not bodies or not jds:
+            return {"error": "No ephemeris returned for the requested bodies."}
+        dates = [astropy.time.Time(j, format="jd").iso[:10] for j in jds]
+    return {"dates": dates, "jds": jds, "bodies": bodies}
 
 
 def compute_travel_time_times_c(distance_ly: float, times_c: float) -> dict:

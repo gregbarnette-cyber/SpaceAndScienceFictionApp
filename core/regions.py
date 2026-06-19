@@ -309,7 +309,7 @@ def compute_sol_regions() -> dict:
     temp = 5778.0
     # Back-compute parallax from vmag and absMag_sun = 4.83
     plx = 1000.0 / (10.0 ** ((-26.74 - 4.83 + 5.0) / 5.0))
-    return compute_star_system_regions(
+    result = compute_star_system_regions(
         vmag=vmag,
         boloLum=boloLum,
         temp=temp,
@@ -317,3 +317,8 @@ def compute_sol_regions() -> dict:
         sunlight_intensity=1.0,
         bond_albedo=0.3,
     )
+    # The Sun is G2V — surface the spectral type so the System Regions Diagram
+    # offers the Phase O O10b Honorverse hyper-limit ring (opt 13). Additive: the
+    # sol-regions query.py output just gains a spectral_type field.
+    result["spectral_type"] = "G2V"
+    return result

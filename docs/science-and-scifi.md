@@ -12,6 +12,7 @@ Options 11–16. All features here display data from local CSV files or hardcode
 - **Moon Data tables** — from `moonInfo.csv`; grouped by planet in order: Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto; each planet's moons sorted ascending by SemiMajor Axis (km); columns: Satellite Name, Diameter (km), Mass (kg), Perigee (km), Apogee (km), SemiMajor Axis (km), Eccentricity, Period (days), Gravity (m/s^2), Escape Velocity (km/s).
 - **Solar System Dwarf Planets Data** — from `dwarfPlanetInfo.csv`; sorted ascending by Semimajor Axis; same columns as planets table but header row says "Dwarf Planet Name" and Mass is in Earth masses.
 - **Solar System Major Asteroids Data** — from `asteroidsInfo.csv`; sorted ascending by Semimajor Axis; columns: Asteroid Name, Diameter (KM), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity.
+- **GUI (`SolarSystemPanel`)**: the four data tabs (Planets, Moons, Dwarf Planets, Asteroids) are unchanged. **Phase O O7** makes it a `DiagramToggleMixin` with a **Show Diagrams** toggle adding two orbital-diagram tabs via `core.viz.prepare_solar_system_orbits` → `make_orbits_canvas`: **Orbital Diagram** (a `QComboBox` over *Planets* / *Dwarf Planets + Asteroids*) and **Moon Systems** (a `QComboBox` per planet; moon SMAs km→AU via ÷1.496e8, with a secondary km top axis). No new menu option, no CLI change.
 
 ### Option 12: Main Sequence Star Properties — `main_sequence_star_properties()`
 - Reads `propertiesOfMainSequenceStars.csv` and displays all rows in a single table.
@@ -21,6 +22,7 @@ Options 11–16. All features here display data from local CSV files or hardcode
 - Displays all Star System Regions output tables for the Sun using hardcoded solar constants: `vmag = -26.74`, `boloLum = -0.07`, `temp = 5778 K`, `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`.
 - Parallax back-computed from absolute magnitude: `plx = 1000 / (10^((vmag - absMag + 5) / 5))` ≈ 206265 mas.
 - Calls the same shared display helpers documented in `docs/star-system-regions.md`: `_display_star_system_properties()`, `_display_stellar_properties()`, `_display_star_distance()`, `_display_earth_equivalent_orbit()`, `_display_solar_system_regions()`, `_display_alternate_hz_regions()`, `_display_calculated_hz()`.
+- **GUI (`SolRegionsPanel`)**: seven data tabs (built once at construction; no inputs). **Phase O O6** makes it a `DiagramToggleMixin` with a **Show Diagrams** toggle adding the three ring tabs opts 9/10 have — **HZ Diagram**, **System Regions Diagram**, **Alternate HZ Diagram** — via the shared `gui/panels/star_regions.py::add_region_diagram_tabs` over the `compute_sol_regions()` dict (the same `prepare_hz_diagram` / `prepare_system_regions_diagram` / `prepare_alt_hz_diagram` preps; no new core code). The seven data tabs are unchanged.
 
 ## Science Fiction Features
 
@@ -28,6 +30,8 @@ Options 11–16. All features here display data from local CSV files or hardcode
 - Reads `spTypeHyperLM.csv` (no header; columns: Spectral Class, Light Minutes).
 - Converts LM → AU: `au = lm / 8.3167`.
 - Output table columns: Spectral Class | Light Minutes (2dp) | AUs (4dp).
+- **GUI (`HonorverseHyperPanel`)**: the table is unchanged. **Phase O O10a** makes it a `DiagramToggleMixin` with a **Show Diagrams** toggle adding a **"Hyper Limits"** bar-chart tab (`core.viz.prepare_hyper_limits` → `make_hyper_bar_canvas`): all 44 classes as horizontal bars in LM with a secondary AU top axis, coloured by spectral class (hottest at top), scroll-wrapped.
+- **Phase O O10b** (opts 8/9, not 14): `core.science.compute_hyper_limit_for_spectral_type(sp_type)` resolves a star's hyper limit from this table via the ceiling rule (O/B/A single-entry; F0–M9 subtyped, smallest subtype ≥ requested, falling to the next cooler letter, clamped to M9; `None` for a non-OBAFGKM type). Used by the Star System Regions hyper-limit ring — see `docs/star-system-regions.md`.
 
 ### Option 15: Honorverse Acceleration by Mass Table — `honorverse_acceleration_by_mass()`
 - Hardcoded table of ship mass ranges and acceleration values (no external data file).

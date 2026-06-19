@@ -35,6 +35,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 |---|---|---|---|
 | `simbad-lookup` | `--star` | SIMBAD | `main_id, ra, dec, sp_type, plx_value, teff, vmag, ly, parsecs, designations, desig_str, gcns` (`gcns` optional — Phase M5, `null` when absent) |
 | `star-regions` | `--star` | SIMBAD + Hypatia | region values (see below) + `simbad` + `hypatia` |
+| `star-regions-manual` | `--vmag --bc --teff --parallax` [`--sunlight-intensity --bond-albedo`] | none | flat dict of region values (`hzil, hzol, snowLine, stellarMass, distAU, …`) + echoed inputs |
 | `distance` | `--star1 --star2` | SIMBAD† | `star1_info, star2_info, distance_ly, distance_au` |
 | `stars-within-sol` | `--ly` | none (local DB) | `limit_ly, count, stars[]` |
 | `stars-within-star` | `--star --ly` | SIMBAD | `center, center_x/y/z, limit_ly, count, stars[]` |
@@ -62,6 +63,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `stellar-evolution` | `--mass-solar` [`--current-age-gyr`] | none | `stages[], total_gyr, ms_end_gyr, current_stage, low_mass, high_mass` |
 | `brachistochrone-au` | `--accel-g --au` | none | `accel_g, distance_au, distance_lm, profiles[]` |
 | `brachistochrone-lm` | `--accel-g --lm` | none | `accel_g, distance_au, distance_lm, profiles[]` |
+| `distance-at-acceleration` | `--accel-g --hours` | none | `accel_g, hours, travel_time_str, profiles[]` |
 | `travel-time-solar` | `--origin --destination --accel-g` [`--v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles[], …` |
 | `optimal-tour` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--closed`] | SIMBAD† (names) | `legs[], total_ly, total_time, naive_total_ly, optimized_total_ly, saved_ly, saved_pct, closed, stars[]` |
 | `jump-route` | `--origin --destination --max-jump` [`--optimize distance\|jumps`] | SIMBAD† (names) | `origin_info, dest_info, reachable, jumps, total_ly, direct_ly, route[], stars[]` |
@@ -116,6 +118,15 @@ Core functions: `databases.compute_simbad_lookup` → `regions.compute_star_syst
 
 Output: a flat dict of computed region values — stellar (`stellarMass, stellarRadius, bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, …`), distance (`parsecs, lightYears, distAU, distKM`), Earth-equivalent orbit (`planetaryYear, planetaryTemperature{,C,F}, sizeOfSun`), and zone boundaries in AU (`hzil, hzol, snowLine, lh2Line, sysol, sysilGrav, sysilSunlight`, plus the alternate-biochemistry pairs `ffInner/ffOuter, fsInner/fsOuter, prwInner/prwOuter, praInner/praOuter, pmInner/pmOuter, phInner/phOuter`) — plus `spectral_type`, `bc_key`, and the embedded `simbad` dict.
 The result dict also includes a top-level `"hypatia"` key: `{"star_name", "properties", "abundances"}` on success, or `{"error": str}` if the Hypatia API call fails. The regions result is always returned even when Hypatia fails.
+
+#### `star-regions-manual`
+The **manual-input** variant of `star-regions` (the opt-10 calculation): no SIMBAD, no Hypatia — you supply the six raw inputs directly. Returns the same flat region-values dict as `star-regions`/`sol-regions`, **without** the `spectral_type`/`bc_key`/`simbad`/`hypatia` extras (those come only from the SIMBAD path).
+```bash
+query.py star-regions-manual --vmag 5.5 --bc -0.1 --teff 5500 --parallax 100
+query.py star-regions-manual --vmag 5.5 --bc -0.1 --teff 5500 --parallax 100 --sunlight-intensity 1.0 --bond-albedo 0.9
+```
+Core function: `regions.compute_star_system_regions(vmag, boloLum, temp, plx, sunlight_intensity=1.0, bond_albedo=0.3)`. `--bc` maps to the function's `boloLum` (bolometric correction); `--sunlight-intensity` / `--bond-albedo` default to `1.0` / `0.3`. **No network.** Output: the echoed inputs (`vmag, boloLum, temp, plx, sunlight_intensity, bond_albedo`) plus every computed region value — stellar (`stellarMass, stellarRadius, bcLuminosity, luminosityFromMass, calculatedLuminosity, …`), distance (`parsecs, lightYears, trigParallax`), Earth-equivalent orbit (`distAU, distKM, planetaryYear, planetaryTemperature{,C,F}, sizeOfSun`), and the zone boundaries (`sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol` + the alternate-biochemistry pairs `ffInner/ffOuter, …, phInner/phOuter`).
+> **Validation:** this wraps a **non-self-validating** legacy function (like the Phase-N pure-compute wrappers). Out-of-range numerics surface as a **raw-exception** `{"error": str(e)}` (exit 1) — e.g. `--parallax 0` → `"division by zero"`, a negative parallax → `"math domain error"` — **not** a curated message; argparse rejects missing/non-numeric args (exit 2). Key on `"error"` + exit code, not the message text.
 
 ### Distance and proximity
 
@@ -260,6 +271,14 @@ query.py brachistochrone-au --accel-g 1.0 --au 5.2
 query.py brachistochrone-lm --accel-g 0.5 --lm 43.2
 ```
 Core functions: `calculators.compute_travel_time_system_au(accel_g, distance_au)` / `compute_travel_time_system_lm(accel_g, distance_lm)`. No network. Output: `{accel_g, distance_au, distance_lm, profiles}` (`distance_lm` ↔ `distance_au` are inter-derived). `profiles` is a list of 3 dicts, each `{label, hours, travel_time_str, max_vel}` (`max_vel` ∈ `"N/A"`/`"Y"`/`"N"`): ① continuous-to-halfway, ② accel¼/coast½/decel¼, ③ accel-to-3%c/coast/decel.
+
+#### `distance-at-acceleration`
+*(Added later to close an exposure gap — not one of the original Phase-N five above, but it shares their non-self-validating contract and sits with its brachistochrone siblings.)* The **inverse** of the brachistochrone subcommands — given an acceleration **and a travel time**, the distance covered by three profiles (the opt-24 calculation).
+```bash
+query.py distance-at-acceleration --accel-g 1.0 --hours 24
+```
+Core function: `calculators.compute_distance_at_acceleration(accel_g, hours)`. No network. Output: `{accel_g, hours, travel_time_str, profiles}` — `profiles` is a list of 3 dicts, each `{label, distance_au, distance_lm, max_vel}` (`max_vel` is `"N/A"` for profiles ① continuous-accel-for-the-whole-time and ② accel¼/coast½/decel¼; `"Y"`/`"N"` for profile ③ accel-to-3%c/coast, indicating whether the 3% c cap was reached in the window).
+> **Validation:** non-self-validating (like the Phase-N pure-compute wrappers). An out-of-range numeric surfaces as a **raw-exception** `{"error": str(e)}` (exit 1) — e.g. `--accel-g 0` → `"division by zero"`; argparse rejects missing/non-numeric args (exit 2).
 
 #### `travel-time-solar`
 Brachistochrone travel time between two solar-system bodies at a departure epoch (the opt-22 calculation). **Live JPL Horizons network call** — the only network-bound entry in this phase.

@@ -122,6 +122,8 @@ Options 22–23 and 29–30 are given a distance and solve for travel time.
 - **Profile 3 — Accel to 3% c, Coast, Then Decelerate**: `t_cap = V_CAP / a`. If `a×t_cap² ≥ d`, cap not reached → use Profile 1 formula. Else: `t = 2×t_cap + (d - a×t_cap²) / V_CAP`.
   - When cap not reached, label appended with `"(cap not reached)"`.
 
+> **Phase O · O9 — Acceleration Profiles diagram tab (GUI).** `core.viz.prepare_brachistochrone_profiles(result)` reconstructs each profile's piecewise `v(t)`/`d(t)` from `accel_g` + the per-profile total time + the profile type (the formulas above, plus the opt-24 distance-given-time variants and the opt-23 custom-thrust accel/coast/decel profile), sampling ~200 points → `{accel_g, profiles:[{label, color, t_hours, v_kms, d_au}]}` (colours fixed per index). `gui.visualizations.plot_helpers.make_profile_canvas` draws two stacked subplots sharing the time axis: velocity (km/s + a secondary `% c` axis) over cumulative distance (AU + a secondary LM axis). Added as an **"Acceleration Profiles"** viz tab on opts **24/29/30** (which gained `DiagramToggleMixin`) and to the existing diagram tabs of opts **22/23**. Pure viz reconstruction — no change to the core travel-time math. See `docs/gui-architecture.md`.
+
 ### Option 24: Distance Traveled at an Acceleration Within a Certain Time — `distance_traveled_at_acceleration()`
 - Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Travel Time in Hours` (> 0)
 - Computes distance (metres → AU and LM) for each profile given the travel time.
@@ -132,6 +134,7 @@ Options 22–23 and 29–30 are given a distance and solve for travel time.
 - Output table columns: Acceleration Profile | Acceleration (G's) | Travel Time (Hours) | Travel Time | Distance (AU) | Distance (LM) | Max Vel
   - Max Vel: "N/A" for Profiles 1 and 2 (no velocity cap); "Y" or "N" for Profile 3 indicating whether the 3% c cap was reached.
 - Row order: Profile 1, Profile 2, Profile 3.
+- **`query.py`:** exposed as `distance-at-acceleration --accel-g --hours` (core `calculators.compute_distance_at_acceleration(accel_g, hours)` → `{accel_g, hours, travel_time_str, profiles:[{label, distance_au, distance_lm, max_vel}]}`). The inverse of `brachistochrone-au`/`-lm` (accel + time → distance vs accel + distance → time); non-self-validating like them (out-of-range → raw-exception exit 1). See `docs/integration.md`.
 
 ### Option 29: Travel Time Between 2 System Objs (Generic, Distance in AUs) — `travel_time_between_system_objects()`
 - Prompts: `Enter Acceleration in # of g's` (> 0), `Enter Distance in AUs` (> 0)
@@ -156,7 +159,7 @@ Options 22–23 and 29–30 are given a distance and solve for travel time.
 All JPL Horizons queries are wrapped by helpers in `core/calculators.py`, which in turn rely on the shared retry/timeout/error-classification helpers (`_with_retries`, `_timeout_ctx`, `_network_error_msg`, `_make_simbad`) from `core/shared.py`:
 
 - **`_get_heliocentric_vectors(horizons_id, epoch_jd)`** — wraps the `Horizons(...).vectors()` call in `_with_retries` (3 attempts, exponential backoff) inside `_timeout_ctx(30)` (30 s socket timeout per attempt). Raises on exhausted retries; callers catch and classify via `_network_error_msg`.
-- **`fetch_body_properties(horizons_id)`** — wraps `urllib.request.urlopen(url, timeout=15)` in `_with_retries`. Errors are **not cached** in `_BODY_PROPS_CACHE`; only successful responses are cached, so a transient failure retries fresh next call.
+- **`fetch_body_properties(horizons_id)`** — wraps `requests.get("https://ssd.jpl.nasa.gov/api/horizons.api", params=…, timeout=15)` (`raise_for_status`) in `_with_retries`. Uses `requests` (certifi CA bundle) rather than raw `urllib.request`: on networks with a TLS-intercepting proxy / self-signed CA chain, `urllib` fails SSL verification ("Network Error") while `requests` — like every other network call in this project — succeeds. Errors are **not cached** in `_BODY_PROPS_CACHE`; only successful responses are cached, so a transient failure retries fresh next call.
 - **`_planet_fetch_errors`** — module-level list reset at each fresh `_fetch_planet_positions` call. Any planet that fails all retries is omitted from the returned list (preserving existing behavior) and its error message appended here. The list is available for debugging but not currently surfaced in the GUI.
 - **`compute_lookup_star_for_distance`** — uses `_make_simbad("plx_value", timeout=30)` + `_with_retries` + `_timeout_ctx(30)`, same pattern as SIMBAD callers in `databases.py`. Error messages classified via `_network_error_msg`.
 
@@ -198,6 +201,8 @@ Ambiguous-name detection (`"Multiple major-bodies"` / `"ambiguous"`) in `compute
 - Same error handling as option 31: ambiguous Horizons name, lookup failure, same-object detection (distance < 1e-9 AU).
 - **GUI diagram tab**: identical to option 22 — "Solar System Map" (2D top-down XY ecliptic view) with the same planet map, origin/dest markers, dashed travel line, and click-to-dialog interactivity. Planet positions are fetched at departure epoch `t0_jd`.
 - **Core function**: `core.calculators.compute_travel_time_custom_thrust(origin, destination, accel_g, burn_duration_s, v_cap_pct, burn_value, burn_unit_label, departure_date)` — `departure_date` is an ISO string `"YYYY-MM-DD"`; when `None`, defaults to today. Returns `departure_date`, `origin_xyz`, `dest_xyz`, `origin_id`, `dest_id`, and `planet_positions` in addition to the thrust/phase data.
+
+> **Phase O · O5b — Solar System Map date scrubber (GUI, opts 22/23).** The "Solar System Map" tab (`gui/panels/system_travel.py` `_SolarMapScrubber`) adds an **"▶ Animate over time"** button + slider + Play/Pause/Reset. On Animate it batch-fetches each animated body's real ephemeris over `[departure − span, departure + span]` via `core.calculators.compute_solar_ephemeris_track(body_ids, start_iso, stop_iso, n_steps=300)` — **one JPL Horizons range query per body** (`epochs` start/stop/step → the whole span in a single round-trip), run on a background thread. Scrubbing then re-offsets markers (`set_offsets`) from the cached track with **no per-frame network**. Animated bodies = origin + destination + in-view reference planets; the dashed departure trajectory line, orbit rings, and the Sun stay static (the readout labels it "trajectory fixed at departure"). Span (half) = `min(2 × longest trip-body period, 50 yr)` floored at 2 yr, period estimated `P ≈ r^1.5` yr. `compute_solar_ephemeris_track` returns `{dates, jds, bodies:{id:{x,y,z}}}` or `{"error"}`; it is **GUI-only** (no `query.py` subcommand). The exoplanet-archive **System Map** (opt-3 Map variant) has the sibling **O5a** scrubber, which is fully offline (Kepler from archive elements — `prepare_exoplanet_system_diagram`). See `docs/gui-architecture.md`.
 
 ## Route Planning (Phase I)
 
@@ -338,4 +343,10 @@ route's origin/start/center sits at the chart origin (gold ★), with distance r
 `limit_ly = max node distance × 1.1`. Route lines stay visible at all zooms; the per-segment labels follow the chart's
 existing **zoom-driven label decluttering** (shown once the visible half-range drops below ~15 ly), so a busy route
 starts uncluttered and reveals labels on zoom. **Phase O8 (two-star maps for opts 17/20/21) reuses this same `routes=`
-parameter** — Phase I built it first.
+parameter** — Phase I built it first. O8 ships as panel wiring only (no new core/canvas): `gui/panels/route_planning.py`
+`_two_star_route_map(result, kind)` converts a two-star result (`kind="distance"` for opt 17's `star1_info`/`star2_info`,
+`"travel"` for opts 20/21's `origin_info`/`dest_info`) into `{stars, edges}` — star-1/origin is `stars[0]` (→ gold ★
+centre), Sol is appended as a grey reference node unless an endpoint is Sol, and one dashed edge is labelled with the
+distance (+ travel time and ×c for opts 20/21). `add_two_star_chart_tabs(panel, result, kind)` then centres via the
+shared `_centered` and adds the **"Star Chart"** + **"Star Chart 3D"** tabs (reused by `DistanceBetweenStarsPanel` (17)
+and the two `TravelTimeStars*` panels (20/21), all now `DiagramToggleMixin`).

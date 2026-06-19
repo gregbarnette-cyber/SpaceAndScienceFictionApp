@@ -3,12 +3,55 @@
 
 from PySide6.QtWidgets import (
     QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QComboBox, QLabel,
 )
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.science
 import core.viz
-from gui.visualizations.plot_helpers import mpl_available, make_hr_canvas
+from gui.visualizations.plot_helpers import (
+    mpl_available, make_hr_canvas, make_orbits_canvas,
+)
+
+
+def _orbit_diagram_tab(choices, km_axis=False):
+    """A diagram tab: a QComboBox over `choices` [(label, kind), …] + an orbital
+    canvas (`make_orbits_canvas`) rebuilt for the selected kind (Phase O · O7)."""
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
+    combo = QComboBox()
+    combo.setProperty("no_width_cap", True)
+    for label, _kind in choices:
+        combo.addItem(label)
+    lay.addWidget(combo)
+    holder = QWidget()
+    hlay = QVBoxLayout(holder)
+    hlay.setContentsMargins(0, 0, 0, 0)
+    lay.addWidget(holder, 1)
+
+    def _rebuild(idx):
+        while hlay.count():
+            it = hlay.takeAt(0)
+            ww = it.widget()
+            if ww:
+                ww.deleteLater()
+        label, kind = choices[idx]
+        data = core.viz.prepare_solar_system_orbits(kind)
+        if "error" in data:
+            hlay.addWidget(QLabel(data["error"]))
+            return
+        title = (f"{data['star_name']}'s Moons" if km_axis
+                 else f"Solar System — {label}")
+        canvas, toolbar = make_orbits_canvas(
+            None, data["orbits"], data["hz_zones"], data["max_au"],
+            star_name=data["star_name"], title=title, km_axis=km_axis)
+        hlay.addWidget(toolbar)
+        hlay.addWidget(canvas)
+
+    combo.currentIndexChanged.connect(_rebuild)
+    _rebuild(0)
+    return w
 
 
 def _au_lm(val_str: str) -> str:
@@ -20,16 +63,35 @@ def _au_lm(val_str: str) -> str:
     return f"{v:g} ({v * 8.3167:.3f} LM)"
 
 
-class SolarSystemPanel(ResultPanel):
-    """Option 12 — Solar System Bodies: four sub-tabs for planets, moons, dwarf planets, asteroids."""
+class SolarSystemPanel(DiagramToggleMixin, ResultPanel):
+    """Option 11 — Solar System Bodies: four sub-tabs for planets, moons, dwarf
+    planets, asteroids.
+
+    Phase O · O7 adds an "Orbital Diagram" tab (combo: Planets / Dwarf Planets +
+    Asteroids) and a "Moon Systems" tab (combo: per-planet moon orbits, with a km
+    secondary axis) behind a Show Diagrams toggle. The four data tabs are
+    unchanged; rendered once at construction (no inputs).
+    """
 
     def build_inputs(self):
-        self._input_count = 0
+        form_widget = QWidget()
+        row = QHBoxLayout(form_widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        row.addWidget(self._show_diagrams_btn)
+        row.addStretch()
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
 
     def build_results_area(self):
         data = core.science.compute_solar_system_tables()
         tabs = QTabWidget()
-        self._layout.addWidget(tabs)
+        self._tables_widget = tabs
+        self._layout.addWidget(tabs, 1)
 
         # ── Planets ───────────────────────────────────────────────────────────
         p_headers = [
@@ -131,6 +193,22 @@ class SolarSystemPanel(ResultPanel):
         view = self.make_table(a_headers, a_rows)
         view.setSortingEnabled(False)
         tabs.addTab(view, "Asteroids")
+
+        # ── Phase O O7: orbital-diagram viz tabs ──────────────────────────────
+        self._setup_diagram_view()
+        if mpl_available():
+            self._viz_tabs_widget.addTab(
+                _orbit_diagram_tab([("Planets", "planets"),
+                                    ("Dwarf Planets + Asteroids", "dwarfs_asteroids")]),
+                "Orbital Diagram")
+            moon_planets = list(data["moons"].keys())
+            if moon_planets:
+                self._viz_tabs_widget.addTab(
+                    _orbit_diagram_tab([(p, f"moons:{p}") for p in moon_planets],
+                                       km_axis=True),
+                    "Moon Systems")
+        self._finish_render()
+        self._input_count = self._layout.count()
 
 
 class MainSequencePanel(DiagramToggleMixin, ResultPanel):

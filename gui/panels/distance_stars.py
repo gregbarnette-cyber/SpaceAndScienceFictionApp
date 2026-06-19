@@ -17,15 +17,17 @@ from gui.visualizations.plot_helpers import (
     make_star_chart_canvas, make_star_chart_3d_canvas,
     make_hr_canvas, make_sky_canvas, _isochrone_rings,
 )
+from gui.panels.route_planning import add_two_star_chart_tabs
 
 
 # ── Option 17: Distance Between 2 Stars ──────────────────────────────────────
 
-class DistanceBetweenStarsPanel(ResultPanel):
-    """Two star name inputs → distance in light years  (option 17)."""
+class DistanceBetweenStarsPanel(DiagramToggleMixin, ResultPanel):
+    """Two star name inputs → distance in light years + Star Chart  (option 17)."""
 
     def build_inputs(self):
-        form = QFormLayout()
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
 
         self._star1 = QLineEdit()
         self._star1.setPlaceholderText("e.g. Sol, Vega, Alpha Centauri")
@@ -35,23 +37,40 @@ class DistanceBetweenStarsPanel(ResultPanel):
         self._star2.setPlaceholderText("e.g. Epsilon Eridani, HD 10700")
         form.addRow("Star 2:", self._star2)
 
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setSpacing(6)
         self.run_btn = QPushButton("Calculate")
         self.run_btn.clicked.connect(self._calculate)
         self._star2.returnPressed.connect(self._calculate)
-        form.addRow("", self.run_btn)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
 
-        self._layout.addLayout(form)
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()
 
     def build_results_area(self):
-        pass
+        self._tables_widget = QWidget()
+        self._tables_layout = QVBoxLayout(self._tables_widget)
+        self._tables_layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.addWidget(self._tables_widget, 1)
+        self._setup_diagram_view()
+        self._input_count = self._layout.count()
 
     def _calculate(self):
         s1 = self._star1.text().strip()
         s2 = self._star2.text().strip()
         if not s1 or not s2:
             return
-        self.clear_results()
+        self._prepare_render()
+        _clear_tables_layout(self)
         self.run_in_background(
             core.calculators.compute_distance_between_stars,
             s1, s2,
@@ -59,12 +78,13 @@ class DistanceBetweenStarsPanel(ResultPanel):
         )
 
     def _render(self, result: dict):
-        self.clear_results()
+        self._prepare_render()
+        _clear_tables_layout(self)
         if "error" in result:
             lbl = QLabel(result["error"])
             lbl.setStyleSheet("color: red;")
             lbl.setWordWrap(True)
-            self.add_result_widget(lbl)
+            self._tables_layout.addWidget(lbl)
             return
 
         s1 = result["star1_info"]
@@ -77,7 +97,7 @@ class DistanceBetweenStarsPanel(ResultPanel):
             dist_text += f"  /  {dist_au:.2f} AU"
         lbl = QLabel(dist_text)
         lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.add_result_widget(lbl)
+        self._tables_layout.addWidget(lbl)
 
         headers = ["Star", "Star Designations", "RA", "DEC", "Light Years"]
         rows = [
@@ -88,7 +108,10 @@ class DistanceBetweenStarsPanel(ResultPanel):
         ]
         table = self.make_table(headers, rows)
         table.setSortingEnabled(False)
-        self.add_result_widget(table)
+        self._tables_layout.addWidget(table)
+
+        add_two_star_chart_tabs(self, result, "distance")
+        self._finish_render()
 
 
 # ── Shared build helper for opts 18, 19 ──────────────────────────────────────

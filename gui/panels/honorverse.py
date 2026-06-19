@@ -8,9 +8,13 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from gui.panels.base import ResultPanel
+from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.science
 import core.calculators
+import core.viz
+from gui.visualizations.plot_helpers import (
+    mpl_available, make_hyper_bar_canvas, wrap_scrollable,
+)
 
 _FOOTNOTE = (
     "* Merchantmen do not normally use these bands. "
@@ -30,11 +34,26 @@ def _speed_str(xc: float, ly_hr: float, note: str = "") -> str:
     return s
 
 
-class HonorverseHyperPanel(ResultPanel):
-    """Option 15 — Honorverse Hyper Limits by Spectral Class."""
+class HonorverseHyperPanel(DiagramToggleMixin, ResultPanel):
+    """Option 14 — Honorverse Hyper Limits by Spectral Class.
+
+    Phase O · O10a adds a "Hyper Limits" bar-chart viz tab (LM, secondary AU
+    axis, coloured by class) behind a Show Diagrams toggle. The table is unchanged.
+    """
 
     def build_inputs(self):
-        self._input_count = 0
+        form_widget = QWidget()
+        row = QHBoxLayout(form_widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        row.addWidget(self._show_diagrams_btn)
+        row.addStretch()
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
 
     def build_results_area(self):
         limits = core.science.compute_honorverse_hyper_limits()
@@ -45,7 +64,23 @@ class HonorverseHyperPanel(ResultPanel):
         ]
         view = self.make_table(headers, rows)
         view.setSortingEnabled(False)
-        self._layout.addWidget(view)
+        self._tables_widget = QWidget()
+        tl = QVBoxLayout(self._tables_widget)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.addWidget(view)
+        self._layout.addWidget(self._tables_widget, 1)
+
+        # ── Phase O O10a: Hyper Limits bar-chart viz tab ──────────────────────
+        self._setup_diagram_view()
+        if mpl_available():
+            data = core.viz.prepare_hyper_limits()
+            if "error" not in data:
+                canvas, toolbar = make_hyper_bar_canvas(None, data)
+                if canvas is not None:
+                    self._viz_tabs_widget.addTab(
+                        wrap_scrollable(None, canvas, toolbar), "Hyper Limits")
+        self._finish_render()
+        self._input_count = self._layout.count()
 
 
 class HonorverseAccelPanel(ResultPanel):

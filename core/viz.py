@@ -232,6 +232,101 @@ def prepare_system_orbits(planets: list) -> dict:
     }
 
 
+# km per AU — converts moon SMA (km) → AU for the O7 orbital diagrams.
+_KM_PER_AU_SS = 1.496e8
+
+
+def prepare_solar_system_orbits(kind: str = "planets") -> dict:
+    """Solar-system orbital-ellipse data for opt 11 (Phase O · O7).
+
+    kind ∈ {"planets", "dwarfs_asteroids", "moons:<planet>"} — planet/dwarf/
+    asteroid SMAs are AU; moon SMAs are km (÷1.496e8 → AU). Same orbit-dict shape
+    as ``prepare_system_orbits`` ({name, sma, peri, apo, ecc, x_pts, y_pts,
+    color}) plus {hz_zones: [], max_au, star_name} (no HZ — these bodies orbit
+    the Sun / their planet) or {"error": str}.
+    """
+    import core.science
+    data = core.science.compute_solar_system_tables()
+
+    km_to_au = 1.0
+    if kind == "planets":
+        rows = [(p.get("Planet"), p.get("Semimajor Axis"), p.get("Eccentricity"))
+                for p in data["planets"]]
+        star_name = "Sun"
+    elif kind == "dwarfs_asteroids":
+        rows = [(b.get("Name"), b.get("Semimajor Axis"), b.get("Eccentricity"))
+                for b in data["dwarf_planets"] + data["asteroids"]]
+        star_name = "Sun"
+    elif kind.startswith("moons:"):
+        planet = kind.split(":", 1)[1]
+        moons = data["moons"].get(planet)
+        if not moons:
+            return {"error": f"No moon data for '{planet}'."}
+        rows = [(m.get("Satellite Name"), m.get("SemiMajor Axis (km)"),
+                 m.get("Eccentricity")) for m in moons]
+        km_to_au = 1.0 / _KM_PER_AU_SS
+        star_name = planet
+    else:
+        return {"error": f"Unknown kind '{kind}'."}
+
+    N = 361
+    thetas = [2.0 * math.pi * i / (N - 1) for i in range(N)]
+    orbits = []
+    max_au = 0.0
+    for i, (name, sma_s, ecc_s) in enumerate(rows):
+        try:
+            sma = float(sma_s) * km_to_au
+        except (ValueError, TypeError):
+            continue
+        if sma <= 0:
+            continue
+        try:
+            ecc = float(ecc_s)
+            if math.isnan(ecc) or ecc < 0:
+                ecc = 0.0
+        except (ValueError, TypeError):
+            ecc = 0.0
+        ecc = min(ecc, 0.99)
+        b  = sma * math.sqrt(1.0 - ecc * ecc)
+        ae = sma * ecc
+        orbits.append({
+            "name":  str(name or f"Body {i + 1}"),
+            "sma":   sma,
+            "peri":  sma * (1.0 - ecc),
+            "apo":   sma * (1.0 + ecc),
+            "ecc":   ecc,
+            "x_pts": [sma * math.cos(t) - ae for t in thetas],
+            "y_pts": [b   * math.sin(t)      for t in thetas],
+            "color": _ORBIT_COLORS[i % len(_ORBIT_COLORS)],
+        })
+        max_au = max(max_au, sma * (1.0 + ecc))
+
+    if not orbits:
+        return {"error": "No valid orbital data found."}
+    return {"orbits": orbits, "hz_zones": [], "max_au": max_au * 1.25,
+            "star_name": star_name}
+
+
+def prepare_hyper_limits() -> dict:
+    """Honorverse hyper-limit bar-chart data (Phase O · O10a).
+
+    Reads ``core.science.compute_honorverse_hyper_limits()`` (44 spectral classes:
+    O/B/A, F0–M9, Red Giant). Returns parallel lists in table order (hot→cool),
+    coloured by leading spectral class:
+        {classes:[str], lm:[float], au:[float], colors:[str]} or {"error": str}.
+    """
+    import core.science
+    rows = core.science.compute_honorverse_hyper_limits()
+    if not rows:
+        return {"error": "Honorverse hyper-limit table is empty."}
+    return {
+        "classes": [r["spectral_class"] for r in rows],
+        "lm":      [r["lm"] for r in rows],
+        "au":      [r["au"] for r in rows],
+        "colors":  [_sp_color(r["spectral_class"]) for r in rows],
+    }
+
+
 def prepare_star_map_from_result(result: dict) -> dict:
     """Convert a compute_stars_within_distance_of_sol/star result to star-map format.
 
@@ -316,12 +411,26 @@ def prepare_system_regions_diagram(d: dict) -> dict:
     hz_zones = _compute_hz_zones(d["temp"], d["calculatedLuminosity"])
     eeid_au  = d.get("distAU", 0.0)
     max_au   = d["sysol"] * 1.05
-    return {
+    result = {
         "regions":  [{"label": l, "au": au, "color": c} for l, au, c in regions],
         "hz_zones": hz_zones,
         "eeid_au":  eeid_au,
         "max_au":   max_au,
     }
+    # Phase O O10b: when the star's spectral type resolves, attach the Honorverse
+    # hyper limit as a SEPARATE overlay key (not a physical region — the canvas
+    # draws it as a dashed-red ring only when its checkbox is ticked). Absent for
+    # opt-10 (manual) / opt-13 (Sol) dicts, which carry no spectral_type.
+    sp = d.get("spectral_type")
+    if sp:
+        import core.science
+        hl = core.science.compute_hyper_limit_for_spectral_type(sp)
+        if hl:
+            result["hyper_limit"] = {
+                "label": "Honorverse Hyper Limit", "au": hl["au"],
+                "color": "#cc2222", "matched_class": hl["matched_class"],
+            }
+    return result
 
 
 def prepare_alt_hz_diagram(d: dict) -> dict:
@@ -446,6 +555,51 @@ def prepare_abundance_profile(hypatia_result: dict) -> dict:
         "categories": categories,
         "colors":     colors,
         "star_name":  hypatia_result.get("star_name", ""),
+    }
+
+
+# Solar motion w.r.t. the Local Standard of Rest (Schönrich, Binney & Dehnen 2010),
+# km/s, in Hypatia's (U toward the Galactic centre, V along Galactic rotation, W toward
+# the north Galactic pole) frame. Hypatia's U/V/W are *heliocentric*, so adding this
+# puts a star's velocity in the LSR frame — where the Toomre population thresholds
+# (thin <50 / thick ≈70–180 / halo >180 km/s total) are defined and the constant-total-
+# velocity arcs centre at the origin. (Phase O Open Decision #2, resolved 2026-06-18:
+# Hypatia returns heliocentric U/V/W → LSR-correct. Set this to (0, 0, 0) to plot the
+# raw heliocentric velocities instead.)
+_SOLAR_MOTION_UVW = (11.1, 12.24, 7.25)
+
+
+def prepare_toomre(hypatia_result: dict) -> dict:
+    """Toomre / galactic-kinematics data from a compute_hypatia_data() result (Phase O · O11).
+
+    Hypatia returns heliocentric U/V/W velocities; they are LSR-corrected here by adding
+    the solar motion (``_SOLAR_MOTION_UVW``) so the constant-total-velocity arcs centre at
+    the LSR origin and the thin/thick/halo speed thresholds read directly off the plot.
+
+    Returns ``{v, uw, total, disk, star_name}`` (``uw = √(U²+W²)``, ``total = √(U²+V²+W²)``,
+    all LSR-frame, km/s) or ``{"error": str}`` when any of U/V/W is null — a Toomre point
+    needs all three components.
+    """
+    if not hypatia_result or "error" in hypatia_result:
+        msg = (hypatia_result.get("error", "No Hypatia data available")
+               if hypatia_result else "No Hypatia data available")
+        return {"error": msg}
+
+    props = hypatia_result.get("properties") or {}
+    u, v, w = props.get("u_vel"), props.get("v_vel"), props.get("w_vel")
+    if u is None or v is None or w is None:
+        return {"error": "No U/V/W kinematics available for this star"}
+
+    su, sv, sw = _SOLAR_MOTION_UVW
+    u_l = float(u) + su
+    v_l = float(v) + sv
+    w_l = float(w) + sw
+    return {
+        "v":         v_l,
+        "uw":        math.hypot(u_l, w_l),
+        "total":     math.sqrt(u_l * u_l + v_l * v_l + w_l * w_l),
+        "disk":      props.get("disk"),
+        "star_name": hypatia_result.get("star_name", ""),
     }
 
 
@@ -858,6 +1012,94 @@ def prepare_esi_bar_chart(result: dict, top_n: int = 20) -> dict:
     }
 
 
+# ── Phase O O-8: HWC habitability visuals (opt 6) ─────────────────────────────
+
+def prepare_hwc_temps(planet_rows: list) -> dict:
+    """Per-planet temperature-range data from HWC planet rows (Phase O · O12).
+
+    Each planet contributes an equilibrium bar (P_TEMP_EQUIL_MIN→MAX, centre
+    P_TEMP_EQUIL) and/or a surface bar (P_TEMP_SURF_MIN→MAX, centre P_TEMP_SURF).
+    A planet qualifies when it carries at least one complete min/max pair; planets
+    with neither pair are counted in `skipped`. Returns
+    {"planets":[{name, eq_min, eq, eq_max, surf_min, surf, surf_max}], "skipped"}
+    or {"error": str} when none qualify. All HWC columns are TEXT, so blanks parse
+    to None (never 0).
+    """
+    if not planet_rows:
+        return {"error": "No planets in this system."}
+
+    planets, skipped = [], 0
+    for p in planet_rows:
+        eq_min, eq_max = _num(p.get("P_TEMP_EQUIL_MIN")), _num(p.get("P_TEMP_EQUIL_MAX"))
+        s_min,  s_max  = _num(p.get("P_TEMP_SURF_MIN")),  _num(p.get("P_TEMP_SURF_MAX"))
+        has_eq   = eq_min is not None and eq_max is not None
+        has_surf = s_min is not None and s_max is not None
+        if not (has_eq or has_surf):
+            skipped += 1
+            continue
+        planets.append({
+            "name":     p.get("P_NAME") or "?",
+            "eq_min":   eq_min if has_eq else None,
+            "eq":       _num(p.get("P_TEMP_EQUIL")),
+            "eq_max":   eq_max if has_eq else None,
+            "surf_min": s_min if has_surf else None,
+            "surf":     _num(p.get("P_TEMP_SURF")),
+            "surf_max": s_max if has_surf else None,
+        })
+
+    if not planets:
+        return {"error": "No planets carry an equilibrium or surface temperature range."}
+    return {"planets": planets, "skipped": skipped}
+
+
+def prepare_hwc_esi(star_row: dict, planet_rows: list) -> dict:
+    """ESI-vs-orbit data from an HWC star + planet rows (Phase O · O12).
+
+    Per planet: semi-major axis (P_SEMI_MAJOR_AXIS, AU) vs ESI (P_ESI); coloured by
+    P_HABITABLE. The host's optimistic (S_HZ_OPT_MIN/MAX) and conservative
+    (S_HZ_CON_MIN/MAX) habitable zones are returned as shaded bands. `log_x` is True
+    when the plotted SMA span exceeds 10×. Planets missing a numeric SMA or ESI are
+    counted in `skipped`. Returns {"planets":[{name, a_au, esi, habitable}], "hz_opt",
+    "hz_con", "log_x", "skipped"} or {"error": str} when none qualify.
+    """
+    if not planet_rows:
+        return {"error": "No planets in this system."}
+
+    planets, skipped = [], 0
+    for p in planet_rows:
+        a = _num(p.get("P_SEMI_MAJOR_AXIS"))
+        esi = _num(p.get("P_ESI"))
+        if a is None or a <= 0 or esi is None:
+            skipped += 1
+            continue
+        planets.append({
+            "name":      p.get("P_NAME") or "?",
+            "a_au":      a,
+            "esi":       esi,
+            "habitable": str(p.get("P_HABITABLE")).strip() == "1",
+        })
+    if not planets:
+        return {"error": "No planets carry both a semi-major axis and an ESI."}
+
+    star_row = star_row or {}
+
+    def _band(lo_key, hi_key):
+        lo, hi = _num(star_row.get(lo_key)), _num(star_row.get(hi_key))
+        if lo is not None and hi is not None and hi > 0:
+            return [lo, hi]
+        return None
+
+    a_vals = [p["a_au"] for p in planets]
+    log_x = (max(a_vals) / min(a_vals)) > 10.0
+    return {
+        "planets": planets,
+        "hz_opt":  _band("S_HZ_OPT_MIN", "S_HZ_OPT_MAX"),
+        "hz_con":  _band("S_HZ_CON_MIN", "S_HZ_CON_MAX"),
+        "log_x":   log_x,
+        "skipped": skipped,
+    }
+
+
 # ── L4 Hypatia abundance scatter ──────────────────────────────────────────────
 
 # Plottable axis key -> axis label. Shared with the panel's X/Y dropdowns so the
@@ -1174,3 +1416,149 @@ def prepare_transit_geometry(planets: list) -> dict:
     if not out:
         return {"error": "No planets have a measured orbital inclination."}
     return {"star_radius_au": r_star_au, "planets": out, "skipped": skipped}
+
+
+# ── O9 — Brachistochrone profile charts ──────────────────────────────────────
+# Physical constants mirror core/calculators.py (kept local so this module stays
+# Qt/calculators-import-free).
+_O9_G_MS2 = 9.80665                 # 1 g in m/s²
+_O9_C_MS  = 299_792_458.0           # speed of light, m/s
+_O9_AU_M  = 149_597_870_700.0       # metres per AU
+
+# Fixed per-profile colours (index order) — matches the o09 mockup.
+_PROFILE_COLORS = ["#c0392b", "#2980b9", "#27ae60", "#8e44ad", "#d35400"]
+
+
+def _integrate_phases(phases):
+    """Build per-segment kinematic state from a list of (a_seg_ms2, dt_sec) phases.
+
+    Each segment carries the state at its START: (t_start, t_end, v_start, d_start,
+    a_seg) integrating from v=0, d=0. Returns (segments, total_time_sec).
+    """
+    segs = []
+    t0 = v0 = d0 = 0.0
+    for a_seg, dt in phases:
+        if dt is None or dt < 0:
+            dt = 0.0
+        segs.append((t0, t0 + dt, v0, d0, a_seg))
+        d0 = d0 + v0 * dt + 0.5 * a_seg * dt * dt
+        v0 = v0 + a_seg * dt
+        t0 = t0 + dt
+    return segs, t0
+
+
+def _sample_phases(phases, n=200):
+    """Sample piecewise-constant-acceleration phases into (t_hours, v_kms, d_au).
+
+    ``phases`` is a list of (a_seg_ms2, dt_sec) tuples; integrates exact kinematics
+    (v = v₀ + a·τ, d = d₀ + v₀·τ + ½·a·τ²) and returns n+1 evenly-spaced samples
+    across the total time. A zero-length profile collapses to a single origin point.
+    """
+    segs, total = _integrate_phases(phases)
+    if total <= 0 or not segs:
+        return [0.0], [0.0], [0.0]
+    t_hours, v_kms, d_au = [], [], []
+    j = 0
+    for i in range(n + 1):
+        t = total * i / n
+        while j < len(segs) - 1 and t > segs[j][1]:
+            j += 1
+        t0, _t1, v0, d0, a = segs[j]
+        tl = t - t0
+        v = v0 + a * tl
+        d = d0 + v0 * tl + 0.5 * a * tl * tl
+        t_hours.append(t / 3600.0)
+        v_kms.append(v / 1000.0)
+        d_au.append(d / _O9_AU_M)
+    return t_hours, v_kms, d_au
+
+
+def prepare_brachistochrone_profiles(result: dict, n_samples: int = 200) -> dict:
+    """Reconstruct each brachistochrone profile's v(t)/d(t) curve (Phase O · O9).
+
+    Accepts the result dict from any of the five brachistochrone-bearing core
+    functions and rebuilds the piecewise velocity/distance curves from `accel_g`
+    plus the per-profile total time and profile type, using the EXACT phase
+    structure in `docs/calculators.md`:
+
+      * **opts 22 / 29 / 30** (time-given-distance, `_brachistochrone_profiles`) —
+        each profile carries `hours`; P1 = accel T/2 + decel T/2, P2 = accel T/4 /
+        coast T/2 / decel T/4, P3 = accel-to-cap / coast / decel (or P1's shape when
+        the cap isn't reached, `max_vel == "N"`). `v_cap_pct` defaults to 3.
+      * **opt 24** (`compute_distance_at_acceleration`, distance-given-time) — the
+        top-level `hours` is the shared total time; P1 = continuous accel (no
+        decel), P2 = accel T/4 / coast T/2 / decel T/4, P3 = accel-to-3%c / coast
+        (no decel; P1's shape when the cap isn't reached).
+      * **opt 23** (`compute_travel_time_custom_thrust`) — a single custom-thrust
+        profile: accel for the effective burn / coast / decel for the same burn
+        (or accel-to-midpoint / decel in the short-distance `fallback` case).
+
+    Returns {accel_g, profiles:[{label, color, t_hours, v_kms, d_au}]} (parallel
+    sample lists per profile; colours fixed per index) or {"error": str}.
+    """
+    if not result or "error" in result:
+        return result if result else {"error": "No data to plot."}
+    accel_g = _num(result.get("accel_g"))
+    if accel_g is None or accel_g <= 0:
+        return {"error": "No acceleration in result."}
+    a = accel_g * _O9_G_MS2
+    out = []
+
+    # ── opt 23 — custom thrust: single profile, no "profiles" list ────────────
+    if "profiles" not in result and result.get("t_total_hours") is not None:
+        t_acc   = (_num(result.get("t_accel_hours")) or 0.0) * 3600.0
+        t_coast = (_num(result.get("t_coast_hours")) or 0.0) * 3600.0
+        if result.get("fallback"):
+            phases = [(a, t_acc), (-a, t_acc)]
+            label = "Custom Thrust — accelerate to midpoint, decelerate"
+        else:
+            phases = [(a, t_acc), (0.0, t_coast), (-a, t_acc)]
+            label = "Custom Thrust — accelerate · coast · decelerate"
+        th, vk, da = _sample_phases(phases, n_samples)
+        out.append({"label": label, "color": _PROFILE_COLORS[0],
+                    "t_hours": th, "v_kms": vk, "d_au": da})
+        return {"accel_g": accel_g, "profiles": out}
+
+    profiles = result.get("profiles")
+    if not profiles:
+        return {"error": "No brachistochrone profiles in result."}
+
+    # ── opt 24 — distance-given-time: top-level "hours" is the shared total ────
+    if result.get("hours") is not None:
+        T = (_num(result.get("hours")) or 0.0) * 3600.0
+        t_cap = (0.03 * _O9_C_MS) / a                 # opt 24 hard-codes a 3% c cap
+        for i, p in enumerate(profiles):
+            if i == 0:
+                phases = [(a, T)]                                  # continuous, no decel
+            elif i == 1:
+                phases = [(a, T / 4.0), (0.0, T / 2.0), (-a, T / 4.0)]
+            else:
+                if p.get("max_vel") == "N" or t_cap >= T:          # cap not reached
+                    phases = [(a, T)]
+                else:
+                    phases = [(a, t_cap), (0.0, T - t_cap)]        # accel-to-cap, coast, no decel
+            th, vk, da = _sample_phases(phases, n_samples)
+            out.append({"label": p.get("label", f"Profile {i + 1}"),
+                        "color": _PROFILE_COLORS[i % len(_PROFILE_COLORS)],
+                        "t_hours": th, "v_kms": vk, "d_au": da})
+        return {"accel_g": accel_g, "profiles": out}
+
+    # ── opts 22 / 29 / 30 — time-given-distance: each profile carries "hours" ──
+    v_cap_pct = _num(result.get("v_cap_pct")) or 3.0
+    t_cap = (v_cap_pct / 100.0 * _O9_C_MS) / a
+    for i, p in enumerate(profiles):
+        T = (_num(p.get("hours")) or 0.0) * 3600.0
+        if i == 0:
+            phases = [(a, T / 2.0), (-a, T / 2.0)]
+        elif i == 1:
+            phases = [(a, T / 4.0), (0.0, T / 2.0), (-a, T / 4.0)]
+        else:
+            if p.get("max_vel") == "N" or 2.0 * t_cap >= T:        # cap not reached → P1 shape
+                phases = [(a, T / 2.0), (-a, T / 2.0)]
+            else:
+                phases = [(a, t_cap), (0.0, T - 2.0 * t_cap), (-a, t_cap)]
+        th, vk, da = _sample_phases(phases, n_samples)
+        out.append({"label": p.get("label", f"Profile {i + 1}"),
+                    "color": _PROFILE_COLORS[i % len(_PROFILE_COLORS)],
+                    "t_hours": th, "v_kms": vk, "d_au": da})
+    return {"accel_g": accel_g, "profiles": out}

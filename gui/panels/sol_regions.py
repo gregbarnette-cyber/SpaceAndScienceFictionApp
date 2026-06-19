@@ -1,8 +1,11 @@
-# gui/panels/sol_regions.py — Option 14: Sol Solar System Regions.
+# gui/panels/sol_regions.py — Option 13: Sol Solar System Regions.
 
-from PySide6.QtWidgets import QTabWidget, QWidget, QVBoxLayout
+from PySide6.QtWidgets import (
+    QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+)
 
-from gui.panels.base import ResultPanel
+from gui.panels.base import ResultPanel, DiagramToggleMixin
+from gui.panels.star_regions import add_region_diagram_tabs
 import core.regions
 import core.equations
 
@@ -15,8 +18,8 @@ def _au_lm3(val: float) -> str:
     return f"{val:.3f} ({val * 8.3167:.3f} LM)"
 
 
-class SolRegionsPanel(ResultPanel):
-    """Displays the Sol Solar System Regions output (option 14).
+class SolRegionsPanel(DiagramToggleMixin, ResultPanel):
+    """Displays the Sol Solar System Regions output (option 13).
 
     Seven tab sections matching the CLI output:
         1. Star System Properties
@@ -26,16 +29,32 @@ class SolRegionsPanel(ResultPanel):
         5. Solar System Regions
         6. Alternate HZ Regions
         7. Calculated Habitable Zone
+
+    Phase O O6 adds the three ring-diagram viz tabs (HZ Diagram, System Regions
+    Diagram, Alternate HZ Diagram) opts 9/10 have, behind a Show Diagrams toggle;
+    the seven data tabs are unchanged. Rendered once at construction (no inputs).
     """
 
     def build_inputs(self):
-        self._input_count = 0
+        form_widget = QWidget()
+        row = QHBoxLayout(form_widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        row.addWidget(self._show_diagrams_btn)
+        row.addStretch()
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
 
     def build_results_area(self):
         d = core.regions.compute_sol_regions()
 
         tabs = QTabWidget()
-        self._layout.addWidget(tabs)
+        self._tables_widget = tabs
+        self._layout.addWidget(tabs, 1)
 
         # ── Tab 1: Star System Properties ─────────────────────────────────────
         headers = ["Property", "Value"]
@@ -126,7 +145,6 @@ class SolRegionsPanel(ResultPanel):
         # ── Tab 7: Calculated Habitable Zone (3-luminosity columns) ───────────
         # Reuses compute_habitable_zone for Kopparapu zones; shows three
         # luminosity columns matching the CLI: Bolometric, from Mass, Calculated.
-        from core.equations import compute_habitable_zone
         import math
 
         def _hz_row(zone_name, bc_lum, mass_lum, calc_lum, teff):
@@ -176,3 +194,9 @@ class SolRegionsPanel(ResultPanel):
         hz_view = self.make_table(hz_headers, hz_rows)
         hz_view.setSortingEnabled(False)
         tabs.addTab(hz_view, "Calculated HZ")
+
+        # ── Phase O O6: ring-diagram viz tabs (parity with opts 9/10) ─────────
+        self._setup_diagram_view()
+        add_region_diagram_tabs(self._viz_tabs_widget, d)
+        self._finish_render()
+        self._input_count = self._layout.count()

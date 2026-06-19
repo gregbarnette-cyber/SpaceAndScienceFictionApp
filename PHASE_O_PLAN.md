@@ -1,5 +1,51 @@
 # PHASE O — Visualization Expansion · Implementation Plan
 
+> # ✅ PHASE O COMPLETE & maintainer-approved (2026-06-18)
+> All 18 items + the F1–F3 foundations are implemented and approved across all eight
+> sub-phases (O-1…O-8). The **Master Tracking Matrix** below is the per-item source of
+> truth (every row ☑). `tests/test_viz_phase_o.py` = 152 green; full offline suite 512
+> passed (only the 3 flaky live-network baselines fail). The dated blocks below are the
+> historical per-sub-phase build log (earliest "pending sign-off" notes are superseded by
+> this banner). Working tree uncommitted (maintainer reviews/commits).
+
+> **O-5 ✅ COMPLETE (2026-06-18, pending final maintainer sign-off):** O9
+> Brachistochrone Profile Charts (`prepare_brachistochrone_profiles` +
+> `make_profile_canvas`, tabs on opts 22/23/24/29/30), O5 Date Scrubber (O5a
+> offline exoplanet System Map `_SystemMapScrubber`; O5b ephemeris-driven solar
+> map `_SolarMapScrubber` + `compute_solar_ephemeris_track` — maintainer chose
+> accurate batch ephemeris over circular propagation), O8 Two-Star Map (opts
+> 17/20/21 gain "Star Chart" + "Star Chart 3D" tabs via Phase I `routes=` +
+> `_two_star_route_map`/`add_two_star_chart_tabs`). Two bugs fixed under O5:
+> `fetch_body_properties` urllib→requests (SSL on intercepting proxies) and the
+> ERFA "dubious year" warning suppression. `tests/test_viz_phase_o.py` = 110 green.
+> **O-6 ✅ COMPLETE (2026-06-18, pending final sign-off):** O6 Sol-regions ring
+> parity (opt 13 via the extracted `star_regions.add_region_diagram_tabs`), O7
+> Solar-system orbital diagrams (opt 11 — `prepare_solar_system_orbits` + the
+> additive `make_orbits_canvas(title=, km_axis=)`), O10 Honorverse (O10a opt-14
+> hyper-limit bar chart `prepare_hyper_limits`/`make_hyper_bar_canvas`; O10b opts
+> 8/9 dashed-red hyper-limit ring on the System Regions Diagram via an **opt-in
+> checkbox** — `science.compute_hyper_limit_for_spectral_type` ceiling lookup +
+> `prepare_system_regions_diagram` `hyper_limit` key + `make_system_regions_canvas(show_hyper=)`
+> + `wrap_system_regions_with_hyper_toggle`; opts 10/13 omit it). `tests/test_viz_phase_o.py`
+> = 130 green.
+> **O-7 ✅ COMPLETE (2026-06-18, pending final sign-off):** O11 Toomre / Galactic
+> Kinematics (`core.viz.prepare_toomre` + `make_toomre_canvas` + the shared
+> `make_kinematics_tab` widget) added as a **"Kinematics"** viz tab wherever the
+> Hypatia Abundance Profile tab appears (opts 1, 3–6, 8), shown only when U/V/W are
+> all non-null. Each tab carries the F2 **"ℹ What is this?"** Explain button
+> (`TOOMRE_HELP_HTML`). **Open Decision #2 resolved:** Hypatia returns *heliocentric*
+> U/V/W → LSR-corrected (Schönrich+ 2010 solar motion via `core.viz._SOLAR_MOTION_UVW`),
+> arcs centred at the LSR origin so the 50/70–180/180 km/s thin/thick/halo thresholds
+> read directly. `tests/test_viz_phase_o.py` = 143 green; full offline suite 503 passed.
+> **O-8 ✅ COMPLETE (2026-06-18, pending final sign-off):** O12 HWC Habitability Visuals
+> (opt 6) — `core.viz.prepare_hwc_temps` + `make_hwc_temp_canvas` ("Temperature Ranges":
+> per-planet equilibrium/surface min→max bars + 273–373 K liquid-water band) and
+> `core.viz.prepare_hwc_esi` + `make_hwc_esi_canvas` ("ESI vs Orbit": SMA-vs-ESI scatter,
+> log when span >10×, optimistic/conservative HZ bands, habitable colouring, dot-anchored
+> hover). Both `HwcPanel` viz tabs are additive (each shown only when ≥1 planet qualifies);
+> per-system only (no overlap with L2's cross-catalog ESI ranking). `tests/test_viz_phase_o.py`
+> = 152 green. **Phase O is now feature-complete (all 18 items + F1–F3 done).**
+>
 > **Status: O-1 ✅, O-2 ✅, O-3 ✅, O-4 ✅ COMPLETE + maintainer-approved (2026-06-17).**
 > O-3 shipped all checkpoints: CP0 capability layer, CP1 O15 row↔map linking, CP2 O16 2D
 > legend filtering, CP3 O16 3D legend filtering, CP4 O17 travel-time isochrone rings
@@ -88,21 +134,21 @@ brachistochrone profiles, HWC temp/ESI, transit geometry, and the size strip.
 | O1 | Night Sky From Another Star (+ from Sol) | O-2 | 18, 19 | F1 | `prepare_sky_from_star` | `make_sky_canvas` (new) | ☑ Done (2026-06-14) |
 | O2 | HR / Colour–Magnitude Diagram | O-2 | 12, 18, 19 | F1 | `prepare_hr_main_sequence`, `prepare_hr_from_stars` | `make_hr_canvas` (new) | ☑ Done (2026-06-14) |
 | O15 | Table-Row ↔ Map Linking | O-3 | 18, 19 | — (introduces capability layer) | — | star-map/chart: `highlight_star`, `on_star_click` | ☑ Done (CP1, 2026-06-15) |
-| O16 | Clickable Legend Filtering | O-3 | 18, 19 | O-3 capability layer | — | star-map/chart: per-class collections + legend pick | ◐ 2D done (CP2); 3D = CP3 |
-| O17 | Travel-Time Isochrone Rings | O-3 | 18, 19 | O-3 capability layer | — | star-chart: `isochrone=` param | ☐ Planned (CP4) |
-| O18 | Find-Star-on-Map Box | O-3 | 18, 19 | **O15** (`highlight_star`) | — | — (reuses O15) | ☐ Planned (CP5) |
+| O16 | Clickable Legend Filtering | O-3 | 18, 19 | O-3 capability layer | — | star-map/chart: per-class collections + legend pick | ☑ Done (CP2/CP3, 2026-06-16) |
+| O17 | Travel-Time Isochrone Rings | O-3 | 18, 19 | O-3 capability layer | — | star-chart: `isochrone=` param | ☑ Done (CP4, 2026-06-16) |
+| O18 | Find-Star-on-Map Box | O-3 | 18, 19 | **O15** (`highlight_star`) | — | — (reuses O15) | ☑ Done (CP5, 2026-06-16) |
 | O3 | Mass–Radius Diagram | O-4 | 3, 6, Map panel | — | `prepare_mass_radius` | `make_mass_radius_canvas` (new) | ☑ Done (2026-06-17) |
 | O4 | Solar System Reference Overlay | O-4 | 3, 6, Map panel | — | — | `make_orbits_canvas` (extend: `solar_overlay`) | ☑ Done (2026-06-17) |
 | O13 | Transit Geometry View | O-4 | 3, Map panel | — | `prepare_transit_geometry` | `make_transit_canvas` (new) | ☑ Done (2026-06-17) |
 | O14 | Planet Size-Comparison Strip | O-4 | 3, 6, Map panel | — | — | `make_size_comparison_canvas` (new) | ☑ Done (2026-06-17) |
-| O9 | Brachistochrone Profile Charts | O-5 | 22, 23, 24, 29, 30 | — | `prepare_brachistochrone_profiles` | `make_profile_canvas` (new) | ☐ Planned |
-| O5 | Date Scrubber / Orbital Animation | O-5 | Map panel, 22, 23 | — (reuses `prepare_exoplanet_system_diagram`) | — | panel-side slider/timer + `set_offsets` | ☐ Planned |
-| O8 | Two-Star Map (Distance / Travel-Time) | O-5 | 17, 20, 21 | Phase I `routes=` (already shipped) | — | reuse `make_star_chart_canvas`/`_3d` — "Star Chart" + "Star Chart 3D" tabs (`routes=`) | ☐ Planned |
-| O6 | Diagram Parity for Sol Regions | O-6 | 13 | — (reuses ring prep) | — | reuse existing ring canvases | ☐ Planned |
-| O7 | Solar System Orbital Diagrams | O-6 | 11 | — | `prepare_solar_system_orbits` | reuse `make_orbits_canvas` | ☐ Planned |
-| O10 | Honorverse Visualization (bar + ring) | O-6 | 14 (bar) + 8, 9, 10 (ring) | — | `prepare_hyper_limits`; extend `prepare_system_regions_diagram` | `make_hyper_bar_canvas` (new) | ☐ Planned |
-| O11 | Toomre / Galactic Kinematics + Explain dialog | O-7 | 1, 3, 4, 5, 6, 8 | **F2** (help dialog) | `prepare_toomre` | `make_toomre_canvas` (new) | ☐ Planned |
-| O12 | HWC Habitability Visuals | O-8 | 6 | — | `prepare_hwc_temps`, `prepare_hwc_esi` | `make_hwc_temp_canvas`, `make_hwc_esi_canvas` (new) | ☐ Planned |
+| O9 | Brachistochrone Profile Charts | O-5 | 22, 23, 24, 29, 30 | — | `prepare_brachistochrone_profiles` | `make_profile_canvas` (new) | ☑ Done (2026-06-18) |
+| O5 | Date Scrubber / Orbital Animation | O-5 | Map panel, 22, 23 | — (reuses `prepare_exoplanet_system_diagram`; O5b adds `compute_solar_ephemeris_track`) | — | panel-side slider/timer + `set_offsets`; `make_exoplanet_system_canvas`/`make_solar_travel_canvas` expose additive `_scrub` handles | ☑ Done (2026-06-18) |
+| O8 | Two-Star Map (Distance / Travel-Time) | O-5 | 17, 20, 21 | Phase I `routes=` (already shipped) | — | reuse `make_star_chart_canvas`/`_3d` — "Star Chart" + "Star Chart 3D" tabs (`routes=`) | ☑ Done (2026-06-18) |
+| O6 | Diagram Parity for Sol Regions | O-6 | 13 | — (reuses ring prep) | — | reuse existing ring canvases | ☑ Done (2026-06-18) |
+| O7 | Solar System Orbital Diagrams | O-6 | 11 | — | `prepare_solar_system_orbits` | reuse `make_orbits_canvas` (+ additive `title`/`km_axis` kwargs) | ☑ Done (2026-06-18) |
+| O10 | Honorverse Visualization (bar + ring) | O-6 | 14 (bar); 8, 9, **13** (System Regions ring, opt-in checkbox); **3, 6, Map** (Orbital Diagram ring, opt-in checkbox) | — | `prepare_hyper_limits`; `prepare_system_regions_diagram` adds `hyper_limit` key; `compute_sol_regions` sets `spectral_type="G2V"`; `science.compute_hyper_limit_for_spectral_type` | `make_hyper_bar_canvas` (new); `make_system_regions_canvas(show_hyper=)` + `wrap_system_regions_with_hyper_toggle` (new); `make_orbits_canvas(hyper_au=)` + `wrap_orbits_with_solar_toggle(hyper_au=)` | ☑ Done (2026-06-18) |
+| O11 | Toomre / Galactic Kinematics + Explain dialog | O-7 | 1, 3, 4, 5, 6, 8 | **F2** (help dialog) | `prepare_toomre` | `make_toomre_canvas` + `make_kinematics_tab` (new) | ☑ Done (2026-06-18) |
+| O12 | HWC Habitability Visuals | O-8 | 6 | — | `prepare_hwc_temps`, `prepare_hwc_esi` | `make_hwc_temp_canvas`, `make_hwc_esi_canvas` (new) | ☑ Done (2026-06-18) |
 
 **Note on O8 (corrected 2026-06-14):** O8 **is** a real build item. Opts 17/20/21
 (`DistanceBetweenStarsPanel`, the two `TravelTimeStars*` panels) render **text-only
@@ -478,11 +524,20 @@ at sampled t; colours fixed per index. **Removal:** delete fn+canvas+tabs.
 recompute via the existing offline `prepare_exoplanet_system_diagram`, updating only
 `PathCollection.set_offsets` + `draw_idle()` (orbits/star static). `epoch_known=False`
 planets stay pinned at periastron (no invented motion). Opts 22/23 Solar System Map:
-approximate **propagation** along circular reference orbits (mean motion `n=2π/P`,
-`P=a^1.5`) with a persistent "approximate positions (propagated, not ephemeris)" label;
-no Horizons calls during scrubbing. No new `prepare_*`/canvas. **Test:** position at
-day+0 == the one-shot Search; `epoch_known=False` pinned (offline anchor on the existing
-prep). **Removal:** delete the slider/timer + propagation branch (one-shot Search unchanged).
+~~approximate **propagation** along circular reference orbits~~ **superseded
+(maintainer decision 2026-06-18): use accurate batch-fetched ephemeris instead.**
+Per-frame Horizons is too slow, but a single Horizons **range query per body**
+(`epochs` start/stop/step) returns the whole span in one round-trip, so the new
+core fn `compute_solar_ephemeris_track(body_ids, start, stop, n_steps)` pre-fetches
+each animated body's real ephemeris once (background thread, "Loading ephemeris…")
+and the scrubber drives `set_offsets` from the cache — **no per-frame network**.
+Animated bodies = origin + destination + in-view reference planets; the dashed
+departure travel-line, orbit rings, and the Sun stay static (readout labels it
+"trajectory fixed at departure"). **Test:** position at day+0 == the one-shot Search;
+`epoch_known=False` pinned (exoplanet map); the range fetch dedups/structures bodies
+(mocked Horizons); the scrubber re-offsets markers from a cached track. **Removal:**
+delete the slider/timer + `_SolarMapScrubber`/`_SystemMapScrubber` + `compute_solar_ephemeris_track`
++ the canvas `_scrub` handles (one-shot Search unchanged).
 
 ### O8 — Two-Star Map (Distance / Travel-Time)  *(opts 17, 20, 21 — reuses Phase I `routes=`)*
 - **Current state:** opts 17/20/21 compute both endpoints' 3D positions but render
@@ -639,8 +694,14 @@ panel builds its viz tab without error.
 ## Open decisions (resolve at implementation, not now)
 1. **O1 projection** — Aitoff vs rectangular RA/Dec (hover-math simplicity). Decide from
    the `o01` mockup.
-2. **O11 arc frame** — centre the constant-velocity arcs on the origin (LSR-corrected
-   velocities) or offset (heliocentric). Settle from what Hypatia's U/V/W actually are.
+2. *(Resolved 2026-06-18.)* **O11 arc frame** — Hypatia's U/V/W are **heliocentric**
+   (Sun-relative, as stored from sources like the Geneva-Copenhagen Survey). `prepare_toomre`
+   therefore **LSR-corrects** them by adding the solar motion (Schönrich, Binney & Dehnen 2010:
+   `_SOLAR_MOTION_UVW = (11.1, 12.24, 7.25)`) so the constant-total-velocity arcs centre at the
+   **LSR origin (0,0)** and the standard thin/thick/halo total-speed thresholds (50/70–180/180
+   km/s) read directly. The correction lives in one module constant — set it to `(0,0,0)` to plot
+   raw heliocentric velocities if a future Hypatia build is found to already be LSR-frame. The
+   canvas footnotes the frame ("V LSR-corrected (Schönrich+ 2010); boundaries heuristic").
 3. **O6 render flow** — give opt 13 a minimal Show-Diagrams flow vs. refactor to the
    standard render pattern (data tabs must not change either way).
 4. *(Resolved 2026-06-14 — the two-star map for opts 17/20/21 is build item **O8** in

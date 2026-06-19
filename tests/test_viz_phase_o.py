@@ -1379,7 +1379,8 @@ class O4OrbitsToggleWiringTest(unittest.TestCase):
     def test_wrapper_returns_none_when_canvas_fails(self):
         from gui.visualizations.plot_helpers import wrap_orbits_with_solar_toggle
         # A builder that yields no canvas → wrapper returns None (no empty tab).
-        self.assertIsNone(wrap_orbits_with_solar_toggle(None, lambda _ov: (None, None)))
+        self.assertIsNone(
+            wrap_orbits_with_solar_toggle(None, lambda _ov, _h: (None, None)))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1553,6 +1554,1167 @@ class O14PanelWiringSmokeTest(unittest.TestCase):
         self.assertIsNotNone(_make_size_tab(p, [{"pl_name": "b", "pl_rade": "1.9"}]))
         # No radius anywhere → no tab.
         self.assertIsNone(_make_size_tab(p, [{"pl_name": "x", "pl_rade": None}]))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-5 — O9 Brachistochrone Profile Charts: prepare_brachistochrone_profiles
+#   reconstructs each profile's piecewise v(t)/d(t) from accel_g + total time +
+#   profile type, using the docs/calculators.md formulas. Anchors: every profile
+#   starts at (0,0,0); its final cumulative distance reproduces the core's
+#   distance for that profile; profile-1 peak velocity = √(a·D); colours fixed.
+# ─────────────────────────────────────────────────────────────────────────────
+_O9_G   = 9.80665
+_O9_C   = 299_792_458.0
+_O9_AU  = 149_597_870_700.0
+
+
+class O9BrachistochroneProfilePrepTest(unittest.TestCase):
+    """core.viz.prepare_brachistochrone_profiles — segment reconstruction."""
+
+    def test_style_a_time_given_distance(self):
+        # opts 22/29/30 shape: top-level distance_au, profiles carry "hours".
+        res = calc.compute_travel_time_system_au(1.0, 5.2)
+        out = viz.prepare_brachistochrone_profiles(res)
+        self.assertEqual(out["accel_g"], 1.0)
+        self.assertEqual(len(out["profiles"]), 3)
+        # Colours fixed per index.
+        self.assertEqual([p["color"] for p in out["profiles"]],
+                         ["#c0392b", "#2980b9", "#27ae60"])
+        for p in out["profiles"]:
+            # Every profile starts at the origin.
+            self.assertAlmostEqual(p["t_hours"][0], 0.0)
+            self.assertAlmostEqual(p["v_kms"][0], 0.0)
+            self.assertAlmostEqual(p["d_au"][0], 0.0)
+            # Cumulative distance reproduces the brachistochrone distance.
+            self.assertAlmostEqual(p["d_au"][-1], 5.2, places=3)
+            # Velocity returns to ~0 at arrival (decel profiles) or stays positive
+            # (none here is a no-decel profile), but never negative.
+            self.assertGreaterEqual(min(p["v_kms"]), -1e-6)
+        # Profile 1 peak velocity at the midpoint = √(a·D).
+        a   = 1.0 * _O9_G
+        D_m = 5.2 * _O9_AU
+        v_peak_kms = math.sqrt(a * D_m) / 1000.0
+        mid = len(out["profiles"][0]["v_kms"]) // 2
+        self.assertAlmostEqual(out["profiles"][0]["v_kms"][mid], v_peak_kms, places=1)
+
+    def test_style_a_profile3_cap_reached(self):
+        # A large distance makes profile 3 actually reach the 3% c cap.
+        res = calc.compute_travel_time_system_au(1.0, 200_000.0)
+        out = viz.prepare_brachistochrone_profiles(res)
+        p3 = out["profiles"][2]
+        self.assertAlmostEqual(p3["d_au"][-1], 200_000.0, places=0)
+        # Peak velocity is capped at 3% c.
+        v_cap_kms = 0.03 * _O9_C / 1000.0
+        self.assertAlmostEqual(max(p3["v_kms"]), v_cap_kms, places=1)
+
+    def test_style_b_distance_given_time(self):
+        # opt 24 shape: top-level "hours" shared; each profile carries distance_au.
+        res = calc.compute_distance_at_acceleration(1.0, 100.0)
+        out = viz.prepare_brachistochrone_profiles(res)
+        self.assertEqual(len(out["profiles"]), 3)
+        for core_p, viz_p in zip(res["profiles"], out["profiles"]):
+            self.assertAlmostEqual(viz_p["d_au"][-1], core_p["distance_au"], places=3)
+        # Profile 1 here is continuous accel (no decel) → velocity monotonically rises.
+        v = out["profiles"][0]["v_kms"]
+        self.assertTrue(all(v[i] <= v[i + 1] + 1e-9 for i in range(len(v) - 1)))
+
+    def test_style_c_custom_thrust(self):
+        # opt 23 shape: single profile, no "profiles" list. Hand-built result.
+        a, t_acc, t_coast = 1.0 * _O9_G, 36000.0, 72000.0   # 10 h burn, 20 h coast
+        expected_d_m = a * t_acc ** 2 + a * t_acc * t_coast
+        result = {
+            "accel_g": 1.0, "fallback": False,
+            "t_total_hours": (2 * t_acc + t_coast) / 3600.0,
+            "t_accel_hours": t_acc / 3600.0,
+            "t_coast_hours": t_coast / 3600.0,
+        }
+        out = viz.prepare_brachistochrone_profiles(result)
+        self.assertEqual(len(out["profiles"]), 1)
+        self.assertEqual(out["profiles"][0]["color"], "#c0392b")
+        self.assertAlmostEqual(out["profiles"][0]["d_au"][-1],
+                               expected_d_m / _O9_AU, places=5)
+        # Coast phase holds a constant velocity (a flat middle segment exists).
+        v = out["profiles"][0]["v_kms"]
+        self.assertGreater(max(v), 0.0)
+
+    def test_style_c_fallback(self):
+        a, t_half = 1.0 * _O9_G, 36000.0
+        result = {
+            "accel_g": 1.0, "fallback": True,
+            "t_total_hours": (2 * t_half) / 3600.0,
+            "t_accel_hours": t_half / 3600.0, "t_coast_hours": 0.0,
+        }
+        out = viz.prepare_brachistochrone_profiles(result)
+        self.assertEqual(len(out["profiles"]), 1)
+        self.assertAlmostEqual(out["profiles"][0]["d_au"][-1],
+                               (a * t_half ** 2) / _O9_AU, places=5)
+
+    def test_error_paths(self):
+        self.assertIn("error", viz.prepare_brachistochrone_profiles({"error": "x"}))
+        self.assertIn("error", viz.prepare_brachistochrone_profiles({}))
+        self.assertIn("error", viz.prepare_brachistochrone_profiles(
+            {"accel_g": 0.0, "profiles": []}))
+        self.assertIn("error", viz.prepare_brachistochrone_profiles(
+            {"accel_g": 1.0, "distance_au": 5.0}))   # no profiles, no t_total_hours
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O9ProfileCanvasSmokeTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_canvas_builds(self):
+        from gui.visualizations.plot_helpers import make_profile_canvas
+        data = viz.prepare_brachistochrone_profiles(
+            calc.compute_travel_time_system_au(1.0, 5.2))
+        build_canvas_ok(self, make_profile_canvas, None, data)
+
+    def test_error_canvas(self):
+        from gui.visualizations.plot_helpers import make_profile_canvas
+        build_canvas_ok(self, make_profile_canvas, None, {"error": "no data"})
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O9PanelWiringSmokeTest(unittest.TestCase):
+    """Construct the host panels offscreen and exercise the O9 tab builders."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _StubWindow:
+        pass
+
+    def test_brachistochrone_panels_construct_and_add_tab(self):
+        import gui.panels as panels
+        from gui.panels.brachistochrone import _add_profile_tab
+        win = self._StubWindow()
+        for cls, result in (
+            (panels.BrachistochroneAuPanel, calc.compute_travel_time_system_au(1.0, 4.2)),
+            (panels.BrachistochroneLmPanel, calc.compute_travel_time_system_lm(1.0, 35.0)),
+            (panels.BrachistochroneAccelPanel, calc.compute_distance_at_acceleration(1.0, 24.0)),
+        ):
+            p = cls(win)
+            n0 = p._viz_tabs_widget.count()
+            _add_profile_tab(p, result)
+            self.assertEqual(p._viz_tabs_widget.count(), n0 + 1)
+
+    def test_system_travel_profile_tab_builder(self):
+        import gui.panels as panels
+        from gui.panels.system_travel import _add_profile_tab
+        # opt 23 custom-thrust shape (no network — hand-built result).
+        result = {
+            "accel_g": 1.0, "fallback": False,
+            "t_total_hours": 50.0, "t_accel_hours": 10.0, "t_coast_hours": 30.0,
+        }
+        p = panels.SystemTravelThrustPanel(self._StubWindow())
+        n0 = p._viz_tabs_widget.count()
+        _add_profile_tab(p, result)
+        self.assertEqual(p._viz_tabs_widget.count(), n0 + 1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-5 — O5 Date Scrubber: pure date/span helpers + the System Map scrubber's
+#   offline recompute (day-0 == the one-shot Search; epoch_known=False pinned).
+# ─────────────────────────────────────────────────────────────────────────────
+class O5ScrubberHelpersTest(unittest.TestCase):
+    """Pure span/date helpers in gui.panels.nasa_exoplanet (no Qt needed)."""
+
+    def test_span_days(self):
+        from gui.panels.nasa_exoplanet import _scrub_span_days
+        # 2 × longest period.
+        self.assertEqual(_scrub_span_days(
+            [{"pl_orbper": "100"}, {"pl_orbper": "400"}]), 800)
+        # No usable period → 365-day fallback.
+        self.assertEqual(_scrub_span_days([{"pl_name": "x"}]), 365)
+        # Capped at 50 yr.
+        self.assertEqual(_scrub_span_days([{"pl_orbper": "100000"}]),
+                         int(round(50.0 * 365.25)))
+
+    def test_offset_date_iso(self):
+        from gui.panels.nasa_exoplanet import _scrub_offset_date_iso
+        self.assertEqual(_scrub_offset_date_iso("2026-06-14", 30), "2026-07-14")
+        self.assertEqual(_scrub_offset_date_iso("2026-06-14", -14), "2026-05-31")
+        self.assertEqual(_scrub_offset_date_iso("2026-06-14", 0), "2026-06-14")
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O5ScrubberRecomputeTest(unittest.TestCase):
+    """The System Map scrubber re-offsets epoch-known planets; pins the rest."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _fixture(self):
+        return [
+            {"pl_name": "b", "pl_orbsmax": "1.0", "pl_orbeccen": "0.1",
+             "pl_orbper": "365.0", "pl_orbtper": "2451545.0", "hostname": "Test"},
+            {"pl_name": "c", "pl_orbsmax": "2.0", "pl_orbeccen": "0.2"},  # no epoch
+        ]
+
+    def test_day0_anchor_and_pinned(self):
+        from gui.panels.nasa_exoplanet import (
+            _SystemMapScrubber, _scrub_offset_date_iso)
+        planets = self._fixture()
+        base = "2026-06-14"
+        base_data = viz.prepare_exoplanet_system_diagram(planets, base)
+        scr = _SystemMapScrubber(None, base_data, planets, base, None)
+        scrub = scr._canvas._scrub
+        self.assertTrue(scrub["planets"]["b"]["epoch_known"])
+        self.assertFalse(scrub["planets"]["c"]["epoch_known"])
+
+        bd = {p["name"]: p for p in base_data["planets"]}
+        # Day-0: the marker sits exactly where the one-shot Search placed it.
+        off_b0 = scrub["planets"]["b"]["scatter"].get_offsets()[0]
+        self.assertAlmostEqual(float(off_b0[0]), bd["b"]["x"], places=6)
+        self.assertAlmostEqual(float(off_b0[1]), bd["b"]["y"], places=6)
+        off_c0 = scrub["planets"]["c"]["scatter"].get_offsets()[0]
+
+        # Scrub +90 days: epoch-known 'b' moves to the recomputed position.
+        scr._slider.setValue(90)
+        scr._recompute()
+        exp = viz.prepare_exoplanet_system_diagram(
+            planets, _scrub_offset_date_iso(base, 90))
+        exp_b = {p["name"]: p for p in exp["planets"]}["b"]
+        off_b1 = scrub["planets"]["b"]["scatter"].get_offsets()[0]
+        self.assertAlmostEqual(float(off_b1[0]), exp_b["x"], places=6)
+        self.assertAlmostEqual(float(off_b1[1]), exp_b["y"], places=6)
+        self.assertNotAlmostEqual(float(off_b1[0]), float(off_b0[0]), places=4)
+
+        # epoch-unknown 'c' stays pinned at periastron (no invented motion).
+        off_c1 = scrub["planets"]["c"]["scatter"].get_offsets()[0]
+        self.assertAlmostEqual(float(off_c1[0]), float(off_c0[0]), places=9)
+        self.assertAlmostEqual(float(off_c1[1]), float(off_c0[1]), places=9)
+
+        # Reset snaps the slider back to centre (base date) and re-centres 'b'.
+        scr._reset()
+        self.assertEqual(scr._slider.value(), 0)
+        off_b2 = scrub["planets"]["b"]["scatter"].get_offsets()[0]
+        self.assertAlmostEqual(float(off_b2[0]), bd["b"]["x"], places=6)
+        self.assertAlmostEqual(float(off_b2[1]), bd["b"]["y"], places=6)
+
+    def test_map_panel_constructs(self):
+        import gui.panels as panels
+
+        class _StubWindow:
+            pass
+        p = panels.NasaPlanetarySystemsMapPanel(_StubWindow())
+        self.assertIsNotNone(p)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-5 — O5b Solar-map ephemeris animation: the range-fetch core fn (mocked
+#   Horizons), the pure body-id/span helpers, and the scrubber's frame stepping.
+# ─────────────────────────────────────────────────────────────────────────────
+class O5bEphemerisTrackTest(unittest.TestCase):
+    """core.calculators.compute_solar_ephemeris_track — batch range fetch."""
+
+    def test_track_mocked_horizons(self):
+        from unittest.mock import patch
+        vec = {"x": [1.0, 1.1, 1.2], "y": [0.0, 0.1, 0.2], "z": [0.0, 0.0, 0.0],
+               "datetime_jd": [2451545.0, 2451546.0, 2451547.0]}
+        with patch("astroquery.jplhorizons.Horizons") as MockH:
+            MockH.return_value.vectors.return_value = vec
+            res = calc.compute_solar_ephemeris_track(
+                ["399", "499", "399"], "2026-06-01", "2026-06-30", n_steps=3)
+        self.assertNotIn("error", res)
+        self.assertEqual(set(res["bodies"].keys()), {"399", "499"})  # deduped
+        self.assertEqual(len(res["jds"]), 3)
+        self.assertEqual(res["dates"][0], "2000-01-01")              # jd 2451545
+        self.assertEqual(res["bodies"]["399"]["x"], [1.0, 1.1, 1.2])
+
+    def test_no_bodies(self):
+        res = calc.compute_solar_ephemeris_track([], "2026-06-01", "2026-06-30")
+        self.assertIn("error", res)
+
+
+class O5bSolarHelpersTest(unittest.TestCase):
+    """Pure body-id / span helpers in gui.panels.system_travel (no Qt needed)."""
+
+    def _map_data(self):
+        return {
+            "origin_name": "Earth", "dest_name": "Mars",
+            "origin_id": "399", "dest_id": "499",
+            "origin_xyz": (1.0, 0.0, 0.0), "dest_xyz": (0.0, 1.52, 0.0),
+            "planets": [
+                {"name": "Earth", "x": 1.0, "y": 0.0, "z": 0.0,
+                 "color": "#4fc3f7", "horizons_id": "399"},
+                {"name": "Neptune", "x": 30.0, "y": 0.0, "z": 0.0,   # out of view
+                 "color": "#5b8df5", "horizons_id": "899"},
+            ],
+            "planet_orbits": [{"name": "Earth", "sma_au": 1.0, "color": "#4fc3f7"}],
+            "max_au": 2.0,
+        }
+
+    def test_offset_date(self):
+        from gui.panels.system_travel import _offset_date_iso
+        self.assertEqual(_offset_date_iso("2026-06-14", 10), "2026-06-24")
+        self.assertEqual(_offset_date_iso("2026-06-14", -14), "2026-05-31")
+
+    def test_body_ids_dedup_and_inview(self):
+        from gui.panels.system_travel import _solar_anim_body_ids
+        ids = _solar_anim_body_ids(self._map_data())
+        # origin + dest + the in-view Earth planet; Neptune (30 AU) excluded.
+        self.assertEqual(ids, ["399", "499"])
+
+    def test_span_days(self):
+        from gui.panels.system_travel import _solar_anim_span_days
+        span = _solar_anim_span_days(self._map_data())
+        # 2 × 1.52^1.5 yr ≈ 3.75 yr, floored at 2 yr, capped at 50 yr.
+        self.assertGreater(span, int(2 * 365.25))
+        self.assertLessEqual(span, int(round(50 * 365.25)))
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O5bSolarScrubberTest(unittest.TestCase):
+    """The solar-map scrubber re-offsets markers from a cached track."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_frame_moves_markers(self):
+        import astropy.time
+        from gui.panels.system_travel import _SolarMapScrubber
+        map_data = {
+            "origin_name": "Earth", "dest_name": "Mars",
+            "origin_id": "399", "dest_id": "499",
+            "origin_xyz": (1.0, 0.0, 0.0), "dest_xyz": (0.0, 1.5, 0.0),
+            "planets": [{"name": "Earth", "x": 1.0, "y": 0.0, "z": 0.0,
+                         "color": "#4fc3f7", "horizons_id": "399"}],
+            "planet_orbits": [{"name": "Earth", "sma_au": 1.0, "color": "#4fc3f7"}],
+            "max_au": 2.0,
+        }
+        base = "2026-06-14"
+        scr = _SolarMapScrubber(None, map_data, base, None)
+        # Controls start hidden until ephemeris loads.
+        self.assertFalse(scr._slider.isVisible())
+
+        base_jd = astropy.time.Time(f"{base}T12:00:00").jd
+        track = {
+            "dates": ["2026-06-01", "2026-06-14", "2026-06-27"],
+            "jds":   [base_jd - 13, base_jd, base_jd + 13],
+            "bodies": {
+                "399": {"x": [0.9, 1.0, 1.1], "y": [0.0, 0.0, 0.0], "z": [0, 0, 0]},
+                "499": {"x": [0.0, 0.0, 0.0], "y": [1.4, 1.5, 1.6], "z": [0, 0, 0]},
+            },
+        }
+        scr._on_track(track)
+        # Slider spans the samples; centred on the base date (index 1).
+        self.assertEqual(scr._slider.maximum(), 2)
+        self.assertEqual(scr._base_index, 1)
+
+        scrub = scr._canvas._scrub
+        scr._frame(2)
+        off_o = scrub["bodies"][("origin", "Earth")]["scatter"].get_offsets()[0]
+        self.assertAlmostEqual(float(off_o[0]), 1.1, places=6)
+        off_d = scrub["bodies"][("dest", "Mars")]["scatter"].get_offsets()[0]
+        self.assertAlmostEqual(float(off_d[1]), 1.6, places=6)
+
+        # Reset → back to the base-date sample.
+        scr._reset()
+        self.assertEqual(scr._slider.value(), 1)
+
+    def test_track_error_is_non_fatal(self):
+        from gui.panels.system_travel import _SolarMapScrubber
+        map_data = {
+            "origin_name": "Earth", "dest_name": "Mars",
+            "origin_id": "399", "dest_id": "499",
+            "origin_xyz": (1.0, 0.0, 0.0), "dest_xyz": (0.0, 1.5, 0.0),
+            "planets": [], "planet_orbits": [], "max_au": 2.0,
+        }
+        scr = _SolarMapScrubber(None, map_data, "2026-06-14", None)
+        scr._on_track({"error": "JPL Horizons unreachable."})
+        self.assertFalse(scr._slider.isVisible())  # stays in pre-load state
+        self.assertIn("unreachable", scr._readout.text())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-5 — O8 Two-Star Map (opts 17/20/21): the node-conversion / edge-label helper
+#   (offline, hand-checkable geometry) + canvas smoke + panel tab wiring.
+# ─────────────────────────────────────────────────────────────────────────────
+class O8TwoStarRouteMapTest(unittest.TestCase):
+    """gui.panels.route_planning._two_star_route_map — node/edge conversion."""
+
+    def test_distance_with_sol_endpoint(self):
+        from gui.panels.route_planning import _two_star_route_map
+        result = {
+            "star1_info": {"name": "Sol", "ra_deg": 0.0, "dec_deg": 0.0,
+                           "ly": 0.0, "desig_str": ""},
+            "star2_info": {"name": "Star2", "ra_deg": 0.0, "dec_deg": 0.0,
+                           "ly": 10.0, "desig_str": "HD 1"},
+            "distance_ly": 10.0,
+        }
+        rm = _two_star_route_map(result, "distance")
+        # An endpoint is Sol (at the origin) → no extra Sol node.
+        self.assertEqual(len(rm["stars"]), 2)
+        self.assertEqual(rm["stars"][0]["name"], "Sol")
+        self.assertAlmostEqual(rm["stars"][0]["x"], 0.0)
+        self.assertAlmostEqual(rm["stars"][1]["x"], 10.0)   # ra=dec=0, ly=10 → (10,0,0)
+        self.assertAlmostEqual(rm["stars"][1]["y"], 0.0)
+        self.assertEqual(len(rm["edges"]), 1)
+        e = rm["edges"][0]
+        self.assertEqual(e["label"], "10.00 ly")
+        self.assertEqual(e["style"], "dashed")
+        self.assertAlmostEqual(e["x1"], 0.0)
+        self.assertAlmostEqual(e["x2"], 10.0)
+
+    def test_distance_neither_sol_appends_sol(self):
+        from gui.panels.route_planning import _two_star_route_map
+        result = {
+            "star1_info": {"name": "A", "ra_deg": 0.0, "dec_deg": 0.0,
+                           "ly": 4.0, "desig_str": ""},
+            "star2_info": {"name": "B", "ra_deg": 90.0, "dec_deg": 0.0,
+                           "ly": 3.0, "desig_str": ""},
+            "distance_ly": 5.0,
+        }
+        rm = _two_star_route_map(result, "distance")
+        self.assertEqual(len(rm["stars"]), 3)               # A, B, + grey Sol
+        self.assertEqual(rm["stars"][2]["name"], "Sol")
+        self.assertAlmostEqual(rm["stars"][2]["x"], 0.0)
+        self.assertAlmostEqual(rm["stars"][1]["y"], 3.0)    # ra=90 → (0,3,0)
+        self.assertEqual(rm["edges"][0]["label"], "5.00 ly")
+
+    def test_travel_label_has_time_and_velocity(self):
+        from gui.panels.route_planning import _two_star_route_map
+        result = {
+            "origin_info": {"name": "Sol", "ra_deg": 0.0, "dec_deg": 0.0,
+                            "ly": 0.0, "desig_str": ""},
+            "dest_info": {"name": "Eps Ind", "ra_deg": 0.0, "dec_deg": 0.0,
+                          "ly": 11.4, "desig_str": ""},
+            "distance_ly": 11.4, "times_c": 100.0, "travel_time_str": "4 Months",
+        }
+        rm = _two_star_route_map(result, "travel")
+        self.assertEqual(rm["edges"][0]["label"], "11.40 ly — 4 Months @ 100×c")
+
+    def test_error_passthrough(self):
+        from gui.panels.route_planning import _two_star_route_map
+        self.assertIn("error", _two_star_route_map({"error": "no match"}, "distance"))
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O8TwoStarCanvasAndPanelTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _StubWindow:
+        pass
+
+    def _distance_result(self):
+        return {
+            "star1_info": {"name": "Sol", "ra_deg": 0.0, "dec_deg": 0.0,
+                           "ly": 0.0, "desig_str": "", "ra_hms": "", "dec_dms": ""},
+            "star2_info": {"name": "Vega", "ra_deg": 279.2, "dec_deg": 38.8,
+                           "ly": 25.0, "desig_str": "HD 172167",
+                           "ra_hms": "18 36 56", "dec_dms": "+38 47 01"},
+            "distance_ly": 25.0, "distance_au": None,
+        }
+
+    def test_canvas_builds_with_routes(self):
+        from gui.panels.route_planning import _two_star_route_map, _centered
+        from gui.visualizations.plot_helpers import (
+            make_star_chart_canvas, make_star_chart_3d_canvas)
+        rm = _two_star_route_map(self._distance_result(), "distance")
+        stars, edges, limit_ly = _centered(rm)
+        build_canvas_ok(self, make_star_chart_canvas, None, stars,
+                        limit_ly=limit_ly, routes=edges)
+        build_canvas_ok(self, make_star_chart_3d_canvas, None, stars,
+                        limit_ly=limit_ly, routes=edges)
+
+    def test_panels_add_two_chart_tabs(self):
+        import gui.panels as panels
+        from gui.panels.route_planning import add_two_star_chart_tabs
+        win = self._StubWindow()
+        d = panels.DistanceBetweenStarsPanel(win)
+        add_two_star_chart_tabs(d, self._distance_result(), "distance")
+        self.assertEqual(d._viz_tabs_widget.count(), 2)   # Star Chart + Star Chart 3D
+        self.assertEqual(d._viz_tabs_widget.tabText(0), "Star Chart")
+        self.assertEqual(d._viz_tabs_widget.tabText(1), "Star Chart 3D")
+
+        travel = {
+            "origin_info": {"name": "Sol", "ra_deg": 0.0, "dec_deg": 0.0,
+                            "ly": 0.0, "desig_str": ""},
+            "dest_info": {"name": "Vega", "ra_deg": 279.2, "dec_deg": 38.8,
+                          "ly": 25.0, "desig_str": ""},
+            "distance_ly": 25.0, "times_c": 100.0, "ly_hr": 0.0114,
+            "total_hours": 1.0, "travel_time_str": "3 Months",
+        }
+        t = panels.TravelTimeStarsTimesCPanel(win)
+        add_two_star_chart_tabs(t, travel, "travel")
+        self.assertEqual(t._viz_tabs_widget.count(), 2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-6 — O6 Sol Regions diagram parity (opt 13): the three existing ring preps
+#   return valid shapes for the compute_sol_regions() dict; canvas smoke; the
+#   panel gains 3 viz tabs without disturbing its 7 data tabs.
+# ─────────────────────────────────────────────────────────────────────────────
+import core.regions as regions
+
+
+class O6SolRegionsPrepTest(unittest.TestCase):
+    """The HZ / System-Regions / Alt-HZ preps work on the Sol regions dict."""
+
+    def test_preps_valid_for_sol(self):
+        d = regions.compute_sol_regions()
+        # Anchor: Sol's circumstellar HZ inner/outer bracket ~1 AU.
+        self.assertAlmostEqual(d["hzil"], 0.95, delta=0.1)
+        self.assertAlmostEqual(d["hzol"], 1.37, delta=0.1)
+
+        hz = viz.prepare_hz_diagram(d["temp"], d["calculatedLuminosity"])
+        self.assertIn("zones", hz)
+        self.assertNotIn("error", hz)
+
+        sr = viz.prepare_system_regions_diagram(d)
+        self.assertNotIn("error", sr)
+        self.assertIn("regions", sr)
+
+        alt = viz.prepare_alt_hz_diagram(d)
+        self.assertIn("zones", alt)
+        self.assertNotIn("error", alt)
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O6SolRegionsCanvasAndPanelTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_canvas_smoke(self):
+        from gui.visualizations.plot_helpers import (
+            make_hz_canvas, make_system_regions_canvas, make_alt_hz_canvas)
+        d = regions.compute_sol_regions()
+        hz = viz.prepare_hz_diagram(d["temp"], d["calculatedLuminosity"])
+        build_canvas_ok(self, make_hz_canvas, None, hz["zones"], hz["max_au"])
+        build_canvas_ok(self, make_system_regions_canvas, None,
+                        viz.prepare_system_regions_diagram(d))
+        alt = viz.prepare_alt_hz_diagram(d)
+        build_canvas_ok(self, make_alt_hz_canvas, None, alt["zones"], alt["max_au"])
+
+    def test_panel_has_seven_data_tabs_and_three_viz_tabs(self):
+        import gui.panels as panels
+
+        class _StubWindow:
+            pass
+        p = panels.SolRegionsPanel(_StubWindow())
+        self.assertEqual(p._tables_widget.count(), 7)        # data tabs unchanged
+        self.assertEqual(p._viz_tabs_widget.count(), 3)
+        names = [p._viz_tabs_widget.tabText(i) for i in range(3)]
+        self.assertEqual(names, ["HZ Diagram", "System Regions Diagram",
+                                 "Alternate HZ Diagram"])
+
+    def test_opts_9_10_still_build_region_diagrams(self):
+        # The extracted add_region_diagram_tabs keeps opts 8/9/10 parity.
+        from gui.panels.star_regions import add_region_diagram_tabs
+        from PySide6.QtWidgets import QTabWidget
+        d = regions.compute_sol_regions()
+        tw = QTabWidget()
+        add_region_diagram_tabs(tw, d)            # hypatia None → no Abundance tab
+        self.assertEqual(tw.count(), 3)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-6 — O7 Solar System Orbital Diagrams (opt 11): prepare_solar_system_orbits
+#   (moon km→AU conversion anchor + orbit shape) + canvas smoke + panel tabs.
+# ─────────────────────────────────────────────────────────────────────────────
+class O7SolarSystemOrbitsPrepTest(unittest.TestCase):
+    """core.viz.prepare_solar_system_orbits — body sets + km→AU moon conversion."""
+
+    def test_planets(self):
+        res = viz.prepare_solar_system_orbits("planets")
+        self.assertNotIn("error", res)
+        self.assertEqual(len(res["orbits"]), 8)
+        self.assertEqual(res["star_name"], "Sun")
+        self.assertEqual(res["hz_zones"], [])
+        # Sorted by SMA → Mercury first; orbit-frame x_pts[0] == periastron.
+        o0 = res["orbits"][0]
+        self.assertEqual(o0["name"], "Mercury")
+        self.assertAlmostEqual(o0["peri"], 0.387 * (1 - 0.205), places=3)
+        self.assertAlmostEqual(o0["x_pts"][0], o0["peri"], places=6)
+
+    def test_dwarfs_asteroids(self):
+        res = viz.prepare_solar_system_orbits("dwarfs_asteroids")
+        self.assertNotIn("error", res)
+        self.assertGreater(len(res["orbits"]), 0)
+
+    def test_moon_km_to_au_anchor(self):
+        res = viz.prepare_solar_system_orbits("moons:Earth")
+        self.assertNotIn("error", res)
+        self.assertEqual(res["star_name"], "Earth")
+        # Luna SMA 384399 km ÷ 1.496e8 = 0.002569 AU.
+        self.assertAlmostEqual(res["orbits"][0]["sma"], 384399 / 1.496e8, places=6)
+
+    def test_errors(self):
+        self.assertIn("error", viz.prepare_solar_system_orbits("nope"))
+        self.assertIn("error", viz.prepare_solar_system_orbits("moons:Zog"))
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O7SolarSystemCanvasAndPanelTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_canvas_smoke(self):
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        pl = viz.prepare_solar_system_orbits("planets")
+        build_canvas_ok(self, make_orbits_canvas, None, pl["orbits"], pl["hz_zones"],
+                        pl["max_au"], star_name="Sun", title="Solar System — Planets")
+        mn = viz.prepare_solar_system_orbits("moons:Jupiter")
+        build_canvas_ok(self, make_orbits_canvas, None, mn["orbits"], mn["hz_zones"],
+                        mn["max_au"], star_name="Jupiter", km_axis=True)
+
+    def test_orbits_canvas_additive_no_new_kwargs(self):
+        # F3-style guard: default title/km_axis → still builds for existing callers.
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        pl = viz.prepare_solar_system_orbits("planets")
+        build_canvas_ok(self, make_orbits_canvas, None, pl["orbits"], [], pl["max_au"])
+
+    def test_panel_tabs(self):
+        import gui.panels as panels
+
+        class _StubWindow:
+            pass
+        p = panels.SolarSystemPanel(_StubWindow())
+        self.assertEqual(p._tables_widget.count(), 4)        # data tabs unchanged
+        self.assertEqual(p._viz_tabs_widget.count(), 2)
+        self.assertEqual([p._viz_tabs_widget.tabText(i) for i in range(2)],
+                         ["Orbital Diagram", "Moon Systems"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-6 — O10 Honorverse Visualization.
+#   O10a (opt 14): prepare_hyper_limits + make_hyper_bar_canvas + panel tab.
+#   O10b (opts 8/9): compute_hyper_limit_for_spectral_type ceiling rule;
+#     prepare_system_regions_diagram adds `hyper_limit` only when spectral_type
+#     resolves; the ring draws only with show_hyper=True; the wrapper's checkbox
+#     appears only when a hyper_limit is present.
+# ─────────────────────────────────────────────────────────────────────────────
+import core.science as science
+
+
+class O10aHyperLimitsPrepTest(unittest.TestCase):
+    def test_prep(self):
+        d = viz.prepare_hyper_limits()
+        self.assertEqual(len(d["classes"]), 44)
+        self.assertEqual(d["classes"][0], "O")
+        self.assertAlmostEqual(d["lm"][0], 49.6, places=2)
+        self.assertAlmostEqual(d["au"][0], 49.6 / 8.3167, places=4)
+        self.assertEqual(d["colors"][0], "#9BB0FF")
+        # Red Giant has no OBAFGKM leading letter → default grey.
+        self.assertEqual(d["colors"][d["classes"].index("Red Giant")], "#AAAAAA")
+        self.assertEqual(len(d["lm"]), len(d["au"]))
+
+
+class O10bHyperLookupTest(unittest.TestCase):
+    def test_ceiling_rule(self):
+        f = science.compute_hyper_limit_for_spectral_type
+        self.assertEqual(f("G2V")["matched_class"], "G2")    # exact (complete 0–9)
+        self.assertEqual(f("K5V")["matched_class"], "K5")
+        self.assertEqual(f("O5V")["matched_class"], "O")     # single-entry letter
+        self.assertEqual(f("A0V")["matched_class"], "A")
+        self.assertEqual(f("F3IV")["matched_class"], "F3")
+        self.assertEqual(f("M9.5")["matched_class"], "M9")   # clamp past coolest
+        self.assertAlmostEqual(f("G2V")["au"], 21.12 / 8.3167, places=4)
+
+    def test_none_paths(self):
+        f = science.compute_hyper_limit_for_spectral_type
+        self.assertIsNone(f("DA1.9"))   # white dwarf — no OBAFGKM class
+        self.assertIsNone(f(""))
+        self.assertIsNone(f(None))
+        self.assertIsNone(f("WR"))
+
+
+class O10bRegionsPrepGatingTest(unittest.TestCase):
+    def _regions_dict(self, spectral=None):
+        import core.regions as reg
+        d = reg.compute_star_system_regions(
+            vmag=4.83, boloLum=-0.07, temp=5778, plx=130,
+            sunlight_intensity=1.0, bond_albedo=0.3)
+        if spectral is not None:
+            d["spectral_type"] = spectral
+        return d
+
+    def test_hyper_limit_added_only_with_spectral_type(self):
+        with_sp = viz.prepare_system_regions_diagram(self._regions_dict("G2V"))
+        self.assertIn("hyper_limit", with_sp)
+        self.assertAlmostEqual(with_sp["hyper_limit"]["au"], 21.12 / 8.3167, places=3)
+        # No spectral type (opt 10 / opt 13 path) → no hyper_limit key.
+        without = viz.prepare_system_regions_diagram(self._regions_dict(None))
+        self.assertNotIn("hyper_limit", without)
+        # Unresolvable type (white dwarf) → no hyper_limit either.
+        wd = viz.prepare_system_regions_diagram(self._regions_dict("DA1.9"))
+        self.assertNotIn("hyper_limit", wd)
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O10CanvasAndPanelTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _regions_data(self, spectral="G2V"):
+        import core.regions as reg
+        d = reg.compute_star_system_regions(
+            vmag=4.83, boloLum=-0.07, temp=5778, plx=130,
+            sunlight_intensity=1.0, bond_albedo=0.3)
+        d["spectral_type"] = spectral
+        return viz.prepare_system_regions_diagram(d)
+
+    def test_hyper_bar_canvas(self):
+        from gui.visualizations.plot_helpers import make_hyper_bar_canvas
+        build_canvas_ok(self, make_hyper_bar_canvas, None, viz.prepare_hyper_limits())
+        build_canvas_ok(self, make_hyper_bar_canvas, None, {"error": "empty"})
+
+    def test_regions_ring_only_when_show_hyper(self):
+        from gui.visualizations.plot_helpers import make_system_regions_canvas
+        data = self._regions_data()
+        c_off, _ = make_system_regions_canvas(None, data, show_hyper=False)
+        c_on, _  = make_system_regions_canvas(None, data, show_hyper=True)
+
+        def _legend_text(cv):
+            leg = cv.figure.axes[0].get_legend()
+            return " ".join(t.get_text() for t in leg.get_texts()) if leg else ""
+        self.assertNotIn("Honorverse", _legend_text(c_off))   # additive: off → no ring
+        self.assertIn("Honorverse", _legend_text(c_on))
+
+    def test_wrapper_checkbox_presence(self):
+        from PySide6.QtWidgets import QCheckBox
+        from gui.visualizations.plot_helpers import wrap_system_regions_with_hyper_toggle
+        w_hyper = wrap_system_regions_with_hyper_toggle(None, self._regions_data())
+        self.assertEqual(len(w_hyper.findChildren(QCheckBox)), 1)
+        # No hyper_limit → no checkbox (opt-10 manual path: no spectral type).
+        import core.regions as reg
+        d_manual = reg.compute_star_system_regions(
+            vmag=4.83, boloLum=-0.07, temp=5778, plx=130,
+            sunlight_intensity=1.0, bond_albedo=0.3)
+        w_plain = wrap_system_regions_with_hyper_toggle(
+            None, viz.prepare_system_regions_diagram(d_manual))
+        self.assertEqual(len(w_plain.findChildren(QCheckBox)), 0)
+
+    def test_opt14_panel_has_hyper_tab(self):
+        import gui.panels as panels
+
+        class _StubWindow:
+            pass
+        p = panels.HonorverseHyperPanel(_StubWindow())
+        names = [p._viz_tabs_widget.tabText(i)
+                 for i in range(p._viz_tabs_widget.count())]
+        self.assertIn("Hyper Limits", names)
+
+    def test_region_tabs_checkbox_gating(self):
+        # add_region_diagram_tabs: System Regions tab gets a checkbox only when
+        # the dict resolves a hyper limit (opts 8/9), not for opts 10/13.
+        from PySide6.QtWidgets import QTabWidget, QCheckBox
+        from gui.panels.star_regions import add_region_diagram_tabs
+        import core.regions as reg
+
+        def _sr_tab_checkboxes(d):
+            tw = QTabWidget()
+            add_region_diagram_tabs(tw, d)
+            for i in range(tw.count()):
+                if tw.tabText(i) == "System Regions Diagram":
+                    return len(tw.widget(i).findChildren(QCheckBox))
+            return None
+
+        d_sp = reg.compute_star_system_regions(
+            vmag=4.83, boloLum=-0.07, temp=5778, plx=130,
+            sunlight_intensity=1.0, bond_albedo=0.3)
+        d_sp["spectral_type"] = "G2V"
+        self.assertEqual(_sr_tab_checkboxes(d_sp), 1)
+        # Opt 13 (Sol) now carries G2V → checkbox present (Sun hyper limit).
+        self.assertEqual(_sr_tab_checkboxes(reg.compute_sol_regions()), 1)
+        # Opt 10 (manual, no spectral type) → no checkbox.
+        d_manual = reg.compute_star_system_regions(
+            vmag=4.83, boloLum=-0.07, temp=5778, plx=130,
+            sunlight_intensity=1.0, bond_albedo=0.3)
+        self.assertEqual(_sr_tab_checkboxes(d_manual), 0)
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O10cOrbitalHyperOverlayTest(unittest.TestCase):
+    """O10b extension — hyper-limit ring on the Orbital Diagram (opts 3/6/Map)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _StubWindow:
+        pass
+
+    def _orbits(self):
+        return viz.prepare_system_orbits([
+            {"pl_name": "b", "pl_orbsmax": "1.0", "pl_orbeccen": "0.0",
+             "st_teff": "5778", "st_rad": "1.0", "hostname": "Test"}])
+
+    def test_canvas_ring_only_with_hyper_au(self):
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        od = self._orbits()
+
+        def _legend_text(cv):
+            leg = cv.figure.axes[0].get_legend()
+            return " ".join(t.get_text() for t in leg.get_texts()) if leg else ""
+        c_off, _ = make_orbits_canvas(None, od["orbits"], od["hz_zones"], od["max_au"])
+        c_on, _  = make_orbits_canvas(None, od["orbits"], od["hz_zones"], od["max_au"],
+                                      hyper_au=2.54)
+        self.assertNotIn("Honorverse", _legend_text(c_off))   # additive: default off
+        self.assertIn("Honorverse", _legend_text(c_on))
+
+    def test_hyper_au_resolution(self):
+        from gui.panels.nasa_exoplanet import _hyper_au_for
+        self.assertAlmostEqual(_hyper_au_for("G2V"), 21.12 / 8.3167, places=3)
+        self.assertIsNone(_hyper_au_for("DA1.9"))             # white dwarf
+        self.assertIsNone(_hyper_au_for(None))
+
+    def test_orbits_tab_checkbox_gating(self):
+        from PySide6.QtWidgets import QCheckBox
+        from gui.panels.nasa_exoplanet import _make_orbits_tab
+        import gui.panels as panels
+        p = panels.NasaPlanetarySystemsPanel(self._StubWindow())
+        planets = [{"pl_name": "b", "pl_orbsmax": "1.0", "pl_orbeccen": "0.0",
+                    "st_teff": "5778", "st_rad": "1.0", "hostname": "Test"}]
+        # Resolvable type → solar + hyper checkboxes (2).
+        w2 = _make_orbits_tab(p, planets, "Test", sp_type="G2V")
+        self.assertEqual(len(w2.findChildren(QCheckBox)), 2)
+        # No / unresolvable type → solar checkbox only (1).
+        self.assertEqual(
+            len(_make_orbits_tab(p, planets, "Test", sp_type=None).findChildren(QCheckBox)), 1)
+        self.assertEqual(
+            len(_make_orbits_tab(p, planets, "Test", sp_type="DA1.9").findChildren(QCheckBox)), 1)
+
+    def test_hwc_panel_render_builds_viz_tabs(self):
+        # Regression: a function-level `import core.science` in HwcPanel._render
+        # once shadowed the module-level `core`, aborting the whole viz section
+        # (no Show Diagrams). Drive _render end-to-end and assert viz tabs build.
+        from PySide6.QtWidgets import QCheckBox
+        import gui.panels as panels
+
+        class _Nav:
+            def show(self): pass
+            def hide(self): pass
+
+        class _Win:
+            nav_tree = _Nav()
+            def statusBar(self):
+                class _S:
+                    def showMessage(self, *a, **k): pass
+                return _S()
+
+        p = panels.HwcPanel(_Win())
+        result = {
+            "simbad": {"desig_str": "Tau Ceti"},
+            "star_row": {"S_NAME": "Tau Ceti", "S_TYPE": "G8.5V",
+                         "S_TEMPERATURE": "5344", "S_RADIUS": "0.79",
+                         "S_LUMINOSITY": "0.52"},
+            "planet_rows": [{"P_NAME": "Tau Ceti e", "P_SEMI_MAJOR_AXIS": "0.538",
+                             "P_ECCENTRICITY": "0.18"}],
+            "hypatia": None,
+        }
+        p._render(result)
+        tabs = [p._viz_tabs_widget.tabText(i)
+                for i in range(p._viz_tabs_widget.count())]
+        self.assertIn("Orbital Diagram", tabs)      # render reached the viz section
+        self.assertIn("HZ Diagram", tabs)
+        for i in range(p._viz_tabs_widget.count()):
+            if p._viz_tabs_widget.tabText(i) == "Orbital Diagram":
+                # G8.5 resolves → solar + hyper checkboxes.
+                self.assertEqual(
+                    len(p._viz_tabs_widget.widget(i).findChildren(QCheckBox)), 2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-7 — Hypatia Kinematics (O11 Toomre diagram + F2 Explain dialog)
+# ─────────────────────────────────────────────────────────────────────────────
+class O11ToomreTest(unittest.TestCase):
+    """prepare_toomre — √(U²+W²) anchor, LSR correction, null/error paths (offline)."""
+
+    @staticmethod
+    def _hyp(u, v, w, disk="thin"):
+        return {"star_name": "Tau Ceti",
+                "properties": {"u_vel": u, "v_vel": v, "w_vel": w, "disk": disk},
+                "abundances": []}
+
+    def test_uw_and_lsr_anchor(self):
+        su, sv, sw = viz._SOLAR_MOTION_UVW
+        res = viz.prepare_toomre(self._hyp(30.0, -40.0, 10.0))
+        self.assertNotIn("error", res)
+        self.assertAlmostEqual(res["v"], -40.0 + sv, places=6)
+        self.assertAlmostEqual(res["uw"], math.hypot(30.0 + su, 10.0 + sw), places=6)
+        self.assertAlmostEqual(
+            res["total"],
+            math.sqrt((30.0 + su) ** 2 + (-40.0 + sv) ** 2 + (10.0 + sw) ** 2),
+            places=6)
+        self.assertEqual(res["disk"], "thin")
+        self.assertEqual(res["star_name"], "Tau Ceti")
+
+    def test_error_when_any_component_null(self):
+        self.assertIn("error", viz.prepare_toomre(self._hyp(None, -40.0, 10.0)))
+        self.assertIn("error", viz.prepare_toomre(self._hyp(30.0, None, 10.0)))
+        self.assertIn("error", viz.prepare_toomre(self._hyp(30.0, -40.0, None)))
+
+    def test_error_passthrough_and_empty(self):
+        self.assertIn("error", viz.prepare_toomre({"error": "boom"}))
+        self.assertIn("error", viz.prepare_toomre({}))
+        self.assertIn("error", viz.prepare_toomre(
+            {"star_name": "X", "properties": {}}))
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O11CanvasSmokeTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_toomre_canvas_builds(self):
+        from gui.visualizations.plot_helpers import make_toomre_canvas
+        data = viz.prepare_toomre(O11ToomreTest._hyp(20.0, -25.0, 8.0))
+        build_canvas_ok(self, make_toomre_canvas, None, data)
+
+    def test_toomre_canvas_error_card(self):
+        from gui.visualizations.plot_helpers import make_toomre_canvas
+        build_canvas_ok(self, make_toomre_canvas, None, {"error": "no kinematics"})
+
+    def test_make_kinematics_tab_builds_with_help_button(self):
+        from PySide6.QtWidgets import QWidget, QPushButton
+        from gui.visualizations.plot_helpers import make_kinematics_tab
+        w = make_kinematics_tab(O11ToomreTest._hyp(20.0, -25.0, 8.0))
+        self.assertIsInstance(w, QWidget)
+        # The "ℹ What is this?" help button is present and opens the dialog.
+        btns = w.findChildren(QPushButton)
+        self.assertTrue(btns)
+        from gui.help import _open_help_dialogs
+        n0 = len(_open_help_dialogs)
+        btns[0].click()
+        self.assertGreaterEqual(len(_open_help_dialogs), n0 + 1)
+
+    def test_make_kinematics_tab_none_without_uvw(self):
+        from gui.visualizations.plot_helpers import make_kinematics_tab
+        self.assertIsNone(make_kinematics_tab(O11ToomreTest._hyp(None, -25.0, 8.0)))
+        self.assertIsNone(make_kinematics_tab({"error": "x"}))
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O11PanelWiringSmokeTest(unittest.TestCase):
+    """A host panel's _render adds a "Kinematics" tab when U/V/W are present."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _Nav:
+        def show(self): pass
+        def hide(self): pass
+
+    class _Win:
+        def __init__(self):
+            self.nav_tree = O11PanelWiringSmokeTest._Nav()
+        def statusBar(self):
+            class _S:
+                def showMessage(self, *a, **k): pass
+            return _S()
+
+    def _result(self, hypatia):
+        return {
+            "simbad": {"desig_str": "Tau Ceti"},
+            "star_row": {"S_NAME": "Tau Ceti", "S_TYPE": "G8.5V",
+                         "S_TEMPERATURE": "5344", "S_RADIUS": "0.79",
+                         "S_LUMINOSITY": "0.52"},
+            "planet_rows": [{"P_NAME": "Tau Ceti e", "P_SEMI_MAJOR_AXIS": "0.538",
+                             "P_ECCENTRICITY": "0.18"}],
+            "hypatia": hypatia,
+        }
+
+    def test_kinematics_tab_present_with_uvw(self):
+        import gui.panels as panels
+        p = panels.HwcPanel(self._Win())
+        hyp = {"star_name": "Tau Ceti",
+               "properties": {"u_vel": 10.0, "v_vel": -20.0, "w_vel": 5.0,
+                              "disk": "thin"},
+               "abundances": []}
+        p._render(self._result(hyp))
+        tabs = [p._viz_tabs_widget.tabText(i)
+                for i in range(p._viz_tabs_widget.count())]
+        self.assertIn("Kinematics", tabs)
+
+    def test_no_kinematics_tab_without_uvw(self):
+        import gui.panels as panels
+        p = panels.HwcPanel(self._Win())
+        hyp = {"star_name": "Tau Ceti",
+               "properties": {"u_vel": None, "v_vel": -20.0, "w_vel": 5.0},
+               "abundances": []}
+        p._render(self._result(hyp))
+        tabs = [p._viz_tabs_widget.tabText(i)
+                for i in range(p._viz_tabs_widget.count())]
+        self.assertNotIn("Kinematics", tabs)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# O-8 — HWC Habitability Visuals (O12: Temperature Ranges + ESI vs Orbit, opt 6)
+# ─────────────────────────────────────────────────────────────────────────────
+class O12HwcTempsTest(unittest.TestCase):
+    """prepare_hwc_temps — qualify rule, skip count, error path (offline)."""
+
+    def test_eq_only_surf_only_both_and_skipped(self):
+        rows = [
+            {"P_NAME": "b", "P_TEMP_EQUIL_MIN": "240", "P_TEMP_EQUIL": "265",
+             "P_TEMP_EQUIL_MAX": "290"},                                   # eq only
+            {"P_NAME": "c", "P_TEMP_SURF_MIN": "195", "P_TEMP_SURF": "215",
+             "P_TEMP_SURF_MAX": "240"},                                    # surf only
+            {"P_NAME": "d", "P_TEMP_EQUIL_MIN": "330", "P_TEMP_EQUIL_MAX": "400",
+             "P_TEMP_SURF_MIN": "360", "P_TEMP_SURF_MAX": "440"},          # both
+            {"P_NAME": "e", "P_TEMP_EQUIL_MIN": "250"},                    # no pair → skip
+        ]
+        res = viz.prepare_hwc_temps(rows)
+        self.assertNotIn("error", res)
+        self.assertEqual(len(res["planets"]), 3)
+        self.assertEqual(res["skipped"], 1)
+        b = res["planets"][0]
+        self.assertEqual((b["eq_min"], b["eq"], b["eq_max"]), (240.0, 265.0, 290.0))
+        self.assertIsNone(b["surf_min"])
+        c = res["planets"][1]
+        self.assertIsNone(c["eq_min"])
+        self.assertEqual((c["surf_min"], c["surf_max"]), (195.0, 240.0))
+
+    def test_error_when_none_qualify(self):
+        self.assertIn("error", viz.prepare_hwc_temps(
+            [{"P_NAME": "x", "P_TEMP_EQUIL": "300"}]))
+        self.assertIn("error", viz.prepare_hwc_temps([]))
+
+
+class O12HwcEsiTest(unittest.TestCase):
+    """prepare_hwc_esi — SMA/ESI filter, HZ bands from star row, log span (offline)."""
+
+    def _star(self):
+        return {"S_HZ_OPT_MIN": "0.75", "S_HZ_OPT_MAX": "1.77",
+                "S_HZ_CON_MIN": "0.95", "S_HZ_CON_MAX": "1.67"}
+
+    def test_filter_bands_and_habitable(self):
+        rows = [
+            {"P_NAME": "b", "P_SEMI_MAJOR_AXIS": "0.7", "P_ESI": "0.92", "P_HABITABLE": "1"},
+            {"P_NAME": "c", "P_SEMI_MAJOR_AXIS": "1.4", "P_ESI": "0.64", "P_HABITABLE": "0"},
+            {"P_NAME": "d", "P_SEMI_MAJOR_AXIS": "", "P_ESI": "0.5"},        # no SMA → skip
+            {"P_NAME": "e", "P_SEMI_MAJOR_AXIS": "0.3", "P_ESI": ""},        # no ESI → skip
+        ]
+        res = viz.prepare_hwc_esi(self._star(), rows)
+        self.assertNotIn("error", res)
+        self.assertEqual(len(res["planets"]), 2)
+        self.assertEqual(res["skipped"], 2)
+        self.assertEqual(res["hz_opt"], [0.75, 1.77])
+        self.assertEqual(res["hz_con"], [0.95, 1.67])
+        self.assertTrue(res["planets"][0]["habitable"])
+        self.assertFalse(res["planets"][1]["habitable"])
+        self.assertFalse(res["log_x"])              # 1.4/0.7 = 2× < 10
+
+    def test_log_x_when_span_exceeds_10x(self):
+        rows = [
+            {"P_NAME": "b", "P_SEMI_MAJOR_AXIS": "0.2", "P_ESI": "0.5"},
+            {"P_NAME": "f", "P_SEMI_MAJOR_AXIS": "5.0", "P_ESI": "0.3"},   # 25× span
+        ]
+        res = viz.prepare_hwc_esi({}, rows)
+        self.assertTrue(res["log_x"])
+        self.assertIsNone(res["hz_opt"])            # empty star row → no bands
+
+    def test_error_when_none_qualify(self):
+        self.assertIn("error", viz.prepare_hwc_esi(
+            self._star(), [{"P_NAME": "x", "P_ESI": "0.5"}]))
+        self.assertIn("error", viz.prepare_hwc_esi(self._star(), []))
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O12CanvasSmokeTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_temp_canvas_builds(self):
+        from gui.visualizations.plot_helpers import make_hwc_temp_canvas
+        data = viz.prepare_hwc_temps([
+            {"P_NAME": "b", "P_TEMP_EQUIL_MIN": "240", "P_TEMP_EQUIL": "265",
+             "P_TEMP_EQUIL_MAX": "290", "P_TEMP_SURF_MIN": "255",
+             "P_TEMP_SURF": "280", "P_TEMP_SURF_MAX": "305"}])
+        build_canvas_ok(self, make_hwc_temp_canvas, None, data)
+
+    def test_esi_canvas_builds_and_error_card(self):
+        from gui.visualizations.plot_helpers import make_hwc_esi_canvas
+        data = viz.prepare_hwc_esi(
+            {"S_HZ_OPT_MIN": "0.75", "S_HZ_OPT_MAX": "1.77"},
+            [{"P_NAME": "b", "P_SEMI_MAJOR_AXIS": "0.7", "P_ESI": "0.92", "P_HABITABLE": "1"}])
+        build_canvas_ok(self, make_hwc_esi_canvas, None, data)
+        build_canvas_ok(self, make_hwc_esi_canvas, None, {"error": "x"})
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class O12PanelWiringSmokeTest(unittest.TestCase):
+    """HwcPanel._render adds the two O12 tabs when planets qualify, omits them otherwise."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _Nav:
+        def show(self): pass
+        def hide(self): pass
+
+    class _Win:
+        def __init__(self):
+            self.nav_tree = O12PanelWiringSmokeTest._Nav()
+        def statusBar(self):
+            class _S:
+                def showMessage(self, *a, **k): pass
+            return _S()
+
+    def _render(self, planet_rows):
+        import gui.panels as panels
+        p = panels.HwcPanel(self._Win())
+        p._render({
+            "simbad": {"desig_str": "Tau Ceti"},
+            "star_row": {"S_NAME": "Tau Ceti", "S_TYPE": "G8.5V",
+                         "S_TEMPERATURE": "5344", "S_RADIUS": "0.79",
+                         "S_LUMINOSITY": "0.52",
+                         "S_HZ_OPT_MIN": "0.55", "S_HZ_OPT_MAX": "1.0",
+                         "S_HZ_CON_MIN": "0.7", "S_HZ_CON_MAX": "0.9"},
+            "planet_rows": planet_rows,
+            "hypatia": None,
+        })
+        return [p._viz_tabs_widget.tabText(i)
+                for i in range(p._viz_tabs_widget.count())]
+
+    def test_tabs_present_with_qualifying_planets(self):
+        tabs = self._render([
+            {"P_NAME": "Tau Ceti e", "P_SEMI_MAJOR_AXIS": "0.538", "P_ESI": "0.78",
+             "P_HABITABLE": "1", "P_TEMP_EQUIL_MIN": "230", "P_TEMP_EQUIL": "250",
+             "P_TEMP_EQUIL_MAX": "270"}])
+        self.assertIn("Temperature Ranges", tabs)
+        self.assertIn("ESI vs Orbit", tabs)
+
+    def test_tabs_absent_without_qualifying_data(self):
+        tabs = self._render([
+            {"P_NAME": "Tau Ceti e", "P_SEMI_MAJOR_AXIS": "0.538"}])  # no ESI, no temp range
+        self.assertNotIn("Temperature Ranges", tabs)
+        self.assertNotIn("ESI vs Orbit", tabs)
 
 
 if __name__ == "__main__":

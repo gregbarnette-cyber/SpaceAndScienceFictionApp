@@ -168,6 +168,65 @@ def _add_route_chart_tabs(panel, result):
         _route_chart_3d_tab(panel, stars, limit_ly, edges), "Star Chart 3D")
 
 
+# ── Phase O O8 — Two-Star Map (opts 17, 20, 21) ──────────────────────────────
+
+def _two_star_route_map(result: dict, kind: str) -> dict:
+    """Convert a two-star result into route-map geometry for the Star Charts.
+
+    `kind="distance"` (opt 17: `star1_info`/`star2_info`) or `"travel"` (opts
+    20/21: `origin_info`/`dest_info`). star-1/origin is `stars[0]` (→ the gold ★
+    centre after `_centered`); Sol is appended as a grey reference node unless an
+    endpoint already is Sol (at the origin). The single dashed edge is labelled
+    with the distance (+ travel time and ×c for opts 20/21). Returns
+    {"stars", "edges", "edge_style"} or the `{"error"}` passthrough.
+    """
+    if not isinstance(result, dict) or "error" in result:
+        return result
+    if kind == "distance":
+        s1, s2 = result["star1_info"], result["star2_info"]
+        label = f"{result['distance_ly']:.2f} ly"
+    else:
+        s1, s2 = result["origin_info"], result["dest_info"]
+        label = (f"{result['distance_ly']:.2f} ly — "
+                 f"{result['travel_time_str']} @ {result['times_c']:g}×c")
+
+    def _node(s):
+        x, y, z = core.calculators._to_cartesian(s["ra_deg"], s["dec_deg"], s["ly"])
+        return {"name": s["name"], "desig": s.get("desig_str", ""),
+                "sp_type": "", "color": core.calculators._star_map_color(""),
+                "ly": s["ly"], "x": x, "y": y, "z": z}
+
+    n1, n2 = _node(s1), _node(s2)
+    stars = [n1, n2]
+    if not (abs(n1["ly"]) < 1e-9 or abs(n2["ly"]) < 1e-9):
+        stars.append({"name": "Sol", "desig": "", "sp_type": "G2V",
+                      "color": core.calculators._star_map_color("G2V"),
+                      "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0})
+    edges = [core.viz._route_edge(n1, n2, label, "dashed")]
+    return {"stars": stars, "edges": edges, "edge_style": "dashed"}
+
+
+def add_two_star_chart_tabs(panel, result: dict, kind: str):
+    """Add "Star Chart" + "Star Chart 3D" viz tabs for a two-star result (O8)."""
+    if not mpl_available():
+        return
+    rm = _two_star_route_map(result, kind)
+    if not isinstance(rm, dict) or "error" in rm or not rm.get("stars"):
+        return
+    stars, edges, limit_ly = _centered(rm)
+
+    chart_w = QWidget()
+    chart_l = QVBoxLayout(chart_w)
+    chart_l.setContentsMargins(4, 4, 4, 4)
+    canvas, toolbar = make_star_chart_canvas(panel, stars, limit_ly=limit_ly,
+                                             routes=edges)
+    chart_l.addWidget(toolbar)
+    chart_l.addWidget(canvas)
+    panel._viz_tabs_widget.addTab(chart_w, "Star Chart")
+    panel._viz_tabs_widget.addTab(
+        _route_chart_3d_tab(panel, stars, limit_ly, edges), "Star Chart 3D")
+
+
 # ── I1: Multi-Stop Journey ───────────────────────────────────────────────────
 
 class MultiStopJourneyPanel(DiagramToggleMixin, ResultPanel):

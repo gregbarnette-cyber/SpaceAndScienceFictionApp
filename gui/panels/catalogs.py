@@ -16,8 +16,10 @@ from gui.panels.base import ResultPanel, DiagramToggleMixin
 from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.viz
+import core.science
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas, wrap_scrollable,
+    make_kinematics_tab, make_hwc_temp_canvas, make_hwc_esi_canvas,
     make_mass_radius_canvas, make_size_comparison_canvas, wrap_orbits_with_solar_toggle,
     log_viz_error,
 )
@@ -381,7 +383,11 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         markers_arg = hwc_markers if hwc_markers else None
 
         if "orbits" in orbit_data:
-            def _build_orbits(solar_overlay):
+            _hl = core.science.compute_hyper_limit_for_spectral_type(
+                str(star_row.get("S_TYPE", "")))
+            hyper_au = _hl["au"] if _hl else None
+
+            def _build_orbits(solar_overlay, show_hyper):
                 return make_orbits_canvas(
                     self,
                     orbit_data["orbits"],
@@ -390,8 +396,9 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                     star_name=str(star_row.get("S_NAME", "")),
                     markers=markers_arg,
                     solar_overlay=solar_overlay,
+                    hyper_au=hyper_au if show_hyper else None,
                 )
-            orb_w = wrap_orbits_with_solar_toggle(self, _build_orbits)
+            orb_w = wrap_orbits_with_solar_toggle(self, _build_orbits, hyper_au=hyper_au)
             if orb_w is not None:
                 self._viz_tabs_widget.addTab(orb_w, "Orbital Diagram")
 
@@ -436,6 +443,32 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 sz_l.addWidget(sz_canvas)
                 self._viz_tabs_widget.addTab(sz_w, "Size Comparison")
 
+        # HWC habitability visuals (Phase O · O12) — per-system temperature ranges
+        # and ESI-vs-orbit; each tab appears only when ≥1 planet qualifies.
+        if mpl_available():
+            try:
+                tr_data = core.viz.prepare_hwc_temps(planet_rows)
+                if "error" not in tr_data:
+                    tr_canvas, tr_toolbar = make_hwc_temp_canvas(None, tr_data)
+                    if tr_canvas is not None:
+                        tr_w = wrap_scrollable(None, tr_canvas, tr_toolbar)
+                        self._viz_tabs_widget.addTab(tr_w, "Temperature Ranges")
+            except Exception:
+                log_viz_error("Temperature Ranges")
+            try:
+                es_data = core.viz.prepare_hwc_esi(star_row, planet_rows)
+                if "error" not in es_data:
+                    es_canvas, es_toolbar = make_hwc_esi_canvas(self, es_data)
+                    if es_canvas is not None:
+                        es_w = QWidget()
+                        es_l = QVBoxLayout(es_w)
+                        es_l.setContentsMargins(4, 4, 4, 4)
+                        es_l.addWidget(es_toolbar)
+                        es_l.addWidget(es_canvas)
+                        self._viz_tabs_widget.addTab(es_w, "ESI vs Orbit")
+            except Exception:
+                log_viz_error("ESI vs Orbit")
+
         if hypatia and "error" not in hypatia:
             try:
                 ab_data = core.viz.prepare_abundance_profile(hypatia)
@@ -448,6 +481,13 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
                 log_viz_error("Abundance Profile")
+
+            try:
+                kin_w = make_kinematics_tab(hypatia)
+                if kin_w is not None:
+                    self._viz_tabs_widget.addTab(kin_w, "Kinematics")
+            except Exception:
+                log_viz_error("Kinematics")
 
         self._finish_render()
 

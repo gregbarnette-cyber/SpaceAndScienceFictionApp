@@ -22,6 +22,7 @@ from core.equations import _kopparapu_seff
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_system_regions_canvas, make_alt_hz_canvas,
     make_abundance_canvas, log_viz_error, wrap_scrollable,
+    wrap_system_regions_with_hyper_toggle, make_kinematics_tab,
 )
 
 
@@ -55,6 +56,80 @@ def _au_lm3(val: float) -> str:
     return f"{val:.3f} ({val * 8.3167:.3f} LM)"
 
 
+
+
+# ── Shared region-diagram tabs (opts 8/9/10 + opt 13 Sol Regions, O6) ─────────
+
+def add_region_diagram_tabs(target, d: dict, hypatia=None):
+    """Add the HZ / System Regions / Alternate HZ (+ Abundance Profile) diagram
+    tabs for a star-regions dict `d` to `target` (a QTabWidget).
+
+    Shared by the opts 8/9/10 star-regions panels (via `_build_region_tabs`) and
+    the opt-13 Sol Regions panel (Phase O O6 diagram parity). Guarded by
+    `mpl_available()`; a render failure is logged, not fatal. The Abundance
+    Profile tab is added only when `hypatia` carries valid data (opts 9/10/13
+    pass None → omitted).
+    """
+    if not mpl_available():
+        return
+    try:
+        hz_data = core.viz.prepare_hz_diagram(d["temp"], d["calculatedLuminosity"])
+        if "zones" in hz_data:
+            hz_w = QWidget()
+            hz_l = QVBoxLayout(hz_w)
+            hz_l.setContentsMargins(4, 4, 4, 4)
+            canvas, toolbar = make_hz_canvas(
+                None,
+                hz_data["zones"],
+                hz_data["max_au"],
+                title=f"Habitable Zone  (T={d['temp']:.0f} K,  L={d['calculatedLuminosity']:.4f} L☉)",
+                eeid_au=d.get("distAU"),
+            )
+            hz_l.addWidget(toolbar)
+            hz_l.addWidget(canvas)
+            target.addTab(hz_w, "HZ Diagram")
+
+        # System Regions Diagram — wrapped so opts 8/9 (with a resolvable
+        # spectral type) get the Phase O O10b "Show Honorverse Hyper Limit"
+        # checkbox; opts 10/13 (no hyper_limit) get the plain canvas.
+        regions_data = core.viz.prepare_system_regions_diagram(d)
+        sr_w = wrap_system_regions_with_hyper_toggle(None, regions_data)
+        if sr_w is not None:
+            target.addTab(sr_w, "System Regions Diagram")
+
+        alt_data = core.viz.prepare_alt_hz_diagram(d)
+        if "zones" in alt_data:
+            alt_canvas, alt_toolbar = make_alt_hz_canvas(
+                None,
+                alt_data["zones"],
+                alt_data["max_au"],
+                eeid_au=d.get("distAU"),
+            )
+            alt_w = QWidget()
+            alt_l = QVBoxLayout(alt_w)
+            alt_l.setContentsMargins(4, 4, 4, 4)
+            alt_l.addWidget(alt_toolbar)
+            alt_l.addWidget(alt_canvas)
+            target.addTab(alt_w, "Alternate HZ Diagram")
+
+        # Abundance Profile — only when Hypatia data is present and valid
+        if hypatia and "error" not in hypatia:
+            ab_data = core.viz.prepare_abundance_profile(hypatia)
+            if "error" not in ab_data:
+                ab_canvas, ab_toolbar = make_abundance_canvas(
+                    None, ab_data, hypatia.get("star_name", "")
+                )
+                if ab_canvas is not None:
+                    ab_w = wrap_scrollable(None, ab_canvas, ab_toolbar)
+                    target.addTab(ab_w, "Abundance Profile")
+
+        # Kinematics (Toomre) — only when U/V/W are all present (Phase O O11).
+        if hypatia and "error" not in hypatia:
+            kin_w = make_kinematics_tab(hypatia)
+            if kin_w is not None:
+                target.addTab(kin_w, "Kinematics")
+    except Exception:
+        log_viz_error("Star Regions diagrams")
 
 
 # ── Shared results renderer ───────────────────────────────────────────────────
@@ -206,63 +281,9 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
     if hypatia is not None:
         tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
 
-    # ── Visualization tabs (require matplotlib) ───────────────────────────────
-    if mpl_available():
-        target = viz_widget if viz_widget is not None else tabs
-        try:
-            hz_data = core.viz.prepare_hz_diagram(d["temp"], d["calculatedLuminosity"])
-            if "zones" in hz_data:
-                hz_w = QWidget()
-                hz_l = QVBoxLayout(hz_w)
-                hz_l.setContentsMargins(4, 4, 4, 4)
-                canvas, toolbar = make_hz_canvas(
-                    None,
-                    hz_data["zones"],
-                    hz_data["max_au"],
-                    title=f"Habitable Zone  (T={d['temp']:.0f} K,  L={d['calculatedLuminosity']:.4f} L☉)",
-                    eeid_au=d.get("distAU"),
-                )
-                hz_l.addWidget(toolbar)
-                hz_l.addWidget(canvas)
-                target.addTab(hz_w, "HZ Diagram")
-
-            regions_data = core.viz.prepare_system_regions_diagram(d)
-            sr_canvas, sr_toolbar = make_system_regions_canvas(None, regions_data)
-            if sr_canvas is not None:
-                sr_w = QWidget()
-                sr_l = QVBoxLayout(sr_w)
-                sr_l.setContentsMargins(4, 4, 4, 4)
-                sr_l.addWidget(sr_toolbar)
-                sr_l.addWidget(sr_canvas)
-                target.addTab(sr_w, "System Regions Diagram")
-
-            alt_data = core.viz.prepare_alt_hz_diagram(d)
-            if "zones" in alt_data:
-                alt_canvas, alt_toolbar = make_alt_hz_canvas(
-                    None,
-                    alt_data["zones"],
-                    alt_data["max_au"],
-                    eeid_au=d.get("distAU"),
-                )
-                alt_w = QWidget()
-                alt_l = QVBoxLayout(alt_w)
-                alt_l.setContentsMargins(4, 4, 4, 4)
-                alt_l.addWidget(alt_toolbar)
-                alt_l.addWidget(alt_canvas)
-                target.addTab(alt_w, "Alternate HZ Diagram")
-
-            # Abundance Profile — only when Hypatia data is present and valid
-            if hypatia and "error" not in hypatia:
-                ab_data = core.viz.prepare_abundance_profile(hypatia)
-                if "error" not in ab_data:
-                    ab_canvas, ab_toolbar = make_abundance_canvas(
-                        None, ab_data, hypatia.get("star_name", "")
-                    )
-                    if ab_canvas is not None:
-                        ab_w = wrap_scrollable(None, ab_canvas, ab_toolbar)
-                        target.addTab(ab_w, "Abundance Profile")
-        except Exception:
-            log_viz_error("Star Regions diagrams")
+    # ── Visualization tabs (require matplotlib) — shared with opt 13 (O6) ──────
+    add_region_diagram_tabs(
+        viz_widget if viz_widget is not None else tabs, d, hypatia)
 
     return tabs
 

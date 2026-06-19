@@ -74,22 +74,31 @@ def wrap_scrollable(parent, canvas, toolbar):
     return container
 
 
-def wrap_orbits_with_solar_toggle(parent, build_canvas):
-    """Wrap an orbital-diagram canvas in a tab with a Solar-System overlay checkbox.
+def wrap_orbits_with_solar_toggle(parent, build_canvas, hyper_au=None):
+    """Wrap an orbital-diagram canvas in a tab with overlay checkboxes.
 
-    `build_canvas(solar_overlay: bool) -> (canvas, toolbar)` is called to (re)build the
-    canvas; toggling the "Show Solar System reference" checkbox rebuilds it in place
-    (cheap — same prepared data, just the additive `solar_overlay` flag). Shared by the
-    Orbital Diagram tabs on opts 3, 6, and the Map panel (Phase O · O4). Returns the
-    container QWidget, or None if the canvas can't build.
+    `build_canvas(solar_overlay: bool, show_hyper: bool) -> (canvas, toolbar)` is called
+    to (re)build the canvas; toggling the "Show Solar System reference" checkbox rebuilds
+    it in place (Phase O · O4). **Phase O · O10b:** when `hyper_au` is given (> 0) a second
+    "Show Honorverse Hyper Limit (fiction)" checkbox is added (default off) that passes
+    `show_hyper=True`; with `hyper_au=None` there is no second checkbox (and `show_hyper`
+    is always False). Shared by the Orbital Diagram tabs on opts 3, 6, and the Map panel.
+    Returns the container QWidget, or None if the canvas can't build.
     """
-    from PySide6.QtWidgets import QWidget, QVBoxLayout, QCheckBox
+    from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QCheckBox
 
     container = QWidget(parent)
     lay = QVBoxLayout(container)
     lay.setContentsMargins(4, 4, 4, 4)
-    chk = QCheckBox("Show Solar System reference")
-    lay.addWidget(chk)
+    ctl = QHBoxLayout()
+    chk_solar = QCheckBox("Show Solar System reference")
+    ctl.addWidget(chk_solar)
+    chk_hyper = None
+    if hyper_au and hyper_au > 0:
+        chk_hyper = QCheckBox("Show Honorverse Hyper Limit (fiction)")
+        ctl.addWidget(chk_hyper)
+    ctl.addStretch()
+    lay.addLayout(ctl)
 
     state = {"toolbar": None, "canvas": None}
 
@@ -99,14 +108,17 @@ def wrap_orbits_with_solar_toggle(parent, build_canvas):
             state["toolbar"].deleteLater()
             lay.removeWidget(state["canvas"])
             state["canvas"].deleteLater()
-        canvas, toolbar = build_canvas(chk.isChecked())
+        show_hyper = chk_hyper.isChecked() if chk_hyper is not None else False
+        canvas, toolbar = build_canvas(chk_solar.isChecked(), show_hyper)
         state["toolbar"], state["canvas"] = toolbar, canvas
         if toolbar is not None:
             lay.addWidget(toolbar)
         if canvas is not None:
             lay.addWidget(canvas)
 
-    chk.toggled.connect(lambda _checked: _rebuild())
+    chk_solar.toggled.connect(lambda _checked: _rebuild())
+    if chk_hyper is not None:
+        chk_hyper.toggled.connect(lambda _checked: _rebuild())
     _rebuild()
     if state["canvas"] is None:
         return None
@@ -342,7 +354,9 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
 def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                        max_au: float, star_name: str = "",
                        eeid_au: float = None, markers: list = None,
-                       solar_overlay: bool = False):
+                       solar_overlay: bool = False,
+                       title: str = None, km_axis: bool = False,
+                       hyper_au: float = None):
     """Keplerian ellipse orbital diagram with HZ annulus overlay.
 
     orbits:  list of dicts {name, x_pts, y_pts, color, peri, sma, apo, ecc}.
@@ -352,6 +366,12 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
       the Solar-System planet semi-major axes (`core.viz._PLANET_SMAS`) for those
       that fit inside `max_au × 1.1`, with an end-of-orbit label. Default False →
       the render is byte-identical to before.
+    title: Phase O · O7 — overrides the "Planetary Orbits" diagram title
+      (default None → unchanged).
+    km_axis: Phase O · O7 — adds a secondary top x-axis in km (AU × 1.496e8) for
+      moon-system diagrams (default False → unchanged).
+    hyper_au: Phase O · O10b — when > 0, draw a dashed-red Honorverse hyper-limit
+      ring at this AU (expanding the frame if needed); default None → unchanged.
     Returns (canvas, toolbar).
     """
     valid_markers = [m for m in (markers or []) if m.get("au") and m["au"] > 0]
@@ -359,6 +379,9 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
         max_marker_au = max(m["au"] for m in valid_markers)
         if max_marker_au > max_au * 0.85:
             max_au = max_marker_au * 1.2
+    # Phase O O10b: ensure the hyper-limit ring fits the frame when shown.
+    if hyper_au and hyper_au > 0 and hyper_au > max_au * 0.85:
+        max_au = hyper_au * 1.15
 
     fig = Figure(figsize=(6.5, 6.5), facecolor=_SPACE_BG)
     canvas = FigureCanvas(fig)
@@ -410,6 +433,15 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                 label=f"{orb['name']}  (a={orb['sma']:.3f} AU)")
         ax.scatter([orb["peri"]], [0], color=orb["color"], s=18, zorder=4)
 
+    # Honorverse hyper-limit ring (Phase O O10b) — dashed red, clearly fiction.
+    if hyper_au and hyper_au > 0:
+        ax.add_patch(Circle((0, 0), hyper_au, fill=False, edgecolor="#cc2222",
+                            linewidth=1.8, linestyle=(0, (5, 3)), alpha=0.95,
+                            zorder=6))
+        ax.text(-hyper_au * 0.717, hyper_au * 0.717,
+                f"Honorverse Hyper Limit\n{hyper_au:.2f} AU",
+                color="#cc2222", fontsize=6.5, ha="right", va="bottom", zorder=6)
+
     # Star
     star_r = max_au * 0.015
     ax.add_patch(Circle((0, 0), star_r, color="#FFEE55", zorder=10))
@@ -428,7 +460,16 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                 bbox=dict(facecolor="#1a1a1a", alpha=0.75,
                           edgecolor="#FFAA44", boxstyle="round,pad=3"))
 
-    _style_ax(ax, max_au, "Planetary Orbits")
+    _style_ax(ax, max_au, title or "Planetary Orbits")
+
+    # Phase O O7: optional secondary km axis (top) for moon-system diagrams.
+    if km_axis:
+        _KM_PER_AU = 1.496e8
+        sec = ax.secondary_xaxis(
+            "top", functions=(lambda au: au * _KM_PER_AU,
+                              lambda km: km / _KM_PER_AU))
+        sec.set_xlabel("km", color=_LABEL_CLR, fontsize=8)
+        sec.tick_params(colors=_LABEL_CLR, labelsize=7)
 
     # ── Legend: orbit lines + HZ boundary lines ────────────────────────────────
     orbit_handles, _ = ax.get_legend_handles_labels()
@@ -451,6 +492,11 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
         hz_legend.append(Line2D(
             [0], [0], color=m["color"], linewidth=1.2, linestyle="-.",
             alpha=0.8, label=f"{m['label']}  ({m['au']:.3f} AU)",
+        ))
+    if hyper_au and hyper_au > 0:
+        hz_legend.append(Line2D(
+            [0], [0], color="#cc2222", linewidth=1.8, linestyle="--",
+            label=f"Honorverse Hyper Limit · fiction  ({hyper_au:.2f} AU)",
         ))
     ax.legend(handles=orbit_handles + hz_legend, loc="upper right", fontsize=7,
               framealpha=0.85, labelcolor="#333333",
@@ -2138,13 +2184,16 @@ _SR_ZONE_NAMES = [
 ]
 
 
-def make_system_regions_canvas(parent, data: dict):
+def make_system_regions_canvas(parent, data: dict, show_hyper: bool = False):
     """Concentric ring diagram (√AU scale) showing star system region boundaries.
 
     Regions are painted as colored tori from the star outward, with √AU compression
     so all zones from the inner gravity limit to the system outer limit are visible.
 
     data: result of core.viz.prepare_system_regions_diagram().
+    show_hyper: Phase O · O10b — when True AND data carries a `hyper_limit`, draw a
+      distinct dashed-red Honorverse hyper-limit ring (clearly fiction) over the
+      physical zones. Default False → byte-identical render (no ring).
     Returns (canvas, toolbar) or (None, None) on failure.
     """
     regions = data.get("regions", [])
@@ -2203,6 +2252,19 @@ def make_system_regions_canvas(parent, data: dict):
         ax.text(r_e * 0.717, -r_e * 0.717, f"EEID\n{eeid_au:.3f} AU",
                 color="#006644", fontsize=6, ha="left", va="top", zorder=8)
 
+    # Honorverse hyper-limit ring (Phase O O10b) — dashed red, clearly fiction.
+    hyper = data.get("hyper_limit") if show_hyper else None
+    hyper_drawn = None
+    if hyper and hyper.get("au", 0) > 0:
+        r_h = au_to_r(hyper["au"])
+        ax.add_patch(Circle((0, 0), r_h, fill=False, edgecolor="#cc2222",
+                            linewidth=1.8, linestyle=(0, (5, 3)), alpha=0.95,
+                            zorder=9))
+        ax.text(-r_h * 0.717, r_h * 0.717,
+                f"{hyper['label']}\n{hyper['au']:.2f} AU",
+                color="#cc2222", fontsize=6, ha="right", va="bottom", zorder=9)
+        hyper_drawn = hyper
+
     # Star
     ax.add_patch(Circle((0, 0), STAR_R, color="#FFEE55", zorder=10))
 
@@ -2223,6 +2285,11 @@ def make_system_regions_canvas(parent, data: dict):
         handles.append(mpatches.Patch(
             facecolor="none", edgecolor="#006644", linewidth=1.5,
             label=f"Earth Equiv. Insolation  ({eeid_au:.3f} AU)",
+        ))
+    if hyper_drawn:
+        handles.append(Line2D(
+            [0], [0], color="#cc2222", linewidth=1.8, linestyle="--",
+            label=f"Honorverse Hyper Limit · fiction  ({hyper_drawn['au']:.2f} AU)",
         ))
     ax.legend(handles=handles, loc="upper right", fontsize=6,
               framealpha=0.85, labelcolor="#333333",
@@ -2437,11 +2504,15 @@ def _style_ax(ax, max_au: float, title: str):
 def _build_solar_travel_elements(ax, data: dict):
     """Draw planet orbits, planets, Sun, origin, destination, and travel line.
 
-    Returns (scatter_artists, origin_pt, dest_pt) for click-to-info wiring.
+    Returns (scatter_artists, scrub_bodies). `scrub_bodies` maps a unique
+    (role, name) key → {"scatter", "label", "id", "ha", "va"} so the Phase O O5b
+    animation can re-offset markers/labels from a cached ephemeris (set_offsets
+    only — orbit rings, the Sun, and the departure travel-line stay static).
     """
     import math as _math
 
     max_au = data["max_au"]
+    scrub_bodies = {}
 
     # Reference orbit circles (thin dashed rings)
     for orb in data.get("planet_orbits", []):
@@ -2460,9 +2531,12 @@ def _build_solar_travel_elements(ax, data: dict):
         r = _math.sqrt(p["x"] ** 2 + p["y"] ** 2) or 0.01
         ox_lbl = p["x"] / r * max_au * 0.04
         oy_lbl = p["y"] / r * max_au * 0.04
-        ax.text(p["x"] + ox_lbl, p["y"] + oy_lbl, p["name"],
-                color=_LABEL_CLR, fontsize=6.5, ha="center", va="center",
-                alpha=0.85, zorder=5)
+        lbl = ax.text(p["x"] + ox_lbl, p["y"] + oy_lbl, p["name"],
+                      color=_LABEL_CLR, fontsize=6.5, ha="center", va="center",
+                      alpha=0.85, zorder=5)
+        scrub_bodies[("planet", p["name"])] = {
+            "scatter": sc, "label": lbl, "id": p.get("horizons_id", ""),
+            "ha": "center", "va": "center"}
 
     # Sun
     ax.scatter([0], [0], color="#FFD700", s=120, marker="*", zorder=6)
@@ -2483,10 +2557,13 @@ def _build_solar_travel_elements(ax, data: dict):
     orig_sc._body_info = {"name": data["origin_name"],
                           "x": ox_, "y": oy_, "z": data["origin_xyz"][2],
                           "horizons_id": data.get("origin_id", "")}
-    ax.text(ox_ + max_au * 0.04, oy_ + max_au * 0.04,
-            f"Origin\n{data['origin_name']}",
-            color="#FF8800", fontsize=7, ha="left", va="bottom",
-            alpha=0.95, zorder=9)
+    orig_lbl = ax.text(ox_ + max_au * 0.04, oy_ + max_au * 0.04,
+                       f"Origin\n{data['origin_name']}",
+                       color="#FF8800", fontsize=7, ha="left", va="bottom",
+                       alpha=0.95, zorder=9)
+    scrub_bodies[("origin", data["origin_name"])] = {
+        "scatter": orig_sc, "label": orig_lbl, "id": data.get("origin_id", ""),
+        "ha": "left", "va": "bottom"}
 
     # Destination marker
     dest_sc = ax.scatter([dx_], [dy_], color="#00CCCC", s=100,
@@ -2494,12 +2571,15 @@ def _build_solar_travel_elements(ax, data: dict):
     dest_sc._body_info = {"name": data["dest_name"],
                           "x": dx_, "y": dy_, "z": data["dest_xyz"][2],
                           "horizons_id": data.get("dest_id", "")}
-    ax.text(dx_ + max_au * 0.04, dy_ - max_au * 0.04,
-            f"Dest\n{data['dest_name']}",
-            color="#00CCCC", fontsize=7, ha="left", va="top",
-            alpha=0.95, zorder=9)
+    dest_lbl = ax.text(dx_ + max_au * 0.04, dy_ - max_au * 0.04,
+                       f"Dest\n{data['dest_name']}",
+                       color="#00CCCC", fontsize=7, ha="left", va="top",
+                       alpha=0.95, zorder=9)
+    scrub_bodies[("dest", data["dest_name"])] = {
+        "scatter": dest_sc, "label": dest_lbl, "id": data.get("dest_id", ""),
+        "ha": "left", "va": "top"}
 
-    return planet_artists + [orig_sc, dest_sc]
+    return planet_artists + [orig_sc, dest_sc], scrub_bodies
 
 
 def _wire_solar_travel_click(canvas, ax, artists, on_body_click=None):
@@ -2818,9 +2898,15 @@ def make_solar_travel_canvas(parent, data: dict, on_body_click=None):
     canvas = FigureCanvas(fig)
     ax = fig.add_subplot(111, aspect="equal", facecolor=_SPACE_BG)
 
-    artists = _build_solar_travel_elements(ax, data)
+    artists, scrub_bodies = _build_solar_travel_elements(ax, data)
     _style_ax(ax, max_au, title)
     _wire_solar_travel_click(canvas, ax, artists, on_body_click=on_body_click)
+
+    # Phase O O5b: expose per-body handles so the date scrubber can re-offset
+    # markers/labels from a cached ephemeris. Additive — non-animating callers
+    # ignore it (the render is byte-identical).
+    canvas._scrub = {"ax": ax, "max_au": max_au, "title": title,
+                     "bodies": scrub_bodies}
 
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
@@ -3011,11 +3097,10 @@ def make_exoplanet_system_canvas(parent, data: dict, on_planet_click=None):
     max_au    = data["max_au"]
     star_name = data.get("star_name", "")
     epoch_iso = data.get("epoch_iso") or ""
-    title = "Exoplanet System Map"
+    title_base = "Exoplanet System Map"
     if star_name:
-        title += f"  —  {star_name}"
-    if epoch_iso:
-        title += f"   ({epoch_iso})"
+        title_base += f"  —  {star_name}"
+    title = title_base + (f"   ({epoch_iso})" if epoch_iso else "")
 
     fig = Figure(figsize=(6.5, 6.5), facecolor=_SPACE_BG)
     canvas = FigureCanvas(fig)
@@ -3027,8 +3112,9 @@ def make_exoplanet_system_canvas(parent, data: dict, on_planet_click=None):
                 color=orb["color"], linewidth=0.8, linestyle="--",
                 alpha=0.55, zorder=2)
 
-    # Planet markers
+    # Planet markers (per-planet handles collected for the O5 date scrubber).
     planet_artists = []
+    scrub_planets = {}
     for p in data.get("planets", []):
         sc = ax.scatter([p["x"]], [p["y"]], color=p["color"],
                         s=70, zorder=4, picker=6, edgecolor="#222222",
@@ -3038,9 +3124,13 @@ def make_exoplanet_system_canvas(parent, data: dict, on_planet_click=None):
         r = math.sqrt(p["x"] ** 2 + p["y"] ** 2) or 0.01
         ox_lbl = p["x"] / r * max_au * 0.045
         oy_lbl = p["y"] / r * max_au * 0.045
-        ax.text(p["x"] + ox_lbl, p["y"] + oy_lbl, p["name"],
-                color=_LABEL_CLR, fontsize=7, ha="center", va="center",
-                alpha=0.9, zorder=5)
+        lbl = ax.text(p["x"] + ox_lbl, p["y"] + oy_lbl, p["name"],
+                      color=_LABEL_CLR, fontsize=7, ha="center", va="center",
+                      alpha=0.9, zorder=5)
+        scrub_planets[p["name"]] = {
+            "scatter": sc, "label": lbl, "ring": None,
+            "epoch_known": p.get("epoch_known", True),
+        }
 
     # Host star at origin (gold ★)
     star_sc = ax.scatter([0], [0], color="#FFD700", s=160, marker="*",
@@ -3068,9 +3158,11 @@ def make_exoplanet_system_canvas(parent, data: dict, on_planet_click=None):
     for art in planet_artists:
         p = art._body_info
         if not p.get("epoch_known", True):
-            ax.scatter([p["x"]], [p["y"]], facecolor="none",
-                       edgecolor="#222222", s=180, linewidth=0.8,
-                       zorder=3, alpha=0.6)
+            ring = ax.scatter([p["x"]], [p["y"]], facecolor="none",
+                              edgecolor="#222222", s=180, linewidth=0.8,
+                              zorder=3, alpha=0.6)
+            if p["name"] in scrub_planets:
+                scrub_planets[p["name"]]["ring"] = ring
 
     # Hover tooltip + click info
     hover_text = ax.text(0.98, 0.98, "", transform=ax.transAxes,
@@ -3130,6 +3222,14 @@ def make_exoplanet_system_canvas(parent, data: dict, on_planet_click=None):
     canvas.mpl_connect("motion_notify_event", _on_motion)
     canvas.mpl_connect("pick_event", _on_pick)
     canvas.mpl_connect("button_press_event", _on_click)
+
+    # Phase O O5: expose per-planet artist handles so a date scrubber can
+    # re-offset markers/labels (set_offsets only — orbits/star stay static).
+    # Additive: callers that don't scrub simply ignore this attribute.
+    canvas._scrub = {
+        "ax": ax, "max_au": max_au, "title_base": title_base,
+        "planets": scrub_planets,
+    }
 
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
@@ -3864,6 +3964,557 @@ def make_size_comparison_canvas(parent, planets, radius_key, name_key):
             tip.set_visible(True)
         elif tip.get_visible():
             tip.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+# Secondary-axis conversion factors for the brachistochrone profile chart.
+_PROFILE_C_KM_S    = 299_792.458                                       # km/s → %c
+_PROFILE_AU_PER_LM = 149_597_870_700.0 / (299_792_458.0 * 60.0)       # AU → LM (~8.3167)
+
+
+def make_profile_canvas(parent, data: dict):
+    """Brachistochrone velocity/distance profile charts (Phase O · O9).
+
+    data: core.viz.prepare_brachistochrone_profiles() →
+        {accel_g, profiles:[{label, color, t_hours, v_kms, d_au}]}.
+    Two stacked subplots sharing the time (hours) axis: top = velocity (km/s, with a
+    secondary %c axis); bottom = cumulative distance (AU, with a secondary LM axis).
+    One line per profile (fixed colour per index). Light theme.
+    Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(7, 5), dpi=100, facecolor=_SPACE_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+    profiles = data.get("profiles") or []
+    if not profiles:
+        return _error_canvas("No profiles to plot.")
+
+    fig = Figure(figsize=(7.5, 6.5), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.11, right=0.87, top=0.93, bottom=0.09, hspace=0.22)
+    ax_v = fig.add_subplot(211)
+    ax_d = fig.add_subplot(212, sharex=ax_v)
+    for ax in (ax_v, ax_d):
+        ax.set_facecolor("#ffffff")
+        ax.grid(color=_GRID_CLR, linewidth=0.6, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+
+    for p in profiles:
+        ax_v.plot(p["t_hours"], p["v_kms"], color=p["color"], lw=1.8, label=p["label"])
+        ax_d.plot(p["t_hours"], p["d_au"], color=p["color"], lw=1.8, label=p["label"])
+
+    ax_v.tick_params(labelbottom=False)
+    ax_v.set_ylabel("velocity (km/s)", color=_LABEL_CLR, fontsize=9)
+    ax_d.set_ylabel("distance (AU)", color=_LABEL_CLR, fontsize=9)
+    ax_d.set_xlabel("time (hours)", color=_LABEL_CLR, fontsize=9)
+    ax_v.set_xlim(left=0.0)
+    ax_v.set_ylim(bottom=0.0)
+    ax_d.set_ylim(bottom=0.0)
+
+    # Secondary right-hand axes: %c (velocity) and LM (distance) — linear rescales.
+    sec_v = ax_v.secondary_yaxis(
+        "right",
+        functions=(lambda v: v / _PROFILE_C_KM_S * 100.0,
+                   lambda pc: pc * _PROFILE_C_KM_S / 100.0))
+    sec_v.set_ylabel("% c", color=_LABEL_CLR, fontsize=9)
+    sec_v.tick_params(colors=_LABEL_CLR, labelsize=8)
+    sec_d = ax_d.secondary_yaxis(
+        "right",
+        functions=(lambda au: au * _PROFILE_AU_PER_LM,
+                   lambda lm: lm / _PROFILE_AU_PER_LM))
+    sec_d.set_ylabel("distance (LM)", color=_LABEL_CLR, fontsize=9)
+    sec_d.tick_params(colors=_LABEL_CLR, labelsize=8)
+
+    accel_g = data.get("accel_g")
+    title = "Brachistochrone Velocity & Distance Profiles"
+    if accel_g is not None:
+        title += f"  ·  {accel_g:g} g"
+    ax_v.set_title(title, color=_LABEL_CLR, fontsize=10, pad=8)
+    ax_v.legend(loc="upper right", fontsize=7.5, framealpha=0.9)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+# ── O10a — Honorverse hyper-limit bar chart ──────────────────────────────────
+
+_HYPER_LM_PER_AU = 8.3167
+
+
+def make_hyper_bar_canvas(parent, data: dict):
+    """Horizontal Honorverse hyper-limit bar chart (Phase O · O10a).
+
+    data: core.viz.prepare_hyper_limits() → {classes, lm, au, colors}.
+    Bars in light-minutes (LM) with a secondary top axis in AU (÷8.3167), coloured
+    by spectral class, hottest (O) at the top. 44 bars → tall figure (the host
+    panel wraps it in wrap_scrollable). Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(8, 2.4), dpi=100, facecolor=_SPACE_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+    classes = data["classes"]
+    lm      = data["lm"]
+    colors  = data["colors"]
+    n = len(classes)
+    if not n:
+        return _error_canvas("No hyper-limit data to plot.")
+
+    fig_h = max(3.0, min(0.26 * n + 1.2, 16.0))
+    fig = Figure(figsize=(8, fig_h), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.14, right=0.95, top=0.94, bottom=0.06)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#ffffff")
+
+    y = list(range(n))
+    ax.barh(y, lm, color=colors, edgecolor="#888888", linewidth=0.5, height=0.78)
+    lm_max = max(lm) if lm else 1.0
+    for yi, v in zip(y, lm):
+        ax.text(v + lm_max * 0.01, yi,
+                f"{v:.1f} LM ({v / _HYPER_LM_PER_AU:.2f} AU)",
+                va="center", ha="left", fontsize=6.5, color=_LABEL_CLR)
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(classes, fontsize=7, color=_LABEL_CLR)
+    ax.invert_yaxis()                      # first class (O, hot) at top
+    ax.set_xlim(0, lm_max * 1.20)          # room for the value labels
+    ax.set_xlabel("Hyper Limit — light-minutes (LM)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+    ax.grid(axis="x", color=_GRID_CLR, alpha=0.5, linewidth=0.7, linestyle="--")
+    ax.set_axisbelow(True)
+
+    sec = ax.secondary_xaxis(
+        "top", functions=(lambda l: l / _HYPER_LM_PER_AU,
+                          lambda a: a * _HYPER_LM_PER_AU))
+    sec.set_xlabel("AU", color=_LABEL_CLR, fontsize=9)
+    sec.tick_params(colors=_LABEL_CLR, labelsize=8)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def wrap_system_regions_with_hyper_toggle(parent, data: dict):
+    """Wrap the System Regions canvas in a tab (Phase O · O10b).
+
+    When `data` carries a `hyper_limit` (opts 8/9 with a resolvable spectral type)
+    a "Show Honorverse Hyper Limit (fiction)" checkbox is added — **unchecked by
+    default** — that rebuilds the canvas with the dashed-red ring. With no
+    `hyper_limit` (opts 10/13, or an unresolvable type) there is no checkbox and
+    the plain canvas is shown (unchanged). Returns the container QWidget, or None
+    if the canvas can't build.
+    """
+    if not _MPL_OK:
+        return None
+    from PySide6.QtWidgets import QWidget, QVBoxLayout, QCheckBox
+
+    container = QWidget(parent)
+    lay = QVBoxLayout(container)
+    lay.setContentsMargins(4, 4, 4, 4)
+
+    has_hyper = bool(data.get("hyper_limit"))
+    chk = None
+    if has_hyper:
+        chk = QCheckBox("Show Honorverse Hyper Limit (fiction)")
+        lay.addWidget(chk)
+
+    state = {"toolbar": None, "canvas": None}
+
+    def _rebuild():
+        if state["canvas"] is not None:
+            lay.removeWidget(state["toolbar"])
+            state["toolbar"].deleteLater()
+            lay.removeWidget(state["canvas"])
+            state["canvas"].deleteLater()
+        canvas, toolbar = make_system_regions_canvas(
+            None, data, show_hyper=chk.isChecked() if chk is not None else False)
+        state["toolbar"], state["canvas"] = toolbar, canvas
+        if toolbar is not None:
+            lay.addWidget(toolbar)
+        if canvas is not None:
+            lay.addWidget(canvas)
+
+    if chk is not None:
+        chk.toggled.connect(lambda _checked: _rebuild())
+    _rebuild()
+    if state["canvas"] is None:
+        return None
+    return container
+
+
+# ── Phase O O-7: Hypatia Kinematics (Toomre diagram) ──────────────────────────
+
+# Heuristic constant-total-velocity contours (km/s) separating the Galactic
+# populations on a Toomre diagram. Thin disk ≲50, thick ≈70–180, halo ≳180.
+_TOOMRE_ARCS = (50, 100, 180)
+
+
+def make_toomre_canvas(parent, data: dict):
+    """Toomre / galactic-kinematics diagram (Phase O · O11).
+
+    data: core.viz.prepare_toomre() → {v, uw, total, disk, star_name} or {"error"}.
+    x = V (km/s, LSR); y = √(U²+W²). Dashed constant-total-velocity arcs at 50/100/180
+    km/s centred at the LSR origin; heuristic thin/thick/halo region labels; the star a
+    gold ★ (hover anchors to it). Light theme. Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(7, 5), dpi=100, facecolor=_SPACE_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+
+    v = float(data["v"])
+    uw = float(data["uw"])
+    total = float(data.get("total", math.hypot(v, uw)))
+
+    fig = Figure(figsize=(7.2, 5.6), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.11, right=0.96, top=0.88, bottom=0.14)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#ffffff")
+
+    outer = _TOOMRE_ARCS[-1]
+    x_lo = min(-outer - 30, v - 40)
+    x_hi = max(80, v + 40)
+    y_hi = max(outer + 30, uw + 40)
+
+    # Dashed semicircle arcs of constant total velocity, centred at the LSR origin
+    # (0, 0). Only the y ≥ 0 half is meaningful (y = √(U²+W²)).
+    thetas = [t * math.pi / 180.0 for t in range(0, 181, 3)]
+    for r in _TOOMRE_ARCS:
+        xs = [r * math.cos(t) for t in thetas]
+        ys = [r * math.sin(t) for t in thetas]
+        ax.plot(xs, ys, color="#999999", linewidth=1.0, linestyle=(0, (5, 4)), zorder=2)
+        ax.text(r * math.cos(math.radians(125)), r * math.sin(math.radians(125)) + 2,
+                f"{r}", color="#888888", fontsize=8, ha="center", va="bottom", zorder=2)
+
+    # Heuristic population caption near the top.
+    ax.text(0.5, 0.97, "thin disk <50  ·  thick ≈70–180  ·  halo >180  (heuristic)",
+            transform=ax.transAxes, ha="center", va="top", fontsize=8.5,
+            color="#2e8b57", zorder=3)
+
+    # The star: gold ★ at (V, √(U²+W²)).
+    ax.scatter([v], [uw], s=260, marker="*", c="#FFD700", edgecolors="#7a5c00",
+               linewidths=0.9, zorder=5)
+    name = data.get("star_name") or "this star"
+    ax.annotate(name, (v, uw), textcoords="offset points", xytext=(9, 5),
+                fontsize=8.5, fontweight="bold", color="#7a5c00", zorder=6)
+
+    ax.axhline(0, color="#cccccc", linewidth=0.8, zorder=1)
+    ax.axvline(0, color="#cccccc", linewidth=0.8, zorder=1)
+    ax.set_xlim(x_lo, x_hi)
+    ax.set_ylim(-10, y_hi)
+    ax.set_xlabel("V (km/s, LSR) — Galactic rotation", color=_LABEL_CLR, fontsize=9)
+    ax.set_ylabel("√(U² + W²)  (km/s)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+    ax.grid(color=_GRID_CLR, linewidth=0.6, alpha=0.6)
+    ax.set_axisbelow(True)
+
+    disk = data.get("disk")
+    subtitle = f"   ·   Hypatia disk: {disk}" if disk else ""
+    ax.set_title(f"Toomre Diagram — {name}{subtitle}",
+                 color=_LABEL_CLR, fontsize=10, pad=10)
+    ax.text(0.5, -0.18, "V LSR-corrected (Schönrich+ 2010 solar motion); boundaries heuristic",
+            transform=ax.transAxes, ha="center", va="top", fontsize=7.5,
+            color="#999999", style="italic")
+
+    # Hover tooltip anchored to the star marker (follows the dot, per convention).
+    annot = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0", ec="#2266cc", lw=0.8, alpha=0.95),
+        arrowprops=dict(arrowstyle="->", color="#2266cc", lw=0.8),
+        color="#222", fontsize=8, zorder=10, visible=False,
+    )
+
+    def _on_motion(event):
+        if event.inaxes is not ax:
+            if annot.get_visible():
+                annot.set_visible(False)
+                canvas.draw_idle()
+            return
+        px, py = ax.transData.transform((v, uw))
+        if (px - event.x) ** 2 + (py - event.y) ** 2 <= 196:
+            annot.xy = (v, uw)
+            annot.set_text(f"{name}\nV={v:.1f}  √(U²+W²)={uw:.1f}\ntotal={total:.1f} km/s")
+            annot.set_visible(True)
+        elif annot.get_visible():
+            annot.set_visible(False)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_kinematics_tab(hypatia: dict):
+    """Build the Phase O · O11 "Kinematics" viz-tab widget for a Hypatia result.
+
+    Returns a QWidget (an "ℹ What is this?" help button over the Toomre canvas +
+    toolbar) or **None** when matplotlib is unavailable or the star has no complete
+    U/V/W kinematics (``prepare_toomre`` → ``{"error"}``) — so the host panel adds the
+    tab only when it qualifies. Shared by every panel that shows the Hypatia Abundance
+    Profile (opts 1, 3–6, 8).
+    """
+    if not _MPL_OK:
+        return None
+    from core.viz import prepare_toomre
+    from gui.help import info_button
+    from gui.help_text import TOOMRE_HELP_HTML
+    from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
+
+    data = prepare_toomre(hypatia)
+    if not data or "error" in data:
+        return None
+    canvas, toolbar = make_toomre_canvas(None, data)
+    if canvas is None:
+        return None
+
+    container = QWidget()
+    lay = QVBoxLayout(container)
+    lay.setContentsMargins(4, 4, 4, 4)
+    lay.setSpacing(2)
+
+    btn_row = QHBoxLayout()
+    btn_row.addWidget(info_button("Toomre / Galactic Kinematics", TOOMRE_HELP_HTML))
+    btn_row.addStretch(1)
+    lay.addLayout(btn_row)
+    if toolbar is not None:
+        lay.addWidget(toolbar)
+    lay.addWidget(canvas)
+    return container
+
+
+# ── Phase O O-8: HWC habitability visuals (opt 6) ─────────────────────────────
+
+_HWC_EQ_CLR   = "#e08a3c"   # equilibrium-temperature bar
+_HWC_SURF_CLR = "#c0392b"   # surface-temperature bar
+_HWC_WATER    = "#3a8a3a"   # liquid-water band / habitable point
+_HWC_NOHAB    = "#999999"   # non-habitable point
+
+
+def make_hwc_temp_canvas(parent, data: dict):
+    """HWC per-planet temperature-range bars (Phase O · O12).
+
+    data: core.viz.prepare_hwc_temps() → {planets:[{name, eq_min, eq, eq_max,
+    surf_min, surf, surf_max}], skipped}. Each planet gets an equilibrium bar
+    (orange) and/or a surface bar (red), a central-value tick, and a shaded
+    273–373 K "liquid water" band with dashed edges. Light theme. Returns
+    (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(7.5, 3.0), dpi=100, facecolor=_SPACE_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+    planets = data.get("planets") or []
+    if not planets:
+        return _error_canvas("No temperature ranges to plot.")
+
+    n = len(planets)
+    fig_h = max(2.6, min(0.7 * n + 1.4, 14.0))
+    fig = Figure(figsize=(8, fig_h), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.18, right=0.96, top=0.90, bottom=0.16)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#ffffff")
+
+    # Liquid-water band (273–373 K).
+    ax.axvspan(273.0, 373.0, color=_HWC_WATER, alpha=0.14, zorder=0)
+    for t in (273.0, 373.0):
+        ax.axvline(t, color="#4a7fa8", linestyle=(0, (4, 4)), linewidth=1.0, zorder=1)
+        ax.text(t, 1.0, f"{t:.0f} K", transform=ax.get_xaxis_transform(),
+                ha="center", va="bottom", fontsize=7.5, color="#4a7fa8", clip_on=False)
+
+    lo_vals, hi_vals = [273.0], [373.0]
+    for i, p in enumerate(planets):
+        y = n - 1 - i                       # first planet on top
+        if p.get("eq_min") is not None:
+            ax.barh(y + 0.18, p["eq_max"] - p["eq_min"], left=p["eq_min"], height=0.30,
+                    color=_HWC_EQ_CLR, alpha=0.85, edgecolor="#8a531f", linewidth=0.4, zorder=3)
+            lo_vals.append(p["eq_min"]); hi_vals.append(p["eq_max"])
+            if p.get("eq") is not None:
+                ax.plot([p["eq"], p["eq"]], [y + 0.05, y + 0.31], color="#5a3410",
+                        linewidth=1.2, zorder=4)
+        if p.get("surf_min") is not None:
+            ax.barh(y - 0.18, p["surf_max"] - p["surf_min"], left=p["surf_min"], height=0.30,
+                    color=_HWC_SURF_CLR, alpha=0.85, edgecolor="#7a1f17", linewidth=0.4, zorder=3)
+            lo_vals.append(p["surf_min"]); hi_vals.append(p["surf_max"])
+            if p.get("surf") is not None:
+                ax.plot([p["surf"], p["surf"]], [y - 0.31, y - 0.05], color="#5a0f0a",
+                        linewidth=1.2, zorder=4)
+
+    ax.set_yticks([n - 1 - i for i in range(n)])
+    ax.set_yticklabels([p["name"] for p in planets], fontsize=8, color=_LABEL_CLR)
+    ax.set_ylim(-0.6, n - 0.4)
+    span = max(hi_vals) - min(lo_vals)
+    pad = max(15.0, span * 0.05)
+    ax.set_xlim(min(lo_vals) - pad, max(hi_vals) + pad)
+    ax.set_xlabel("Temperature (K) — equilibrium (orange) / surface (red); green = liquid water",
+                  color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+    ax.grid(axis="x", color=_GRID_CLR, linewidth=0.6, alpha=0.5)
+    ax.set_axisbelow(True)
+    title = "Planet Temperature Ranges"
+    if data.get("skipped"):
+        title += f"   ·   {data['skipped']} without a min/max range omitted"
+    ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=14)
+
+    handles = [
+        mpatches.Patch(color=_HWC_EQ_CLR, label="equilibrium"),
+        mpatches.Patch(color=_HWC_SURF_CLR, label="surface"),
+        mpatches.Patch(color=_HWC_WATER, alpha=0.3, label="liquid water (273–373 K)"),
+    ]
+    ax.legend(handles=handles, loc="lower right", fontsize=7.5, framealpha=0.9)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_hwc_esi_canvas(parent, data: dict):
+    """HWC ESI-vs-orbit scatter (Phase O · O12).
+
+    data: core.viz.prepare_hwc_esi() → {planets:[{name, a_au, esi, habitable}],
+    hz_opt, hz_con, log_x, skipped}. x = semi-major axis (AU, log when log_x),
+    y = ESI; the host's optimistic / conservative HZ are shaded green bands; points
+    are green (habitable) / grey. Hover anchors to the nearest point. Light theme.
+    Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(7.5, 5), dpi=100, facecolor=_SPACE_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+    planets = data.get("planets") or []
+    if not planets:
+        return _error_canvas("No planets with ESI to plot.")
+
+    fig = Figure(figsize=(8, 5.4), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.10, right=0.96, top=0.90, bottom=0.12)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#ffffff")
+
+    # HZ bands (optimistic lighter + behind, conservative darker on top).
+    if data.get("hz_opt"):
+        ax.axvspan(data["hz_opt"][0], data["hz_opt"][1], color=_HWC_WATER, alpha=0.12,
+                   zorder=0, label="optimistic HZ")
+    if data.get("hz_con"):
+        ax.axvspan(data["hz_con"][0], data["hz_con"][1], color=_HWC_WATER, alpha=0.26,
+                   zorder=1, label="conservative HZ")
+
+    xs = [p["a_au"] for p in planets]
+    ys = [p["esi"] for p in planets]
+    cols = [_HWC_WATER if p["habitable"] else _HWC_NOHAB for p in planets]
+    ax.scatter(xs, ys, s=70, c=cols, edgecolors="#ffffff", linewidths=0.6, zorder=4)
+    for p in planets:
+        ax.annotate(p["name"], (p["a_au"], p["esi"]), textcoords="offset points",
+                    xytext=(7, 3), fontsize=7.5, color="#444", zorder=5)
+
+    if data.get("log_x"):
+        ax.set_xscale("log")
+    ax.set_ylim(0.0, 1.05)
+    ax.set_xlabel("Semi-major axis (AU)" + ("  — log" if data.get("log_x") else ""),
+                  color=_LABEL_CLR, fontsize=9)
+    ax.set_ylabel("Earth Similarity Index (ESI)", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+    ax.grid(color=_GRID_CLR, linewidth=0.6, alpha=0.5)
+    ax.set_axisbelow(True)
+    title = "ESI vs Orbit"
+    if data.get("skipped"):
+        title += f"   ·   {data['skipped']} without SMA/ESI omitted"
+    ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=10)
+    handles = [
+        Line2D([0], [0], marker="o", linestyle="", markersize=8, markerfacecolor=_HWC_WATER,
+               markeredgecolor="#fff", label="habitable"),
+        Line2D([0], [0], marker="o", linestyle="", markersize=8, markerfacecolor=_HWC_NOHAB,
+               markeredgecolor="#fff", label="not habitable"),
+    ]
+    ax.legend(handles=handles, loc="best", fontsize=7.5, framealpha=0.9)
+
+    annot = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0", ec="#2266cc", lw=0.8, alpha=0.95),
+        arrowprops=dict(arrowstyle="->", color="#2266cc", lw=0.8),
+        color="#222", fontsize=8, zorder=10, visible=False,
+    )
+
+    def _on_motion(event):
+        if event.inaxes is not ax:
+            if annot.get_visible():
+                annot.set_visible(False)
+                canvas.draw_idle()
+            return
+        best_i, best_d = None, None
+        for i, (xv, yv) in enumerate(zip(xs, ys)):
+            px, py = ax.transData.transform((xv, yv))
+            d = (px - event.x) ** 2 + (py - event.y) ** 2
+            if best_d is None or d < best_d:
+                best_d, best_i = d, i
+        if best_i is not None and best_d <= 225:
+            p = planets[best_i]
+            annot.xy = (xs[best_i], ys[best_i])
+            annot.set_text(f"{p['name']}\na={p['a_au']:.3g} AU  ESI={p['esi']:.3f}")
+            annot.set_visible(True)
+        elif annot.get_visible():
+            annot.set_visible(False)
         canvas.draw_idle()
 
     canvas.mpl_connect("motion_notify_event", _on_motion)

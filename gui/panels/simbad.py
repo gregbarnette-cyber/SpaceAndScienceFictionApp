@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel
 from gui.panels.hypatia_tab import build_hypatia_tab, fit_table_height
-from gui.visualizations.plot_helpers import mpl_available, make_abundance_canvas, log_viz_error, wrap_scrollable
+from gui.visualizations.plot_helpers import mpl_available, make_abundance_canvas, log_viz_error, wrap_scrollable, make_kinematics_tab
 import core.databases
 import core.viz
 
@@ -202,5 +202,13 @@ class SimbadPanel(ResultPanel):
                             tabs.addTab(ab_w, "Abundance Profile")
                 except Exception:
                     log_viz_error("Abundance Profile")
+
+                # Kinematics (Toomre) — only when U/V/W are all present (Phase O O11).
+                try:
+                    kin_w = make_kinematics_tab(hypatia)
+                    if kin_w is not None:
+                        tabs.addTab(kin_w, "Kinematics")
+                except Exception:
+                    log_viz_error("Kinematics")
 
         self.add_result_widget(tabs)

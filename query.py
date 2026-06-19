@@ -50,6 +50,13 @@ def cmd_star_regions(args):
     _out(result)
 
 
+def cmd_star_regions_manual(args):
+    _out(regions.compute_star_system_regions(
+        args.vmag, args.bc, args.teff, args.parallax,
+        sunlight_intensity=args.sunlight_intensity, bond_albedo=args.bond_albedo,
+    ))
+
+
 def cmd_distance(args):
     _out(calculators.compute_distance_between_stars(args.star1, args.star2))
 
@@ -193,6 +200,10 @@ def cmd_brachistochrone_au(args):
 
 def cmd_brachistochrone_lm(args):
     _out(calculators.compute_travel_time_system_lm(args.accel_g, args.lm))
+
+
+def cmd_distance_at_acceleration(args):
+    _out(calculators.compute_distance_at_acceleration(args.accel_g, args.hours))
 
 
 def cmd_travel_time_solar(args):
@@ -396,6 +407,19 @@ def main():
     p.add_argument("--star", required=True)
     p.set_defaults(func=cmd_star_regions)
 
+    # star-regions-manual
+    p = sub.add_parser("star-regions-manual",
+                       help="Star system regions from manual inputs (no SIMBAD)")
+    p.add_argument("--vmag",     required=True, type=float, help="Apparent magnitude (V)")
+    p.add_argument("--bc",       required=True, type=float, help="Bolometric correction (BC)")
+    p.add_argument("--teff",     required=True, type=float, help="Effective temperature (K)")
+    p.add_argument("--parallax", required=True, type=float, help="Parallax (mas, > 0)")
+    p.add_argument("--sunlight-intensity", dest="sunlight_intensity", type=float, default=1.0,
+                   help="Sunlight intensity (Terra = 1.0; default 1.0)")
+    p.add_argument("--bond-albedo", dest="bond_albedo", type=float, default=0.3,
+                   help="Bond albedo (Terra = 0.3, Venus = 0.9; default 0.3)")
+    p.set_defaults(func=cmd_star_regions_manual)
+
     # distance
     p = sub.add_parser("distance", help="3D distance between two stars")
     p.add_argument("--star1", required=True)
@@ -598,6 +622,13 @@ def main():
     p.add_argument("--accel-g", dest="accel_g", required=True, type=float, help="Acceleration in g")
     p.add_argument("--lm",      required=True, type=float, help="Distance in light minutes")
     p.set_defaults(func=cmd_brachistochrone_lm)
+
+    # distance-at-acceleration
+    p = sub.add_parser("distance-at-acceleration",
+                       help="Distance traveled for three profiles given acceleration + travel time")
+    p.add_argument("--accel-g", dest="accel_g", required=True, type=float, help="Acceleration in g")
+    p.add_argument("--hours",   required=True, type=float, help="Travel time in hours")
+    p.set_defaults(func=cmd_distance_at_acceleration)
 
     # travel-time-solar
     p = sub.add_parser("travel-time-solar",

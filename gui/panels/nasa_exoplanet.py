@@ -11,19 +11,20 @@ import math
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QTabWidget, QSizePolicy,
-    QDateEdit, QDialog, QGridLayout, QDialogButtonBox,
+    QDateEdit, QDialog, QGridLayout, QDialogButtonBox, QSlider,
 )
-from PySide6.QtCore import Qt, QDate
+from PySide6.QtCore import Qt, QDate, QTimer
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.viz
+import core.science
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas,
     make_exoplanet_system_canvas, make_mass_radius_canvas, make_transit_canvas,
     make_size_comparison_canvas, log_viz_error, wrap_scrollable,
-    wrap_orbits_with_solar_toggle,
+    wrap_orbits_with_solar_toggle, make_kinematics_tab,
 )
 
 
@@ -469,18 +470,29 @@ def _make_hz_tab_exocat(panel, row):
     return w
 
 
-def _make_orbits_tab(panel, planets, star_name=""):
+def _hyper_au_for(sp_type):
+    """Resolve a host spectral type → Honorverse hyper-limit AU, or None (O10b)."""
+    if not sp_type:
+        return None
+    hl = core.science.compute_hyper_limit_for_spectral_type(str(sp_type))
+    return hl["au"] if hl else None
+
+
+def _make_orbits_tab(panel, planets, star_name="", sp_type=None):
     """Return a QWidget with an embedded orbital diagram, or None if insufficient data.
 
-    The diagram carries a "Show Solar System reference" overlay checkbox (Phase O · O4).
+    The diagram carries a "Show Solar System reference" overlay checkbox (Phase O · O4)
+    and, when the host spectral type resolves a Honorverse hyper limit (Phase O · O10b),
+    a "Show Honorverse Hyper Limit (fiction)" checkbox.
     """
     if not mpl_available():
         return None
     orbit_data = core.viz.prepare_system_orbits(planets)
     if "error" in orbit_data:
         return None
+    hyper_au = _hyper_au_for(sp_type)
 
-    def _build(solar_overlay):
+    def _build(solar_overlay, show_hyper):
         return make_orbits_canvas(
             panel,
             orbit_data["orbits"],
@@ -488,9 +500,10 @@ def _make_orbits_tab(panel, planets, star_name=""):
             orbit_data["max_au"],
             star_name=star_name,
             solar_overlay=solar_overlay,
+            hyper_au=hyper_au if show_hyper else None,
         )
 
-    return wrap_orbits_with_solar_toggle(panel, _build)
+    return wrap_orbits_with_solar_toggle(panel, _build, hyper_au=hyper_au)
 
 
 def _make_mass_radius_tab(panel, planets, mass_key="pl_bmasse",
@@ -716,7 +729,9 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
 
         # Viz tabs (shown only via Show Diagrams button)
         star_name = str(planets[0].get("hostname") or "") if planets else ""
-        orb_w = _make_orbits_tab(self, planets, star_name)
+        orb_w = _make_orbits_tab(
+            self, planets, star_name,
+            sp_type=(planets[0].get("st_spectype") if planets else None))
         if orb_w:
             self._viz_tabs_widget.addTab(orb_w, "Orbital Diagram")
         hz_w = _make_hz_tab(self, planets)
@@ -744,6 +759,13 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
                 log_viz_error("Abundance Profile")
+
+            try:
+                kin_w = make_kinematics_tab(hypatia)
+                if kin_w is not None:
+                    self._viz_tabs_widget.addTab(kin_w, "Kinematics")
+            except Exception:
+                log_viz_error("Kinematics")
 
         if self._viz_tabs_widget.count() > 0:
             self._show_diagrams_btn.setVisible(True)
@@ -845,6 +867,13 @@ class NasaHwoExepPanel(DiagramToggleMixin, _StarSearchPanel):
             except Exception:
                 log_viz_error("Abundance Profile")
 
+            try:
+                kin_w = make_kinematics_tab(hypatia)
+                if kin_w is not None:
+                    self._viz_tabs_widget.addTab(kin_w, "Kinematics")
+            except Exception:
+                log_viz_error("Kinematics")
+
         self._finish_render()
 
 
@@ -942,7 +971,139 @@ class NasaMissionExocatPanel(DiagramToggleMixin, _StarSearchPanel):
             except Exception:
                 log_viz_error("Abundance Profile")
 
+            try:
+                kin_w = make_kinematics_tab(hypatia)
+                if kin_w is not None:
+                    self._viz_tabs_widget.addTab(kin_w, "Kinematics")
+            except Exception:
+                log_viz_error("Kinematics")
+
         self._finish_render()
+
+
+# ── Phase O O5 — System Map date scrubber ────────────────────────────────────
+
+def _scrub_span_days(planets) -> int:
+    """Half-span (days) for the scrubber: min(2 × longest period, 50 yr).
+
+    Falls back to 365 days when no planet has a usable orbital period.
+    """
+    periods = [_fval(p.get("pl_orbper")) for p in planets]
+    periods = [pp for pp in periods if pp and pp > 0]
+    if not periods:
+        return 365   # no usable period → a ±1-year default window
+    span = min(2.0 * max(periods), 50.0 * 365.25)
+    return max(1, int(round(span)))
+
+
+def _scrub_offset_date_iso(base_iso: str, offset_days: int) -> str:
+    """ISO date = base date + offset_days (offline; pure)."""
+    import datetime
+    base = datetime.date.fromisoformat(base_iso)
+    return (base + datetime.timedelta(days=int(offset_days))).isoformat()
+
+
+class _SystemMapScrubber(QWidget):
+    """System Map tab with a date slider + Play/Pause (Phase O · O5).
+
+    Re-runs the offline ``prepare_exoplanet_system_diagram`` for the scrubbed
+    date and re-offsets each epoch-known planet marker/label (``set_offsets``
+    only — orbits and the host star stay static). ``epoch_known=False`` planets
+    stay pinned at periastron (the scrubber invents no motion for them). No
+    network calls during scrubbing.
+    """
+
+    def __init__(self, panel, base_data, planets, base_date_iso, on_planet_click):
+        super().__init__()
+        self._planets   = planets
+        self._base_date = base_date_iso
+        self._span_days = _scrub_span_days(planets)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(4, 4, 4, 4)
+
+        self._canvas, toolbar = make_exoplanet_system_canvas(
+            panel, base_data, on_planet_click=on_planet_click)
+        lay.addWidget(toolbar)
+        lay.addWidget(self._canvas, 1)
+
+        ctl = QHBoxLayout()
+        self._play_btn = QPushButton("▶ Play")
+        self._play_btn.clicked.connect(self._toggle_play)
+        ctl.addWidget(self._play_btn)
+        self._reset_btn = QPushButton("⏮ Reset")
+        self._reset_btn.clicked.connect(self._reset)
+        ctl.addWidget(self._reset_btn)
+        self._slider = QSlider(Qt.Orientation.Horizontal)
+        self._slider.setMinimum(-self._span_days)
+        self._slider.setMaximum(self._span_days)
+        self._slider.setValue(0)
+        self._slider.setProperty("no_width_cap", True)
+        self._slider.valueChanged.connect(self._on_slider)
+        ctl.addWidget(self._slider, 1)
+        self._readout = QLabel(f"Map date: {base_date_iso}")
+        ctl.addWidget(self._readout)
+        lay.addLayout(ctl)
+
+        # ~10 fps play stepper + a 50 ms throttle that coalesces rapid drags.
+        self._timer = QTimer(self)
+        self._timer.setInterval(100)
+        self._timer.timeout.connect(self._advance)
+        self._throttle = QTimer(self)
+        self._throttle.setSingleShot(True)
+        self._throttle.setInterval(50)
+        self._throttle.timeout.connect(self._recompute)
+
+    def _on_slider(self, _value):
+        if not self._throttle.isActive():
+            self._throttle.start()
+
+    def _toggle_play(self):
+        if self._timer.isActive():
+            self._timer.stop()
+            self._play_btn.setText("▶ Play")
+        else:
+            self._play_btn.setText("⏸ Pause")
+            self._timer.start()
+
+    def _advance(self):
+        step = max(1, round(2 * self._span_days / 120))
+        v = self._slider.value() + step
+        if v > self._slider.maximum():
+            v = self._slider.minimum()
+        self._slider.setValue(v)
+
+    def _reset(self):
+        """Stop playback and snap the slider back to the base map date (centre)."""
+        if self._timer.isActive():
+            self._timer.stop()
+            self._play_btn.setText("▶ Play")
+        self._slider.setValue(0)
+        self._recompute()   # immediate (don't wait on the throttle)
+
+    def _recompute(self):
+        offset   = self._slider.value()
+        date_iso = _scrub_offset_date_iso(self._base_date, offset)
+        data  = core.viz.prepare_exoplanet_system_diagram(self._planets, date_iso)
+        scrub = getattr(self._canvas, "_scrub", None)
+        if not scrub or "error" in data:
+            return
+        max_au = scrub["max_au"]
+        by_name = {p["name"]: p for p in data.get("planets", [])}
+        for name, h in scrub["planets"].items():
+            if not h["epoch_known"]:
+                continue   # pinned at periastron — invent no motion
+            np_ = by_name.get(name)
+            if np_ is None:
+                continue
+            x, y = np_["x"], np_["y"]
+            h["scatter"].set_offsets([[x, y]])
+            r = math.hypot(x, y) or 0.01
+            h["label"].set_position(
+                (x + x / r * max_au * 0.045, y + y / r * max_au * 0.045))
+        scrub["ax"].title.set_text(f"{scrub['title_base']}   ({date_iso})")
+        self._readout.setText(f"Map date: {date_iso}")
+        self._canvas.draw_idle()
 
 
 # ── NASA Planetary Systems Map (opt 3 + System Map tab) ──────────────────────
@@ -1185,25 +1346,23 @@ class NasaPlanetarySystemsMapPanel(_StarSearchPanel):
 
         star_name = str(planets[0].get("hostname") or "") if planets else ""
 
-        # NEW: System Map tab — planets at date-resolved positions
+        # System Map tab — planets at date-resolved positions, with the Phase O
+        # O5 date scrubber (slider + Play/Pause) driving offline recomputes.
         if mpl_available():
             sys_data = core.viz.prepare_exoplanet_system_diagram(planets, date_iso)
             if "error" not in sys_data:
                 if not sys_data.get("star_name"):
                     sys_data["star_name"] = star_name
-                sm_w = QWidget()
-                sm_l = QVBoxLayout(sm_w)
-                sm_l.setContentsMargins(4, 4, 4, 4)
-                canvas, toolbar = make_exoplanet_system_canvas(
-                    self, sys_data,
+                scrubber = _SystemMapScrubber(
+                    self, sys_data, planets, date_iso,
                     on_planet_click=lambda pi: _show_exoplanet_dialog(self, pi),
                 )
-                sm_l.addWidget(toolbar)
-                sm_l.addWidget(canvas)
-                self._viz_tabs_widget.addTab(sm_w, "System Map")
+                self._viz_tabs_widget.addTab(scrubber, "System Map")
 
         # Carry over the existing Orbital Diagram + HZ Diagram tabs
-        orb_w = _make_orbits_tab(self, planets, star_name)
+        orb_w = _make_orbits_tab(
+            self, planets, star_name,
+            sp_type=(planets[0].get("st_spectype") if planets else None))
         if orb_w:
             self._viz_tabs_widget.addTab(orb_w, "Orbital Diagram")
         hz_w = _make_hz_tab(self, planets)
@@ -1231,6 +1390,13 @@ class NasaPlanetarySystemsMapPanel(_StarSearchPanel):
                         self._viz_tabs_widget.addTab(ab_w, "Abundance Profile")
             except Exception:
                 log_viz_error("Abundance Profile")
+
+            try:
+                kin_w = make_kinematics_tab(hypatia)
+                if kin_w is not None:
+                    self._viz_tabs_widget.addTab(kin_w, "Kinematics")
+            except Exception:
+                log_viz_error("Kinematics")
 
         if self._viz_tabs_widget.count() > 0:
             self._show_diagrams_btn.setVisible(True)

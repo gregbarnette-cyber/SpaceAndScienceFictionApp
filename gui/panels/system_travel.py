@@ -4,16 +4,38 @@
 from PySide6.QtWidgets import (
     QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel,
     QComboBox, QWidget, QVBoxLayout, QDateEdit, QDialog,
-    QGridLayout, QDialogButtonBox, QSizePolicy,
+    QGridLayout, QDialogButtonBox, QSizePolicy, QSlider,
 )
 from PySide6.QtCore import QDate, Qt, QTimer, QThread, Signal, QObject
 
-from gui.panels.base import ResultPanel, DiagramToggleMixin
+from gui.panels.base import ResultPanel, DiagramToggleMixin, Worker
 import core.calculators
 import core.viz
 from gui.visualizations.plot_helpers import (
-    mpl_available, make_solar_travel_canvas,
+    mpl_available, make_solar_travel_canvas, make_profile_canvas,
 )
+
+
+def _add_profile_tab(panel, result):
+    """Add the Phase O O9 'Acceleration Profiles' viz tab (opts 22/23).
+
+    No-op when matplotlib is unavailable or the profile reconstruction yields no
+    data, so the existing render is unchanged when the tab can't be built.
+    """
+    if not mpl_available():
+        return
+    data = core.viz.prepare_brachistochrone_profiles(result)
+    if not data or "error" in data:
+        return
+    canvas, toolbar = make_profile_canvas(panel, data)
+    if canvas is None:
+        return
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
+    lay.addWidget(toolbar)
+    lay.addWidget(canvas)
+    panel._viz_tabs_widget.addTab(w, "Acceleration Profiles")
 
 
 def _clear_tables_layout(panel):
@@ -260,6 +282,198 @@ def _show_body_dialog(parent_widget, body_info: dict):
     dlg.show()
 
 
+# ── Phase O O5b — Solar System Map date scrubber (ephemeris-driven) ───────────
+
+def _offset_date_iso(base_iso: str, offset_days: int) -> str:
+    """ISO date = base date + offset_days (offline; pure)."""
+    import datetime
+    base = datetime.date.fromisoformat(base_iso)
+    return (base + datetime.timedelta(days=int(offset_days))).isoformat()
+
+
+def _solar_anim_body_ids(map_data: dict) -> list:
+    """Horizons ids to animate: origin + destination + in-view reference planets."""
+    import math as _m
+    ids = []
+    for key in ("origin_id", "dest_id"):
+        bid = map_data.get(key)
+        if bid:
+            ids.append(bid)
+    max_au = map_data.get("max_au", 0.0)
+    for p in map_data.get("planets", []):
+        bid = p.get("horizons_id")
+        if bid and _m.hypot(p.get("x", 0.0), p.get("y", 0.0)) <= max_au:
+            ids.append(bid)
+    out, seen = [], set()
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out
+
+
+def _solar_anim_span_days(map_data: dict) -> int:
+    """Half-span (days) = min(2 × longest trip-body period, 50 yr), ≥ 2 yr.
+
+    Period is estimated from the body's heliocentric distance (P ≈ r^1.5 yr) so
+    the window matches the trip's timescale without an extra Horizons call.
+    """
+    import math as _m
+
+    def per_years(xyz):
+        r = _m.sqrt(xyz[0] ** 2 + xyz[1] ** 2 + xyz[2] ** 2)
+        return r ** 1.5 if r > 0 else 1.0
+
+    longest = max(per_years(map_data["origin_xyz"]),
+                  per_years(map_data["dest_xyz"]))
+    span_years = min(max(2.0 * longest, 2.0), 50.0)
+    return int(round(span_years * 365.25))
+
+
+def _run_async(fn, args, on_done):
+    """Run fn(*args) on a QThread; deliver the result to on_done on the main thread."""
+    thread = QThread()
+    worker = Worker(fn, *args)
+    worker.moveToThread(thread)
+    triple = (thread, worker, None)
+    _dialog_threads.append(triple)
+    thread.started.connect(worker.run)
+    worker.finished.connect(on_done, Qt.ConnectionType.QueuedConnection)
+    worker.finished.connect(thread.quit)
+    thread.finished.connect(
+        lambda t=triple: QTimer.singleShot(
+            500, lambda: _dialog_threads.remove(t) if t in _dialog_threads else None))
+    thread.start()
+
+
+class _SolarMapScrubber(QWidget):
+    """Solar System Map tab with an ephemeris-driven date scrubber (Phase O · O5b).
+
+    Shows the static departure-date map plus an "Animate over time" button. On
+    click it batch-fetches each animated body's real JPL Horizons ephemeris over
+    [base − span, base + span] in ONE range query per body (background thread),
+    caches it, then drives a slider + Play/Pause/Reset by re-offsetting markers
+    from the cache (no per-frame network). The dashed departure trajectory line,
+    orbit rings, and the Sun stay static.
+    """
+
+    def __init__(self, panel, map_data, base_date_iso, on_body_click):
+        super().__init__()
+        self._map_data  = map_data
+        self._base_date = base_date_iso
+        self._track     = None
+        self._jds       = None
+        self._dates     = None
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(4, 4, 4, 4)
+        self._canvas, toolbar = make_solar_travel_canvas(
+            panel, map_data, on_body_click=on_body_click)
+        lay.addWidget(toolbar)
+        lay.addWidget(self._canvas, 1)
+
+        ctl = QHBoxLayout()
+        self._anim_btn = QPushButton("▶ Animate over time")
+        self._anim_btn.clicked.connect(self._load)
+        ctl.addWidget(self._anim_btn)
+        self._play_btn = QPushButton("▶ Play")
+        self._play_btn.clicked.connect(self._toggle_play)
+        self._play_btn.setVisible(False)
+        ctl.addWidget(self._play_btn)
+        self._reset_btn = QPushButton("⏮ Reset")
+        self._reset_btn.clicked.connect(self._reset)
+        self._reset_btn.setVisible(False)
+        ctl.addWidget(self._reset_btn)
+        self._slider = QSlider(Qt.Orientation.Horizontal)
+        self._slider.setProperty("no_width_cap", True)
+        self._slider.setVisible(False)
+        self._slider.valueChanged.connect(self._frame)
+        ctl.addWidget(self._slider, 1)
+        self._readout = QLabel(f"Map date: {base_date_iso}  (approximate trajectory fixed at departure)")
+        ctl.addWidget(self._readout)
+        lay.addLayout(ctl)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(80)
+        self._timer.timeout.connect(self._advance)
+
+    def _load(self):
+        ids = _solar_anim_body_ids(self._map_data)
+        if not ids:
+            self._readout.setText("No bodies available to animate.")
+            return
+        span = _solar_anim_span_days(self._map_data)
+        start = _offset_date_iso(self._base_date, -span)
+        stop  = _offset_date_iso(self._base_date, span)
+        self._anim_btn.setEnabled(False)
+        self._anim_btn.setText("Loading ephemeris…")
+        _run_async(core.calculators.compute_solar_ephemeris_track,
+                   (ids, start, stop), self._on_track)
+
+    def _on_track(self, track):
+        self._anim_btn.setText("▶ Animate over time")
+        self._anim_btn.setEnabled(True)
+        if not track or "error" in track:
+            msg = track.get("error", "Ephemeris load failed.") if track else "Ephemeris load failed."
+            self._readout.setText(msg)
+            return
+        self._track = track["bodies"]
+        self._jds   = track["jds"]
+        self._dates = track["dates"]
+        import astropy.time
+        base_jd = astropy.time.Time(f"{self._base_date}T12:00:00").jd
+        base_i = min(range(len(self._jds)), key=lambda i: abs(self._jds[i] - base_jd))
+        self._base_index = base_i
+        self._slider.blockSignals(True)
+        self._slider.setMinimum(0)
+        self._slider.setMaximum(len(self._jds) - 1)
+        self._slider.setValue(base_i)
+        self._slider.blockSignals(False)
+        self._anim_btn.setVisible(False)
+        for w in (self._play_btn, self._reset_btn, self._slider):
+            w.setVisible(True)
+        self._frame(base_i)
+
+    def _toggle_play(self):
+        if self._timer.isActive():
+            self._timer.stop()
+            self._play_btn.setText("▶ Play")
+        else:
+            self._play_btn.setText("⏸ Pause")
+            self._timer.start()
+
+    def _advance(self):
+        v = self._slider.value() + 1
+        if v > self._slider.maximum():
+            v = self._slider.minimum()
+        self._slider.setValue(v)
+
+    def _reset(self):
+        if self._timer.isActive():
+            self._timer.stop()
+            self._play_btn.setText("▶ Play")
+        self._slider.setValue(getattr(self, "_base_index", 0))
+
+    def _frame(self, i):
+        scrub = getattr(self._canvas, "_scrub", None)
+        if not scrub or self._track is None:
+            return
+        max_au = scrub["max_au"]
+        for _key, b in scrub["bodies"].items():
+            tr = self._track.get(b["id"])
+            if tr is None or i >= len(tr["x"]):
+                continue
+            x, y = tr["x"][i], tr["y"][i]
+            b["scatter"].set_offsets([[x, y]])
+            import math as _m
+            r = _m.hypot(x, y) or 0.01
+            b["label"].set_position(
+                (x + x / r * max_au * 0.04, y + y / r * max_au * 0.04))
+        self._readout.setText(
+            f"Map date: {self._dates[i]}  (ephemeris positions · trajectory fixed at departure)")
+        self._canvas.draw_idle()
+
+
 # ── Option 31: Planet/Moon/Asteroid ──────────────────────────────────────────
 
 class SystemTravelSolarPanel(DiagramToggleMixin, ResultPanel):
@@ -404,20 +618,18 @@ class SystemTravelSolarPanel(DiagramToggleMixin, ResultPanel):
         if mpl_available() and "origin_xyz" in result:
             map_data = core.viz.prepare_solar_travel_diagram(result)
             if "error" not in map_data:
-                self._add_solar_travel_tabs(map_data)
+                self._add_solar_travel_tabs(map_data, result["departure_date"])
+
+        _add_profile_tab(self, result)
 
         self._tables_layout.addStretch(1)
         self._finish_render()
 
-    def _add_solar_travel_tabs(self, map_data: dict):
-        w2d = QWidget()
-        l2d = QVBoxLayout(w2d)
-        l2d.setContentsMargins(4, 4, 4, 4)
-        canvas, toolbar = make_solar_travel_canvas(
-            self, map_data, on_body_click=lambda bi: _show_body_dialog(self, bi))
-        l2d.addWidget(toolbar)
-        l2d.addWidget(canvas)
-        self._viz_tabs_widget.addTab(w2d, "Solar System Map")
+    def _add_solar_travel_tabs(self, map_data: dict, base_date: str):
+        scrubber = _SolarMapScrubber(
+            self, map_data, base_date,
+            on_body_click=lambda bi: _show_body_dialog(self, bi))
+        self._viz_tabs_widget.addTab(scrubber, "Solar System Map")
 
 
 # ── Option 32: Custom Thrust Duration ────────────────────────────────────────
@@ -631,17 +843,15 @@ class SystemTravelThrustPanel(DiagramToggleMixin, ResultPanel):
         if mpl_available() and "origin_xyz" in result:
             map_data = core.viz.prepare_solar_travel_diagram(result)
             if "error" not in map_data:
-                self._add_solar_travel_tabs(map_data)
+                self._add_solar_travel_tabs(map_data, result["departure_date"])
+
+        _add_profile_tab(self, result)
 
         self._tables_layout.addStretch(1)
         self._finish_render()
 
-    def _add_solar_travel_tabs(self, map_data: dict):
-        w2d = QWidget()
-        l2d = QVBoxLayout(w2d)
-        l2d.setContentsMargins(4, 4, 4, 4)
-        canvas, toolbar = make_solar_travel_canvas(
-            self, map_data, on_body_click=lambda bi: _show_body_dialog(self, bi))
-        l2d.addWidget(toolbar)
-        l2d.addWidget(canvas)
-        self._viz_tabs_widget.addTab(w2d, "Solar System Map")
+    def _add_solar_travel_tabs(self, map_data: dict, base_date: str):
+        scrubber = _SolarMapScrubber(
+            self, map_data, base_date,
+            on_body_click=lambda bi: _show_body_dialog(self, bi))
+        self._viz_tabs_widget.addTab(scrubber, "Solar System Map")
