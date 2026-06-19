@@ -1287,7 +1287,7 @@ T_eq ≈ 278.5 K × S_eff^0.25        (airless, zero albedo; × (1−A)^0.25 for
 
 Back-converting every current divisor (`core/regions.py` `_display_alternate_hz_regions()` keys `ffInner/ffOuter, fsInner/fsOuter, prwInner/prwOuter, praInner/praOuter, pmInner/pmOuter, phInner/phOuter`; snow line in `_display_solar_system_regions()`) and comparing to measured liquid ranges:
 
-| App band (key, divisors in/out) | Implied T_eq band (A=0) | Sun-distance band | Measured liquid range | Verdict |
+| App band (key, divisors in/out) | Implied T_eq band (A=0) | Sun-distance band | Measured liquid range / condensation T | Verdict |
 |---|---|---|---|---|
 | Fluorosilicone `ffInner/ffOuter` (52 / 29.9) | 748–651 K | 0.14–0.18 AU | silicones degrade below ~573 K | ⚠️ too hot — only a hypothetical high-T analog |
 | Fluorocarbon-sulfur `fsInner/fsOuter` (38.7 / 3.2) | 695–373 K | 0.16–0.56 AU | liquid sulfur usable 388–443 K; heavy PFCs ~400–550 K | ✓ brackets sulfur+PFC; band wider than sulfur's usable window |
@@ -1296,7 +1296,9 @@ Back-converting every current divisor (`core/regions.py` `_display_alternate_hz_
 | Polylipid-methane `pmInner/pmOuter` (0.023 / 0.0094) | 108–87 K | 6.6–10.3 AU | **91–112 K** | ✅ excellent |
 | Polylipid-hydrogen `phInner/phOuter` (0.0025 / 0.000024) | 62–19.5 K | 20–204 AU | **14–20 K** | ⚠️ only the outer edge is right; 62 K is above H₂'s 33 K critical temp (gas) |
 | `snowLine` (0.04) | ~124 K | 5.0 AU | water ice 150–170 K | △ matches a *cold present-day frost line*, not the canonical 170 K / 2.7 AU formation snow line (divisor ≈ 0.14) |
-| `lh2Line` (0.0025) | ~62 K | 20 AU | H₂ condenses ~20 K | ⚠️ 62 K is the N₂/CO frost regime, not hydrogen |
+| `lh2Line` (0.0025) | ~62 K | 20 AU | H₂ condenses ~20 K | ⚠️ 62 K matches the **1-atm** N₂/CO liquid range (63–82 K), but is far above the **disk** N₂/CO frost lines (~17–25 K) used in P3a — and above H₂'s 33 K critical point; it fits neither a hydrogen nor a disk-frost reading without a stated pressure regime |
+
+> **Verdict confidence:** the ✅/⚠️ ratings assume the divisors were built on the airless, A=0 `278.5 × S_eff^0.25` model; they are **provisional** until the Gillett scan confirms the model and reference temperature (see the provenance note below). The tight ammonia/methane matches are themselves evidence *for* that model.
 
 The ammonia and methane bands match measured 1-atm liquid ranges almost exactly — strong evidence the table was deliberately built as "where the solvent's equilibrium temperature equals its liquid range." The water band is sound (a touch cold because it's airless-equilibrium, no greenhouse). The **hydrogen inner edge, the `snowLine`/`lh2Line` labels, and the fluorosilicone band** are the only weak spots.
 
@@ -1306,8 +1308,8 @@ The ammonia and methane bands match measured 1-atm liquid ranges almost exactly 
 
 Each edit shifts current CLI opts 8–10/13 output, the two GUI ring diagrams, and `query.py star-regions`, so each ships with its `docs/star-system-regions.md` update + a test re-anchor (the Phase H pattern in `tests/test_worldbuilding.py`) in the same commit. **Gate behind the maintainer decision above.**
 
-- **P1a — hydrogen inner edge** (`phInner`, divisor `0.0025` → 62 K, supercritical for H₂): tighten toward the ~20 K end so the band is thermodynamically possible for hydrogen.
-- **P1b — `lh2Line`** (0.0025 → 62 K): relabel as an **N₂/CO frost line**, or move to a true H₂ value (~0.000024). 62 K is not where H₂ condenses.
+- **P1a — hydrogen band (`phInner`/`phOuter`) is mis-placed at *both* edges, not just the inner one.** A liquid band's inner (hot) edge is the solvent's **boiling** point and its outer (cold) edge the **freezing** point. H₂ boils at 20.3 K and freezes at 13.8 K, so a physical H₂ band is `phInner ≈ (20.3/278.5)⁴ ≈ 0.0000283` (≈ 188 AU) to `phOuter ≈ (13.8/278.5)⁴ ≈ 0.0000060` (≈ 408 AU) — far out and razor-thin. The **current** `phOuter` (0.000024 → 19.5 K) already sits at H₂'s boiling point, i.e. it belongs at the *inner* edge. The fix therefore moves **both** divisors outward (not just the 62 K inner edge); after correction the whole band relocates to ~190–410 AU. Note in `docs/star-system-regions.md` that merely retuning `phInner` toward 20 K while leaving `phOuter` at 19.5 K collapses the band to ~zero width.
+- **P1b — `lh2Line` (0.0025 → 62 K) is not a hydrogen line, and the "N₂/CO frost" relabel needs a pressure regime.** 62 K is supercritical for H₂ (critical 33.2 K), so it cannot be "liquid hydrogen." It coincides with the **1-atm** liquid ranges of N₂ (63–77 K) and CO (68–82 K), **not** the protoplanetary **disk** frost lines of N₂/CO (~17–25 K) that P3a uses. Reconcile the two conventions before relabeling: (a) if `lh2Line` is a 1-atm condensation front, relabel it "N₂/CO (1-atm) condensation" and state that P3a's CO "~17 K" is the *disk* value; or (b) if it should track H₂, move it to the true H₂ value (~0.0000283, boiling 20 K). Do **not** call 62 K "the N₂/CO frost regime" unqualified — under P3a's own disk convention that is wrong.
 - **P1c — `snowLine`** (0.04 → 5 AU for the Sun): this is the *present-day* frost line, not the 170 K / 2.7 AU *formation* line. Either label it as such or add the second line (see P3c). Divisor for 2.7 AU ≈ 0.14.
 - **P1d — fluorosilicone band** (`ffInner/ffOuter`, 651–748 K): hotter than any real silicone survives — retune downward or relabel "hypothetical high-T silicone analog" so it isn't read literally.
 
@@ -1317,8 +1319,8 @@ Each edit shifts current CLI opts 8–10/13 output, the two GUI ring diagrams, a
 
 New rows in `_display_alternate_hz_regions()` (and matching `query.py star-regions` keys + the Alternate HZ ring diagram), each derived from its solvent's liquid range via `S_eff = (T_liquid / 278.5)^4`:
 
-- **P2a — liquid / supercritical CO₂** — Bains 2024's standout non-protonating solvent; currently absent. Critical point 304 K.
-- **P2b — explicit liquid-sulfur band** — narrow usable window 388–443 K (115–170 °C); currently only implied inside fluorocarbon-sulfur.
+- **P2a — liquid / supercritical CO₂** — Bains 2024's standout non-protonating solvent; currently absent. Critical point 304 K. **Pressure caveat:** CO₂ has *no* 1-atm liquid phase (sublimes at 194.7 K; liquid only above the 5.18-atm triple point), so this band is **pressure-conditional**, unlike the 1-atm water/ammonia/methane bands. The engine must carry an explicit assumed surface pressure for CO₂ and derive `t_low_k`/`t_high_k` from that pressure's liquid range (e.g. triple-point 216.6 K → critical 304 K for a ≥5.2-atm world); flag it as pressure-conditional in the solvent table and `citation`.
+- **P2b — explicit liquid-sulfur band** — narrow usable window 388–443 K (115–170 °C); currently only implied inside fluorocarbon-sulfur. Note the existing fluorocarbon-sulfur *outer* edge (373 K) falls **below** sulfur's 388 K melting point — so this explicit 388–443 K band is the physically correct sub-band (the table's "wider than usable window" verdict already implies this).
 - **P2c — water-ammonia eutectic band** — stays liquid well below 273 K (Titan-relevant); distinct, well-supported.
 - **P2d — concentrated sulfuric acid band** — pure freezes 283.6 K; aqueous mixtures liquid 170–610 K depending on concentration; one of only two solvents Bains 2024 rates as both functional and plausibly abundant on rocky worlds.
 
@@ -1333,7 +1335,7 @@ New rows in `_display_alternate_hz_regions()` (and matching `query.py star-regio
 The high-value addition: generalize the hardcoded divisor table into a first-class engine.
 
 **`core/equations.py`** — add `compute_solvent_zone(luminosity_solar, solvent=None, t_low_k=None, t_high_k=None, albedo=0.0) -> dict`:
-- Either pick a named solvent from a built-in table (water, ammonia, methane, ethane, water-ammonia, CO₂, sulfuric acid, sulfur, hydrogen, nitrogen, HF, formamide — each with freeze/boil K + a literature citation) **or** supply a custom `t_low_k`/`t_high_k` liquid range.
+- Either pick a named solvent from a built-in table (water, ammonia, methane, ethane, water-ammonia, CO₂, sulfuric acid, sulfur, hydrogen, nitrogen, HF, formamide — each with freeze/boil K + a literature citation) **or** supply a custom `t_low_k`/`t_high_k` liquid range. Sub-triple-point solvents with no 1-atm liquid phase (CO₂, and any other flagged pressure-conditional entry) carry an explicit assumed pressure and take their `t_low_k`/`t_high_k` from that pressure's liquid range — their band is meaningless without it (see P2a). For hydrogen, use the boiling/freezing edges (20.3 / 13.8 K), not the legacy 62 K (see P1a).
 - `S_eff_edge = ((T_edge / 278.5)^4) / (1 − albedo)`; `inner_au = sqrt(luminosity / S_eff_at_T_high)`, `outer_au = sqrt(luminosity / S_eff_at_T_low)`.
 - Self-validates (`luminosity > 0`, `0 ≤ albedo < 1`, `0 < t_low < t_high`) and returns `{"error": str}` on bad input — the Phase H contract.
 - Returns `{solvent, t_low_k, t_high_k, albedo, luminosity_solar, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, citation}`.
