@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase P — Snow Lines &amp; Solvent Zones (Mockup)</title>
+<style>
+  :root{
+    --bg:#f0f0f0; --panel:#ffffff; --border:#b8b8b8; --border-soft:#d8d8d8;
+    --text:#222; --muted:#6a6a6a; --accent:#4a90d9; --accent-d:#3a73ad;
+    --head:#e9eef5; --zebra:#f7f9fc; --good:#2e8b57; --warn:#b8860b; --bad:#b03030; --chip:#eef2f7;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+       font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}
+  .topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600}
+  .notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px;line-height:1.5}
+  .notice b{color:#4d4109}
+  .notice code{background:#f3e9c3;padding:0 4px;border-radius:3px}
+  .app{flex:1;display:flex;min-height:0}
+  .nav{width:248px;min-width:248px;background:#fafafa;border-right:1px solid var(--border);overflow:auto;padding:6px 0}
+  .nav .cat{padding:7px 12px 3px;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px}
+  .nav .cat.new{color:var(--accent)}
+  .nav .new-badge{background:var(--accent);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .nav .chg-badge{background:var(--warn);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .nav .item{padding:5px 12px 5px 24px;color:#555;border-left:3px solid transparent}
+  .nav .item.muted{color:#bbb}
+  .nav .item.live{color:#1f3a57;cursor:pointer}
+  .nav .item.live:hover{background:#eef4fb}
+  .nav .item.active{background:#e2eefb;border-left-color:var(--accent);color:#13314e;font-weight:600}
+  .content{flex:1;overflow:auto;padding:18px 22px}
+  .panel{display:none}
+  .panel.active{display:block}
+  h2.title{margin:0 0 2px;font-size:18px}
+  .sub{color:var(--muted);margin:0 0 12px;font-size:12.5px;max-width:880px;line-height:1.45}
+  details.spec{margin:0 0 14px;font-size:12px;color:#555;background:#f5f7fa;border:1px solid var(--border-soft);border-radius:5px;padding:6px 10px;max-width:900px}
+  details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+  details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+  details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.55}
+  /* form */
+  .form{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:14px 16px;max-width:660px;margin-bottom:14px}
+  .field{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .field label{font-size:12.5px;color:#444;width:210px;text-align:right;font-weight:500}
+  .field input[type=text]{height:28px;border:1px solid var(--border);border-radius:4px;padding:0 7px;font-size:12.5px;background:#fff;width:150px}
+  .field select{height:28px;border:1px solid var(--border);border-radius:4px;padding:0 6px;font-size:12.5px;background:#fff;width:240px}
+  .field .unit{color:#999;font-size:11px}
+  .field.optional label{color:#888;font-style:italic}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:12px}
+  button.btn{height:30px;padding:0 16px;border:1px solid var(--accent-d);background:var(--accent);color:#fff;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer}
+  button.btn:hover{background:var(--accent-d)}
+  button.ghost{background:#fff;color:#444;border:1px solid var(--border)}
+  button.ghost:hover{background:#f0f0f0}
+  .err{color:var(--bad);font-size:12px;margin:6px 0;display:none}
+  .infoline{font-size:12.5px;font-weight:600;margin:8px 0;display:none}
+  .tablewrap{border:1px solid var(--border);border-radius:6px;overflow:auto;max-width:1180px;background:#fff;margin-top:8px}
+  .tablewrap.hide{display:none}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th{background:var(--head);text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;font-size:11.5px}
+  td{padding:6px 10px;border-bottom:1px solid #eee;white-space:nowrap}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:nth-child(even) td{background:var(--zebra)}
+  .st-good{color:var(--good);font-weight:600}
+  .st-warn{color:var(--warn);font-weight:600}
+  .st-bad{color:var(--bad);font-weight:600}
+  .st-new{color:var(--accent);font-weight:600}
+  .pill{font-size:10.5px;padding:1px 6px;border-radius:9px;font-weight:600}
+  .pill.good{background:#e3f3ea;color:var(--good)} .pill.warn{background:#f7eed3;color:var(--warn)}
+  .pill.bad{background:#f6e1e1;color:var(--bad)} .pill.new{background:#e2eefb;color:var(--accent-d)}
+  .note{font-size:11.5px;color:#777;margin-top:10px;max-width:900px;line-height:1.5}
+  .mocknote{background:#f3f0fa;border:1px solid #d9cdf0;color:#5b478a;padding:7px 11px;border-radius:5px;font-size:12px;margin:12px 0;max-width:900px;line-height:1.45}
+  /* viz */
+  .vizhead{font-size:12px;font-weight:700;color:#3a73ad;margin:16px 0 6px}
+  .viz-row{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px;max-width:1100px}
+  svg.ring{border:1px solid var(--border-soft);border-radius:6px}
+  .legend{display:flex;flex-direction:column;gap:4px;font-size:11.5px;padding-top:2px}
+  .legend .lg{display:flex;align-items:center;gap:6px;white-space:nowrap}
+  .legend .sw{width:15px;height:10px;border-radius:2px;display:inline-block;border:1px solid rgba(0,0,0,.25)}
+  .legend .lgsub{color:#999}
+  .ovctl{display:flex;gap:16px;align-items:flex-start;margin:6px 0 4px;font-size:12.5px;flex-wrap:wrap}
+  .ovsolv{display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center;max-width:560px}
+  .ovsolv label{display:flex;align-items:center;gap:5px;font-weight:500}
+  .ovsolv .sw{width:13px;height:10px;border-radius:2px;display:inline-block;border:1px solid rgba(0,0,0,.25)}
+  svg.ring .hit{cursor:pointer}
+  #vptip{position:fixed;display:none;z-index:1000;pointer-events:none;background:#1f2733;color:#eef;
+         font-size:11px;line-height:1.4;padding:5px 9px;border-radius:5px;max-width:250px;
+         box-shadow:0 3px 10px rgba(0,0,0,.3)}
+  #vptip b{color:#fff}
+</style>
+</head>
+<body>
+<div class="topbar">
+  Space &amp; Science Fiction App <span style="color:#888">— GUI mockup</span>
+  <span class="tag">Phase P &middot; Snow Lines &amp; Solvent Zones</span>
+</div>
+<div class="notice">
+  <b>Interactive mockup for feedback — not the real app.</b>
+  All panels are live (client-side JS). <b>Package A (2026-06-19): two temperature models.</b>
+  <b>M1 — surface</b> (solvent liquid bands, with greenhouse): <code>T = 314.9 × (1−A)<sup>0.25</sup> × S<sup>0.25</sup></code> (= 288 K at A=0.3).
+  <b>M2 — equilibrium</b> (snow/ice lines, no greenhouse): <code>T = 278.5 × (1−A)<sup>0.25</sup> × S<sup>0.25</sup></code>.
+  Both fix the app's albedo bug (<code>(1−A)<sup>0.25</sup></code>, not <code>(1−A)<sup>1</sup></code>). The six legacy bands are
+  <b>Asimov's six biochemistries</b> ("Not As We Know It," 1962). Pure math, no network.
+</div>
+
+<div class="app">
+  <div class="nav">
+    <div class="cat">Star System Regions</div>
+    <div class="item muted">Star System Regions (SIMBAD)</div>
+    <div class="item muted">Star System Regions (Semi)</div>
+    <div class="item muted">Star System Regions (Manual)</div>
+    <div class="item live" data-panel="reg" onclick="showPanel('reg')">Alternate HZ <span class="chg-badge">CHANGED</span></div>
+
+    <div class="cat">Worldbuilding</div>
+    <div class="item muted">Roche Limit</div>
+    <div class="item muted">Tidal Locking Timescale</div>
+    <div class="item muted">Hill Sphere</div>
+    <div class="item muted">Binary Orbit Stability</div>
+    <div class="item muted">Atmosphere Retention</div>
+    <div class="item live active" data-panel="p4" onclick="showPanel('p4')">Solvent Habitable Zone <span class="new-badge">NEW</span></div>
+    <div class="item live" data-panel="p5" onclick="showPanel('p5')">Ice Lines <span class="new-badge">NEW</span></div>
+    <div class="item live" data-panel="p6" onclick="showPanel('p6')">Solvent Reference <span class="new-badge">NEW</span></div>
+
+    <div class="cat">Orbital Diagrams</div>
+    <div class="item live" data-panel="ov" onclick="showPanel('ov')">Orbital Overlay (opt 3/6) <span class="new-badge">NEW</span></div>
+  </div>
+
+  <div class="content">
+
+    <!-- ================= P4 Solvent Habitable Zone ================= -->
+    <div class="panel active" id="panel-p4">
+      <h2 class="title">Solvent Habitable Zone Calculator <span class="pill new">P4</span></h2>
+      <p class="sub">Generalizes the hardcoded Alternate-HZ divisor table into a first-class engine: the orbital
+        band where a chosen solvent stays liquid, from its liquid range and the star's luminosity. At albedo 0.3
+        a named solvent's band edges land on its 1-atm boiling (inner) / freezing (outer) points.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>compute_solvent_zone(luminosity_solar, solvent=None, t_low_k=None, t_high_k=None, albedo=0.3)</code></li>
+          <li><b>M1 surface model</b>: <code>T_ref = 314.9·(1−A)<sup>0.25</sup></code> (= 288 K at A=0.3); <code>S_eff = (T_edge/T_ref)⁴</code>; <code>AU = √(L / S_eff)</code></li>
+          <li>Reproduces the legacy bands at A=0.3 (water 373/273 K → divisors 2.8/0.8) with the corrected
+            <code>(1−A)<sup>0.25</sup></code> albedo law. Hydrogen uses 20.3/13.8 K (not the legacy 64 K). CO₂ is
+            pressure-conditional (≥ 5.2 atm).</li>
+          <li>Self-validating (Phase H contract): L&gt;0, 0≤A&lt;1, 0&lt;t_low&lt;t_high, known solvent → else <code>{"error"}</code>.</li>
+        </ul>
+      </details>
+      <div class="form">
+        <div class="field"><label>Star Luminosity (L☉):</label><input type="text" id="p4_lum" value="1.0"></div>
+        <div class="field"><label>Solvent:</label>
+          <select id="p4_solv" onchange="p4SolvChange()"></select></div>
+        <div class="field" id="p4_lowrow" style="display:none"><label>Custom Freeze T (K):</label><input type="text" id="p4_low" placeholder="lower edge"></div>
+        <div class="field" id="p4_hirow" style="display:none"><label>Custom Boil T (K):</label><input type="text" id="p4_hi" placeholder="upper edge"></div>
+        <div class="field optional"><label>Bond Albedo:</label><input type="text" id="p4_alb" placeholder="0.3 if blank"></div>
+        <div class="actions"><button class="btn" onclick="runP4()">Calculate</button>
+          <button class="ghost btn" onclick="document.getElementById('p4_out').classList.add('hide')">Clear</button></div>
+        <div class="err" id="p4_err"></div>
+      </div>
+      <div class="infoline" id="p4_info"></div>
+      <div class="tablewrap hide" id="p4_out"></div>
+      <div class="vizhead">Solvent Zone Ring (⁴√AU radial scale · M1 surface)</div>
+      <div id="p4_viz" class="viz-row"></div>
+    </div>
+
+    <!-- ================= P5 Ice Lines ================= -->
+    <div class="panel" id="panel-p5">
+      <h2 class="title">Ice-Line Calculator <span class="pill new">P5</span></h2>
+      <p class="sub">Volatile condensation fronts on the <b>M2 equilibrium model</b> (no greenhouse) — the single
+        canonical water snow line (170 K / 2.68 AU) plus CO₂ / NH₃ / N₂ / CO fronts. Disk fronts (CO, N₂) are set
+        by disk-midplane temperature, so their irradiation placement is illustrative (flagged below).</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><code>compute_ice_lines(luminosity_solar, albedo=0.0)</code> → <code>{lines:[{species, t_cond_k, au, lm, kind, disk_line, note}]}</code></li>
+          <li><b>M2</b>: <code>T_ref = 278.5·(1−A)<sup>0.25</sup></code>; <code>AU = √L · (T_ref / T_cond)²</code>. Default albedo 0 (ice grains).</li>
+          <li>Single water snow line (170 K → 2.68 AU) — no dual line: present-day &amp; formation both ≈ 2.7 AU for the Sun.</li>
+          <li>The √L irradiation law does not cleanly place disk-midplane lines (CO/N₂) — surfaced as a caveat.</li>
+        </ul>
+      </details>
+      <div class="form">
+        <div class="field"><label>Star Luminosity (L☉):</label><input type="text" id="p5_lum" value="1.0"></div>
+        <div class="field optional"><label>Bond Albedo:</label><input type="text" id="p5_alb" placeholder="0.0 (ice grains) if blank"></div>
+        <div class="actions"><button class="btn" onclick="runP5()">Calculate</button>
+          <button class="ghost btn" onclick="document.getElementById('p5_out').classList.add('hide')">Clear</button></div>
+        <div class="err" id="p5_err"></div>
+      </div>
+      <div class="tablewrap hide" id="p5_out"></div>
+      <div class="note">Disk-front rows (CO, N₂) are flagged — their true location is set by disk-midplane temperature,
+        not stellar irradiation. Complementary to these, the regions table's <code>lh2Line</code> (~62 K, 20 AU,
+        M2) is the <i>1-atm</i> N₂/CO surface-frost reading — a different convention (P1b); both are shown and both
+        are correct for what they represent.</div>
+      <div class="vizhead">Frost-Line Map (⁴√AU · inner-focus ≤ 18 AU · M2 equilibrium)</div>
+      <div class="ovctl"><label><input type="checkbox" id="p5_full" onchange="runP5()"> Full range (draw the N₂ / CO disk fronts to scale, out to ~200 AU)</label></div>
+      <div id="p5_viz" class="viz-row"></div>
+    </div>
+
+    <!-- ================= P6 Solvent Reference ================= -->
+    <div class="panel" id="panel-p6">
+      <h2 class="title">Alternative Solvents — Reference Table <span class="pill new">P6</span></h2>
+      <p class="sub">Static reference (à la Main Sequence Star Properties). Liquid ranges, the implied equilibrium-T
+        band at A = 0.3, and the Bains 2024 plausibility verdict. No computation — the same built-in table the
+        Solvent HZ &amp; Ice-Line calculators use.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li>Source: module constant <code>_SOLVENTS</code> in <code>core/equations.py</code> (single source of truth).</li>
+          <li>Bains/Petkowski/Seager 2024 four-criterion verdict stored per entry as <code>plausibility</code>.</li>
+        </ul>
+      </details>
+      <div class="tablewrap" id="p6_out"></div>
+      <div class="vizhead">Liquid-Range Bars (Temperature, K — log axis)</div>
+      <div id="p6_viz" class="viz-row"></div>
+      <div class="note"><b>Bains 2024 headline:</b> only water and concentrated sulfuric acid are rated both
+        functional <i>and</i> plausibly abundant on rocky worlds; ammonia fails the occurrence criterion; CO₂ is the
+        standout non-protonating solvent (but needs ≥ 5.2 atm to have a liquid phase at all).</div>
+    </div>
+
+    <!-- ================= Regions: corrected Alternate HZ ================= -->
+    <div class="panel" id="panel-reg">
+      <h2 class="title">Alternate Habitable Zone Regions <span class="pill warn">P1 · P2 · P7</span></h2>
+      <p class="sub">The existing Star-System-Regions output, corrected &amp; extended (Package A). Solvent bands
+        use <b>M1</b> (surface); snow/ice lines use <b>M2</b> (equilibrium). Sound bands (water / ammonia /
+        methane) are <b>unchanged</b>.</p>
+      <details class="spec"><summary>Plan details</summary>
+        <ul>
+          <li><b>P1a:</b> hydrogen band → 0.0000247 / 0.0000053 (20.3 / 13.8 K, ~200–440 AU; M1). Value fix.</li>
+          <li><b>P1c:</b> <code>snowLine</code> → <b>0.139</b> (170 K, <b>2.68 AU</b>; M2). Value fix (was 0.04 / 5 AU — surface model misapplied to an ice line).</li>
+          <li><b>P1b:</b> <code>lh2Line</code> value is correct under M2 (62 K, 20 AU) — relabel only. <b>P1d:</b> fluorosilicone → hypothetical high-T (relabel).</li>
+          <li><b>P1e:</b> <code>planetaryTemperature</code> albedo bug <code>(1−A)¹ → (1−A)<sup>0.25</sup></code> (separate fix; not shown in this table).</li>
+          <li><b>P2:</b> new CO₂ / sulfur / water-ammonia / sulfuric-acid solvent bands (M1).</li>
+          <li><b>P7:</b> per-model implied-T column + citations + the M1/M2 disclaimer.</li>
+        </ul>
+      </details>
+      <div class="form">
+        <div class="field"><label>Star Luminosity (L☉):</label><input type="text" id="reg_lum" value="1.0"></div>
+        <div class="actions"><button class="btn" onclick="runReg()">Recompute</button></div>
+        <div class="err" id="reg_err"></div>
+      </div>
+      <div class="tablewrap" id="reg_out"></div>
+      <div class="mocknote">In the app the <b>Status</b> pills are: <span class="st-good">sound (unchanged)</span> ·
+        <span class="st-new">new</span> · <span class="st-warn">relabeled</span> ·
+        <span class="st-bad">corrected value</span>. Solvent-band temps shown at the regions default A=0.3 (M1);
+        snow/ice temps at A=0 (M2). The Solvent-HZ &amp; Ice-Line calculators expose albedo.</div>
+      <div class="note"><b>P7c disclaimer:</b> the <b>M1 solvent bands</b> are surface temperatures with Earth-like
+        greenhouse (A=0.3) — they run closer-in than greenhouse-corrected HZs (water 0.60–1.12 AU vs Kopparapu's
+        ~0.95–1.37 AU). The <b>M2 snow/ice lines</b> are bare equilibrium (no greenhouse), correct for ice
+        condensation in vacuum.</div>
+      <div class="vizhead">Alternate-HZ Ring (⁴√AU · inner-focus ≤ 12 AU · 10 bands; M1 solvent + M2 snow/ice)</div>
+      <div class="ovctl"><label><input type="checkbox" id="reg_full" onchange="runReg()"> Full range (draw the H₂ band &amp; N₂/CO line to scale, out to ~480 AU)</label></div>
+      <div id="reg_viz" class="viz-row"></div>
+    </div>
+
+    <!-- ================= Orbital overlay (opts 3/6/Map) ================= -->
+    <div class="panel" id="panel-ov">
+      <h2 class="title">Orbital Overlay — Snow Line &amp; Solvent Zones <span class="pill new">V6 · V7</span></h2>
+      <p class="sub">Demo of the optional overlays added to the <b>existing orbital diagrams</b> (opts 3 / 6 / Map),
+        following the O4 "solar reference" / O10b "hyper limit" checkbox pattern. Toggle a dashed <b>water snow
+        line</b> ring (V6) and tick <b>multiple alternate-solvent bands</b> (V7) to shade behind a sample system's
+        planet orbits at once — answering "is planet X icy/giant?" and "which biochemistry could each planet host?"</p>
+      <details class="spec"><summary>Plan details (§13)</summary>
+        <ul>
+          <li><b>V6:</b> additive <code>snow_au=</code> on <code>make_orbits_canvas</code> → one dashed ring at the host's water snow line (M2 from L).</li>
+          <li><b>V7:</b> additive <code>solvent_bands=[…]</code> → shaded annuli behind the real planet orbits (M1).</li>
+          <li>Default off → byte-identical to today; mirrors the O4/O10b checkbox wiring.</li>
+        </ul>
+      </details>
+      <div class="ovctl">
+        <label><input type="checkbox" id="ov_snow" checked onchange="runOverlay()"> Show snow line (V6)</label>
+        <span style="display:flex;gap:8px;align-items:flex-start"><b style="white-space:nowrap">Solvent zones (V7):</b>
+          <span id="ov_solv_box" class="ovsolv"></span></span>
+      </div>
+      <div id="ov_viz" class="viz-row"></div>
+      <div class="mocknote">Sample system (host ~G2V, L = 1; planets b–f). In the app these render on the real
+        <code>make_orbits_canvas</code> orbits via additive <code>snow_au=</code> / <code>solvent_bands=</code>;
+        planets beyond the snow line are the icy/giant ones, planets inside a shaded band could host that solvent's
+        biochemistry.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ===== two temperature models (PHASE_P_PLAN.md §0) ===== */
+const LM_PER_AU = 8.3167;
+const M1 = A => 314.9 * Math.pow(1 - A, 0.25);   // M1 surface (solvent bands): 288.0 K at A=0.3
+const M2 = A => 278.5 * Math.pow(1 - A, 0.25);   // M2 equilibrium (ice/snow lines): no greenhouse
+const sEff  = (T, Tr) => Math.pow(T / Tr, 4);    // divisor from an edge temperature, given a model T_ref
+const tEdge = (S, Tr) => Tr * Math.pow(S, 0.25); // edge temperature from a divisor, given a model T_ref
+const f=(v,d)=>v.toFixed(d), sci=v=>v.toExponential(3);
+
+/* ===== inline-SVG diagram helpers (mockup-only renderers; the app uses matplotlib) ===== */
+const _au=a=>a>=10?a.toFixed(0):a>=1?a.toFixed(1):a.toFixed(2);
+function ringSVG(o){            // o:{bands:[{inner,outer,color,tip}], lines:[{au,color,dash,tip}], maxAu, capNote, starTip}
+  const W=300,H=300,C=150,MAXR=125, maxAu=o.maxAu;
+  const rs=au=>MAXR*Math.pow(Math.max(au,1e-12)/maxAu,0.25);
+  let g=`<rect width="${W}" height="${H}" rx="6" fill="#fbfcfe" pointer-events="none"/>`;
+  [0.1,0.3,1,3,10,30,100,300,1000].filter(a=>a<=maxAu*1.001).forEach(a=>{
+    const r=rs(a);
+    g+=`<circle cx="${C}" cy="${C}" r="${r.toFixed(1)}" fill="none" stroke="#e3e7ef" pointer-events="none"/>`;
+    g+=`<text x="${(C+r).toFixed(1)}" y="${C-2}" font-size="8" fill="#aab" text-anchor="middle" pointer-events="none">${_au(a)}</text>`;
+  });
+  (o.bands||[]).forEach(b=>{const ri=rs(b.inner),ro=rs(b.outer),mid=(ri+ro)/2,wd=Math.max(ro-ri,1.5);
+    g+=`<circle class="hit" data-tip="${b.tip||''}" pointer-events="stroke" cx="${C}" cy="${C}" r="${mid.toFixed(1)}" fill="none" stroke="${b.color}" stroke-width="${wd.toFixed(1)}" opacity="0.28"/>`;
+    g+=`<circle cx="${C}" cy="${C}" r="${ri.toFixed(1)}" fill="none" stroke="${b.color}" stroke-width="1.1" pointer-events="none"/>`;
+    g+=`<circle cx="${C}" cy="${C}" r="${ro.toFixed(1)}" fill="none" stroke="${b.color}" stroke-width="1.1" pointer-events="none"/>`;});
+  (o.lines||[]).forEach(l=>{const r=rs(l.au).toFixed(1);
+    g+=`<circle class="hit" data-tip="${l.tip||''}" pointer-events="stroke" cx="${C}" cy="${C}" r="${r}" fill="none" stroke="#000" stroke-opacity="0" stroke-width="11"/>`;
+    g+=`<circle cx="${C}" cy="${C}" r="${r}" fill="none" stroke="${l.color}" stroke-width="1.7" stroke-dasharray="${l.dash||'5 3'}" pointer-events="none"/>`;});
+  g+=`<circle class="hit" data-tip="${o.starTip||'Host star'}" cx="${C}" cy="${C}" r="5" fill="#ffcc33" stroke="#a80"/>`;
+  if(o.capNote) g+=`<text x="${C}" y="${H-6}" font-size="8.5" fill="#99a" text-anchor="middle" pointer-events="none">${o.capNote}</text>`;
+  return `<svg class="ring" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${g}</svg>`;
+}
+function legend(items){return '<div class="legend">'+items.map(i=>
+  `<div class="lg"><span class="sw" style="background:${i.color}"></span><span>${i.label}${i.sub?` <span class="lgsub">${i.sub}</span>`:''}</span></div>`).join('')+'</div>';}
+function barSVG(rows){          // rows:[{name,lo,hi,color}]
+  const W=660,rowH=22,padL=170,padR=40,padT=26,padB=28,H=padT+padB+rows.length*rowH;
+  const lo10=Math.log10(10),hi10=Math.log10(760);
+  const lx=t=>padL+(Math.log10(t)-lo10)/(hi10-lo10)*(W-padL-padR);
+  let g=`<rect width="${W}" height="${H}" rx="6" fill="#ffffff"/>`;
+  g+=`<rect x="${lx(273).toFixed(1)}" y="${padT}" width="${(lx(373)-lx(273)).toFixed(1)}" height="${rows.length*rowH}" fill="#33aa55" opacity="0.10"/>`;
+  [10,20,50,100,200,400,700].forEach(t=>{const x=lx(t).toFixed(1);
+    g+=`<line x1="${x}" y1="${padT}" x2="${x}" y2="${H-padB}" stroke="#eef"/><text x="${x}" y="${padT-9}" font-size="9" fill="#99a" text-anchor="middle">${t}</text>`;});
+  g+=`<text x="${((padL+W-padR)/2).toFixed(0)}" y="${H-8}" font-size="10" fill="#778" text-anchor="middle">Liquid range — Temperature (K, log) · green band = water 273–373 K</text>`;
+  rows.forEach((r,i)=>{const y=padT+i*rowH+3,h=rowH-9,x0=lx(r.lo),x1=lx(r.hi);
+    g+=`<text x="${padL-8}" y="${(y+h-1).toFixed(1)}" font-size="10.5" fill="#333" text-anchor="end" pointer-events="none">${r.name}</text>`;
+    g+=`<rect class="hit" data-tip="${r.tip||''}" x="${x0.toFixed(1)}" y="${y}" width="${Math.max(x1-x0,2).toFixed(1)}" height="${h}" rx="2" fill="${r.color}" opacity="0.85"/>`;
+    g+=`<text x="${(x1+4).toFixed(1)}" y="${(y+h-1).toFixed(1)}" font-size="8.5" fill="#889" pointer-events="none">${r.lo}–${r.hi}K</text>`;});
+  return `<svg class="ring" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${g}</svg>`;
+}
+function orbitSVG(o){           // o:{planets:[{name,au,color,rad,ang,tip}], maxAu, snowAu, snowTip, bands:[{inner,outer,color,tip}]}
+  const W=320,H=320,C=160,MAXR=140, rs=au=>MAXR*au/o.maxAu;
+  let g=`<rect width="${W}" height="${H}" rx="6" fill="#f7f9fc" pointer-events="none"/>`;
+  (o.bands||[]).forEach(b=>{const ri=rs(b.inner),ro=rs(b.outer),mid=(ri+ro)/2,wd=Math.max(ro-ri,2);
+    g+=`<circle class="hit" data-tip="${b.tip||''}" pointer-events="stroke" cx="${C}" cy="${C}" r="${mid.toFixed(1)}" fill="none" stroke="${b.color}" stroke-width="${wd.toFixed(1)}" opacity="0.22"/>`;
+    g+=`<circle cx="${C}" cy="${C}" r="${ri.toFixed(1)}" fill="none" stroke="${b.color}" stroke-width="0.8" opacity="0.7" pointer-events="none"/>`;
+    g+=`<circle cx="${C}" cy="${C}" r="${ro.toFixed(1)}" fill="none" stroke="${b.color}" stroke-width="0.8" opacity="0.7" pointer-events="none"/>`;});
+  if(o.snowAu){const r=rs(o.snowAu).toFixed(1);
+    g+=`<circle class="hit" data-tip="${o.snowTip||''}" pointer-events="stroke" cx="${C}" cy="${C}" r="${r}" fill="none" stroke="#000" stroke-opacity="0" stroke-width="11"/>`;
+    g+=`<circle cx="${C}" cy="${C}" r="${r}" fill="none" stroke="#3a86c8" stroke-width="1.7" stroke-dasharray="5 3" pointer-events="none"/>`;
+    g+=`<text x="${(C+r*0.71).toFixed(1)}" y="${(C-r*0.71).toFixed(1)}" font-size="8.5" fill="#3a73ad" pointer-events="none">snow</text>`;}
+  o.planets.forEach(p=>{const r=rs(p.au);
+    g+=`<circle cx="${C}" cy="${C}" r="${r.toFixed(1)}" fill="none" stroke="#c8cee0" pointer-events="none"/>`;
+    const a=(p.ang||0)*Math.PI/180,px=C+r*Math.cos(a),py=C-r*Math.sin(a);
+    g+=`<circle class="hit" data-tip="${p.tip||''}" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${p.rad||4}" fill="${p.color}"/>`;
+    g+=`<text x="${(px+6).toFixed(1)}" y="${(py+3).toFixed(1)}" font-size="9" fill="#445" pointer-events="none">${p.name}</text>`;});
+  g+=`<circle class="hit" data-tip="${o.starTip||'Host star'}" cx="${C}" cy="${C}" r="5" fill="#ffcc33" stroke="#a80"/>`;
+  return `<svg class="ring" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${g}</svg>`;
+}
+
+/* ===== built-in solvent table (PHASE_P_PLAN.md §4a) ===== */
+const SOLV=[
+ {key:'water',         name:'Water',                     lo:273.15, hi:373.15, cond:false, P:null, cite:'CRC; Asimov 1962',  plaus:'Functional & abundant — the baseline'},
+ {key:'ammonia',       name:'Ammonia',                   lo:195.45, hi:239.75, cond:false, P:null, cite:'Gillett; Asimov 1962', plaus:'Good solvent; fails occurrence (Bains 2024)'},
+ {key:'methane',       name:'Methane',                   lo:90.69,  hi:111.65, cond:false, P:null, cite:'CRC; Asimov 1962',  plaus:'Non-polar; Titan-type; limited chemistry'},
+ {key:'ethane',        name:'Ethane',                    lo:90.36,  hi:184.55, cond:false, P:null, cite:'CRC; Titan',        plaus:'Non-polar; Titan lakes'},
+ {key:'water_ammonia', name:'Water-ammonia eutectic',    lo:176.0,  hi:273.0,  cond:false, P:null, cite:'Gillett; Titan',    plaus:'Extends water cold-ward; Titan interior'},
+ {key:'so2',           name:'Sulfur dioxide',            lo:197.6,  hi:263.1,  cond:false, P:null, cite:'Gillett',           plaus:'Good industrial solvent; Io-type'},
+ {key:'co2',           name:'Carbon dioxide',            lo:216.6,  hi:304.1,  cond:true,  P:5.2,  cite:'Bains 2024; CRC',   plaus:'Standout non-protonating solvent (≥5.2 atm)'},
+ {key:'sulfuric_acid', name:'Concentrated sulfuric acid',lo:283.6,  hi:610.0,  cond:false, P:null, cite:'Bains 2024; Gillett',plaus:'Functional & plausibly abundant (Venus clouds)'},
+ {key:'sulfur',        name:'Molten sulfur',             lo:388.4,  hi:717.8,  cond:false, P:null, cite:'CRC',               plaus:'Very hot; Io-type'},
+ {key:'hydrogen',      name:'Hydrogen',                  lo:13.80,  hi:20.28,  cond:false, P:null, cite:'CRC; Asimov 1962',  plaus:'Razor-thin band, very cold & far'},
+ {key:'nitrogen',      name:'Nitrogen',                  lo:63.15,  hi:77.36,  cond:false, P:null, cite:'CRC',               plaus:'Triton/Pluto surface ices'},
+ {key:'hf',            name:'Hydrogen fluoride',         lo:189.8,  hi:292.7,  cond:false, P:null, cite:'CRC',               plaus:'Polar; constrained by F budget'},
+ {key:'formamide',     name:'Formamide',                 lo:275.7,  hi:493.0,  cond:false, P:null, cite:'Bains 2024',        plaus:'NH-solvent; prebiotic interest'},
+];
+
+/* ===== shared helpers ===== */
+function val(id){return document.getElementById(id).value.trim();}
+function pos(id){const v=parseFloat(val(id)); return (isFinite(v)&&v>0)?v:NaN;}
+function alb(id){const s=val(id); if(s==='')return 0.3; const v=parseFloat(s); return (isFinite(v)&&v>=0&&v<1)?v:NaN;}
+function albIce(id){const s=val(id); if(s==='')return 0.0; const v=parseFloat(s); return (isFinite(v)&&v>=0&&v<1)?v:NaN;}
+function fail(p,msg){const e=document.getElementById(p+'_err');e.textContent=msg;e.style.display='block';
+  const o=document.getElementById(p+'_out'); if(o)o.classList.add('hide');
+  const i=document.getElementById(p+'_info'); if(i)i.style.display='none'; return false;}
+function ok(p){document.getElementById(p+'_err').style.display='none';}
+function show(p,html){const o=document.getElementById(p+'_out');o.innerHTML=html;o.classList.remove('hide');}
+function tbl(headers,rows){return '<table><thead><tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>'+rows+'</tbody></table>';}
+
+/* ===== P4 Solvent zone ===== */
+function fillSolvents(sel){
+  let h='';
+  SOLV.forEach(s=>h+=`<option value="${s.key}">${s.name}${s.cond?' (≥'+s.P+' atm)':''}</option>`);
+  h+='<option value="__custom">Custom liquid range…</option>';
+  document.getElementById(sel).innerHTML=h;
+}
+function p4SolvChange(){
+  const custom = val('p4_solv')==='__custom';
+  document.getElementById('p4_lowrow').style.display = custom?'flex':'none';
+  document.getElementById('p4_hirow').style.display  = custom?'flex':'none';
+}
+function runP4(){
+  const L=pos('p4_lum'), A=alb('p4_alb'); const key=val('p4_solv');
+  if(isNaN(L)) return fail('p4','Luminosity must be a positive number.');
+  if(isNaN(A)) return fail('p4','Albedo must be in [0, 1).');
+  let name, lo, hi, cond=false, Pa=null, cite='custom';
+  if(key==='__custom'){
+    lo=pos('p4_low'); hi=pos('p4_hi'); name='Custom';
+    if(isNaN(lo)||isNaN(hi)) return fail('p4','Custom freeze and boil temperatures must be positive numbers.');
+    if(lo>=hi) return fail('p4','Freeze temperature must be below boil temperature.');
+  } else {
+    const s=SOLV.find(x=>x.key===key); name=s.name; lo=s.lo; hi=s.hi; cond=s.cond; Pa=s.P; cite=s.cite;
+  }
+  ok('p4');
+  const Tr=M1(A);   // M1 surface model (solvent liquid bands)
+  const sIn=sEff(hi,Tr), sOut=sEff(lo,Tr);
+  const auIn=Math.sqrt(L/sIn), auOut=Math.sqrt(L/sOut);
+  const info=document.getElementById('p4_info');
+  info.innerHTML = `<b>${name}</b> liquid range ${f(lo,1)}–${f(hi,1)} K · M1 surface T_ref = ${f(Tr,1)} K (A=${f(A,2)})`
+    + (cond?` · <span class="st-warn">pressure-conditional — assumes ≥ ${Pa} atm</span>`:'');
+  info.style.display='block';
+  show('p4', tbl(
+    ['Edge','Liquid-range T (K)','S_eff (divisor)','Distance (AU)','Distance (LM)'],
+    `<tr><td>Inner (boil)</td><td class="num">${f(hi,1)}</td><td class="num">${sIn<0.001?sci(sIn):f(sIn,4)}</td><td class="num">${f(auIn,4)}</td><td class="num">${f(auIn*LM_PER_AU,3)}</td></tr>`
+   +`<tr><td>Outer (freeze)</td><td class="num">${f(lo,1)}</td><td class="num">${sOut<0.001?sci(sOut):f(sOut,4)}</td><td class="num">${f(auOut,4)}</td><td class="num">${f(auOut*LM_PER_AU,3)}</td></tr>`)
+   + `<div style="padding:7px 10px;font-size:11.5px;color:#777">Citation: ${cite}</div>`);
+  // ring diagram: solvent band + water HZ reference
+  const wIn=Math.sqrt(L/sEff(373.15,Tr)), wOut=Math.sqrt(L/sEff(273.15,Tr));
+  const bands=[{inner:auIn,outer:auOut,color:'#33AA55',
+    tip:`<b>${name}</b> zone (M1 surface)<br>${f(auIn,3)}–${f(auOut,3)} AU<br>liquid ${f(lo,0)}–${f(hi,0)} K${cond?' · ≥'+Pa+' atm':''}`}];
+  const leg=[{color:'#33AA55',label:name,sub:`${f(auIn,3)}–${f(auOut,3)} AU`}];
+  if(key!=='water'){bands.push({inner:wIn,outer:wOut,color:'#4488CC',
+    tip:`<b>Water HZ</b> (reference, M1)<br>${f(wIn,3)}–${f(wOut,3)} AU<br>273–373 K`});
+    leg.push({color:'#4488CC',label:'Water HZ (reference)',sub:`${f(wIn,3)}–${f(wOut,3)} AU`});}
+  leg.push({color:'#ffcc33',label:'Star'});
+  document.getElementById('p4_viz').innerHTML =
+    ringSVG({bands,lines:[],maxAu:Math.max(auOut,wOut)*1.1,
+      starTip:`<b>Host star</b><br>L = ${f(L,2)} L☉ · A = ${f(A,2)}`})+legend(leg);
+}
+
+/* ===== P5 Ice lines ===== */
+const ICE=[
+ {sp:'Water snow line', T:170, kind:'snow_line', disk:false},
+ {sp:'NH₃ front',  T:80, kind:'front', disk:false},
+ {sp:'CO₂ front',  T:70, kind:'front', disk:false},
+ {sp:'N₂ front',   T:22, kind:'front', disk:true},
+ {sp:'CO front',   T:20, kind:'front', disk:true},
+];
+function runP5(){
+  const L=pos('p5_lum'), A=albIce('p5_alb');
+  if(isNaN(L)) return fail('p5','Luminosity must be a positive number.');
+  if(isNaN(A)) return fail('p5','Albedo must be in [0, 1).'); ok('p5');
+  const Tr=M2(A);   // M2 equilibrium model (ice condensation)
+  const rows = ICE.slice().sort((a,b)=>b.T-a.T).map(x=>{
+    const au=Math.sqrt(L)*Math.pow(Tr/x.T,2);
+    const note = x.disk?'<span class="st-warn">disk-set — irradiation placement illustrative</span>'
+               : x.kind==='snow_line'?'canonical 170 K snow line (~2.7 AU; Hayashi 1981)':'condensation front';
+    return `<tr><td>${x.sp}</td><td class="num">${x.T}</td><td class="num">${f(au,3)}</td><td class="num">${f(au*LM_PER_AU,2)}</td><td>${x.kind}</td><td>${note}</td></tr>`;
+  }).join('');
+  show('p5', tbl(['Species / line','Cond. T (K)','Distance (AU)','Distance (LM)','Type','Note'], rows));
+  // frost-line ring map (inner-focus default; Full-range toggle)
+  const cmap={170:'#4499FF',80:'#33AAAA',70:'#FF8800',22:'#9966CC',20:'#cc66aa'};
+  const full=document.getElementById('p5_full').checked, CAP=18;
+  const onL=[], leg=[];
+  ICE.forEach(x=>{const au=Math.sqrt(L)*Math.pow(Tr/x.T,2), color=cmap[x.T]||'#888', nm=x.sp+(x.disk?' (disk)':'');
+    const tip=`<b>${nm}</b> (M2 equilibrium)<br>${f(au,2)} AU · ${x.T} K${x.disk?'<br>disk-set — placement illustrative':''}`;
+    if(full||au<=CAP){onL.push({au,color,dash:x.disk?'2 3':'6 3',tip}); leg.push({color,label:nm,sub:`${f(au,2)} AU`});}
+    else leg.push({color,label:'▸ '+nm,sub:`${f(au,0)} AU · off-scale`});});
+  leg.push({color:'#ffcc33',label:'Star'});
+  const trueMax=Math.max(...ICE.map(x=>Math.sqrt(L)*Math.pow(Tr/x.T,2)))*1.1;
+  const maxAu=full?trueMax:CAP, capNote=full?`full range — to ${f(trueMax,0)} AU`:`inner-focus — view ≤ ${CAP} AU (toggle Full range)`;
+  document.getElementById('p5_viz').innerHTML =
+    ringSVG({bands:[],lines:onL,maxAu,capNote,starTip:`<b>Host star</b><br>L = ${f(L,2)} L☉`})+legend(leg);
+}
+
+/* ===== P6 Reference (static) ===== */
+const _PLAUS_COLOR={water:'#2e8b57',sulfuric_acid:'#2e8b57',
+  co2:'#b8860b',methane:'#b8860b',ethane:'#b8860b',water_ammonia:'#b8860b',so2:'#b8860b',ammonia:'#b8860b'};
+function buildP6(){
+  const rows = SOLV.map(s=>{
+    const tIn=s.hi, tOut=s.lo;   // band edges already = liquid range
+    return `<tr><td>${s.name}${s.cond?` <span class="pill warn">≥${s.P} atm</span>`:''}</td>`
+      +`<td class="num">${f(s.lo,1)} – ${f(s.hi,1)}</td>`
+      +`<td class="num">${f(tOut,0)} – ${f(tIn,0)} K</td>`
+      +`<td>${s.plaus}</td><td>${s.cite}</td></tr>`;
+  }).join('');
+  document.getElementById('p6_out').innerHTML =
+    tbl(['Solvent','Liquid Range (K, 1 atm)','Equilibrium-T Band (A=0.3)','Plausibility (Bains 2024)','Key Citation'], rows);
+  // liquid-range bar chart
+  const bars=SOLV.slice().sort((a,b)=>a.lo-b.lo).map(s=>({name:s.name,lo:Math.round(s.lo),hi:Math.round(s.hi),color:_PLAUS_COLOR[s.key]||'#8aa',
+    tip:`<b>${s.name}</b><br>liquid ${Math.round(s.lo)}–${Math.round(s.hi)} K (1 atm)${s.cond?' · ≥'+s.P+' atm':''}<br>${s.plaus}`}));
+  document.getElementById('p6_viz').innerHTML = barSVG(bars)+legend([
+    {color:'#2e8b57',label:'Functional & abundant (Bains 2024)'},
+    {color:'#b8860b',label:'Notable / conditional'},{color:'#8aa',label:'Other'}]);
+}
+
+/* ===== Regions: corrected/extended Alternate HZ ===== */
+const ALT=[
+ {label:'Fluorosilicone-Fluorosilicone', dIn:52,     dOut:29.9,     tag:'relabeled — hypothetical high-T', cls:'warn', cite:'Asimov 1962'},
+ {label:'Fluorocarbon-Sulfur',           dIn:38.7,   dOut:3.2,      tag:'unchanged',                      cls:'',     cite:'Asimov 1962'},
+ {label:'Protein-Water',                 dIn:2.8,    dOut:0.8,      tag:'sound — unchanged',              cls:'good', cite:'Asimov 1962; CRC'},
+ {label:'Protein-Ammonia',               dIn:0.48,   dOut:0.21,     tag:'sound — unchanged',              cls:'good', cite:'Asimov 1962; Gillett'},
+ {label:'Polylipid-Methane',             dIn:0.023,  dOut:0.0094,   tag:'sound — unchanged',              cls:'good', cite:'Asimov 1962; CRC'},
+ {label:'Polylipid-Hydrogen',            dIn:0.0000247, dOut:0.0000053, tag:'CORRECTED P1a (was 0.0025 / 0.000024)', cls:'bad', cite:'CRC'},
+ {label:'Carbon dioxide (≥5.2 atm)',     dIn:1.243,  dOut:0.320,    tag:'NEW P2a · pressure-conditional', cls:'new',  cite:'Bains 2024'},
+ {label:'Liquid sulfur',                 dIn:38.59,  dOut:3.309,    tag:'NEW P2b',                        cls:'new',  cite:'CRC'},
+ {label:'Water-ammonia eutectic',        dIn:0.8075, dOut:0.1395,   tag:'NEW P2c · approx',               cls:'new',  cite:'Gillett; Titan'},
+ {label:'Sulfuric acid',                 dIn:20.13,  dOut:0.940,    tag:'NEW P2d',                        cls:'new',  cite:'Bains 2024'},
+];
+const SNOW=[
+ {label:'Water snow line (M2)',       d:0.139,   tag:'CORRECTED P1c (was 0.04 / 5.0 AU / 129 K)',             cls:'bad'},
+ {label:'N₂/CO (1-atm) condensation', d:0.0025,  tag:'relabeled P1b (was "lh2Line"; value correct under M2)', cls:''},
+];
+function pillFor(cls){
+  const map={good:['good','sound'],bad:['bad','corrected'],new:['new','new'],warn:['warn','relabeled'],'':['','unchanged']};
+  const [c,t]=map[cls]||['',''];
+  return c?`<span class="pill ${c}">${t}</span>`:`<span style="color:#999">unchanged</span>`;
+}
+function runReg(){
+  const L=pos('reg_lum');
+  if(isNaN(L)) return fail('reg','Luminosity must be a positive number.'); ok('reg');
+  const TrM1=M1(0.3), TrM2=M2(0.0);   // solvent bands → M1 surface; snow/ice lines → M2 equilibrium
+  const bandRow=b=>{
+    const tIn=tEdge(b.dIn,TrM1), tOut=tEdge(b.dOut,TrM1);
+    const auIn=Math.sqrt(L/b.dIn), auOut=Math.sqrt(L/b.dOut);
+    const dfmt=v=>v<0.001?sci(v):f(v,4);
+    return `<tr><td>${b.label}</td><td class="num">${dfmt(b.dIn)} / ${dfmt(b.dOut)}</td>`
+      +`<td class="num">${f(tIn,0)} – ${f(tOut,0)} K</td>`
+      +`<td class="num">${f(auIn,3)} – ${f(auOut,3)}</td>`
+      +`<td>${pillFor(b.cls)} <span style="font-size:11px;color:#888">${b.tag}</span></td>`
+      +`<td style="font-size:11px;color:#888">${b.cite}</td></tr>`;
+  };
+  let html = '<div style="padding:6px 10px;font-weight:600;background:#eef4fb;font-size:11.5px">Alternate-biochemistry solvent bands — M1 surface (Asimov six + P2 additions)</div>';
+  html += tbl(['Band (solvent)','Divisor in / out','Implied T (M1, A=0.3)','Distance (AU) in–out','Status','Citation'],
+              ALT.map(bandRow).join(''));
+  const snowRow=s=>{
+    const t=tEdge(s.d,TrM2), au=Math.sqrt(L/s.d);
+    return `<tr><td>${s.label}</td><td class="num">${f(s.d,4)}</td><td class="num">${f(t,0)} K</td>`
+      +`<td class="num">${f(au,3)}</td><td>${pillFor(s.cls)} <span style="font-size:11px;color:#888">${s.tag}</span></td></tr>`;
+  };
+  html += '<div style="padding:6px 10px;font-weight:600;background:#eef4fb;font-size:11.5px;margin-top:0">Snow / condensation lines — M2 equilibrium (P1b/c)</div>';
+  html += tbl(['Line','Divisor','Implied T (M2, A=0)','Distance (AU)','Status'], SNOW.map(snowRow).join(''));
+  document.getElementById('reg_out').innerHTML = html;
+  // 10-band alt-HZ ring (M1 bands + M2 snow/N₂CO lines), inner-focus default + Full-range toggle
+  const PAL=['#FF3300','#FF8800','#33AA55','#4488CC','#8833EE','#223366','#11998e','#b8860b','#5577aa','#aa3377'];
+  const full=document.getElementById('reg_full').checked, CAP=12;
+  const onB=[], onL=[], leg=[];
+  const dfmt=v=>v<0.001?sci(v):f(v,4);
+  ALT.forEach((b,i)=>{const inner=Math.sqrt(L/b.dIn),outer=Math.sqrt(L/b.dOut),color=PAL[i%10];
+    const tip=`<b>${b.label}</b> (M1 surface)<br>${f(inner,2)}–${f(outer,2)} AU<br>${f(tEdge(b.dIn,TrM1),0)}–${f(tEdge(b.dOut,TrM1),0)} K · div ${dfmt(b.dIn)}/${dfmt(b.dOut)}<br>${b.cite}`;
+    if(full||outer<=CAP){onB.push({inner,outer,color,tip}); leg.push({color,label:b.label,sub:`${f(inner,2)}–${f(outer,2)} AU`});}
+    else leg.push({color,label:'▸ '+b.label,sub:`${f(inner,0)}–${f(outer,0)} AU · off-scale`});});
+  SNOW.forEach((s,i)=>{const au=Math.sqrt(L/s.d),color=i===0?'#4499FF':'#9933FF';
+    const tip=`<b>${s.label}</b> (M2 equilibrium)<br>${f(au,2)} AU · ${f(tEdge(s.d,TrM2),0)} K · div ${f(s.d,4)}`;
+    if(full||au<=CAP){onL.push({au,color,dash:'6 3',tip}); leg.push({color,label:s.label,sub:`${f(au,2)} AU`});}
+    else leg.push({color,label:'▸ '+s.label,sub:`${f(au,0)} AU · off-scale`});});
+  leg.push({color:'#ffcc33',label:'Star'});
+  const trueMax=Math.max(...ALT.map(b=>Math.sqrt(L/b.dOut)),...SNOW.map(s=>Math.sqrt(L/s.d)))*1.1;
+  const maxAu=full?trueMax:CAP, capNote=full?`full range — to ${f(trueMax,0)} AU`:`inner-focus — view ≤ ${CAP} AU (toggle Full range)`;
+  document.getElementById('reg_viz').innerHTML =
+    ringSVG({bands:onB,lines:onL,maxAu,capNote,starTip:`<b>Host star</b><br>L = ${f(L,2)} L☉ · A = 0.3 (M1)`})+legend(leg);
+}
+
+/* ===== Orbital overlay (V6 snow line / V7 solvent band) ===== */
+const OV_PLANETS=[
+ {name:'b',au:0.4,color:'#b5b5b5'},{name:'c',au:0.9,color:'#4fc3f7'},
+ {name:'d',au:1.6,color:'#7ed957'},{name:'e',au:5.2,color:'#c9956b',rad:6},
+ {name:'f',au:9.5,color:'#d4b896',rad:5},
+];
+// curated multi-select set (distinct colours; all fit the sample frame)
+const OV_SOLV=[
+ {key:'water',         color:'#4488CC', def:true},
+ {key:'ammonia',       color:'#33AA55', def:true},
+ {key:'methane',       color:'#8833EE', def:true},
+ {key:'ethane',        color:'#11998e', def:false},
+ {key:'co2',           color:'#FF8800', def:false},
+ {key:'sulfuric_acid', color:'#b8860b', def:false},
+];
+function fillOvSolv(){
+  document.getElementById('ov_solv_box').innerHTML = OV_SOLV.map(o=>{
+    const s=SOLV.find(x=>x.key===o.key);
+    return `<label><input type="checkbox" class="ov_cb" value="${o.key}"${o.def?' checked':''} onchange="runOverlay()">`
+      +`<span class="sw" style="background:${o.color}"></span>${s.name}</label>`;
+  }).join('');
+}
+function runOverlay(){
+  const L=1, maxAu=11, Tr=M1(0.3);
+  const snow=document.getElementById('ov_snow').checked ? Math.sqrt(L)*Math.pow(M2(0.0)/170,2) : null;
+  const bands=[], leg=[];
+  document.querySelectorAll('.ov_cb').forEach(cb=>{
+    if(!cb.checked) return;
+    const o=OV_SOLV.find(x=>x.key===cb.value), s=SOLV.find(x=>x.key===cb.value);
+    const inner=Math.sqrt(L/sEff(s.hi,Tr)), outer=Math.sqrt(L/sEff(s.lo,Tr));
+    bands.push({inner,outer,color:o.color,name:s.name,
+      tip:`<b>${s.name} zone</b> (M1)<br>${f(inner,2)}–${f(outer,2)} AU<br>liquid ${f(s.lo,0)}–${f(s.hi,0)} K`});
+    leg.push({color:o.color,label:`${s.name} zone`,sub:`${f(inner,2)}–${f(outer,2)} AU`});
+  });
+  if(snow) leg.push({color:'#3a86c8',label:'Water snow line',sub:`${f(snow,2)} AU`});
+  leg.push(...OV_PLANETS.map(p=>({color:p.color,label:`Planet ${p.name}`,sub:`${p.au} AU`})),{color:'#ffcc33',label:'Host star'});
+  const pl=OV_PLANETS.map((p,i)=>{
+    const inZones=bands.filter(b=>p.au>=b.inner&&p.au<=b.outer).map(b=>b.name);
+    const tip=`<b>Planet ${p.name}</b><br>${p.au} AU · ${snow&&p.au>snow?'beyond snow line (icy/giant)':'inside snow line (rocky)'}`
+      +(inZones.length?`<br>in: ${inZones.join(', ')}`:'<br>in no shown solvent zone');
+    return {...p,ang:35+i*64,tip};   // fixed angles for a tidy layout
+  });
+  document.getElementById('ov_viz').innerHTML = orbitSVG({planets:pl,maxAu,snowAu:snow,bands,
+    snowTip:`<b>Water snow line</b> (M2)<br>${f(snow||0,2)} AU · 170 K<br>planets beyond are icy/giant`,
+    starTip:'<b>Host star</b> ~G2V · L = 1 L☉'})+legend(leg);
+}
+
+/* ===== nav ===== */
+function showPanel(p){
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  document.getElementById('panel-'+p).classList.add('active');
+  document.querySelectorAll('.nav .item.live').forEach(x=>x.classList.toggle('active',x.dataset.panel===p));
+}
+
+/* ===== cursor-following hover tooltip (delegated; works for every [data-tip] in any diagram) ===== */
+function initTip(){
+  if(typeof document.createElement!=='function' || !document.body) return;   // headless guard
+  const tip=document.createElement('div'); tip.id='vptip'; document.body.appendChild(tip);
+  document.addEventListener('mousemove',e=>{
+    const el=e.target&&e.target.closest?e.target.closest('[data-tip]'):null;
+    const txt=el&&el.getAttribute('data-tip');
+    if(txt){ tip.innerHTML=txt; tip.style.display='block';
+      const w=tip.offsetWidth||180;
+      tip.style.left=Math.min(e.clientX+14, (window.innerWidth||1200)-w-10)+'px';
+      tip.style.top=(e.clientY+14)+'px';
+    } else tip.style.display='none';
+  });
+}
+
+/* init */
+fillSolvents('p4_solv'); fillOvSolv();
+runP4(); runP5(); buildP6(); runReg(); runOverlay();
+initTip();
+showPanel('p4');
+</script>
+</body>
+</html>
