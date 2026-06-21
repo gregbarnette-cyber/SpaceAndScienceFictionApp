@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phase R1 — System Generator Panel (mockup)</title>
+<style>
+  :root{
+    --bg:#f5f5f5; --panel:#ffffff; --line:#c8c8c8; --line2:#e2e2e2;
+    --ink:#222; --muted:#666; --accent:#2b6cb0; --accent2:#1a4e84;
+    --observed:#1f7a3d; --synth:#2b6cb0; --warn:#9a6700; --chip:#eef2f7;
+    --navy:#0b1020; --navy2:#070b18;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#dcdcdc;font-family:"Segoe UI",system-ui,Arial,sans-serif;color:var(--ink);font-size:13px}
+  .app{max-width:1180px;margin:18px auto;background:var(--bg);border:1px solid #b5b5b5;border-radius:6px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+  .titlebar{background:linear-gradient(#fbfbfb,#ececec);border-bottom:1px solid var(--line);padding:7px 12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .titlebar .dot{width:11px;height:11px;border-radius:50%;background:#e0524d;box-shadow:18px 0 #e3b341,36px 0 #5bbf5b;margin-right:34px}
+  .body{display:flex;min-height:640px}
+  .nav{width:208px;background:#efefef;border-right:1px solid var(--line);padding:8px 0;font-size:12.5px}
+  .nav .cat{color:var(--muted);padding:8px 14px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  .nav .item{padding:5px 14px 5px 24px;color:#333;cursor:default}
+  .nav .item.active{background:#d6e6f7;border-left:3px solid var(--accent);padding-left:21px;font-weight:600;color:var(--accent2)}
+  .main{flex:1;padding:14px 18px;overflow:auto}
+  h2{margin:0 0 4px;font-size:16px}
+  .sub{color:var(--muted);margin-bottom:12px;font-size:12px}
+
+  .form{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:14px 16px;margin-bottom:14px}
+  .row{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+  label.k{width:140px;color:#444;text-align:right;flex:none}
+  input[type=text],input[type=number]{padding:5px 8px;border:1px solid #b9b9b9;border-radius:3px;font-size:13px;background:#fff;max-width:300px}
+  input[disabled]{background:#f0f0f0;color:#999}
+  .btn{padding:6px 14px;border:1px solid #9fb6cf;background:linear-gradient(#fafcff,#e8f0fb);border-radius:4px;cursor:pointer;font-size:12.5px}
+  .btn:hover{background:#dfeafb}
+  .btn.primary{border-color:#2b6cb0;background:linear-gradient(#3d86d6,#2b6cb0);color:#fff;font-weight:600}
+  .btn.small{padding:3px 9px;font-size:12px}
+  .radio{display:inline-flex;align-items:center;gap:5px;margin-right:14px}
+  .chips{display:inline-flex;gap:4px}
+  .chip{padding:3px 9px;border:1px solid #b9c6d6;border-radius:13px;background:var(--chip);cursor:default;font-size:12px;color:#456}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .hint{color:var(--muted);font-size:11.5px}
+  .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600}
+  .pill.def{background:#fff4d6;color:var(--warn);border:1px solid #e6c869}
+
+  .verdict{border-radius:5px;padding:9px 12px;margin-bottom:12px;font-size:12.5px}
+  .verdict.ok{background:#e7f6ec;border:1px solid #aedcbd;color:#155f33}
+
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:0}
+  .tab{padding:6px 14px;border:1px solid var(--line);border-bottom:none;background:#ececec;border-radius:5px 5px 0 0;color:#456;cursor:default;font-size:12.5px}
+  .tab.active{background:var(--panel);color:var(--ink);font-weight:600;position:relative;top:1px}
+  .tabpane{background:var(--panel);border:1px solid var(--line);border-radius:0 5px 5px 5px;padding:14px}
+
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{border:1px solid var(--line2);padding:5px 8px;text-align:right}
+  th{background:#f0f3f7;color:#345;font-weight:600;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  td.src-obs{color:var(--observed);font-weight:600}
+  td.src-syn{color:var(--synth);font-weight:600}
+  tr.obs{background:#f3faf5}
+  .legend{display:flex;gap:18px;margin:10px 2px 2px;font-size:12px;color:#445;flex-wrap:wrap}
+  .swatch{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px;margin-right:5px}
+  .starcard{display:flex;gap:26px;flex-wrap:wrap;background:#f7f9fc;border:1px solid var(--line2);border-radius:5px;padding:10px 14px;margin-bottom:12px;font-size:12.5px}
+  .starcard b{color:#234}
+  .kv{min-width:150px}
+  .kv .l{color:var(--muted);font-size:11px}
+  .footer{margin-top:14px;display:flex;gap:10px;align-items:center}
+  .note{color:var(--muted);font-size:11.5px;margin-top:10px;font-style:italic}
+  svg{display:block;background:var(--navy2);border-radius:4px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar"><span class="dot"></span>Space &amp; Science Fiction App — System Generator <span class="hint" style="font-weight:400;margin-left:8px">(Phase R1 mockup — illustrative values)</span></div>
+  <div class="body">
+
+    <!-- faux nav -->
+    <div class="nav">
+      <div class="cat">Star Databases</div>
+      <div class="item">SIMBAD Lookup</div>
+      <div class="item">NASA Planetary Systems</div>
+      <div class="cat">Worldbuilding</div>
+      <div class="item">Roche Limit</div>
+      <div class="item">Solvent Habitable Zone</div>
+      <div class="cat">Generator</div>
+      <div class="item active">System Generator</div>
+      <div class="cat">Reports</div>
+      <div class="item">Dossier Export</div>
+    </div>
+
+    <!-- panel -->
+    <div class="main">
+      <h2>System Generator</h2>
+      <div class="sub">Deterministic procedural systems — same seed (+ same anchor) → identical output. Observed and synthetic bodies are always distinguishable.</div>
+
+      <!-- input form -->
+      <div class="form">
+        <div class="row">
+          <label class="k">Seed</label>
+          <input type="text" value="4173" style="width:120px">
+          <button class="btn small">🎲 Randomize</button>
+          <span class="hint">the seed is the system's identity</span>
+        </div>
+        <div class="row">
+          <label class="k">Mode</label>
+          <span class="radio"><input type="radio" name="mode"> Synthetic (offline)</span>
+          <span class="radio"><input type="radio" name="mode" checked> Anchor on real star</span>
+        </div>
+        <div class="row">
+          <label class="k">Anchor star</label>
+          <input type="text" value="Tau Ceti">
+          <span class="hint">blank → synthetic · filled → pulls real specs + known planets (network)</span>
+        </div>
+        <div class="row">
+          <label class="k">Spectral class</label>
+          <span class="chips">
+            <span class="chip">O</span><span class="chip">B</span><span class="chip">A</span>
+            <span class="chip">F</span><span class="chip">G</span><span class="chip">K</span><span class="chip">M</span>
+          </span>
+          <input type="text" value="" placeholder="subtype e.g. 2V" style="width:120px" disabled>
+          <span class="hint">(synthetic mode only — disabled while anchored)</span>
+        </div>
+        <div class="row">
+          <label class="k">Planets</label>
+          <input type="number" value="7" style="width:70px">
+          <span class="radio" style="margin-left:14px"><input type="checkbox"> require habitable</span>
+          <span style="margin-left:18px">Research priors: <span class="pill def">DEFAULTS</span></span>
+          <span class="hint">literature values · tagged default-extrapolation</span>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <label class="k"></label>
+          <button class="btn primary">Generate</button>
+        </div>
+      </div>
+
+      <!-- results -->
+      <div class="verdict ok">✓ Generated <b>Tau Ceti (HD 10700)</b> — 2 observed planets + 5 synthetic extensions placed against the star's real HZ &amp; snow line.</div>
+
+      <div class="starcard">
+        <div class="kv"><div class="l">Spectral type</div><b>G8V</b> <span class="hint">(observed)</span></div>
+        <div class="kv"><div class="l">Teff</div><b>5320 K</b></div>
+        <div class="kv"><div class="l">Mass / Radius</div><b>0.78 M☉ / 0.79 R☉</b></div>
+        <div class="kv"><div class="l">Luminosity</div><b>0.52 L☉</b></div>
+        <div class="kv"><div class="l">Habitable zone</div><b>0.69 – 0.99 AU</b></div>
+        <div class="kv"><div class="l">Water snow line</div><b>1.94 AU</b></div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active">Orbit Diagram</div>
+        <div class="tab">HZ Ring</div>
+        <div class="tab">Planet Table</div>
+      </div>
+      <div class="tabpane">
+        <!-- orbit diagram (log-radius, top-down) -->
+        <svg width="100%" viewBox="0 0 880 300" preserveAspectRatio="xMidYMid meet">
+          <!-- HZ annulus -->
+          <defs>
+            <radialGradient id="hz" cx="6%" cy="50%" r="62%">
+              <stop offset="0%" stop-color="#13361f" stop-opacity="0"/>
+              <stop offset="40%" stop-color="#1f7a3d" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <!-- baseline -->
+          <line x1="40" y1="150" x2="850" y2="150" stroke="#2a3868" stroke-width="1"/>
+          <!-- HZ band 0.69-0.99 AU -->
+          <rect x="150" y="60" width="46" height="180" fill="#1f7a3d" fill-opacity="0.18"/>
+          <text x="173" y="52" fill="#7fd6a0" font-size="11" text-anchor="middle">HZ</text>
+          <!-- snow line 1.94 AU dashed cyan -->
+          <line x1="300" y1="60" x2="300" y2="240" stroke="#39c6d6" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <text x="300" y="255" fill="#8fe6f0" font-size="10.5" text-anchor="middle">snow line 1.94 AU</text>
+          <!-- star -->
+          <circle cx="40" cy="150" r="9" fill="#ffd54a"/>
+          <text x="40" y="180" fill="#ffe08a" font-size="11" text-anchor="middle">★ Tau Ceti</text>
+
+          <!-- planets: x = 40 + 360*log10(au/0.1) roughly -->
+          <!-- b  0.19 AU synthetic rocky -->
+          <circle cx="100" cy="150" r="5" fill="none" stroke="#2b6cb0" stroke-width="2" stroke-dasharray="3 2"/>
+          <text x="100" y="135" fill="#9cc4ee" font-size="10" text-anchor="middle">b·0.19</text>
+          <!-- e 0.54 AU observed rocky (in HZ-ish edge) -->
+          <circle cx="150" cy="150" r="6" fill="#1f7a3d"/>
+          <text x="150" y="135" fill="#8fe0aa" font-size="10" text-anchor="middle">e·0.54</text>
+          <!-- f 1.33 AU observed rocky -->
+          <circle cx="255" cy="150" r="6" fill="#1f7a3d"/>
+          <text x="255" y="135" fill="#8fe0aa" font-size="10" text-anchor="middle">f·1.33</text>
+          <!-- g 2.6 AU synthetic ice -->
+          <circle cx="335" cy="150" r="6" fill="none" stroke="#2b6cb0" stroke-width="2" stroke-dasharray="3 2"/>
+          <text x="335" y="135" fill="#9cc4ee" font-size="10" text-anchor="middle">g·2.6</text>
+          <!-- h 5.1 AU synthetic gas giant + moons -->
+          <circle cx="450" cy="150" r="11" fill="none" stroke="#2b6cb0" stroke-width="2.5" stroke-dasharray="3 2"/>
+          <circle cx="450" cy="150" r="20" fill="none" stroke="#3a5a8a" stroke-width="0.8"/>
+          <text x="450" y="128" fill="#9cc4ee" font-size="10" text-anchor="middle">h·5.1 (gas, 3 moons)</text>
+          <!-- i 11 AU synthetic gas -->
+          <circle cx="585" cy="150" r="9" fill="none" stroke="#2b6cb0" stroke-width="2.5" stroke-dasharray="3 2"/>
+          <text x="585" y="130" fill="#9cc4ee" font-size="10" text-anchor="middle">i·11</text>
+          <!-- j 24 AU synthetic ice giant -->
+          <circle cx="720" cy="150" r="7" fill="none" stroke="#2b6cb0" stroke-width="2.5" stroke-dasharray="3 2"/>
+          <text x="720" y="132" fill="#9cc4ee" font-size="10" text-anchor="middle">j·24</text>
+
+          <text x="850" y="150" fill="#4a6a99" font-size="10" text-anchor="end" dy="-6">log AU →</text>
+        </svg>
+        <div class="legend">
+          <span><span class="swatch" style="background:#1f7a3d"></span>Observed (NASA / HWC)</span>
+          <span><span class="swatch" style="background:#fff;border:2px dashed #2b6cb0"></span>Synthetic (generated, seed 4173)</span>
+          <span><span class="swatch" style="background:#1f7a3d;opacity:.4"></span>Habitable zone</span>
+          <span><span class="swatch" style="background:#39c6d6"></span>Water snow line</span>
+        </div>
+      </div>
+
+      <!-- planet table (always rendered below; shown here under the diagram for the mockup) -->
+      <div style="margin-top:16px">
+        <table>
+          <thead>
+            <tr><th>Planet</th><th>SMA (AU)</th><th>Mass (M⊕)</th><th>Radius (R⊕)</th><th>Ecc</th><th>Type</th><th>T_eq (K)</th><th>In HZ</th><th>Notes</th><th>Source</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Tau Ceti b</td><td>0.19</td><td>0.6</td><td>0.85</td><td>0.04</td><td>rocky</td><td>463</td><td>—</td><td>too hot; thin atmosphere</td><td class="src-syn">synthetic</td></tr>
+            <tr class="obs"><td>Tau Ceti e</td><td>0.54</td><td>3.9</td><td>1.59</td><td>0.18</td><td>rocky</td><td>295</td><td>opt.</td><td>retains N₂, O₂, H₂O, CO₂</td><td class="src-obs">observed</td></tr>
+            <tr class="obs"><td>Tau Ceti f</td><td>1.33</td><td>3.9</td><td>1.59</td><td>0.16</td><td>rocky</td><td>188</td><td>—</td><td>cold; outside HZ</td><td class="src-obs">observed</td></tr>
+            <tr><td>Tau Ceti g</td><td>2.60</td><td>8.1</td><td>2.6</td><td>0.07</td><td>ice</td><td>134</td><td>—</td><td>beyond snow line</td><td class="src-syn">synthetic</td></tr>
+            <tr><td>Tau Ceti h</td><td>5.10</td><td>190</td><td>9.1</td><td>0.05</td><td>gas</td><td>95</td><td>—</td><td>3 moons (Roche&lt;a&lt;Hill)</td><td class="src-syn">synthetic</td></tr>
+            <tr><td>Tau Ceti i</td><td>11.0</td><td>120</td><td>7.9</td><td>0.09</td><td>gas</td><td>65</td><td>—</td><td>—</td><td class="src-syn">synthetic</td></tr>
+            <tr><td>Tau Ceti j</td><td>24.0</td><td>22</td><td>4.1</td><td>0.03</td><td>ice</td><td>44</td><td>—</td><td>—</td><td class="src-syn">synthetic</td></tr>
+          </tbody>
+        </table>
+        <div class="note">Synthetic SMAs are log-spaced (Titius–Bode-ish jitter) and de-conflicted against the observed orbits of e and f. Population statistics are default-extrapolation, not research-calibrated (Phase R3 will refine via the formation-priors hook).</div>
+      </div>
+
+      <div class="footer">
+        <button class="btn">📄 Send to Dossier</button>
+        <button class="btn">⭳ Copy JSON</button>
+        <span class="hint">→ flows into the existing HZ/orbit diagrams and a Phase Q dossier with zero new viz</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>
