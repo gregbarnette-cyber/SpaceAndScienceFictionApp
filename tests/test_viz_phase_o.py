@@ -580,7 +580,7 @@ class O15RowMapLinkingTest(unittest.TestCase):
             {"name": "* alf Cen B", "desig": "GJ 559 B", "sp_type": "K1V",
              "color": "#ffd2a1", "ly": 4.37, "x": -1.6, "y": -1.3, "z": -3.8},
         ]
-        _add_map_tabs(p, map_stars, 15.0, "title")
+        _add_map_tabs(p, map_stars, 15.0, "title", {"stars": []})
         return p, view
 
     def test_five_canvases_wired(self):
@@ -957,7 +957,7 @@ class O17IsochroneTest(unittest.TestCase):
             {"name": "* alf Cen B", "desig": "GJ 559 B", "sp_type": "K1V",
              "color": "#ffd2a1", "ly": 4.37, "x": -1.6, "y": -1.3, "z": -3.8},
         ]
-        _add_map_tabs(p, map_stars, 15.0, "title")
+        _add_map_tabs(p, map_stars, 15.0, "title", {"stars": []})
         return p, view
 
     def _chart_iso_controls(self, panel, tab_text):
@@ -1062,7 +1062,7 @@ class O18FindTest(unittest.TestCase):
             {"name": "Wolf  359", "desig": "GJ 406", "sp_type": "M6",
              "color": "#dfe6ff", "ly": 7.86, "x": -7.42, "y": 2.1, "z": 1.02},
         ]
-        _add_map_tabs(p, map_stars, 15.0, "title")
+        _add_map_tabs(p, map_stars, 15.0, "title", {"stars": []})
         return p
 
     def _find(self, p, q):
@@ -1380,7 +1380,7 @@ class O4OrbitsToggleWiringTest(unittest.TestCase):
         from gui.visualizations.plot_helpers import wrap_orbits_with_solar_toggle
         # A builder that yields no canvas → wrapper returns None (no empty tab).
         self.assertIsNone(
-            wrap_orbits_with_solar_toggle(None, lambda _ov, _h: (None, None)))
+            wrap_orbits_with_solar_toggle(None, lambda _ov, _h, _s, _sb: (None, None)))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2390,14 +2390,19 @@ class O10cOrbitalHyperOverlayTest(unittest.TestCase):
         p = panels.NasaPlanetarySystemsPanel(self._StubWindow())
         planets = [{"pl_name": "b", "pl_orbsmax": "1.0", "pl_orbeccen": "0.0",
                     "st_teff": "5778", "st_rad": "1.0", "hostname": "Test"}]
-        # Resolvable type → solar + hyper checkboxes (2).
+        _HYPER = "Show Honorverse Hyper Limit (fiction)"
+
+        def _cb_texts(w):
+            return [c.text() for c in w.findChildren(QCheckBox)]
+
+        # The hyper-limit checkbox is gated on a resolvable spectral type.
         w2 = _make_orbits_tab(p, planets, "Test", sp_type="G2V")
-        self.assertEqual(len(w2.findChildren(QCheckBox)), 2)
-        # No / unresolvable type → solar checkbox only (1).
-        self.assertEqual(
-            len(_make_orbits_tab(p, planets, "Test", sp_type=None).findChildren(QCheckBox)), 1)
-        self.assertEqual(
-            len(_make_orbits_tab(p, planets, "Test", sp_type="DA1.9").findChildren(QCheckBox)), 1)
+        self.assertIn(_HYPER, _cb_texts(w2))
+        self.assertNotIn(_HYPER, _cb_texts(_make_orbits_tab(p, planets, "Test", sp_type=None)))
+        self.assertNotIn(_HYPER, _cb_texts(_make_orbits_tab(p, planets, "Test", sp_type="DA1.9")))
+        # Phase P V6/V7 overlays present (host L resolves from st_teff/st_rad).
+        self.assertIn("Show water snow line", _cb_texts(w2))
+        self.assertTrue(any(c.text() == "Water" for c in w2.findChildren(QCheckBox)))
 
     def test_hwc_panel_render_builds_viz_tabs(self):
         # Regression: a function-level `import core.science` in HwcPanel._render
@@ -2434,9 +2439,11 @@ class O10cOrbitalHyperOverlayTest(unittest.TestCase):
         self.assertIn("HZ Diagram", tabs)
         for i in range(p._viz_tabs_widget.count()):
             if p._viz_tabs_widget.tabText(i) == "Orbital Diagram":
-                # G8.5 resolves → solar + hyper checkboxes.
-                self.assertEqual(
-                    len(p._viz_tabs_widget.widget(i).findChildren(QCheckBox)), 2)
+                texts = [c.text() for c in
+                         p._viz_tabs_widget.widget(i).findChildren(QCheckBox)]
+                # G8.5 resolves → hyper checkbox; S_LUMINOSITY present → V6/V7 overlays.
+                self.assertIn("Show Honorverse Hyper Limit (fiction)", texts)
+                self.assertIn("Show water snow line", texts)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

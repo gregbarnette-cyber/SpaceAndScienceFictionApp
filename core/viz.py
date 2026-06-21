@@ -213,6 +213,7 @@ def prepare_system_orbits(planets: list) -> dict:
 
     # Derive HZ zones from the first planet's stellar parameters
     hz_zones = []
+    lum = None
     first = planets[0]
     try:
         teff = float(first.get("st_teff") or 0)
@@ -229,6 +230,7 @@ def prepare_system_orbits(planets: list) -> dict:
         "hz_zones":  hz_zones,
         "max_au":    max_au * 1.25,
         "star_name": star_name,
+        "luminosity": lum,   # Phase P V6/V7: host L (☉) for snow-line / solvent overlays
     }
 
 
@@ -327,6 +329,104 @@ def prepare_hyper_limits() -> dict:
     }
 
 
+# Plausibility colours for the solvent reference bar chart (Phase P V5 / P6).
+# Keyed by _SOLVENTS key; mirrors the mockup's _PLAUS_COLOR.
+_SOLVENT_PLAUS_COLORS = {
+    "water": "#2e8b57", "sulfuric_acid": "#2e8b57",                       # functional & abundant
+    "co2": "#b8860b", "methane": "#b8860b", "ethane": "#b8860b",
+    "water_ammonia": "#b8860b", "so2": "#b8860b", "ammonia": "#b8860b",   # notable / conditional
+}
+_SOLVENT_PLAUS_OTHER = "#8899aa"                                          # other
+
+
+def solvent_plausibility_color(key: str) -> str:
+    """Plausibility-category colour for a solvent key (Phase P V5 / P6)."""
+    return _SOLVENT_PLAUS_COLORS.get(key, _SOLVENT_PLAUS_OTHER)
+
+
+def prepare_solvent_ranges() -> dict:
+    """Solvent liquid-range bar-chart data (Phase P V5; backs SolventReferencePanel).
+
+    Reads the built-in solvent table (core.equations.get_solvents()), sorted by
+    freezing point ascending (coldest first). Each bar spans freeze→boil on a
+    Temperature (K) axis, coloured by Bains-2024 plausibility category. Returns
+    parallel lists:
+        {names, lo, hi, colors, plausibility, pressure_conditional,
+         assumed_pressure_atm, citation}.
+    """
+    import core.equations
+    solv = sorted(core.equations.get_solvents(), key=lambda s: s["t_low_k"])
+    return {
+        "names":   [s["name"] for s in solv],
+        "lo":      [s["t_low_k"] for s in solv],
+        "hi":      [s["t_high_k"] for s in solv],
+        "colors":  [solvent_plausibility_color(s["key"]) for s in solv],
+        "plausibility":         [s["plausibility"] for s in solv],
+        "pressure_conditional": [s["pressure_conditional"] for s in solv],
+        "assumed_pressure_atm": [s["assumed_pressure_atm"] for s in solv],
+        "citation":             [s["citation"] for s in solv],
+    }
+
+
+# Frost-line ring colours (Phase P V4), keyed by condensation temperature (K).
+_ICE_LINE_COLORS = {170: "#4499FF", 80: "#33AAAA", 70: "#FF8800",
+                    22: "#9966CC", 20: "#cc66aa"}
+
+
+def prepare_ice_line_diagram(result: dict) -> dict:
+    """Frost-line ring-map data (Phase P V4) from a compute_ice_lines() result.
+
+    Each line carries its AU, condensation T, a colour (by T), and the disk_line
+    flag (drawn dashed-finer on the canvas). Returns
+    {lines:[{species, au, t_cond_k, color, disk_line, kind, note}],
+     luminosity_solar} or {"error": str}.
+    """
+    if not result or "error" in result:
+        return result if result else {"error": "No ice-line data."}
+    lines = [{
+        "species": ln["species"], "au": ln["au"], "t_cond_k": ln["t_cond_k"],
+        "color": _ICE_LINE_COLORS.get(int(round(ln["t_cond_k"])), "#888888"),
+        "disk_line": ln["disk_line"], "kind": ln["kind"], "note": ln["note"],
+    } for ln in result["lines"]]
+    return {"lines": lines, "luminosity_solar": result["luminosity_solar"]}
+
+
+# Phase P V7 solvent overlay set for the orbital diagrams: (key, colour, default-on).
+# All default OFF → the orbital diagram is byte-identical until the user opts in.
+_ORBIT_SOLVENTS = [
+    ("water",         "#2e8b57", False),
+    ("ammonia",       "#4488cc", False),
+    ("methane",       "#8833ee", False),
+    ("ethane",        "#00aaaa", False),
+    ("co2",           "#cc8844", False),
+    ("sulfuric_acid", "#cc4466", False),
+]
+
+
+def prepare_orbit_overlays(luminosity_solar) -> dict:
+    """Phase P V6/V7 — snow-line + solvent-zone overlay data for the orbital
+    diagrams (opts 3/6/Map), derived from a host luminosity (☉).
+
+    Returns {snow_au, solvent_options:[{key, name, inner_au, outer_au, color,
+    default}]} or {"error": str} for a missing/non-positive luminosity.
+    """
+    import core.equations
+    if luminosity_solar is None or luminosity_solar <= 0:
+        return {"error": "Host luminosity unavailable — overlays need st_rad + st_teff."}
+    ice = core.equations.compute_ice_lines(luminosity_solar)
+    snow_au = next((l["au"] for l in ice["lines"] if l["kind"] == "snow_line"), None)
+    options = []
+    for key, color, default in _ORBIT_SOLVENTS:
+        z = core.equations.compute_solvent_zone(luminosity_solar, key)
+        if "error" in z:
+            continue
+        options.append({
+            "key": key, "name": z["name"], "inner_au": z["inner_au"],
+            "outer_au": z["outer_au"], "color": color, "default": default,
+        })
+    return {"snow_au": snow_au, "solvent_options": options}
+
+
 def prepare_star_map_from_result(result: dict) -> dict:
     """Convert a compute_stars_within_distance_of_sol/star result to star-map format.
 
@@ -404,8 +504,8 @@ def prepare_system_regions_diagram(d: dict) -> dict:
         ("System Inner Limit (Sunlight)",  d["sysilSunlight"],"#FF6633"),
         ("Circumstellar HZ Inner",         d["hzil"],         "#FFCC00"),
         ("Circumstellar HZ Outer",         d["hzol"],         "#44AA55"),
-        ("Snow Line",                      d["snowLine"],     "#4499FF"),
-        ("LH₂ Line",                       d["lh2Line"],      "#9933FF"),
+        ("Water snow line",                d["snowLine"],     "#4499FF"),
+        ("N₂/CO (1-atm)",                  d["lh2Line"],      "#9933FF"),
         ("System Outer Limit",             d["sysol"],        "#888888"),
     ]
     hz_zones = _compute_hz_zones(d["temp"], d["calculatedLuminosity"])
@@ -454,6 +554,20 @@ def prepare_alt_hz_diagram(d: dict) -> dict:
             {"label": "Polylipid-Hydrogen",
              "inner_au": d["phInner"], "outer_au": d["phOuter"], "color": "#223366"},
         ]
+        # Phase P P2 (V1): additional alternative-solvent bands → 10-band diagram.
+        # Present only on dicts built after P2 (regions.compute_star_system_regions);
+        # guarded so an older/partial dict still renders the original six.
+        if "co2Inner" in d:
+            zones += [
+                {"label": "Carbon Dioxide (≥5.2 atm)",
+                 "inner_au": d["co2Inner"], "outer_au": d["co2Outer"], "color": "#00AAAA"},
+                {"label": "Liquid Sulfur",
+                 "inner_au": d["sInner"], "outer_au": d["sOuter"], "color": "#AA2200"},
+                {"label": "Water-Ammonia Eutectic",
+                 "inner_au": d["waInner"], "outer_au": d["waOuter"], "color": "#66CCEE"},
+                {"label": "Sulfuric Acid",
+                 "inner_au": d["saInner"], "outer_au": d["saOuter"], "color": "#CC8844"},
+            ]
     except KeyError as e:
         return {"error": f"Missing field: {e}"}
     max_au = max(z["outer_au"] for z in zones)

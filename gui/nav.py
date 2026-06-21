@@ -89,6 +89,9 @@ NAVIGATION = [
         ("Hill Sphere",              "HillSpherePanel"),
         ("Binary Orbit Stability",   "BinaryOrbitPanel"),
         ("Atmosphere Retention",     "AtmosphereRetentionPanel"),
+        ("Solvent Habitable Zone",   "SolventZonePanel"),
+        ("Ice Line Calculator",      "IceLineCalculatorPanel"),
+        ("Solvent Reference Table",  "SolventReferencePanel"),
     ]),
     ("Rotating Habitat", [
         ("Gravity Acceleration",   "GravityAccelPanel"),

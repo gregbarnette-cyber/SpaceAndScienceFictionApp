@@ -26,6 +26,252 @@ def _rocky_radius_km(mass_earth: float) -> float:
     return _EARTH_RADIUS_KM * mass_earth ** 0.55
 
 
+# ── Phase P — two temperature-reference models ───────────────────────────────
+# Phase P (snow lines & alternative-solvent HZs) uses two physically-distinct
+# reference temperatures, one per phenomenon. Both fix the legacy albedo bug:
+# radiative equilibrium scales as (1−A)^0.25 (a fourth root), NOT the (1−A)¹ in
+# the legacy planetaryTemperature model. Centralized here so the P4 solvent-zone
+# calculator (M1) and the P5 ice-line calculator (M2) reference one definition
+# and cannot drift. Shared scaling: S_eff(T) = (T / T_ref)^4;
+# AU(S_eff, L) = sqrt(L / S_eff). See PHASE_P_PLAN.md §0.
+
+# Earth-calibrated zero-albedo anchors:
+_T_SURF_REF_A0 = 314.9   # M1 surface (equilibrium + Earth-like greenhouse); → 288.0 K at A=0.3
+_T_EQ_REF_A0   = 278.5   # M2 radiative equilibrium (no greenhouse); 255 K at A=0.3 (Earth's textbook eq. temp)
+
+
+def _t_ref_surface(albedo: float = 0.3) -> float:
+    """M1 surface-temperature reference (solvent liquid bands / habitability).
+
+    T_ref = 314.9 × (1 − albedo)^0.25  (= 288 × ((1−albedo)/0.7)^0.25).
+    Equilibrium + Earth-like greenhouse; → 288.0 K at albedo 0.3 (the existing
+    alt-HZ convention). Used by the P1a/P2 solvent bands, the corrected
+    planetaryTemperature display (P1e), and compute_solvent_zone (P4).
+    """
+    return _T_SURF_REF_A0 * (1.0 - albedo) ** 0.25
+
+
+def _t_ref_equilibrium(albedo: float = 0.0) -> float:
+    """M2 radiative-equilibrium reference (snow / ice / condensation lines).
+
+    T_ref = 278.5 × (1 − albedo)^0.25.
+    No greenhouse (ice condenses in vacuum / thin disk gas) → 278.5 K at A=0.
+    Used by the corrected snowLine (P1c), lh2Line (P1b), the P3 ice fronts, and
+    compute_ice_lines (P5).
+    """
+    return _T_EQ_REF_A0 * (1.0 - albedo) ** 0.25
+
+
+def implied_edge_temp(au, luminosity_solar, model="surface", albedo=None):
+    """Implied edge / condensation temperature (K) at distance `au` for a star
+    of luminosity `luminosity_solar` (solar = 1) — the Phase P P7a per-row helper.
+
+    S_eff = L / au²;  T = T_ref(model, albedo) × S_eff^0.25.  Because the region
+    AU already encodes the divisor (au = sqrt(L / divisor)), L cancels and the
+    result depends only on the band's divisor — i.e. it is the band edge's fixed
+    physical temperature (water boils at ~373 K regardless of the host star).
+
+    model:
+        "surface"     → M1 (solvent liquid bands); default albedo 0.3 (→ 288 K ref).
+        "equilibrium" → M2 (snow / ice / condensation lines); default albedo 0.0
+                        (→ 278.5 K ref).
+
+    Returns None for non-positive / missing au or luminosity (defensive guard).
+    """
+    if au is None or luminosity_solar is None or au <= 0 or luminosity_solar <= 0:
+        return None
+    if model == "equilibrium":
+        t_ref = _t_ref_equilibrium(0.0 if albedo is None else albedo)
+    else:
+        t_ref = _t_ref_surface(0.3 if albedo is None else albedo)
+    s_eff = luminosity_solar / (au * au)
+    return t_ref * s_eff ** 0.25
+
+
+# ── Phase P P4 — built-in solvent table + Solvent Habitable Zone engine ───────
+# The single source of truth shared by P4 (compute_solvent_zone), P5
+# (compute_ice_lines), and P6 (SolventReferencePanel). One entry per solvent:
+#   key, name, t_low_k (freeze/lower edge), t_high_k (boil/upper edge),
+#   pressure_conditional, assumed_pressure_atm (None unless conditional),
+#   citation, plausibility (Bains 2024 four-criterion verdict — for P6).
+# Edge temps are 1-atm liquid ranges unless pressure_conditional. See
+# PHASE_P_PLAN.md §4a; values confirmed against CRC at build time.
+
+_SOLVENTS = [
+    {"key": "water",         "name": "Water",                      "t_low_k": 273.15, "t_high_k": 373.15, "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "CRC; Asimov 1962",     "plausibility": "Functional & abundant — the baseline"},
+    {"key": "ammonia",       "name": "Ammonia",                    "t_low_k": 195.45, "t_high_k": 239.75, "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "Gillett; Asimov 1962", "plausibility": "Good solvent; fails occurrence (Bains 2024)"},
+    {"key": "methane",       "name": "Methane",                    "t_low_k": 90.69,  "t_high_k": 111.65, "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "CRC; Asimov 1962",     "plausibility": "Non-polar; Titan-type; limited chemistry"},
+    {"key": "ethane",        "name": "Ethane",                     "t_low_k": 90.36,  "t_high_k": 184.55, "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "CRC; Titan",           "plausibility": "Non-polar; Titan lakes"},
+    {"key": "water_ammonia", "name": "Water-ammonia eutectic",     "t_low_k": 176.0,  "t_high_k": 273.0,  "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "Gillett; Titan",       "plausibility": "Extends water cold-ward; Titan interior"},
+    {"key": "so2",           "name": "Sulfur dioxide",             "t_low_k": 197.6,  "t_high_k": 263.1,  "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "Gillett",              "plausibility": "Good industrial solvent; Io-type"},
+    {"key": "co2",           "name": "Carbon dioxide",             "t_low_k": 216.6,  "t_high_k": 304.1,  "pressure_conditional": True,  "assumed_pressure_atm": 5.2,  "citation": "Bains 2024; CRC",      "plausibility": "Standout non-protonating solvent (≥5.2 atm)"},
+    {"key": "sulfuric_acid", "name": "Concentrated sulfuric acid", "t_low_k": 283.6,  "t_high_k": 610.0,  "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "Bains 2024; Gillett",  "plausibility": "Functional & plausibly abundant (Venus clouds)"},
+    {"key": "sulfur",        "name": "Molten sulfur",              "t_low_k": 388.4,  "t_high_k": 717.8,  "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "CRC",                  "plausibility": "Very hot; Io-type"},
+    {"key": "hydrogen",      "name": "Hydrogen",                   "t_low_k": 13.80,  "t_high_k": 20.28,  "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "CRC; Asimov 1962",     "plausibility": "Razor-thin band, very cold & far"},
+    {"key": "nitrogen",      "name": "Nitrogen",                   "t_low_k": 63.15,  "t_high_k": 77.36,  "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "CRC",                  "plausibility": "Triton/Pluto surface ices"},
+    {"key": "hf",            "name": "Hydrogen fluoride",          "t_low_k": 189.8,  "t_high_k": 292.7,  "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "CRC",                  "plausibility": "Polar; constrained by F budget"},
+    {"key": "formamide",     "name": "Formamide",                  "t_low_k": 275.7,  "t_high_k": 493.0,  "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "Bains 2024",           "plausibility": "NH-solvent; prebiotic interest"},
+]
+
+_SOLVENTS_BY_KEY = {s["key"]: s for s in _SOLVENTS}
+
+
+def get_solvents() -> list:
+    """Return the built-in solvent table (list of dicts). Shared by P4/P5/P6."""
+    return _SOLVENTS
+
+
+def compute_solvent_zone(luminosity_solar, solvent=None, t_low_k=None,
+                         t_high_k=None, albedo=0.3) -> dict:
+    """Solvent Habitable Zone — the AU band where a solvent is liquid on a planet
+    surface (Phase P P4, M1 surface model). Self-validating (Phase H contract).
+
+    Pick a named `solvent` from the built-in table, OR supply a custom
+    `t_low_k`/`t_high_k` liquid range (explicit temps take precedence; a named
+    solvent merely fills the temps). The band's INNER edge = the solvent's
+    boiling point (t_high_k, hotter → closer in); the OUTER edge = its freezing
+    point (t_low_k).
+
+    M1 surface model: T_ref = 314.9 × (1 − albedo)^0.25 (→ 288 K at A=0.3, the
+    existing alternate-HZ convention). For each edge, S_eff = (T_edge / T_ref)^4
+    and AU = sqrt(luminosity_solar / S_eff).
+
+    Returns the full result dict, or {"error": str} for: non-positive luminosity,
+    albedo ∉ [0, 1), a temperature range that is not 0 < t_low < t_high, or an
+    unknown named solvent.
+    """
+    if luminosity_solar is None or luminosity_solar <= 0:
+        return {"error": "Luminosity must be greater than 0."}
+    if albedo is None or not (0.0 <= albedo < 1.0):
+        return {"error": "Albedo must be in the range [0, 1)."}
+
+    key = solvent
+    name = None
+    pressure_conditional = False
+    assumed_pressure_atm = None
+    citation = ""
+
+    have_custom = t_low_k is not None or t_high_k is not None
+    if have_custom:
+        # Explicit-range path (both edges required); a named solvent, if also
+        # given, only supplies the display name / metadata.
+        if t_low_k is None or t_high_k is None:
+            return {"error": "A custom range needs both t_low_k and t_high_k."}
+        entry = _SOLVENTS_BY_KEY.get(solvent) if solvent else None
+        if entry is not None:
+            name = entry["name"]
+            pressure_conditional = entry["pressure_conditional"]
+            assumed_pressure_atm = entry["assumed_pressure_atm"]
+            citation = entry["citation"]
+        else:
+            key = solvent or "custom"
+            name = "Custom liquid range"
+    elif solvent is not None:
+        entry = _SOLVENTS_BY_KEY.get(solvent)
+        if entry is None:
+            valid = ", ".join(s["key"] for s in _SOLVENTS)
+            return {"error": f"Unknown solvent '{solvent}'. Valid: {valid}."}
+        t_low_k = entry["t_low_k"]
+        t_high_k = entry["t_high_k"]
+        name = entry["name"]
+        pressure_conditional = entry["pressure_conditional"]
+        assumed_pressure_atm = entry["assumed_pressure_atm"]
+        citation = entry["citation"]
+    else:
+        return {"error": "Provide a solvent name or a custom t_low_k/t_high_k range."}
+
+    if not (0.0 < t_low_k < t_high_k):
+        return {"error": "Temperatures must satisfy 0 < t_low_k < t_high_k."}
+
+    t_ref = _t_ref_surface(albedo)
+    s_eff_inner = (t_high_k / t_ref) ** 4   # boiling edge (closer in)
+    s_eff_outer = (t_low_k / t_ref) ** 4    # freezing edge (farther out)
+    inner_au = math.sqrt(luminosity_solar / s_eff_inner)
+    outer_au = math.sqrt(luminosity_solar / s_eff_outer)
+
+    return {
+        "solvent": key,
+        "name": name,
+        "t_low_k": t_low_k,
+        "t_high_k": t_high_k,
+        "albedo": albedo,
+        "t_ref_k": t_ref,
+        "luminosity_solar": luminosity_solar,
+        "inner_au": inner_au,
+        "outer_au": outer_au,
+        "inner_lm": inner_au * 8.3167,
+        "outer_lm": outer_au * 8.3167,
+        "s_eff_inner": s_eff_inner,
+        "s_eff_outer": s_eff_outer,
+        # Round-trip the divisors back to edge temps (≈ t_high_k / t_low_k):
+        "t_eq_inner": t_ref * s_eff_inner ** 0.25,
+        "t_eq_outer": t_ref * s_eff_outer ** 0.25,
+        "pressure_conditional": pressure_conditional,
+        "assumed_pressure_atm": assumed_pressure_atm,
+        "citation": citation,
+    }
+
+
+# ── Phase P P5 — Ice-Line Calculator (M2 equilibrium model) ──────────────────
+# Volatile condensation fronts: the single canonical water snow line (170 K — no
+# dual/formation line, see PHASE_P_PLAN.md §3c) plus the CO2/NH3/N2/CO fronts.
+# Ordered hot→cold (= inner→outer). The deep-cold CO/N2 fronts are really set by
+# disk-midplane temperature, so their irradiation placement is illustrative
+# (disk_line=True).
+
+_ICE_LINES = [
+    {"species": "Water snow line", "t_cond_k": 170.0, "kind": "snow_line", "disk_line": False},
+    {"species": "NH₃ front",  "t_cond_k": 80.0,  "kind": "front",     "disk_line": False},
+    {"species": "CO₂ front",  "t_cond_k": 70.0,  "kind": "front",     "disk_line": False},
+    {"species": "N₂ front",   "t_cond_k": 22.0,  "kind": "front",     "disk_line": True},
+    {"species": "CO front",        "t_cond_k": 20.0,  "kind": "front",     "disk_line": True},
+]
+
+
+def compute_ice_lines(luminosity_solar, albedo=0.0) -> dict:
+    """Volatile condensation / ice lines for a star (Phase P P5, M2 equilibrium
+    model — no greenhouse). Self-validating (Phase H contract).
+
+    M2: T_ref = 278.5 × (1 − albedo)^0.25 (default albedo 0.0 for bare ice
+    grains; → 278.5 K). Each line: AU = sqrt(luminosity_solar) × (T_ref / T_cond)².
+    The water snow line lands at the canonical ~2.68 AU / 170 K at L=1, A=0
+    (Hayashi 1981). The deep-cold N₂/CO fronts carry disk_line=True (their
+    irradiation placement at ~160–194 AU is illustrative).
+
+    Returns {luminosity_solar, albedo, t_ref_k, lines:[{species, t_cond_k, au,
+    lm, kind ("snow_line"|"front"), disk_line, note}]}, or {"error": str} for
+    non-positive luminosity / albedo ∉ [0, 1).
+    """
+    if luminosity_solar is None or luminosity_solar <= 0:
+        return {"error": "Luminosity must be greater than 0."}
+    if albedo is None or not (0.0 <= albedo < 1.0):
+        return {"error": "Albedo must be in the range [0, 1)."}
+
+    t_ref = _t_ref_equilibrium(albedo)
+    root_l = math.sqrt(luminosity_solar)
+    lines = []
+    for e in _ICE_LINES:
+        au = root_l * (t_ref / e["t_cond_k"]) ** 2
+        if e["disk_line"]:
+            note = "disk-set — irradiation placement illustrative"
+        elif e["kind"] == "snow_line":
+            note = "canonical 170 K snow line (~2.7 AU; Hayashi 1981)"
+        else:
+            note = "condensation front"
+        lines.append({
+            "species": e["species"], "t_cond_k": e["t_cond_k"],
+            "au": au, "lm": au * 8.3167, "kind": e["kind"],
+            "disk_line": e["disk_line"], "note": note,
+        })
+
+    return {
+        "luminosity_solar": luminosity_solar,
+        "albedo": albedo,
+        "t_ref_k": t_ref,
+        "lines": lines,
+    }
+
+
 # ── Kopparapu et al. 2014 HZ coefficients ────────────────────────────────────
 
 _KOPPARAPU_PARAMS = {

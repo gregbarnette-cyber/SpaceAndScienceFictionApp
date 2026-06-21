@@ -173,6 +173,59 @@ def cmd_atmosphere_retention(args):
     ))
 
 
+# ── Solvent zones (Phase P) ───────────────────────────────────────────────────
+# Wrap the self-validating compute_solvent_zone / compute_ice_lines (Phase H
+# contract: curated {"error"} → exit 1, unlike the Phase N raw-exception path).
+
+def cmd_solvent_zone(args):
+    has_custom = args.t_low is not None or args.t_high is not None
+    if args.solvent and has_custom:
+        sys.stderr.write("error: --solvent and --t-low/--t-high are mutually exclusive\n")
+        sys.exit(2)
+    if not args.solvent and not has_custom:
+        sys.stderr.write("error: provide --solvent NAME or both --t-low and --t-high\n")
+        sys.exit(2)
+    _out(equations.compute_solvent_zone(
+        args.luminosity, solvent=args.solvent,
+        t_low_k=args.t_low, t_high_k=args.t_high, albedo=args.albedo,
+    ))
+
+
+def cmd_ice_lines(args):
+    _out(equations.compute_ice_lines(args.luminosity, albedo=args.albedo))
+
+
+# ── Velocity & constant-speed travel converters (opts 25–28, 31, 32) ──────────
+# Thin wrappers over non-self-validating pure-math core functions, so they share
+# the Phase-N contract: out-of-range → raw-exception {"error"} (exit 1) where the
+# math raises (e.g. zero velocity in the travel-time pair → division by zero);
+# argparse rejects missing/non-numeric args (exit 2). The conversion / distance
+# wrappers have no error path (any float is finite).
+
+def cmd_ly_hr_to_times_c(args):
+    _out(calculators.compute_ly_hr_to_times_c(args.ly_hr))
+
+
+def cmd_times_c_to_ly_hr(args):
+    _out(calculators.compute_speed_of_light_to_ly_hr(args.times_c))
+
+
+def cmd_distance_traveled_ly_hr(args):
+    _out(calculators.compute_distance_traveled_ly_hr(args.ly_hr, args.hours))
+
+
+def cmd_distance_traveled_times_c(args):
+    _out(calculators.compute_distance_traveled_times_c(args.times_c, args.hours))
+
+
+def cmd_travel_time_ly_hr(args):
+    _out(calculators.compute_travel_time_ly_hr(args.distance_ly, args.ly_hr))
+
+
+def cmd_travel_time_times_c(args):
+    _out(calculators.compute_travel_time_times_c(args.distance_ly, args.times_c))
+
+
 # ── Integration expansion (Phase N) ───────────────────────────────────────────
 # Each handler is a thin verbatim wrapper over an existing core function. N1–N4
 # wrap the older, non-self-validating equation/calculator functions, so
@@ -582,6 +635,82 @@ def main():
     p.add_argument("--planet-radius-earth", required=True, type=float)
     p.add_argument("--temperature-k",       required=True, type=float)
     p.set_defaults(func=cmd_atmosphere_retention)
+
+    # ── Solvent zones (Phase P) ──────────────────────────────────────────────
+
+    # solvent-zone
+    p = sub.add_parser("solvent-zone",
+                       help="Solvent Habitable Zone band (M1 surface model)")
+    p.add_argument("--luminosity", required=True, type=float,
+                   help="Stellar luminosity (L_sun)")
+    p.add_argument("--solvent",
+                   help="Named solvent key (water, ammonia, methane, co2, ...)")
+    p.add_argument("--t-low", dest="t_low", type=float,
+                   help="Custom freezing/lower edge (K) — use with --t-high")
+    p.add_argument("--t-high", dest="t_high", type=float,
+                   help="Custom boiling/upper edge (K) — use with --t-low")
+    p.add_argument("--albedo", type=float, default=0.3,
+                   help="Bond albedo (default 0.3)")
+    p.set_defaults(func=cmd_solvent_zone)
+
+    # ice-lines
+    p = sub.add_parser("ice-lines",
+                       help="Volatile condensation / ice lines (M2 equilibrium model)")
+    p.add_argument("--luminosity", required=True, type=float,
+                   help="Stellar luminosity (L_sun)")
+    p.add_argument("--albedo", type=float, default=0.0,
+                   help="Bond albedo (default 0.0, bare ice grains)")
+    p.set_defaults(func=cmd_ice_lines)
+
+    # ── Velocity & constant-speed travel converters (opts 25–28, 31, 32) ──────
+
+    # ly-hr-to-times-c (opt 31)
+    p = sub.add_parser("ly-hr-to-times-c",
+                       help="Convert a ly/hr velocity to multiples of c")
+    p.add_argument("--ly-hr", dest="ly_hr", required=True, type=float,
+                   help="Velocity in light years per hour")
+    p.set_defaults(func=cmd_ly_hr_to_times_c)
+
+    # times-c-to-ly-hr (opt 32)
+    p = sub.add_parser("times-c-to-ly-hr",
+                       help="Convert a multiple-of-c velocity to ly/hr")
+    p.add_argument("--times-c", dest="times_c", required=True, type=float,
+                   help="Velocity as a multiple of the speed of light")
+    p.set_defaults(func=cmd_times_c_to_ly_hr)
+
+    # distance-traveled-ly-hr (opt 25)
+    p = sub.add_parser("distance-traveled-ly-hr",
+                       help="Distance covered at a ly/hr velocity over a time")
+    p.add_argument("--ly-hr", dest="ly_hr", required=True, type=float,
+                   help="Velocity in light years per hour")
+    p.add_argument("--hours", required=True, type=float, help="Travel time in hours")
+    p.set_defaults(func=cmd_distance_traveled_ly_hr)
+
+    # distance-traveled-times-c (opt 26)
+    p = sub.add_parser("distance-traveled-times-c",
+                       help="Distance covered at a multiple of c over a time")
+    p.add_argument("--times-c", dest="times_c", required=True, type=float,
+                   help="Velocity as a multiple of the speed of light")
+    p.add_argument("--hours", required=True, type=float, help="Travel time in hours")
+    p.set_defaults(func=cmd_distance_traveled_times_c)
+
+    # travel-time-ly-hr (opt 27)
+    p = sub.add_parser("travel-time-ly-hr",
+                       help="Time to travel N light years at a ly/hr velocity")
+    p.add_argument("--distance-ly", dest="distance_ly", required=True, type=float,
+                   help="Distance in light years")
+    p.add_argument("--ly-hr", dest="ly_hr", required=True, type=float,
+                   help="Velocity in light years per hour (> 0)")
+    p.set_defaults(func=cmd_travel_time_ly_hr)
+
+    # travel-time-times-c (opt 28)
+    p = sub.add_parser("travel-time-times-c",
+                       help="Time to travel N light years at a multiple of c")
+    p.add_argument("--distance-ly", dest="distance_ly", required=True, type=float,
+                   help="Distance in light years")
+    p.add_argument("--times-c", dest="times_c", required=True, type=float,
+                   help="Velocity as a multiple of the speed of light (> 0)")
+    p.set_defaults(func=cmd_travel_time_times_c)
 
     # ── Integration expansion (Phase N) ──────────────────────────────────────
 

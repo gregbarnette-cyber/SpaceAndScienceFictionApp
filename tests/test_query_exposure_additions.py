@@ -119,5 +119,57 @@ class StarRegionsManualTest(unittest.TestCase):
                               "--teff", "5500", "--parallax", "100")[0], 2)  # non-numeric
 
 
+class VelocityTravelConvertersTest(unittest.TestCase):
+    """Group-A converters (opts 25–28, 31, 32): thin wrappers over the simple
+    constant-velocity calculators. Same Phase-N contract — the conversion /
+    distance wrappers have no error path; the two travel-time wrappers raise on a
+    zero velocity (exit 1); argparse rejects missing/non-numeric args (exit 2)."""
+
+    def test_ly_hr_to_times_c(self):
+        code, payload, _ = _run("ly-hr-to-times-c", "--ly-hr", "0.01")
+        self.assertEqual(code, 0)
+        self.assertEqual(set(payload), {"ly_hr", "times_c"})
+        self.assertAlmostEqual(payload["times_c"], 87.658128, places=4)
+        self.assertEqual(payload, calculators.compute_ly_hr_to_times_c(0.01))
+
+    def test_times_c_to_ly_hr(self):
+        code, payload, _ = _run("times-c-to-ly-hr", "--times-c", "100")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload, calculators.compute_speed_of_light_to_ly_hr(100.0))
+
+    def test_distance_traveled_ly_hr_and_times_c(self):
+        code, payload, _ = _run("distance-traveled-ly-hr", "--ly-hr", "0.01", "--hours", "100")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload, calculators.compute_distance_traveled_ly_hr(0.01, 100.0))
+        self.assertAlmostEqual(payload["distance_ly"], 1.0, places=9)
+        code, payload, _ = _run("distance-traveled-times-c", "--times-c", "100", "--hours", "50")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload, calculators.compute_distance_traveled_times_c(100.0, 50.0))
+
+    def test_travel_time_ly_hr_and_times_c(self):
+        code, payload, _ = _run("travel-time-ly-hr", "--distance-ly", "4.37", "--ly-hr", "0.01")
+        self.assertEqual(code, 0)
+        self.assertEqual(set(payload),
+                         {"distance_ly", "ly_hr", "times_c", "total_hours", "travel_time_str"})
+        self.assertEqual(payload, calculators.compute_travel_time_ly_hr(4.37, 0.01))
+        code, payload, _ = _run("travel-time-times-c", "--distance-ly", "4.37", "--times-c", "100")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload, calculators.compute_travel_time_times_c(4.37, 100.0))
+
+    def test_zero_velocity_is_exit_1(self):
+        # Travel-time pair: division by zero → raw-exception {"error"} exit 1.
+        code, payload, _ = _run("travel-time-ly-hr", "--distance-ly", "4.37", "--ly-hr", "0")
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
+        code, payload, _ = _run("travel-time-times-c", "--distance-ly", "4.37", "--times-c", "0")
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
+
+    def test_argparse_exit_2(self):
+        self.assertEqual(_run("distance-traveled-ly-hr", "--ly-hr", "0.01")[0], 2)   # missing --hours
+        self.assertEqual(_run("ly-hr-to-times-c", "--ly-hr", "abc")[0], 2)           # non-numeric
+        self.assertEqual(_run("travel-time-ly-hr", "--ly-hr", "0.01")[0], 2)         # missing --distance-ly
+
+
 if __name__ == "__main__":
     unittest.main()

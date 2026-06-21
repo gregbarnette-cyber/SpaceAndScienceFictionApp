@@ -74,16 +74,20 @@ def wrap_scrollable(parent, canvas, toolbar):
     return container
 
 
-def wrap_orbits_with_solar_toggle(parent, build_canvas, hyper_au=None):
+def wrap_orbits_with_solar_toggle(parent, build_canvas, hyper_au=None,
+                                  snow_au=None, solvent_options=None):
     """Wrap an orbital-diagram canvas in a tab with overlay checkboxes.
 
-    `build_canvas(solar_overlay: bool, show_hyper: bool) -> (canvas, toolbar)` is called
-    to (re)build the canvas; toggling the "Show Solar System reference" checkbox rebuilds
-    it in place (Phase O · O4). **Phase O · O10b:** when `hyper_au` is given (> 0) a second
-    "Show Honorverse Hyper Limit (fiction)" checkbox is added (default off) that passes
-    `show_hyper=True`; with `hyper_au=None` there is no second checkbox (and `show_hyper`
-    is always False). Shared by the Orbital Diagram tabs on opts 3, 6, and the Map panel.
-    Returns the container QWidget, or None if the canvas can't build.
+    `build_canvas(solar_overlay, show_hyper, snow_au, solvent_bands) -> (canvas, toolbar)`
+    is called to (re)build the canvas; toggling any checkbox rebuilds it in place.
+    `solar_overlay`/`show_hyper` are the Phase O · O4 / O10b overlays. **Phase P V6:**
+    when `snow_au` > 0 a "Show water snow line" checkbox is added (passes `snow_au`
+    when ticked, else None). **Phase P V7:** when `solvent_options` (a list of
+    {key, name, inner_au, outer_au, color, default}) is given, a checkbox per solvent
+    is added (water/ammonia/methane default-on); `build_canvas` receives the list of
+    ticked band dicts. All overlays default off/byte-identical when their data is
+    absent. Shared by opts 3, 6, and the Map panel. Returns the container QWidget,
+    or None if the canvas can't build.
     """
     from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QCheckBox
 
@@ -97,8 +101,27 @@ def wrap_orbits_with_solar_toggle(parent, build_canvas, hyper_au=None):
     if hyper_au and hyper_au > 0:
         chk_hyper = QCheckBox("Show Honorverse Hyper Limit (fiction)")
         ctl.addWidget(chk_hyper)
+    chk_snow = None
+    if snow_au and snow_au > 0:
+        chk_snow = QCheckBox("Show water snow line")
+        ctl.addWidget(chk_snow)
     ctl.addStretch()
     lay.addLayout(ctl)
+
+    # Phase P V7: a row of per-solvent checkboxes (text coloured to match the band).
+    solvent_checks = []   # (checkbox, option)
+    if solvent_options:
+        from PySide6.QtWidgets import QLabel
+        ctl2 = QHBoxLayout()
+        ctl2.addWidget(QLabel("Solvent zones:"))
+        for opt in solvent_options:
+            c = QCheckBox(opt["name"])
+            c.setChecked(bool(opt.get("default", False)))
+            c.setStyleSheet(f"color: {opt['color']};")
+            ctl2.addWidget(c)
+            solvent_checks.append((c, opt))
+        ctl2.addStretch()
+        lay.addLayout(ctl2)
 
     state = {"toolbar": None, "canvas": None}
 
@@ -109,7 +132,11 @@ def wrap_orbits_with_solar_toggle(parent, build_canvas, hyper_au=None):
             lay.removeWidget(state["canvas"])
             state["canvas"].deleteLater()
         show_hyper = chk_hyper.isChecked() if chk_hyper is not None else False
-        canvas, toolbar = build_canvas(chk_solar.isChecked(), show_hyper)
+        snow = snow_au if (chk_snow is not None and chk_snow.isChecked()) else None
+        bands = [{"name": o["name"], "inner_au": o["inner_au"],
+                  "outer_au": o["outer_au"], "color": o["color"]}
+                 for c, o in solvent_checks if c.isChecked()]
+        canvas, toolbar = build_canvas(chk_solar.isChecked(), show_hyper, snow, bands)
         state["toolbar"], state["canvas"] = toolbar, canvas
         if toolbar is not None:
             lay.addWidget(toolbar)
@@ -119,6 +146,10 @@ def wrap_orbits_with_solar_toggle(parent, build_canvas, hyper_au=None):
     chk_solar.toggled.connect(lambda _checked: _rebuild())
     if chk_hyper is not None:
         chk_hyper.toggled.connect(lambda _checked: _rebuild())
+    if chk_snow is not None:
+        chk_snow.toggled.connect(lambda _checked: _rebuild())
+    for c, _o in solvent_checks:
+        c.toggled.connect(lambda _checked: _rebuild())
     _rebuild()
     if state["canvas"] is None:
         return None
@@ -139,6 +170,31 @@ def _disable_zoom_rect(toolbar):
 
 
 # ── Click-to-info shared helpers ───────────────────────────────────────────────
+
+def _anchor_hover_to_cursor(hover_text, ax, event):
+    """Position a text2D hover label next to the cursor (axes-fraction coords),
+    flipping alignment and clamping so it stays on-canvas.
+
+    Used by the 3D star charts (opts 18/19 "Star Chart 3D" / "Map 3D") so the
+    tooltip follows the hovered dot instead of sitting in a fixed corner. Uses the
+    cursor's display-pixel position (event.x/event.y) — reliable in 3D, unlike
+    event.xdata/ydata — converted into the axes' 2D fraction frame.
+    """
+    try:
+        fx, fy = ax.transAxes.inverted().transform((event.x, event.y))
+    except Exception:
+        fx, fy = 0.98, 0.97
+    ha = "right" if fx > 0.6 else "left"
+    va = "top" if fy > 0.6 else "bottom"
+    off = 0.02
+    fx += -off if ha == "right" else off
+    fy += -off if va == "top" else off
+    fx = min(max(fx, 0.02), 0.98)
+    fy = min(max(fy, 0.02), 0.98)
+    hover_text.set_position((fx, fy))
+    hover_text.set_ha(ha)
+    hover_text.set_va(va)
+
 
 def _make_info_box(ax):
     """Invisible details text box pinned to the bottom-left corner of the axes.
@@ -356,7 +412,8 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                        eeid_au: float = None, markers: list = None,
                        solar_overlay: bool = False,
                        title: str = None, km_axis: bool = False,
-                       hyper_au: float = None):
+                       hyper_au: float = None, snow_au: float = None,
+                       solvent_bands: list = None):
     """Keplerian ellipse orbital diagram with HZ annulus overlay.
 
     orbits:  list of dicts {name, x_pts, y_pts, color, peri, sma, apo, ecc}.
@@ -372,6 +429,11 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
       moon-system diagrams (default False → unchanged).
     hyper_au: Phase O · O10b — when > 0, draw a dashed-red Honorverse hyper-limit
       ring at this AU (expanding the frame if needed); default None → unchanged.
+    snow_au: Phase P · V6 — when > 0, draw a dashed cyan water-snow-line ring at
+      this AU (M2; planets beyond it are likely icy/giant); default None → unchanged.
+    solvent_bands: Phase P · V7 — list of {name, inner_au, outer_au, color} drawn
+      as translucent annuli behind the planet orbits ("which biochemistry could
+      each planet host?"); default None/empty → no annuli → unchanged.
     Returns (canvas, toolbar).
     """
     valid_markers = [m for m in (markers or []) if m.get("au") and m["au"] > 0]
@@ -382,10 +444,27 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
     # Phase O O10b: ensure the hyper-limit ring fits the frame when shown.
     if hyper_au and hyper_au > 0 and hyper_au > max_au * 0.85:
         max_au = hyper_au * 1.15
+    # Phase P V6/V7: expand the frame to fit the snow line + selected solvent bands.
+    if snow_au and snow_au > 0 and snow_au > max_au * 0.85:
+        max_au = snow_au * 1.15
+    _sbands = [b for b in (solvent_bands or []) if b.get("outer_au", 0) > 0]
+    if _sbands:
+        _smax = max(b["outer_au"] for b in _sbands)
+        if _smax > max_au * 0.85:
+            max_au = _smax * 1.12
 
     fig = Figure(figsize=(6.5, 6.5), facecolor=_SPACE_BG)
     canvas = FigureCanvas(fig)
     ax = fig.add_subplot(111, aspect="equal", facecolor=_SPACE_BG)
+
+    # Phase P V7: alternative-solvent zones as translucent annuli, drawn first so
+    # the HZ fill, planet orbits, and rings layer on top.
+    for b in _sbands:
+        inner = max(b.get("inner_au", 0.0), 0.0)
+        ax.add_patch(mpatches.Wedge(
+            (0, 0), b["outer_au"], 0, 360, width=b["outer_au"] - inner,
+            facecolor=b["color"], edgecolor=b["color"], linewidth=0.8,
+            alpha=0.16, zorder=0.6))
 
     # HZ zone fills and boundary lines (matching HZ diagram style)
     if hz_zones:
@@ -442,6 +521,16 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                 f"Honorverse Hyper Limit\n{hyper_au:.2f} AU",
                 color="#cc2222", fontsize=6.5, ha="right", va="bottom", zorder=6)
 
+    # Water snow line ring (Phase P V6) — dashed cyan; planets beyond it are
+    # likely icy / gas-giant, planets inside more likely rocky.
+    if snow_au and snow_au > 0:
+        ax.add_patch(Circle((0, 0), snow_au, fill=False, edgecolor="#22aacc",
+                            linewidth=1.6, linestyle=(0, (6, 3)), alpha=0.95,
+                            zorder=5.5))
+        ax.text(snow_au * 0.717, -snow_au * 0.717,
+                f"Water snow line\n{snow_au:.2f} AU",
+                color="#1188aa", fontsize=6.5, ha="left", va="top", zorder=5.5)
+
     # Star
     star_r = max_au * 0.015
     ax.add_patch(Circle((0, 0), star_r, color="#FFEE55", zorder=10))
@@ -497,6 +586,16 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
         hz_legend.append(Line2D(
             [0], [0], color="#cc2222", linewidth=1.8, linestyle="--",
             label=f"Honorverse Hyper Limit · fiction  ({hyper_au:.2f} AU)",
+        ))
+    if snow_au and snow_au > 0:
+        hz_legend.append(Line2D(
+            [0], [0], color="#22aacc", linewidth=1.6, linestyle="--",
+            label=f"Water snow line  ({snow_au:.2f} AU)",
+        ))
+    for b in _sbands:
+        hz_legend.append(mpatches.Patch(
+            facecolor=b["color"], edgecolor=b["color"], alpha=0.45,
+            label=f"{b['name']} zone  ({b['inner_au']:.2f}–{b['outer_au']:.2f} AU)",
         ))
     ax.legend(handles=orbit_handles + hz_legend, loc="upper right", fontsize=7,
               framealpha=0.85, labelcolor="#333333",
@@ -1240,7 +1339,7 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
                       framealpha=0.85, labelcolor="#333333",
                       facecolor="#ffffff", edgecolor="#aaaaaa")
 
-    # Hover tooltip — fixed top-right so it doesn't overlap the upper-left legend
+    # Hover tooltip — follows the cursor (anchored next to the hovered dot).
     hover_text = ax.text2D(0.98, 0.97, "", transform=ax.transAxes,
                            fontsize=8, color=_LABEL_CLR, va="top", ha="right",
                            bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0",
@@ -1257,6 +1356,7 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
         if idx is not None:
             ly_val = stars[idx].get("ly", 0)
             hover_text.set_text(f"{names[idx]}\n{ly_val:.2f} ly")
+            _anchor_hover_to_cursor(hover_text, ax, event)
             hover_text.set_visible(True)
         else:
             if hover_text.get_visible():
@@ -1999,7 +2099,7 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
             rtxt.set_visible(initial_show_labels)
             star_labels.append(rtxt)
 
-    # Hover tooltip (top-right text2D — stays fixed under rotation).
+    # Hover tooltip — follows the cursor (anchored next to the hovered dot).
     hover_text = ax.text2D(
         0.98, 0.97, "", transform=ax.transAxes,
         fontsize=7, color="#222222", va="top", ha="right",
@@ -2018,6 +2118,7 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
         if idx is not None:
             s = body_stars[idx]
             hover_text.set_text(f"{body_names[idx]}\n{s.get('ly', 0):.3f} ly")
+            _anchor_hover_to_cursor(hover_text, ax, event)
             hover_text.set_visible(True)
         elif hover_text.get_visible():
             hover_text.set_visible(False)
@@ -2364,17 +2465,30 @@ def _annulus_path(r_inner: float, r_outer: float, n: int = 120):
 
 
 def make_alt_hz_canvas(parent, zones: list, max_au: float, title: str = "",
-                       eeid_au: float = None):
+                       eeid_au: float = None, full_range: bool = False,
+                       cap_au: float = 12.0):
     """Concentric ring diagram for alternate biochemistry habitable zones (⁴√AU scale).
 
     zones: list of dicts {label, inner_au, outer_au, color} ordered hot→cold.
-    ⁴√AU (quartic-root) compression keeps all six zone rings simultaneously visible
-    despite spanning three orders of magnitude in AU.
-    Returns (canvas, toolbar).
+    ⁴√AU (quartic-root) compression keeps the zone rings simultaneously visible
+    despite spanning orders of magnitude in AU.
+
+    Phase P V1: with the 10-band set the hydrogen band reaches ~200–440 AU and
+    dwarfs the inner cluster, so the diagram defaults to **inner-focus** — the
+    radial scale caps at `cap_au` (≈12 AU, through methane) and any band whose
+    inner edge lies beyond the cap is moved to the legend with a ▸ off-scale
+    marker. `full_range=True` re-renders out to the farthest band. Cursor hover
+    pops a band tooltip; click-to-info is kept. Returns (canvas, toolbar).
     """
+    true_max = max_au
+    draw_max = true_max if (full_range or true_max <= cap_au) else cap_au
+
     def au_to_r(au):
-        """Quartic-root compression: outermost zone outer edge → r = 1.0."""
-        return (au / max_au) ** 0.25
+        """Quartic-root compression: r = 1.0 at the radial cap (draw_max)."""
+        return (au / draw_max) ** 0.25
+
+    on_zones = [z for z in zones if z["inner_au"] <= draw_max]
+    off_zones = [z for z in zones if z["inner_au"] > draw_max]
 
     MAX_R  = 1.06
     STAR_R = MAX_R * 0.016
@@ -2388,26 +2502,28 @@ def make_alt_hz_canvas(parent, zones: list, max_au: float, title: str = "",
 
     # Paint annuli hot→cold (innermost first); each zone's PathPatch is an independent
     # donut so overlapping zones blend via alpha compositing rather than overwriting.
-    for i, zone in enumerate(zones):
+    # An on-scale band whose outer edge exceeds the cap is clipped to draw_max.
+    for i, zone in enumerate(on_zones):
         r_inner = au_to_r(zone["inner_au"])
-        r_outer = au_to_r(zone["outer_au"])
+        r_outer = au_to_r(min(zone["outer_au"], draw_max))
         ax.add_patch(mpatches.PathPatch(
             _annulus_path(r_inner, r_outer),
             facecolor=zone["color"], edgecolor="#555555",
             linewidth=0.5, alpha=0.62, zorder=3 + i,
         ))
 
-    # Boundary dashed circles for each zone's inner and outer edge
-    for zone in zones:
+    # Boundary dashed circles for each zone's inner and outer edge (within scale)
+    for zone in on_zones:
         for r_au in (zone["inner_au"], zone["outer_au"]):
-            ax.add_patch(Circle(
-                (0, 0), au_to_r(r_au),
-                fill=False, edgecolor=zone["color"],
-                linewidth=0.6, linestyle="--", alpha=0.5, zorder=9,
-            ))
+            if r_au <= draw_max:
+                ax.add_patch(Circle(
+                    (0, 0), au_to_r(r_au),
+                    fill=False, edgecolor=zone["color"],
+                    linewidth=0.6, linestyle="--", alpha=0.5, zorder=9,
+                ))
 
     # EEID marker
-    if eeid_au and 0 < eeid_au < max_au:
+    if eeid_au and 0 < eeid_au < draw_max:
         r_e = au_to_r(eeid_au)
         ax.add_patch(Circle((0, 0), r_e,
                             fill=False, edgecolor="#006644",
@@ -2418,19 +2534,28 @@ def make_alt_hz_canvas(parent, zones: list, max_au: float, title: str = "",
     # Star
     ax.add_patch(Circle((0, 0), STAR_R, color="#FFEE55", zorder=12))
 
-    ax.set_title(title or "Alternate HZ Regions  (⁴√AU scale)",
-                 color=_LABEL_CLR, fontsize=10, pad=8)
+    cap_note = (f"full range — to {true_max:.0f} AU" if draw_max >= true_max
+                else f"inner-focus — view ≤ {cap_au:.0f} AU (toggle Full range)")
+    ax.set_title(f"{title or 'Alternate HZ Regions'}  (⁴√AU scale)\n{cap_note}",
+                 color=_LABEL_CLR, fontsize=9, pad=8)
 
-    # Legend: zone name + AU range
+    # Legend: on-scale zones (name + AU range) then off-scale ▸ markers.
     handles = [
         mpatches.Patch(
             facecolor=z["color"], edgecolor="#555555",
             linewidth=0.7, alpha=0.75,
             label=f"{z['label']}  ({z['inner_au']:.3f} – {z['outer_au']:.3f} AU)",
         )
-        for z in zones
+        for z in on_zones
     ]
-    if eeid_au and 0 < eeid_au < max_au:
+    handles += [
+        mpatches.Patch(
+            facecolor=z["color"], edgecolor="#555555", linewidth=0.7, alpha=0.55,
+            label=f"▸ {z['label']}  ({z['inner_au']:.0f}–{z['outer_au']:.0f} AU · off-scale)",
+        )
+        for z in off_zones
+    ]
+    if eeid_au and 0 < eeid_au < draw_max:
         handles.append(mpatches.Patch(
             facecolor="none", edgecolor="#006644", linewidth=1.5,
             label=f"Earth Equiv. Insolation  ({eeid_au:.3f} AU)",
@@ -2439,6 +2564,31 @@ def make_alt_hz_canvas(parent, zones: list, max_au: float, title: str = "",
               framealpha=0.85, labelcolor="#333333",
               facecolor="#ffffff", edgecolor="#aaaaaa",
               borderpad=0.6, labelspacing=0.35)
+
+    # ── Cursor-anchored hover (Phase P §13 interactivity) ─────────────────────
+    _annot = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round", fc="#ffffe0", ec="#888888", alpha=0.95),
+        fontsize=7, color="#222222", zorder=30, visible=False)
+
+    def _on_move(event):
+        if event.inaxes is not ax or event.xdata is None:
+            if _annot.get_visible():
+                _annot.set_visible(False)
+                canvas.draw_idle()
+            return
+        au = (math.hypot(event.xdata, event.ydata) ** 4) * draw_max
+        hit = next((z for z in on_zones if z["inner_au"] <= au <= z["outer_au"]), None)
+        if hit:
+            _annot.xy = (event.xdata, event.ydata)
+            _annot.set_text(f"{hit['label']}\n{hit['inner_au']:.3f}–{hit['outer_au']:.3f} AU (M1)")
+            _annot.set_visible(True)
+            canvas.draw_idle()
+        elif _annot.get_visible():
+            _annot.set_visible(False)
+            canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_move)
 
     # ── Click-to-info ─────────────────────────────────────────────────────────
     _alt_bodies = {
@@ -2473,11 +2623,243 @@ def make_alt_hz_canvas(parent, zones: list, max_au: float, title: str = "",
             "title": z["label"],
             "body": _alt_bodies.get(z["label"], "Alternate biochemistry HZ."),
         }
-        for z in zones
+        for z in on_zones
     ]
     _attach_ring_click(canvas, ax, _make_info_box(ax), _alt_click,
-                       r_to_au=lambda r: (r ** 4) * max_au,
-                       eeid_au=eeid_au if eeid_au and 0 < eeid_au < max_au else None)
+                       r_to_au=lambda r: (r ** 4) * draw_max,
+                       eeid_au=eeid_au if eeid_au and 0 < eeid_au < draw_max else None)
+
+    fig.tight_layout(pad=0.5)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_solvent_zone_canvas(parent, result: dict, water_ref: dict = None):
+    """Phase P V3 — the chosen solvent's liquid band as a shaded ⁴√AU annulus,
+    with the water HZ drawn behind it for reference, the star at centre, and the
+    radial scale auto-fit to the band (maxAU = outermost edge × 1.1).
+
+    result    : a compute_solvent_zone() dict (the selected solvent).
+    water_ref : an optional compute_solvent_zone(L, "water") dict drawn as a faint
+                reference annulus (pass None when the selected solvent IS water).
+
+    Hover anywhere inside a band pops a cursor-anchored tooltip; click-to-info box
+    is kept too. Returns (canvas, toolbar) or (None, None) on a bad result.
+    """
+    if not result or "error" in result:
+        return None, None
+
+    bands = []
+    if water_ref and "error" not in water_ref and result.get("solvent") != "water":
+        bands.append({
+            "label": "Water HZ (reference)", "ref": True,
+            "inner_au": water_ref["inner_au"], "outer_au": water_ref["outer_au"],
+            "t_low": water_ref["t_low_k"], "t_high": water_ref["t_high_k"],
+            "color": "#4a90d9", "alpha": 0.28,
+            "body": ("Liquid-water habitable zone (M1 surface).\n"
+                     "Shown for reference behind the selected solvent."),
+        })
+    bands.append({
+        "label": result.get("name") or "Solvent", "ref": False,
+        "inner_au": result["inner_au"], "outer_au": result["outer_au"],
+        "t_low": result["t_low_k"], "t_high": result["t_high_k"],
+        "color": "#2e8b57", "alpha": 0.60,
+        "body": (f"Liquid range {result['t_low_k']:.1f} – {result['t_high_k']:.1f} K "
+                 f"(M1 surface).\n{result.get('citation', '')}"
+                 + (f"\nPressure-conditional — assumes "
+                    f"{result.get('assumed_pressure_atm')} atm."
+                    if result.get("pressure_conditional") else "")),
+    })
+
+    max_au = max(b["outer_au"] for b in bands) * 1.1
+
+    def au_to_r(au):
+        return (au / max_au) ** 0.25
+
+    MAX_R  = 1.06
+    STAR_R = MAX_R * 0.016
+
+    fig = Figure(figsize=(7, 7), facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, aspect="equal", facecolor=_SPACE_BG)
+    ax.set_xlim(-MAX_R, MAX_R)
+    ax.set_ylim(-MAX_R, MAX_R)
+    ax.axis("off")
+
+    for i, b in enumerate(bands):
+        ax.add_patch(mpatches.PathPatch(
+            _annulus_path(au_to_r(b["inner_au"]), au_to_r(b["outer_au"])),
+            facecolor=b["color"], edgecolor="#555555",
+            linewidth=0.5, alpha=b["alpha"], zorder=3 + i,
+        ))
+        for r_au in (b["inner_au"], b["outer_au"]):
+            ax.add_patch(Circle((0, 0), au_to_r(r_au), fill=False,
+                                edgecolor=b["color"], linewidth=0.7,
+                                linestyle="--", alpha=0.6, zorder=9))
+
+    ax.add_patch(Circle((0, 0), STAR_R, color="#FFEE55", zorder=12))
+
+    sub = ""
+    if result.get("pressure_conditional"):
+        sub = f"  ·  assumes {result.get('assumed_pressure_atm')} atm"
+    ax.set_title(f"{result.get('name', 'Solvent')} Liquid Zone  (⁴√AU scale){sub}",
+                 color=_LABEL_CLR, fontsize=10, pad=8)
+
+    handles = [
+        mpatches.Patch(
+            facecolor=b["color"], edgecolor="#555555", linewidth=0.7, alpha=0.75,
+            label=f"{b['label']}  ({b['inner_au']:.3f} – {b['outer_au']:.3f} AU)",
+        )
+        for b in bands
+    ]
+    ax.legend(handles=handles, loc="upper right", fontsize=6.5,
+              framealpha=0.85, labelcolor="#333333",
+              facecolor="#ffffff", edgecolor="#aaaaaa",
+              borderpad=0.6, labelspacing=0.35)
+
+    # ── Click-to-info ─────────────────────────────────────────────────────────
+    _attach_ring_click(
+        canvas, ax, _make_info_box(ax),
+        [{"inner_au": b["inner_au"], "outer_au": b["outer_au"],
+          "title": b["label"], "body": b["body"]} for b in bands],
+        r_to_au=lambda r: (r ** 4) * max_au,
+    )
+
+    # ── Cursor-anchored hover (Phase P §13 interactivity) ─────────────────────
+    annot = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round", fc="#ffffe0", ec="#888888", alpha=0.95),
+        fontsize=7, color="#222222", zorder=30, visible=False,
+    )
+
+    def _on_move(event):
+        if event.inaxes is not ax or event.xdata is None:
+            if annot.get_visible():
+                annot.set_visible(False)
+                canvas.draw_idle()
+            return
+        au = (math.hypot(event.xdata, event.ydata) ** 4) * max_au
+        hit = next((b for b in bands if b["inner_au"] <= au <= b["outer_au"]), None)
+        if hit:
+            annot.xy = (event.xdata, event.ydata)
+            annot.set_text(
+                f"{hit['label']}\n{hit['inner_au']:.3f}–{hit['outer_au']:.3f} AU\n"
+                f"liquid {hit['t_low']:.0f}–{hit['t_high']:.0f} K  (M1)"
+            )
+            annot.set_visible(True)
+            canvas.draw_idle()
+        elif annot.get_visible():
+            annot.set_visible(False)
+            canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_move)
+
+    fig.tight_layout(pad=0.5)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+_ICE_CAP_AU = 18.0   # inner-focus radial cap (Phase P V4)
+
+
+def make_ice_line_canvas(parent, data: dict, full_range: bool = False):
+    """Phase P V4 — concentric frost-line map: the water snow line + the
+    CO₂/NH₃/N₂/CO condensation fronts as labelled dashed ⁴√AU rings (disk-set
+    N₂/CO drawn dotted), star at centre.
+
+    data : core.viz.prepare_ice_line_diagram() → {lines:[{species, au, t_cond_k,
+           color, disk_line, kind, note}], luminosity_solar}.
+    full_range : False → inner-focus (cap 18 AU; lines beyond go to the legend
+           with a ▸ off-scale marker); True → scale out to the farthest line.
+
+    Hover anywhere near a ring pops a cursor-anchored tooltip; click-to-info kept.
+    Returns (canvas, toolbar) or (None, None) on a bad result.
+    """
+    if not _MPL_OK or not data or "error" in data:
+        return None, None
+    lines = data.get("lines") or []
+    if not lines:
+        return None, None
+
+    from matplotlib.lines import Line2D
+
+    true_max = max(ln["au"] for ln in lines) * 1.1
+    inner_min = min(ln["au"] for ln in lines)
+    max_au = true_max if full_range else max(_ICE_CAP_AU, inner_min * 1.1)
+
+    def au_to_r(au):
+        return (au / max_au) ** 0.25
+
+    MAX_R  = 1.06
+    STAR_R = MAX_R * 0.016
+
+    fig = Figure(figsize=(7, 7), facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, aspect="equal", facecolor=_SPACE_BG)
+    ax.set_xlim(-MAX_R, MAX_R)
+    ax.set_ylim(-MAX_R, MAX_R)
+    ax.axis("off")
+
+    handles = []
+    drawn = []        # (line, r) for hover/click hit-testing
+    markers = []      # for _attach_ring_click
+    for ln in lines:
+        nm = ln["species"] + (" (disk)" if ln["disk_line"] else "")
+        ls = ":" if ln["disk_line"] else "--"
+        if ln["au"] <= max_au:
+            r = au_to_r(ln["au"])
+            ax.add_patch(Circle((0, 0), r, fill=False, edgecolor=ln["color"],
+                                linewidth=1.4, linestyle=ls, alpha=0.9, zorder=8))
+            drawn.append((ln, r))
+            markers.append({"label": nm, "au": ln["au"], "color": ln["color"],
+                            "body": f"{ln['t_cond_k']:.0f} K  ·  {ln['note']}"})
+            handles.append(Line2D([0], [0], color=ln["color"], lw=1.5, ls=ls,
+                                  label=f"{nm}  ({ln['au']:.2f} AU · {ln['t_cond_k']:.0f} K)"))
+        else:
+            handles.append(Line2D([0], [0], color=ln["color"], lw=1.5, ls=ls,
+                                  label=f"▸ {nm}  ({ln['au']:.0f} AU · off-scale)"))
+
+    ax.add_patch(Circle((0, 0), STAR_R, color="#FFEE55", zorder=12))
+
+    cap_note = (f"full range — to {true_max:.0f} AU" if full_range
+                else f"inner-focus — view ≤ {_ICE_CAP_AU:.0f} AU (toggle Full range)")
+    ax.set_title(f"Frost-Line Map  (⁴√AU scale)\n{cap_note}",
+                 color=_LABEL_CLR, fontsize=9, pad=8)
+    ax.legend(handles=handles, loc="upper right", fontsize=6,
+              framealpha=0.85, labelcolor="#333333", facecolor="#ffffff",
+              edgecolor="#aaaaaa", borderpad=0.6, labelspacing=0.35)
+
+    # Click-to-info (rings carried as markers; no zones).
+    _attach_ring_click(canvas, ax, _make_info_box(ax), [],
+                       r_to_au=lambda r: (r ** 4) * max_au, markers=markers)
+
+    # ── Cursor-anchored hover ─────────────────────────────────────────────────
+    annot = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round", fc="#ffffe0", ec="#888888", alpha=0.95),
+        fontsize=7, color="#222222", zorder=30, visible=False,
+    )
+
+    def _on_move(event):
+        if event.inaxes is not ax or event.xdata is None:
+            if annot.get_visible():
+                annot.set_visible(False)
+                canvas.draw_idle()
+            return
+        r = math.hypot(event.xdata, event.ydata)
+        hit = min(drawn, key=lambda lr: abs(lr[1] - r), default=None)
+        if hit and abs(hit[1] - r) <= 0.035:
+            ln = hit[0]
+            tag = "  ·  disk-set (illustrative)" if ln["disk_line"] else ""
+            annot.xy = (event.xdata, event.ydata)
+            annot.set_text(f"{ln['species']}\n{ln['au']:.2f} AU · {ln['t_cond_k']:.0f} K (M2){tag}")
+            annot.set_visible(True)
+            canvas.draw_idle()
+        elif annot.get_visible():
+            annot.set_visible(False)
+            canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_move)
 
     fig.tight_layout(pad=0.5)
     toolbar = NavToolbar(canvas, parent)
@@ -4117,6 +4499,105 @@ def make_hyper_bar_canvas(parent, data: dict):
                           lambda a: a * _HYPER_LM_PER_AU))
     sec.set_xlabel("AU", color=_LABEL_CLR, fontsize=9)
     sec.tick_params(colors=_LABEL_CLR, labelsize=8)
+
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_solvent_bar_canvas(parent, data: dict):
+    """Horizontal solvent liquid-range bar chart (Phase P V5; mirrors the O10a
+    hyper-bar style).
+
+    data: core.viz.prepare_solvent_ranges() → {names, lo, hi, colors,
+    plausibility, pressure_conditional, assumed_pressure_atm, citation}. Each bar
+    spans freeze→boil on a Temperature (K) axis, coloured by Bains-2024
+    plausibility; coldest at top. Cursor-anchored hover. Returns (canvas, toolbar).
+    """
+    if not _MPL_OK:
+        return None, None
+
+    def _error_canvas(msg):
+        fig = Figure(figsize=(8, 2.4), dpi=100, facecolor=_SPACE_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SPACE_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_LABEL_CLR, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+    names = data["names"]
+    lo, hi, colors = data["lo"], data["hi"], data["colors"]
+    n = len(names)
+    if not n:
+        return _error_canvas("No solvent data to plot.")
+
+    fig_h = max(3.0, min(0.34 * n + 1.4, 16.0))
+    fig = Figure(figsize=(8, fig_h), dpi=100, facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    fig.subplots_adjust(left=0.22, right=0.96, top=0.92, bottom=0.08)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#ffffff")
+
+    y = list(range(n))
+    widths = [h - l for l, h in zip(lo, hi)]
+    ax.barh(y, widths, left=lo, color=colors, edgecolor="#666666",
+            linewidth=0.5, height=0.72)
+    hi_max = max(hi) if hi else 1.0
+    for yi, l, h in zip(y, lo, hi):
+        ax.text(h + hi_max * 0.01, yi, f"{l:.0f}–{h:.0f} K",
+                va="center", ha="left", fontsize=6.5, color=_LABEL_CLR)
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(names, fontsize=7, color=_LABEL_CLR)
+    ax.invert_yaxis()                       # coldest (smallest freeze) at top
+    ax.set_xlim(0, hi_max * 1.16)           # room for the value labels
+    ax.set_xlabel("Temperature (K) — 1-atm liquid range", color=_LABEL_CLR, fontsize=9)
+    ax.tick_params(colors=_LABEL_CLR, labelsize=8)
+    ax.grid(axis="x", color=_GRID_CLR, alpha=0.5, linewidth=0.7, linestyle="--")
+    ax.set_axisbelow(True)
+    ax.set_title("Solvent Liquid Ranges (1 atm)", color=_LABEL_CLR, fontsize=10, pad=8)
+
+    # Plausibility legend (three categories).
+    legend_handles = [
+        mpatches.Patch(facecolor="#2e8b57", edgecolor="#666666", label="Functional & abundant (Bains 2024)"),
+        mpatches.Patch(facecolor="#b8860b", edgecolor="#666666", label="Notable / conditional"),
+        mpatches.Patch(facecolor="#8899aa", edgecolor="#666666", label="Other"),
+    ]
+    ax.legend(handles=legend_handles, loc="lower right", fontsize=6.5,
+              framealpha=0.9, labelcolor="#333333", facecolor="#ffffff",
+              edgecolor="#aaaaaa", borderpad=0.6)
+
+    # ── Cursor-anchored hover (Phase P §13 interactivity) ─────────────────────
+    plaus = data.get("plausibility", [""] * n)
+    cond = data.get("pressure_conditional", [False] * n)
+    patm = data.get("assumed_pressure_atm", [None] * n)
+    annot = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round", fc="#ffffe0", ec="#888888", alpha=0.95),
+        fontsize=7, color="#222222", zorder=30, visible=False,
+    )
+
+    def _on_move(event):
+        if event.inaxes is not ax or event.xdata is None or event.ydata is None:
+            if annot.get_visible():
+                annot.set_visible(False)
+                canvas.draw_idle()
+            return
+        i = int(round(event.ydata))
+        if 0 <= i < n and lo[i] <= event.xdata <= hi[i]:
+            extra = f"  ·  ≥{patm[i]} atm" if cond[i] else ""
+            annot.xy = (event.xdata, event.ydata)
+            annot.set_text(f"{names[i]}\nliquid {lo[i]:.0f}–{hi[i]:.0f} K{extra}\n{plaus[i]}")
+            annot.set_visible(True)
+            canvas.draw_idle()
+        elif annot.get_visible():
+            annot.set_visible(False)
+            canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_move)
 
     toolbar = NavToolbar(canvas, parent)
     return canvas, toolbar

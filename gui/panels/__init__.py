@@ -39,6 +39,8 @@ from gui.panels.system_travel    import SystemTravelSolarPanel, SystemTravelThru
 from gui.panels.worldbuilding    import (RocheLimitPanel, TidalLockingPanel,
                                          HillSpherePanel, BinaryOrbitPanel,
                                          AtmosphereRetentionPanel)
+from gui.panels.solvent_zones    import (SolventZonePanel, IceLineCalculatorPanel,
+                                         SolventReferencePanel)
 from gui.panels.search           import (StarSystemsSearchPanel, HwcSearchPanel,
                                          NasaExoplanetSearchPanel, HypatiaSearchPanel)
 from gui.panels.route_planning    import (MultiStopJourneyPanel, NearestNeighborPanel,

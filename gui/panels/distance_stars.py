@@ -519,12 +519,30 @@ def _build_iso_chart_tab(panel, map_stars, limit, click_cb, canvases, is_3d):
     return w
 
 
-def _add_map_tabs(panel, map_stars, limit, title):
-    """Build the five opt-18/19 map tabs (Map X–Y/X–Z/3D, Star Chart, Star Chart
-    3D) and wire O15 row↔map linking. Appends tabs to panel._viz_tabs_widget and
-    expects panel._link_view to already hold the result table."""
+def _add_map_tabs(panel, map_stars, limit, title, result):
+    """Build the opt-18/19 diagram tabs in display order — Star Chart, Star Chart
+    3D, HR Diagram, Night Sky, Map X–Y, Map X–Z, Map 3D — and wire O15 row↔map
+    linking. Star Chart is the default selected tab. Appends tabs to
+    panel._viz_tabs_widget and expects panel._link_view to already hold the result
+    table."""
     canvases = []
     click_cb = lambda nm: _star_click_select(panel, nm)
+
+    # Labeled X-Y star chart (dark theme) + O17 isochrone control — the default
+    # tab. The helper appends the live canvas to `canvases` (re-appended on each
+    # Apply rebuild).
+    chart_w = _build_iso_chart_tab(panel, map_stars, limit, click_cb,
+                                   canvases, is_3d=False)
+    panel._viz_tabs_widget.addTab(chart_w, "Star Chart")
+
+    # Star Chart 3D — labeled 3D companion + O17 isochrone control.
+    chart3d_w = _build_iso_chart_tab(panel, map_stars, limit, click_cb,
+                                     canvases, is_3d=True)
+    panel._viz_tabs_widget.addTab(chart3d_w, "Star Chart 3D")
+
+    # HR Diagram (O2b) + Night Sky (O1) — between the star charts and the maps.
+    _add_hr_tab(panel, result)
+    _add_night_sky_tab(panel, result)
 
     # Map X–Y / X–Z (light-gray 2D scatter).
     for proj, xk, yk, xl, yl in [
@@ -587,19 +605,9 @@ def _add_map_tabs(panel, map_stars, limit, title):
     panel._viz_tabs_widget.addTab(map3d_w, "Map 3D")
     canvases.append(canvas3d)
 
-    # Labeled X-Y star chart (dark theme) + O17 isochrone control. The helper
-    # appends the live canvas to `canvases` (and re-appends on each Apply rebuild).
-    chart_w = _build_iso_chart_tab(panel, map_stars, limit, click_cb,
-                                   canvases, is_3d=False)
-    panel._viz_tabs_widget.addTab(chart_w, "Star Chart")
-
-    # Star Chart 3D — labeled 3D companion + O17 isochrone control.
-    chart3d_w = _build_iso_chart_tab(panel, map_stars, limit, click_cb,
-                                     canvases, is_3d=True)
-    panel._viz_tabs_widget.addTab(chart3d_w, "Star Chart 3D")
-
     _wire_row_map_linking(panel, panel._link_view, canvases)
     _add_find_box(panel)
+    panel._viz_tabs_widget.setCurrentIndex(0)   # default to Star Chart
 
 
 def _add_hr_tab(panel, result):
@@ -755,12 +763,8 @@ class StarsWithinDistanceSolPanel(DiagramToggleMixin, ResultPanel):
                 _add_map_tabs(
                     self, map_data["stars"], limit,
                     f"Stars within {limit} ly of Sol  ({count} stars)",
+                    result,
                 )
-
-                # Phase O — HR Diagram (O2b) + Night Sky (O1), placed to the
-                # RIGHT of the map/chart tabs.
-                _add_hr_tab(self, result)
-                _add_night_sky_tab(self, result)
 
         self._finish_render()
 
@@ -863,11 +867,7 @@ class StarsWithinDistanceStarPanel(DiagramToggleMixin, ResultPanel):
                 _add_map_tabs(
                     self, map_data["stars"], limit,
                     f"Stars within {limit} ly of {center}  ({count} stars)",
+                    result,
                 )
-
-                # Phase O — HR Diagram (O2b) + Night Sky (O1), placed to the
-                # RIGHT of the map/chart tabs.
-                _add_hr_tab(self, result)
-                _add_night_sky_tab(self, result)
 
         self._finish_render()

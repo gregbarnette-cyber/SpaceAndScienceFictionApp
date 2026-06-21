@@ -6,6 +6,7 @@ import math
 import re
 
 from core.db import get_conn
+from core.equations import compute_solvent_zone, compute_ice_lines, _t_ref_surface
 
 # ── Spectral-class helpers (shared by options 9, 10, 13) ─────────────────────
 
@@ -147,7 +148,10 @@ def compute_star_system_regions(
     distAU = math.sqrt(bcLuminosity / sunlight_intensity)
     distKM = distAU * 149000000.0
     planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
-    planetaryTemperature = 374.0 * 1.1 * (1.0 - bond_albedo) * (sunlight_intensity ** 0.25)
+    # Phase P P1e: M1 surface model with the correct (1−A)^0.25 albedo exponent
+    # (was the badly-wrong linear (1−A); identical at A=0.3 → 288 K, correct
+    # elsewhere). _t_ref_surface(A) = 314.9 × (1−A)^0.25.
+    planetaryTemperature = _t_ref_surface(bond_albedo) * (sunlight_intensity ** 0.25)
     planetaryTemperatureC = planetaryTemperature - 273.15
     planetaryTemperatureF = (planetaryTemperatureC * 9.0 / 5.0) + 32.0
     starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
@@ -157,7 +161,11 @@ def compute_star_system_regions(
     sysilSunlight = math.sqrt(bcLuminosity / 16.0)
     hzil = math.sqrt(bcLuminosity / 1.1)
     hzol = math.sqrt(bcLuminosity / 0.53)
-    snowLine = math.sqrt(bcLuminosity / 0.04)
+    # Phase P P1c: the canonical water snow line — 170 K / 2.68 AU (M2), was the
+    # greenhouse-baked surface model misapplied to an ice line (0.04 → 5.0 AU).
+    snowLine = math.sqrt(bcLuminosity / 0.139)
+    # P1b: value unchanged — under M2 this 0.0025 divisor is the 62 K / 20 AU
+    # N₂/CO 1-atm surface-frost line (relabelled in the displays, not retuned).
     lh2Line = math.sqrt(bcLuminosity / 0.0025)
     sysol = 40.0 * stellarMass
 
@@ -173,8 +181,35 @@ def compute_star_system_regions(
     praOuter = math.sqrt(bcLuminosity / 0.21)
     pmInner  = math.sqrt(bcLuminosity / 0.023)
     pmOuter  = math.sqrt(bcLuminosity / 0.0094)
-    phInner  = math.sqrt(bcLuminosity / 0.0025)
-    phOuter  = math.sqrt(bcLuminosity / 0.000024)
+    # Phase P P1a: hydrogen band corrected to its real 1-atm liquid range
+    # (boil 20.3 K / freeze 13.8 K → ~200–440 AU). The legacy 0.0025/0.000024
+    # put the inner edge supercritical (H₂ crit 33 K) and the outer at the boil.
+    phInner  = math.sqrt(bcLuminosity / 0.0000247)
+    phOuter  = math.sqrt(bcLuminosity / 0.0000053)
+
+    # Phase P P2: additional alternative-solvent bands (M1 surface model, A=0.3),
+    # derived from the shared _SOLVENTS liquid ranges via compute_solvent_zone so
+    # they cannot drift from the Solvent Habitable Zone calculator. Additive — the
+    # existing ff/fs/prw/pra/pm/ph bands are untouched.
+    _co2 = compute_solvent_zone(bcLuminosity, "co2")            # pressure-conditional (≥5.2 atm)
+    _sulfur = compute_solvent_zone(bcLuminosity, "sulfur")
+    _wa = compute_solvent_zone(bcLuminosity, "water_ammonia")   # eutectic (approx)
+    _sa = compute_solvent_zone(bcLuminosity, "sulfuric_acid")
+    co2Inner, co2Outer = _co2["inner_au"], _co2["outer_au"]
+    sInner,   sOuter   = _sulfur["inner_au"], _sulfur["outer_au"]
+    waInner,  waOuter  = _wa["inner_au"], _wa["outer_au"]
+    saInner,  saOuter  = _sa["inner_au"], _sa["outer_au"]
+
+    # Phase P P3: volatile ice-condensation fronts (M2 equilibrium, A=0). Additive
+    # keys for the CO₂/NH₃/N₂/CO fronts (the canonical water snow line stays the
+    # existing snowLine key — corrected to 170 K / 2.68 AU in P1c). N₂/CO are
+    # disk-midplane-set, so their irradiation placement is illustrative.
+    _ice_by_t = {int(round(l["t_cond_k"])): l["au"]
+                 for l in compute_ice_lines(bcLuminosity)["lines"]}
+    iceLineNH3 = _ice_by_t[80]
+    iceLineCO2 = _ice_by_t[70]
+    iceLineN2  = _ice_by_t[22]
+    iceLineCO  = _ice_by_t[20]
 
     return {
         # Inputs (stored for display)
@@ -224,6 +259,14 @@ def compute_star_system_regions(
         "praInner": praInner, "praOuter": praOuter,
         "pmInner": pmInner,   "pmOuter": pmOuter,
         "phInner": phInner,   "phOuter": phOuter,
+        # Phase P P2 — additional alternative-solvent bands (M1)
+        "co2Inner": co2Inner, "co2Outer": co2Outer,
+        "sInner": sInner,     "sOuter": sOuter,
+        "waInner": waInner,   "waOuter": waOuter,
+        "saInner": saInner,   "saOuter": saOuter,
+        # Phase P P3 — volatile ice-condensation fronts (M2)
+        "iceLineNH3": iceLineNH3, "iceLineCO2": iceLineCO2,
+        "iceLineN2":  iceLineN2,  "iceLineCO":  iceLineCO,
     }
 
 

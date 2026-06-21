@@ -69,19 +69,41 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - `distAU = sqrt(bcLuminosity / sunlightIntensity)`
   - `distKM = distAU × 149000000`
   - `planetaryYear = sqrt(distAU³ / stellarMass)`
-  - `planetaryTemperature = 374 × 1.1 × (1 - bondAlbedo) × sunlightIntensity ** 0.25`
+  - `planetaryTemperature = 314.9 × (1 - bondAlbedo)^0.25 × sunlightIntensity^0.25` (Phase P P1e — the M1 surface model; the corrected `(1−A)^0.25` albedo exponent. Identical to the legacy `374 × 1.1 × (1−A) × S^0.25` at A=0.3 → 288 K, but physically correct at every other albedo — the old linear `(1−A)` collapsed unrealistically at high albedo, e.g. Venus → ~110 K below its 227 K equilibrium temp.)
   - `planetaryTemperatureC = planetaryTemperature - 273.15`
   - `planetaryTemperatureF = (planetaryTemperatureC × 9/5) + 32`
   - `starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)`; `sizeOfSun = f"{starAngularDiameter:.2f}°"`
   - Columns: Distance AU (4dp), Distance KM (5e), Year (4dp), Temp K (2dp), Temp C (2dp), Temp F (2dp), Size of Sun (degree string)
+
+> **Phase P — two temperature models (M1 / M2).** The region rows below split across two
+> physically-distinct reference temperatures, centralized as `core.equations._t_ref_surface`
+> / `_t_ref_equilibrium` (so the calculators and the regions display can't drift). Both fix the
+> legacy albedo bug — radiative equilibrium scales as `(1−A)^0.25` (a fourth root), **not** the
+> old linear `(1−A)`:
+> - **M1 surface** `T_ref = 314.9 × (1−A)^0.25` (= 288 K at A=0.3): equilibrium **+ Earth-like
+>   greenhouse**. Used for the **solvent liquid bands** (the Alternate HZ Regions table) and the
+>   corrected `planetaryTemperature` (P1e). Solvent-band implied-T is shown at the A=0.3 / 288 K
+>   reference.
+> - **M2 equilibrium** `T_ref = 278.5 × (1−A)^0.25` (278.5 K at A=0): bare radiative equilibrium,
+>   **no greenhouse**. Used for the **snow / ice condensation lines** (`snowLine`, `lh2Line`, the
+>   P3 ice fronts). Implied-T shown at A=0.
+>
+> Shared: `S_eff(T) = (T/T_ref)^4`, `AU = sqrt(L / S_eff)`. The P7a implied-edge-T helper
+> `implied_edge_temp(au, L, model)` inverts this to annotate each row. See `docs/equations.md`
+> (the two calculators) and `PHASE_P_PLAN.md` §0.
+
 - **Solar System Regions table** — rendered by `_display_solar_system_regions()`; uses `_print_table()` (Region | AU, left-aligned); AU formatted as `{val:.4f} ({val × 8.3167:.3f} LM)`:
   - `sysilGrav = 0.2 × stellarMass`, `sysilSunlight = sqrt(bcLuminosity/16)`
   - `hzil = sqrt(bcLuminosity/1.1)`, `hzol = sqrt(bcLuminosity/0.53)`
-  - `snowLine = sqrt(bcLuminosity/0.04)`, `lh2Line = sqrt(bcLuminosity/0.0025)`, `sysol = 40 × stellarMass`
-- **Solar System Alternate Habitable Zone Regions table** — rendered by `_display_alternate_hz_regions()`; same 2-column format as Solar System Regions; all 12 values computed as `sqrt(bcLuminosity / divisor)`:
-  - Fluorosilicone-Fluorosilicone Inner/Outer (÷52, ÷29.9), Fluorocarbon-Sulfur Inner/Outer (÷38.7, ÷3.2)
+  - `snowLine = sqrt(bcLuminosity/0.139)`, `lh2Line = sqrt(bcLuminosity/0.0025)`, `sysol = 40 × stellarMass`
+    - **Phase P P1c (snow line):** the divisor was corrected `0.04 → 0.139` — the canonical **170 K water snow line at ~2.68 AU** (M2 equilibrium model; Hayashi 1981). The legacy `0.04` (5.0 AU / 129 K) was the greenhouse-baked **surface** model misapplied to an ice-condensation line. The display label is **"Water Snow Line"** (was "Snow Line").
+    - **Phase P P1b (lh2Line):** value **unchanged** — under the M2 equilibrium model the `0.0025` divisor is correct (62 K / 20 AU = the **N₂/CO 1-atm surface-frost line**); only the display label changed to **"N₂/CO (1-atm) Condensation"** (was "Liquid Hydrogen (LH2) Line").
+- **Solar System Alternate Habitable Zone Regions table** — rendered by `_display_alternate_hz_regions()`; AU + an implied-T column (Phase P P7a) sorted by **AU ascending**; values computed as `sqrt(bcLuminosity / divisor)`. The six Asimov bands plus the Phase P P2 additions (10 bands / 20 edges):
+  - Fluorosilicone-Fluorosilicone Inner/Outer (÷52, ÷29.9) — **hypothetical high-T silicone analog** (~670–770 K; Phase P P1d label-only), Fluorocarbon-Sulfur Inner/Outer (÷38.7, ÷3.2)
   - Protein-Water Inner/Outer (÷2.8, ÷0.8), Protein-Ammonia Inner/Outer (÷0.48, ÷0.21)
-  - Polylipid-Methane Inner/Outer (÷0.023, ÷0.0094), Polylipid-Hydrogen Inner/Outer (÷0.0025, ÷0.000024)
+  - Polylipid-Methane Inner/Outer (÷0.023, ÷0.0094), **Polylipid-Hydrogen Inner/Outer (÷0.0000247, ÷0.0000053)** — Phase P P1a value correction (was ÷0.0025, ÷0.000024; the legacy inner edge was supercritical and the outer sat at the boil point; now the real H₂ 1-atm liquid range ≈ 200–440 AU)
+  - **Phase P P2 (additive, M1):** Carbon Dioxide Inner/Outer (÷1.243, ÷0.320 — pressure-conditional, ≥5.2 atm), Liquid Sulfur (÷38.59, ÷3.309), Water-Ammonia Eutectic (÷0.8075, ÷0.1395), Sulfuric Acid (÷20.13, ÷0.940). These are derived from the shared `core.equations._SOLVENTS` liquid ranges via `compute_solvent_zone` at A=0.3, so they can't drift from the Solvent Habitable Zone calculator.
+  - **Phase P P3 (additive, M2):** the ice-condensation fronts `iceLineNH3`/`iceLineCO2`/`iceLineN2`/`iceLineCO` (CO₂/NH₃/N₂/CO; N₂/CO are disk-set) are added to the regions dict via `compute_ice_lines` and flow through `query.py` (not displayed as table rows).
 - **Calculated Habitable Zone table** — rendered by `_display_calculated_hz()`; uses `_print_table()` (4 columns: Zone + 3 luminosity AU columns, all left-aligned); AU formatted as `{au:.3f} ({au × 8.3167:.3f} LM)`:
   - `calculatedLuminosity = stellarRadius² × (temp/5778)⁴`
   - Uses same Kopparapu et al. coefficients as `_display_habitable_zone()` in `docs/star-databases.md`

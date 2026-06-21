@@ -58,12 +58,20 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `hill-sphere` | `--star-mass-solar --planet-mass-earth --sma-au` [`--eccentricity`] | none | `hill_radius_km, hill_radius_au, stable_orbit_limit_km/au, …` |
 | `binary-stability` | `--mass1-solar --mass2-solar --binary-sma-au --test-sma-au` [`--eccentricity`] | none | `mass_ratio, stype_critical_sma_au, ptype_critical_sma_au, orbit_type, is_stable, …` |
 | `atmosphere-retention` | `--planet-mass-earth --planet-radius-earth --temperature-k` | none | `v_escape_kms, gases[]` |
+| `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
+| `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
 | `stellar-evolution` | `--mass-solar` [`--current-age-gyr`] | none | `stages[], total_gyr, ms_end_gyr, current_stage, low_mass, high_mass` |
 | `brachistochrone-au` | `--accel-g --au` | none | `accel_g, distance_au, distance_lm, profiles[]` |
 | `brachistochrone-lm` | `--accel-g --lm` | none | `accel_g, distance_au, distance_lm, profiles[]` |
 | `distance-at-acceleration` | `--accel-g --hours` | none | `accel_g, hours, travel_time_str, profiles[]` |
+| `ly-hr-to-times-c` | `--ly-hr` | none | `ly_hr, times_c` |
+| `times-c-to-ly-hr` | `--times-c` | none | `times_c, ly_hr` |
+| `distance-traveled-ly-hr` | `--ly-hr --hours` | none | `ly_hr, hours, distance_ly` |
+| `distance-traveled-times-c` | `--times-c --hours` | none | `times_c, ly_hr, hours, distance_ly` |
+| `travel-time-ly-hr` | `--distance-ly --ly-hr` | none | `distance_ly, ly_hr, times_c, total_hours, travel_time_str` |
+| `travel-time-times-c` | `--distance-ly --times-c` | none | `distance_ly, times_c, ly_hr, total_hours, travel_time_str` |
 | `travel-time-solar` | `--origin --destination --accel-g` [`--v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles[], …` |
 | `optimal-tour` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--closed`] | SIMBAD† (names) | `legs[], total_ly, total_time, naive_total_ly, optimized_total_ly, saved_ly, saved_pct, closed, stars[]` |
 | `jump-route` | `--origin --destination --max-jump` [`--optimize distance\|jumps`] | SIMBAD† (names) | `origin_info, dest_info, reachable, jumps, total_ly, direct_ly, route[], stars[]` |
@@ -215,6 +223,50 @@ query.py atmosphere-retention --planet-mass-earth 1.0 --planet-radius-earth 1.0 
 ```
 Core function: `equations.compute_atmosphere_retention(planet_mass_earth, planet_radius_earth, temperature_k)`. Output: `{planet_mass_earth, planet_radius_earth, temperature_k, v_escape_kms, gases[]}` where each gas is `{gas, mol_mass_amu, lambda, v_thermal_kms, status}` (status ∈ Retained / Escaping slowly / Lost rapidly) for H₂, He, CH₄, H₂O, N₂, O₂, CO₂.
 
+### Solvent zones (Phase P — no network)
+
+Two pure-math calculators backing the Worldbuilding "Solvent Habitable Zone" and
+"Ice Line Calculator" panels. Both wrap **self-validating** core functions, so they
+follow the **Phase H** contract (curated `{"error"}` exit 1, **not** the Phase N
+raw-exception path): malformed/missing/non-numeric args → argparse **exit 2** (stderr);
+out-of-range (luminosity ≤ 0, albedo ∉ [0, 1), `t_low ≥ t_high`, unknown solvent) →
+`{"error": str}` **exit 1**; success → dict **exit 0**. Phase P uses **two temperature
+models**: **M1 surface** `T_ref = 314.9 × (1−A)^0.25` (= 288 K at A=0.3, the alt-HZ
+convention; solvent liquid bands) and **M2 equilibrium** `T_ref = 278.5 × (1−A)^0.25`
+(no greenhouse; snow/ice condensation). See `docs/equations.md` / `docs/star-system-regions.md`.
+
+#### `solvent-zone`
+The AU band where a solvent is liquid on a planet surface (M1 surface model). Pick a
+**named** `--solvent` from the built-in table (water, ammonia, methane, ethane,
+water_ammonia, so2, co2, sulfuric_acid, sulfur, hydrogen, nitrogen, hf, formamide) **or**
+supply a custom `--t-low`/`--t-high` liquid range (mutually exclusive; supplying both or
+neither → exit 2). `--albedo` defaults to **0.3**.
+```bash
+query.py solvent-zone --luminosity 1.0 --solvent water
+query.py solvent-zone --luminosity 1.0 --t-low 273.15 --t-high 373.15 --albedo 0.0
+```
+Core function: `equations.compute_solvent_zone(luminosity_solar, solvent=None, t_low_k=None, t_high_k=None, albedo=0.3)`. The band's inner edge = the solvent's boiling point (closer in), outer edge = its freezing point. Output: `{solvent, name, t_low_k, t_high_k, albedo, t_ref_k, luminosity_solar, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation}` (`t_eq_*` round-trip the edge temps; `co2` is `pressure_conditional` with `assumed_pressure_atm = 5.2`).
+
+#### `ice-lines`
+The single canonical water snow line (170 K) plus the CO₂/NH₃/N₂/CO condensation fronts (M2 equilibrium model). `--albedo` defaults to **0.0** (bare ice grains).
+```bash
+query.py ice-lines --luminosity 1.0
+query.py ice-lines --luminosity 0.5 --albedo 0.1
+```
+Core function: `equations.compute_ice_lines(luminosity_solar, albedo=0.0)`. Output: `{luminosity_solar, albedo, t_ref_k, lines}` where each line is `{species, t_cond_k, au, lm, kind ("snow_line"|"front"), disk_line, note}`. `AU = sqrt(L) × (T_ref / T_cond)²`; the water snow line lands at ~2.68 AU at L=1. The deep-cold N₂/CO fronts carry `disk_line=true` (disk-midplane-set; their ~160–194 AU placement is illustrative).
+
+> **Region-output change (Phase P, consumer-facing).** The existing `star-regions` /
+> `sol-regions` / `star-regions-manual` subcommands serialize the whole regions dict
+> verbatim, so the Phase P **P1 value corrections** and **P2/P3 additive keys** now flow
+> through their JSON automatically (no dispatcher change):
+> - **Changed values:** `snowLine` (5.0 → **2.68 AU** at L=1, divisor 0.04 → 0.139),
+>   `phInner`/`phOuter` (the hydrogen band → **~200–440 AU**, divisors 0.0000247 / 0.0000053),
+>   and `planetaryTemperature`/`C`/`F` — the last only at **non-0.3** albedo (the
+>   `(1−A)^0.25` fix; A=0.3 output is unchanged). `lh2Line` value is unchanged (relabel-only).
+> - **New keys:** the P2 solvent bands `co2Inner`/`co2Outer`, `sInner`/`sOuter`,
+>   `waInner`/`waOuter`, `saInner`/`saOuter` (M1) and the P3 ice fronts `iceLineNH3`,
+>   `iceLineCO2`, `iceLineN2`, `iceLineCO` (M2).
+
 ### Integration expansion (Phase N)
 
 Five subcommands that each wrap an **existing `core/` function verbatim** — no new output shapes; each returns
@@ -279,6 +331,18 @@ query.py distance-at-acceleration --accel-g 1.0 --hours 24
 ```
 Core function: `calculators.compute_distance_at_acceleration(accel_g, hours)`. No network. Output: `{accel_g, hours, travel_time_str, profiles}` — `profiles` is a list of 3 dicts, each `{label, distance_au, distance_lm, max_vel}` (`max_vel` is `"N/A"` for profiles ① continuous-accel-for-the-whole-time and ② accel¼/coast½/decel¼; `"Y"`/`"N"` for profile ③ accel-to-3%c/coast, indicating whether the 3% c cap was reached in the window).
 > **Validation:** non-self-validating (like the Phase-N pure-compute wrappers). An out-of-range numeric surfaces as a **raw-exception** `{"error": str(e)}` (exit 1) — e.g. `--accel-g 0` → `"division by zero"`; argparse rejects missing/non-numeric args (exit 2).
+
+#### Velocity & constant-speed travel converters (opts 25–28, 31, 32)
+Six thin wrappers over the simple constant-velocity calculators (the CLI menu opts 25–28 / 31 / 32), added to close an exposure gap. No network. **Non-self-validating** (Phase-N contract): the conversion / distance wrappers have **no error path** (any float is finite); the two travel-time wrappers raise `{"error": "float division by zero"}` (exit 1) on a zero velocity. Argparse rejects missing/non-numeric args (exit 2). Velocity ↔ c uses the Julian-year constant `8765.8128` (hours/yr).
+```bash
+query.py ly-hr-to-times-c --ly-hr 0.01                       # opt 31
+query.py times-c-to-ly-hr --times-c 100                      # opt 32
+query.py distance-traveled-ly-hr --ly-hr 0.01 --hours 100    # opt 25
+query.py distance-traveled-times-c --times-c 100 --hours 50  # opt 26
+query.py travel-time-ly-hr --distance-ly 4.37 --ly-hr 0.01   # opt 27
+query.py travel-time-times-c --distance-ly 4.37 --times-c 100 # opt 28
+```
+Core functions: `calculators.compute_ly_hr_to_times_c(ly_hr)` → `{ly_hr, times_c}`; `compute_speed_of_light_to_ly_hr(times_c)` → `{times_c, ly_hr}`; `compute_distance_traveled_ly_hr(ly_hr, hours)` → `{ly_hr, hours, distance_ly}`; `compute_distance_traveled_times_c(times_c, hours)` → `{times_c, ly_hr, hours, distance_ly}`; `compute_travel_time_ly_hr(distance_ly, ly_hr)` → `{distance_ly, ly_hr, times_c, total_hours, travel_time_str}`; `compute_travel_time_times_c(distance_ly, times_c)` → `{distance_ly, times_c, ly_hr, total_hours, travel_time_str}` (`travel_time_str` is a human-readable breakdown, e.g. `"18 Days, 5 Hours"`).
 
 #### `travel-time-solar`
 Brachistochrone travel time between two solar-system bodies at a departure epoch (the opt-22 calculation). **Live JPL Horizons network call** — the only network-bound entry in this phase.

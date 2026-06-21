@@ -148,3 +148,69 @@ All five inherit `ResultPanel` directly (no `DiagramToggleMixin` — no visualiz
 - Returns `{mass_solar, stages:[{name, start_gyr, end_gyr, duration_gyr, color}], total_gyr, ms_end_gyr, current_age_gyr, current_stage, low_mass, high_mass}`.
 - **Anchor:** 1 M☉ → `T_ms = 10 Gyr`, `ms_end_gyr ≈ 10.1 Gyr` (after the 0.01·T_ms Pre-MS), six stages, `total_gyr ≈ 13.8 Gyr`.
 - Viz: `core.viz.prepare_evolution_diagram(result)` → `{stages, current_age_gyr, x_max_gyr, …}`; `gui/visualizations/plot_helpers.make_evolution_canvas(parent, data)` renders the horizontal stacked-bar timeline with a dashed current-age marker.
+
+## Solvent Zones & Ice Lines (Phase P)
+
+Two self-validating pure-math calculators in `core/equations.py` backing the GUI
+**Worldbuilding** panels `SolventZonePanel` (Solvent Habitable Zone), `IceLineCalculatorPanel`
+(Ice Line Calculator), and `SolventReferencePanel` (static reference table), plus the
+`solvent-zone` / `ice-lines` `query.py` subcommands (see `docs/integration.md`). They also
+ground the corrected/extended **Alternate Habitable Zone Regions** output of opts 8–10/13
+(see `docs/star-system-regions.md`). No network, no DB.
+
+### Two temperature models (M1 / M2)
+
+Phase P uses two physically-distinct reference temperatures, centralized as helpers so the
+calculators can't drift (the model fix replaces the legacy linear `(1−A)` albedo term with
+the correct fourth-root `(1−A)^0.25`):
+
+- **`_t_ref_surface(albedo=0.3)` — M1 surface model** `T_ref = 314.9 × (1−A)^0.25` (= 288.0 K
+  at A=0.3, the existing alt-HZ convention). Equilibrium **+ Earth-like greenhouse**; used for
+  whether a solvent is **liquid on a surface** (habitability).
+- **`_t_ref_equilibrium(albedo=0.0)` — M2 equilibrium model** `T_ref = 278.5 × (1−A)^0.25`
+  (278.5 K at A=0). Bare radiative equilibrium, **no greenhouse**; used for **ice/snow
+  condensation** (vacuum / thin disk gas).
+
+Shared scaling: `S_eff(T) = (T / T_ref)^4`; `AU(S_eff, L) = sqrt(L / S_eff)`. The
+**P7a implied-edge-temperature** helper `implied_edge_temp(au, luminosity_solar, model)` inverts
+this (`T = T_ref × (L/au²)^0.25`) to annotate each region row with its band-edge temperature.
+
+### Built-in solvent table — `_SOLVENTS` / `get_solvents()`
+
+The single source of truth shared by P4/P5/P6: one entry per solvent — `{key, name, t_low_k
+(freeze), t_high_k (boil), pressure_conditional, assumed_pressure_atm, citation, plausibility}`.
+13 solvents: water, ammonia, methane, ethane, water_ammonia (eutectic), so2, co2 (pressure-
+conditional, ≥5.2 atm), sulfuric_acid, sulfur, hydrogen (13.8/20.3 K — **not** the legacy 64 K),
+nitrogen, hf, formamide. Edge temps are 1-atm liquid ranges (CRC; Asimov 1962; Bains 2024;
+Gillett), confirmed at build time.
+
+### `compute_solvent_zone(luminosity_solar, solvent=None, t_low_k=None, t_high_k=None, albedo=0.3)`
+
+The AU band where a solvent is liquid on a surface (**M1**). Named solvent **or** custom
+`t_low_k`/`t_high_k` (explicit temps take precedence). Inner edge = boiling point (closer in),
+outer = freezing point. `s_eff_inner = (t_high_k / T_ref)^4`, `s_eff_outer = (t_low_k / T_ref)^4`;
+`inner_au = sqrt(L / s_eff_inner)`, etc. Self-validates: `luminosity_solar > 0`, `0 ≤ albedo < 1`,
+`0 < t_low_k < t_high_k`, named `solvent ∈ _SOLVENTS`. At A=0.3 reproduces the legacy alt-HZ
+divisors (water 2.8/0.8 → 373/273 K, ammonia 0.48/0.21, methane 0.023/0.0094). Returns
+`{solvent, name, t_low_k, t_high_k, albedo, t_ref_k, luminosity_solar, inner_au, outer_au,
+inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional,
+assumed_pressure_atm, citation}` (`t_eq_*` round-trip the edge temps).
+- **Anchors:** water (L=1, A=0.3) → 0.596/1.112 AU; hydrogen → ~202/436 AU (the corrected band,
+  `s_eff` = the P1a divisors 0.0000247/0.0000053); co2 → `pressure_conditional=True`, 5.2 atm.
+- **Viz:** `core.viz.prepare_solvent_ranges()` → `make_solvent_bar_canvas` (V5 liquid-range bars,
+  coloured by Bains-2024 plausibility); `make_solvent_zone_canvas` (V3 auto-fit ⁴√AU ring with a
+  water reference + hover).
+
+### `compute_ice_lines(luminosity_solar, albedo=0.0)`
+
+The single canonical water snow line (170 K — no dual/formation line) plus the CO₂/NH₃/N₂/CO
+condensation fronts (**M2**). `AU = sqrt(L) × (T_ref / T_cond)²`. Self-validates
+(`luminosity_solar > 0`, `0 ≤ albedo < 1`). Returns `{luminosity_solar, albedo, t_ref_k,
+lines:[{species, t_cond_k, au, lm, kind ("snow_line"|"front"), disk_line, note}]}` (hot→cold =
+inner→outer). The deep-cold N₂/CO fronts carry `disk_line=True` (disk-midplane-set; ~160–194 AU
+placement illustrative).
+- **Anchors:** L=1, A=0 → `t_ref_k ≈ 278.5`; water snow line **2.68 AU** (170 K; Hayashi 1981);
+  CO₂ ≈ 15.8 AU, NH₃ ≈ 12.1 AU.
+- **Viz:** `core.viz.prepare_ice_line_diagram(result)` → `make_ice_line_canvas` (V4 frost-line ring,
+  inner-focus ≤ 18 AU + Full-range toggle + hover); `prepare_orbit_overlays(L)` feeds the V6
+  snow-line ring + V7 solvent-zone overlays (all default-off) on the opt-3/6/Map orbital diagrams.

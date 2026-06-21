@@ -839,8 +839,12 @@ def _print_table(headers1, headers2, rows, aligns):
 
 # ─── Star System Regions ──────────────────────────────────────────────────────
 
-def _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter):
-    """Print the Solar System Alternate Habitable Zone Regions table."""
+def _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter, bcLuminosity=None):
+    """Print the Solar System Alternate Habitable Zone Regions table.
+
+    Phase P P7a: each solvent-band edge carries its implied surface temperature
+    (M1 surface model, A=0.3 reference) beside the AU value.
+    """
     title = "Solar System Alternate Habitable Zone Regions"
     dashes = "-" * len(title)
     print(dashes)
@@ -851,24 +855,47 @@ def _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, 
     def au_fmt(val):
         return f"{val:.4f} ({val * 8.3167:.3f} LM)"
 
-    headers1 = [" Region", "AU"]
-    headers2 = ["", ""]
-    rows = [
-        [" Fluorosilicone-Fluorosilicone Inner Limit", au_fmt(ffInner)],
-        [" Fluorocarbon-Sulfur Inner Limit",           au_fmt(fsInner)],
-        [" Fluorosilicone-Fluorosilicone Outer Limit", au_fmt(ffOuter)],
-        [" Fluorocarbon-Sulfur Outer Limit",           au_fmt(fsOuter)],
-        [" Protein-Water Inner Limit",                 au_fmt(prwInner)],
-        [" Protein-Water Outer Limit",                 au_fmt(prwOuter)],
-        [" Protein-Ammonia Inner Limit",               au_fmt(praInner)],
-        [" Protein-Ammonia Outer Limit",               au_fmt(praOuter)],
-        [" Polylipid-Methane Inner Limit",             au_fmt(pmInner)],
-        [" Polylipid-Methane Outer Limit",             au_fmt(pmOuter)],
-        [" Polylipid-Hydrogen Inner Limit",            au_fmt(phInner)],
-        [" Polylipid-Hydrogen Outer Limit",            au_fmt(phOuter)],
+    def t_fmt(val):
+        t = core.equations.implied_edge_temp(val, bcLuminosity, "surface")
+        return f"~{t:.0f} K" if t is not None else "N/A"
+
+    headers1 = [" Region", "AU", "Implied Edge T"]
+    headers2 = ["", "", "(M1 surface)"]
+    # (label, AU) for every band edge, sorted by AU ascending. Phase P P2 adds the
+    # CO2/sulfur/water-ammonia/sulfuric-acid bands (derived from the shared
+    # _SOLVENTS liquid ranges via compute_solvent_zone at the A=0.3 / 288 K ref).
+    bands = [
+        ("Fluorosilicone-Fluorosilicone Inner Limit", ffInner),
+        ("Fluorosilicone-Fluorosilicone Outer Limit", ffOuter),
+        ("Fluorocarbon-Sulfur Inner Limit",           fsInner),
+        ("Fluorocarbon-Sulfur Outer Limit",           fsOuter),
+        ("Protein-Water Inner Limit",                 prwInner),
+        ("Protein-Water Outer Limit",                 prwOuter),
+        ("Protein-Ammonia Inner Limit",               praInner),
+        ("Protein-Ammonia Outer Limit",               praOuter),
+        ("Polylipid-Methane Inner Limit",             pmInner),
+        ("Polylipid-Methane Outer Limit",             pmOuter),
+        ("Polylipid-Hydrogen Inner Limit",            phInner),
+        ("Polylipid-Hydrogen Outer Limit",            phOuter),
     ]
-    aligns = ["l", "l"]
+    if bcLuminosity is not None:
+        for key, label in (("co2", "Carbon Dioxide (>=5.2 atm)"),
+                           ("sulfur", "Liquid Sulfur"),
+                           ("water_ammonia", "Water-Ammonia Eutectic"),
+                           ("sulfuric_acid", "Sulfuric Acid")):
+            z = core.equations.compute_solvent_zone(bcLuminosity, key)
+            bands.append((f"{label} Inner Limit", z["inner_au"]))
+            bands.append((f"{label} Outer Limit", z["outer_au"]))
+    bands.sort(key=lambda lb: lb[1])
+    rows = [[f" {label}", au_fmt(au), t_fmt(au)] for label, au in bands]
+    aligns = ["l", "l", "l"]
     _print_table(headers1, headers2, rows, aligns)
+    print()
+    print("  Bands: Asimov's six biochemistries (\"Not As We Know It,\" 1962);")
+    print("  edge T = each solvent's 1-atm liquid range under M1 (surface, Earth-like")
+    print("  greenhouse, A=0.3 -> 288 K ref). See also Bains et al. 2024; NAS, The")
+    print("  Limits of Organic Life (2007). M1 bands run closer-in than greenhouse-")
+    print("  corrected HZs; snow/ice lines use M2 (bare equilibrium) instead.")
     print()
 
 
@@ -938,8 +965,13 @@ def _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemp
     print()
 
 
-def _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol):
-    """Print the Solar System Regions table."""
+def _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol, bcLuminosity=None):
+    """Print the Solar System Regions table.
+
+    Phase P P7a: the Snow Line and LH2 (N2/CO 1-atm) Line carry their implied
+    condensation temperature (M2 equilibrium model, no greenhouse) beside the AU
+    value; the other boundaries are not condensation lines, so they show "-".
+    """
     title = "Solar System Regions"
     dashes = "-" * len(title)
     print(dashes)
@@ -950,19 +982,27 @@ def _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine
     def au_fmt(val):
         return f"{val:.4f} ({val * 8.3167:.3f} LM)"
 
-    headers1 = [" Region", "AU"]
-    headers2 = ["", ""]
+    def t_fmt(val):
+        t = core.equations.implied_edge_temp(val, bcLuminosity, "equilibrium")
+        return f"~{t:.0f} K" if t is not None else "-"
+
+    headers1 = [" Region", "AU", "Implied Cond. T"]
+    headers2 = ["", "", "(M2 equilib.)"]
     rows = [
-        [" System Inner Limit (Gravity)",             au_fmt(sysilGrav)],
-        [" System Inner Limit (Sunlight)",            au_fmt(sysilSunlight)],
-        [" Circumstellar Habitable Zone Inner Limit", au_fmt(hzil)],
-        [" Circumstellar Habitable Zone Outer Limit", au_fmt(hzol)],
-        [" Snow Line",                                au_fmt(snowLine)],
-        [" Liquid Hydrogen (LH2) Line",               au_fmt(lh2Line)],
-        [" System Outer Limit",                       au_fmt(sysol)],
+        [" System Inner Limit (Gravity)",             au_fmt(sysilGrav),    "-"],
+        [" System Inner Limit (Sunlight)",            au_fmt(sysilSunlight), "-"],
+        [" Circumstellar Habitable Zone Inner Limit", au_fmt(hzil),         "-"],
+        [" Circumstellar Habitable Zone Outer Limit", au_fmt(hzol),         "-"],
+        [" Water Snow Line",                          au_fmt(snowLine),     t_fmt(snowLine)],
+        [" N2/CO (1-atm) Condensation",               au_fmt(lh2Line),      t_fmt(lh2Line)],
+        [" System Outer Limit",                       au_fmt(sysol),        "-"],
     ]
-    aligns = ["l", "l"]
+    aligns = ["l", "l", "l"]
     _print_table(headers1, headers2, rows, aligns)
+    print()
+    print("  Snow / condensation temperatures use M2 (bare radiative equilibrium,")
+    print("  no greenhouse). The water snow line marks where water ice condenses")
+    print("  (Hayashi 1981). Solvent-liquid bands instead use M1 (surface).")
     print()
 
 
@@ -1137,7 +1177,7 @@ def query_star_system_regions():
     distAU = math.sqrt(bcLuminosity / sunlightIntensity)
     distKM = distAU * 149000000
     planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
-    planetaryTemperature = 374 * 1.1 * (1 - bondAlbedo) * (sunlightIntensity ** 0.25)
+    planetaryTemperature = 314.9 * ((1 - bondAlbedo) ** 0.25) * (sunlightIntensity ** 0.25)
     planetaryTemperatureC = planetaryTemperature - 273.15
     planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
     starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
@@ -1146,7 +1186,7 @@ def query_star_system_regions():
     sysilSunlight = math.sqrt(bcLuminosity / 16)
     hzil = math.sqrt(bcLuminosity / 1.1)
     hzol = math.sqrt(bcLuminosity / 0.53)
-    snowLine = math.sqrt(bcLuminosity / 0.04)
+    snowLine = math.sqrt(bcLuminosity / 0.139)
     lh2Line = math.sqrt(bcLuminosity / 0.0025)
     sysol = 40 * stellarMass
     calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
@@ -1160,15 +1200,15 @@ def query_star_system_regions():
     praOuter = math.sqrt(bcLuminosity / 0.21)
     pmInner  = math.sqrt(bcLuminosity / 0.023)
     pmOuter  = math.sqrt(bcLuminosity / 0.0094)
-    phInner  = math.sqrt(bcLuminosity / 0.0025)
-    phOuter  = math.sqrt(bcLuminosity / 0.000024)
+    phInner  = math.sqrt(bcLuminosity / 0.0000247)
+    phOuter  = math.sqrt(bcLuminosity / 0.0000053)
 
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
     _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
     _display_star_distance(plx, trigParallax, parsecs, lightYears)
     _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun)
-    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol)
-    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter)
+    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol, bcLuminosity)
+    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter, bcLuminosity)
     _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius)
 
     # ── Hypatia Catalog ───────────────────────────────────────────────────────
@@ -1657,7 +1697,7 @@ def query_star_system_regions_semi_manual():
     distAU = math.sqrt(bcLuminosity / sunlightIntensity)
     distKM = distAU * 149000000
     planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
-    planetaryTemperature = 374 * 1.1 * (1 - bondAlbedo) * (sunlightIntensity ** 0.25)
+    planetaryTemperature = 314.9 * ((1 - bondAlbedo) ** 0.25) * (sunlightIntensity ** 0.25)
     planetaryTemperatureC = planetaryTemperature - 273.15
     planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
     starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
@@ -1666,7 +1706,7 @@ def query_star_system_regions_semi_manual():
     sysilSunlight = math.sqrt(bcLuminosity / 16)
     hzil = math.sqrt(bcLuminosity / 1.1)
     hzol = math.sqrt(bcLuminosity / 0.53)
-    snowLine = math.sqrt(bcLuminosity / 0.04)
+    snowLine = math.sqrt(bcLuminosity / 0.139)
     lh2Line = math.sqrt(bcLuminosity / 0.0025)
     sysol = 40 * stellarMass
     calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
@@ -1680,15 +1720,15 @@ def query_star_system_regions_semi_manual():
     praOuter = math.sqrt(bcLuminosity / 0.21)
     pmInner  = math.sqrt(bcLuminosity / 0.023)
     pmOuter  = math.sqrt(bcLuminosity / 0.0094)
-    phInner  = math.sqrt(bcLuminosity / 0.0025)
-    phOuter  = math.sqrt(bcLuminosity / 0.000024)
+    phInner  = math.sqrt(bcLuminosity / 0.0000247)
+    phOuter  = math.sqrt(bcLuminosity / 0.0000053)
 
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
     _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
     _display_star_distance(plx, trigParallax, parsecs, lightYears)
     _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun)
-    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol)
-    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter)
+    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol, bcLuminosity)
+    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter, bcLuminosity)
     _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius)
 
     input("\nPress Enter to Return to the Main Menu")
@@ -1735,7 +1775,7 @@ def query_star_system_regions_manual():
     distAU = math.sqrt(bcLuminosity / sunlightIntensity)
     distKM = distAU * 149000000
     planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
-    planetaryTemperature = 374 * 1.1 * (1 - bondAlbedo) * (sunlightIntensity ** 0.25)
+    planetaryTemperature = 314.9 * ((1 - bondAlbedo) ** 0.25) * (sunlightIntensity ** 0.25)
     planetaryTemperatureC = planetaryTemperature - 273.15
     planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
     starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
@@ -1744,7 +1784,7 @@ def query_star_system_regions_manual():
     sysilSunlight = math.sqrt(bcLuminosity / 16)
     hzil = math.sqrt(bcLuminosity / 1.1)
     hzol = math.sqrt(bcLuminosity / 0.53)
-    snowLine = math.sqrt(bcLuminosity / 0.04)
+    snowLine = math.sqrt(bcLuminosity / 0.139)
     lh2Line = math.sqrt(bcLuminosity / 0.0025)
     sysol = 40 * stellarMass
     calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
@@ -1758,16 +1798,16 @@ def query_star_system_regions_manual():
     praOuter = math.sqrt(bcLuminosity / 0.21)
     pmInner  = math.sqrt(bcLuminosity / 0.023)
     pmOuter  = math.sqrt(bcLuminosity / 0.0094)
-    phInner  = math.sqrt(bcLuminosity / 0.0025)
-    phOuter  = math.sqrt(bcLuminosity / 0.000024)
+    phInner  = math.sqrt(bcLuminosity / 0.0000247)
+    phOuter  = math.sqrt(bcLuminosity / 0.0000053)
 
     print()
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
     _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
     _display_star_distance(plx, trigParallax, parsecs, lightYears)
     _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun)
-    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol)
-    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter)
+    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol, bcLuminosity)
+    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter, bcLuminosity)
     _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius)
 
     input("\nPress Enter to Return to the Main Menu")
@@ -5398,7 +5438,7 @@ def sol_solar_system_regions():
     distAU           = math.sqrt(bcLuminosity / sunlightIntensity)
     distKM           = distAU * 149000000
     planetaryYear    = math.sqrt((distAU ** 3) / stellarMass)
-    planetaryTemperature  = 374 * 1.1 * (1 - bondAlbedo) * (sunlightIntensity ** 0.25)
+    planetaryTemperature  = 314.9 * ((1 - bondAlbedo) ** 0.25) * (sunlightIntensity ** 0.25)
     planetaryTemperatureC = planetaryTemperature - 273.15
     planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
     starAngularDiameter   = 57.3 ** (stellarDiameterKM / distKM)
@@ -5407,7 +5447,7 @@ def sol_solar_system_regions():
     sysilSunlight    = math.sqrt(bcLuminosity / 16)
     hzil             = math.sqrt(bcLuminosity / 1.1)
     hzol             = math.sqrt(bcLuminosity / 0.53)
-    snowLine         = math.sqrt(bcLuminosity / 0.04)
+    snowLine         = math.sqrt(bcLuminosity / 0.139)
     lh2Line          = math.sqrt(bcLuminosity / 0.0025)
     sysol            = 40 * stellarMass
     calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
@@ -5421,15 +5461,15 @@ def sol_solar_system_regions():
     praOuter = math.sqrt(bcLuminosity / 0.21)
     pmInner  = math.sqrt(bcLuminosity / 0.023)
     pmOuter  = math.sqrt(bcLuminosity / 0.0094)
-    phInner  = math.sqrt(bcLuminosity / 0.0025)
-    phOuter  = math.sqrt(bcLuminosity / 0.000024)
+    phInner  = math.sqrt(bcLuminosity / 0.0000247)
+    phOuter  = math.sqrt(bcLuminosity / 0.0000053)
 
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
     _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
     _display_star_distance(plx, trigParallax, parsecs, lightYears)
     _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun)
-    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol)
-    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter)
+    _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol, bcLuminosity)
+    _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter, bcLuminosity)
     _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, stellarRadius)
 
     input("\nPress Enter to Return to the Main Menu")

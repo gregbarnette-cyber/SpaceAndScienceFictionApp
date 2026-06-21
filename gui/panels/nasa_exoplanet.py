@@ -492,7 +492,12 @@ def _make_orbits_tab(panel, planets, star_name="", sp_type=None):
         return None
     hyper_au = _hyper_au_for(sp_type)
 
-    def _build(solar_overlay, show_hyper):
+    # Phase P V6/V7: snow-line + solvent-zone overlays from the host luminosity.
+    ov = core.viz.prepare_orbit_overlays(orbit_data.get("luminosity"))
+    snow_au = ov.get("snow_au")
+    solvent_options = ov.get("solvent_options")
+
+    def _build(solar_overlay, show_hyper, snow, solvent_bands):
         return make_orbits_canvas(
             panel,
             orbit_data["orbits"],
@@ -501,9 +506,13 @@ def _make_orbits_tab(panel, planets, star_name="", sp_type=None):
             star_name=star_name,
             solar_overlay=solar_overlay,
             hyper_au=hyper_au if show_hyper else None,
+            snow_au=snow,
+            solvent_bands=solvent_bands,
         )
 
-    return wrap_orbits_with_solar_toggle(panel, _build, hyper_au=hyper_au)
+    return wrap_orbits_with_solar_toggle(
+        panel, _build, hyper_au=hyper_au,
+        snow_au=snow_au, solvent_options=solvent_options)
 
 
 def _make_mass_radius_tab(panel, planets, mass_key="pl_bmasse",

@@ -9,7 +9,7 @@ import math
 
 from PySide6.QtWidgets import (
     QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLineEdit, QPushButton, QLabel, QSizePolicy,
+    QLineEdit, QPushButton, QLabel, QSizePolicy, QCheckBox,
 )
 from PySide6.QtCore import Qt
 
@@ -18,7 +18,7 @@ from gui.panels.hypatia_tab import build_hypatia_tab, _tbl
 import core.databases
 import core.regions
 import core.viz
-from core.equations import _kopparapu_seff
+from core.equations import _kopparapu_seff, implied_edge_temp
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_system_regions_canvas, make_alt_hz_canvas,
     make_abundance_canvas, log_viz_error, wrap_scrollable,
@@ -56,6 +56,116 @@ def _au_lm3(val: float) -> str:
     return f"{val:.3f} ({val * 8.3167:.3f} LM)"
 
 
+# ── Phase P P7a: implied edge-temperature annotations (M1 surface / M2 equilib.) ─
+
+def _t_surf(au: float, lum: float) -> str:
+    """M1 surface implied edge temperature (solvent bands)."""
+    t = implied_edge_temp(au, lum, "surface")
+    return f"~{t:.0f} K" if t is not None else "N/A"
+
+
+def _t_eq(au: float, lum: float) -> str:
+    """M2 equilibrium implied condensation temperature (snow/ice lines)."""
+    t = implied_edge_temp(au, lum, "equilibrium")
+    return f"~{t:.0f} K" if t is not None else "—"
+
+
+def _tbl_with_note(headers, rows, note: str) -> QWidget:
+    """A region table (via _tbl) plus a small gray italic footnote below it."""
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.addWidget(_tbl(headers, rows), 1)
+    lbl = QLabel(note)
+    lbl.setWordWrap(True)
+    lbl.setStyleSheet("color: #666; font-style: italic; padding: 4px 2px;")
+    lay.addWidget(lbl)
+    return w
+
+
+_ALT_HZ_NOTE = (
+    "Implied Edge T = each band edge's M1 surface temperature (equilibrium + "
+    "Earth-like greenhouse, A=0.3 → 288 K reference); the band edges are each "
+    "solvent's 1-atm liquid range. Bands: Asimov's six biochemistries (\"Not As We "
+    "Know It,\" 1962); see also Bains et al. 2024; NAS, The Limits of Organic Life "
+    "(2007). M1 solvent bands run closer-in than greenhouse-corrected HZs. "
+    "Fluorosilicone is a hypothetical high-T silicone analog (~670–770 K); the "
+    "Carbon Dioxide band is pressure-conditional (needs ≥5.2 atm for a liquid)."
+)
+_SYS_REGIONS_NOTE = (
+    "Implied Cond. T (Water Snow Line / N₂·CO line) uses M2 — bare radiative "
+    "equilibrium, no greenhouse (A=0 → 278.5 K reference). The other boundaries "
+    "are not condensation lines, so they show “—”. The water snow line is the "
+    "canonical 170 K / ~2.7 AU ice-condensation line (Hayashi 1981)."
+)
+
+# Alternate-HZ band edges (label, regions-dict key). Includes the Phase P P2
+# additions; rows are presented sorted by AU ascending (see _alt_hz_rows).
+_ALT_HZ_BANDS = [
+    ("Fluorosilicone-Fluorosilicone Inner Limit", "ffInner"),
+    ("Fluorosilicone-Fluorosilicone Outer Limit", "ffOuter"),
+    ("Fluorocarbon-Sulfur Inner Limit",           "fsInner"),
+    ("Fluorocarbon-Sulfur Outer Limit",           "fsOuter"),
+    ("Protein-Water Inner Limit",                 "prwInner"),
+    ("Protein-Water Outer Limit",                 "prwOuter"),
+    ("Protein-Ammonia Inner Limit",               "praInner"),
+    ("Protein-Ammonia Outer Limit",               "praOuter"),
+    ("Polylipid-Methane Inner Limit",             "pmInner"),
+    ("Polylipid-Methane Outer Limit",             "pmOuter"),
+    ("Polylipid-Hydrogen Inner Limit",            "phInner"),
+    ("Polylipid-Hydrogen Outer Limit",            "phOuter"),
+    ("Carbon Dioxide Inner Limit (≥5.2 atm)",     "co2Inner"),
+    ("Carbon Dioxide Outer Limit (≥5.2 atm)",     "co2Outer"),
+    ("Liquid Sulfur Inner Limit",                 "sInner"),
+    ("Liquid Sulfur Outer Limit",                 "sOuter"),
+    ("Water-Ammonia Eutectic Inner Limit",        "waInner"),
+    ("Water-Ammonia Eutectic Outer Limit",        "waOuter"),
+    ("Sulfuric Acid Inner Limit",                 "saInner"),
+    ("Sulfuric Acid Outer Limit",                 "saOuter"),
+]
+
+
+def _alt_hz_rows(d, lum):
+    """Alternate-HZ table rows [label, AU, implied-T], sorted by AU ascending.
+    Skips any band whose key is absent (back-compat with pre-P2 dicts)."""
+    bands = [(lbl, k) for lbl, k in _ALT_HZ_BANDS if k in d]
+    bands.sort(key=lambda lk: d[lk[1]])
+    return [[lbl, _au_lm4(d[k]), _t_surf(d[k], lum)] for lbl, k in bands]
+
+
+
+
+# ── Phase P V1: Alternate-HZ ring tab with an inner-focus / Full-range toggle ─
+
+def _alt_hz_tab(alt_data, eeid_au=None):
+    """The Alternate HZ ring (10 bands) in a tab with a 'Full range' checkbox.
+    Default = inner-focus (≤ 12 AU; the hydrogen band sits off-scale in the
+    legend); ticking re-renders make_alt_hz_canvas out to the farthest band."""
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
+    chk = QCheckBox("Full range (draw the hydrogen band to scale, out to ~200+ AU)")
+    lay.addWidget(chk)
+    holder = QWidget()
+    hlay = QVBoxLayout(holder)
+    hlay.setContentsMargins(0, 0, 0, 0)
+    lay.addWidget(holder, 1)
+
+    def _rebuild():
+        while hlay.count():
+            it = hlay.takeAt(0)
+            ww = it.widget()
+            if ww:
+                ww.deleteLater()
+        canvas, toolbar = make_alt_hz_canvas(
+            None, alt_data["zones"], alt_data["max_au"],
+            eeid_au=eeid_au, full_range=chk.isChecked())
+        hlay.addWidget(toolbar)
+        hlay.addWidget(canvas)
+
+    chk.toggled.connect(_rebuild)
+    _rebuild()
+    return w
 
 
 # ── Shared region-diagram tabs (opts 8/9/10 + opt 13 Sol Regions, O6) ─────────
@@ -99,18 +209,8 @@ def add_region_diagram_tabs(target, d: dict, hypatia=None):
 
         alt_data = core.viz.prepare_alt_hz_diagram(d)
         if "zones" in alt_data:
-            alt_canvas, alt_toolbar = make_alt_hz_canvas(
-                None,
-                alt_data["zones"],
-                alt_data["max_au"],
-                eeid_au=d.get("distAU"),
-            )
-            alt_w = QWidget()
-            alt_l = QVBoxLayout(alt_w)
-            alt_l.setContentsMargins(4, 4, 4, 4)
-            alt_l.addWidget(alt_toolbar)
-            alt_l.addWidget(alt_canvas)
-            target.addTab(alt_w, "Alternate HZ Diagram")
+            target.addTab(_alt_hz_tab(alt_data, eeid_au=d.get("distAU")),
+                          "Alternate HZ Diagram")
 
         # Abundance Profile — only when Hypatia data is present and valid
         if hypatia and "error" not in hypatia:
@@ -204,39 +304,29 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
         "Earth Equiv. Orbit",
     )
 
+    _L = d["bcLuminosity"]
     tabs.addTab(
-        _tbl(
-            ["Region", "AU"],
+        _tbl_with_note(
+            ["Region", "AU", "Implied Cond. T (M2)"],
             [
-                ["System Inner Limit (Gravity)",  _au_lm4(d["sysilGrav"])],
-                ["System Inner Limit (Sunlight)", _au_lm4(d["sysilSunlight"])],
-                ["Circumstellar HZ Inner Limit",  _au_lm4(d["hzil"])],
-                ["Circumstellar HZ Outer Limit",  _au_lm4(d["hzol"])],
-                ["Snow Line",                     _au_lm4(d["snowLine"])],
-                ["Liquid Hydrogen (LH2) Line",    _au_lm4(d["lh2Line"])],
-                ["System Outer Limit",            _au_lm4(d["sysol"])],
+                ["System Inner Limit (Gravity)",  _au_lm4(d["sysilGrav"]),    "—"],
+                ["System Inner Limit (Sunlight)", _au_lm4(d["sysilSunlight"]), "—"],
+                ["Circumstellar HZ Inner Limit",  _au_lm4(d["hzil"]),         "—"],
+                ["Circumstellar HZ Outer Limit",  _au_lm4(d["hzol"]),         "—"],
+                ["Water Snow Line",               _au_lm4(d["snowLine"]), _t_eq(d["snowLine"], _L)],
+                ["N₂/CO (1-atm) Condensation",    _au_lm4(d["lh2Line"]),  _t_eq(d["lh2Line"], _L)],
+                ["System Outer Limit",            _au_lm4(d["sysol"]),        "—"],
             ],
+            _SYS_REGIONS_NOTE,
         ),
         "System Regions",
     )
 
     tabs.addTab(
-        _tbl(
-            ["Region", "AU"],
-            [
-                ["Fluorosilicone-Fluorosilicone Inner Limit", _au_lm4(d["ffInner"])],
-                ["Fluorocarbon-Sulfur Inner Limit",           _au_lm4(d["fsInner"])],
-                ["Fluorosilicone-Fluorosilicone Outer Limit", _au_lm4(d["ffOuter"])],
-                ["Fluorocarbon-Sulfur Outer Limit",           _au_lm4(d["fsOuter"])],
-                ["Protein-Water Inner Limit",                 _au_lm4(d["prwInner"])],
-                ["Protein-Water Outer Limit",                 _au_lm4(d["prwOuter"])],
-                ["Protein-Ammonia Inner Limit",               _au_lm4(d["praInner"])],
-                ["Protein-Ammonia Outer Limit",               _au_lm4(d["praOuter"])],
-                ["Polylipid-Methane Inner Limit",             _au_lm4(d["pmInner"])],
-                ["Polylipid-Methane Outer Limit",             _au_lm4(d["pmOuter"])],
-                ["Polylipid-Hydrogen Inner Limit",            _au_lm4(d["phInner"])],
-                ["Polylipid-Hydrogen Outer Limit",            _au_lm4(d["phOuter"])],
-            ],
+        _tbl_with_note(
+            ["Region", "AU", "Implied Edge T (M1)"],
+            _alt_hz_rows(d, _L),
+            _ALT_HZ_NOTE,
         ),
         "Alternate HZ Regions",
     )

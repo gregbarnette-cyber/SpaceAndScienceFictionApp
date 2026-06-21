@@ -387,7 +387,29 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 str(star_row.get("S_TYPE", "")))
             hyper_au = _hl["au"] if _hl else None
 
-            def _build_orbits(solar_overlay, show_hyper):
+            # Phase P V6/V7: host luminosity → snow-line + solvent-zone overlays.
+            def _hwc_lum():
+                for k in ("S_LUMINOSITY",):
+                    try:
+                        v = float(star_row.get(k) or 0)
+                        if v > 0:
+                            return v
+                    except (ValueError, TypeError):
+                        pass
+                try:
+                    r = float(star_row.get("S_RADIUS") or 0)
+                    t = float(star_row.get("S_TEMPERATURE") or 0)
+                    if r > 0 and t > 0:
+                        return r ** 2 * (t / 5778.0) ** 4
+                except (ValueError, TypeError):
+                    pass
+                return None
+
+            ov = core.viz.prepare_orbit_overlays(_hwc_lum())
+            snow_au = ov.get("snow_au")
+            solvent_options = ov.get("solvent_options")
+
+            def _build_orbits(solar_overlay, show_hyper, snow, solvent_bands):
                 return make_orbits_canvas(
                     self,
                     orbit_data["orbits"],
@@ -397,8 +419,12 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                     markers=markers_arg,
                     solar_overlay=solar_overlay,
                     hyper_au=hyper_au if show_hyper else None,
+                    snow_au=snow,
+                    solvent_bands=solvent_bands,
                 )
-            orb_w = wrap_orbits_with_solar_toggle(self, _build_orbits, hyper_au=hyper_au)
+            orb_w = wrap_orbits_with_solar_toggle(
+                self, _build_orbits, hyper_au=hyper_au,
+                snow_au=snow_au, solvent_options=solvent_options)
             if orb_w is not None:
                 self._viz_tabs_widget.addTab(orb_w, "Orbital Diagram")
 

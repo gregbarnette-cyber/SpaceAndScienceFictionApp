@@ -1,13 +1,29 @@
 # gui/panels/sol_regions.py — Option 13: Sol Solar System Regions.
 
 from PySide6.QtWidgets import (
-    QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
 )
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
-from gui.panels.star_regions import add_region_diagram_tabs
+from gui.panels.star_regions import (
+    add_region_diagram_tabs, _t_surf, _t_eq, _alt_hz_rows,
+    _ALT_HZ_NOTE, _SYS_REGIONS_NOTE,
+)
 import core.regions
 import core.equations
+
+
+def _wrap_note(view, note: str) -> QWidget:
+    """A table view plus a small gray italic footnote below it (Phase P P7)."""
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.addWidget(view, 1)
+    lbl = QLabel(note)
+    lbl.setWordWrap(True)
+    lbl.setStyleSheet("color: #666; font-style: italic; padding: 4px 2px;")
+    lay.addWidget(lbl)
+    return w
 
 
 def _au_lm4(val: float) -> str:
@@ -108,39 +124,26 @@ class SolRegionsPanel(DiagramToggleMixin, ResultPanel):
         tabs.addTab(self.make_table(headers, rows), "Earth Equiv. Orbit")
 
         # ── Tab 5: Solar System Regions ───────────────────────────────────────
-        headers = ["Region", "AU"]
+        _L = d["bcLuminosity"]
+        headers = ["Region", "AU", "Implied Cond. T (M2)"]
         rows = [
-            ["System Inner Limit (Gravity)",              _au_lm4(d["sysilGrav"])],
-            ["System Inner Limit (Sunlight)",             _au_lm4(d["sysilSunlight"])],
-            ["Circumstellar HZ Inner Limit",              _au_lm4(d["hzil"])],
-            ["Circumstellar HZ Outer Limit",              _au_lm4(d["hzol"])],
-            ["Snow Line",                                 _au_lm4(d["snowLine"])],
-            ["Liquid Hydrogen (LH2) Line",                _au_lm4(d["lh2Line"])],
-            ["System Outer Limit",                        _au_lm4(d["sysol"])],
+            ["System Inner Limit (Gravity)",              _au_lm4(d["sysilGrav"]),    "—"],
+            ["System Inner Limit (Sunlight)",             _au_lm4(d["sysilSunlight"]), "—"],
+            ["Circumstellar HZ Inner Limit",              _au_lm4(d["hzil"]),         "—"],
+            ["Circumstellar HZ Outer Limit",              _au_lm4(d["hzol"]),         "—"],
+            ["Water Snow Line",                           _au_lm4(d["snowLine"]), _t_eq(d["snowLine"], _L)],
+            ["N₂/CO (1-atm) Condensation",                _au_lm4(d["lh2Line"]),  _t_eq(d["lh2Line"], _L)],
+            ["System Outer Limit",                        _au_lm4(d["sysol"]),        "—"],
         ]
         view = self.make_table(headers, rows)
         view.setSortingEnabled(False)
-        tabs.addTab(view, "System Regions")
+        tabs.addTab(_wrap_note(view, _SYS_REGIONS_NOTE), "System Regions")
 
-        # ── Tab 6: Alternate HZ Regions ───────────────────────────────────────
-        headers = ["Region", "AU"]
-        rows = [
-            ["Fluorosilicone-Fluorosilicone Inner Limit", _au_lm4(d["ffInner"])],
-            ["Fluorocarbon-Sulfur Inner Limit",           _au_lm4(d["fsInner"])],
-            ["Fluorosilicone-Fluorosilicone Outer Limit", _au_lm4(d["ffOuter"])],
-            ["Fluorocarbon-Sulfur Outer Limit",           _au_lm4(d["fsOuter"])],
-            ["Protein-Water Inner Limit",                 _au_lm4(d["prwInner"])],
-            ["Protein-Water Outer Limit",                 _au_lm4(d["prwOuter"])],
-            ["Protein-Ammonia Inner Limit",               _au_lm4(d["praInner"])],
-            ["Protein-Ammonia Outer Limit",               _au_lm4(d["praOuter"])],
-            ["Polylipid-Methane Inner Limit",             _au_lm4(d["pmInner"])],
-            ["Polylipid-Methane Outer Limit",             _au_lm4(d["pmOuter"])],
-            ["Polylipid-Hydrogen Inner Limit",            _au_lm4(d["phInner"])],
-            ["Polylipid-Hydrogen Outer Limit",            _au_lm4(d["phOuter"])],
-        ]
-        view = self.make_table(headers, rows)
+        # ── Tab 6: Alternate HZ Regions (sorted by AU ascending) ──────────────
+        headers = ["Region", "AU", "Implied Edge T (M1)"]
+        view = self.make_table(headers, _alt_hz_rows(d, _L))
         view.setSortingEnabled(False)
-        tabs.addTab(view, "Alternate HZ Regions")
+        tabs.addTab(_wrap_note(view, _ALT_HZ_NOTE), "Alternate HZ Regions")
 
         # ── Tab 7: Calculated Habitable Zone (3-luminosity columns) ───────────
         # Reuses compute_habitable_zone for Kopparapu zones; shows three
