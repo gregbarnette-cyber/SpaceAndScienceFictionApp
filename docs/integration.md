@@ -60,6 +60,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `atmosphere-retention` | `--planet-mass-earth --planet-radius-earth --temperature-k` | none | `v_escape_kms, gases[]` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
+| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …`] | SIMBAD + NASA + Hypatia (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json) |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
 | `stellar-evolution` | `--mass-solar` [`--current-age-gyr`] | none | `stages[], total_gyr, ms_end_gyr, current_stage, low_mass, high_mass` |
@@ -266,6 +267,50 @@ Core function: `equations.compute_ice_lines(luminosity_solar, albedo=0.0)`. Outp
 > - **New keys:** the P2 solvent bands `co2Inner`/`co2Outer`, `sInner`/`sOuter`,
 >   `waInner`/`waOuter`, `saInner`/`saOuter` (M1) and the P3 ice fronts `iceLineNH3`,
 >   `iceLineCO2`, `iceLineN2`, `iceLineCO` (M2).
+
+### System dossier (Phase Q — no network for Sol)
+
+#### `dossier`
+Render a complete, self-contained **system dossier** by composing the existing readers
+(`simbad-lookup` → regions + Kopparapu HZ + the NASA/HWC planet catalogs + Hypatia
+abundances + the M5 GCNS cross-reference) into one document. This is the one call that
+returns a whole system writeup instead of stitching 5+ subcommand outputs together. Pure
+composition — **no new astronomy**.
+```bash
+query.py dossier --star "Tau Ceti"
+query.py dossier --star "Tau Ceti" --fmt json
+query.py dossier --star "Tau Ceti" --fmt html --sections identity regions planets
+query.py dossier --star Sol                       # fully offline (Solar System)
+query.py dossier --star Sol --sections planets moons
+```
+Core function: `report.build_system_dossier(star, sections=None, fmt="markdown")`.
+
+- **`--fmt`** (default `markdown`): `markdown` / `html` emit a rendered **`document`** string
+  (HTML is self-contained — inline `<style>`, no external assets, **text + tables only**: the
+  HZ-ring / abundance figures are a GUI-only enrichment, never in the `query.py` output).
+  `json` emits a structured **`data`** dict (the per-section data dicts) and **no** `document`.
+- **`--sections`** (default: all available): any subset of `identity regions habitable_zone
+  planets hypatia gcns moons`. `moons` is a **Sol-only opt-in** (large; never in the default
+  set).
+- **Sections.** `identity`, `regions` (stellar properties + system regions + the full Phase P
+  alternate-solvent bands & ice/condensation lines), `habitable_zone` (Kopparapu, 3 luminosity
+  columns), `planets` (**both** NASA pscomppars [priority 1] and HWC [priority 2] sub-tables
+  when both resolve), `hypatia` (all measured species, grouped by nucleosynthetic family), and
+  `gcns` (Bayesian distance + σ).
+- **`Sol`/`Sun`** is the **offline reference-origin path**: identity from solar constants,
+  regions/HZ from `compute_sol_regions`, `planets` from the real Solar System tables (Planets /
+  Dwarf Planets / Major Asteroids; `moons` opt-in), Hypatia from the solar [X/H]≡0 zero-point,
+  and **GCNS is not applicable** (a `notes[]` entry, not a warning). No SIMBAD/network call.
+- **Output envelope:** `{star, fmt, sections, warnings, notes}` plus `document` (md/html) or
+  `data` (json). `sections` lists the sections actually rendered.
+
+> **Validation (self-validating — Phase H contract):** a **SIMBAD-lookup failure** for a real
+> star, an unknown `--sections` value, or (via the core) a bad call → `{"error": str}` on
+> stdout, **exit 1**. A bad `--fmt` (not markdown/html/json) is rejected by argparse → **exit
+> 2** (stderr). A real star that is simply **missing a source** (no planets / no Hypatia / a
+> white-dwarf regions failure) is **not** an error: that section is dropped to a **`warnings[]`**
+> entry and the dossier still renders the rest (exit 0). Intentional omissions (GCNS-N/A on
+> Sol) are **`notes[]`**, separate from warnings.
 
 ### Integration expansion (Phase N)
 
@@ -804,6 +849,8 @@ the core function.
 ## Two-step subcommands
 
 For subcommands that run SIMBAD first (`star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, `hwc`, `hypatia-data`): if the SIMBAD lookup returns `{"error": ...}`, that error is returned immediately and the second core function is never called.
+
+`dossier` (Phase Q) runs SIMBAD first for a real star and aborts with that error if it fails; per-section sources that fail *after* SIMBAD resolves become warnings, not errors. `dossier --star Sol`/`Sun` runs no SIMBAD/network step at all (the offline reference-origin path; it reads the local Solar System tables, overridable via `SPACE_APP_DB`).
 
 The `gcns-within-sol`, `gcns-source`, and `gcns-system` subcommands are **local DB reads** (no SIMBAD step). The `gcns-distance` / `gcns-travel-time` / `gcns-stars-within-star` calculators are local DB reads **except** for `--star…` endpoints, which add a SIMBAD name-resolution step (a SIMBAD error on any `--star…` endpoint is returned immediately). The DB path can be overridden with the `SPACE_APP_DB` environment variable (used by tests).
 

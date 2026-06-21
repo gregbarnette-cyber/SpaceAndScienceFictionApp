@@ -25,6 +25,9 @@ NAVIGATION = [
         ("ESI Ranking",            "EsiRankingPanel"),
         ("Stellar Evolution",      "StellarEvolutionPanel"),
     ]),
+    ("Reports", [
+        ("System Dossier Export",  "DossierExportPanel"),
+    ]),
     ("GCNS", [
         ("GCNS Census Browser",         "GcnsCensusBrowserPanel"),
         ("GCNS Source Lookup",          "GcnsSourceLookupPanel"),

@@ -12,7 +12,7 @@ The app is a mature Space & Science Fiction CLI/GUI tool that has completed Phas
 This document brainstorms future phases in order of likely value and implementation effort.
 
 
-> **Status (updated 2026-06-20):** Phases **A–F** (skeleton → SQLite migration) plus **G, H, I (+ I-OPTS), K, L, M, N, O, P** are ✅ implemented; **Phase J** is ❌ declined. Their full brainstorm/spec text has been **moved to [`future_phases_archive.md`](future_phases_archive.md)** to keep this file lean — see the *Completed & Declined Phases* table below for per-phase pointers (archive section, `PHASE_*_PLAN.md`, `docs/`). This file now tracks only **forward-looking work**: the Phase **Q / R / S** candidates. `query.py` currently carries **61 subcommands**.
+> **Status (updated 2026-06-20):** Phases **A–F** (skeleton → SQLite migration) plus **G, H, I (+ I-OPTS), K, L, M, N, O, P** are ✅ implemented; **Phase J** is ❌ declined. Their full brainstorm/spec text has been **moved to [`future_phases_archive.md`](future_phases_archive.md)** to keep this file lean — see the *Completed & Declined Phases* table below for per-phase pointers (archive section, `PHASE_*_PLAN.md`, `docs/`). This file now tracks only **forward-looking work**: the Phase **R / S** candidates (Phase **Q** — System Dossier Export — is ✅ implemented 2026-06-20; see `PHASE_Q_PLAN.md` / `PHASE_Q_MOCKUP.md` and `docs/gui-architecture.md`). `query.py` currently carries **62 subcommands**.
 
 > **Scope — GUI-only.** New feature work targets the PySide6 GUI only. The CLI (`main.py` / `MENU_OPTIONS`) is **frozen at opts 1–58** and is not extended by any phase below. Every new feature is a GUI nav entry backed by a panel class (precedent: `DbStatusPanel`, `NasaPlanetarySystemsMapPanel`, which carry no option number), so there are **no menu numbers to assign and nothing to renumber**. The shared `core/` functions each phase specifies are still built — the GUI and `query.py` consume them; only the CLI presentation layer is dropped. (The lone archive exception: Phase N was integration-surface-only — `query.py` subcommands over existing `core/` functions, no GUI/CLI change.)
 
@@ -34,51 +34,37 @@ Full brainstorm + as-built notes live in [`future_phases_archive.md`](future_pha
 | N | query.py Integration Expansion | ✅ 2026-06-12 | [archive](future_phases_archive.md#phase-n--querypy-integration-expansion--implemented-2026-06-12) · [`PHASE_N_PLAN.md`](PHASE_N_PLAN.md) · `docs/integration.md` |
 | O | Visualization Expansion | ✅ 2026-06-18 | [archive](future_phases_archive.md#phase-o--visualization-expansion) · [`PHASE_O_PLAN.md`](PHASE_O_PLAN.md) · `docs/gui-architecture.md` |
 | P | Snow Lines & Alternative-Solvent HZs | ✅ 2026-06-20 | [archive](future_phases_archive.md#phase-p--snow-lines--alternative-solvent-habitable-zones-grounded--extended) · [`PHASE_P_PLAN.md`](PHASE_P_PLAN.md) · `docs/equations.md`, `docs/star-system-regions.md`, `docs/integration.md` |
+| Q | System Dossier Export & Reporting | ✅ 2026-06-20 | [archive](future_phases_archive.md#phase-q--system-dossier-export--reporting-implemented-2026-06-20) · [`PHASE_Q_PLAN.md`](PHASE_Q_PLAN.md), [`PHASE_Q_MOCKUP.md`](PHASE_Q_MOCKUP.md) · `docs/integration.md`, `docs/gui-architecture.md` |
 
 ---
 
-# New phase candidates (beyond P)
+# New phase candidates (beyond Q)
 
-> Brainstormed 2026-06-13. Three new phases that build a coherent **worldbuilding workflow** on top of the existing engine — **generate** plausible systems (R), **organize** them into named projects (S), and **export** them as shareable dossiers (Q). Each reuses existing `core/` functions, follows the GUI-only-plus-`query.py` model, and is independently valuable. Mockup-gated like every prior phase. None is spec'd to build-ready depth yet — these are the next brainstorm tier, at the J/K/L level of detail.
-
-## Phase Q — System Dossier Export & Reporting
-
-**New panels (GUI-only)**: `DossierExportPanel`
-**Existing options touched**: none — Q *reads* the result dicts that opts 1/3/6/8 and the GCNS/Hypatia paths already produce; no computation changes.
-
-The app computes rich per-star analyses but can only **display** them, one tab at a time. A worldbuilder (and the downstream `scifiWorldBuilding` repo) wants a single **shareable document** bundling everything known about a system. Q renders the existing result dicts into a self-contained **HTML or Markdown dossier** — no new astronomy, just composition + templating.
-
-**`core/report.py`** (new module) — pure formatting, no I/O beyond returning a string:
-- `build_system_dossier(star: str, sections: list[str] = None, fmt: str = "markdown") -> dict` — orchestrates the existing readers (`compute_simbad_lookup` → `compute_star_system_regions_from_simbad` + `compute_hypatia_data`; optional `compute_hwc`, `compute_planetary_systems_composite`, the GCNS cross-ref) and renders the merged data to one document. `sections` selects among `{"identity", "regions", "habitable_zone", "planets", "hypatia", "gcns"}` (default all available). `fmt ∈ {"markdown", "html", "json"}`.
-- Returns `{"star": str, "fmt": str, "sections": [...], "document": str, "warnings": [str]}` or `{"error": str}`. Per-source failures (e.g. no Hypatia data) become `warnings`, not errors — the dossier still renders with what resolved.
-- HTML output is **self-contained** (inline `<style>`, no external assets); tables mirror the GUI table columns; embeds the existing matplotlib diagrams as inline base64 `<img>` **only when matplotlib is available** (HZ ring, abundance bar chart), otherwise text-only.
-
-**GUI** — `DossierExportPanel`: star name field + section checkboxes + format radio (Markdown / HTML) + "Generate" (background, since it runs the network readers) → preview pane + "Save to file…" (`QFileDialog`). A "Batch" mode takes a newline list of stars and writes one file each (ties into Phase S projects — export a whole project at once).
-
-**`query.py`** — `dossier --star … [--fmt markdown|html|json] [--sections …]`: emits the document on stdout. This is **high value for the downstream repo** — one Bash call returns a complete, citeable system writeup instead of stitching 5+ subcommand outputs together.
-
-**Validation / tests / success**: self-validating (bad star → the SIMBAD error; unknown `fmt`/`section` → `{"error"}`). Tests (`tests/test_report.py`, offline, mocked readers): section selection, the markdown/html/json shapes, per-source-failure-becomes-warning isolation, deterministic output for a fixed fixture. Success: a single call produces a complete, self-contained dossier; missing data degrades to warnings; existing panels/outputs untouched.
+> Brainstormed 2026-06-13 as a coherent **worldbuilding workflow** — **export** shareable dossiers (Q, ✅ implemented 2026-06-20 — see the Completed table above + [archive](future_phases_archive.md#phase-q--system-dossier-export--reporting-implemented-2026-06-20)), **generate** plausible systems (R), **organize** them into named projects (S). The two remaining candidates (R, S) reuse existing `core/` functions, follow the GUI-only-plus-`query.py` model, and are independently valuable. Mockup-gated like every prior phase. Neither is spec'd to build-ready depth yet — these are the next brainstorm tier, at the J/K/L level of detail.
 
 ## Phase R — Procedural Star System Generation
 
 **New panels (GUI-only)**: `SystemGeneratorPanel`
-**Existing options touched**: none — R is a new consumer of the existing physics (`compute_main_sequence_table`, `compute_habitable_zone`, `compute_star_luminosity`, and the Phase H `compute_hill_sphere` / `compute_roche_limit` / `compute_atmosphere_retention`).
+**Existing options touched**: none — R is a new consumer of the existing physics (`compute_main_sequence_table`, `compute_habitable_zone`, `compute_star_luminosity`, the Phase H `compute_hill_sphere` / `compute_roche_limit` / `compute_atmosphere_retention`) **and**, in real-anchor mode, the star-database readers (`compute_simbad_lookup`, `compute_star_system_regions_from_simbad`, `compute_planetary_systems_composite`, `compute_hwc`).
 
-Generate **plausible synthetic star systems** for fiction — the inverse of the app's analysis tools. Given a seed (and optional constraints), build a star, place planets, and attach moons, all grounded in the equations already implemented, with **deterministic, reproducible output** (same seed → same system).
+Generate **plausible star systems** for fiction — the inverse of the app's analysis tools. With **deterministic, reproducible output** (same inputs → same system). **Decision (2026-06-20): hybrid data model** — R works in two modes:
+
+- **Synthetic mode** (no anchor): build the star from a seed + the main-sequence reference table, then sample planets/moons procedurally. Fully offline, no database lookups; the seed *is* the system's identity.
+- **Real-anchor mode** (name a real star): **pull the star's true specs from the databases** — `compute_simbad_lookup` + `compute_star_system_regions_from_simbad` give real Teff/mass/luminosity/HZ/snow-line — and its **real known planets** from `compute_planetary_systems_composite` (NASA pscomppars) / `compute_hwc` (HWC). Then procedurally **extend** it: fill empty orbital zones with invented planets, attach moons, project unobserved bodies — all placed relative to the *real* HZ and snow line. The seed makes the *procedural additions* reproducible; the real bodies are flagged `source:"observed"` vs the generated `source:"synthetic"` so the two never blur.
 
 **`core/generate.py`** (new module):
-- `generate_system(seed: int, spectral_class: str = None, n_planets: int = None, require_habitable: bool = False) -> dict` — uses a seeded `random.Random(seed)` (deterministic):
-  1. **Star**: pick/accept a spectral class → interpolate Teff/mass/radius/luminosity from `compute_main_sequence_table()` rows; derive the HZ via `compute_habitable_zone(teff, luminosity)`.
-  2. **Planets**: sample count + semi-major axes (log-spaced with a Titius–Bode-ish jitter), masses, and eccentricities; classify each (rocky/ice/gas) by mass; compute periastron/apastron and equilibrium temperature; flag HZ membership against the star's HZ. `require_habitable=True` re-rolls until ≥ 1 rocky planet lands in the conservative HZ (bounded retries → `{"error"}` if it can't).
+- `generate_system(seed: int, anchor_star: str = None, spectral_class: str = None, n_planets: int = None, require_habitable: bool = False) -> dict` — seeded `random.Random(seed)` (deterministic):
+  1. **Star**: if `anchor_star` is given → resolve it via the database readers and use its real specs/HZ; else pick/accept a `spectral_class` → interpolate Teff/mass/radius/luminosity from `compute_main_sequence_table()` rows; derive the HZ via `compute_habitable_zone(teff, luminosity)`.
+  2. **Planets**: in real-anchor mode, seed the planet list with the star's **observed** planets (NASA/HWC), then sample *additional* planets into the gaps; in synthetic mode, sample the whole list. Semi-major axes log-spaced (Titius–Bode-ish jitter) and de-conflicted against any observed orbits; classify each (rocky/ice/gas) by mass; compute periastron/apastron + equilibrium temperature; flag HZ membership against the star's HZ. `require_habitable=True` re-rolls until ≥ 1 rocky planet lands in the conservative HZ (bounded retries → `{"error"}` if it can't; in real-anchor mode an observed HZ planet satisfies it directly).
   3. **Moons / rings**: for giants, attach moons within `compute_hill_sphere` and outside `compute_roche_limit`; run `compute_atmosphere_retention` on rocky worlds to annotate "retains N₂/O₂/…".
-- Returns a structured `{"seed", "star": {...}, "planets": [{...}], "warnings": [...]}` — the **same row shapes the analysis panels already render**, so the generated system can flow straight into the HZ/orbit/regions diagrams and a Phase Q dossier with zero new viz.
-- Self-validating: `n_planets` in a sane range, valid `spectral_class`, etc.
+- Returns `{"seed", "anchor_star", "star": {...}, "planets": [{..., "source": "observed"|"synthetic"}], "warnings": [...]}` — the **same row shapes the analysis panels already render**, so a generated system flows straight into the HZ/orbit/regions diagrams and a **Phase Q dossier** with zero new viz. (A natural pairing: anchor on a real star, extend it, then export the hybrid system as a Q dossier.)
+- Self-validating: `n_planets` in a sane range, valid `spectral_class`; an unresolvable `anchor_star` → the SIMBAD error (real-anchor mode is the one networked path).
 
-**GUI** — `SystemGeneratorPanel`: seed field (+ "Randomize" button that fills a seed — the value is shown so it's reproducible), optional spectral-class chip, planet-count spinner, "require habitable" checkbox → generates and renders an orbit diagram + HZ ring (reusing `make_orbits_canvas` / `make_hz_canvas`) + a planet table. "Send to Dossier" hands the result to Phase Q.
+**GUI** — `SystemGeneratorPanel`: seed field (+ "Randomize" button that fills a shown, reproducible seed), an optional **"Anchor on real star"** field (blank → synthetic; filled → real-anchor, background since it hits the network), optional spectral-class chip (synthetic mode), planet-count spinner, "require habitable" checkbox → renders an orbit diagram + HZ ring (reusing `make_orbits_canvas` / `make_hz_canvas`, observed vs synthetic bodies styled distinctly) + a planet table. "Send to Dossier" hands the result to Phase Q.
 
-**`query.py`** — `generate-system --seed N [--spectral-class G2V] [--planets 6] [--require-habitable]`: deterministic JSON, so the downstream repo can generate a stable named system from a seed and re-fetch it identically.
+**`query.py`** — `generate-system --seed N [--anchor-star "Tau Ceti"] [--spectral-class G2V] [--planets 6] [--require-habitable]`: deterministic JSON. Synthetic mode is offline; `--anchor-star` adds the SIMBAD/NASA/HWC lookups.
 
-**Validation / tests / success**: deterministic (seed-stable) — the headline test is *same seed → identical output* (`tests/test_generate.py`, offline, no `Date.now`/unseeded RNG). Also: HZ flags consistent with `compute_habitable_zone`; moons sit between Roche and Hill; `require_habitable` either delivers a HZ rocky world or errors after bounded retries; bad inputs → `{"error"}`. Success: reproducible plausible systems that render in the existing diagrams and export via Q; physics consistent with the analysis side (a generated system analyzed by opts 8–10 agrees with its generation parameters).
+**Validation / tests / success**: deterministic (seed-stable) — the headline test is *same seed (+ same anchor) → identical output* (`tests/test_generate.py`, offline for synthetic mode + mocked readers for real-anchor, no `Date.now`/unseeded RNG). Also: HZ flags consistent with `compute_habitable_zone`; moons sit between Roche and Hill; synthetic planets never collide with observed orbits; `require_habitable` either delivers a HZ rocky world or errors after bounded retries; bad inputs → `{"error"}`. Success: reproducible plausible systems (synthetic or real-anchored) that render in the existing diagrams and export via Q; physics consistent with the analysis side (a generated system analyzed by opts 8–10 agrees with its generation parameters); observed and synthetic bodies always distinguishable.
 
 ## Phase S — Project Workspaces (Campaign / Novel Manager)
 
@@ -107,12 +93,11 @@ CREATE TABLE IF NOT EXISTS project_members (
 
 ---
 
-## Remaining Work — Priority (Q / R / S)
+## Remaining Work — Priority (R / S)
 
-The full historical priority table (Phases G–P) is in [`future_phases_archive.md`](future_phases_archive.md#implementation-priority-recommendation-historical). Only Q/R/S remain:
+The full historical priority table (Phases G–P) is in [`future_phases_archive.md`](future_phases_archive.md#implementation-priority-recommendation-historical). Phase **Q** is ✅ implemented (2026-06-20). Only R/S remain:
 
 | Phase | Effort | Value | Recommendation |
 |---|---|---|---|
-| Q — Dossier Export | Low–Medium | **High** | Pure composition over existing readers — no new astronomy. One `query.py dossier` call returns a complete system writeup; the biggest single win for the downstream repo. |
-| R — Procedural Generation | Medium | **High** | Inverts the analysis tools into a deterministic (seed-stable) generator; reuses the Phase H + HZ + main-sequence physics. Pairs with Q (export) and S (collect). |
-| S — Project Workspaces | Medium | Medium–High | Turns the app into a worldbuilding workspace (campaign/novel manager). Builds on the J2 favorites concept; the natural home for R-generated systems and Q batch export. Best after Q, R. |
+| R — Procedural Generation | Medium | **High** | Inverts the analysis tools into a deterministic (seed-stable) generator; reuses the Phase H + HZ + main-sequence physics. Pairs with the now-shipped Q (export systems as dossiers) and S (collect). |
+| S — Project Workspaces | Medium | Medium–High | Turns the app into a worldbuilding workspace (campaign/novel manager). Builds on the J2 favorites concept; the natural home for R-generated systems and Q batch export. Best after R. |

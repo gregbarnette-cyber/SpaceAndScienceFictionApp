@@ -14,6 +14,7 @@ import core.calculators as calculators
 import core.databases as databases
 import core.equations as equations
 import core.regions as regions
+import core.report as report
 import core.science as science
 
 
@@ -193,6 +194,13 @@ def cmd_solvent_zone(args):
 
 def cmd_ice_lines(args):
     _out(equations.compute_ice_lines(args.luminosity, albedo=args.albedo))
+
+
+# Phase Q — system dossier (pure composition over existing readers; self-validating).
+# Markdown/HTML emit a `document`; JSON emits structured `data`. `--star Sol`/`Sun` is the
+# offline reference-origin path. Bad fmt/section or a SIMBAD-lookup failure → {"error"} exit 1.
+def cmd_dossier(args):
+    _out(report.build_system_dossier(args.star, sections=args.sections, fmt=args.fmt))
 
 
 # ── Velocity & constant-speed travel converters (opts 25–28, 31, 32) ──────────
@@ -984,6 +992,18 @@ def main():
                    help="Coast-phase velocity cap as %% of c (default 3.0)")
     p.add_argument("--date", default=None, help="Departure date ISO YYYY-MM-DD (default: today)")
     p.set_defaults(func=cmd_travel_time_custom_thrust)
+
+    # dossier
+    p = sub.add_parser("dossier",
+                       help="Render a full system dossier (markdown/html/json)")
+    p.add_argument("--star", required=True,
+                   help="Star name, or 'Sol'/'Sun' for the Solar System (offline)")
+    p.add_argument("--fmt", choices=["markdown", "html", "json"], default="markdown",
+                   help="Output format (default markdown)")
+    p.add_argument("--sections", nargs="+",
+                   help="Subset of: identity regions habitable_zone planets hypatia gcns moons "
+                        "(default: all available; 'moons' is Sol-only opt-in)")
+    p.set_defaults(func=cmd_dossier)
 
     args = parser.parse_args()
     try:

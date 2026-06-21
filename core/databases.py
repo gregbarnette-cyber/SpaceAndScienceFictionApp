@@ -3048,37 +3048,48 @@ def search_hypatia_cache(filters: dict) -> dict:
 
 # ── Star comparison (Phase L1) ───────────────────────────────────────────────
 
-def _sol_compare_entry() -> dict:
-    """Reference-constant comparison entry for the Sun.
+def _sun_hypatia_baseline() -> dict:
+    """The Sun's Hypatia-shaped reference block (no network).
 
-    The Sun is not a SIMBAD catalog object — "Sol"/"Sun" don't resolve — so its
-    textbook values are injected directly. Under the Lodders (2009) solar
-    normalisation that Hypatia uses, every [X/H]_sun ≡ 0 by definition, so the
-    Sun is the natural zero-point baseline for the abundance comparison; its
-    synthetic abundance rows carry n=0 (no catalog) to mark them as the reference
-    rather than measurements.
+    Under the Lodders (2009) solar normalisation Hypatia uses, every [X/H]_sun ≡ 0
+    by definition, so the Sun is the natural zero-point baseline; the synthetic
+    abundance rows carry n=0 (no catalog) to mark them as the reference rather than
+    measurements. U/V/W are heliocentric galactic space velocities, so the Sun (the
+    frame origin) has U/V/W ≡ 0 — the same "Sun = reference" basis as [X/H] ≡ 0 and
+    distance ≡ 0. Shared by the L1 Sun comparison entry and the Phase Q Sol dossier
+    so the baseline can't drift between them.
     """
-    from core.equations import compute_habitable_zone
     from core.hypatia_elements import HYPATIA_SPECIES
 
-    zmap = {z["key"]: z["au"] for z in compute_habitable_zone(5778.0, 1.0)}
     abundances = [{
         "element": s["symbol"], "name": s["name"], "z": s["z"],
         "category": s["category"], "mean": 0.0, "std": 0.0,
         "min": 0.0, "max": 0.0, "n": 0,
     } for s in HYPATIA_SPECIES]
     return {
+        "star_name": "Sun",
+        "properties": {"logg": 4.44, "disk": "thin disk",
+                       "u_vel": 0.0, "v_vel": 0.0, "w_vel": 0.0},
+        "abundances": abundances,
+    }
+
+
+def _sol_compare_entry() -> dict:
+    """Reference-constant comparison entry for the Sun.
+
+    The Sun is not a SIMBAD catalog object — "Sol"/"Sun" don't resolve — so its
+    textbook values are injected directly. The Hypatia block is the shared solar
+    zero-point baseline (_sun_hypatia_baseline).
+    """
+    from core.equations import compute_habitable_zone
+
+    zmap = {z["key"]: z["au"] for z in compute_habitable_zone(5778.0, 1.0)}
+    return {
         "name": "Sun", "sp_type": "G2V", "teff": 5778.0, "luminosity": 1.0,
         "mass": 1.0, "radius": 1.0,
         "hz_inner_au": zmap.get("rg"), "hz_outer_au": zmap.get("mg"),
         "ly": 0.0, "app_magnitude": -26.74,
-        "hypatia": {"star_name": "Sun",
-                    # U/V/W are heliocentric galactic space velocities — the Sun
-                    # is the origin of that frame, so its U/V/W ≡ 0 (the same
-                    # "Sun = reference" basis as [X/H] ≡ 0 and distance ≡ 0).
-                    "properties": {"logg": 4.44, "disk": "thin disk",
-                                   "u_vel": 0.0, "v_vel": 0.0, "w_vel": 0.0},
-                    "abundances": abundances},
+        "hypatia": _sun_hypatia_baseline(),
         "error": None,
     }
 

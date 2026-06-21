@@ -1408,3 +1408,35 @@ A static "Alternative Solvents for Life" reference table à la `MainSequencePane
 
 > **Status (2026-06-13):** G, H, I (+ I-OPTS), K, M, N are ✅ implemented; J, L, O, P remain (P is the most fully spec'd). Q/R/S are new brainstorm candidates. The duplicate **M** row above is pre-existing.
 
+
+---
+
+## Phase Q — System Dossier Export & Reporting (implemented 2026-06-20)
+
+> Implemented 2026-06-20 across 5 checkpoints (Q-core-1…5); suite green. As-built docs:
+> [`PHASE_Q_PLAN.md`](PHASE_Q_PLAN.md), [`PHASE_Q_MOCKUP.md`](PHASE_Q_MOCKUP.md),
+> `docs/integration.md` (the `dossier` subcommand), `docs/gui-architecture.md` (Phase Q row).
+> The brainstorm below is the original 2026-06-13 candidate text, preserved for provenance.
+> **As-built deltas from the brainstorm:** (1) the planets section shows **both** NASA
+> pscomppars (priority 1) **and** HWC (priority 2) sub-tables when both resolve; (2) an
+> additive **`notes[]`** field separates by-design omissions (GCNS-N/A on Sol) from
+> `warnings[]`; (3) **`--star Sol`/`Sun`** is a dedicated offline reference-origin path
+> (`compute_sol_regions` + the real `compute_solar_system_tables` + the `_sun_hypatia_baseline`
+> zero-point), with a Sol-only opt-in **`moons`** section; (4) **HTML images are GUI-only**
+> (option A) — `core/report.py` and `query.py dossier --fmt html` stay text+tables, while
+> `DossierExportPanel` splices inline base64 figures into its own preview/save; (5) `fmt=json`
+> returns structured **`data`** only (no rendered string); (6) the regions section renders the
+> full Phase P solvent/ice surface; Hypatia renders all measured species.
+
+**New panels (GUI-only)**: `DossierExportPanel`
+**Existing options touched**: none — Q *reads* the result dicts that opts 1/3/6/8 and the GCNS/Hypatia paths already produce; no computation changes.
+
+The app computes rich per-star analyses but can only **display** them, one tab at a time. A worldbuilder (and the downstream `scifiWorldBuilding` repo) wants a single **shareable document** bundling everything known about a system. Q renders the existing result dicts into a self-contained **HTML or Markdown dossier** — no new astronomy, just composition + templating.
+
+**`core/report.py`** (new module) — pure formatting, no I/O beyond returning a string:
+- `build_system_dossier(star, sections=None, fmt="markdown") -> dict` — orchestrates the existing readers (`compute_simbad_lookup` → `compute_star_system_regions_from_simbad` + `compute_hypatia_data`; `compute_hwc`, `compute_planetary_systems_composite`, the GCNS cross-ref) and renders the merged data to one document. `sections` selects among `{"identity", "regions", "habitable_zone", "planets", "hypatia", "gcns"}` (+ Sol-only `moons`). `fmt ∈ {"markdown", "html", "json"}`.
+- Returns `{"star", "fmt", "sections", "warnings", "notes"}` + `document` (md/html) or `data` (json), or `{"error": str}`. Per-source failures become `warnings`, by-design omissions `notes`.
+
+**GUI** — `DossierExportPanel` (new "Reports" nav category): star field + section checkboxes + format radio + "Generate" (background) → preview + "Save to file…" + a "Batch" mode (newline list → one file each). HTML preview/save gets inline base64 HZ-ring + abundance figures (option A).
+
+**`query.py`** — `dossier --star … [--fmt markdown|html|json] [--sections …]` (62nd subcommand). `--star Sol`/`Sun` is fully offline. One Bash call returns a complete system writeup.
