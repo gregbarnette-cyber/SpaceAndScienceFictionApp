@@ -53,6 +53,7 @@ from gui.panels.gcns             import (GcnsCensusBrowserPanel, GcnsSourceLooku
 from gui.panels.comparison       import (StarComparisonPanel, EsiRankingPanel,
                                          StellarEvolutionPanel)
 from gui.panels.reports          import DossierExportPanel
+from gui.panels.generator        import SystemGeneratorPanel
 from gui.panels.csv_utility      import (CsvUtilityPanel, ExportStarSystemsPanel,
                                          ImportHwcPanel, ImportMissionExocatPanel,
                                          ImportMainSequencePanel, ImportSolarSystemPanel,

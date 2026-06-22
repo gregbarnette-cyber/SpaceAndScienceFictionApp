@@ -708,15 +708,22 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable):
 
 
 def generate_system(seed, anchor_star=None, spectral_class=None,
-                    n_planets=None, require_habitable=False):
+                    n_planets=None, require_habitable=False,
+                    constraints=None, companion=None,
+                    research_policy="permissive", nbody=False):
     """Deterministically generate a plausible planetary system.
 
     Two modes share one output shape:
       • synthetic-from-seed (``anchor_star`` is None) — built here (R1-C2);
       • real-anchor (``anchor_star`` given) — extends a real star/system (R1-C3).
 
-    Determinism contract: same ``seed`` (+ same ``anchor_star``) → byte-identical
-    output. Self-validating: bad input → ``{"error": str}``.
+    Determinism contract: same ``seed`` (+ same ``anchor_star`` + same constraint
+    spec) → byte-identical output. Self-validating: bad input → ``{"error": str}``.
+
+    When ``constraints`` is non-empty (Phase R2), generation is delegated to the
+    constraint/feasibility engine, which builds the base system here and layers a
+    four-layer feasibility verdict on top. **Zero constraints → the R1 path,
+    byte-identical** (the R2 kwargs are additive).
 
     Args:
         seed: integer RNG seed (required).
@@ -725,6 +732,10 @@ def generate_system(seed, anchor_star=None, spectral_class=None,
         n_planets: optional planet count (0–15); sampled if None.
         require_habitable: if True, retry until a conservative-HZ rocky world lands
                            (bounded), else error.
+        constraints: optional list of constraint dicts (Phase R2) → feasibility mode.
+        companion: optional multi-star hint ``{mass_solar, sma_au[, ecc]}`` (Phase R2).
+        research_policy: ``"permissive"`` (default) | ``"strict"`` (R3).
+        nbody: opt-in N-body confirmation of marginal verdicts (Phase R2-C4).
     """
     if not isinstance(seed, int) or isinstance(seed, bool):
         return {"error": "seed must be an integer."}
@@ -733,6 +744,14 @@ def generate_system(seed, anchor_star=None, spectral_class=None,
             return {"error": "n_planets must be an integer."}
         if not (0 <= n_planets <= _MAX_N_PLANETS):
             return {"error": f"n_planets must be between 0 and {_MAX_N_PLANETS}."}
+
+    if constraints:
+        # Function-local import: generate.py must stay importable without pulling
+        # in core.feasibility at module load (feasibility imports back into here).
+        from core.feasibility import evaluate_feasibility
+        return evaluate_feasibility(seed, anchor_star, spectral_class, n_planets,
+                                    require_habitable, constraints, companion,
+                                    research_policy, nbody)
 
     if anchor_star is not None and str(anchor_star).strip():
         return _generate_real_anchor(seed, anchor_star, n_planets, require_habitable)

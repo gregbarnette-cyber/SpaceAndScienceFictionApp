@@ -117,5 +117,81 @@ class GenerateSystemArgparse(unittest.TestCase):
         self.assertEqual(code, 2)
 
 
+# ── Phase R2-C6 · generate-system --constraint / --companion / --nbody ───────
+
+_FEAS_KEYS = _TOP_KEYS | {"feasible", "constraints"}
+_LAYER_KEYS = {"id", "type", "verdict", "layer1", "layer2", "layer3", "layer4"}
+
+
+class GenerateSystemFeasibility(unittest.TestCase):
+    def test_feasibility_contract(self):
+        code, payload, _ = _run(
+            "generate-system", "--seed", "7", "--spectral-class", "G2V", "--planets", "5",
+            "--constraint", "planet_at_location:terrestrial,1.0,in_hz",
+            "--constraint", "trojan:terrestrial,outermost,L4")
+        self.assertEqual(code, 0)
+        self.assertEqual(set(payload), _FEAS_KEYS)
+        self.assertIn(payload["feasible"], (True, False))
+        self.assertEqual(len(payload["constraints"]), 2)
+        for c in payload["constraints"]:
+            self.assertEqual(set(c), _LAYER_KEYS)
+            self.assertEqual(c["layer3"]["grounding"], "default-extrapolation")
+
+    def test_zero_constraint_parity(self):
+        # No --constraint → the R1 path: original top keys, no feasibility envelope.
+        code, payload, _ = _run("generate-system", "--seed", "7",
+                                "--spectral-class", "G2V", "--planets", "5")
+        self.assertEqual(code, 0)
+        self.assertEqual(set(payload), _TOP_KEYS)
+        self.assertNotIn("feasible", payload)
+
+    def test_constraint_determinism(self):
+        args = ("generate-system", "--seed", "7", "--spectral-class", "G2V", "--planets", "5",
+                "--constraint", "resonance:b,c,2:1", "--companion", "0.5,20", "--nbody")
+        _, a, _ = _run(*args)
+        _, b, _ = _run(*args)
+        self.assertEqual(a, b)
+
+    def test_companion_gate_and_note(self):
+        code, payload, _ = _run(
+            "generate-system", "--seed", "7", "--spectral-class", "G2V", "--planets", "5",
+            "--constraint", "planet_at_location:terrestrial,1.0,at:9.0", "--companion", "0.5,20")
+        self.assertEqual(code, 0)
+        c1 = payload["constraints"][0]
+        self.assertEqual(c1["verdict"], "infeasible")          # S-type, beyond critical SMA
+        self.assertIn("Binary truncation", c1["layer1"]["reason"])
+        self.assertTrue(any("companion hint" in n for n in payload["notes"]))
+
+    def test_unknown_constraint_not_evaluated(self):
+        code, payload, _ = _run("generate-system", "--seed", "7",
+                                "--spectral-class", "G2V", "--planets", "3",
+                                "--constraint", "frobnicate:x")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["constraints"][0]["verdict"], "not_evaluated")
+
+
+class GenerateSystemConstraintErrors(unittest.TestCase):
+    def test_malformed_constraint_exit1(self):
+        code, payload, _ = _run("generate-system", "--seed", "1", "--spectral-class", "G2V",
+                                "--constraint", "planet_at_location:terrestrial")
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
+        self.assertIn("Malformed --constraint", payload["error"])
+
+    def test_malformed_companion_exit1(self):
+        code, payload, _ = _run("generate-system", "--seed", "1", "--spectral-class", "G2V",
+                                "--constraint", "planet_at_location:terrestrial,1.0,in_hz",
+                                "--companion", "0.5")
+        self.assertEqual(code, 1)
+        self.assertIn("Malformed --companion", payload["error"])
+
+    def test_bad_companion_ecc_exit1(self):
+        code, payload, _ = _run("generate-system", "--seed", "1", "--spectral-class", "G2V",
+                                "--constraint", "planet_at_location:terrestrial,1.0,in_hz",
+                                "--companion", "0.5,20,1.5")
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
+
+
 if __name__ == "__main__":
     unittest.main()

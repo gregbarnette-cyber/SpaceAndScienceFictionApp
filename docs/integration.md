@@ -61,6 +61,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
 | `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …`] | SIMBAD + NASA + Hypatia (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json) |
+| `generate-system` | `--seed` [`--anchor-star` `--spectral-class` `--planets` `--require-habitable` `--constraint…` `--companion` `--nbody`] | none (synthetic) · SIMBAD + NASA + HWC (with `--anchor-star`) | `seed, mode, anchor_star, star, planets[], warnings, notes` — plus `feasible, constraints[]` with `--constraint` |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
 | `stellar-evolution` | `--mass-solar` [`--current-age-gyr`] | none | `stages[], total_gyr, ms_end_gyr, current_stage, low_mass, high_mass` |
@@ -311,6 +312,99 @@ Core function: `report.build_system_dossier(star, sections=None, fmt="markdown")
 > white-dwarf regions failure) is **not** an error: that section is dropped to a **`warnings[]`**
 > entry and the dossier still renders the rest (exit 0). Intentional omissions (GCNS-N/A on
 > Sol) are **`notes[]`**, separate from warnings.
+
+### Procedural system generation (Phase R1 + R2 — no network for synthetic mode)
+
+#### `generate-system`
+Deterministically generate a plausible planetary system — the inverse of the analysis
+tools. Two modes: **synthetic-from-seed** (offline) and **real-anchor** (extends a real
+star/system, networked). With one or more **`--constraint`** flags it becomes a
+**constraint/feasibility analyzer** (Phase R2) — see "Feasibility mode" below. **Headline
+contract: same `--seed` (+ same `--anchor-star` + same constraints) → byte-identical
+output.** Pure composition over verified `core/` functions — the only new astronomy is a
+planet classifier + a Phase-P equilibrium-temperature wrapper (R1) plus packing / resonance
+/ co-orbital diagnostics + an opt-in pure-numpy N-body screen (R2).
+```bash
+query.py generate-system --seed 88 --spectral-class K2V --planets 5 --require-habitable   # synthetic, offline
+query.py generate-system --seed 4173                                                       # synthetic, sampled class/count
+query.py generate-system --seed 4173 --anchor-star "Tau Ceti"                              # real-anchor (+ network)
+```
+Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=None, n_planets=None, require_habitable=False, constraints=None, companion=None, research_policy="permissive", nbody=False)`.
+
+- **`--seed`** (required, int): the RNG seed — the system's identity.
+- **`--anchor-star`** (optional): a real star name → **real-anchor mode** (pulls real
+  specs via SIMBAD + `compute_star_system_regions_from_simbad`, the real known planets via
+  NASA pscomppars / HWC flagged `source:"observed"`, then extends with synthetic infill
+  flagged `source:"synthetic"`). Omit → **synthetic mode** (fully offline).
+- **`--spectral-class`** (synthetic only): e.g. `K2V`; sampled from `DefaultPriors` weights
+  if omitted. Ignored in real-anchor mode (the anchor's real class is used). `O`-class is
+  rejected.
+- **`--planets`** (optional, 0–15): the synthetic planet count (or the synthetic-infill
+  count when anchored); sampled from the planet-count distribution if omitted.
+- **`--require-habitable`** (store-true): retry (bounded) until a conservative-HZ rocky
+  world is placed, else a curated error.
+- **Output:** `{seed, mode ("synthetic"|"real_anchor"), anchor_star, star, planets[],
+  warnings[], notes[]}`. `star` carries `name, spectral_class, teff, mass_solar,
+  radius_solar, luminosity, hz_inner_au/hz_outer_au` (conservative) + `hz_opt_inner_au/
+  hz_opt_outer_au` (optimistic) + `snow_line_au, source, grounding, multiplicity`. Each
+  planet carries `name, a_au, mass_earth, radius_earth, ecc, type
+  (rocky|super_earth|ice|gas|super_jovian|brown_dwarf), t_eq_k, in_hz, hz_class
+  (conservative|optimistic|null), source, atmosphere, moons[]`. Every synthetic field is
+  grounded `default-extrapolation` (the `DefaultPriors` provider — research-calibrated
+  priors are Phase R3). Multi-star anchors are **detected, warned, and safe-capped** (no
+  synthetic body beyond a conservative cap; observed bodies are never capped); a quantitative
+  S/P-type verdict needs a `--companion` hint (Phase R2 — below).
+
+> **Validation (self-validating — Phase H contract, *not* the Phase-N raw-exception path):**
+> bad input → a curated `{"error": str}` on stdout, **exit 1** — a bad `--spectral-class`, an
+> `--planets` outside 0–15, `--require-habitable` exhausted after bounded retries, an
+> unresolvable `--anchor-star`, a non-OBAFGKM (e.g. white-dwarf) anchor primary, a **malformed
+> `--constraint` / `--companion` DSL**, or an out-of-range `--companion` eccentricity. Argparse
+> rejects a missing or non-integer `--seed` / `--planets` → **exit 2** (stderr).
+
+##### Feasibility mode (Phase R2 — `--constraint` / `--companion` / `--nbody`)
+
+Describe the system you *want* as structured constraints and get a **four-layer verdict per
+constraint** — stable? · why? · how could it arise? · nearest feasible alternative? — plus
+the satisfied system. **Zero `--constraint` flags → the R1 generation path, byte-identical**
+(all three flags are additive).
+```bash
+query.py generate-system --seed 4173 --anchor-star "47 Ursae Majoris" \
+  --constraint 'planet_at_location:terrestrial,1.0,between:b:c' \
+  --constraint 'trojan:terrestrial,giant_in_hz,L4' --nbody
+query.py generate-system --seed 88 --spectral-class K2V --planets 6 \
+  --constraint 'resonance:c,d,2:1' --companion '0.5,20,0.1'
+```
+
+- **`--constraint`** (repeatable) — a compact DSL `type:field,field[,…]` (comma-separated;
+  location / ratio fields may themselves contain `:`). Vocabulary v1:
+  - `planet_at_location:<type>,<mass_earth>,<location>` — `<location>` ∈ `in_hz` | `at:AU` |
+    `between:A:B` | `interior_to:REF` | `exterior_to:REF` | `in_zone:ZONE` | `in_hz:opt`.
+  - `trojan:<companion_type>,<host>,[L4|L5]` · `moon:<host>[,<mass_earth>][,terraformable]` ·
+    `resonance:<bodyA>,<bodyB>,<p:q>`.
+  - stretch: `habitable_world[:cons|opt[,min_count]]` · `alt_solvent_world:<solvent>[,<mass>]`
+    · `architecture:<giant_beyond_snow_line|no_hot_jupiter>`.
+  - Refs are a planet letter (`b` = innermost by SMA), an observed planet name, or a symbolic
+    anchor (`giant_in_hz`, `super_jovian_in_hz`, `outermost`/`innermost`). An **unresolvable
+    ref or an unknown constraint type is *not* an error** — that constraint is
+    `verdict:"not_evaluated"` and the rest still evaluate. A **malformed** DSL → curated
+    `{"error"}` exit 1.
+- **`--companion 'mass_solar,sma_au[,ecc]'`** — a multi-star hint; a placed body must pass the
+  Holman & Wiegert S-type (inside the critical SMA) / P-type (circumbinary, outside it) test.
+  Binary instability is decisive (overrides a stable packing verdict → infeasible).
+- **`--nbody`** (store-true) — run a **bounded, deterministic, pure-numpy** N-body screen on a
+  **marginal** packing verdict (the Δ ∈ [2√3, 10) gray band) to resolve it to feasible /
+  infeasible. Opt-in; a short-integration screen, **not** a Gyr stability proof.
+
+- **Feasibility output** (only with `--constraint`): the R1 envelope **plus** `feasible`
+  (bool — all *evaluated* constraints feasible; marginal/infeasible make it false;
+  `not_evaluated` is neutral) and `constraints[]`, one entry per constraint:
+  `{id, type, verdict ("feasible"|"marginal"|"infeasible"|"not_evaluated"),
+  layer1 {stable, reason, metrics}, layer2 {mechanism, checked, note},
+  layer3 {hypotheses:[{pathway, plausibility, grounding}], grounding}, layer4
+  {alternatives:[{change, result, spec_patch}]}}`. Layer-3 hypotheses are **always tagged
+  `grounding="default-extrapolation"`** (R3 swaps in research-calibrated priors with no engine
+  change); each Layer-4 `spec_patch` is the exact spec mutation that flips the constraint.
 
 ### Integration expansion (Phase N)
 
@@ -851,6 +945,8 @@ the core function.
 For subcommands that run SIMBAD first (`star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, `hwc`, `hypatia-data`): if the SIMBAD lookup returns `{"error": ...}`, that error is returned immediately and the second core function is never called.
 
 `dossier` (Phase Q) runs SIMBAD first for a real star and aborts with that error if it fails; per-section sources that fail *after* SIMBAD resolves become warnings, not errors. `dossier --star Sol`/`Sun` runs no SIMBAD/network step at all (the offline reference-origin path; it reads the local Solar System tables, overridable via `SPACE_APP_DB`).
+
+`generate-system` (Phase R1) runs **no network in synthetic mode** (no `--anchor-star`). With `--anchor-star` it runs SIMBAD first (then `compute_star_system_regions_from_simbad` + NASA pscomppars / HWC); an unresolvable anchor or a non-OBAFGKM (e.g. white-dwarf) regions failure is returned immediately as `{"error": ...}`, while missing observed planets is a `warnings[]` entry, not an error.
 
 The `gcns-within-sol`, `gcns-source`, and `gcns-system` subcommands are **local DB reads** (no SIMBAD step). The `gcns-distance` / `gcns-travel-time` / `gcns-stars-within-star` calculators are local DB reads **except** for `--star…` endpoints, which add a SIMBAD name-resolution step (a SIMBAD error on any `--star…` endpoint is returned immediately). The DB path can be overridden with the `SPACE_APP_DB` environment variable (used by tests).
 

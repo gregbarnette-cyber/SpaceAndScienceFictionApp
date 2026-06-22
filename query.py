@@ -445,14 +445,123 @@ def cmd_travel_time_custom_thrust(args):
     ))
 
 
+# ── Phase R2 · constraint / companion DSL parsing for generate-system ────────
+
+def _parse_location(token):
+    """Parse a planet_at_location location token: in_hz | at:AU | between:A:B |
+    interior_to:REF | exterior_to:REF | in_zone:ZONE | in_hz:opt."""
+    kind, _, larg = token.partition(":")
+    kind = kind.strip()
+    if kind == "at":
+        return {"kind": "at", "au": float(larg)}
+    if kind == "between":
+        a, _, b = larg.partition(":")
+        if not a or not b:
+            raise ValueError("location 'between' needs two refs, e.g. between:b:c")
+        return {"kind": "between", "ref_a": a, "ref_b": b}
+    if kind in ("interior_to", "exterior_to"):
+        if not larg:
+            raise ValueError(f"location '{kind}' needs a ref, e.g. {kind}:b")
+        return {"kind": kind, "ref": larg}
+    if kind == "in_hz":
+        return {"kind": "in_hz", "hz": larg} if larg else {"kind": "in_hz"}
+    if kind == "in_zone":
+        return {"kind": "in_zone", "zone": larg or "hz"}
+    raise ValueError(f"unknown location kind: {kind!r}")
+
+
+def _parse_constraint(spec):
+    """Parse one --constraint DSL string into a spec constraint dict.
+
+    Grammar: ``type:field,field[,…]`` — comma-separated fields after the type;
+    location / ratio fields may themselves contain ':'. An unknown type passes
+    through verbatim (the engine reports it as not_evaluated)."""
+    ctype, _, rest = spec.partition(":")
+    ctype = ctype.strip()
+    if not ctype:
+        raise ValueError(f"Malformed --constraint {spec!r}: missing type.")
+    fields = [f.strip() for f in rest.split(",")] if rest else []
+    try:
+        if ctype == "planet_at_location":
+            if len(fields) < 3:
+                raise ValueError("expected type,mass,location "
+                                 "(e.g. planet_at_location:terrestrial,1.0,between:b:c)")
+            return {"type": ctype, "planet_type": fields[0],
+                    "mass_earth": float(fields[1]), "location": _parse_location(fields[2])}
+        if ctype == "trojan":
+            if len(fields) < 2:
+                raise ValueError("expected companion_type,host[,point] "
+                                 "(e.g. trojan:terrestrial,giant_in_hz,L4)")
+            out = {"type": ctype, "companion_type": fields[0], "host": fields[1]}
+            if len(fields) >= 3 and fields[2]:
+                out["point"] = fields[2].upper()
+            return out
+        if ctype == "moon":
+            if not fields or not fields[0]:
+                raise ValueError("expected host[,mass][,terraformable] "
+                                 "(e.g. moon:super_jovian_in_hz,1.0,terraformable)")
+            out = {"type": ctype, "host": fields[0]}
+            if len(fields) >= 2 and fields[1] and fields[1] != "terraformable":
+                out["mass_earth"] = float(fields[1])
+            if "terraformable" in fields[1:]:
+                out["terraformable"] = True
+            return out
+        if ctype == "resonance":
+            if len(fields) < 3:
+                raise ValueError("expected bodyA,bodyB,ratio (e.g. resonance:c,d,2:1)")
+            return {"type": ctype, "bodies": [fields[0], fields[1]], "ratio": fields[2]}
+        if ctype == "habitable_world":
+            out = {"type": ctype}
+            if fields and fields[0]:
+                out["hz"] = fields[0]
+            if len(fields) >= 2 and fields[1]:
+                out["min_count"] = int(fields[1])
+            return out
+        if ctype == "alt_solvent_world":
+            if not fields or not fields[0]:
+                raise ValueError("expected solvent[,mass] (e.g. alt_solvent_world:ammonia)")
+            out = {"type": ctype, "solvent": fields[0]}
+            if len(fields) >= 2 and fields[1]:
+                out["mass_earth"] = float(fields[1])
+            return out
+        if ctype == "architecture":
+            if not fields or not fields[0]:
+                raise ValueError("expected rule (e.g. architecture:giant_beyond_snow_line)")
+            return {"type": ctype, "rule": fields[0]}
+        return {"type": ctype}      # unknown type → engine emits not_evaluated
+    except ValueError as e:
+        raise ValueError(f"Malformed --constraint {spec!r}: {e}")
+
+
+def _parse_companion(spec):
+    """Parse --companion 'mass_solar,sma_au[,ecc]' into a hint dict."""
+    parts = [p.strip() for p in spec.split(",")]
+    if len(parts) < 2:
+        raise ValueError(f"Malformed --companion {spec!r}: expected 'mass_solar,sma_au[,ecc]'.")
+    try:
+        out = {"mass_solar": float(parts[0]), "sma_au": float(parts[1])}
+        if len(parts) >= 3 and parts[2]:
+            out["ecc"] = float(parts[2])
+    except ValueError:
+        raise ValueError(f"Malformed --companion {spec!r}: values must be numbers.")
+    return out
+
+
 def cmd_generate_system(args):
-    # Synthetic offline; --anchor-star adds SIMBAD/NASA/HWC network. Self-validating.
+    # Synthetic offline; --anchor-star adds SIMBAD/NASA/HWC network. With one or more
+    # --constraint flags, generation delegates to the R2 feasibility engine (a malformed
+    # DSL raises → curated {"error"} exit 1 via main()). Zero constraints → the R1 path.
+    constraints = [_parse_constraint(s) for s in (args.constraint or [])]
+    companion = _parse_companion(args.companion) if args.companion else None
     _out(generate.generate_system(
         args.seed,
         anchor_star=args.anchor_star,
         spectral_class=args.spectral_class,
         n_planets=args.planets,
         require_habitable=args.require_habitable,
+        constraints=constraints or None,
+        companion=companion,
+        nbody=args.nbody,
     ))
 
 
@@ -1030,6 +1139,15 @@ def main():
                    help="Planet count 0-15 (synthetic count, or synthetic-infill count when anchored; sampled if omitted)")
     p.add_argument("--require-habitable", dest="require_habitable", action="store_true",
                    help="Require a conservative-HZ rocky world (bounded retry, else error)")
+    p.add_argument("--constraint", dest="constraint", action="append", default=None,
+                   help="A desired feature (repeatable) → feasibility mode. DSL 'type:fields', "
+                        "e.g. 'planet_at_location:terrestrial,1.0,between:b:c', "
+                        "'trojan:terrestrial,giant_in_hz,L4', "
+                        "'moon:super_jovian_in_hz,1.0,terraformable', 'resonance:c,d,2:1'")
+    p.add_argument("--companion", dest="companion", default=None,
+                   help="Multi-star companion hint 'mass_solar,sma_au[,ecc]' for S/P-type checks")
+    p.add_argument("--nbody", dest="nbody", action="store_true",
+                   help="N-body confirmation of marginal packing verdicts (opt-in)")
     p.set_defaults(func=cmd_generate_system)
 
     args = parser.parse_args()

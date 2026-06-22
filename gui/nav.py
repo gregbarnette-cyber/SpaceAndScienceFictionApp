@@ -25,6 +25,9 @@ NAVIGATION = [
         ("ESI Ranking",            "EsiRankingPanel"),
         ("Stellar Evolution",      "StellarEvolutionPanel"),
     ]),
+    ("Generator", [
+        ("System Generator",       "SystemGeneratorPanel"),
+    ]),
     ("Reports", [
         ("System Dossier Export",  "DossierExportPanel"),
     ]),
