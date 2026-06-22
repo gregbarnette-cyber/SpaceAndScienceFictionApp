@@ -13,6 +13,7 @@ import sys
 import core.calculators as calculators
 import core.databases as databases
 import core.equations as equations
+import core.generate as generate
 import core.regions as regions
 import core.report as report
 import core.science as science
@@ -441,6 +442,17 @@ def cmd_travel_time_custom_thrust(args):
         args.origin, args.destination, args.accel_g, burn_duration_s,
         v_cap_pct=args.v_cap_pct, burn_value=args.burn_value,
         burn_unit_label=label, departure_date=args.date,
+    ))
+
+
+def cmd_generate_system(args):
+    # Synthetic offline; --anchor-star adds SIMBAD/NASA/HWC network. Self-validating.
+    _out(generate.generate_system(
+        args.seed,
+        anchor_star=args.anchor_star,
+        spectral_class=args.spectral_class,
+        n_planets=args.planets,
+        require_habitable=args.require_habitable,
     ))
 
 
@@ -1004,6 +1016,21 @@ def main():
                    help="Subset of: identity regions habitable_zone planets hypatia gcns moons "
                         "(default: all available; 'moons' is Sol-only opt-in)")
     p.set_defaults(func=cmd_dossier)
+
+    # generate-system
+    p = sub.add_parser("generate-system",
+                       help="Procedurally generate a planetary system (synthetic or real-anchor)")
+    p.add_argument("--seed", required=True, type=int,
+                   help="Integer RNG seed (same seed → identical output)")
+    p.add_argument("--anchor-star", dest="anchor_star", default=None,
+                   help="Real star to anchor on (adds SIMBAD/NASA/HWC network); omit for synthetic")
+    p.add_argument("--spectral-class", dest="spectral_class", default=None,
+                   help="Synthetic-only host class, e.g. K2V (sampled if omitted)")
+    p.add_argument("--planets", dest="planets", type=int, default=None,
+                   help="Planet count 0-15 (synthetic count, or synthetic-infill count when anchored; sampled if omitted)")
+    p.add_argument("--require-habitable", dest="require_habitable", action="store_true",
+                   help="Require a conservative-HZ rocky world (bounded retry, else error)")
+    p.set_defaults(func=cmd_generate_system)
 
     args = parser.parse_args()
     try:
