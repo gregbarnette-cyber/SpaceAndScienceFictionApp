@@ -21,6 +21,21 @@ python query.py <subcommand> [arguments]
 pytest                      # or: python -m unittest discover -s tests
 ```
 
+### Development environment
+
+The repo is developed on both Windows and WSL2; keep commands/scripts cross-OS (the `query.py`
+invocation already handles the Windows `venv/Scripts/python.exe` vs Linux `venv/bin/python` split and
+the base-folder case fallback — see `docs/integration.md`).
+
+**Phase T dust path (`dustmaps`/`healpy`) is WSL/Linux-only.** `healpy` has **no Windows pip wheel**, so
+`pip install dustmaps` fails on a native-Windows checkout. Build, run, and test the Phase T **dust**
+subcommands (`dust-sightline` / `dust-between` / dust-weighted routing; CLI dust-fetch) from the
+**WSL/Linux venv** — which is also the path the sister consumer repo invokes. Keep `dustmaps` in an
+**optional extra** (`requirements-dust.txt` / `extras_require['dust']`), **never** base `requirements.txt`,
+and gate the dust tests on `dustmaps` importability (like the `*_live.py` network gate) so a native-Windows
+checkout skips them cleanly. This scopes to the dust path only — the rest of the app (including all of Phase
+T's pure-math calculators) remains fully cross-OS. See `PHASE_T_PLAN.md`.
+
 ### Tests
 
 Tests live in `tests/`. The bulk are **offline** and need no network or Qt:

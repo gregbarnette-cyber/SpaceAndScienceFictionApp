@@ -93,13 +93,40 @@ CREATE TABLE IF NOT EXISTS project_members (
 
 **Validation / tests / success**: `tests/test_projects.py` (offline, tmp DB) — CRUD round-trips, unique-name enforcement, membership idempotency, `get_project` shape, cascade on `delete_project`, and the generated-seed round-trip (a procedural member re-generates identically via its stored seed). Success: projects persist; members carry notes + reproducible procedural seeds; a project exports as a multi-system dossier; no existing behavior changes.
 
+## Phase T — `query.py` Research-Tooling Extensions (sister-project requests)
+
+> **Status: Planned (2026-06-22).** Requested by the sibling worldbuilding repo (`scifiWorldBuilding-Claude`) as two companion request specs in `research/query-api-methods/` — **`calculator-extensions-request.md`** and **`dust-map-query-request.md`** — each carrying a full Q&A + implementer-decisions thread (resolved 2026-06-22). Build-ready spec lives in [`PHASE_T_PLAN.md`](PHASE_T_PLAN.md).
+
+**Surface — `query.py`, not GUI.** Unlike the GUI-focused phases, Phase T is **integration-surface work** (Phase-N-style): the consumer drives every feature through the venv/JSON contract. **No native-Windows GUI**, and explicitly **no `wsl.exe` bridge** (declined) — dust runs in the WSL/Linux venv (the same one the consumer already invokes), gated absent on a native-Windows pip checkout. The one CLI touch (T2 `dust-fetch`, menu **option 59**) is an **import utility** in the lineage of opts 52–58 (GCNS opt 58 is the direct precedent), not a feature menu option — consistent with the import-utility carve-out, not a break of the opts-1–58 feature freeze.
+
+Two independent tracks; **T1 first** (low-risk pure-math, partly already-built), then **T2** (new optional dependency, forked to contain it).
+
+### T1 — Calculator & census extensions (pure-math / local-DB; no new datasets)
+New self-validating (Phase-H/P contract) subcommands, all granular, all documented contract-by-reference in `docs/integration.md`. Sub-staged by confidence:
+- **T1a — "near-free" reuse wrappers** (smallest, highest-confidence): `trojan-stability` (thin wrapper over the existing R2 `core/feasibility.py` `gascheau_coorbital_stable`, μ<0.0385); `circumbinary-hz` (combined-luminosity Kopparapu HZ over the existing `_kopparapu_seff` + `compute_binary_orbit_stability` H4 — **flags `out_of_range_teff`, doesn't clamp**); `lorentz-factor`; the white-dwarf census filter (`--wd-prob-min/max`, `wd_prob` already in `gcns_stars`); and **B3 folded into `hill-sphere` as defaulted extra keys** (`--moon-inclination-deg`/`--prograde` → `stable_moon_limit_au` Domingos + `stable_fraction`, retaining the 0.5×r_H `stable_orbit_limit_au` as a coarse cross-check).
+- **T1b — new pure-math**: detectability group `rv-semi-amplitude` / `transit-signal` / `astrometric-signal` / `direct-imaging` (group A); `tidal-heating` (B1, incl. `io_flux_ratio`, order-of-mag flagged); `kozai-lidov` (C2, order-of-mag, constant pinned at build); `relativistic-brachistochrone` (D1, lifts the 3%c Newtonian cap).
+- **T1c — census filters**: `solar-analogs` (Hypatia-cache-primary ~14k + optional GCNS distance join; emits population/size field); substellar L/T/Y filter (emits a `completeness_note` JSON field — GCNS incompleteness beyond ~10–25 pc).
+
+Reuse the verified R2/H core wherever it exists (on convention conflicts, the R2/cited-source form wins). Order-of-magnitude outputs labelled; units declared per-field; coefficients (B1, C2, direct-imaging IWA) pinned against cited sources at build. Tests follow the `tests/test_query_phase_n.py` subprocess-contract harness.
+
+### T2 — Dust / ISM query path (new OPTIONAL dependency, forked)
+**Part A (read-only):** `dust-sightline` (direction profile), `dust-between` (star-to-star line; reuses GCNS/SIMBAD resolvers + Sol origin), CLI **option 59** `dust-fetch` + `--check`. **Part B (Core planners only):** `--weight distance|dust` on `jump-route` (flagship Dijkstra) / `optimal-tour` / `multi-stop` / `nearest-neighbor` / `trade-route`, each returning per-leg + cumulative A_V **plus a distance-optimal comparison** (`extra_ly`/`saved_av`). `distance` stays default. **Deferred:** `blend` weight, `--max-leg-av`, `jump-network` cost-budget, `farthest-first`.
+
+- **Maps/output:** Leike 2020 (near-field) + Edenhofer 2024 (shell), `--map near-field|edenhofer|auto`. Output in **A_V mag, R_V=3.1**, + native-value echo (`native_quantity`) + `units`. Auto seam: Leike 0–69 pc, Edenhofer inner-subtracted beyond (no double-count), `seam` flag on crossing bins. Out-of-coverage → per-bin `null` + non-fatal note (no clamp); deep cavity → small value + wide σ + `low_dust_high_uncertainty` note.
+- **Architecture (risk control):** **forked, not parameterized in place** — new `core/dust.py` (Part A) + `core/dust_routing.py` (Part B) that **reuse** the existing non-weight route helpers (`_resolve_star_position`, `_load_star_systems_positions`, `_SpatialGrid`, `_merge_endpoint`, `_map_node`), **extract a shared cost-injected `_dijkstra` seam** for `jump-route` (guarded byte-identical by the existing route tests), and **fork** the other planners. New `dust-*` subcommands. This keeps `dustmaps`/`healpy` **out of `core/calculators.py`** so the stellar layer stays importable everywhere; only `test_dust_routing.py` skips (gated like `*_live.py`).
+- **Dependency/runtime:** `dustmaps`(+healpy) in an **optional extra** (`requirements-dust.txt` / `extras_require['dust']`), never base `requirements.txt`. **Runs in the WSL/Linux venv** (manylinux healpy wheels install cleanly there; pip-on-native-Windows has no healpy wheel — conda-forge has a win-64 build but that's outside the pip venv). Dust cache on the **native WSL filesystem** (not `/mnt/c`), gitignored, fetch-once/offline (GCNS `space_app.db` model).
+
+**Why before research:** the consumer wants the tooling in place before the local-ISM / detectability research packets run, rather than building mid-run. T1 unblocks the detectability/survey-bias packets; T2 Part A unblocks per-corridor dust reporting; T2 Part B adds dust-weighted corridors.
+
 ---
 
-## Remaining Work — Priority (R / S)
+## Remaining Work — Priority (T / S)
 
-The full historical priority table (Phases G–P) is in [`future_phases_archive.md`](future_phases_archive.md#implementation-priority-recommendation-historical). Phase **Q** is ✅ implemented (2026-06-20). Only R/S remain:
+The full historical priority table (Phases G–P) is in [`future_phases_archive.md`](future_phases_archive.md#implementation-priority-recommendation-historical). Phase **Q** is ✅ implemented (2026-06-20); **R1+R2** ✅ implemented (2026-06-22, R3 deferred). Remaining: **T** (new, sister-project requests) and **S**:
 
 | Phase | Effort | Value | Recommendation |
 |---|---|---|---|
-| R — Procedural Generation | Medium | **High** | Inverts the analysis tools into a deterministic (seed-stable) generator; reuses the Phase H + HZ + main-sequence physics. Pairs with the now-shipped Q (export systems as dossiers) and S (collect). |
-| S — Project Workspaces | Medium | Medium–High | Turns the app into a worldbuilding workspace (campaign/novel manager). Builds on the J2 favorites concept; the natural home for R-generated systems and Q batch export. Best after R. |
+| T1 — Calculator & census extensions | Low–Medium | **High** | Pure-math/local-DB `query.py` additions for the sister project's research packets; partly already-built (R2/H reuse). Lowest-risk, highest-confidence — **do first** (T1a near-free wrappers, then T1b new math, then T1c census filters). |
+| T2 — Dust / ISM query path | Medium–High | **High** | New optional `dustmaps` dependency (forked to contain it) + dust-weighted routing. Part A (read-only) before Part B (routing); WSL/Linux-venv-only, gated. Gate on the unit/seam contract proven in Part A. |
+| R3 — Research-priors hook | Medium | Medium | The deferred third part of Phase R (`ResearchPriors` + policy switch; `DefaultPriors` is the seam). Forward-looking. |
+| S — Project Workspaces | Medium | Medium–High | Turns the app into a worldbuilding workspace (campaign/novel manager). Builds on the J2 favorites concept; the natural home for R-generated systems and Q batch export. |
