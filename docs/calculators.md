@@ -357,3 +357,16 @@ centre), Sol is appended as a grey reference node unless an endpoint is Sol, and
 distance (+ travel time and ×c for opts 20/21). `add_two_star_chart_tabs(panel, result, kind)` then centres via the
 shared `_centered` and adds the **"Star Chart"** + **"Star Chart 3D"** tabs (reused by `DistanceBetweenStarsPanel` (17)
 and the two `TravelTimeStars*` panels (20/21), all now `DiagramToggleMixin`).
+
+## Detectability & Relativistic Calculators (Phase T1b)
+
+Five new pure-math `query.py`-only calculators in `core/calculators.py` for the sibling worldbuilding repo's
+survey-bias / STL-travel research (alongside B1 `tidal-heating` and C2 `kozai-lidov`, which live in
+`core/equations.py`). All **self-validating** (Phase-H/P contract: curated `{"error"}` exit 1, argparse exit 2).
+No network, no GUI. Full per-field contract + anchors in `docs/integration.md`.
+
+- **`compute_rv_semi_amplitude(planet_mass_earth, star_mass_solar, period_days=None, sma_au=None, ecc=0, inclination_deg=90)`** (A1) — Lovis & Fischer 2010 RV semi-amplitude `K`. Input mass in Earth masses → **M_Jup internally** (the 28.4329 m/s constant is per-M_Jup). Exactly one of period/sma (Kepler III derives the other). → `{k_ms, period_days, sma_au, ecc, inclination_deg, …}`. Anchor: Earth→Sun ≈ 0.0895 m/s.
+- **`compute_transit_signal(planet_radius_earth, star_radius_solar, sma_au=None, period_days=None, star_mass_solar=None)`** (A2) — Winn 2010 depth `(Rp/R*)²`, geometric prob `R*/a`, duration `(P/π)·arcsin(R*/a)`. `--sma-au` alone leaves period/duration `null`; `--period-days`+`--star-mass-solar` derives `a`. → `{depth_ppm, depth_frac, transit_prob, duration_hours, sma_au, period_days, …}`. Anchor: Earth→Sun ≈ 83.9 ppm / 0.0047 / ~13 h.
+- **`compute_astrometric_signal(planet_mass_earth, star_mass_solar, sma_au, distance_pc)`** (A3) — `α=(Mp/M*)·(a/d)`; **microarcsec** headline + arcsec echo. → `{signal_microarcsec, signal_arcsec, …}`. Anchor: Jupiter→Sun @10 pc ≈ 496 µas.
+- **`compute_direct_imaging(sma_au, distance_pc, planet_radius_earth, albedo=0.3, telescope_diameter_m=None, wavelength_um=None)`** (A4) — sep `a/d`, reflected contrast `A_g·(Rp/a)²` (Rp→AU), optional `IWA=λ/D` (1·λ/D convention; real coronagraphs use 1–4 λ/D) + `resolvable` flag (both `null` unless both telescope args given; only one → error). → `{angular_sep_arcsec, contrast_reflected, iwa_arcsec, resolvable, …}`. Anchor: Earth→Sun contrast ≈ 5.4e-10.
+- **`compute_relativistic_brachistochrone(accel_g, distance_ly)`** (D1) — constant **proper**-acceleration flip-and-burn (MTW), lifting the 3%c Newtonian cap of options 22–23/29–30. `X=arccosh(1+a·(D/2)/c²)`; coordinate time `2(c/a)sinh X`, proper time `2(c/a)X`, midpoint `peak_velocity_c=tanh X`, `peak_lorentz_factor=cosh X`. → `{coord_time_yr, proper_time_yr, peak_velocity_c, peak_lorentz_factor, …}`. Anchor: 1 g over 4.37 ly → coord ≈ 6.0 yr, proper ≈ 3.58 yr, peak ≈ 0.95 c; converges to the Newtonian `2√(D/a)` at low speed. Constants added: `_M_JUP_EARTH`, `_M_SUN_EARTH`, `_R_SUN_AU`, `_R_EARTH_AU`, `_ARCSEC_PER_RAD`, `_SEC_PER_JULIAN_YEAR`, `_LY_M`.

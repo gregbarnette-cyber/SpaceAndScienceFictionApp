@@ -2295,12 +2295,19 @@ def _gcns_row_to_dict(row) -> dict:
     return d
 
 
-def compute_gcns_within_sol(limit_ly: float) -> dict:
+def compute_gcns_within_sol(limit_ly: float, wd_prob_min: float = None,
+                            wd_prob_max: float = None) -> dict:
     """All GCNS stars within limit_ly light years of Sol (Bayesian distances).
 
     Reads the gcns_stars DB table only — no network. Returns
     {limit_ly, count, snapshot_date, gcns_version, stars[]} or {"error": str}.
     Each star carries heliocentric x/y/z (ly) for map parity with stars-within-sol.
+
+    Optional white-dwarf census filter: ``wd_prob_min`` / ``wd_prob_max`` restrict
+    to sources whose GCNS white-dwarf probability (``wd_prob``) falls in the given
+    range (rows with NULL wd_prob are excluded once either bound is set). Both
+    None → byte-identical to the unfiltered census. A min > max simply matches
+    nothing (not an error), consistent with the other range filters.
     """
     import math as _math
     from core.db import get_conn
@@ -2316,11 +2323,20 @@ def compute_gcns_within_sol(limit_ly: float) -> dict:
     if total == 0:
         return {"error": "gcns_stars table is empty — run option 58 (Import GCNS Data) first."}
 
+    where = ["light_years IS NOT NULL", "light_years <= ?"]
+    params = [limit_ly]
+    if wd_prob_min is not None:
+        where.append("wd_prob IS NOT NULL AND wd_prob >= ?")
+        params.append(wd_prob_min)
+    if wd_prob_max is not None:
+        where.append("wd_prob IS NOT NULL AND wd_prob <= ?")
+        params.append(wd_prob_max)
+
     rows = conn.execute(
         f"SELECT {', '.join(_GCNS_ROW_COLS)} FROM gcns_stars "
-        "WHERE light_years IS NOT NULL AND light_years <= ? "
+        f"WHERE {' AND '.join(where)} "
         "ORDER BY light_years ASC",
-        (limit_ly,),
+        tuple(params),
     ).fetchall()
 
     stars = []
@@ -3044,6 +3060,242 @@ def search_hypatia_cache(filters: dict) -> dict:
     if capped:
         rows = rows[:_SEARCH_CAP]
     return {"count": len(rows), "capped": capped, "cap": _SEARCH_CAP, "stars": rows}
+
+
+# ── Phase T1c · census-filter presets (solar analogs / substellar) ───────────
+# Convenience presets over the existing census tables. Each carries its
+# population/completeness caveat as a JSON field (the consumer reads JSON, not
+# docs, at query time). No new datasets; self-validating (Phase-H/P).
+
+_SUN_TEFF = 5772.0   # IAU nominal solar effective temperature (K)
+_SUN_LOGG = 4.44     # solar surface gravity (log g, cgs)
+_SUN_FEH  = 0.0      # solar [Fe/H] (Lodders 2009 zero-point)
+
+# Tolerance boxes around the solar values: tight "twin" vs looser "analog".
+_SOLAR_ANALOG_PRESETS = {
+    "twin":   {"teff": 100.0, "logg": 0.1, "feh": 0.1},
+    "analog": {"teff": 500.0, "logg": 0.4, "feh": 0.3},
+}
+
+_SOLAR_POP_NOTE = ("Solar analogs are drawn from the ~14k Hypatia-cached stars (those with "
+                   "measured abundances); this is not a complete solar-neighbourhood census.")
+
+_SUBSTELLAR_NOTE = ("GCNS (Gaia-only) substellar completeness falls off beyond ~10–25 pc; "
+                    "L/T/Y dwarfs are too faint for Gaia farther out, and only "
+                    "SIMBAD-cross-matched rows carry a spectral type — this list is a lower bound.")
+
+
+def _attach_gcns_distance(conn, rows):
+    """Best-effort attach a GCNS Bayesian distance (dist_pc_gcns) to hypatia rows.
+
+    Cross-match chain: hypatia_cache.star_name → star_systems.designations →
+    Gaia EDR3/DR3 id (via _GCNS_GAIA_ID_RE) → gcns_stars.dist_pc. Sets
+    dist_pc_gcns=None wherever any hop breaks; returns the number matched. Lossy by
+    design (it only resolves where star_systems carries a Gaia id for that name).
+    """
+    from core.db import table_exists
+    for r in rows:
+        r["dist_pc_gcns"] = None
+    names = [r["star_name"] for r in rows if r.get("star_name")]
+    if not names or not table_exists("star_systems") or not table_exists("gcns_stars"):
+        return 0
+
+    qmarks = ",".join("?" * len(names))
+    try:
+        desig = {row["star_name"]: row["designations"] for row in conn.execute(
+            f"SELECT star_name, designations FROM star_systems WHERE star_name IN ({qmarks})", names)}
+    except Exception:
+        return 0
+
+    name_to_gid, gids = {}, set()
+    for name, d in desig.items():
+        if not d:
+            continue
+        m = _GCNS_GAIA_ID_RE.search(str(d))
+        if m:
+            gid = int(m.group(1))
+            name_to_gid[name] = gid
+            gids.add(gid)
+    if not gids:
+        return 0
+
+    gid_list = list(gids)
+    gq = ",".join("?" * len(gid_list))
+    try:
+        gid_to_dist = {row["gaia_source_id"]: row["dist_pc"] for row in conn.execute(
+            f"SELECT gaia_source_id, dist_pc FROM gcns_stars WHERE gaia_source_id IN ({gq})", gid_list)}
+    except Exception:
+        return 0
+
+    matched = 0
+    for r in rows:
+        gid = name_to_gid.get(r.get("star_name"))
+        if gid is not None and gid in gid_to_dist:
+            r["dist_pc_gcns"] = gid_to_dist[gid]
+            matched += 1
+    return matched
+
+
+def compute_solar_analogs(mode="twin", teff_tol=None, logg_tol=None, feh_tol=None,
+                          ly_max=None, gcns_distance=False) -> dict:
+    """Solar twins/analogs from the Hypatia cache by a tolerance box (Phase T1c E2).
+
+    Filters hypatia_cache around the solar values (Teff 5772 K, log g 4.44, [Fe/H] 0);
+    `mode="twin"` is a tight box (±100/±0.1/±0.1), `mode="analog"` a looser one
+    (±500/±0.4/±0.3); any explicit *_tol overrides that axis. `ly_max` filters
+    light_years; `gcns_distance=True` best-effort attaches a GCNS Bayesian distance.
+
+    Returns {mode, criteria, population, count, capped, cap, stars[]} or {"error": str}.
+    The `population` block (source + size + caveat note) is mandatory so a short list
+    is never read as a complete census (Hypatia-cache-limited to ~14k abundance stars).
+    """
+    from core.db import get_conn, table_exists
+
+    if mode not in _SOLAR_ANALOG_PRESETS:
+        return {"error": f"Unknown mode '{mode}' (expected 'twin' or 'analog')."}
+    if not table_exists("hypatia_cache"):
+        return {"error": "hypatia_cache table is empty — run the Import Hypatia Cache utility first."}
+
+    preset = _SOLAR_ANALOG_PRESETS[mode]
+    tt = preset["teff"] if teff_tol is None else teff_tol
+    lt = preset["logg"] if logg_tol is None else logg_tol
+    ft = preset["feh"]  if feh_tol  is None else feh_tol
+    for label, val in (("teff_tol", tt), ("logg_tol", lt), ("feh_tol", ft)):
+        if val <= 0:
+            return {"error": f"{label} must be positive."}
+    if ly_max is not None and ly_max <= 0:
+        return {"error": "ly_max must be positive."}
+
+    clauses, params = [], []
+    clauses += _range_clause("teff", _SUN_TEFF - tt, _SUN_TEFF + tt, params)
+    clauses += _range_clause("logg", _SUN_LOGG - lt, _SUN_LOGG + lt, params)
+    clauses += _range_clause("fe_h", _SUN_FEH - ft, _SUN_FEH + ft, params)
+    if ly_max is not None:
+        clauses.append("(light_years IS NOT NULL AND light_years <= ?)")
+        params.append(ly_max)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = (
+        "SELECT hc.star_name, hc.hip, hc.hd, hc.teff, hc.logg, hc.vmag, hc.bv, "
+        "hc.distance_pc, hc.disk, hc.fe_h, hc.light_years, "
+        "(SELECT mean FROM hypatia_abundance WHERE star_name = hc.star_name AND element = 'Mg') AS mg_h, "
+        "(SELECT mean FROM hypatia_abundance WHERE star_name = hc.star_name AND element = 'Si') AS si_h, "
+        "(SELECT mean FROM hypatia_abundance WHERE star_name = hc.star_name AND element = 'O')  AS o_h "
+        "FROM hypatia_cache hc"
+        f"{where} ORDER BY hc.fe_h IS NULL, hc.fe_h DESC LIMIT ?"
+    )
+    params.append(_SEARCH_CAP + 1)
+
+    try:
+        conn = get_conn()
+        total = conn.execute("SELECT COUNT(*) FROM hypatia_cache").fetchone()[0]
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    except Exception as e:
+        return {"error": f"Error reading hypatia_cache table: {e}"}
+    if total == 0:
+        return {"error": "hypatia_cache table is empty — run the Import Hypatia Cache utility first."}
+
+    capped = len(rows) > _SEARCH_CAP
+    if capped:
+        rows = rows[:_SEARCH_CAP]
+
+    gcns_matched = _attach_gcns_distance(conn, rows) if gcns_distance else None
+
+    return {
+        "mode": mode,
+        "criteria": {
+            "teff_center": _SUN_TEFF, "teff_tol": tt,
+            "logg_center": _SUN_LOGG, "logg_tol": lt,
+            "feh_center":  _SUN_FEH,  "feh_tol":  ft,
+            "ly_max": ly_max,
+        },
+        "population": {
+            "source": "hypatia_cache",
+            "total_in_cache": total,
+            "returned": len(rows),
+            "gcns_distance_matched": gcns_matched,
+            "note": _SOLAR_POP_NOTE,
+        },
+        "count": len(rows),
+        "capped": capped,
+        "cap": _SEARCH_CAP,
+        "stars": rows,
+    }
+
+
+def compute_substellar_census(ly_max=None, include_late_m=False, classes=None) -> dict:
+    """Substellar (L/T/Y) census from gcns_stars by spectral-type prefix (Phase T1c E3).
+
+    Selects gcns_stars whose SIMBAD-cross-matched `spectral_type` begins with one of
+    the substellar classes (default L/T/Y; `include_late_m` adds M7/M8/M9; `classes`
+    overrides). `ly_max` filters light_years. Sorted by light_years; capped at
+    _SEARCH_CAP. Returns {classes, ly_max, count, capped, cap, completeness_note,
+    population, snapshot_date, gcns_version, stars[]} or {"error": str}.
+
+    The `completeness_note` is mandatory: GCNS substellar completeness falls off
+    beyond ~10–25 pc and only cross-matched rows carry a spectral type, so the result
+    is an explicit lower bound (never read a short list as complete).
+    """
+    from core.db import get_conn
+
+    if ly_max is not None and ly_max <= 0:
+        return {"error": "ly_max must be positive."}
+
+    if classes:
+        prefixes = [str(c).strip().upper() for c in classes if str(c).strip()]
+    else:
+        prefixes = ["L", "T", "Y"]
+    if include_late_m:
+        prefixes = prefixes + ["M7", "M8", "M9"]
+    if not prefixes:
+        return {"error": "No spectral classes given."}
+
+    conn = get_conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM gcns_stars").fetchone()[0]
+    except Exception as e:
+        return {"error": f"Error reading gcns_stars table: {e}"}
+    if total == 0:
+        return {"error": "gcns_stars table is empty — run option 58 (Import GCNS Data) first."}
+
+    or_parts, params = [], []
+    for pfx in prefixes:
+        or_parts.append("spectral_type LIKE ?")
+        params.append(pfx + "%")
+    clauses = ["spectral_type IS NOT NULL", "(" + " OR ".join(or_parts) + ")"]
+    if ly_max is not None:
+        clauses.append("(light_years IS NOT NULL AND light_years <= ?)")
+        params.append(ly_max)
+    where = " WHERE " + " AND ".join(clauses)
+
+    rows = conn.execute(
+        f"SELECT {', '.join(_GCNS_ROW_COLS)} FROM gcns_stars{where} "
+        "ORDER BY light_years IS NULL, light_years ASC LIMIT ?",
+        tuple(params + [_SEARCH_CAP + 1]),
+    ).fetchall()
+    stars = [_gcns_row_to_dict(r) for r in rows]
+    capped = len(stars) > _SEARCH_CAP
+    if capped:
+        stars = stars[:_SEARCH_CAP]
+
+    with_type = conn.execute(
+        "SELECT COUNT(*) FROM gcns_stars WHERE spectral_type IS NOT NULL").fetchone()[0]
+    meta = _gcns_meta_dict()
+    return {
+        "classes": prefixes,
+        "ly_max": ly_max,
+        "count": len(stars),
+        "capped": capped,
+        "cap": _SEARCH_CAP,
+        "completeness_note": _SUBSTELLAR_NOTE,
+        "population": {
+            "total_in_gcns": total,
+            "with_spectral_type": with_type,
+            "returned": len(stars),
+        },
+        "snapshot_date": meta.get("snapshot_date"),
+        "gcns_version": meta.get("gcns_version"),
+        "stars": stars,
+    }
 
 
 # ── Star comparison (Phase L1) ───────────────────────────────────────────────

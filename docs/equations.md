@@ -111,12 +111,13 @@ Tidal-locking timescale of a satellite (MacDonald 1964 torque model).
 - Returns `{primary_mass_earth, satellite_mass_earth, sma_km, initial_rotation_hours, rigidity_pa, tidal_q, satellite_radius_km, lock_time_years, lock_time_gyr}`.
 - **Model limitation:** `rigidity_pa` is accepted and echoed for transparency, but `k₂` is fixed at 0.3 (the MacDonald rocky-body simplification) — an order-of-magnitude estimate, reserved for a future Love-number refinement. The `a⁶` dependence means doubling `sma_km` multiplies the lock time by ≈ 64.
 
-### H3: `compute_hill_sphere(star_mass_solar, planet_mass_earth, sma_au, eccentricity=0)`
+### H3: `compute_hill_sphere(star_mass_solar, planet_mass_earth, sma_au, eccentricity=0, moon_inclination_deg=0, prograde=True)`
 Gravitational sphere of influence of a planet; stable satellite orbits exist within ~0.5 × Hill radius.
-- Validate `star_mass_solar > 0`, `planet_mass_earth > 0`, `sma_au > 0`, `0 ≤ e < 1`.
+- Validate `star_mass_solar > 0`, `planet_mass_earth > 0`, `sma_au > 0`, `0 ≤ e < 1`, and (Phase T1a) `0 ≤ moon_inclination_deg ≤ 180`.
 - `r_H_m = a_m × (1 − e) × (M_p / (3 × M_star))^(1/3)`; `stable_limit = 0.5 × r_H`. Both reported in km and AU.
-- Returns `{star_mass_solar, planet_mass_earth, sma_au, eccentricity, hill_radius_km, hill_radius_au, stable_orbit_limit_km, stable_orbit_limit_au}`.
+- Returns `{star_mass_solar, planet_mass_earth, sma_au, eccentricity, moon_inclination_deg, prograde, hill_radius_km, hill_radius_au, stable_orbit_limit_km, stable_orbit_limit_au, stable_fraction, stable_moon_limit_km, stable_moon_limit_au}`.
 - **Anchor:** Earth (1 M☉, 1 M⊕, 1 AU, e=0) → hill_radius ≈ 1,496,000 km (0.0100 AU), stable ≈ 748,000 km.
+- **Phase T1a — Domingos 2006 exomoon keys (B3, additive).** The crude `stable_orbit_limit_*` (0.5 × r_H heuristic) is **retained** but superseded by the largest-stable-satellite-orbit fit of Domingos, Winter & Yokoyama (2006, MNRAS 373, 1227): `stable_moon_limit = f × r_Hill`, where the **prograde** factor `f = 0.4895·(1 − 1.0305·e_p − 0.2738·i_sat)` and the **retrograde** factor `f = 0.9309·(1 − 1.0764·e_p − 0.9812·i_sat)` (the retrograde e/i coefficients are pinned against the paper). `e_p` is the planet's eccentricity; the satellite inclination `i_sat` is taken in **degrees on input, radians internally**. New keys: `stable_fraction` (= `f`), `stable_moon_limit_au` (headline) and `stable_moon_limit_km`. The two new inputs `moon_inclination_deg` (default 0) and `prograde` (default True) are **additive/defaulted** — with both omitted, all pre-existing keys/values are byte-identical to before. **Anchor:** e=0, i=0, prograde → `stable_fraction = 0.4895`; retrograde → `0.9309`; i=45° prograde → ≈ 0.3843.
 
 ### H4: `compute_binary_orbit_stability(mass1_solar, mass2_solar, binary_sma_au, test_sma_au, eccentricity=0)`
 Planet orbit stability in a binary (Holman & Wiegert 1999 empirical fit). S-type = planet orbits one star; P-type = circumbinary.
@@ -214,3 +215,74 @@ placement illustrative).
 - **Viz:** `core.viz.prepare_ice_line_diagram(result)` → `make_ice_line_canvas` (V4 frost-line ring,
   inner-focus ≤ 18 AU + Full-range toggle + hover); `prepare_orbit_overlays(L)` feeds the V6
   snow-line ring + V7 solvent-zone overlays (all default-off) on the opt-3/6/Map orbital diagrams.
+
+## Research-Tooling Calculators (Phase T1a)
+
+Two new self-validating pure-math calculators (Phase-H/P contract: curated `{"error"}` for
+out-of-range) added for the sibling worldbuilding repo's `query.py` consumer. Backed by
+`compute_circumbinary_hz` (`core/equations.py`) and `compute_lorentz_factor` (`core/calculators.py`,
+documented here with its calculator siblings). The third Phase-T1a "calculator" — the Domingos 2006
+exomoon keys — is folded into **H3 `compute_hill_sphere`** above, not a separate function. The
+`trojan-stability` subcommand is a thin wrapper over the existing R2 `core/feasibility.gascheau_coorbital_stable`
+(no new math). See `docs/integration.md` for the `query.py` contract.
+
+### `compute_circumbinary_hz(teff1, lum1, teff2, lum2)` (C1)
+
+Circumbinary (P-type) habitable zone from the **combined** light of a close binary. For a
+circumbinary planet the binary separation ≪ the planet's orbit, so the pair acts as one point
+source of luminosity `L_tot = L₁ + L₂`. The Kopparapu S_eff coefficients need one effective
+temperature; the **luminosity/flux-weighted** convention is used:
+`eff_teff = (L₁·T₁ + L₂·T₂)/(L₁+L₂)` (collapses to the brighter star as the other's L → 0). The six
+zone boundaries are then `compute_habitable_zone(eff_teff, L_tot)`.
+- **Out-of-range Teff — flag, don't clamp.** The Kopparapu polynomial is only valid ~2600–7200 K; a
+  binary's combined Teff trips this far more often than a single star. When `eff_teff` is outside
+  `[2600, 7200]` K, the result sets `out_of_range_teff = True` and echoes `eff_teff` but **still
+  returns the zones** (more conservative than single-star `habitable-zone`'s silent extrapolation).
+- **Validation (self-validating):** all four inputs `> 0` else `{"error": str}`.
+- Returns `{teff1, lum1, teff2, lum2, combined_lum, eff_teff, out_of_range_teff, zones}` — `zones` is
+  the same 6-dict list (`zone_name, key, au, lm, seff`) as `compute_habitable_zone`.
+- **Anchors:** equal Sun-like stars (5778 K, L=1 each) → `eff_teff = 5778 K`, `combined_lum = 2`,
+  `out_of_range_teff = False`; two 2400 K stars → `eff_teff = 2400 K`, `out_of_range_teff = True`
+  (still 6 zones returned).
+
+### `compute_lorentz_factor(velocity_c)` (D2)
+
+Special-relativistic Lorentz / time-dilation factor for a **sublight** velocity (lives with the
+velocity converters in `core/calculators.py`). `γ = 1/√(1 − β²)`, `time_dilation_pct = (γ − 1)·100`.
+- **Deliberately distinct** from the FTL-arithmetic converters (`compute_ly_hr_to_times_c` /
+  `compute_speed_of_light_to_ly_hr`), which treat "× c" as a plain multiplier with **no** relativistic
+  interpretation. This one is relativistic and rejects β ≥ 1.
+- **Validation (self-validating):** `0 ≤ velocity_c < 1` else
+  `{"error": "Velocity must be in the range 0 ≤ β < 1 (sublight)."}`.
+- Returns `{velocity_c, lorentz_factor, time_dilation_pct}`.
+- **Anchors:** β=0 → γ=1; β=0.6 → γ=1.25 (25% dilation); β→0.999 → γ≈22.37.
+
+### `compute_tidal_heating(primary_mass_earth, satellite_radius_km, sma_km, ecc, k2=0.3, tidal_q=100)` (B1)
+
+Tidal heating power + surface flux of a **synchronously rotating** satellite on an eccentric orbit
+(Phase T1b). **`Ė = (21/2)·(G·k₂·M_p²·R_s⁵·n·e²)/(Q·a⁶)`** — the leading **`21/2`** is the Peale &
+Cassen (1978) constant, verified against Heller & Barnes 2013 (arXiv:1209.5323) / Henning et al. 2009;
+mean motion `n = √(G·M_p/a³)`. Surface flux `= Ė/(4πR_s²)` W/m²; `io_flux_ratio = surface_flux / 2.0`
+(Io's globally-averaged heat flux ≈ 2 W/m²).
+- **Order-of-magnitude** (fixed-Q, homogeneous body, small-e expansion) — labelled as such; a scale
+  estimate, not a precise dissipation prediction.
+- **Validation (self-validating):** `primary_mass_earth>0`, `satellite_radius_km>0`, `sma_km>0`,
+  `0≤e<1`, `k2>0`, `tidal_q>0`.
+- Returns `{heating_power_w, surface_flux_wm2, mean_motion_rad_s, io_flux_ratio, primary_mass_earth,
+  satellite_radius_km, sma_km, ecc, k2, tidal_q}`.
+- **Anchor:** Io-like (M_p=317.8 M⊕, R_s=1821 km, a=421 700 km, e=0.0041, k₂=0.3, Q=100) →
+  `mean_motion_rad_s ≈ 4.1e-5`, `io_flux_ratio` O(1) (within an order of Io — Io's real k₂≈0.03 ≪ 0.3).
+
+### `compute_kozai_lidov(m1_solar, m2_solar, m3_solar, period_inner_yr=None, period_outer_yr=None, sma_inner_au=None, sma_outer_au=None, ecc_outer=0)` (C2)
+
+Kozai–Lidov (von Zeipel–Lidov–Kozai) oscillation timescale for a hierarchical triple (Phase T1b).
+**`T_KL = (8/15π)·((M₁+M₂+M₃)/M₃)·(P_out²/P_in)·(1−e_out²)^{3/2}`** years — the leading **`8/15π`**
+(≈0.16977) is verified against Antognini 2015 (MNRAS 452, 3610, Eq. 42); the general-triple mass factor
+`(M₁+M₂+M₃)/M₃` (M₃ = outer/tertiary perturber, **denominator**) is the Kiseleva et al. 1998 form. Supply
+either both periods (yr) or both SMAs (AU) — `P_in=√(a_in³/(M₁+M₂))`, `P_out=√(a_out³/(M₁+M₂+M₃))`.
+- **Order-of-magnitude** (the exact KL period varies within "a factor of a few" of this; Antognini 2015) —
+  labelled as such.
+- **Validation (self-validating):** masses `>0`, `0≤e_out<1`; exactly one complete period **or** SMA pair
+  (partial/both → `{"error"}`).
+- Returns `{timescale_years, m1_solar, m2_solar, m3_solar, period_inner_yr, period_outer_yr, ecc_outer}`.
+- **Anchor:** M₁=M₂=M₃=1 M☉, P_in=1 yr, P_out=100 yr, e_out=0 → `T_KL = (8/15π)·3·(100²/1) ≈ 5093 yr`.

@@ -47,7 +47,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `mission-exocat` | `--star` | SIMBAD (then local DB) | `simbad, exocat` |
 | `hwc` | `--star` | SIMBAD (then local DB) | `simbad, star_row, planet_rows[]` |
 | `hypatia-data` | `--star` | SIMBAD + Hypatia | `star_name, properties, abundances[]` |
-| `gcns-within-sol` | `--ly` | none (local DB) | `limit_ly, count, snapshot_date, gcns_version, stars[]` |
+| `gcns-within-sol` | `--ly` [`--wd-prob-min --wd-prob-max`] | none (local DB) | `limit_ly, count, snapshot_date, gcns_version, stars[]` |
 | `gcns-source` | `--id` | none (local DB) | `snapshot_date, gcns_version, star` |
 | `gcns-system` | `--id` | none (local DB) | `snapshot_date, gcns_version, query_source_id, system` |
 | `gcns-distance` | (`--star1`\|`--id1`) (`--star2`\|`--id2`) | SIMBAD‡ (local DB) | `star1_info, star2_info, distance_ly, distance_au, snapshot_date, gcns_version` |
@@ -55,9 +55,19 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `gcns-stars-within-star` | (`--star`\|`--id`) `--ly` | SIMBAD‡ (local DB) | `center, center_x/y/z, limit_ly, count, snapshot_date, gcns_version, stars[]` |
 | `roche-limit` | `--primary-mass-earth --satellite-density` [`--primary-radius-earth`] | none | `rigid_km, rigid_au, fluid_km, fluid_au, primary_density_gcc, …` |
 | `tidal-locking` | `--primary-mass-earth --satellite-mass-earth --sma-km --rotation-hours` [`--rigidity-pa --tidal-q`] | none | `lock_time_years, lock_time_gyr, satellite_radius_km, …` |
-| `hill-sphere` | `--star-mass-solar --planet-mass-earth --sma-au` [`--eccentricity`] | none | `hill_radius_km, hill_radius_au, stable_orbit_limit_km/au, …` |
+| `hill-sphere` | `--star-mass-solar --planet-mass-earth --sma-au` [`--eccentricity --moon-inclination-deg --retrograde`] | none | `hill_radius_km, hill_radius_au, stable_orbit_limit_km/au, stable_fraction, stable_moon_limit_km/au, …` |
 | `binary-stability` | `--mass1-solar --mass2-solar --binary-sma-au --test-sma-au` [`--eccentricity`] | none | `mass_ratio, stype_critical_sma_au, ptype_critical_sma_au, orbit_type, is_stable, …` |
 | `atmosphere-retention` | `--planet-mass-earth --planet-radius-earth --temperature-k` | none | `v_escape_kms, gases[]` |
+| `trojan-stability` | `--host-mass-earth --companion-mass-earth --star-mass-solar` | none | `mass_ratio, criterion, stable` |
+| `lorentz-factor` | `--velocity-c` | none | `velocity_c, lorentz_factor, time_dilation_pct` |
+| `circumbinary-hz` | (`--teff1 --lum1 --teff2 --lum2`) \| (`--star1 --star2`) | none \| SIMBAD (`--star`) | `combined_lum, eff_teff, out_of_range_teff, zones[]` |
+| `rv-semi-amplitude` | `--planet-mass-earth --star-mass-solar` (`--period-days`\|`--sma-au`) [`--ecc --inclination-deg`] | none | `k_ms, period_days, sma_au, ecc, inclination_deg` |
+| `transit-signal` | `--planet-radius-earth --star-radius-solar` (`--sma-au` \| `--period-days --star-mass-solar`) | none | `depth_ppm, depth_frac, transit_prob, duration_hours, sma_au, period_days` |
+| `astrometric-signal` | `--planet-mass-earth --star-mass-solar --sma-au --distance-pc` | none | `signal_microarcsec, signal_arcsec` |
+| `direct-imaging` | `--sma-au --distance-pc --planet-radius-earth` [`--albedo --telescope-diameter-m --wavelength-um`] | none | `angular_sep_arcsec, contrast_reflected, iwa_arcsec, resolvable` |
+| `tidal-heating` | `--primary-mass-earth --satellite-radius-km --sma-km --ecc` [`--k2 --tidal-q`] | none | `heating_power_w, surface_flux_wm2, mean_motion_rad_s, io_flux_ratio` (order-of-mag) |
+| `kozai-lidov` | `--m1-solar --m2-solar --m3-solar` (`--period-inner-yr --period-outer-yr` \| `--sma-inner-au --sma-outer-au`) [`--ecc-outer`] | none | `timescale_years` (order-of-mag) |
+| `relativistic-brachistochrone` | `--accel-g --distance-ly` | none | `coord_time_yr, proper_time_yr, peak_velocity_c, peak_lorentz_factor` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
 | `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …`] | SIMBAD + NASA + Hypatia (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json) |
@@ -86,6 +96,8 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `search-hwc` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
 | `search-exoplanets` | _(all optional filters)_ | **NASA TAP (live)** | `count, capped, cap, stars[]` |
 | `search-hypatia` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
+| `solar-analogs` | [`--mode twin\|analog --teff-tol --logg-tol --feh-tol --ly-max --gcns-distance`] | none (local DB) | `mode, criteria, population, count, capped, cap, stars[]` |
+| `substellar` | [`--ly-max --include-late-m --classes …`] | none (local DB) | `classes, ly_max, count, capped, cap, completeness_note, population, stars[]` |
 | `compare-stars` | `--stars N [N …]` (2–4) | SIMBAD + NASA + Hypatia | `stars[]` (per-star error isolation) |
 | `main-sequence` | _(none)_ | none (local DB) | **list** of 24 spectral-class rows |
 | `solar-system` | _(none)_ | none (local DB) | `planets[], moons[], dwarf_planets[], asteroids[]` |
@@ -208,8 +220,10 @@ Core function: `equations.compute_tidal_locking_time(primary_mass_earth, satelli
 Hill sphere (gravitational sphere of influence) of a planet; stable satellite orbits within ~0.5 × Hill radius.
 ```bash
 query.py hill-sphere --star-mass-solar 1.0 --planet-mass-earth 1.0 --sma-au 1.0
+query.py hill-sphere --star-mass-solar 1.0 --planet-mass-earth 317.8 --sma-au 5.2 --moon-inclination-deg 30 --retrograde
 ```
-Core function: `equations.compute_hill_sphere(star_mass_solar, planet_mass_earth, sma_au, eccentricity=0)`. `--eccentricity` defaults to 0. Output: `{…inputs…, hill_radius_km, hill_radius_au, stable_orbit_limit_km, stable_orbit_limit_au}`.
+Core function: `equations.compute_hill_sphere(star_mass_solar, planet_mass_earth, sma_au, eccentricity=0, moon_inclination_deg=0, prograde=True)`. `--eccentricity` defaults to 0. Output: `{…inputs…, moon_inclination_deg, prograde, hill_radius_km, hill_radius_au, stable_orbit_limit_km, stable_orbit_limit_au, stable_fraction, stable_moon_limit_km, stable_moon_limit_au}`.
+- **Phase T1a — Domingos 2006 exomoon keys (B3, additive).** `--moon-inclination-deg` (default 0, **degrees** — radians internally; valid `0 ≤ i ≤ 180`) and `--retrograde` (store-true → the retrograde fit; default prograde) drive the largest-stable-satellite-orbit estimate of Domingos, Winter & Yokoyama (2006): `stable_moon_limit_au = stable_fraction × hill_radius_au` with `stable_fraction = f`, prograde `f = 0.4895·(1 − 1.0305·e_p − 0.2738·i)`, retrograde `f = 0.9309·(1 − 1.0764·e_p − 0.9812·i)`. **`stable_moon_limit_au` (Domingos) supersedes `stable_orbit_limit_au` (the retained crude 0.5 × r_H heuristic)** as the headline stable-moon radius. With both new args omitted, the pre-existing keys/values are **byte-identical** to before. Out-of-range inclination → `{"error"}` exit 1.
 
 #### `binary-stability`
 Planet orbit stability in a binary (Holman & Wiegert 1999). S-type = orbits one star; P-type = circumbinary.
@@ -224,6 +238,132 @@ Which atmospheric gases a planet retains against Jeans escape (optimistic — us
 query.py atmosphere-retention --planet-mass-earth 1.0 --planet-radius-earth 1.0 --temperature-k 255
 ```
 Core function: `equations.compute_atmosphere_retention(planet_mass_earth, planet_radius_earth, temperature_k)`. Output: `{planet_mass_earth, planet_radius_earth, temperature_k, v_escape_kms, gases[]}` where each gas is `{gas, mol_mass_amu, lambda, v_thermal_kms, status}` (status ∈ Retained / Escaping slowly / Lost rapidly) for H₂, He, CH₄, H₂O, N₂, O₂, CO₂.
+
+### Research-tooling extensions (Phase T1a — no network)
+
+Three calculators added for the sibling worldbuilding repo (`scifiWorldBuilding-Claude`),
+all **self-validating** (Phase-H/P contract: curated `{"error": str}` → exit 1; argparse
+→ exit 2; success dict → exit 0). The B3 exomoon model rides on `hill-sphere` (above) and the
+E1 white-dwarf filter rides on `gcns-within-sol` (below); both are additive — see those sections.
+
+#### `trojan-stability`
+L4/L5 (Trojan) co-orbital linear-stability test (Gascheau 1843 / Routh). Stable when the
+co-orbital mass ratio `μ = (m_host + m_companion)/M★ < μ_crit = ½·(1 − √(23/27)) ≈ 0.0385`. A thin
+wrapper over the **Phase R2** `core/feasibility.gascheau_coorbital_stable` (the R2 form correctly folds
+the co-orbital body's own mass into the numerator; chosen over the request's generic `--mass1/--mass2`).
+```bash
+query.py trojan-stability --host-mass-earth 1.0 --companion-mass-earth 0 --star-mass-solar 1.0
+```
+Core function: `feasibility.gascheau_coorbital_stable(host_mass_earth, companion_mass_earth, star_mass_solar)`.
+Output: `{mass_ratio, criterion, stable}` (`criterion` ≈ 0.03852; `stable` is `mass_ratio < criterion`).
+**Validation:** `host_mass_earth > 0`, `star_mass_solar > 0`, `companion_mass_earth ≥ 0` else `{"error"}` exit 1.
+
+#### `lorentz-factor`
+Special-relativistic Lorentz / time-dilation factor for a **sublight** velocity. `γ = 1/√(1 − β²)`;
+`time_dilation_pct = (γ − 1)·100`. **Deliberately distinct** from the FTL-arithmetic `ly-hr`/`times-c`
+converters (which treat "× c" as a plain multiplier with no relativistic interpretation).
+```bash
+query.py lorentz-factor --velocity-c 0.6        # γ = 1.25
+```
+Core function: `calculators.compute_lorentz_factor(velocity_c)`. `--velocity-c` is β (a fraction of c).
+Output: `{velocity_c, lorentz_factor, time_dilation_pct}`. **Validation:** `0 ≤ velocity_c < 1` else
+`{"error": "Velocity must be in the range 0 ≤ β < 1 (sublight)."}` exit 1.
+
+#### `circumbinary-hz`
+Circumbinary (P-type) habitable zone from the two stars' **combined** light. `combined_lum = lum1 + lum2`;
+the Kopparapu S_eff coefficients use a **luminosity/flux-weighted** effective temperature
+`eff_teff = (lum1·teff1 + lum2·teff2)/(lum1+lum2)`; then the same 6-zone Kopparapu boundaries as
+`habitable-zone`, computed from `combined_lum`.
+```bash
+query.py circumbinary-hz --teff1 5778 --lum1 1.0 --teff2 4000 --lum2 0.3
+query.py circumbinary-hz --star1 "Alpha Centauri A" --star2 "Alpha Centauri B"   # SIMBAD-resolve (Phase T1b)
+```
+Core function: `equations.compute_circumbinary_hz(teff1, lum1, teff2, lum2)`. Output:
+`{teff1, lum1, teff2, lum2, combined_lum, eff_teff, out_of_range_teff, zones}` — `zones` is the same
+6-dict list (`zone_name, key, au, lm, seff`) as `habitable-zone`. **Out-of-range Teff is flagged, not
+clamped:** when `eff_teff` falls outside the Kopparapu validity (~2600–7200 K), `out_of_range_teff` is
+`true` and `eff_teff` is echoed but the zones are **still returned** (more conservative than single-star
+`habitable-zone`'s silent extrapolation — a binary's combined Teff trips this far more often).
+**Validation:** all four inputs `> 0` else `{"error"}` exit 1.
+- **Phase T1b — `--star1`/`--star2` SIMBAD-resolve mode (additive).** Instead of the four numeric inputs,
+  pass two **star names**: each is resolved via `compute_simbad_lookup` → `compute_star_system_regions_from_simbad`
+  (`temp` + `bcLuminosity`, the same derivation as `star-regions`; works for any main-sequence type) and fed
+  to the **unchanged** core function. The numeric and `--star` modes are mutually exclusive — supplying both,
+  or only one star, or a partial numeric set, is an **argparse-style exit 2** (a stderr message, not JSON). A
+  SIMBAD/regions failure on either star is returned immediately as `{"error"}` exit 1. `--star` mode adds a
+  SIMBAD network call; the numeric mode stays fully offline.
+
+### Detectability / exomoon / triple / relativistic calculators (Phase T1b — no network)
+
+Eight new self-validating (Phase-H/P contract) pure-math calculators for the sibling worldbuilding repo's
+survey-bias and dynamics research. Curated `{"error"}` → exit 1; argparse → exit 2. **B1 `tidal-heating`
+and C2 `kozai-lidov` are explicitly order-of-magnitude** (fixed-Q / secular approximations) — treat their
+single numbers as scale estimates, not precise predictions. The three load-bearing coefficients were
+verified against the cited papers (see `PHASE_T_PLAN.md` T1b).
+
+#### `rv-semi-amplitude` (A1)
+Radial-velocity semi-amplitude a planet induces on its star (Lovis & Fischer 2010):
+`K = 28.4329 m/s · (1/√(1−e²)) · (Mp·sin i / M_Jup) · ((M*+Mp)/M_sun)^(−2/3) · (P/1yr)^(−1/3)`. The input
+`--planet-mass-earth` is converted to **M_Jup internally** (the constant is per-M_Jup); `k_ms` is in m/s.
+```bash
+query.py rv-semi-amplitude --planet-mass-earth 1 --star-mass-solar 1 --period-days 365.25
+query.py rv-semi-amplitude --planet-mass-earth 317.8 --star-mass-solar 1 --sma-au 5.2 --ecc 0.05
+```
+Core: `calculators.compute_rv_semi_amplitude(planet_mass_earth, star_mass_solar, period_days=None, sma_au=None, ecc=0, inclination_deg=90)`. Supply exactly one of `--period-days`/`--sma-au` (a required mutually-exclusive group → argparse exit 2 if both/neither; the other is derived via Kepler III). `--ecc` default 0, `--inclination-deg` default 90. Output: `{k_ms, period_days, sma_au, ecc, inclination_deg, planet_mass_earth, star_mass_solar}`. **Validation:** masses `>0`, `0≤e<1`. **Anchor:** Earth→Sun ≈ `0.0895 m/s`.
+
+#### `transit-signal` (A2)
+Transit depth, geometric probability, and duration (Winn 2010): depth `δ=(Rp/R*)²`, prob `p≈R*/a`,
+duration `T≈(P/π)·arcsin(R*/a)`.
+```bash
+query.py transit-signal --planet-radius-earth 1 --star-radius-solar 1 --sma-au 1 --star-mass-solar 1
+```
+Core: `calculators.compute_transit_signal(planet_radius_earth, star_radius_solar, sma_au=None, period_days=None, star_mass_solar=None)`. Supply `--sma-au`, **or** `--period-days` + `--star-mass-solar` (derives `a`). When only `--sma-au` is given (no mass), `period_days`/`duration_hours` are `null` (depth + probability still computed). Output: `{depth_ppm, depth_frac, transit_prob, duration_hours, sma_au, period_days, planet_radius_earth, star_radius_solar}`. **Validation:** radii `>0`; a star radius ≥ the orbital distance → `{"error"}`. **Anchor:** Earth→Sun ≈ `83.9 ppm`, `prob 0.0047`, `duration ~13 h`.
+
+#### `astrometric-signal` (A3)
+Astrometric wobble: `α = (Mp/M*)·(a_AU/d_pc)`, reported **microarcsec** headline + arcsec echo.
+```bash
+query.py astrometric-signal --planet-mass-earth 317.8 --star-mass-solar 1 --sma-au 5.2 --distance-pc 10
+```
+Core: `calculators.compute_astrometric_signal(planet_mass_earth, star_mass_solar, sma_au, distance_pc)`. Output: `{signal_microarcsec, signal_arcsec, …inputs}`. **Validation:** all four `>0`. **Anchor:** Jupiter→Sun @ 10 pc ≈ `496 µas`.
+
+#### `direct-imaging` (A4)
+Reflected-light contrast + angular separation, optionally vs a telescope inner working angle: sep
+`θ=a/d`, contrast `C≈A_g·(Rp/a)²` (Rp→AU), `IWA=λ/D` (the **1·λ/D** convention — real coronagraphs use a
+1–4 λ/D multiple), `resolvable = θ≥IWA`.
+```bash
+query.py direct-imaging --sma-au 1 --distance-pc 10 --planet-radius-earth 1
+query.py direct-imaging --sma-au 1 --distance-pc 10 --planet-radius-earth 1 --telescope-diameter-m 6.5 --wavelength-um 1.0
+```
+Core: `calculators.compute_direct_imaging(sma_au, distance_pc, planet_radius_earth, albedo=0.3, telescope_diameter_m=None, wavelength_um=None)`. `iwa_arcsec`/`resolvable` are `null` unless **both** telescope args are given (only one → `{"error"}` exit 1). Output: `{angular_sep_arcsec, contrast_reflected, iwa_arcsec, resolvable, …inputs}`. **Validation:** sma/distance/radius `>0`, albedo `>0`. **Anchor:** Earth→Sun (A_g 0.3) ≈ contrast `5.4e-10`, sep `0.1″` @ 10 pc.
+
+#### `tidal-heating` (B1) — order-of-magnitude
+Tidal heating power + surface flux of a synchronous satellite. **`Ė = (21/2)·(G·k₂·M_p²·R_s⁵·n·e²)/(Q·a⁶)`**
+(Peale & Cassen 1978; leading **21/2** pinned against Heller & Barnes 2013), `n=√(GM_p/a³)`; surface flux
+`= Ė/(4πR_s²)`; `io_flux_ratio` vs Io's ≈ 2 W/m².
+```bash
+query.py tidal-heating --primary-mass-earth 317.8 --satellite-radius-km 1821 --sma-km 421700 --ecc 0.0041
+```
+Core: `equations.compute_tidal_heating(primary_mass_earth, satellite_radius_km, sma_km, ecc, k2=0.3, tidal_q=100)`. Output: `{heating_power_w, surface_flux_wm2, mean_motion_rad_s, io_flux_ratio, …inputs}`. **Validation:** mass/radius/sma `>0`, `0≤e<1`, `k2>0`, `tidal_q>0`. **Order-of-magnitude** — a fixed-Q, homogeneous, small-e estimate.
+
+#### `kozai-lidov` (C2) — order-of-magnitude
+Kozai–Lidov oscillation timescale of a hierarchical triple. **`T_KL = (8/15π)·((M₁+M₂+M₃)/M₃)·(P_out²/P_in)·(1−e_out²)^{3/2}`**
+years (leading **8/15π** pinned against Antognini 2015 Eq. 42; general mass factor = Kiseleva 1998, M₃ = the
+outer/tertiary perturber in the denominator).
+```bash
+query.py kozai-lidov --m1-solar 1 --m2-solar 1 --m3-solar 1 --period-inner-yr 1 --period-outer-yr 100
+query.py kozai-lidov --m1-solar 1 --m2-solar 0.5 --m3-solar 0.3 --sma-inner-au 1 --sma-outer-au 30 --ecc-outer 0.2
+```
+Core: `equations.compute_kozai_lidov(m1_solar, m2_solar, m3_solar, period_inner_yr=None, period_outer_yr=None, sma_inner_au=None, sma_outer_au=None, ecc_outer=0)`. Supply **both** periods or **both** SMAs (the other set derived via Kepler III). Output: `{timescale_years, …inputs}`. **Validation:** masses `>0`, `0≤e_out<1`; partial/both input sets → `{"error"}` exit 1. **Anchor:** equal solar masses, P_in 1 yr, P_out 100 yr → `≈ 5093 yr`. **Order-of-magnitude.**
+
+#### `relativistic-brachistochrone` (D1)
+Flip-and-burn under constant **proper** acceleration, relativistically correct (MTW) — lifts the 3%c
+Newtonian cap of the `brachistochrone-au`/`-lm` subcommands. `X=arccosh(1+a·(D/2)/c²)`; coordinate (observer)
+time `2·(c/a)·sinh X`, proper (ship) time `2·(c/a)·X`; midpoint `peak_velocity_c=tanh X`,
+`peak_lorentz_factor=cosh X`.
+```bash
+query.py relativistic-brachistochrone --accel-g 1 --distance-ly 4.37
+```
+Core: `calculators.compute_relativistic_brachistochrone(accel_g, distance_ly)`. Output: `{accel_g, distance_ly, coord_time_yr, proper_time_yr, peak_velocity_c, peak_lorentz_factor}`. **Validation:** `accel_g>0`, `distance_ly>0`. **Anchor:** 1 g over 4.37 ly → coord `≈ 6.0 yr`, proper `≈ 3.58 yr`, peak `≈ 0.95 c`; at low speed it converges to the Newtonian flip-burn `2√(D/a)` with proper ≈ coordinate time.
 
 ### Solvent zones (Phase P — no network)
 
@@ -677,9 +817,12 @@ Reads the `gcns_stars` / `gcns_systems` / `gcns_system_members` / `gcns_system_p
 All GCNS sources within N light years of Sol, sorted ascending by `light_years`.
 ```bash
 query.py gcns-within-sol --ly 15
+query.py gcns-within-sol --ly 50 --wd-prob-min 0.5      # white-dwarf census (Phase T1a)
 ```
-Core function: `databases.compute_gcns_within_sol(ly)`
-Output: `{limit_ly, count, snapshot_date, gcns_version, stars[]}`. Each star carries the fields above plus heliocentric `x`/`y`/`z` (ly) for map parity with `stars-within-sol`. Example (abridged):
+Core function: `databases.compute_gcns_within_sol(ly, wd_prob_min=None, wd_prob_max=None)`
+Output: `{limit_ly, count, snapshot_date, gcns_version, stars[]}`. Each star carries the fields above plus heliocentric `x`/`y`/`z` (ly) for map parity with `stars-within-sol`.
+- **Phase T1a — white-dwarf census filter (E1, additive).** Optional `--wd-prob-min` / `--wd-prob-max` restrict the census to sources whose GCNS white-dwarf probability (`wd_prob`) falls in the given range; rows with a NULL `wd_prob` are excluded once either bound is set. Both omitted → byte-identical to the unfiltered census. A `min > max` simply matches nothing (count 0), not an error — consistent with the other range filters. This is the closest census primitive to attach to (there is **no** GCNS `search-*` function). Empty `gcns_stars` → `{"error"}` exit 1; non-numeric `--ly`/`--wd-prob-*` → argparse exit 2.
+Example (abridged):
 ```json
 {
   "limit_ly": 6.0,
@@ -849,6 +992,37 @@ mg_h, si_h, o_h}` (`mg_h`/`si_h`/`o_h` are pivoted convenience [X/H] values; any
 > Star Systems search also gained `--fe-h-min`/`--fe-h-max` (an inner JOIN onto this cache; matches nothing when the
 > cache is empty).
 
+### Census-filter presets (Phase T1c — local DB, no network)
+
+Two convenience census presets for the sibling worldbuilding repo. Self-validating (curated `{"error"}` →
+exit 1; argparse → exit 2). **The defining feature: each result carries its population/completeness caveat as a
+JSON field** (`population` / `completeness_note`) — the external consumer reads JSON, not docs, at query time —
+so a short list is never mistaken for a complete census.
+
+#### `solar-analogs`
+Solar twins/analogs from the **Hypatia cache** by a tolerance box around the solar values (Teff 5772 K, log g
+4.44, [Fe/H] 0.0). Backed by `hypatia_cache` — the only table carrying teff/logg/[Fe/H] — so the population is
+necessarily the ~14k abundance-measured stars (stated in the output).
+```bash
+query.py solar-analogs                                   # twin box (default)
+query.py solar-analogs --mode analog --ly-max 50
+query.py solar-analogs --teff-tol 30 --feh-tol 0.05 --gcns-distance
+```
+Core: `databases.compute_solar_analogs(mode="twin", teff_tol=None, logg_tol=None, feh_tol=None, ly_max=None, gcns_distance=False)`. `--mode twin` → tolerance `±100 K / ±0.1 / ±0.1`; `--mode analog` → `±500 K / ±0.4 / ±0.3`; any `--*-tol` overrides that axis; `--ly-max` filters `light_years`. Output: `{mode, criteria{teff_center, teff_tol, logg_center, logg_tol, feh_center, feh_tol, ly_max}, population{source:"hypatia_cache", total_in_cache, returned, gcns_distance_matched, note}, count, capped, cap, stars[]}` — `stars` carry the `hypatia_cache` columns + `mg_h/si_h/o_h` pivots. **`population.note`** states the Hypatia-cache limit (the locked caveat).
+- **`--gcns-distance` (opt-in, best-effort):** attaches a GCNS Bayesian distance `dist_pc_gcns` per star via the cross-match `star_name → star_systems.designations → Gaia id → gcns_stars.dist_pc` (`null` where the chain breaks); `population.gcns_distance_matched` reports the hit count. Default off → no `dist_pc_gcns` key, `gcns_distance_matched: null`.
+- **Validation:** empty `hypatia_cache` → `{"error"}` exit 1; any explicit `--*-tol ≤ 0` or `--ly-max ≤ 0` → curated `{"error"}` exit 1; bad `--mode` / non-numeric tol → argparse exit 2.
+
+#### `substellar`
+Substellar (**L/T/Y**) census from `gcns_stars` by SIMBAD-cross-matched **spectral-type prefix** — the census the
+completeness caveat is about. `--teff-max` is **not** offered (`gcns_stars` has no teff).
+```bash
+query.py substellar
+query.py substellar --ly-max 20 --include-late-m
+query.py substellar --classes L T            # override the prefix set
+```
+Core: `databases.compute_substellar_census(ly_max=None, include_late_m=False, classes=None)`. Selects rows whose `spectral_type` begins with one of `classes` (default `L T Y`; `--include-late-m` adds `M7/M8/M9`); `spectral_type IS NOT NULL` (only cross-matched rows carry a type); `--ly-max` filters `light_years`; sorted by distance, capped at 500. Output: `{classes, ly_max, count, capped, cap, completeness_note, population{total_in_gcns, with_spectral_type, returned}, snapshot_date, gcns_version, stars[]}` — `stars` are the standard GCNS row shape. **`completeness_note`** is the mandatory lower-bound disclosure (GCNS substellar completeness falls off beyond ~10–25 pc; only cross-matched rows carry types).
+- **Validation:** empty `gcns_stars` → `{"error"}` exit 1; `--ly-max ≤ 0` → curated `{"error"}` exit 1; non-numeric `--ly-max` → argparse exit 2.
+
 #### `compare-stars`
 Side-by-side comparison of **2–4 stars** in one structured result (Phase L1). Live network (SIMBAD + an optional NASA
 pscomppars supplement + Hypatia). This is the one call that bundles work an external caller would otherwise have to
@@ -950,10 +1124,13 @@ For subcommands that run SIMBAD first (`star-regions`, `exoplanets`, `planetary-
 
 The `gcns-within-sol`, `gcns-source`, and `gcns-system` subcommands are **local DB reads** (no SIMBAD step). The `gcns-distance` / `gcns-travel-time` / `gcns-stars-within-star` calculators are local DB reads **except** for `--star…` endpoints, which add a SIMBAD name-resolution step (a SIMBAD error on any `--star…` endpoint is returned immediately). The DB path can be overridden with the `SPACE_APP_DB` environment variable (used by tests).
 
+`circumbinary-hz` (Phase T1a/T1b) is **offline in its numeric mode** (`--teff1/--lum1/--teff2/--lum2`); its `--star1/--star2` mode adds a SIMBAD lookup per star (→ `compute_star_system_regions_from_simbad` for teff/luminosity), returning a SIMBAD/regions error immediately. The two modes are mutually exclusive (both, or one star only, or a partial numeric set → argparse-style exit 2). All other Phase T1b calculators (`rv-semi-amplitude`, `transit-signal`, `astrometric-signal`, `direct-imaging`, `tidal-heating`, `kozai-lidov`, `relativistic-brachistochrone`) are pure-compute, no network.
+
 ## Implementation notes
 
 - No `sys.path` manipulation — Python prepends the script's own directory automatically when run directly, so `import core.X` works without changes.
 - Unexpected exceptions from core functions are caught by a top-level handler in `main()` and returned as `{"error": str(e)}` with exit code 1.
 - `--ly-hr` and `--times-c` are a mutually exclusive required group for `travel-time`, `optimal-tour`, and `multi-stop`; supplying both or neither is rejected by `argparse` with exit code 2.
 - The `gcns-*` calculators use one required mutually-exclusive group **per endpoint** (`--star1`/`--id1`, `--star2`/`--id2`, or `--star`/`--id`), plus the `--ly-hr`/`--times-c` group for `gcns-travel-time`. Supplying both or neither within any group is rejected by `argparse` with **exit code 2** and a message on **stderr** — this is the argparse path, **not** the JSON-`{"error"}`/exit-1 path, so do not parse stdout as JSON for those invocations. A resolvable-but-invalid request (e.g. a name not in GCNS, an ambiguous name, or an empty `gcns_stars` table) instead returns `{"error": ...}` on stdout with exit 1.
+- **Phase T mode-selection groups:** `rv-semi-amplitude` uses a real **argparse** required mutually-exclusive group `--period-days`/`--sma-au` (both/neither → exit 2). `circumbinary-hz` (numeric `--teff1/--lum1/--teff2/--lum2` vs `--star1/--star2`) enforces its mode exclusivity **in the handler** — both modes, one star only, or a partial numeric set → a stderr message + **exit 2**. `kozai-lidov` requires exactly one complete pair (both periods **or** both SMAs); a partial/both-pair input is a **core** check → curated `{"error"}` **exit 1**. `solar-analogs --mode` is an argparse `choices` (bad value → exit 2). `substellar --classes` is `nargs="+"`.
 - **Phase N validation asymmetry** (see "Integration expansion (Phase N)" above): the pure-compute Phase-N subcommands (`habitable-zone-sma`, `star-luminosity`, `brachistochrone-au`, `brachistochrone-lm`) wrap **non-self-validating** legacy core functions, so out-of-range numerics surface via the generic top-level handler as `{"error": str(e)}` with a **raw exception message** (not a curated sentence), exit 1 — except `star-luminosity`, which has no out-of-range error path (only argparse exit 2). Only `travel-time-solar` returns curated `{"error": ...}` dicts. This is intentional (Phase N adds no `core/` validation); key on `"error"` + exit code, never on the message text.

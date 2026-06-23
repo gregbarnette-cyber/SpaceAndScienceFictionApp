@@ -477,6 +477,164 @@ def compute_habitable_zone_sma(teff: float, luminosity: float, sma: float) -> di
     return {"zones": zones, "planet_seff": planet_seff, "verdict": verdict}
 
 
+# Kopparapu et al. (2014) S_eff polynomial validity range (effective temperature).
+_KOPPARAPU_TEFF_MIN = 2600.0
+_KOPPARAPU_TEFF_MAX = 7200.0
+
+
+def compute_circumbinary_hz(teff1: float, lum1: float,
+                            teff2: float, lum2: float) -> dict:
+    """Circumbinary (P-type) habitable zone from the two stars' combined light.
+
+    For a circumbinary planet the binary separation ≪ the planet's orbit, so the
+    pair acts as a single point source of luminosity L1+L2. The Kopparapu S_eff
+    coefficients need one effective temperature; we use the **luminosity/flux-
+    weighted** mean — `eff_teff = (L1·T1 + L2·T2)/(L1+L2)` — which collapses to
+    the brighter star as the other's luminosity → 0. The six zone boundaries are
+    then `compute_habitable_zone(eff_teff, L1+L2)`.
+
+    The Kopparapu polynomial is only valid ~2600–7200 K. A binary's combined Teff
+    lands out of range far more often than a single star, so we **flag and still
+    return** (out_of_range_teff = True) rather than clamp or silently extrapolate.
+
+    Args:
+        teff1, teff2: each star's effective temperature in K (> 0)
+        lum1, lum2:   each star's luminosity in solar units (> 0)
+
+    Returns:
+        dict with keys: teff1, lum1, teff2, lum2, combined_lum, eff_teff,
+        out_of_range_teff, zones — or {"error": str}. `zones` is the same 6-dict
+        list as compute_habitable_zone.
+    """
+    if teff1 <= 0 or teff2 <= 0 or lum1 <= 0 or lum2 <= 0:
+        return {"error": "Both temperatures and both luminosities must be positive."}
+
+    combined_lum = lum1 + lum2
+    eff_teff = (lum1 * teff1 + lum2 * teff2) / combined_lum
+    out_of_range = eff_teff < _KOPPARAPU_TEFF_MIN or eff_teff > _KOPPARAPU_TEFF_MAX
+    zones = compute_habitable_zone(eff_teff, combined_lum)
+
+    return {
+        "teff1": teff1,
+        "lum1": lum1,
+        "teff2": teff2,
+        "lum2": lum2,
+        "combined_lum": combined_lum,
+        "eff_teff": eff_teff,
+        "out_of_range_teff": out_of_range,
+        "zones": zones,
+    }
+
+
+def compute_tidal_heating(primary_mass_earth, satellite_radius_km, sma_km, ecc,
+                          k2=0.3, tidal_q=100) -> dict:
+    """Tidal heating power + surface flux of a synchronous satellite (order-of-magnitude).
+
+    Synchronous-satellite tidal-dissipation rate **`Ė = (21/2)·(G·k₂·M_p²·R_s⁵·n·e²)/(Q·a⁶)`**
+    (Peale & Cassen 1978; the leading 21/2 is pinned against Heller & Barnes 2013 /
+    Henning et al. 2009), with mean motion `n = √(G·M_p/a³)`. Surface flux `= Ė/(4πR_s²)`,
+    compared to Io's ≈ 2 W/m² (`io_flux_ratio`). **This is an order-of-magnitude estimate**
+    (fixed-Q, homogeneous body, small-e expansion).
+
+    Args:
+        primary_mass_earth:  host planet/primary mass in Earth masses (> 0)
+        satellite_radius_km: satellite radius in km (> 0)
+        sma_km:              satellite semi-major axis in km (> 0)
+        ecc:                 orbital eccentricity (0 ≤ e < 1)
+        k2:                  satellite potential Love number (> 0; default 0.3)
+        tidal_q:             satellite tidal quality factor (> 0; default 100)
+
+    Returns:
+        dict with keys: heating_power_w, surface_flux_wm2, mean_motion_rad_s,
+        io_flux_ratio, primary_mass_earth, satellite_radius_km, sma_km, ecc, k2,
+        tidal_q — or {"error": str}.
+    """
+    if primary_mass_earth <= 0 or satellite_radius_km <= 0 or sma_km <= 0:
+        return {"error": "Primary mass, satellite radius, and SMA must be positive."}
+    if not (0 <= ecc < 1):
+        return {"error": "Eccentricity must be in the range 0 ≤ e < 1."}
+    if k2 <= 0 or tidal_q <= 0:
+        return {"error": "k2 and tidal Q must be positive."}
+
+    M_p = primary_mass_earth * _EARTH_MASS_KG
+    R_s = satellite_radius_km * 1000.0
+    a_m = sma_km * 1000.0
+    n = math.sqrt(_G * M_p / a_m ** 3)
+    E_dot = (21.0 / 2.0) * (_G * k2 * M_p ** 2 * R_s ** 5 * n * ecc ** 2) / (tidal_q * a_m ** 6)
+    surface_flux = E_dot / (4.0 * math.pi * R_s ** 2)
+
+    return {
+        "heating_power_w": E_dot,
+        "surface_flux_wm2": surface_flux,
+        "mean_motion_rad_s": n,
+        "io_flux_ratio": surface_flux / 2.0,
+        "primary_mass_earth": primary_mass_earth,
+        "satellite_radius_km": satellite_radius_km,
+        "sma_km": sma_km,
+        "ecc": ecc,
+        "k2": k2,
+        "tidal_q": tidal_q,
+    }
+
+
+def compute_kozai_lidov(m1_solar, m2_solar, m3_solar,
+                        period_inner_yr=None, period_outer_yr=None,
+                        sma_inner_au=None, sma_outer_au=None,
+                        ecc_outer=0) -> dict:
+    """Kozai–Lidov oscillation timescale for a hierarchical triple (order-of-magnitude).
+
+    **`T_KL = (8/15π)·((M₁+M₂+M₃)/M₃)·(P_out²/P_in)·(1−e_out²)^{3/2}`** years — the leading
+    8/15π is pinned against Antognini 2015 (MNRAS 452, 3610, Eq. 42); the general mass factor
+    `(M₁+M₂+M₃)/M₃` (M₃ = the outer/tertiary perturber, in the denominator) is the Kiseleva
+    et al. 1998 form. **Order-of-magnitude** (the exact KL period varies within a factor of a
+    few). Supply periods directly, or both SMAs (`P_in=√(a_in³/(M₁+M₂))`,
+    `P_out=√(a_out³/(M₁+M₂+M₃))`).
+
+    Args:
+        m1_solar, m2_solar: inner-pair masses in solar masses (> 0)
+        m3_solar:           outer/tertiary perturber mass in solar masses (> 0)
+        period_inner_yr, period_outer_yr: orbital periods in years (> 0) — or use SMAs
+        sma_inner_au, sma_outer_au:        semi-major axes in AU (> 0) — alt to periods
+        ecc_outer:          outer-orbit eccentricity (0 ≤ e < 1)
+
+    Returns:
+        dict with keys: timescale_years, m1_solar, m2_solar, m3_solar, period_inner_yr,
+        period_outer_yr, ecc_outer — or {"error": str}.
+    """
+    if m1_solar <= 0 or m2_solar <= 0 or m3_solar <= 0:
+        return {"error": "All three masses must be positive."}
+    if not (0 <= ecc_outer < 1):
+        return {"error": "Outer eccentricity must be in the range 0 ≤ e < 1."}
+
+    has_periods = period_inner_yr is not None and period_outer_yr is not None
+    has_smas = sma_inner_au is not None and sma_outer_au is not None
+    if has_periods == has_smas:
+        return {"error": "Provide either both periods (yr) or both semi-major axes (AU)."}
+
+    if has_smas:
+        if sma_inner_au <= 0 or sma_outer_au <= 0:
+            return {"error": "Semi-major axes must be positive."}
+        period_inner_yr = math.sqrt(sma_inner_au ** 3 / (m1_solar + m2_solar))
+        period_outer_yr = math.sqrt(sma_outer_au ** 3 / (m1_solar + m2_solar + m3_solar))
+    else:
+        if period_inner_yr <= 0 or period_outer_yr <= 0:
+            return {"error": "Periods must be positive."}
+
+    m_total = m1_solar + m2_solar + m3_solar
+    t_kl = ((8.0 / (15.0 * math.pi)) * (m_total / m3_solar)
+            * (period_outer_yr ** 2 / period_inner_yr) * (1.0 - ecc_outer ** 2) ** 1.5)
+
+    return {
+        "timescale_years": t_kl,
+        "m1_solar": m1_solar,
+        "m2_solar": m2_solar,
+        "m3_solar": m3_solar,
+        "period_inner_yr": period_inner_yr,
+        "period_outer_yr": period_outer_yr,
+        "ecc_outer": ecc_outer,
+    }
+
+
 # ── Worldbuilding calculators (Phase H) ──────────────────────────────────────
 # Five pure-math tools for authors/worldbuilders. Unlike the older equation
 # functions, these self-validate physical ranges and return {"error": str} for
@@ -581,25 +739,50 @@ def compute_tidal_locking_time(primary_mass_earth: float, satellite_mass_earth: 
     }
 
 
+# Domingos, Winter & Yokoyama (2006, MNRAS 373, 1227) critical-satellite-orbit
+# fits, a_c/R_Hill = lead · (1 − e_coeff·e_planet − i_coeff·i_sat) with i_sat in
+# RADIANS. Pinned against the paper (the prograde row matches the request; the
+# retrograde e/i coefficients are the values the request left to "pin at build").
+_DOMINGOS_PROGRADE   = (0.4895, 1.0305, 0.2738)
+_DOMINGOS_RETROGRADE = (0.9309, 1.0764, 0.9812)
+
+
 def compute_hill_sphere(star_mass_solar: float, planet_mass_earth: float,
-                        sma_au: float, eccentricity: float = 0) -> dict:
+                        sma_au: float, eccentricity: float = 0,
+                        moon_inclination_deg: float = 0, prograde: bool = True) -> dict:
     """Hill sphere (gravitational sphere of influence) of a planet in a star system.
 
+    Also reports the largest stable satellite ("moon") orbit via the Domingos et
+    al. 2006 fit — `stable_moon_limit_au = f · r_Hill`, where the prograde factor
+    `f = 0.4895·(1 − 1.0305·e_p − 0.2738·i_sat)` (retrograde `0.9309·(1 − 1.0764·e_p
+    − 0.9812·i_sat)`), with the satellite inclination taken in degrees on input and
+    radians internally. This is the refined form of the coarse `stable_orbit_limit_au`
+    (0.5 · r_Hill heuristic), which is retained as a cross-check.
+
     Args:
-        star_mass_solar:   host star mass in solar masses (> 0)
-        planet_mass_earth: planet mass in Earth masses (> 0)
-        sma_au:            planet's semi-major axis in AU (> 0)
-        eccentricity:      orbital eccentricity (0 ≤ e < 1)
+        star_mass_solar:      host star mass in solar masses (> 0)
+        planet_mass_earth:    planet mass in Earth masses (> 0)
+        sma_au:               planet's semi-major axis in AU (> 0)
+        eccentricity:         planet's orbital eccentricity (0 ≤ e < 1)
+        moon_inclination_deg: satellite orbital inclination in degrees (0 ≤ i ≤ 180)
+        prograde:             True for a prograde satellite, False for retrograde
 
     Returns:
         dict with keys: star_mass_solar, planet_mass_earth, sma_au, eccentricity,
-        hill_radius_km, hill_radius_au, stable_orbit_limit_km, stable_orbit_limit_au
+        moon_inclination_deg, prograde, hill_radius_km, hill_radius_au,
+        stable_orbit_limit_km, stable_orbit_limit_au (0.5 heuristic),
+        stable_fraction, stable_moon_limit_km, stable_moon_limit_au (Domingos 2006)
         — or {"error": str}.
+
+        The new keys are additive: with the default moon_inclination_deg=0 /
+        prograde=True the pre-existing keys are unchanged.
     """
     if star_mass_solar <= 0 or planet_mass_earth <= 0 or sma_au <= 0:
         return {"error": "Star mass, planet mass, and SMA must be positive."}
     if not (0 <= eccentricity < 1):
         return {"error": "Eccentricity must be in the range 0 ≤ e < 1."}
+    if not (0 <= moon_inclination_deg <= 180):
+        return {"error": "Moon inclination must be in the range 0 ≤ i ≤ 180 degrees."}
 
     M_star = star_mass_solar * _SOLAR_MASS_KG
     M_p = planet_mass_earth * _EARTH_MASS_KG
@@ -609,15 +792,25 @@ def compute_hill_sphere(star_mass_solar: float, planet_mass_earth: float,
     r_H_km = r_H_m / 1000.0
     stable_km = 0.5 * r_H_km
 
+    lead, e_coeff, i_coeff = _DOMINGOS_PROGRADE if prograde else _DOMINGOS_RETROGRADE
+    i_rad = math.radians(moon_inclination_deg)
+    f = lead * (1.0 - e_coeff * eccentricity - i_coeff * i_rad)
+    moon_limit_m = f * r_H_m
+
     return {
         "star_mass_solar": star_mass_solar,
         "planet_mass_earth": planet_mass_earth,
         "sma_au": sma_au,
         "eccentricity": eccentricity,
+        "moon_inclination_deg": moon_inclination_deg,
+        "prograde": prograde,
         "hill_radius_km": r_H_km,
         "hill_radius_au": r_H_m / _M_PER_AU,
         "stable_orbit_limit_km": stable_km,
         "stable_orbit_limit_au": (0.5 * r_H_m) / _M_PER_AU,
+        "stable_fraction": f,
+        "stable_moon_limit_km": moon_limit_m / 1000.0,
+        "stable_moon_limit_au": moon_limit_m / _M_PER_AU,
     }
 
 

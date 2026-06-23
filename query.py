@@ -13,6 +13,7 @@ import sys
 import core.calculators as calculators
 import core.databases as databases
 import core.equations as equations
+import core.feasibility as feasibility
 import core.generate as generate
 import core.regions as regions
 import core.report as report
@@ -108,7 +109,9 @@ def cmd_hypatia_data(args):
 
 
 def cmd_gcns_within_sol(args):
-    _out(databases.compute_gcns_within_sol(args.ly))
+    _out(databases.compute_gcns_within_sol(
+        args.ly, wd_prob_min=args.wd_prob_min, wd_prob_max=args.wd_prob_max,
+    ))
 
 
 def cmd_gcns_source(args):
@@ -159,6 +162,7 @@ def cmd_hill_sphere(args):
     _out(equations.compute_hill_sphere(
         args.star_mass_solar, args.planet_mass_earth, args.sma_au,
         eccentricity=args.eccentricity,
+        moon_inclination_deg=args.moon_inclination_deg, prograde=not args.retrograde,
     ))
 
 
@@ -172,6 +176,133 @@ def cmd_binary_stability(args):
 def cmd_atmosphere_retention(args):
     _out(equations.compute_atmosphere_retention(
         args.planet_mass_earth, args.planet_radius_earth, args.temperature_k,
+    ))
+
+
+# ── Phase T1a — research-tooling extensions (self-validating, Phase-H/P) ───────
+
+def cmd_trojan_stability(args):
+    _out(feasibility.gascheau_coorbital_stable(
+        args.host_mass_earth, args.companion_mass_earth, args.star_mass_solar,
+    ))
+
+
+def cmd_lorentz_factor(args):
+    _out(calculators.compute_lorentz_factor(args.velocity_c))
+
+
+def _resolve_star_teff_lum(name):
+    """Resolve a star name → (teff, bolometric luminosity) via SIMBAD + regions.
+
+    Returns {"teff": float, "lum": float} or {"error": str}. Reuses the same
+    derivation as the Star System Regions feature (works for any main-sequence type).
+    """
+    simbad = databases.compute_simbad_lookup(name)
+    if "error" in simbad:
+        return simbad
+    reg = regions.compute_star_system_regions_from_simbad(simbad)
+    if "error" in reg:
+        return reg
+    teff = reg.get("temp")
+    lum = reg.get("bcLuminosity")
+    if teff is None or lum is None:
+        return {"error": f"Could not derive temperature/luminosity for '{name}'."}
+    return {"teff": teff, "lum": lum}
+
+
+def cmd_circumbinary_hz(args):
+    numeric = [args.teff1, args.lum1, args.teff2, args.lum2]
+    any_numeric = any(v is not None for v in numeric)
+    all_numeric = all(v is not None for v in numeric)
+    any_star = bool(args.star1) or bool(args.star2)
+    both_star = bool(args.star1) and bool(args.star2)
+
+    if any_star and any_numeric:
+        sys.stderr.write("error: provide either --teff1/--lum1/--teff2/--lum2 OR "
+                         "--star1/--star2, not both\n")
+        sys.exit(2)
+    if both_star:
+        r1 = _resolve_star_teff_lum(args.star1)
+        if "error" in r1:
+            _out(r1)
+            return
+        r2 = _resolve_star_teff_lum(args.star2)
+        if "error" in r2:
+            _out(r2)
+            return
+        _out(equations.compute_circumbinary_hz(r1["teff"], r1["lum"], r2["teff"], r2["lum"]))
+        return
+    if all_numeric:
+        _out(equations.compute_circumbinary_hz(args.teff1, args.lum1, args.teff2, args.lum2))
+        return
+    sys.stderr.write("error: provide all of --teff1/--lum1/--teff2/--lum2, "
+                     "or both --star1 and --star2\n")
+    sys.exit(2)
+
+
+# ── Phase T1b — detectability / exomoon / triple / relativistic calculators ───
+
+def cmd_rv_semi_amplitude(args):
+    _out(calculators.compute_rv_semi_amplitude(
+        args.planet_mass_earth, args.star_mass_solar,
+        period_days=args.period_days, sma_au=args.sma_au,
+        ecc=args.ecc, inclination_deg=args.inclination_deg,
+    ))
+
+
+def cmd_transit_signal(args):
+    _out(calculators.compute_transit_signal(
+        args.planet_radius_earth, args.star_radius_solar,
+        sma_au=args.sma_au, period_days=args.period_days,
+        star_mass_solar=args.star_mass_solar,
+    ))
+
+
+def cmd_astrometric_signal(args):
+    _out(calculators.compute_astrometric_signal(
+        args.planet_mass_earth, args.star_mass_solar, args.sma_au, args.distance_pc,
+    ))
+
+
+def cmd_direct_imaging(args):
+    _out(calculators.compute_direct_imaging(
+        args.sma_au, args.distance_pc, args.planet_radius_earth, albedo=args.albedo,
+        telescope_diameter_m=args.telescope_diameter_m, wavelength_um=args.wavelength_um,
+    ))
+
+
+def cmd_tidal_heating(args):
+    _out(equations.compute_tidal_heating(
+        args.primary_mass_earth, args.satellite_radius_km, args.sma_km, args.ecc,
+        k2=args.k2, tidal_q=args.tidal_q,
+    ))
+
+
+def cmd_kozai_lidov(args):
+    _out(equations.compute_kozai_lidov(
+        args.m1_solar, args.m2_solar, args.m3_solar,
+        period_inner_yr=args.period_inner_yr, period_outer_yr=args.period_outer_yr,
+        sma_inner_au=args.sma_inner_au, sma_outer_au=args.sma_outer_au,
+        ecc_outer=args.ecc_outer,
+    ))
+
+
+def cmd_relativistic_brachistochrone(args):
+    _out(calculators.compute_relativistic_brachistochrone(args.accel_g, args.distance_ly))
+
+
+# ── Phase T1c — census-filter presets ─────────────────────────────────────────
+
+def cmd_solar_analogs(args):
+    _out(databases.compute_solar_analogs(
+        mode=args.mode, teff_tol=args.teff_tol, logg_tol=args.logg_tol,
+        feh_tol=args.feh_tol, ly_max=args.ly_max, gcns_distance=args.gcns_distance,
+    ))
+
+
+def cmd_substellar(args):
+    _out(databases.compute_substellar_census(
+        ly_max=args.ly_max, include_late_m=args.include_late_m, classes=args.classes,
     ))
 
 
@@ -669,6 +800,10 @@ def main():
     p = sub.add_parser("gcns-within-sol",
                        help="GCNS stars within N light years of Sol (Bayesian distances, local DB)")
     p.add_argument("--ly", required=True, type=float)
+    p.add_argument("--wd-prob-min", dest="wd_prob_min", type=float, default=None,
+                   help="Minimum GCNS white-dwarf probability (white-dwarf census filter)")
+    p.add_argument("--wd-prob-max", dest="wd_prob_max", type=float, default=None,
+                   help="Maximum GCNS white-dwarf probability")
     p.set_defaults(func=cmd_gcns_within_sol)
 
     # gcns-source
@@ -745,6 +880,11 @@ def main():
     p.add_argument("--planet-mass-earth", required=True, type=float)
     p.add_argument("--sma-au",            required=True, type=float)
     p.add_argument("--eccentricity",      type=float, default=0)
+    p.add_argument("--moon-inclination-deg", dest="moon_inclination_deg",
+                   type=float, default=0,
+                   help="Satellite orbital inclination in degrees (Domingos 2006 stable-moon limit)")
+    p.add_argument("--retrograde", action="store_true",
+                   help="Use the retrograde Domingos factor (default: prograde)")
     p.set_defaults(func=cmd_hill_sphere)
 
     # binary-stability
@@ -764,6 +904,137 @@ def main():
     p.add_argument("--planet-radius-earth", required=True, type=float)
     p.add_argument("--temperature-k",       required=True, type=float)
     p.set_defaults(func=cmd_atmosphere_retention)
+
+    # ── Phase T1a — research-tooling extensions ──────────────────────────────
+
+    # trojan-stability (wraps R2 gascheau_coorbital_stable)
+    p = sub.add_parser("trojan-stability",
+                       help="L4/L5 Trojan co-orbital stability (Gascheau/Routh μ < 0.0385)")
+    p.add_argument("--host-mass-earth",      required=True, type=float,
+                   help="Co-orbital host body mass in Earth masses")
+    p.add_argument("--companion-mass-earth", required=True, type=float,
+                   help="Trojan companion mass in Earth masses (may be 0)")
+    p.add_argument("--star-mass-solar",      required=True, type=float,
+                   help="Central star mass in solar masses")
+    p.set_defaults(func=cmd_trojan_stability)
+
+    # lorentz-factor (relativistic time dilation; distinct from the FTL converters)
+    p = sub.add_parser("lorentz-factor",
+                       help="Relativistic Lorentz / time-dilation factor for a sublight velocity")
+    p.add_argument("--velocity-c", required=True, type=float,
+                   help="Velocity as a fraction of c (0 ≤ β < 1)")
+    p.set_defaults(func=cmd_lorentz_factor)
+
+    # circumbinary-hz (reuses compute_habitable_zone from combined light)
+    p = sub.add_parser("circumbinary-hz",
+                       help="Circumbinary (P-type) habitable zone from two stars' combined light")
+    p.add_argument("--teff1", type=float, help="Star 1 effective temperature (K)")
+    p.add_argument("--lum1",  type=float, help="Star 1 luminosity (L_sun)")
+    p.add_argument("--teff2", type=float, help="Star 2 effective temperature (K)")
+    p.add_argument("--lum2",  type=float, help="Star 2 luminosity (L_sun)")
+    p.add_argument("--star1", help="Star 1 by name (SIMBAD; alt to --teff1/--lum1)")
+    p.add_argument("--star2", help="Star 2 by name (SIMBAD; alt to --teff2/--lum2)")
+    p.set_defaults(func=cmd_circumbinary_hz)
+
+    # rv-semi-amplitude (A1)
+    p = sub.add_parser("rv-semi-amplitude",
+                       help="Radial-velocity semi-amplitude a planet induces on its star")
+    p.add_argument("--planet-mass-earth", required=True, type=float)
+    p.add_argument("--star-mass-solar",   required=True, type=float)
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--period-days", type=float, help="Orbital period in days")
+    g.add_argument("--sma-au",      type=float, help="Semi-major axis in AU (derive P via Kepler III)")
+    p.add_argument("--ecc",             type=float, default=0)
+    p.add_argument("--inclination-deg", type=float, default=90)
+    p.set_defaults(func=cmd_rv_semi_amplitude)
+
+    # transit-signal (A2)
+    p = sub.add_parser("transit-signal",
+                       help="Transit depth, geometric probability, and duration")
+    p.add_argument("--planet-radius-earth", required=True, type=float)
+    p.add_argument("--star-radius-solar",   required=True, type=float)
+    p.add_argument("--sma-au",          type=float, help="Semi-major axis in AU")
+    p.add_argument("--period-days",     type=float, help="Orbital period in days (with --star-mass-solar)")
+    p.add_argument("--star-mass-solar", type=float, help="Star mass (M_sun); derives a from --period-days")
+    p.set_defaults(func=cmd_transit_signal)
+
+    # astrometric-signal (A3)
+    p = sub.add_parser("astrometric-signal",
+                       help="Astrometric wobble of a star induced by a planet")
+    p.add_argument("--planet-mass-earth", required=True, type=float)
+    p.add_argument("--star-mass-solar",   required=True, type=float)
+    p.add_argument("--sma-au",            required=True, type=float)
+    p.add_argument("--distance-pc",       required=True, type=float)
+    p.set_defaults(func=cmd_astrometric_signal)
+
+    # direct-imaging (A4)
+    p = sub.add_parser("direct-imaging",
+                       help="Reflected-light contrast and angular separation, optional vs telescope IWA")
+    p.add_argument("--sma-au",              required=True, type=float)
+    p.add_argument("--distance-pc",         required=True, type=float)
+    p.add_argument("--planet-radius-earth", required=True, type=float)
+    p.add_argument("--albedo",              type=float, default=0.3)
+    p.add_argument("--telescope-diameter-m", type=float, default=None,
+                   help="Telescope aperture (m); with --wavelength-um computes the IWA")
+    p.add_argument("--wavelength-um",        type=float, default=None,
+                   help="Observing wavelength (µm); with --telescope-diameter-m computes the IWA")
+    p.set_defaults(func=cmd_direct_imaging)
+
+    # tidal-heating (B1)
+    p = sub.add_parser("tidal-heating",
+                       help="Tidal heating power + surface flux of a satellite (order-of-magnitude)")
+    p.add_argument("--primary-mass-earth",  required=True, type=float)
+    p.add_argument("--satellite-radius-km", required=True, type=float)
+    p.add_argument("--sma-km",              required=True, type=float)
+    p.add_argument("--ecc",                 required=True, type=float)
+    p.add_argument("--k2",      type=float, default=0.3, help="Satellite Love number (default 0.3)")
+    p.add_argument("--tidal-q", type=float, default=100, help="Satellite tidal quality factor (default 100)")
+    p.set_defaults(func=cmd_tidal_heating)
+
+    # kozai-lidov (C2)
+    p = sub.add_parser("kozai-lidov",
+                       help="Kozai–Lidov oscillation timescale for a hierarchical triple (order-of-magnitude)")
+    p.add_argument("--m1-solar", required=True, type=float)
+    p.add_argument("--m2-solar", required=True, type=float)
+    p.add_argument("--m3-solar", required=True, type=float, help="Outer/tertiary perturber mass (M_sun)")
+    p.add_argument("--period-inner-yr", type=float, help="Inner orbital period (yr) — with --period-outer-yr")
+    p.add_argument("--period-outer-yr", type=float, help="Outer orbital period (yr)")
+    p.add_argument("--sma-inner-au",    type=float, help="Inner SMA (AU) — alt to periods, with --sma-outer-au")
+    p.add_argument("--sma-outer-au",    type=float, help="Outer SMA (AU)")
+    p.add_argument("--ecc-outer",       type=float, default=0)
+    p.set_defaults(func=cmd_kozai_lidov)
+
+    # relativistic-brachistochrone (D1)
+    p = sub.add_parser("relativistic-brachistochrone",
+                       help="Flip-and-burn under constant proper acceleration (relativistic; lifts the 3%c cap)")
+    p.add_argument("--accel-g",     required=True, type=float)
+    p.add_argument("--distance-ly", required=True, type=float)
+    p.set_defaults(func=cmd_relativistic_brachistochrone)
+
+    # ── Phase T1c — census-filter presets ────────────────────────────────────
+
+    # solar-analogs (E2)
+    p = sub.add_parser("solar-analogs",
+                       help="Solar twins/analogs from the Hypatia cache (teff/logg/[Fe/H] box)")
+    p.add_argument("--mode", choices=["twin", "analog"], default="twin",
+                   help="twin = tight box (±100/±0.1/±0.1); analog = looser (±500/±0.4/±0.3)")
+    p.add_argument("--teff-tol", type=float, default=None, help="Override Teff tolerance (K)")
+    p.add_argument("--logg-tol", type=float, default=None, help="Override log g tolerance (dex)")
+    p.add_argument("--feh-tol",  type=float, default=None, help="Override [Fe/H] tolerance (dex)")
+    p.add_argument("--ly-max",   type=float, default=None, help="Max distance (light years)")
+    p.add_argument("--gcns-distance", action="store_true",
+                   help="Best-effort attach the GCNS Bayesian distance (dist_pc_gcns) per star")
+    p.set_defaults(func=cmd_solar_analogs)
+
+    # substellar (E3)
+    p = sub.add_parser("substellar",
+                       help="Substellar (L/T/Y) census from gcns_stars by spectral-type prefix")
+    p.add_argument("--ly-max", type=float, default=None, help="Max distance (light years)")
+    p.add_argument("--include-late-m", action="store_true",
+                   help="Also include late-M dwarfs (M7/M8/M9, the M/L boundary)")
+    p.add_argument("--classes", nargs="+", default=None,
+                   help="Override the spectral-class prefixes (default: L T Y)")
+    p.set_defaults(func=cmd_substellar)
 
     # ── Solvent zones (Phase P) ──────────────────────────────────────────────
 

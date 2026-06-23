@@ -223,7 +223,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 
 ## Import GCNS Data Feature (opt 58)
 
-Adds the **Gaia Catalogue of Nearby Stars** (GCNS; Smart et al. 2021, A&A 649 A6) as a separate astrometric/completeness backbone with **Bayesian distances + uncertainties** — data the SIMBAD-built `star_systems` table lacks. GCNS is stored in its own isolated `gcns_stars` table; nothing about options 18/19/50/51 or the existing `star_systems` table changes. The data is exposed only via `query.py` — the readers `gcns-within-sol`, `gcns-source`, `gcns-system`, plus the GCNS-backed calculators `gcns-distance`, `gcns-travel-time`, `gcns-stars-within-star` (all read-only consumers of the `gcns_stars`/`gcns_systems` tables; see `docs/integration.md`); no existing menu option displays it.
+Adds the **Gaia Catalogue of Nearby Stars** (GCNS; Smart et al. 2021, A&A 649 A6) as a separate astrometric/completeness backbone with **Bayesian distances + uncertainties** — data the SIMBAD-built `star_systems` table lacks. GCNS is stored in its own isolated `gcns_stars` table; nothing about options 18/19/50/51 or the existing `star_systems` table changes. The data is exposed only via `query.py` — the readers `gcns-within-sol` (Phase T1a added the `--wd-prob-min/max` white-dwarf census filter), `gcns-source`, `gcns-system`, plus the GCNS-backed calculators `gcns-distance`, `gcns-travel-time`, `gcns-stars-within-star`, and the Phase T1c `substellar` census (L/T/Y by spectral-type prefix over `gcns_stars`, with a `completeness_note` JSON caveat) — all read-only consumers of the `gcns_stars`/`gcns_systems` tables; see `docs/integration.md`; no existing menu option displays it.
 
 - Menu option 58: `import_gcns_data()` (CLI) / `ImportGcnsPanel` (GUI, in `gui/panels/csv_utility.py`). Core function: `core.databases.compute_gcns_ingest(progress_callback=None)` → `{total_rows, main_count, missing_count, simbad_matched, resolved_pairs, systems_count, systems_multi, members_in_stars, snapshot_date, gcns_version}` or `{"error": ...}`.
 - **Source:** GAVO TAP service `https://dc.g-vo.org/tap`, tables `gcns.main` (331,312 rows), `gcns.missing_10mas` (1,259 known-nearby objects Gaia EDR3 missed — e.g. Alpha Cen A/B, Luhman 16), and `gcns.resolvedss` (19,176 resolved-pair rows — see "Resolved systems" below). All three are pulled in one opt-58 run so they share a single `snapshot_date`. Pulled via `pyvo` **async** jobs (`submit_job` → `run` → `wait` → `fetch_result` → `delete`) with `maxrec=400000`; sync mode is unusable (20k default cap, 60 s timeout). Wrapped in the shared `_with_retries`/`_timeout_ctx` helpers from `core/shared.py`; network errors classified via `_network_error_msg`.
@@ -501,3 +501,8 @@ that function uses, activating only when an fe_h filter is set.
   single Plot tab.
 - **`query.py search-hypatia`** — local-DB read over `search_hypatia_cache`; same
   `search-*` contract (see `docs/integration.md`).
+- **`query.py solar-analogs`** (Phase T1c E2) — a convenience preset over
+  `hypatia_cache`: a solar twin/analog tolerance box (Teff 5772 / log g 4.44 /
+  [Fe/H] 0) with an opt-in best-effort GCNS Bayesian-distance join. Emits a
+  `population` block (source + size + the Hypatia-limit caveat note) in the JSON.
+  See `docs/integration.md`.

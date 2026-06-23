@@ -43,6 +43,33 @@ def compute_speed_of_light_to_ly_hr(times_c: float) -> dict:
     return {"times_c": times_c, "ly_hr": times_c / HOURS_PER_JULIAN_YEAR}
 
 
+def compute_lorentz_factor(velocity_c: float) -> dict:
+    """Special-relativistic Lorentz (time-dilation) factor for a sublight velocity.
+
+    γ = 1/√(1 − β²) where β = velocity_c (a fraction of c). Self-validating
+    (Phase-H/P contract): velocity must satisfy 0 ≤ β < 1.
+
+    NOTE: this is a *relativistic* calculator and is deliberately distinct from the
+    FTL-arithmetic converters (compute_ly_hr_to_times_c / compute_speed_of_light_to_ly_hr),
+    which treat "× c" as a plain multiplier with no relativistic interpretation.
+
+    Args:
+        velocity_c: velocity as a fraction of the speed of light (0 ≤ β < 1)
+
+    Returns:
+        dict with keys: velocity_c, lorentz_factor, time_dilation_pct — or {"error": str}.
+        time_dilation_pct = (γ − 1) × 100 (percent slowdown of the moving clock).
+    """
+    if velocity_c < 0 or velocity_c >= 1:
+        return {"error": "Velocity must be in the range 0 ≤ β < 1 (sublight)."}
+    gamma = 1.0 / math.sqrt(1.0 - velocity_c * velocity_c)
+    return {
+        "velocity_c": velocity_c,
+        "lorentz_factor": gamma,
+        "time_dilation_pct": (gamma - 1.0) * 100.0,
+    }
+
+
 def compute_distance_traveled_ly_hr(ly_hr: float, hours: float) -> dict:
     """Distance traveled at a given ly/hr over a given number of hours.
 
@@ -438,6 +465,214 @@ _G_MS2     = 9.80665              # 1 g in m/s²
 _C_MS      = 299_792_458.0        # speed of light in m/s
 _M_PER_AU  = 149_597_870_700.0    # metres per AU
 _M_PER_LM  = _C_MS * 60.0        # metres per light-minute
+
+# ── Physical constants for the Phase T1b detectability / relativistic calcs ───
+_M_JUP_EARTH         = 317.828            # Jupiter mass in Earth masses
+_M_SUN_EARTH         = 332_946.0          # Sun mass in Earth masses
+_R_SUN_AU            = 0.00465047          # solar radius in AU
+_R_EARTH_AU          = 4.25875e-5          # Earth radius in AU
+_ARCSEC_PER_RAD      = 206_264.806         # arcsec per radian
+_SEC_PER_JULIAN_YEAR = 365.25 * 86400.0    # 31,557,600 s (Julian year)
+_LY_M                = _C_MS * _SEC_PER_JULIAN_YEAR  # metres per light-year
+
+
+# ── Phase T1b · planet-detectability calculators (group A) ────────────────────
+# Pure-compute, self-validating (Phase-H/P contract). Granular subcommands for the
+# sibling worldbuilding repo's survey-bias research. See docs/calculators.md.
+
+def compute_rv_semi_amplitude(planet_mass_earth, star_mass_solar,
+                              period_days=None, sma_au=None,
+                              ecc=0, inclination_deg=90):
+    """Radial-velocity semi-amplitude K a planet induces on its star (Lovis & Fischer 2010).
+
+    `K = 28.4329 m/s · (1/√(1−e²)) · (Mp·sin i / M_Jup) · ((M*+Mp)/M_sun)^(−2/3) · (P/1yr)^(−1/3)`.
+    `--planet-mass-earth` is converted to M_Jup internally (the 28.4329 constant is per-M_Jup).
+    Supply exactly one of `period_days` / `sma_au` (the other is derived via Kepler III).
+
+    Returns {k_ms, period_days, sma_au, ecc, inclination_deg, planet_mass_earth,
+    star_mass_solar} or {"error": str}.
+    """
+    if planet_mass_earth <= 0 or star_mass_solar <= 0:
+        return {"error": "Planet mass and star mass must be positive."}
+    if not (0 <= ecc < 1):
+        return {"error": "Eccentricity must be in the range 0 ≤ e < 1."}
+    if (period_days is None) == (sma_au is None):
+        return {"error": "Provide exactly one of period_days / sma_au."}
+    if period_days is not None and period_days <= 0:
+        return {"error": "Period must be positive."}
+    if sma_au is not None and sma_au <= 0:
+        return {"error": "Semi-major axis must be positive."}
+
+    mp_solar = planet_mass_earth / _M_SUN_EARTH
+    total_mass = star_mass_solar + mp_solar
+    if sma_au is not None:
+        period_yr = math.sqrt(sma_au ** 3 / total_mass)
+        period_days = period_yr * 365.25
+    else:
+        period_yr = period_days / 365.25
+        sma_au = (total_mass * period_yr ** 2) ** (1.0 / 3.0)
+
+    mp_jup = planet_mass_earth / _M_JUP_EARTH
+    sin_i = math.sin(math.radians(inclination_deg))
+    k_ms = (28.4329 * (1.0 / math.sqrt(1.0 - ecc ** 2)) * (mp_jup * sin_i)
+            * total_mass ** (-2.0 / 3.0) * period_yr ** (-1.0 / 3.0))
+    return {
+        "k_ms": k_ms,
+        "period_days": period_days,
+        "sma_au": sma_au,
+        "ecc": ecc,
+        "inclination_deg": inclination_deg,
+        "planet_mass_earth": planet_mass_earth,
+        "star_mass_solar": star_mass_solar,
+    }
+
+
+def compute_transit_signal(planet_radius_earth, star_radius_solar,
+                           sma_au=None, period_days=None, star_mass_solar=None):
+    """Transit depth, geometric probability, and duration (Winn 2010).
+
+    depth `δ=(Rp/R*)²`; probability `p≈R*/a` (circular); duration `T≈(P/π)·arcsin(R*/a)`.
+    Supply `sma_au`, or `period_days` + `star_mass_solar` (a derived via Kepler III).
+    When only `sma_au` is given (no `star_mass_solar`), the period/duration are left None.
+
+    Returns {depth_ppm, depth_frac, transit_prob, duration_hours, sma_au, period_days,
+    planet_radius_earth, star_radius_solar} or {"error": str}.
+    """
+    if planet_radius_earth <= 0 or star_radius_solar <= 0:
+        return {"error": "Planet radius and star radius must be positive."}
+
+    if sma_au is not None:
+        if sma_au <= 0:
+            return {"error": "Semi-major axis must be positive."}
+        a_au = sma_au
+        if star_mass_solar is not None:
+            if star_mass_solar <= 0:
+                return {"error": "Star mass must be positive."}
+            period_days = 365.25 * math.sqrt(a_au ** 3 / star_mass_solar)
+    elif period_days is not None and star_mass_solar is not None:
+        if period_days <= 0 or star_mass_solar <= 0:
+            return {"error": "Period and star mass must be positive."}
+        period_yr = period_days / 365.25
+        a_au = (star_mass_solar * period_yr ** 2) ** (1.0 / 3.0)
+    else:
+        return {"error": "Provide --sma-au, or both --period-days and --star-mass-solar."}
+
+    r_star_au = star_radius_solar * _R_SUN_AU
+    rp_au = planet_radius_earth * _R_EARTH_AU
+    if r_star_au >= a_au:
+        return {"error": "Star radius meets or exceeds the orbital distance (no transit geometry)."}
+
+    depth_frac = (rp_au / r_star_au) ** 2
+    transit_prob = r_star_au / a_au
+    duration_hours = None
+    if period_days is not None:
+        duration_hours = (period_days * 24.0 / math.pi) * math.asin(r_star_au / a_au)
+
+    return {
+        "depth_ppm": depth_frac * 1e6,
+        "depth_frac": depth_frac,
+        "transit_prob": transit_prob,
+        "duration_hours": duration_hours,
+        "sma_au": a_au,
+        "period_days": period_days,
+        "planet_radius_earth": planet_radius_earth,
+        "star_radius_solar": star_radius_solar,
+    }
+
+
+def compute_astrometric_signal(planet_mass_earth, star_mass_solar, sma_au, distance_pc):
+    """Astrometric wobble of a star induced by a planet.
+
+    `α [arcsec] = (Mp/M*)·(a_AU / d_pc)`; reported headline in microarcsec with an arcsec echo.
+
+    Returns {signal_microarcsec, signal_arcsec, planet_mass_earth, star_mass_solar,
+    sma_au, distance_pc} or {"error": str}.
+    """
+    if planet_mass_earth <= 0 or star_mass_solar <= 0 or sma_au <= 0 or distance_pc <= 0:
+        return {"error": "Planet mass, star mass, SMA, and distance must be positive."}
+    ratio = (planet_mass_earth / _M_SUN_EARTH) / star_mass_solar
+    signal_arcsec = ratio * sma_au / distance_pc
+    return {
+        "signal_microarcsec": signal_arcsec * 1e6,
+        "signal_arcsec": signal_arcsec,
+        "planet_mass_earth": planet_mass_earth,
+        "star_mass_solar": star_mass_solar,
+        "sma_au": sma_au,
+        "distance_pc": distance_pc,
+    }
+
+
+def compute_direct_imaging(sma_au, distance_pc, planet_radius_earth, albedo=0.3,
+                           telescope_diameter_m=None, wavelength_um=None):
+    """Reflected-light contrast and angular separation, optionally vs a telescope IWA.
+
+    Angular separation `θ [arcsec] = a_AU / d_pc`; reflected contrast `C ≈ A_g·(Rp/a)²`
+    (max, full phase) with Rp converted to AU; optional inner working angle `IWA = λ/D`
+    (the 1·λ/D convention) in arcsec when both telescope args are given, and a
+    `resolvable = θ ≥ IWA` flag (else both null).
+
+    Returns {angular_sep_arcsec, contrast_reflected, iwa_arcsec, resolvable, sma_au,
+    distance_pc, planet_radius_earth, albedo} or {"error": str}.
+    """
+    if sma_au <= 0 or distance_pc <= 0 or planet_radius_earth <= 0:
+        return {"error": "SMA, distance, and planet radius must be positive."}
+    if albedo <= 0:
+        return {"error": "Albedo must be positive."}
+    has_d = telescope_diameter_m is not None
+    has_w = wavelength_um is not None
+    if has_d != has_w:
+        return {"error": "Provide both --telescope-diameter-m and --wavelength-um, or neither."}
+
+    rp_au = planet_radius_earth * _R_EARTH_AU
+    angular_sep_arcsec = sma_au / distance_pc
+    contrast = albedo * (rp_au / sma_au) ** 2
+
+    iwa_arcsec = None
+    resolvable = None
+    if has_d and has_w:
+        if telescope_diameter_m <= 0 or wavelength_um <= 0:
+            return {"error": "Telescope diameter and wavelength must be positive."}
+        iwa_rad = (wavelength_um * 1e-6) / telescope_diameter_m
+        iwa_arcsec = iwa_rad * _ARCSEC_PER_RAD
+        resolvable = angular_sep_arcsec >= iwa_arcsec
+
+    return {
+        "angular_sep_arcsec": angular_sep_arcsec,
+        "contrast_reflected": contrast,
+        "iwa_arcsec": iwa_arcsec,
+        "resolvable": resolvable,
+        "sma_au": sma_au,
+        "distance_pc": distance_pc,
+        "planet_radius_earth": planet_radius_earth,
+        "albedo": albedo,
+    }
+
+
+def compute_relativistic_brachistochrone(accel_g, distance_ly):
+    """Flip-and-burn under constant *proper* acceleration, relativistically correct (MTW).
+
+    Per half-distance D/2 (then doubled): `X = arccosh(1 + a·(D/2)/c²)`; proper time per
+    half `τ_h=(c/a)·X`, coordinate time `t_h=(c/a)·sinh X`; midpoint `peak_velocity_c=tanh X`,
+    `peak_lorentz_factor=cosh X`. Lifts the 3%c Newtonian cap of the brachistochrone subcommands.
+
+    Returns {accel_g, distance_ly, coord_time_yr, proper_time_yr, peak_velocity_c,
+    peak_lorentz_factor} or {"error": str}.
+    """
+    if accel_g <= 0 or distance_ly <= 0:
+        return {"error": "Acceleration and distance must be positive."}
+    a = accel_g * _G_MS2
+    half_m = (distance_ly * _LY_M) / 2.0
+    x = math.acosh(1.0 + a * half_m / _C_MS ** 2)
+    tau_half = (_C_MS / a) * x
+    t_half = (_C_MS / a) * math.sinh(x)
+    return {
+        "accel_g": accel_g,
+        "distance_ly": distance_ly,
+        "coord_time_yr": 2.0 * t_half / _SEC_PER_JULIAN_YEAR,
+        "proper_time_yr": 2.0 * tau_half / _SEC_PER_JULIAN_YEAR,
+        "peak_velocity_c": math.tanh(x),
+        "peak_lorentz_factor": math.cosh(x),
+    }
 
 # ── Horizons ID map (options 32, 33) ──────────────────────────────────────────
 _HORIZONS_ID_MAP = {

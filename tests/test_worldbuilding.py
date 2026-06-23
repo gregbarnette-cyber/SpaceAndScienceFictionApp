@@ -61,6 +61,41 @@ class HillSphereTest(unittest.TestCase):
         self.assertIn("error", equations.compute_hill_sphere(1, 1, 1, 1.0))
         self.assertIn("error", equations.compute_hill_sphere(1, 1, 1, -0.1))
 
+    # ── Phase T1a · Domingos 2006 exomoon keys (additive) ────────────────────
+
+    def test_domingos_keys_and_prograde_anchor(self):
+        h = equations.compute_hill_sphere(1.0, 1.0, 1.0, 0)
+        # New keys present.
+        for k in ("moon_inclination_deg", "prograde", "stable_fraction",
+                  "stable_moon_limit_km", "stable_moon_limit_au"):
+            self.assertIn(k, h)
+        # Prograde leading factor at e=0, i=0 is 0.4895; limit = f × r_H.
+        self.assertAlmostEqual(h["stable_fraction"], 0.4895, places=6)
+        self.assertAlmostEqual(h["stable_moon_limit_au"],
+                               0.4895 * h["hill_radius_au"], places=12)
+        self.assertTrue(h["prograde"])
+
+    def test_domingos_retrograde_and_inclination(self):
+        retro = equations.compute_hill_sphere(1.0, 1.0, 1.0, 0, prograde=False)
+        self.assertAlmostEqual(retro["stable_fraction"], 0.9309, places=6)
+        self.assertFalse(retro["prograde"])
+        # Inclination (deg→rad internally) shrinks the prograde factor.
+        incl = equations.compute_hill_sphere(1.0, 1.0, 1.0, 0, moon_inclination_deg=45)
+        self.assertLess(incl["stable_fraction"], 0.4895)
+        # 0.4895·(1 − 0.2738·(π/4)) ≈ 0.4895·0.78503 ≈ 0.38427
+        self.assertAlmostEqual(incl["stable_fraction"], 0.38427, places=4)
+
+    def test_inclination_out_of_range(self):
+        self.assertIn("error", equations.compute_hill_sphere(1, 1, 1, 0,
+                                                             moon_inclination_deg=-5))
+        self.assertIn("error", equations.compute_hill_sphere(1, 1, 1, 0,
+                                                             moon_inclination_deg=181))
+
+    def test_existing_keys_unchanged_with_new_args_omitted(self):
+        h = equations.compute_hill_sphere(1.0, 1.0, 1.0, 0)
+        self.assertAlmostEqual(h["hill_radius_km"], 1.496e6, delta=1.496e6 * 0.01)
+        self.assertAlmostEqual(h["stable_orbit_limit_km"], 0.5 * h["hill_radius_km"], places=6)
+
 
 class BinaryOrbitStabilityTest(unittest.TestCase):
     def test_critical_sma_reference(self):
