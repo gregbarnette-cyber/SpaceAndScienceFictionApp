@@ -119,6 +119,7 @@ NAVIGATION = [
         ("Import Honorverse Hyper Limits", "ImportHonorversePanel"),
         ("Import GCNS Data",               "ImportGcnsPanel"),
         ("Import Hypatia Cache",           "ImportHypatiaPanel"),
+        ("Fetch Dust Map Data",            "FetchDustMapPanel"),
         ("Database Table Status",          "DbStatusPanel"),
     ]),
 ]

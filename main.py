@@ -2843,6 +2843,53 @@ def import_gcns_data():
     input("\nPress Enter to Return to the Main Menu")
 
 
+def dust_fetch_data():
+    """Download (or check) the 3D dust map data for the Phase T2 dust query path.
+
+    Import utility in the opt-58 (GCNS) lineage. Dust is WSL/Linux-venv-only —
+    needs the optional 'dust' extra (dustmaps + healpy). The query.py dust-*
+    subcommands read this cache. Mirrored by the GUI FetchDustMapPanel (Utilities
+    nav); the dust QUERY subcommands stay query.py-only by design."""
+    import core.dust
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=" * 60)
+    print("   FETCH DUST MAP DATA (3D ISM extinction — Phase T2)")
+    print("=" * 60)
+    print()
+    print("  Downloads the dustmaps data into data/dust/ (gitignored, fetch-once,")
+    print("  offline thereafter). Files are large: Leike 2020 ~2.4 GB, Edenhofer")
+    print("  2024 ~3.2 GB (auto = both, ~5.6 GB). WSL/Linux venv only.")
+    print()
+    if not core.dust._dustmaps_available():
+        print("  The optional 'dust' extra is not installed. In the WSL/Linux venv:")
+        print("      pip install -r requirements-dust.txt")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print("  Map:  [1] auto (both)   [2] near-field (Leike)   [3] edenhofer")
+    map_sel = {"1": "auto", "2": "near-field", "3": "edenhofer"}.get(
+        input("  Choose map [1]: ").strip() or "1", "auto")
+    check_only = not (input("  [F]etch or [C]heck status? [C]: ").strip().lower()
+                      .startswith("f"))
+
+    def _progress(msg):
+        print(f"  {msg}")
+
+    result = core.dust.compute_dust_fetch(
+        map_sel=map_sel, check_only=check_only, progress_callback=_progress)
+    if "error" in result:
+        print(f"\nError: {result['error']}")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print()
+    print(f"  Cache dir: {result['cache_dir']}")
+    for f in result["fetched"]:
+        sz = f"{f['size_mb']} MB" if f["size_mb"] is not None else "—"
+        print(f"    {f['map']:<16s} {f['status']:<11s} {sz:>12s}")
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Calculators ──────────────────────────────────────────────────────────────
 
 def _lookup_star_for_distance(designation):
@@ -5727,6 +5774,7 @@ MENU_OPTIONS = {
     "55": ("Import Solar System Data",                                import_solar_system_data),
     "56": ("Import Honorverse Hyper Limits",                          import_honorverse_hyper_data),
     "58": ("Import GCNS Data",                                        import_gcns_data),
+    "59": ("Fetch Dust Map Data",                                     dust_fetch_data),
 }
 
 _STAR_DB_KEYS          = {"1", "2", "3", "4", "5", "6", "7"}
@@ -5737,7 +5785,7 @@ _CALCULATORS_KEYS      = {"17", "18", "19", "20", "21", "22", "23", "24", "25", 
 _PLANETARY_KEYS        = {"33", "34", "35"}
 _ROTATING_HABITAT_KEYS = {"36", "37", "38"}
 _MISC_EQUATIONS_KEYS   = {"39", "40", "41"}
-_UTILITY_KEYS          = {"50", "51", "52", "53", "54", "55", "56", "58"}
+_UTILITY_KEYS          = {"50", "51", "52", "53", "54", "55", "56", "58", "59"}
 
 
 def _print_two_column_section(keys):

@@ -1,0 +1,18 @@
+# Optional 'dust' extra — the Phase T2 dust / ISM query path (dust-sightline,
+# dust-between, CLI option 59 dust-fetch, and the routing --weight dust).
+#
+# Install ON TOP OF requirements.txt, in the WSL/Linux venv only:
+#     pip install -r requirements-dust.txt
+#
+# WSL/Linux-only by design: dustmaps hard-requires healpy, which has NO native-
+# Windows pip wheel (manylinux/macOS only). A native-Windows pip checkout keeps
+# the stellar layer working and skips the dust path behind an import gate.
+#
+# astropy / numpy / requests are already in the base requirements.txt.
+dustmaps
+healpy
+h5py
+scipy
+progressbar2
+six
+tqdm

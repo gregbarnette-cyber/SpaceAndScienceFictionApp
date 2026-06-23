@@ -25,6 +25,24 @@ sudo apt install libxcb-cursor0
 
 > Versions above are the tested baseline; `requirements.txt` pins only the matplotlib range (`>=3.6,<4`) and otherwise installs the latest compatible release of each library.
 
+### Optional — Dust / ISM extra (Phase T2, WSL/Linux only)
+
+The 3D interstellar-dust query path — `query.py dust-sightline` / `dust-between`, the route planners'
+`--weight dust`, and the dust-map fetch (CLI **option 59** / GUI **Utilities → Fetch Dust Map Data**) — needs
+a separate **optional** extra, `requirements-dust.txt`:
+
+| Library | Purpose |
+|---|---|
+| `dustmaps` | 3D Galactic dust maps (Leike 2020 + Edenhofer 2024) |
+| `healpy` | HEALPix support required by `dustmaps` (Edenhofer map) |
+| `h5py`, `scipy`, `progressbar2`, `six`, `tqdm` | `dustmaps` dependencies |
+
+It is **not** in base `requirements.txt` and is **WSL/Linux-venv-only**: `dustmaps` requires `healpy`, which
+has **no native-Windows pip wheel**. A native-Windows checkout keeps the entire stellar layer working and just
+skips the dust path behind an import gate (the dust subcommands/panel return a clean "install the dust extra"
+message). `astropy`/`numpy`/`requests` are already in the base requirements. Install it on top of the base —
+see Installation step 4.
+
 ## Installation
 
 1. **Clone or download** the repository to your local machine:
@@ -47,6 +65,14 @@ source venv/bin/activate     # macOS/Linux
 ```bash
 pip install -r requirements.txt
 ```
+
+4. **(Optional) Install the Dust / ISM extra** — only for the Phase T2 dust path, and only in a **WSL/Linux** venv (see the optional-extra note above):
+
+```bash
+pip install -r requirements-dust.txt
+```
+
+This pulls `dustmaps` + `healpy` (and `h5py`/`scipy`/…). On **native Windows it fails** (no `healpy` pip wheel) — that is expected; the rest of the app is unaffected. After installing, fetch the map data via **CLI option 59 (Fetch Dust Map Data)** or the GUI **Utilities → Fetch Dust Map Data** panel. The maps are large (Leike 2020 ~2.4 GB, Edenhofer 2024 ~3.2 GB) and hosted on **Zenodo**, which bandwidth-throttles large downloads (~0.5 MB/s) and can't resume a broken transfer — so the GUI panel shows copyable, **resumable** `aria2c -c` / `wget -c` commands for a faster manual download into `data/dust/` (then click **Check Status**, which verifies the md5 and reuses the file). See the "Dust / ISM" section of `docs/integration.md`.
 
 ## Running the Application
 
@@ -91,6 +117,7 @@ The code comes down with `git clone`, but the **local SQLite database (`data/spa
 - **Option 50 (Star Systems DB Query)** runs 17 sequential SIMBAD criteria queries (several minutes, network-bound).
 - **Option 58 (Import GCNS Data)** pulls ~331k rows from GAVO TAP (~55–65 MB added to the DB).
 - **Import Hypatia Cache** (GUI utility) makes ~112 throttled API calls (~14k stars / ~245k abundance rows).
+- **Option 59 (Fetch Dust Map Data)** — *only if you use the optional dust extra* — downloads ~5.6 GB of map files into `data/dust/` (also gitignored, WSL/Linux only). These don't live in `space_app.db`; copy the `data/dust/` directory across (or re-fetch) the same way.
 
 To skip all of that, **copy the database file from the old machine to the new one** after cloning:
 
@@ -108,3 +135,4 @@ The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** trav
 - The Open Exoplanet Catalogue data is downloaded once per session and cached in memory.
 - The local SQLite database is created automatically on first run at `data/space_app.db` under the repo root (the `data/` directory is gitignored). Set the `SPACE_APP_DB` environment variable to override this path (see `docs/integration.md`).
 - The `backups/` directory holds manual CSV snapshots (e.g. `starSystemsBackup-*.csv`, `templateStarSystems.csv`) that are **not** read by the app — they are retained for reference only.
+- The **dust / ISM path is optional and WSL/Linux-only** (`requirements-dust.txt`; see above). Without it installed, every other feature works normally and the dust subcommands/panel are simply gated off. The dust map cache lives at `data/dust/` (gitignored) and is fetch-once/offline-after.

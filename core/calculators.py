@@ -1956,6 +1956,54 @@ class _SpatialGrid:
                             yield j, d
 
 
+# ── Shared cost-injected graph search (Phase T2 Part B seam) ─────────────────
+
+def _grid_search(nodes, grid, s, t, max_jump_ly, optimize, edge_cost):
+    """BFS / Dijkstra over a _SpatialGrid, with a pluggable additive edge cost.
+
+    optimize="jumps" → BFS minimizing hop count (edge_cost ignored);
+    optimize="distance" → Dijkstra minimizing the sum of edge_cost(u, v, w_ly),
+    where w_ly is the geometric leg length. Passing edge_cost=lambda u,v,w: w
+    reproduces the original distance-weighted jump route byte-identically; dust
+    routing (core/dust_routing.py) passes the per-leg integrated A_V instead.
+
+    Returns (prev, dist_arr) for path reconstruction by the caller.
+    """
+    nn = len(nodes)
+    prev = [-1] * nn
+    dist_arr = [float("inf")] * nn
+    if optimize == "jumps":
+        dist_arr[s] = 0
+        q = deque([s])
+        while q:
+            u = q.popleft()
+            if u == t:
+                break
+            for v, _w in grid.neighbors(u, max_jump_ly):
+                if dist_arr[v] == float("inf"):
+                    dist_arr[v] = dist_arr[u] + 1
+                    prev[v] = u
+                    q.append(v)
+    else:
+        dist_arr[s] = 0.0
+        pq = [(0.0, s)]
+        done = [False] * nn
+        while pq:
+            du, u = heapq.heappop(pq)
+            if done[u]:
+                continue
+            done[u] = True
+            if u == t:
+                break
+            for v, w in grid.neighbors(u, max_jump_ly):
+                c = du + edge_cost(u, v, w)
+                if c < dist_arr[v]:
+                    dist_arr[v] = c
+                    prev[v] = u
+                    heapq.heappush(pq, (dist_arr[v], v))
+    return prev, dist_arr
+
+
 # ── A: Optimal Tour ──────────────────────────────────────────────────────────
 
 def _tour_len(order: list, closed: bool) -> float:
@@ -2107,38 +2155,8 @@ def compute_jump_route(origin: str, destination: str, max_jump_ly: float,
     t = _merge_endpoint(nodes, d)
     grid = _SpatialGrid(nodes, max_jump_ly)
 
-    nn = len(nodes)
-    prev = [-1] * nn
-    if optimize == "jumps":
-        dist_arr = [float("inf")] * nn
-        dist_arr[s] = 0
-        q = deque([s])
-        while q:
-            u = q.popleft()
-            if u == t:
-                break
-            for v, _w in grid.neighbors(u, max_jump_ly):
-                if dist_arr[v] == float("inf"):
-                    dist_arr[v] = dist_arr[u] + 1
-                    prev[v] = u
-                    q.append(v)
-    else:
-        dist_arr = [float("inf")] * nn
-        dist_arr[s] = 0.0
-        pq = [(0.0, s)]
-        done = [False] * nn
-        while pq:
-            du, u = heapq.heappop(pq)
-            if done[u]:
-                continue
-            done[u] = True
-            if u == t:
-                break
-            for v, w in grid.neighbors(u, max_jump_ly):
-                if du + w < dist_arr[v]:
-                    dist_arr[v] = du + w
-                    prev[v] = u
-                    heapq.heappush(pq, (dist_arr[v], v))
+    prev, dist_arr = _grid_search(nodes, grid, s, t, max_jump_ly, optimize,
+                                  edge_cost=lambda u, v, w: w)
 
     direct_ly = _node_dist(o, d)
     reachable = dist_arr[t] != float("inf")

@@ -12,6 +12,8 @@ import sys
 
 import core.calculators as calculators
 import core.databases as databases
+import core.dust as dust
+import core.dust_routing as dust_routing
 import core.equations as equations
 import core.feasibility as feasibility
 import core.generate as generate
@@ -306,6 +308,38 @@ def cmd_substellar(args):
     ))
 
 
+# ── Dust / ISM (Phase T2 Part A — optional dustmaps extra) ────────────────────
+# Self-validating: a missing extra / unfetched map / bad direction → curated
+# {"error"} (exit 1); a bad --map / non-numeric arg → argparse exit 2. Geometry
+# leaving a map box is NOT an error (per-bin null + note).
+
+def cmd_dust_sightline(args):
+    _out(dust.compute_dust_sightline(
+        l=args.l, b=args.b, ra=args.ra, dec=args.dec, star=args.star, id=args.id,
+        dist_start_pc=args.dist_start, dist_end_pc=args.dist_end,
+        n_steps=args.steps, step_pc=args.step_pc, map_sel=args.map,
+    ))
+
+
+def cmd_dust_between(args):
+    _out(dust.compute_dust_between(
+        star1=args.star1, id1=args.id1, star2=args.star2, id2=args.id2,
+        n_steps=args.steps, step_pc=args.step_pc, map_sel=args.map,
+    ))
+
+
+def _add_dust_weight_flags(p):
+    """Phase T2 Part B: dust-weighted routing flags on a Core route planner.
+    --weight distance (default) → the unchanged core.calculators path; --weight
+    dust → core.dust_routing (integrated A_V edge cost)."""
+    p.add_argument("--weight", choices=["distance", "dust"], default="distance",
+                   help="Edge weight: distance (default, 3D ly) or dust (integrated A_V)")
+    p.add_argument("--map", choices=["near-field", "edenhofer", "auto"], default="auto",
+                   help="Dust map when --weight dust (default auto)")
+    p.add_argument("--dust-step-pc", dest="dust_step_pc", type=float, default=5.0,
+                   help="Dust integration step in pc when --weight dust (default 5)")
+
+
 # ── Solvent zones (Phase P) ───────────────────────────────────────────────────
 # Wrap the self-validating compute_solvent_zone / compute_ice_lines (Phase H
 # contract: curated {"error"} → exit 1, unlike the Phase N raw-exception path).
@@ -410,15 +444,27 @@ def cmd_travel_time_solar(args):
 def cmd_optimal_tour(args):
     use_times_c = args.times_c is not None
     velocity = args.times_c if use_times_c else args.ly_hr
-    _out(calculators.compute_optimal_tour(
-        args.stars, velocity, use_times_c, closed=args.closed,
-    ))
+    if getattr(args, "weight", "distance") == "dust":
+        _out(dust_routing.compute_optimal_tour_dust(
+            args.stars, velocity, use_times_c, closed=args.closed,
+            map_sel=args.map, dust_step_pc=args.dust_step_pc,
+        ))
+    else:
+        _out(calculators.compute_optimal_tour(
+            args.stars, velocity, use_times_c, closed=args.closed,
+        ))
 
 
 def cmd_jump_route(args):
-    _out(calculators.compute_jump_route(
-        args.origin, args.destination, args.max_jump, optimize=args.optimize,
-    ))
+    if getattr(args, "weight", "distance") == "dust":
+        _out(dust_routing.compute_jump_route_dust(
+            args.origin, args.destination, args.max_jump, optimize=args.optimize,
+            map_sel=args.map, dust_step_pc=args.dust_step_pc,
+        ))
+    else:
+        _out(calculators.compute_jump_route(
+            args.origin, args.destination, args.max_jump, optimize=args.optimize,
+        ))
 
 
 def cmd_jump_network(args):
@@ -430,13 +476,25 @@ def cmd_jump_network(args):
 def cmd_multi_stop(args):
     use_times_c = args.times_c is not None
     velocity = args.times_c if use_times_c else args.ly_hr
-    _out(calculators.compute_multi_stop_journey(args.stars, velocity, use_times_c))
+    if getattr(args, "weight", "distance") == "dust":
+        _out(dust_routing.compute_multi_stop_dust(
+            args.stars, velocity, use_times_c,
+            map_sel=args.map, dust_step_pc=args.dust_step_pc,
+        ))
+    else:
+        _out(calculators.compute_multi_stop_journey(args.stars, velocity, use_times_c))
 
 
 def cmd_nearest_neighbor(args):
-    _out(calculators.compute_nearest_neighbor_chain(
-        args.start, args.hops, args.max_ly,
-    ))
+    if getattr(args, "weight", "distance") == "dust":
+        _out(dust_routing.compute_nearest_neighbor_dust(
+            args.start, args.hops, args.max_ly,
+            map_sel=args.map, dust_step_pc=args.dust_step_pc,
+        ))
+    else:
+        _out(calculators.compute_nearest_neighbor_chain(
+            args.start, args.hops, args.max_ly,
+        ))
 
 
 def cmd_farthest_first(args):
@@ -446,7 +504,12 @@ def cmd_farthest_first(args):
 
 
 def cmd_trade_route(args):
-    _out(calculators.compute_trade_route_mst(args.stars))
+    if getattr(args, "weight", "distance") == "dust":
+        _out(dust_routing.compute_trade_route_dust(
+            args.stars, map_sel=args.map, dust_step_pc=args.dust_step_pc,
+        ))
+    else:
+        _out(calculators.compute_trade_route_mst(args.stars))
 
 
 # ── Search & Filter (Phase G) ─────────────────────────────────────────────────
@@ -1036,6 +1099,44 @@ def main():
                    help="Override the spectral-class prefixes (default: L T Y)")
     p.set_defaults(func=cmd_substellar)
 
+    # ── Dust / ISM (Phase T2 Part A — optional dustmaps extra) ───────────────
+
+    # dust-sightline
+    p = sub.add_parser("dust-sightline",
+                       help="ISM dust extinction profile along one direction (A_V, optional dustmaps extra)")
+    p.add_argument("--l", type=float, help="Galactic longitude (deg)")
+    p.add_argument("--b", type=float, help="Galactic latitude (deg)")
+    p.add_argument("--ra", type=float, help="ICRS right ascension (deg)")
+    p.add_argument("--dec", type=float, help="ICRS declination (deg)")
+    p.add_argument("--star", help="Star name whose resolved direction sets the sightline")
+    p.add_argument("--id", type=int, help="Gaia EDR3/DR3 source_id whose direction sets the sightline")
+    p.add_argument("--dist-start", dest="dist_start", type=float, default=0.0,
+                   help="Sightline start distance (pc, default 0)")
+    p.add_argument("--dist-end", dest="dist_end", type=float, default=None,
+                   help="Sightline end distance (pc)")
+    p.add_argument("--steps", type=int, default=50, help="Number of bins (default 50)")
+    p.add_argument("--step-pc", dest="step_pc", type=float, default=None,
+                   help="Bin spacing (pc); overrides --steps")
+    p.add_argument("--map", choices=["near-field", "edenhofer", "auto"], default="auto",
+                   help="Dust map (default auto: Leike ≤69 pc, Edenhofer beyond)")
+    p.set_defaults(func=cmd_dust_sightline)
+
+    # dust-between
+    p = sub.add_parser("dust-between",
+                       help="ISM dust extinction along a star-to-star line (A_V, optional dustmaps extra)")
+    g1 = p.add_mutually_exclusive_group(required=True)
+    g1.add_argument("--star1", help="Endpoint 1 by name (Sol/Sun → origin)")
+    g1.add_argument("--id1", type=int, help="Endpoint 1 by Gaia EDR3/DR3 source_id")
+    g2 = p.add_mutually_exclusive_group(required=True)
+    g2.add_argument("--star2", help="Endpoint 2 by name (Sol/Sun → origin)")
+    g2.add_argument("--id2", type=int, help="Endpoint 2 by Gaia EDR3/DR3 source_id")
+    p.add_argument("--steps", type=int, default=50, help="Number of bins (default 50)")
+    p.add_argument("--step-pc", dest="step_pc", type=float, default=None,
+                   help="Bin spacing (pc); overrides --steps")
+    p.add_argument("--map", choices=["near-field", "edenhofer", "auto"], default="auto",
+                   help="Dust map (default auto)")
+    p.set_defaults(func=cmd_dust_between)
+
     # ── Solvent zones (Phase P) ──────────────────────────────────────────────
 
     # solvent-zone
@@ -1182,6 +1283,7 @@ def main():
     vel = p.add_mutually_exclusive_group(required=True)
     vel.add_argument("--ly-hr",   dest="ly_hr",   type=float, help="Velocity in light years per hour")
     vel.add_argument("--times-c", dest="times_c", type=float, help="Velocity as a multiple of c")
+    _add_dust_weight_flags(p)
     p.set_defaults(func=cmd_optimal_tour)
 
     # jump-route
@@ -1193,6 +1295,7 @@ def main():
                    help="Maximum single-jump distance in light years")
     p.add_argument("--optimize", choices=["distance", "jumps"], default="distance",
                    help="Minimize total distance (default) or number of jumps")
+    _add_dust_weight_flags(p)
     p.set_defaults(func=cmd_jump_route)
 
     # jump-network
@@ -1212,6 +1315,7 @@ def main():
     vel = p.add_mutually_exclusive_group(required=True)
     vel.add_argument("--ly-hr",   dest="ly_hr",   type=float, help="Velocity in light years per hour")
     vel.add_argument("--times-c", dest="times_c", type=float, help="Velocity as a multiple of c")
+    _add_dust_weight_flags(p)
     p.set_defaults(func=cmd_multi_stop)
 
     # nearest-neighbor
@@ -1221,6 +1325,7 @@ def main():
     p.add_argument("--hops",   required=True, type=int, help="Number of hops")
     p.add_argument("--max-ly", dest="max_ly", required=True, type=float,
                    help="Maximum single-hop distance in light years")
+    _add_dust_weight_flags(p)
     p.set_defaults(func=cmd_nearest_neighbor)
 
     # farthest-first
@@ -1236,6 +1341,7 @@ def main():
     p = sub.add_parser("trade-route",
                        help="Minimum spanning tree connecting a set of systems")
     p.add_argument("--stars", required=True, nargs="+", help="System names (≥ 2)")
+    _add_dust_weight_flags(p)
     p.set_defaults(func=cmd_trade_route)
 
     # ── Search & Filter (Phase G) ────────────────────────────────────────────

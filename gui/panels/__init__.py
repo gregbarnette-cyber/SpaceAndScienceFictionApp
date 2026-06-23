@@ -58,7 +58,8 @@ from gui.panels.csv_utility      import (CsvUtilityPanel, ExportStarSystemsPanel
                                          ImportHwcPanel, ImportMissionExocatPanel,
                                          ImportMainSequencePanel, ImportSolarSystemPanel,
                                          ImportHonorversePanel, ImportGcnsPanel,
-                                         ImportHypatiaPanel, DbStatusPanel)
+                                         ImportHypatiaPanel, DbStatusPanel,
+                                         FetchDustMapPanel)
 
 # ── Phase E panels (lazy-loaded to break circular import) ─────────────────────
 # gui/visualizations/*.py imports gui.panels.base, so direct imports here would

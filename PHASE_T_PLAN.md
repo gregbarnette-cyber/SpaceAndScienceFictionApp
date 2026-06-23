@@ -11,6 +11,13 @@
 > build). T1b's three pinned coefficients were verified against the cited papers 2026-06-23 (see the T1b
 > coefficient table). T1c is two convenience census presets whose defining requirement is the **in-JSON**
 > population/completeness caveat fields (locked answers #3/#4).
+>
+> **T2 detailed 2026-06-23** — the dust/ISM track is now a build-ready spec (was a stub). Its dependency,
+> map-API, units, seam, and cache seams were **verified against the `dustmaps` 1.0.14 wheel + the WSL venv**
+> before writing (see "T2.0 — Verified seam facts"), surfacing two corrections to the stub: the map key is
+> `edenhofer2023` (not `edenhofer2024`), and the seam is handled by differential-density per-segment integration
+> (not dustmaps' `integrated=True` add-back). The only open build-time item is the per-map native→A_V scalar
+> (the T2 analog of T1b's coefficient pin), specified with sources. **Not yet built.**
 
 ## Surface & posture (applies to all of Phase T)
 
@@ -461,46 +468,283 @@ Offline subprocess contracts over **seeded throwaway DBs** (the `GcnsWdProbFilte
 
 ---
 
-# Phase T2 — Dust / ISM query path (STUB — new OPTIONAL dependency, forked)
+# Phase T2 — Dust / ISM query path (DETAILED — new OPTIONAL dependency, forked)
 
-Full request: `dust-map-query-request.md` (§§4–14). Gate T2 on the unit/seam contract proven in Part A.
+Full request: `dust-map-query-request.md` (§§4–14; answers §13, implementer calls §14). Gate Part B on the
+unit/seam contract proven in Part A. T2 is the only remaining Phase-T track (T1a/T1b/T1c built 2026-06-23).
 
-**Part A (read-only):** `dust-sightline`, `dust-between` (reuses GCNS/SIMBAD resolvers + Sol origin),
-CLI **option 59** `dust-fetch` + `--check` (import-utility, GCNS opt-58 lineage — not a `query.py`
-subcommand). **Part B (Core planners only):** `--weight distance|dust` on `jump-route` (flagship) /
-`optimal-tour` / `multi-stop` / `nearest-neighbor` / `trade-route`, each with per-leg + cumulative A_V **and a
-distance-optimal comparison** (`extra_ly`/`saved_av`). `distance` stays default. **Deferred:** `blend`
-weight, `--max-leg-av`, `jump-network` cost-budget, `farthest-first`.
+## T2.0 — Verified seam facts (pinned 2026-06-23 against the dustmaps 1.0.14 wheel + WSL venv)
 
-**Maps/output (locked):** Leike 2020 + Edenhofer 2024, `--map near-field|edenhofer|auto`. Output **A_V mag,
-R_V=3.1** + native echo (`native_quantity`) + `units`. Auto seam: Leike 0–69 pc, Edenhofer **inner-subtracted**
-beyond (no double-count), `seam` flag on crossing bins. Out-of-coverage → per-bin `null` + non-fatal
-`out_of_coverage` note (no clamp); deep cavity → small value + wide σ + `low_dust_high_uncertainty` note.
-Explicit `--map near-field|edenhofer` loads only that map.
+These were proven before writing the spec (the T2 analog of the T1b coefficient verification). The wheel
+source (`dustmaps/leike2020.py`, `dustmaps/edenhofer2023.py`, `config.py`, `std_paths.py`) is authoritative;
+two facts **correct the earlier stub**.
 
-**Architecture (risk control — locked):** **forked, not parameterized in place.** New `core/dust.py` (Part A)
-+ `core/dust_routing.py` (Part B): **reuse** the existing non-weight route helpers (`_resolve_star_position`,
-`_load_star_systems_positions`, `_SpatialGrid`, `_merge_endpoint`, `_map_node`); **extract a shared
-cost-injected `_dijkstra` seam** for `jump-route` (guarded byte-identical by the existing route tests);
-**fork** the other planners. New `dust-*` subcommands. This keeps `dustmaps`/`healpy` **out of
-`core/calculators.py`** so the stellar layer stays importable everywhere.
+| Seam | Verified fact | Source |
+|---|---|---|
+| **Dependency installs** | `dustmaps==1.0.14` (`py3-none-any`) + `healpy 1.19.0` resolve a **`cp312-manylinux2014_x86_64`** wheel in the WSL venv (Python 3.12.3) — `pip download` pulls them with no build step. | `pip download dustmaps healpy --no-deps` (run 2026-06-23) |
+| **New deps (full set)** | dustmaps `Requires-Dist`: astropy, h5py, healpy, numpy, progressbar2, requests, scipy, six, tqdm. **Already in base `requirements.txt`:** astropy, numpy, requests. **New for `requirements-dust.txt`:** `dustmaps, healpy, h5py, scipy, progressbar2, six, tqdm`. | wheel `METADATA` |
+| **Map key — Leike** | `dustmaps.leike2020.Leike2020Query` (key `leike2020`); `leike2020.fetch(fetch_samples=False)` → `mean_std.h5` (Zenodo 3993082; samples=14 GB, skip). | `leike2020.py` |
+| **Map key — Edenhofer (CORRECTION)** | The map is **`edenhofer2023` / `dustmaps.edenhofer2023.Edenhofer2023Query`**, **not** `edenhofer2024`. (A&A paper is 2024; arXiv 2308.01295 / dustmaps module are 2023.) `edenhofer2023.fetch()` → `mean_and_std_healpix.fits` (**≈3.2 GB**; Zenodo 8187943; samples=19 GB, skip). Use the `main` flavor (69 pc → 1.25 kpc). | `edenhofer2023.py` |
+| **Leike native quantity** | `query(coords, component='mean'|'std')` → extinction **density**, **`e-foldings / kpc` in the Gaia G band** (differential, not integrated). Cartesian box, lower edge `(−370,−370,−270)` pc, **1-pc voxels**; **out-of-box → NaN**. | `Leike2020Query.query` docstring + `_coords2idx` |
+| **Edenhofer native quantity** | `Edenhofer2023Query(load_samples=False, integrated=False, flavor='main').query(coords, mode='mean'|'std')` → density in **`E` of Zhang, Green & Rix (2023) per parsec** (differential). HEALPix sphere; radii **~69 pc → 1.25 kpc**; outside the shell → **NaN**. `mode='std'` works **without** the samples file. | `Edenhofer2023Query.__init__`/`.query` |
+| **Inner-<69 pc add-back (CORRECTION to seam handling)** | The add-back happens **only in `integrated=True`** (`data[...,0,:] += data0`, then `cumsum`). **We query differential density (`integrated=False`) and integrate per-segment ourselves**, which (a) never triggers the add-back → no double-count, and (b) Edenhofer differential is NaN inside ~69 pc, so Leike owns 0–69 and Edenhofer owns >69 with zero overlap. This is the clean realization of locked decision Q2. | `Edenhofer2023Query.__init__` (the `if integrated is True:` branch) |
+| **Cache location is settable** | `dustmaps.config['data_dir']` (in-process) or `DUSTMAPS_CONFIG_FNAME`→`~/.dustmapsrc` overrides the data dir. `core/dust.py` sets it to a repo-local `data/dust/` on the **native WSL FS** before any fetch/query. | `config.py`, `std_paths.data_dir()` |
 
-**Dependency/runtime (locked):** `dustmaps`(+healpy) in an **optional extra** (`requirements-dust.txt` /
-`extras_require['dust']`), never base `requirements.txt`. **Runs in the WSL/Linux venv** (manylinux healpy
-wheels install cleanly; native-Windows pip has no healpy wheel — conda-forge has a win-64 build but that is
-outside the pip venv; the maintainer develops on Windows + WSL2, so the WSL venv is the canonical home and
-matches the consumer's invocation path). Dust cache on the **native WSL filesystem** (not `/mnt/c`),
-gitignored, fetch-once/offline (GCNS `space_app.db` model).
+### The one genuine build-time pin — native → A_V scalars (R_V=3.1)
 
-**Validation:** self-validating where the request specifies; bad coords/args → exit 2; genuinely-invalid
-inputs → exit 1; geometry leaving a box is **not** an error (null + note). **Tests:** new
-`tests/test_dust_routing.py` + `tests/test_dust_query.py`, **gated on `dustmaps` importability** (mirrors the
-`*_live.py` network gate) so a native-Windows pip checkout skips them; the existing route-planner tests must
-stay green (the `_dijkstra` extraction is byte-identical). **Success:** Part A returns per-bin + cumulative
-A_V with uncertainty across the 69-pc seam for both maps, star endpoints resolve, fetch/cache offline-after;
-Part B `jump-route --weight dust` returns the least-extinction path over the same reachable graph with the
-distance-optimal comparison, `--weight distance` unchanged, `--max-jump` still governs reachability; all
-documented contract-by-reference with extinction units declared.
+Neither map is A_V; locked decision Q1 standardizes output to **A_V (mag), R_V=3.1**, with a `native_quantity`
+echo per bin + a top-level `units`. The differential-density × path integration is settled (below); **the two
+per-map scalar conversions to A_V are the T2 coefficient pin — confirm each against its cited extinction curve
+at build, exactly as T1b pinned 21/2 and 8/15π before coding.** Specify in `core/dust.py` as named module
+constants with the source in a comment:
+
+- **Edenhofer (ZGR23 `E`) → A_V:** `A_V = _AV_PER_ZGR23_E × E`. The ZGR23 extinction curve (the `R(λ)` table at
+  https://doi.org/10.5281/zenodo.6674521, also referenced in the `Edenhofer2023Query` docstring) gives `A(V)/E`
+  at 550 nm for R_V=3.1. Pin `_AV_PER_ZGR23_E` from that table at build (do **not** hard-code a remembered
+  value).
+- **Leike (Gaia-G `e-foldings`) → A_V:** integrating density (e-foldings/kpc) over path (kpc) yields the **Gaia-G
+  optical depth τ_G in e-foldings (natural log)**. `A_G = (2.5/ln 10)·τ_G = 1.0857·τ_G`; then
+  `A_V = A_G / (A_G/A_V)` using the Gaia-G/V extinction ratio at R_V=3.1 from a cited law (Wang & Chen 2019, or
+  the Gaia DR2/EDR3 G-band extinction coefficients). Pin `_AV_G_BAND_RATIO` at build.
+
+Echo per bin: `a_v` (mag, R_V=3.1) + `native_value` + `native_quantity`
+(`"leike2020_density_efoldings_per_kpc_gaiaG"` / `"edenhofer2023_ZGR23_E_per_pc"`); top-level `units:"A_V_mag_RV3.1"`.
+
+### Integration & uncertainty model (settled — no build pin needed)
+
+- **Per-bin differential → column:** sample each map's *density* at the bin center (Leike Cartesian / Edenhofer
+  HEALPix-interp, both built into `query`), multiply by the bin's physical length, convert to A_V via the scalar
+  above. Local legs are a few pc over 1–2 pc resolution → a handful of samples per leg (request §B.6) — cheap.
+- **Per-bin σ:** the `std` component/mode (free in both mean+std files) × bin length × scalar → `a_v_lo/_hi`.
+- **Cumulative σ:** quadrature sum of per-bin σ (independent-bin approximation) — **document that it understates
+  correlated uncertainty**; the exact path (integrate each of Edenhofer's posterior samples, 19 GB, then take
+  the spread) is a **deferred** enhancement, noted in `docs/integration.md`. Leike ships no light-weight samples,
+  so Leike cumulative σ is quadrature-only (mirrors the GCNS "no propagated interval" restraint).
+- **Deep cavity:** covered-but-near-zero → return the small A_V with wide `*_lo/_hi` + a `low_dust_high_uncertainty`
+  note (Q3 refinement b). **NaN from either map** (out-of-box / out-of-shell) → per-bin `a_v=null` + a non-fatal
+  `out_of_coverage` note; **never clamp-to-edge** (Q3). All-bins-null is acceptable (top-level note) rather than
+  a hard error.
+
+---
+
+## T2 Part A — read-only dust queries (`core/dust.py` + CLI option 59)
+
+New module **`core/dust.py`** isolates all `dustmaps`/`healpy` imports (function-local / lazy), so the stellar
+layer (`core/calculators.py` etc.) stays importable on a native-Windows checkout without the optional dep. A
+top-of-module `_require_dustmaps()` raises a curated `{"error": "Dust maps require the optional 'dust' extra …"}`
+when the import fails, so a dust subcommand on a non-dust checkout exits 1 cleanly (not a traceback).
+
+### Shared dust engine (internal to `core/dust.py`)
+
+- `_set_cache_dir()` — point `dustmaps.config['data_dir']` at repo-local `data/dust/` (native WSL FS), idempotent.
+- `_load_map(map_key)` — lazy-construct + process-cache `Leike2020Query()` / `Edenhofer2023Query(integrated=False)`;
+  raises curated `{"error": "map data not fetched — run option 59 (dust-fetch) first."}` on `FileNotFoundError`.
+- `_integrate_sightline(l_deg, b_deg, dist_start_pc, dist_end_pc, n_steps, map_sel)` — the core engine shared by
+  both subcommands: builds the per-bin distance grid, for each bin picks the owning map under `auto`
+  (Leike ≤ ~69 pc, Edenhofer > ~69 pc; `seam` flag on bins straddling the handover), queries `mean`+`std`,
+  converts to A_V, accumulates cumulative A_V + quadrature σ, attaches per-bin `out_of_coverage`/
+  `low_dust_high_uncertainty`/`seam` notes. Returns the `bins[]` + `cumulative_*` + `units` block reused verbatim
+  by `dust-sightline` and `dust-between`.
+
+### T2A-1 · `dust-sightline` — extinction profile along one direction
+
+- **Core (new):** `dust.compute_dust_sightline(l=None, b=None, ra=None, dec=None, star=None, id=None, dist_start_pc=0.0, dist_end_pc=..., n_steps=..., step_pc=None, map_sel="auto")`.
+  - Direction input is **exactly one** of: Galactic `--l --b`, equatorial `--ra --dec`, or a `--star`/`--id`
+    whose resolved position **sets the direction** (its galactic l/b; distance range still from `--dist-*`).
+    `--star`/`--id` reuse `calculators._resolve_star_position` (DB→SIMBAD, `Sol`→origin) / `_resolve_gcns_row`.
+  - `--steps` (count) **or** `--step-pc` (spacing) — mutually exclusive; default a sane `--steps` (e.g. 50).
+- **Output:** `{map, frame, l, b, dist_start_pc, dist_end_pc, n_steps, bins:[{dist_pc, dist_ly, a_v, a_v_lo, a_v_hi, native_value, native_quantity, seam, notes}], cumulative_a_v, cumulative_a_v_lo, cumulative_a_v_hi, units, notes}`.
+- **Validation (self-validating):** exactly one direction mode (else argparse-style exit 2); `dist_end>dist_start≥0`,
+  `n_steps≥1` / `step_pc>0` (curated exit 1); `map_sel ∈ {near-field, edenhofer, auto}` (argparse `choices`,
+  exit 2). A sightline leaving coverage is **not** an error (null bins + note).
+
+### T2A-2 · `dust-between` — extinction along a star-to-star line
+
+- **Core (new):** `dust.compute_dust_between(star1=None, id1=None, star2=None, id2=None, n_steps=..., step_pc=None, map_sel="auto")`.
+  - Endpoints reuse the existing resolvers (`_resolve_star_position` for `--star…`; `_resolve_gcns_row` for
+    `--id…`; `Sol`/`Sun` → origin) — the same dual name/id convention as `gcns-distance`. Direction + length come
+    from the two resolved positions; then `_integrate_sightline` runs along that segment.
+- **Output:** the `dust-sightline` block **plus** `{star1_info, star2_info, separation_pc, separation_ly}`. This
+  is the direct per-corridor input for Packet 1.
+- **Validation:** one endpoint mode per side (exit 2 on both/neither); a resolver error on either side returned
+  immediately (exit 1); same direction-coverage rules as A-1.
+
+### T2A-3 · CLI **option 59** `dust-fetch` (import utility — NOT a `query.py` subcommand)
+
+- **CLI (new):** `main.py::dust_fetch_data()` registered as menu **option 59** in `MENU_OPTIONS` + added to
+  `_UTILITY_KEYS` (lineage of opts 52–58; GCNS opt-58 is the direct precedent — the import-utility carve-out, not
+  a feature-menu addition). **Update (2026-06-23):** a GUI surface for the *fetch utility only* was added —
+  `FetchDustMapPanel` (Utilities nav, `ImportGcnsPanel`-style, gated on `dustmaps` importability). The dust
+  *query* subcommands stay `query.py`-only per §14; only the download utility (like GCNS opt-58) is in the GUI.
+- **Core (new):** `dust.compute_dust_fetch(map_sel="auto", check_only=False, progress_callback=None)` —
+  `_set_cache_dir()` then call `leike2020.fetch()` / `edenhofer2023.fetch()` (both for `auto`); `--check` reports
+  per-map cached/size/path without downloading. Wrap `_require_dustmaps()`; classify network failures with the
+  shared `_network_error_msg`. Returns `{map, fetched:[{map, status, path, size_mb}], cache_dir}` or `{"error"}`.
+- **Sizes/notes (verified via Zenodo HEAD):** Leike `mean_std.h5` ≈ **2.4 GB** + Edenhofer
+  `mean_and_std_healpix.fits` ≈ **3.2 GB** (`auto` ≈ 5.6 GB); document size + location like GCNS opt-58.
+  Cache is gitignored (`data/dust/` — already covered by the `data/` ignore rule), fetch-once/offline-after.
+- **Zenodo throttle / manual download (documented in `docs/integration.md` + the GUI panel).** Zenodo
+  (CERN open-data host) bandwidth-throttles large anonymous downloads (~0.5 MB/s observed), and the dustmaps
+  fetcher can't resume — so the in-app fetch of these files is slow. The recommended path is a **resumable**
+  manual `aria2c -c`/`wget -c` into `data/dust/{leike_2020,edenhofer_2023}/` then `dust-fetch --check`
+  (dustmaps verifies the md5 and reuses it). `FetchDustMapPanel` surfaces these commands in a copyable box.
+
+> **✅ Part A BUILT (2026-06-23).** `core/dust.py` (engine + `compute_dust_sightline` / `compute_dust_between` /
+> `compute_dust_fetch`), `query.py` `dust-sightline` / `dust-between`, `main.py` CLI **option 59** `dust_fetch_data`
+> (+ `_UTILITY_KEYS`), `requirements-dust.txt`, and `tests/_dustcheck.py` + `tests/test_dust_query.py` (14 tests:
+> isolation, extra-missing, the engine math/seam/coverage via a **mocked map**, the validation/exit-code matrix,
+> and a fetch-gated real-data anchor). Conversion scalars pinned from primary sources: Edenhofer **A_V = 2.8·E**
+> (Edenhofer 2024 / ZGR23), Leike **A_V = 1.0857·1.202·τ_G** (O'Neill+ 2024). Full suite green at **867 tests
+> (1 skipped — the un-fetched anchor)**; the stellar layer does not import `dustmaps` (subprocess-guarded). **Part
+> B (routing `--weight dust`) is the remaining T2 work.**
+
+---
+
+## T2 Part B — dust-weighted routing (`core/dust_routing.py`)
+
+New module **`core/dust_routing.py`** (forked, per locked decision — *not* `--weight` threaded into
+`core/calculators.py` in place). It **reuses** the verified non-weight helpers from `core/calculators.py`
+(`_resolve_star_position`, `_load_star_systems_positions`, `_SpatialGrid`, `_merge_endpoint`, `_map_node`,
+`_node_dist`, `_UnionFind`, `HOURS_PER_JULIAN_YEAR`, `format_travel_time`) and the dust engine from `core/dust.py`
+(`compute_dust_between`'s `_integrate_sightline` for per-leg A_V). Keeping the forked planners here keeps
+`dustmaps` out of `core/calculators.py`.
+
+### B.0 — the `_dijkstra` seam extraction (the one in-place change, guarded byte-identical)
+
+`compute_jump_route` (`core/calculators.py:2077`) currently inlines both the BFS (`optimize="jumps"`) and the
+Dijkstra (`optimize="distance"`) loops over `_SpatialGrid.neighbors(u, max_jump_ly)`, whose edge weight is the
+geometric `w` (ly). **Extract the search into a cost-injected helper**
+
+```python
+def _grid_search(nodes, grid, s, t, max_jump_ly, optimize, edge_cost):
+    # edge_cost(u, v, w_ly) -> non-negative additive cost
+    #   distance routing passes edge_cost = lambda u,v,w: w  → byte-identical today
+    #   dust routing      passes edge_cost = per-leg integrated A_V (≥0, additive)
+```
+
+so the existing `compute_jump_route` calls it with `edge_cost=lambda u,v,w: w` (BFS stays hop-count). **The
+existing `tests/test_route_planning_opts.py` / `tests/test_query_route_opts.py` guard byte-identical output** —
+no behavioral change. Dust routing's `jump-route --weight dust` calls the same helper with a memoized per-edge
+A_V cost (`compute_dust_between`-style integration over the leg, cached by ordered node pair). **Reachability
+(`--max-jump`) stays geometric** (governs which edges exist, dust-independent — request §B.4); dust only weights
+existing edges. A_V is a non-negative additive edge weight → Dijkstra-correct (request §B.2).
+
+### B.1 — forked planner entry points (`core/dust_routing.py`)
+
+Each mirrors its `core/calculators.py` sibling's signature with an added `weight` (default `"distance"`) and
+`map_sel`/`dust_step_pc`, returns the same shape **plus** dust fields. `weight="distance"` delegates to the
+existing calculator (so the stellar path is literally unchanged); `weight="dust"` runs the forked cost path.
+
+| Planner (forked) | Dust behavior | Reuses |
+|---|---|---|
+| `compute_jump_route_weighted` | `_grid_search` with A_V edge cost (flagship least-dust path) | `_SpatialGrid`, `_grid_search` |
+| `compute_optimal_tour_weighted` | NN-seed + 2-opt over an **A_V cost matrix** (2-opt is metric-agnostic) | `compute_optimal_tour` skeleton |
+| `compute_multi_stop_weighted` | cumulative A_V over the ordered legs | ordered-leg loop |
+| `compute_nearest_neighbor_weighted` | "nearest" = least-A_V unvisited (still `_load_star_systems_positions` pool) | greedy loop |
+| `compute_trade_route_weighted` | Kruskal MST over A_V edge costs | `_UnionFind` |
+
+**Deferred (locked §13-Q9, §14):** `blend` weight, `--max-leg-av` pruning, `jump-network` cost-budget,
+`farthest-first`.
+
+### B.2 — output additions (per request §B.7)
+
+- **Per leg:** existing fields + `a_v`, `a_v_lo`, `a_v_hi`, `weight_value`, `cumulative_av`, `cumulative_cost`.
+- **Top level:** `weight`, `total_ly`, `total_av`, `total_cost`, and the **distance-optimal comparison** —
+  `distance_optimal_ly`, `distance_optimal_av`, `extra_ly`, `saved_av` (run the distance-weighted planner over
+  the same graph, integrate dust along *its* legs, and diff). This comparison is the deliverable's interpretive
+  payoff (it replaces the dropped `blend`).
+- **`--map auto` per leg** so seam-crossing legs integrate across both maps (§B.8).
+
+> **✅ Part B BUILT (2026-06-23).** `_grid_search` extracted from `compute_jump_route` in `core/calculators.py`
+> (byte-identical — guarded green by `test_route_planning_opts` + `test_query_route_opts`, 66 tests); new
+> `core/dust_routing.py` with the 5 forked weighted planners (`compute_jump_route_dust` /
+> `compute_optimal_tour_dust` / `compute_multi_stop_dust` / `compute_nearest_neighbor_dust` /
+> `compute_trade_route_dust`) reusing the calculators helpers + `core.dust.integrate_segment_av`; `query.py`
+> `--weight {distance,dust}` / `--map` / `--dust-step-pc` on the 5 subparsers (distance → unchanged calculators;
+> dust → dust_routing) via `_add_dust_weight_flags`. Each result adds per-leg `a_v`/`cumulative_av`/`weight_value`
+> + top-level `total_av` + the **distance-optimal comparison** (`extra_ly`/`saved_av`). Tests:
+> `tests/test_dust_routing.py` (12 — routing logic via a mocked `_seg`, the flagship least-dust detour with the
+> comparison, the integration-wiring constant-density check, preflight/exit-code matrix, and the weight=distance
+> delegation guard). Reachability stays geometric; `--weight distance` byte-identical. Deferred per the locked
+> decisions: `blend`, `--max-leg-av`, `jump-network` cost-budget, `farthest-first`. **T2 (and Phase T) complete.**
+
+### B.3 — `query.py` surface
+
+Add the flag set to the five Core planner subparsers (reuse the existing planners — no new subcommand):
+`--weight {distance,dust}` (default `distance`; argparse `choices`), `--map {near-field,edenhofer,auto}`
+(default `auto`), `--dust-step-pc` (default ~5 pc, coarser than a reported corridor — §B.6). Each handler routes
+to `core.dust_routing.*` when `--weight dust`, else the existing `core.calculators.*` (so `--weight distance`
+callers are byte-identical). `--weight distance` stays the default everywhere.
+
+---
+
+## T2 — consolidated deliverables
+
+- **Code:** new `core/dust.py` (Part A engine + `compute_dust_sightline` / `compute_dust_between` /
+  `compute_dust_fetch`); new `core/dust_routing.py` (5 forked weighted planners); `core/calculators.py`
+  (extract `_grid_search` from `compute_jump_route` — byte-identical); `main.py` (option 59 `dust_fetch_data` +
+  `_UTILITY_KEYS`); `query.py` (+`dust-sightline` / `dust-between` subcommands; +`--weight`/`--map`/
+  `--dust-step-pc` on the 5 Core planner subparsers). **New optional dep file** `requirements-dust.txt`
+  (`dustmaps, healpy, h5py, scipy, progressbar2, six, tqdm`). `.gitignore` += `data/dust/`. No GUI; no
+  `core/calculators.py` `dustmaps` import.
+- **Packaging note:** the repo has **no `setup.py`/`pyproject.toml`**, so the optional extra ships as
+  **`requirements-dust.txt`** (the `extras_require['dust']` form in CLAUDE.md is aspirational — there is no
+  setup to hang it on). Documented as `pip install -r requirements-dust.txt` in the WSL venv.
+- **Docs:** `docs/integration.md` — a "Dust / ISM (optional `dustmaps` extra)" section: per-key schemas for
+  `dust-sightline` / `dust-between`, the `--weight`/`--map`/`--dust-step-pc` flags on the 5 planners, the
+  declared `units` (A_V mag, R_V=3.1) + `native_quantity` echo, the two pinned conversion scalars + sources, the
+  WSL-venv-only / import-gated contract, and the cumulative-σ quadrature caveat. `CLAUDE.md` already carries the
+  Phase-T dust WSL/Linux-only note — update it to say `edenhofer2023` and `requirements-dust.txt`. Mark T2 built
+  in `future_phases.md`.
+
+## T2 — test plan (gated on `dustmaps` importability — mirrors the `*_live.py` gate)
+
+A shared gate `tests/_dustcheck.py::dustmaps_importable()` (try `import dustmaps, healpy`); tests use
+`@unittest.skipUnless(dustmaps_importable() and _maps_fetched(), …)` so a native-Windows pip checkout **and** a
+WSL checkout that hasn't fetched the (3.6 GB) maps both skip cleanly — the maintainer baseline of ≤3 skips
+becomes "≤3 net + the dust suite when maps are absent."
+
+- **`tests/test_dust_query.py`** (Part A, gated): `dust-sightline` happy-path key set + a known sightline anchor
+  (a literature A_V toward a mapped cloud, e.g. toward the ρ Oph / Local Bubble wall within ~150 pc — pin the
+  reference value at build); `auto` seam — a 0→120 pc sightline shows `seam`-flagged bins at ~69 pc and no inner
+  double-count (cumulative A_V continuous across the handover); explicit `--map near-field` loads only Leike;
+  out-of-coverage (a Z-exit beyond ±270 pc) → null bins + `out_of_coverage` note, exit 0; `dust-between` adds
+  `star*_info`/`separation_*` and resolves `Sol`→origin; the validation matrix (exit 1/2). A **non-gated**
+  sub-test asserts `core/dust.py` import does **not** drag `dustmaps` into `core/calculators.py` (guards the
+  isolation) and that a dust subcommand on a no-dustmaps checkout returns the curated extra-missing error.
+- **`tests/test_dust_routing.py`** (Part B, gated): `jump-route --weight dust` returns the least-A_V path over
+  the **same reachable graph** as `--weight distance` (same `--max-jump`), with per-leg + cumulative A_V and the
+  `extra_ly`/`saved_av` comparison; `--weight distance` is byte-identical to `compute_jump_route`; the four other
+  weighted planners return their shape + dust fields; an all-dust-equal toy graph makes dust and distance routes
+  coincide (sanity).
+- **Regression (non-gated, MUST stay green):** the existing `tests/test_route_planning_opts.py` +
+  `tests/test_query_route_opts.py` after the `_grid_search` extraction — the byte-identical guard for the seam.
+
+## T2 — validation contract (per surface, self-validating Phase-H/P)
+
+| Surface | exit 1 (`{error}`) | exit 2 (argparse) |
+|---|---|---|
+| `dust-sightline` | dust extra missing; map not fetched; `dist_end≤dist_start`/`<0`; `n_steps<1`/`step_pc≤0`; resolver error | not exactly one direction mode; bad `--map`; non-numeric; both `--steps`+`--step-pc` |
+| `dust-between` | dust extra missing; map not fetched; resolver error on either endpoint | not one endpoint mode per side; bad `--map`; non-numeric |
+| `dust-fetch` (opt 59 CLI) | dust extra missing; download/verify failure (classified) | n/a (CLI menu) |
+| `jump-route`/`optimal-tour`/`multi-stop`/`nearest-neighbor`/`trade-route` `--weight dust` | dust extra missing; map not fetched; existing planner errors | bad `--weight`/`--map`; non-numeric `--dust-step-pc` |
+
+Geometry leaving a map box is **never** an error (null bin + note) — only invalid *inputs* are.
+
+## T2 — success criteria / acceptance (done when)
+
+- **Part A:** `dust-sightline` / `dust-between` return per-bin **A_V (mag, R_V=3.1)** + native echo + per-bin/cumulative
+  σ across the ~69 pc seam for both maps, with the inner column counted exactly once (differential integration);
+  star/`Sol` endpoints resolve through the existing resolvers; option-59 fetch/cache works offline-after on the
+  native WSL FS; out-of-coverage is null+note, deep cavity is small+wide-σ+note.
+- **Part B:** `jump-route --weight dust` returns the least-extinction path over the same reachable graph as
+  `--weight distance`, with per-leg + cumulative A_V and the `extra_ly`/`saved_av` distance-optimal comparison;
+  `--weight distance` is byte-identical (guarded by the existing route tests); `--max-jump` still governs
+  reachability; the other four Core planners accept `--weight dust`.
+- The two native→A_V scalars are pinned against their cited extinction curves (ZGR23 / Gaia-G law) and recorded
+  in `docs/integration.md`; `edenhofer2023` (not 2024) is used throughout.
+- `dustmaps`/`healpy` stay out of `core/calculators.py`; a native-Windows checkout imports the stellar layer and
+  skips the gated dust tests; the WSL venv runs the full dust path. Full non-gated suite green.
 
 ---
 
@@ -516,9 +760,14 @@ documented contract-by-reference with extinction units declared.
 | T2 `blend` weight | **Dropped from v1** — distance-optimal comparison delivers the payoff; no silent normalization |
 | T2 dust-fetch | CLI **option 59** + `--check` (import-utility), not a `query.py` subcommand |
 | T2 dependency/runtime | Optional extra, WSL/Linux-venv-primary, test-gated; no native-Windows GUI / no `wsl.exe` bridge |
-| T2 architecture | Forked (`core/dust.py` + `core/dust_routing.py`); reuse non-weight helpers; extract `_dijkstra` seam; fork the rest |
+| T2 architecture | Forked (`core/dust.py` + `core/dust_routing.py`); reuse non-weight helpers; extract `_grid_search` (the cost-injected Dijkstra/BFS seam) from `compute_jump_route`; fork the rest |
+| T2 map key (verified) | Edenhofer = **`edenhofer2023` / `Edenhofer2023Query`**, not `edenhofer2024` (paper 2024, arXiv/dustmaps 2023) |
+| T2 seam realization (verified) | Query **differential density (`integrated=False`) and integrate per-segment** — avoids dustmaps' `integrated=True` inner-<69 pc add-back entirely; Edenhofer differential is NaN inside ~69 pc so Leike owns 0–69, Edenhofer >69, no overlap |
+| T2 native→A_V (build pin) | Standardize to A_V (mag, R_V=3.1) via two per-map scalars pinned at build against the cited curves — ZGR23 `E`→A_V (zenodo 6674521) for Edenhofer; Gaia-G e-foldings→τ_G→A_G→A_V for Leike; echo `native_quantity` + `units` |
+| T2 optional extra (verified) | No `setup.py`/`pyproject.toml` exists → ship **`requirements-dust.txt`** (`dustmaps, healpy, h5py, scipy, progressbar2, six, tqdm`); `extras_require['dust']` in CLAUDE.md is aspirational. healpy 1.19.0 has a cp312 manylinux wheel — installs clean in the WSL venv |
 
 ## Suggested build order
 
 T1a (5 items, sequenced 1→5) → T1b (new pure-math) → T1c (census filters) → T2 Part A (Leike → Edenhofer/seam)
-→ T2 Part B (forked Core planners). T1 and T2 are independent; T1a is the lowest-risk starting point.
+→ T2 Part B (forked Core planners; `_grid_search` extraction first, guarded by the existing route tests). T1 and
+T2 are independent; T1a was the lowest-risk starting point. **T1, T2 Part A, and T2 Part B all built (2026-06-23) — Phase T complete.**

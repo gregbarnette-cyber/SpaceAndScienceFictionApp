@@ -358,6 +358,20 @@ distance (+ travel time and ×c for opts 20/21). `add_two_star_chart_tabs(panel,
 shared `_centered` and adds the **"Star Chart"** + **"Star Chart 3D"** tabs (reused by `DistanceBetweenStarsPanel` (17)
 and the two `TravelTimeStars*` panels (20/21), all now `DiagramToggleMixin`).
 
+### Dust-weighted variants (Phase T2 Part B — `core/dust_routing.py`)
+
+Five of the planners above — `compute_jump_route` / `compute_optimal_tour` / `compute_multi_stop_journey` /
+`compute_nearest_neighbor_chain` / `compute_trade_route_mst` — have **dust-weighted forks** in
+`core/dust_routing.py` (`compute_*_dust`), surfaced by the `query.py` `--weight {distance,dust}` flag (default
+`distance` → these unchanged functions; `dust` → the fork). The fork reuses the same resolution / pool /
+`_SpatialGrid` helpers but weights each edge by the **integrated dust extinction A_V** (`core/dust.py`) instead
+of 3D distance — least-extinction corridors, with per-leg + cumulative A_V and a distance-optimal comparison
+(`extra_ly`/`saved_av`). **Reachability stays geometric** (`--max-jump`/`--max-ly` are unchanged; dust only
+weights existing edges). The shared Dijkstra/BFS was extracted into `calculators._grid_search(... edge_cost)`
+(distance passes `edge_cost=lambda u,v,w: w` → byte-identical, guarded by the route tests). It is an **optional,
+WSL/Linux-only** path (needs the `dustmaps` extra). See `docs/integration.md` (Dust-weighted routing) and
+`PHASE_T_PLAN.md`.
+
 ## Detectability & Relativistic Calculators (Phase T1b)
 
 Five new pure-math `query.py`-only calculators in `core/calculators.py` for the sibling worldbuilding repo's

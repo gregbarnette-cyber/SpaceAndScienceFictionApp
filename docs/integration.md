@@ -85,19 +85,21 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `travel-time-ly-hr` | `--distance-ly --ly-hr` | none | `distance_ly, ly_hr, times_c, total_hours, travel_time_str` |
 | `travel-time-times-c` | `--distance-ly --times-c` | none | `distance_ly, times_c, ly_hr, total_hours, travel_time_str` |
 | `travel-time-solar` | `--origin --destination --accel-g` [`--v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles[], …` |
-| `optimal-tour` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--closed`] | SIMBAD† (names) | `legs[], total_ly, total_time, naive_total_ly, optimized_total_ly, saved_ly, saved_pct, closed, stars[]` |
-| `jump-route` | `--origin --destination --max-jump` [`--optimize distance\|jumps`] | SIMBAD† (names) | `origin_info, dest_info, reachable, jumps, total_ly, direct_ly, route[], stars[]` |
+| `optimal-tour` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--closed` `--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `legs[], total_ly, total_time, naive_total_ly, optimized_total_ly, saved_ly, saved_pct, closed, stars[]` |
+| `jump-route` | `--origin --destination --max-jump` [`--optimize distance\|jumps` `--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `origin_info, dest_info, reachable, jumps, total_ly, direct_ly, route[], stars[]` |
 | `jump-network` | `--start --max-jump` [`--max-jumps`] | SIMBAD† (names) | `start_name, max_tier, reachable_count, total_in_pool, unreachable_count, tiers[], stars[]` |
-| `multi-stop` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) | SIMBAD† (names) | `legs[], total_ly, total_hours, total_time, stars[]` |
-| `nearest-neighbor` | `--start --hops --max-ly` | SIMBAD† (names) | `chain[], stars[], total_ly, stopped_early, start_name` |
+| `multi-stop` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `legs[], total_ly, total_hours, total_time, stars[]` |
+| `nearest-neighbor` | `--start --hops --max-ly` [`--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `chain[], stars[], total_ly, stopped_early, start_name` |
 | `farthest-first` | `--start --stops` [`--max-reach`] | SIMBAD† (names) | `chain[], tree_edges[], stars[], widest_ly, stopped_early, start_name` |
-| `trade-route` | `--stars N [N …]` | SIMBAD† (names) | `nodes[], edges[], total_ly, stars[]` |
+| `trade-route` | `--stars N [N …]` [`--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `nodes[], edges[], total_ly, stars[]` |
 | `search-star-systems` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
 | `search-hwc` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
 | `search-exoplanets` | _(all optional filters)_ | **NASA TAP (live)** | `count, capped, cap, stars[]` |
 | `search-hypatia` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
 | `solar-analogs` | [`--mode twin\|analog --teff-tol --logg-tol --feh-tol --ly-max --gcns-distance`] | none (local DB) | `mode, criteria, population, count, capped, cap, stars[]` |
 | `substellar` | [`--ly-max --include-late-m --classes …`] | none (local DB) | `classes, ly_max, count, capped, cap, completeness_note, population, stars[]` |
+| `dust-sightline` | one of (`--l --b`)\|(`--ra --dec`)\|(`--star`\|`--id`) `--dist-end` [`--dist-start --steps`\|`--step-pc` `--map`] | none (local dust cache)§ | `map, frame, l, b, dist_start_pc, dist_end_pc, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
+| `dust-between` | (`--star1`\|`--id1`) (`--star2`\|`--id2`) [`--steps`\|`--step-pc` `--map`] | SIMBAD‡ (local dust cache)§ | `map, frame, star1_info, star2_info, separation_pc/ly, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
 | `compare-stars` | `--stars N [N …]` (2–4) | SIMBAD + NASA + Hypatia | `stars[]` (per-star error isolation) |
 | `main-sequence` | _(none)_ | none (local DB) | **list** of 24 spectral-class rows |
 | `solar-system` | _(none)_ | none (local DB) | `planets[], moons[], dwarf_planets[], asteroids[]` |
@@ -110,7 +112,9 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `travel-time-custom-thrust` | `--origin --destination --accel-g --burn-value` [`--burn-unit --v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, distance_au, …, travel_time_str, …` |
 
 † `distance` and `travel-time` skip the SIMBAD call for an endpoint named `"Sol"`/`"Sun"` (treated as the origin at 0,0,0). The seven Route Planning subcommands (`optimal-tour`, `jump-route`, `jump-network`, `multi-stop`, `nearest-neighbor`, `farthest-first`, `trade-route`) likewise resolve each star **DB-first** (`star_systems.star_name`, offline) then **SIMBAD** for names not in the table; `"Sol"`/`"Sun"` → the origin with no lookup. They read the local `star_systems` table for intermediate/candidate stars (run option 50 to populate it).
-‡ The `gcns-*` calculators use SIMBAD **only** for `--star` endpoints (to resolve a name to a Gaia id); `--id` endpoints are fully offline. There is **no** `"Sol"`/`"Sun"` special case — Sol is not a GCNS row, so a Sol endpoint returns an error (use `gcns-within-sol` for Sol-centered census queries).
+‡ The `gcns-*` calculators (and `dust-between`) use SIMBAD **only** for `--star`/`--star1`/`--star2` endpoints (to resolve a name to a position/Gaia id); `--id`/`--id1`/`--id2` endpoints are fully offline. For the `gcns-*` calculators there is **no** `"Sol"`/`"Sun"` special case (Sol is not a GCNS row); `dust-between` **does** treat `Sol`/`Sun` as the origin.
+
+§ A **local read of the fetched dust map cache** (`data/dust/`, populated by CLI **option 59** / the GUI Fetch Dust Map Data panel). Needs the optional `dustmaps` extra (WSL/Linux only) — see the **Dust / ISM** section below. No network for the map query itself.
 
 Shared shapes:
 - The `simbad` sub-dict embedded in `star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, and `hwc` has the **same shape as `simbad-lookup`'s output** (top-level keys above).
@@ -1022,6 +1026,148 @@ query.py substellar --classes L T            # override the prefix set
 ```
 Core: `databases.compute_substellar_census(ly_max=None, include_late_m=False, classes=None)`. Selects rows whose `spectral_type` begins with one of `classes` (default `L T Y`; `--include-late-m` adds `M7/M8/M9`); `spectral_type IS NOT NULL` (only cross-matched rows carry a type); `--ly-max` filters `light_years`; sorted by distance, capped at 500. Output: `{classes, ly_max, count, capped, cap, completeness_note, population{total_in_gcns, with_spectral_type, returned}, snapshot_date, gcns_version, stars[]}` — `stars` are the standard GCNS row shape. **`completeness_note`** is the mandatory lower-bound disclosure (GCNS substellar completeness falls off beyond ~10–25 pc; only cross-matched rows carry types).
 - **Validation:** empty `gcns_stars` → `{"error"}` exit 1; `--ly-max ≤ 0` → curated `{"error"}` exit 1; non-numeric `--ly-max` → argparse exit 2.
+
+### Dust / ISM (Phase T2 Part A — optional `dustmaps` extra; WSL/Linux venv)
+
+Read-only 3D interstellar-**dust extinction** queries over the `dustmaps` package — the
+**optional `dust` extra** (`pip install -r requirements-dust.txt`, on top of base
+`requirements.txt`). `core/dust.py` is the only module that imports `dustmaps`/`healpy`, and it
+does so lazily, so the stellar layer stays importable on a checkout **without** the extra. The
+extra is **WSL/Linux-venv-only**: `dustmaps` hard-requires `healpy`, which has no native-Windows
+pip wheel — a Windows pip checkout keeps the stellar layer and the dust subcommands return a
+curated *"install the optional 'dust' extra"* error. § = a local read **of the fetched dust map
+cache** (`data/dust/`, gitignored); see **CLI option 59 `dust-fetch`** below to populate it.
+
+**Maps (`--map`, default `auto`):** `near-field` = **Leike, Glatzle & Enßlin 2020** (Cartesian box
+±370/±370/±270 pc, 1-pc voxels; `dustmaps.leike2020`); `edenhofer` = **Edenhofer et al. 2024**
+(HEALPix sphere ~69 pc–1.25 kpc; `dustmaps.edenhofer2023` — the dustmaps key/module is **2023**,
+the A&A paper is 2024); `auto` = Leike ≤ ~69 pc, Edenhofer beyond. To avoid the inner-<69 pc
+double-count, the engine queries each map's **differential density** (`integrated=False`) and
+integrates per-segment itself — Edenhofer differential is NaN inside ~69 pc, so the two maps own
+disjoint distance ranges (the seam ≈ 69 pc; bins within 5 pc of it carry `seam:true`).
+
+**Units (declared):** output is **`A_V` in magnitudes at `R_V=3.1`** (`units:"A_V_mag_RV3.1"`, `rv:3.1`),
+standardized from each map's native quantity by a pinned per-map scalar — **Edenhofer:** `A_V =
+2.8·E` (ZGR23 unit `E`; Edenhofer et al. 2024 / the Zhang, Green & Rix 2023 extinction curve,
+zenodo 6674521); **Leike:** density (e-foldings/kpc, Gaia-G optical depth) integrated → `τ_G`, then
+`A_G = 1.0857·τ_G` and `A_V = 1.202·A_G` (the Gaia-G→V ratio at R_V=3.1; O'Neill et al. 2024 Local
+Bubble). Each bin echoes its raw `native_value` + `native_quantity`
+(`"leike2020_density_efoldings_per_kpc_gaiaG"` / `"edenhofer2023_ZGR23_E_per_pc"`) so the conversion
+is auditable. Distances are **parsecs** (map-native) with a light-year echo (`dist_ly`).
+
+**Uncertainty:** per-bin `a_v_lo`/`a_v_hi` from the map's `std`; cumulative `*_lo`/`*_hi` from a
+**quadrature sum** of the per-bin σ (an independent-bin approximation — it understates correlated
+uncertainty; the exact per-sample integration, Edenhofer's 19 GB samples, is a deferred enhancement).
+
+**Coverage:** geometry leaving a map box is **not** an error — that bin gets `a_v:null` + an
+`out_of_coverage` note (never clamped to an edge value). A covered-but-near-zero deep-cavity bin
+returns its small `a_v` with a wide σ + a `low_dust_high_uncertainty` note. Top-level `notes` flags
+`seam_crossed` / `out_of_coverage` / `all_out_of_coverage` / `low_dust_high_uncertainty`.
+
+#### `dust-sightline`
+Extinction profile along one direction — Galactic (`--l --b`), equatorial (`--ra --dec`), or the
+direction of a star (`--star`/`--id`, which sets only the direction; the distance range still comes
+from `--dist-*`) — from `--dist-start` (pc, default 0) to `--dist-end` (pc, required), in `--steps`
+bins (default 50) or `--step-pc` spacing.
+```bash
+query.py dust-sightline --l 120 --b 5 --dist-end 200
+query.py dust-sightline --ra 101.3 --dec -16.7 --dist-start 0 --dist-end 150 --steps 75 --map auto
+query.py dust-sightline --star "Epsilon Eridani" --dist-end 60 --map near-field
+```
+Core: `dust.compute_dust_sightline(l, b, ra, dec, star, id, dist_start_pc=0.0, dist_end_pc, n_steps=50, step_pc=None, map_sel="auto")`. Output: `{map, frame, l, b, dist_start_pc, dist_end_pc, n_steps, bins:[{dist_pc, dist_ly, map, a_v, a_v_lo, a_v_hi, cumulative_a_v, cumulative_a_v_lo, cumulative_a_v_hi, native_value, native_quantity, seam, notes}], cumulative_a_v, cumulative_a_v_lo, cumulative_a_v_hi, units, rv, notes}`.
+
+#### `dust-between`
+Extinction along the straight line between two stars (reuses the route/GCNS resolvers; `Sol`/`Sun` →
+origin). Per-bin `dist_pc` is the path distance from `star1`; map ownership uses each bin's
+heliocentric distance.
+```bash
+query.py dust-between --star1 Sol --star2 "Epsilon Eridani"
+query.py dust-between --id1 5853498713190525696 --id2 4472832130942575872 --step-pc 2 --map auto
+```
+Core: `dust.compute_dust_between(star1, id1, star2, id2, n_steps=50, step_pc=None, map_sel="auto")`. Output: the `dust-sightline` block **plus** `{star1_info, star2_info, separation_pc, separation_ly}` and `frame:"star-to-star"`.
+
+#### CLI option 59 `dust-fetch` (NOT a `query.py` subcommand)
+A one-time map download / cache-status utility — CLI **menu option 59** (`main.py::dust_fetch_data`),
+in the opt-58 (GCNS) import-utility lineage. It also has a **GUI panel** —
+**`FetchDustMapPanel`** (Utilities nav, mirroring `ImportGcnsPanel`: map selector + Check-Status/Fetch
+buttons + a background `QThread` + progress bar), gated so a checkout without the `dustmaps` extra shows an
+install hint instead of a broken entry. The dust **query** subcommands (`dust-sightline` / `dust-between` /
+the routing `--weight dust`) remain `query.py`-only (no GUI) by design.
+
+**Zenodo throttle & manual download (read before fetching).** Both maps are hosted on **Zenodo** (CERN's
+open-data repository), which **bandwidth-throttles** large anonymous file downloads — observed at ~0.5 MB/s,
+so the in-app `compute_dust_fetch` of the 2.4 GB Leike + 3.2 GB Edenhofer files can take well over an hour.
+This is download *bandwidth shaping* (and/or transient server load), distinct from Zenodo's separate API
+request-rate limits; it is not an error, just slow. The dustmaps fetcher **cannot resume** a broken transfer
+(it verifies an md5 and restarts from zero), so a faster, **resumable** path is to download the files
+manually into the cache, then run `dust-fetch --check` (or the GUI panel's **Check Status**) — dustmaps
+verifies the md5 and uses the cached file. The fetch is one-time; the cache is offline thereafter. The GUI
+`FetchDustMapPanel` shows these commands (aimed at the real cache dir) in a **copyable "Manual download"
+box** with a Copy button:
+
+```bash
+# Leike 2020 → data/dust/leike_2020/mean_std.h5   (md5 1ea998fdaef58f53da639356362223ba)
+aria2c -c -x4 -d data/dust/leike_2020 \
+  'https://zenodo.org/record/3993082/files/mean_std.h5'
+# Edenhofer 2024 → data/dust/edenhofer_2023/mean_and_std_healpix.fits  (md5 10c823a5fcf81b47b6e15530bcdf54dc)
+aria2c -c -x4 -d data/dust/edenhofer_2023 \
+  'https://zenodo.org/record/8187943/files/mean_and_std_healpix.fits'
+# No aria2c? Resumable wget:  wget -c -P <dir> '<url>'
+```
+
+`aria2c -c` / `wget -c` resume on interruption (the dustmaps fetcher can't), and aria2c's multiple
+connections (`-x4`) often beat the per-connection throttle. The cache dir is `data/dust/` under the repo
+root by default (`core.dust._DUST_CACHE_DIR`, on the native WSL filesystem), gitignored.
+It prompts for the map (`auto`/`near-field`/`edenhofer`) and Fetch-vs-Check, then calls
+`dust.compute_dust_fetch(map_sel, check_only, progress_callback)`. The cache lands in `data/dust/`
+(gitignored, on the native WSL filesystem), fetch-once/offline-after. **Sizes are large:** Leike
+`mean_std.h5` ≈ **2.4 GB**, Edenhofer `mean_and_std_healpix.fits` ≈ **3.2 GB** (`auto` ≈ 5.6 GB);
+download from Zenodo can be slow. Returns `{map, cache_dir, fetched:[{map, status, path, size_mb}]}`
+or `{"error"}`.
+
+> **Validation (self-validating — Phase-H/P).** Curated `{"error"}` exit 1: the `dust` extra not
+> installed; the requested map not fetched (`run CLI option 59`); not exactly one direction mode;
+> `dist_end ≤ dist_start` / `< 0`; `step_pc ≤ 0` / `n_steps < 1`; an endpoint resolver error. Argparse
+> exit 2: a bad `--map` (not near-field/edenhofer/auto); a non-numeric `--l`/`--b`/`--ra`/`--dec`/
+> `--dist-*`/`--step-pc`; `dust-between` without exactly one endpoint per side
+> (`--star1`/`--id1`, `--star2`/`--id2` are required mutually-exclusive groups). **Geometry leaving a
+> map box is never an error** (null bin + note). ‡ `dust-between` resolves `--star…` endpoints through
+> SIMBAD (a name → position); `--id…` endpoints and the direction maths are offline against the local
+> caches.
+
+#### Dust-weighted routing — `--weight dust` (Phase T2 Part B)
+
+The five Core route planners (`jump-route`, `optimal-tour`, `multi-stop`, `nearest-neighbor`,
+`trade-route`) gain three flags: **`--weight {distance,dust}`** (default `distance` — the unchanged
+`core/calculators.py` path; existing callers are byte-identical), **`--map {near-field,edenhofer,auto}`**
+(default `auto`), and **`--dust-step-pc`** (the per-leg integration step, default 5 pc — coarser than a
+reported corridor). With `--weight dust`, the edge weight becomes the **integrated A_V (mag, R_V=3.1)**
+along each leg (from `core/dust.py`), so the route minimizes *extinction* instead of distance. The dust
+path lives in the forked `core/dust_routing.py` (the optional `dustmaps` extra is never imported by the
+stellar layer). **Reachability stays geometric:** `--max-jump` / `--max-ly` still govern which edges exist
+— dust only weights edges that already exist; an unreachable destination is still a clean
+`reachable:false`, not an error.
+```bash
+query.py jump-route --origin Sol --destination Procyon --max-jump 9 --weight dust
+query.py jump-route --origin Sol --destination Procyon --max-jump 9 --weight dust --map near-field --dust-step-pc 2
+query.py trade-route --stars Sol Sirius Procyon "61 Cygni" --weight dust
+```
+Core: `dust_routing.compute_jump_route_dust` / `compute_optimal_tour_dust` / `compute_multi_stop_dust` /
+`compute_nearest_neighbor_dust` / `compute_trade_route_dust`. **A_V is a non-negative additive edge weight**,
+so Dijkstra (`jump-route --optimize distance`) and Kruskal (`trade-route`) stay correct; `jump-route
+--optimize jumps` is still BFS (fewest jumps, dust reported). Each result extends its distance sibling's
+shape with **per-leg/edge** `a_v`, `a_v_lo`, `a_v_hi`, `weight_value`, `fully_covered`, `cumulative_av`, and
+**top-level** `weight:"dust"`, `total_av` (+`_lo`/`_hi`), `all_legs_covered`, plus the **distance-optimal
+comparison** `distance_optimal_ly`, `distance_optimal_av`, `extra_ly`, `saved_av` (the dust column of the
+min-ly route over the same graph — "the least-dust route is `extra_ly` longer but saves `saved_av` mag of
+extinction"; for `multi-stop` the order is fixed so the comparison is degenerate, `extra_ly`/`saved_av` = 0).
+An out-of-coverage leg integrates only its covered portion and is flagged `fully_covered:false`.
+
+> **Validation:** `--weight dust` requires the dust extra + a fetched map (else the same curated `{"error"}`
+> exit 1 as `dust-sightline`); a bad `--weight`/`--map` is argparse exit 2; the underlying planner's own
+> validation (positive `--max-jump`, ≥2 stars, resolvable names) is unchanged. **Deferred (not in this
+> delivery):** the `blend` weight, `--max-leg-av` pruning, the `jump-network` cost-budget, and
+> `farthest-first` dust-weighting.
 
 #### `compare-stars`
 Side-by-side comparison of **2–4 stars** in one structured result (Phase L1). Live network (SIMBAD + an optional NASA
