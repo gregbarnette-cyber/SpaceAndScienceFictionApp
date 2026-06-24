@@ -514,6 +514,28 @@ def integrate_segment_av(p1_pc, p2_pc, step_pc=5.0, map_sel="auto") -> dict:
     }
 
 
+def get_dust_map_status() -> list:
+    """File-presence/size status of the cached dust maps, in menu order.
+
+    Pure pathlib — does NOT import dustmaps/healpy, so it works on a checkout
+    without the optional 'dust' extra (the files can be present regardless). Used
+    by the Database Status panel (option 57). Returns a list of
+    {map, label, path, present, size_mb}.
+    """
+    labels = {
+        "leike2020": "Dust Map: Leike 2020 (near-field)",
+        "edenhofer2023": "Dust Map: Edenhofer 2024",
+    }
+    out = []
+    for mk in ("leike2020", "edenhofer2023"):
+        path = _map_path(mk)
+        present = path.is_file()
+        size_mb = round(path.stat().st_size / 1e6, 1) if present else None
+        out.append({"map": mk, "label": labels[mk], "path": str(path),
+                    "present": present, "size_mb": size_mb})
+    return out
+
+
 def compute_dust_fetch(map_sel="auto", check_only=False, progress_callback=None) -> dict:
     """Download (or report status of) the dust map data into the gitignored cache.
 

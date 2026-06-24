@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, Signal, QObject, QThread
 from gui.panels.base import ResultPanel
 import core.databases
 import core.db
+import core.dust
 
 _PROJECT_ROOT = str(Path(__file__).parent.parent.parent)
 
@@ -422,7 +423,15 @@ class DbStatusPanel(ResultPanel):
             [r["table"], f"{r['rows']:,}", "Populated" if r["populated"] else "Empty"]
             for r in rows
         ]
-        view = self.make_table(["Table", "Rows", "Status"], table_rows)
+
+        # Dust maps are cached FILES (not DB tables); append their presence/size
+        # so the one status view covers the whole data store (Phase T2).
+        for d in core.dust.get_dust_map_status():
+            size = f"{d['size_mb']:,.1f} MB" if d["present"] else "—"
+            table_rows.append(
+                [d["label"], size, "Present" if d["present"] else "Missing"])
+
+        view = self.make_table(["Table / File", "Rows / Size", "Status"], table_rows)
         self.add_result_widget(view)
         self.set_status("Database status check complete.")
 

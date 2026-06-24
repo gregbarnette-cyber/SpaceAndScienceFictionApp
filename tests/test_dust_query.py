@@ -193,6 +193,39 @@ class DustEngineMathTest(unittest.TestCase):
         self.assertLess(r["bins"][0]["dist_pc"], r["bins"][-1]["dist_pc"])
 
 
+class DustMapStatusTest(unittest.TestCase):
+    """get_dust_map_status() is pure-pathlib — works WITHOUT the dust extra (no
+    dustmaps import) and reports file presence/size for the opt-57 status panel."""
+
+    def test_shape_and_keys(self):
+        rows = dust.get_dust_map_status()
+        self.assertEqual([r["map"] for r in rows], ["leike2020", "edenhofer2023"])
+        for r in rows:
+            self.assertEqual(set(r), {"map", "label", "path", "present", "size_mb"})
+            self.assertIn("Dust Map", r["label"])
+            self.assertIsInstance(r["present"], bool)
+            # size_mb is a float when present, None when missing.
+            self.assertTrue(r["size_mb"] is None or isinstance(r["size_mb"], float))
+
+    def test_missing_file_reports_none_size(self):
+        with mock.patch.object(dust, "_DUST_CACHE_DIR",
+                               pathlib.Path(tempfile.mkdtemp())):
+            rows = dust.get_dust_map_status()
+        self.assertTrue(all(r["present"] is False for r in rows))
+        self.assertTrue(all(r["size_mb"] is None for r in rows))
+
+    def test_present_file_reports_size(self):
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        sub, fn = dust._MAP_FILE["leike2020"]
+        (tmp / sub).mkdir(parents=True)
+        (tmp / sub / fn).write_bytes(b"x" * 2048)
+        with mock.patch.object(dust, "_DUST_CACHE_DIR", tmp):
+            rows = {r["map"]: r for r in dust.get_dust_map_status()}
+        self.assertTrue(rows["leike2020"]["present"])
+        self.assertAlmostEqual(rows["leike2020"]["size_mb"], round(2048 / 1e6, 1))
+        self.assertFalse(rows["edenhofer2023"]["present"])
+
+
 @unittest.skipUnless(dustmaps_importable(), "optional 'dust' extra not installed")
 class DustValidationContractTest(unittest.TestCase):
     """Validation reachable only with the extra installed (the availability gate
@@ -351,6 +384,46 @@ class FetchDustMapPanelSmoke(unittest.TestCase):
         # Copy puts the same text on the clipboard.
         p._copy_commands()
         self.assertEqual(QApplication.clipboard().text(), cmds)
+
+
+@unittest.skipUnless(_GUI_OK, "PySide6 not available")
+class DbStatusPanelDustSmoke(unittest.TestCase):
+    """The opt-57 Database Status panel appends the cached dust-map FILES beneath
+    the DB tables (file-presence/size, not a row count)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_dust_rows_appended(self):
+        import core.db
+        from gui.panels.csv_utility import DbStatusPanel
+        fake_tables = [{"table": "Star Systems", "rows": 5, "populated": True}]
+        present = [
+            {"map": "leike2020", "label": "Dust Map: Leike 2020 (near-field)",
+             "path": "/x/a", "present": True, "size_mb": 2365.6},
+            {"map": "edenhofer2023", "label": "Dust Map: Edenhofer 2024",
+             "path": "/x/b", "present": False, "size_mb": None},
+        ]
+        p = DbStatusPanel(_FakeWindow())
+        captured = {}
+        orig = p.make_table
+        p.make_table = lambda headers, rows: (
+            captured.update(headers=headers, rows=rows), orig(headers, rows))[1]
+        with mock.patch.object(core.db, "get_table_status", lambda: fake_tables), \
+             mock.patch.object(dust, "get_dust_map_status", lambda: present):
+            p._run()
+        # Header relabeled to cover both tables and files.
+        self.assertEqual(captured["headers"], ["Table / File", "Rows / Size", "Status"])
+        labels = [r[0] for r in captured["rows"]]
+        self.assertIn("Dust Map: Leike 2020 (near-field)", labels)
+        self.assertIn("Dust Map: Edenhofer 2024", labels)
+        # Present map shows size + "Present"; missing shows "—" + "Missing".
+        by_label = {r[0]: r for r in captured["rows"]}
+        self.assertEqual(by_label["Dust Map: Leike 2020 (near-field)"][1], "2,365.6 MB")
+        self.assertEqual(by_label["Dust Map: Leike 2020 (near-field)"][2], "Present")
+        self.assertEqual(by_label["Dust Map: Edenhofer 2024"][1], "—")
+        self.assertEqual(by_label["Dust Map: Edenhofer 2024"][2], "Missing")
 
 
 if __name__ == "__main__":

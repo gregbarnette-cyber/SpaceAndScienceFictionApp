@@ -1092,7 +1092,11 @@ in the opt-58 (GCNS) import-utility lineage. It also has a **GUI panel** —
 **`FetchDustMapPanel`** (Utilities nav, mirroring `ImportGcnsPanel`: map selector + Check-Status/Fetch
 buttons + a background `QThread` + progress bar), gated so a checkout without the `dustmaps` extra shows an
 install hint instead of a broken entry. The dust **query** subcommands (`dust-sightline` / `dust-between` /
-the routing `--weight dust`) remain `query.py`-only (no GUI) by design.
+the routing `--weight dust`) remain `query.py`-only (no GUI) by design. The **Database Table Status** panel
+(GUI **option 57**, `DbStatusPanel`) also lists the two cached map **files** (presence + size in MB) under the
+DB tables — via the pure-pathlib `core.dust.get_dust_map_status()`, which needs no `dustmaps` import, so it
+reports file presence even on a checkout without the extra. (The maps are **files**, not a SQLite table — this
+is file-presence status, not a row count.)
 
 **Zenodo throttle & manual download (read before fetching).** Both maps are hosted on **Zenodo** (CERN's
 open-data repository), which **bandwidth-throttles** large anonymous file downloads — observed at ~0.5 MB/s,
