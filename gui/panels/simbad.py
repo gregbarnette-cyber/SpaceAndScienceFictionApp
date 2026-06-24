@@ -113,8 +113,19 @@ class SimbadPanel(ResultPanel):
         self.run_btn.clicked.connect(self._search)
         form.addRow("", self.run_btn)
 
+        self._add_proj_btn = QPushButton("Add to project ▾")
+        self._add_proj_btn.setEnabled(False)
+        self._add_proj_btn.setToolTip("Add this star to a project workspace (Phase S).")
+        self._add_proj_btn.clicked.connect(self._add_to_project)
+        form.addRow("", self._add_proj_btn)
+
         self._layout.addLayout(form)
         self._input_count = self._layout.count()
+
+    def _add_to_project(self):
+        from gui.panels.projects import choose_and_add
+        name = getattr(self, "_last_star", None) or self._name_input.text().strip()
+        choose_and_add(self, name, source="looked_up")
 
     def build_results_area(self):
         pass   # results added dynamically in render()
@@ -130,8 +141,12 @@ class SimbadPanel(ResultPanel):
         self.clear_results()
 
         if "error" in result:
+            self._add_proj_btn.setEnabled(False)
             self.show_error(result["error"])
             return
+
+        self._last_star = result.get("main_id") or self._name_input.text().strip()
+        self._add_proj_btn.setEnabled(True)
 
         # ── Star Properties tab ───────────────────────────────────────────────
         props_widget = QWidget()

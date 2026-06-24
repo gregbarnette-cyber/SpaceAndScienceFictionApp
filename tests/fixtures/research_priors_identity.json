@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "dataset_version": "identity-2026-06-24",
+  "provenance": {
+    "source": "IDENTITY fixture — values cloned verbatim from core.priors.DefaultPriors",
+    "description": "Sampling axes equal DefaultPriors and origin_priors mirror the core/feasibility.py Layer-3 heuristics, so a strict run with this dataset differs from a permissive run ONLY in the grounding badge / dataset_version. Used by the R3-C4 'byte-identical except the tag' test.",
+    "citations": []
+  },
+
+  "spectral_class_weights": { "M": 0.74, "K": 0.12, "G": 0.076, "F": 0.03, "A": 0.006, "B": 0.0013 },
+  "n_planet_dist": { "0": 0.05, "1": 0.10, "2": 0.18, "3": 0.20, "4": 0.16, "5": 0.12, "6": 0.08, "7": 0.05, "8": 0.03, "9": 0.02, "10": 0.01 },
+  "spacing_ratio": [1.4, 2.0],
+  "mass_by_zone": { "hot": [0.05, 6.0], "hz": [0.10, 8.0], "cold": [0.50, 600.0], "far": [0.30, 80.0] },
+  "moon_count": [0, 5],
+  "moon_mass_frac": [1e-5, 5e-4],
+
+  "origin_priors": {
+    "planet_at_location:in_situ_beyond_snow": [ { "pathway": "in-situ accretion beyond the snow line", "plausibility": "high" } ],
+    "planet_at_location:in_situ_inner":       [ { "pathway": "in-situ accretion", "plausibility": "medium" } ],
+    "planet_at_location:resonant_migration":  [ { "pathway": "convergent migration into resonance", "plausibility": "medium" } ],
+    "planet_at_location:infeasible":          [ { "pathway": "captured / scattered survivor", "plausibility": "low" } ],
+    "trojan:feasible":                        [ { "pathway": "in-situ co-accretion / capture into the Lagrange point", "plausibility": "medium" } ],
+    "trojan:infeasible":                      [ { "pathway": "no stable co-orbital pathway (host too massive)", "plausibility": "low" } ],
+    "moon:feasible":                          [ { "pathway": "capture / circumplanetary-disk formation", "plausibility": "medium" } ],
+    "moon:infeasible":                        [ { "pathway": "no stable satellite pathway", "plausibility": "low" } ],
+    "resonance:feasible":                     [ { "pathway": "convergent migration into resonance", "plausibility": "high" } ],
+    "resonance:infeasible":                   [ { "pathway": "would require migration / capture into resonance", "plausibility": "low" } ]
+  }
+}

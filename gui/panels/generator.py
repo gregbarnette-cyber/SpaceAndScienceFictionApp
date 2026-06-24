@@ -10,9 +10,12 @@
 #   • Synthetic (anchor blank) — pure/offline → run synchronously (instant).
 #   • Anchor on a real star    — networked (SIMBAD/NASA/HWC) → run_in_background.
 #
-# "Send to Dossier" is DEFERRED (Phase Q's build_system_dossier takes a star name and
-# re-assembles from readers; it can't yet ingest a generated system dict). R1 ships
-# "Copy JSON"; the button is present-but-disabled with an explanatory tooltip.
+# The standalone "Send to Dossier" button stays present-but-disabled: the generated-
+# system dossier renderer now exists (Phase S `core.report.build_generated_dossier`),
+# but the supported export path is "Add to project" → the Projects panel's Export
+# Project Dossier (which fans build_generated_dossier over the members). A one-click
+# single-system file export from here is an optional later add. "Copy JSON" + "Add to
+# project" cover the immediate needs.
 
 import json
 import math
@@ -42,6 +45,7 @@ _VERDICT_COLORS = {
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.generate
+import core.research_priors
 import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_orbits_canvas, make_hz_canvas,
@@ -343,17 +347,23 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
         self._nbody_chk.setToolTip("Run a short deterministic N-body integration to resolve "
                                    "marginal packing verdicts (opt-in).")
         pl_row.addWidget(self._nbody_chk)
-        priors_lbl = QLabel("Research priors:")
+        priors_lbl = QLabel("Research policy:")
         priors_lbl.setStyleSheet("color: #444; margin-left: 10px;")
         pl_row.addWidget(priors_lbl)
-        pill = QLabel("DEFAULTS")
-        pill.setStyleSheet("background: #fff4d6; color: #9a6700; border: 1px solid #e6c869;"
-                           "border-radius: 8px; padding: 1px 7px; font-weight: 600; font-size: 11px;")
-        pill.setToolTip("Literature-informed defaults, tagged grounding=default-extrapolation "
-                        "(research-calibrated priors arrive in Phase R3).")
-        pl_row.addWidget(pill)
+        self._policy = QComboBox()
+        self._policy.addItems(["permissive", "strict"])
+        self._policy.setMaximumWidth(120)
+        self._policy.setToolTip(
+            "permissive: literature-informed DefaultPriors (grounding=default-extrapolation).\n"
+            "strict: research-calibrated priors from an ingested dataset (Import Research "
+            "Priors utility); with no dataset loaded, generation returns a curated error.")
+        self._policy.currentTextChanged.connect(self._update_policy_pill)
+        pl_row.addWidget(self._policy)
+        self._priors_pill = QLabel("DEFAULTS")
+        pl_row.addWidget(self._priors_pill)
         pl_row.addStretch()
         form.addRow("Planets:", pl_w)
+        self._update_policy_pill()
 
         # Desired features (constraints) — optional; empty → plain generation.
         cons_w = QWidget()
@@ -390,12 +400,18 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
         self._copy_btn.setEnabled(False)
         self._dossier_btn = QPushButton("📄 Send to Dossier")
         self._dossier_btn.setEnabled(False)
-        self._dossier_btn.setToolTip("Deferred — Phase Q's dossier builds from a star name; "
-                                     "ingesting a generated system dict is a later Q extension. "
-                                     "Use Copy JSON for now.")
+        self._dossier_btn.setToolTip("To export this system as a dossier: use ➕ Add to "
+                                     "project, then Export Project Dossier in the Projects "
+                                     "panel (a single-system one-click export is a later add).")
         btn_row.addWidget(self.run_btn)
         btn_row.addWidget(self._show_diagrams_btn)
         btn_row.addWidget(self._copy_btn)
+        self._add_proj_btn = QPushButton("➕ Add to project")
+        self._add_proj_btn.setEnabled(False)
+        self._add_proj_btn.setToolTip("Add this generated system to a project "
+                                      "workspace (stores its spec for byte-identical reopen).")
+        self._add_proj_btn.clicked.connect(self._add_to_project)
+        btn_row.addWidget(self._add_proj_btn)
         btn_row.addWidget(self._dossier_btn)
         btn_row.addStretch()
         form.addRow("", btn_w)
@@ -484,6 +500,22 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
 
     # ── generate ────────────────────────────────────────────────────────────────
 
+    def _update_policy_pill(self, *_):
+        """Reflect the selected research policy + ingested-dataset status in the pill."""
+        if self._policy.currentText() == "strict":
+            st = core.research_priors.get_research_priors_status()
+            if st.get("loaded"):
+                self._priors_pill.setText(f"RESEARCH · {st['dataset_version']}")
+                style = ("background:#e6effa;color:#1a4e84;border:1px solid #a9c6e6;")
+            else:
+                self._priors_pill.setText("RESEARCH · none ingested")
+                style = ("background:#fbe9e9;color:#9b2226;border:1px solid #e3b5b5;")
+        else:
+            self._priors_pill.setText("DEFAULTS")
+            style = ("background:#fff4d6;color:#9a6700;border:1px solid #e6c869;")
+        self._priors_pill.setStyleSheet(
+            style + "border-radius:8px;padding:1px 7px;font-weight:600;font-size:11px;")
+
     def _generate(self):
         raw = self._seed.text().strip()
         try:
@@ -507,6 +539,7 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
             "n_planets": None if n < 0 else n,
             "require": self._req_hab.isChecked(),
             "nbody": self._nbody_chk.isChecked(),
+            "research_policy": self._policy.currentText(),
         }
         self._apply_depth = 0
         self._run_specs(self._collect_specs())
@@ -517,6 +550,7 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
         self._active_specs = specs
         p = self._last_params
         cons = specs or None
+        policy = p.get("research_policy", "permissive")
         if p["mode"] == "anchor":
             self._prepare_render()
             self._clear_tables()
@@ -526,12 +560,14 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
                 core.generate.generate_system, p["seed"],
                 anchor_star=p["anchor"], n_planets=p["n_planets"],
                 require_habitable=p["require"], constraints=cons, nbody=p["nbody"],
+                research_policy=policy,
                 on_result=self._render,
             )
         else:
             result = core.generate.generate_system(
                 p["seed"], spectral_class=p["spectral_class"], n_planets=p["n_planets"],
-                require_habitable=p["require"], constraints=cons, nbody=p["nbody"])
+                require_habitable=p["require"], constraints=cons, nbody=p["nbody"],
+                research_policy=policy)
             self._render(result)
 
     def _apply_alternative(self, idx, patch, label):
@@ -554,6 +590,7 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
         self._prepare_render()
         self._clear_tables()
         self._copy_btn.setEnabled(False)
+        self._add_proj_btn.setEnabled(False)
 
         if not result or "error" in result:
             msg = result.get("error", "Unknown error") if result else "No result"
@@ -635,6 +672,7 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
             self._add_hz_tab(star)
 
         self._copy_btn.setEnabled(True)
+        self._add_proj_btn.setEnabled(True)
         self._finish_render()
 
         bits = []
@@ -829,3 +867,22 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
         if cb is not None:
             cb.setText(text)
             self.set_status("Copied system JSON to clipboard.")
+
+    def _add_to_project(self):
+        if not self._last_result or "error" in self._last_result:
+            return
+        from gui.panels.projects import choose_and_add
+        lp = self._last_params or {}
+        spec = {
+            "seed": lp.get("seed"),
+            "mode": "real_anchor" if lp.get("mode") == "anchor" else "synthetic",
+            "anchor_star": lp.get("anchor"),
+            "spectral_class": lp.get("spectral_class"),
+            "n_planets": lp.get("n_planets"),
+            "require_habitable": lp.get("require", False),
+            "constraints": self._active_specs or None,
+            "research_policy": lp.get("research_policy", "permissive"),
+            "nbody": lp.get("nbody", False),
+        }
+        star = self._last_result["star"]["name"]
+        choose_and_add(self, star, source="generated", seed=lp.get("seed"), spec=spec)

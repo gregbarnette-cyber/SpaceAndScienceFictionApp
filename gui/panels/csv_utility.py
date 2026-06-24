@@ -5,13 +5,14 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (QPushButton, QLabel, QProgressBar, QComboBox,
                                QHBoxLayout, QWidget, QGroupBox, QVBoxLayout,
-                               QPlainTextEdit, QApplication)
+                               QPlainTextEdit, QApplication, QLineEdit, QFileDialog)
 from PySide6.QtCore import Qt, Signal, QObject, QThread
 
 from gui.panels.base import ResultPanel
 import core.databases
 import core.db
 import core.dust
+import core.research_priors
 
 _PROJECT_ROOT = str(Path(__file__).parent.parent.parent)
 
@@ -430,6 +431,14 @@ class DbStatusPanel(ResultPanel):
             size = f"{d['size_mb']:,.1f} MB" if d["present"] else "—"
             table_rows.append(
                 [d["label"], size, "Present" if d["present"] else "Missing"])
+
+        # Research-priors cache (a versioned JSON document, not a DB table) — Phase R3.
+        rp = core.research_priors.get_research_priors_status()
+        if rp["loaded"]:
+            table_rows.append([f"research priors ({rp['dataset_version']})",
+                               f"schema {rp['schema_version']}", "Loaded"])
+        else:
+            table_rows.append(["research priors", "—", "Missing"])
 
         view = self.make_table(["Table / File", "Rows / Size", "Status"], table_rows)
         self.add_result_widget(view)
@@ -903,6 +912,177 @@ class FetchDustMapPanel(ResultPanel):
 
     def _on_error_dust(self, msg: str):
         if not self._reenable():
+            return
+        self._progress_bar.setRange(0, 1)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setFormat("Error")
+        self.show_error(msg)
+        self.set_status(f"Error: {msg}")
+
+
+class _ResearchPriorsWorker(QObject):
+    """Worker for the research-priors contract import (validate-before-store)."""
+
+    finished = Signal(object)
+    error    = Signal(str)
+    progress = Signal(str)
+
+    def __init__(self, path):
+        super().__init__()
+        self._path = path
+
+    def run(self):
+        def cb(msg):
+            self.progress.emit(msg)
+        try:
+            result = core.research_priors.compute_research_priors_ingest(
+                path=self._path or None, progress_callback=cb)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class ImportResearchPriorsPanel(ResultPanel):
+    """Import Research Priors panel (Phase R3) — mirrors ImportGcnsPanel/Hypatia.
+
+    Validates a versioned formation-priors data contract and caches it (validate-
+    before-store). Once ingested, `generate-system` / the System Generator's
+    research_policy='strict' draws research-calibrated priors from it. The shipped
+    default is the committed synthetic SAMPLE; a consumer with real priors Browses
+    to their own contract file. See docs/research-priors-contract.md.
+    """
+
+    def build_inputs(self):
+        info = QLabel(
+            "Validates a formation-priors data contract (a single versioned JSON "
+            "document) and stores it in the gitignored data/research_priors/ cache. "
+            "Then System Generator / query.py generate-system with research policy "
+            "'strict' draws research-calibrated priors from it (re-tagging emitted "
+            "fields grounding=research-calibrated). The default file is the committed "
+            "synthetic SAMPLE — Browse to a real contract when one exists. A malformed "
+            "contract is rejected and the existing cache is left intact."
+        )
+        info.setWordWrap(True)
+        self._layout.addWidget(info)
+
+        path_w = QWidget()
+        path_row = QHBoxLayout(path_w)
+        path_row.setContentsMargins(0, 0, 0, 0)
+        path_row.addWidget(QLabel("Contract file:"))
+        self._path_edit = QLineEdit(str(core.research_priors._SAMPLE_CONTRACT_PATH))
+        self._path_edit.setProperty("no_width_cap", True)
+        path_row.addWidget(self._path_edit)
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse)
+        path_row.addWidget(browse)
+        self._layout.addWidget(path_w)
+
+        btn_w = QWidget()
+        btn_row = QHBoxLayout(btn_w)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        self._check_btn = QPushButton("Check Status")
+        self._check_btn.clicked.connect(self._check)
+        self._import_btn = QPushButton("Import")
+        self._import_btn.setFixedHeight(32)
+        self._import_btn.clicked.connect(self._run)
+        btn_row.addWidget(self._check_btn)
+        btn_row.addWidget(self._import_btn)
+        btn_row.addStretch()
+        self._layout.addWidget(btn_w)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 1)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setTextVisible(True)
+        self._progress_bar.setFormat("Ready")
+        self._layout.addWidget(self._progress_bar)
+
+        self._status_lbl = QLabel("")
+        self._status_lbl.setWordWrap(True)
+        self._layout.addWidget(self._status_lbl)
+
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        pass
+
+    def _browse(self):
+        fn, _ = QFileDialog.getOpenFileName(
+            self, "Select research-priors contract", "", "JSON files (*.json);;All files (*)")
+        if fn:
+            self._path_edit.setText(fn)
+
+    def _check(self):
+        self.clear_results()
+        st = core.research_priors.get_research_priors_status()
+        if st["loaded"]:
+            lbl = QLabel(
+                f"<b>Research priors loaded.</b><br>"
+                f"Dataset: {st['dataset_version']}<br>"
+                f"Schema: {st['schema_version']}<br>"
+                f"Origin contexts calibrated: {st['origin_contexts']}<br>"
+                f"Stored at: {st['stored_at']}")
+        else:
+            lbl = QLabel("No research priors ingested — research_policy='strict' will "
+                         "return a curated error until you Import a contract.")
+        lbl.setWordWrap(True)
+        self.add_result_widget(lbl)
+        self.set_status("Research-priors cache status checked.")
+
+    def _run(self):
+        self._import_btn.setEnabled(False)
+        self._progress_bar.setRange(0, 0)   # busy
+        self._progress_bar.setFormat("Importing…")
+        self._status_lbl.setText("")
+        self.clear_results()
+        self.set_status("Importing research priors…")
+
+        self._thread = QThread()
+        self._worker = _ResearchPriorsWorker(self._path_edit.text().strip())
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+        self._worker.progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
+        self._worker.finished.connect(self._on_done,     Qt.ConnectionType.QueuedConnection)
+        self._worker.error.connect(self._on_error_rp,    Qt.ConnectionType.QueuedConnection)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.start()
+
+    def _on_progress(self, msg: str):
+        self._status_lbl.setText(msg)
+        self.set_status(msg)
+
+    def _on_done(self, result: dict):
+        try:
+            self._import_btn.setEnabled(True)
+        except RuntimeError:
+            return
+        self._progress_bar.setRange(0, 1)
+        if "error" in result:
+            self._progress_bar.setValue(0)
+            self._progress_bar.setFormat("Error")
+            self.show_error(result["error"])
+            self.set_status(f"Error: {result['error']}")
+            return
+        self._progress_bar.setValue(1)
+        self._progress_bar.setFormat("Done")
+        self.set_status("Research-priors import complete.")
+        lbl = QLabel(
+            f"<b>Import complete.</b><br>"
+            f"Dataset: {result['dataset_version']}<br>"
+            f"Schema: {result['schema_version']}<br>"
+            f"Sampling axes loaded: {result['axes_loaded']}<br>"
+            f"Origin contexts calibrated: {result['origin_contexts']}<br>"
+            f"Source: {result['source']}<br>"
+            f"Cached at: {result['cache_dir']}")
+        lbl.setWordWrap(True)
+        self.add_result_widget(lbl)
+
+    def _on_error_rp(self, msg: str):
+        try:
+            self._import_btn.setEnabled(True)
+        except RuntimeError:
             return
         self._progress_bar.setRange(0, 1)
         self._progress_bar.setValue(0)

@@ -28,6 +28,9 @@ NAVIGATION = [
     ("Generator", [
         ("System Generator",       "SystemGeneratorPanel"),
     ]),
+    ("Projects", [
+        ("Project Workspace", "ProjectPanel"),
+    ]),
     ("Reports", [
         ("System Dossier Export",  "DossierExportPanel"),
     ]),
@@ -120,6 +123,7 @@ NAVIGATION = [
         ("Import GCNS Data",               "ImportGcnsPanel"),
         ("Import Hypatia Cache",           "ImportHypatiaPanel"),
         ("Fetch Dust Map Data",            "FetchDustMapPanel"),
+        ("Import Research Priors",         "ImportResearchPriorsPanel"),
         ("Database Table Status",          "DbStatusPanel"),
     ]),
 ]

@@ -21,6 +21,7 @@ from core.equations import (
     compute_roche_limit, compute_hill_sphere, compute_atmosphere_retention,
     compute_solvent_zone, compute_binary_orbit_stability,
 )
+from core.priors import DefaultPriors, get_priors, PriorsUnavailable
 
 # ── G1 — packing-stability thresholds ────────────────────────────────────────
 # Gladman (1993) Hill-stability floor for an adjacent pair, Δ_crit = 2√3 ≈ 3.464;
@@ -654,11 +655,20 @@ def evaluate_feasibility(seed, anchor_star=None, spectral_class=None, n_planets=
     if err:
         return err
 
+    # Resolve the priors provider — research-calibrated under strict (gates BOTH the
+    # base-system sampling and the Layer-3 narrative, D5). strict with no ingested
+    # dataset → curated error (no silent fallback).
+    try:
+        priors = get_priors(research_policy)
+    except PriorsUnavailable as e:
+        return {"error": str(e)}
+
     # Function-local import keeps the generate↔feasibility relationship one-way at
     # module load (generate.py imports feasibility only inside generate_system).
     from core.generate import generate_system
     base = generate_system(seed, anchor_star=anchor_star, spectral_class=spectral_class,
-                           n_planets=n_planets, require_habitable=require_habitable)
+                           n_planets=n_planets, require_habitable=require_habitable,
+                           research_policy=research_policy)
     if "error" in base:
         return base
 
@@ -700,18 +710,17 @@ def evaluate_feasibility(seed, anchor_star=None, spectral_class=None, n_planets=
         if res["verdict"] != "not_evaluated":
             if nbody and res["verdict"] == "marginal":
                 res = _nbody_confirm(res, c, base, derived)
-            res["layer3"] = _origin_hypotheses(c, base, derived, res)
+            res["layer3"] = _origin_hypotheses(c, base, derived, res, priors)
             if res["verdict"] in ("infeasible", "marginal"):
                 res["layer4"] = _alternatives(c, base, derived, rule, res["verdict"])
         results.append(res)
 
     evaluated = [r for r in results if r["verdict"] != "not_evaluated"]
     feasible = bool(evaluated) and all(r["verdict"] == "feasible" for r in evaluated)
-    if research_policy == "strict":
-        notes.append("research_policy='strict' requires the R3 research-priors hook; "
-                     "falling back to permissive (Layer-3 grounding=default-extrapolation).")
-    notes.append("Four-layer feasibility report; Layer-3 origin narrative is "
-                 "grounding=default-extrapolation (research-calibrated priors arrive in R3).")
+    _ver = getattr(priors, "version", None)
+    notes.append("Four-layer feasibility report; Layer-3 origin narrative "
+                 f"grounding={priors.grounding}"
+                 + (f" (dataset {_ver})." if _ver else "."))
 
     return {
         "seed": seed,
@@ -736,43 +745,76 @@ def evaluate_feasibility(seed, anchor_star=None, spectral_class=None, n_planets=
 # spec_patch} — spec_patch being the exact mutation the GUI's clickable-apply
 # (D6) re-runs. Both are deterministic (no RNG, ordered scans).
 
-def _tag(pathway, plausibility):
-    return {"pathway": pathway, "plausibility": plausibility,
-            "grounding": "default-extrapolation"}
+# Heuristic origin priors per context key — the DefaultPriors fallback. R3 lets an
+# ingested ResearchPriors dataset override any context via `origin_priors`; an omitted
+# context falls back to this table, tagged grounding="default-extrapolation" even under
+# strict (honest mixed tagging). The identity fixture mirrors this table exactly, so a
+# strict run against it reproduces the heuristic narrative (badge aside).
+_DEFAULT_ORIGIN = {
+    "planet_at_location:in_situ_beyond_snow": [("in-situ accretion beyond the snow line", "high")],
+    "planet_at_location:in_situ_inner":       [("in-situ accretion", "medium")],
+    "planet_at_location:resonant_migration":  [("convergent migration into resonance", "medium")],
+    "planet_at_location:infeasible":          [("captured / scattered survivor", "low")],
+    "trojan:feasible":                        [("in-situ co-accretion / capture into the Lagrange point", "medium")],
+    "trojan:infeasible":                      [("no stable co-orbital pathway (host too massive)", "low")],
+    "moon:feasible":                          [("capture / circumplanetary-disk formation", "medium")],
+    "moon:infeasible":                        [("no stable satellite pathway", "low")],
+    "resonance:feasible":                     [("convergent migration into resonance", "high")],
+    "resonance:infeasible":                   [("would require migration / capture into resonance", "low")],
+}
 
 
-def _origin_hypotheses(c, base, derived, res):
-    """Ranked, confidence-tagged origin hypotheses for an evaluated constraint."""
+def _origin_context_keys(c, derived, res):
+    """The ordered origin-context key(s) for an evaluated constraint (R3 vocabulary)."""
     t = c.get("type")
     v = res["verdict"]
-    hyps = []
+    keys = []
     if t == "planet_at_location":
-        target = (res["layer1"].get("metrics") or {}).get("target_au")
-        snow = derived.get("snow_line")
         if v == "infeasible":
-            hyps.append(_tag("captured / scattered survivor", "low"))
+            keys.append("planet_at_location:infeasible")
         else:
+            target = (res["layer1"].get("metrics") or {}).get("target_au")
+            snow = derived.get("snow_line")
             if snow and target and target >= snow:
-                hyps.append(_tag("in-situ accretion beyond the snow line", "high"))
+                keys.append("planet_at_location:in_situ_beyond_snow")
             else:
-                hyps.append(_tag("in-situ accretion", "medium"))
+                keys.append("planet_at_location:in_situ_inner")
             if res["layer2"].get("mechanism") == "mean_motion_resonance":
-                hyps.append(_tag("convergent migration into resonance", "medium"))
+                keys.append("planet_at_location:resonant_migration")
     elif t == "trojan":
-        hyps.append(_tag("in-situ co-accretion / capture into the Lagrange point", "medium")
-                    if v != "infeasible"
-                    else _tag("no stable co-orbital pathway (host too massive)", "low"))
+        keys.append("trojan:feasible" if v != "infeasible" else "trojan:infeasible")
     elif t == "moon":
-        hyps.append(_tag("capture / circumplanetary-disk formation", "medium")
-                    if v != "infeasible"
-                    else _tag("no stable satellite pathway", "low"))
+        keys.append("moon:feasible" if v != "infeasible" else "moon:infeasible")
     elif t == "resonance":
-        hyps.append(_tag("convergent migration into resonance", "high")
-                    if v == "feasible"
-                    else _tag("would require migration / capture into resonance", "low"))
+        keys.append("resonance:feasible" if v == "feasible" else "resonance:infeasible")
     # Stretch system-shape rules (habitable_world / alt_solvent_world / architecture)
     # describe occupancy, not a single body's pathway → no origin narrative.
-    return {"hypotheses": hyps, "grounding": "default-extrapolation"}
+    return keys
+
+
+def _origin_hypotheses(c, base, derived, res, priors=None):
+    """Ranked, confidence-tagged origin hypotheses for an evaluated constraint.
+
+    R3: an ingested ``ResearchPriors`` dataset (``priors.origin_priors``) overrides a
+    context — those hypotheses carry ``priors.grounding``; an omitted context falls
+    back to the DefaultPriors heuristic, tagged ``default-extrapolation`` even under
+    strict (honest mixed tagging). ``priors=None`` → ``DefaultPriors`` (permissive,
+    byte-identical to R2: empty ``origin_priors`` → every context uses the heuristic).
+    """
+    if priors is None:
+        priors = DefaultPriors()
+    origin_priors = getattr(priors, "origin_priors", None) or {}
+    hyps = []
+    for key in _origin_context_keys(c, derived, res):
+        if key in origin_priors:
+            for h in origin_priors[key]:
+                hyps.append({"pathway": h["pathway"], "plausibility": h["plausibility"],
+                             "grounding": priors.grounding})
+        else:
+            for pathway, plaus in _DEFAULT_ORIGIN.get(key, []):
+                hyps.append({"pathway": pathway, "plausibility": plaus,
+                             "grounding": "default-extrapolation"})
+    return {"hypotheses": hyps, "grounding": priors.grounding}
 
 
 def _resonant_au(a_neighbor, ratio_str, interior):

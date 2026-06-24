@@ -27,7 +27,7 @@ from core.equations import (
     compute_atmosphere_retention,
 )
 from core.science import compute_main_sequence_table
-from core.priors import DefaultPriors
+from core.priors import DefaultPriors, get_priors, PriorsUnavailable
 from core.databases import (
     compute_simbad_lookup,
     compute_planetary_systems_composite,
@@ -263,7 +263,7 @@ def _synth_star(rng, priors, seed, spectral_class, rows):
         "hz_opt_outer_au": _round(hzmap["em"], 5),   # optimistic outer (Early Mars)
         "snow_line_au": _round(snow_line, 5),
         "source": "synthetic",
-        "grounding": "default-extrapolation",
+        "grounding": priors.grounding,
         "multiplicity": None,
     }
     derived = {
@@ -410,10 +410,25 @@ def _has_conservative_hz_rocky(planets):
                for p in planets)
 
 
-def _generate_synthetic(seed, spectral_class, n_planets, require_habitable):
+def _priors_note_fragment(priors):
+    """Provenance fragment for the notes — '<Provider> (grounding=<g>[, dataset <v>])'.
+
+    Uses the class name (DefaultPriors / ResearchPriors) so the permissive output is
+    byte-identical to R1/R2; ResearchPriors appends its dataset version.
+    """
+    ver = getattr(priors, "version", None)
+    suffix = f", dataset {ver}" if ver else ""
+    return f"{type(priors).__name__} (grounding={priors.grounding}{suffix})"
+
+
+def _generate_synthetic(seed, spectral_class, n_planets, require_habitable,
+                        research_policy="permissive"):
     """Synthetic-from-seed system (anchor_star is None)."""
     rng = random.Random(seed)
-    priors = DefaultPriors()
+    try:
+        priors = get_priors(research_policy)
+    except PriorsUnavailable as e:
+        return {"error": str(e)}
 
     rows = _usable_ms_rows()
     if not rows:
@@ -446,8 +461,7 @@ def _generate_synthetic(seed, spectral_class, n_planets, require_habitable):
 
     _attach_moons(rng, priors, star, planets)
 
-    notes = ["All bodies are synthetic; realism priors = DefaultPriors "
-             "(grounding=default-extrapolation)."]
+    notes = [f"All bodies are synthetic; realism priors = {_priors_note_fragment(priors)}."]
     return {
         "seed": seed,
         "mode": "synthetic",
@@ -589,10 +603,14 @@ def _extension_smas(rng, priors, derived, observed_smas, safe_cap_au, n_synth):
     return smas
 
 
-def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable):
+def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
+                          research_policy="permissive"):
     """Extend a real star/system: real specs + observed planets + synthetic infill."""
     rng = random.Random(seed)
-    priors = DefaultPriors()
+    try:
+        priors = get_priors(research_policy)
+    except PriorsUnavailable as e:
+        return {"error": str(e)}
 
     simbad = compute_simbad_lookup(anchor_star)
     if "error" in simbad:
@@ -694,8 +712,7 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable):
     planets.sort(key=lambda p: (p["a_au"] is None, p["a_au"]))
 
     notes.append("Observed bodies from NASA pscomppars / HWC; synthetic extensions use "
-                 "DefaultPriors (grounding=default-extrapolation). Observed planets carry "
-                 "no fabricated moons.")
+                 f"{_priors_note_fragment(priors)}. Observed planets carry no fabricated moons.")
     return {
         "seed": seed,
         "mode": "real_anchor",
@@ -744,6 +761,9 @@ def generate_system(seed, anchor_star=None, spectral_class=None,
             return {"error": "n_planets must be an integer."}
         if not (0 <= n_planets <= _MAX_N_PLANETS):
             return {"error": f"n_planets must be between 0 and {_MAX_N_PLANETS}."}
+    if research_policy not in ("permissive", "strict"):
+        return {"error": "research_policy must be 'permissive' or 'strict' "
+                         f"(got {research_policy!r})."}
 
     if constraints:
         # Function-local import: generate.py must stay importable without pulling
@@ -754,6 +774,29 @@ def generate_system(seed, anchor_star=None, spectral_class=None,
                                     research_policy, nbody)
 
     if anchor_star is not None and str(anchor_star).strip():
-        return _generate_real_anchor(seed, anchor_star, n_planets, require_habitable)
+        return _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
+                                     research_policy)
 
-    return _generate_synthetic(seed, spectral_class, n_planets, require_habitable)
+    return _generate_synthetic(seed, spectral_class, n_planets, require_habitable,
+                               research_policy)
+
+
+def generate_from_spec(spec):
+    """Re-run generate_system from a stored generation spec (Phase S).
+
+    A "spec" is the dict a project workspace persists for a generated member
+    (``generated_spec`` — the generation params, plus an ignored ``mode`` echo).
+    Maps it to keyword args and returns the (deterministic) generate_system result.
+    """
+    spec = spec or {}
+    return generate_system(
+        spec.get("seed"),
+        anchor_star=spec.get("anchor_star"),
+        spectral_class=spec.get("spectral_class"),
+        n_planets=spec.get("n_planets"),
+        require_habitable=spec.get("require_habitable", False),
+        constraints=spec.get("constraints"),
+        companion=spec.get("companion"),
+        research_policy=spec.get("research_policy", "permissive"),
+        nbody=spec.get("nbody", False),
+    )

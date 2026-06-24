@@ -12,7 +12,23 @@
 # will reuse: R3 adds a `ResearchPriors` sibling (fed by the sister project's
 # versioned formation-priors data contract) and a policy switch, plugging in
 # WITHOUT a generator refactor because both expose the same attribute surface.
-# There is no policy switch, no ingest, and no `ResearchPriors` here — that is R3.
+#
+# Phase R3-C2 adds that sibling: `ResearchPriors` (loads the versioned formation-
+# priors data contract — see core/research_priors.py + docs/research-priors-
+# contract.md) and `get_priors(research_policy)` — the single selector the engine
+# calls instead of instantiating a provider directly. The importer that populates
+# the cache (`compute_research_priors_ingest`) lands in R3-C3; the engine wiring
+# (generate.py / feasibility.py) in R3-C4/C5. Until then nothing calls get_priors.
+
+import copy
+import json
+from pathlib import Path
+
+from core.research_priors import (
+    validate_priors_contract,
+    _DEFAULT_CACHE_DIR,
+    _CACHE_PRIORS_NAME,
+)
 
 
 class DefaultPriors:
@@ -75,3 +91,101 @@ class DefaultPriors:
         # Per-giant moon priors.
         self.moon_count = (0, 5)             # inclusive count drawn per giant
         self.moon_mass_frac = (1e-5, 5e-4)   # moon mass / host-planet mass
+
+
+# ── Phase R3-C2 · research-calibrated provider + the policy selector ──────────
+
+class PriorsUnavailable(Exception):
+    """Raised when ``research_policy='strict'`` is requested but no research-priors
+    dataset has been ingested. Callers (generate.py / feasibility.py, R3-C4/C5)
+    convert this into the curated ``{"error": ...}`` self-validating result."""
+
+
+class ResearchPriors:
+    """Research-calibrated priors provider (the R3 sibling of ``DefaultPriors``).
+
+    Exposes the **same attribute surface** as ``DefaultPriors`` (so the generator
+    consumes either interchangeably), built from a validated formation-priors data
+    contract (see ``core/research_priors.py`` + ``docs/research-priors-contract.md``),
+    plus three additions: ``origin_priors`` (the calibrated Layer-3 narrative map),
+    ``version`` (the dataset_version — folded into the determinism tuple + output
+    provenance) and ``schema_version``. ``grounding`` is ``"research-calibrated"``
+    so re-tagging is automatic wherever the engine reads ``priors.grounding``.
+
+    Build via ``from_file`` / ``from_contract`` (direct, used in tests) or
+    ``load(cache_dir)`` (reads the importer's cache; raises ``PriorsUnavailable``
+    when no dataset has been ingested).
+    """
+
+    name = "RESEARCH"
+    grounding = "research-calibrated"
+
+    def __init__(self, contract):
+        # contract is assumed validated (from_contract enforces this).
+        self.schema_version = contract["schema_version"]
+        self.version = contract["dataset_version"]
+        self.provenance = copy.deepcopy(contract.get("provenance", {}))
+
+        # ── the DefaultPriors attribute surface, typed to match exactly ──
+        self.spectral_class_weights = dict(contract["spectral_class_weights"])
+        # JSON object keys are strings → coerce to int so the generator's
+        # `sorted(priors.n_planet_dist.items())` orders numerically (as it does
+        # for DefaultPriors), not lexicographically ("0","1","10","2",…).
+        self.n_planet_dist = {int(k): float(v)
+                              for k, v in contract["n_planet_dist"].items()}
+        self.spacing_ratio = tuple(contract["spacing_ratio"])
+        self.mass_by_zone = {z: tuple(v) for z, v in contract["mass_by_zone"].items()}
+        self.moon_count = tuple(int(x) for x in contract["moon_count"])
+        self.moon_mass_frac = tuple(float(x) for x in contract["moon_mass_frac"])
+
+        # ── the one new axis (calibrated Layer-3 origin narrative) ──
+        self.origin_priors = copy.deepcopy(contract.get("origin_priors", {}))
+
+    @classmethod
+    def from_contract(cls, obj):
+        """Build from an in-memory contract dict (defensively re-validated)."""
+        err = validate_priors_contract(obj)
+        if err:
+            raise ValueError(err["error"])
+        return cls(obj)
+
+    @classmethod
+    def from_file(cls, path):
+        """Build from a contract JSON file."""
+        with open(path, encoding="utf-8") as fh:
+            obj = json.load(fh)
+        return cls.from_contract(obj)
+
+    @classmethod
+    def load(cls, cache_dir=None):
+        """Load the ingested dataset from the importer's cache.
+
+        Raises ``PriorsUnavailable`` when no dataset has been ingested (the cache's
+        ``priors.json`` is absent) — that is the signal ``strict`` turns into a
+        curated error.
+        """
+        cache = Path(cache_dir if cache_dir is not None else _DEFAULT_CACHE_DIR)
+        priors_file = cache / _CACHE_PRIORS_NAME
+        if not priors_file.is_file():
+            raise PriorsUnavailable(
+                "research_policy='strict' requires research priors — run the "
+                "Import Research Priors utility (CLI/GUI) to ingest a dataset.")
+        return cls.from_file(priors_file)
+
+
+def get_priors(research_policy="permissive", cache_dir=None):
+    """Return the priors provider for a research policy — the single swap point.
+
+    - ``"permissive"`` (default) → ``DefaultPriors()`` (R1/R2 behaviour, unchanged).
+    - ``"strict"`` → ``ResearchPriors.load(cache_dir)``; raises ``PriorsUnavailable``
+      when no dataset has been ingested.
+    - anything else → ``ValueError`` (an unknown policy is a programming error).
+
+    ``cache_dir`` is an optional testability hook (default = the importer's cache);
+    the engine callers pass only ``research_policy``.
+    """
+    if research_policy == "permissive":
+        return DefaultPriors()
+    if research_policy == "strict":
+        return ResearchPriors.load(cache_dir)
+    raise ValueError(f"unknown research_policy: {research_policy!r}")

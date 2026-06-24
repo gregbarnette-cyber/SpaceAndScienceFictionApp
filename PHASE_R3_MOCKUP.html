@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phase R3 — Research-Priors Hook (mockup)</title>
+<style>
+  :root{
+    --bg:#f5f5f5; --panel:#ffffff; --line:#c8c8c8; --line2:#e2e2e2;
+    --ink:#222; --muted:#666; --accent:#2b6cb0; --accent2:#1a4e84;
+    --observed:#1f7a3d; --synth:#2b6cb0; --warn:#9a6700; --chip:#eef2f7;
+    --ok:#155f33; --okbg:#e7f6ec; --okln:#aedcbd;
+    --bad:#9b2226; --badbg:#fbe9e9; --badln:#e3b5b5;
+    --def:#8a5a00; --defbg:#fff4d6; --defln:#e6c869;
+    --res:#1a4e84; --resbg:#e6effa; --resln:#a9c6e6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#dcdcdc;font-family:"Segoe UI",system-ui,Arial,sans-serif;color:var(--ink);font-size:13px}
+  .app{max-width:1180px;margin:18px auto;background:var(--bg);border:1px solid #b5b5b5;border-radius:6px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+  .titlebar{background:linear-gradient(#fbfbfb,#ececec);border-bottom:1px solid var(--line);padding:7px 12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .titlebar .dot{width:11px;height:11px;border-radius:50%;background:#e0524d;box-shadow:18px 0 #e3b341,36px 0 #5bbf5b;margin-right:34px}
+  .body{display:flex;min-height:680px}
+  .nav{width:212px;background:#efefef;border-right:1px solid var(--line);padding:8px 0;font-size:12.5px}
+  .nav .cat{color:var(--muted);padding:8px 14px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  .nav .item{padding:5px 14px 5px 24px;color:#333;cursor:default}
+  .nav .item.active{background:#d6e6f7;border-left:3px solid var(--accent);padding-left:21px;font-weight:600;color:var(--accent2)}
+  .main{flex:1;padding:14px 18px;overflow:auto}
+  h2{margin:0 0 4px;font-size:16px}
+  h3{margin:16px 0 6px;font-size:13.5px}
+  .sub{color:var(--muted);margin-bottom:12px;font-size:12px}
+  .note{color:var(--muted);font-size:11.5px;margin:4px 0 0}
+
+  .form{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:14px 16px;margin-bottom:14px}
+  .row{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+  label.k{width:130px;color:#444;text-align:right;flex:none}
+  input[type=text],input[type=number]{padding:5px 8px;border:1px solid #b9b9b9;border-radius:3px;font-size:13px;background:#fff;max-width:340px}
+  input[disabled]{background:#f0f0f0;color:#999}
+  select{padding:4px 6px;border:1px solid #b9b9b9;border-radius:3px;background:#fff;font-size:12.5px}
+  .btn{padding:6px 14px;border:1px solid #9fb6cf;background:linear-gradient(#fafcff,#e8f0fb);border-radius:4px;cursor:pointer;font-size:12.5px}
+  .btn.primary{border-color:#2b6cb0;background:linear-gradient(#3d86d6,#2b6cb0);color:#fff;font-weight:600}
+  .btn.small{padding:3px 9px;font-size:12px}
+  .radio{display:inline-flex;align-items:center;gap:5px;margin-right:14px}
+  .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600}
+  .pill.def{background:var(--defbg);color:var(--def);border:1px solid var(--defln)}
+  .pill.res{background:var(--resbg);color:var(--res);border:1px solid var(--resln)}
+  .pill.obs{background:#e7f6ec;color:var(--observed);border:1px solid #aedcbd}
+  .pill.syn{background:#e6effa;color:var(--synth);border:1px solid #a9c6e6}
+
+  table{border-collapse:collapse;width:100%;font-size:12px;margin:6px 0}
+  th,td{border:1px solid var(--line2);padding:4px 8px;text-align:left}
+  th{background:#f0f3f7}
+  .banner{border-radius:5px;padding:9px 12px;margin:12px 0;font-size:12.5px;font-weight:600}
+  .banner.ok{background:var(--okbg);border:1px solid var(--okln);color:var(--ok)}
+  .banner.bad{background:var(--badbg);border:1px solid var(--badln);color:var(--bad)}
+  .banner.def{background:var(--defbg);border:1px solid var(--defln);color:var(--def)}
+
+  .two{display:flex;gap:14px;flex-wrap:wrap}
+  .col{flex:1;min-width:360px}
+  .frame{border:1px solid var(--line);border-radius:5px;overflow:hidden;background:var(--panel)}
+  .frame .cap{background:#f0f3f7;border-bottom:1px solid var(--line2);padding:5px 10px;font-weight:600;font-size:12px}
+  .frame .bd{padding:10px 12px}
+  pre{margin:0;background:#0b1020;color:#cfe3ff;border-radius:5px;padding:12px 14px;font-size:11.5px;line-height:1.45;overflow:auto;border:1px solid #1a2448}
+  pre .c{color:#7fa9cc}      /* comment */
+  pre .k{color:#9fd0ff}      /* key */
+  pre .n{color:#ffd28a}      /* new-in-R3 */
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:#555;margin:6px 0}
+  .progress{height:14px;background:#e3e3e3;border:1px solid #c2c2c2;border-radius:7px;overflow:hidden;max-width:340px}
+  .progress > i{display:block;height:100%;width:62%;background:linear-gradient(#5b9bd6,#2b6cb0)}
+  .tag{font-size:10.5px;color:#fff;background:#7a869a;border-radius:3px;padding:1px 5px;margin-left:6px}
+  .tag.scaf{background:#9a6700}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar"><span class="dot"></span>Space &amp; Science Fiction App — Phase R3 mockup (research-priors hook)</div>
+  <div class="body">
+    <div class="nav">
+      <div class="cat">Generator</div>
+      <div class="item active">System Generator</div>
+      <div class="cat">Utilities</div>
+      <div class="item">Star Systems DB Query</div>
+      <div class="item">Import GCNS Data</div>
+      <div class="item">Import Hypatia Cache</div>
+      <div class="item">Fetch Dust Map Data</div>
+      <div class="item active">Import Research Priors <span class="tag scaf">R3</span></div>
+      <div class="item">Database Table Status</div>
+    </div>
+
+    <div class="main">
+
+      <!-- ============ A. Import Research Priors panel ============ -->
+      <h2>Import Research Priors <span class="tag scaf">R3 — scaffold</span></h2>
+      <div class="sub">Validate &amp; load a versioned formation-priors data contract (GCNS/Hypatia ingest lineage; validate-before-store). No network — the contract file is local.</div>
+
+      <div class="form">
+        <div class="row"><label class="k">Contract file</label>
+          <input type="text" value="data/research_priors/priors.json" style="width:340px">
+          <button class="btn small">Browse…</button>
+          <span class="note">default path; consumer drops the file here</span>
+        </div>
+        <div class="row"><label class="k"></label>
+          <button class="btn">Check</button>
+          <button class="btn primary">Import</button>
+        </div>
+        <div class="row"><label class="k">Status</label>
+          <div class="progress"><i></i></div>
+          <span class="note">validating axes…</span>
+        </div>
+      </div>
+
+      <div class="banner ok">✓ Imported — schema 1.0 · dataset <b>sample-2026-06-24</b> · 6 sampling axes + 4 origin contexts loaded · stored at data/research_priors/</div>
+      <div class="note">A malformed contract (unknown <code>schema_version</code>, missing/typed-wrong axis) → a red error here and <b>nothing is stored</b> (Gate-1 / validate-before-store). The shipped dataset is a <b>synthetic placeholder</b> — real sister-project priors land later as a data swap, same schema.</div>
+
+      <!-- ============ B. The data contract ============ -->
+      <h3>The formation-priors data contract (versioned) <span class="tag scaf">sample file</span></h3>
+      <div class="legend">
+        <span><span class="pill res">research-calibrated</span> emitted only when this is loaded under <code>strict</code></span>
+        <span style="color:var(--n,#9a6700)">●</span> <span><b>new in R3</b> = <code>origin_priors</code> (calibrated Layer-3)</span>
+      </div>
+<pre><span class="c">// data/research_priors/priors.json  — mirrors the DefaultPriors surface 1:1, + origin_priors + provenance</span>
+{
+  <span class="k">"schema_version"</span>: "1.0",                <span class="c">// gates ingest</span>
+  <span class="k">"dataset_version"</span>: "sample-2026-06-24",  <span class="c">// → output provenance + determinism tuple</span>
+  <span class="k">"provenance"</span>: { "source": "SAMPLE / synthetic placeholder — not research-derived", "citations": [] },
+
+  <span class="c">// ── sampling priors (the DefaultPriors attribute surface, calibrated) ──</span>
+  <span class="k">"spectral_class_weights"</span>: { "M":0.74, "K":0.12, "G":0.076, "F":0.03, "A":0.006, "B":0.0013 },
+  <span class="k">"n_planet_dist"</span>: { "0":0.05, "1":0.10, "2":0.18, "3":0.20, "4":0.16, "5":0.12, "6":0.08, … },
+  <span class="k">"spacing_ratio"</span>: [1.4, 2.0],
+  <span class="k">"mass_by_zone"</span>: { "hot":[0.05,6.0], "hz":[0.10,8.0], "cold":[0.50,600.0], "far":[0.30,80.0] },
+  <span class="k">"moon_count"</span>: [0, 5],  <span class="k">"moon_mass_frac"</span>: [1e-5, 5e-4],
+
+  <span class="n">// ── NEW in R3 — calibrated Layer-3 formation-pathway priors ──</span>
+  <span class="n">"origin_priors"</span>: {
+    <span class="k">"giant_beyond_snow_line"</span>: [ {"pathway":"in_situ","plausibility":"high"}, {"pathway":"migrated","plausibility":"med"} ],
+    <span class="k">"giant_inside_snow_line"</span>: [ {"pathway":"migrated","plausibility":"high"}, {"pathway":"scattered","plausibility":"med"} ],
+    <span class="k">"terrestrial_in_mmr"</span>:     [ {"pathway":"migration_capture","plausibility":"high"} ]
+    <span class="c">// an omitted context → per-key fallback to the DefaultPriors heuristic (never an error)</span>
+  }
+}</pre>
+
+      <!-- ============ C. Generator: policy selector + badge flip ============ -->
+      <h2 style="margin-top:22px">System Generator — research-policy selector</h2>
+      <div class="sub">R2 panel, extended in place: a <b>Research policy</b> control. The only visible change under <code>strict</code> is the grounding badges flip and the dataset version is named — the physics layers (1/2/4) never carry a grounding.</div>
+
+      <div class="form">
+        <div class="row"><label class="k">Mode</label>
+          <span class="radio"><input type="radio" checked> Synthetic</span>
+          <span class="radio"><input type="radio"> Real anchor</span>
+        </div>
+        <div class="row"><label class="k">Seed</label><input type="number" value="88" style="width:120px">
+          <label class="k" style="width:auto">Spectral class</label><input type="text" value="K2V" style="width:90px">
+          <label class="k" style="width:auto">Planets</label><input type="number" value="6" style="width:70px"></div>
+        <div class="row"><label class="k">Research policy</label>
+          <select><option>permissive</option><option selected>strict</option></select>
+          <span class="note">strict + no priors loaded → curated error (no silent fallback)</span>
+        </div>
+        <div class="row"><label class="k"></label><button class="btn primary">Generate / Check Feasibility</button></div>
+      </div>
+
+      <div class="two">
+        <div class="col">
+          <div class="frame">
+            <div class="cap">policy = permissive  (today — byte-identical)</div>
+            <div class="bd">
+              <div class="banner def" style="margin-top:0">Synthetic system · realism priors = <b>DefaultPriors</b></div>
+              <table>
+                <tr><th>Planet</th><th>a (AU)</th><th>Type</th><th>Source</th></tr>
+                <tr><td>K2V b</td><td>0.21</td><td>rocky</td><td><span class="pill syn">synthetic</span></td></tr>
+                <tr><td>K2V c</td><td>0.58</td><td>super_earth</td><td><span class="pill syn">synthetic</span></td></tr>
+                <tr><td>K2V d</td><td>2.9</td><td>gas</td><td><span class="pill syn">synthetic</span></td></tr>
+              </table>
+              <div class="note">grounding: <span class="pill def">default-extrapolation</span> · notes: "All bodies synthetic; realism priors = DefaultPriors (grounding=default-extrapolation)."</div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="frame">
+            <div class="cap">policy = strict  (priors loaded)</div>
+            <div class="bd">
+              <div class="banner ok" style="margin-top:0">Synthetic system · realism priors = <b>ResearchPriors</b> (sample-2026-06-24)</div>
+              <table>
+                <tr><th>Planet</th><th>a (AU)</th><th>Type</th><th>Source</th></tr>
+                <tr><td>K2V b</td><td>0.19</td><td>rocky</td><td><span class="pill syn">synthetic</span></td></tr>
+                <tr><td>K2V c</td><td>0.49</td><td>rocky</td><td><span class="pill syn">synthetic</span></td></tr>
+                <tr><td>K2V d</td><td>3.4</td><td>gas</td><td><span class="pill syn">synthetic</span></td></tr>
+              </table>
+              <div class="note">grounding: <span class="pill res">research-calibrated (sample-2026-06-24)</span> · sampling drawn from the dataset (mass/spacing/count differ — deterministically)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="banner bad" style="max-width:760px">policy = strict, <b>no priors loaded</b> → {"error": "research_policy='strict' requires research priors — run the Import Research Priors utility."} &nbsp;(exit 1, no fabricated tag)</div>
+
+      <!-- ============ D. Layer-3 calibration ============ -->
+      <h3>Layer-3 origin narrative — calibrated under strict</h3>
+      <div class="two">
+        <div class="col"><div class="frame"><div class="cap">permissive — heuristic</div><div class="bd">
+          <table>
+            <tr><th>Pathway</th><th>Plausibility</th><th>Grounding</th></tr>
+            <tr><td>in_situ</td><td>med</td><td><span class="pill def">default-extrapolation</span></td></tr>
+            <tr><td>migrated</td><td>low</td><td><span class="pill def">default-extrapolation</span></td></tr>
+          </table>
+        </div></div></div>
+        <div class="col"><div class="frame"><div class="cap">strict — from origin_priors[giant_beyond_snow_line]</div><div class="bd">
+          <table>
+            <tr><th>Pathway</th><th>Plausibility</th><th>Grounding</th></tr>
+            <tr><td>in_situ</td><td>high</td><td><span class="pill res">research-calibrated</span></td></tr>
+            <tr><td>migrated</td><td>med</td><td><span class="pill res">research-calibrated</span></td></tr>
+          </table>
+          <div class="note">a context the dataset omits → falls back per-key to the heuristic (still <span class="pill def">default-extrapolation</span> for that one row)</div>
+        </div></div></div>
+      </div>
+
+      <!-- ============ E. DbStatus row ============ -->
+      <h3>Database Table Status (opt 57) — appended row</h3>
+      <table style="max-width:620px">
+        <tr><th>Table / File</th><th>Rows / Size</th><th>Status</th></tr>
+        <tr><td>gcns_stars</td><td>331,312</td><td>Present</td></tr>
+        <tr><td>hypatia_cache</td><td>14,085</td><td>Present</td></tr>
+        <tr><td>data/dust/leike_2020/mean_std.h5</td><td>2,412 MB</td><td>Present</td></tr>
+        <tr><td><b>research priors (sample-2026-06-24)</b></td><td>schema 1.0</td><td>Loaded</td></tr>
+      </table>
+      <div class="note">pure-pathlib/JSON status read (no ResearchPriors import needed) — exactly how the dust-map files are reported.</div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>

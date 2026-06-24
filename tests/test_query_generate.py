@@ -193,5 +193,66 @@ class GenerateSystemConstraintErrors(unittest.TestCase):
         self.assertIn("error", payload)
 
 
+# ── R3-C6 · --research-policy subprocess contract ────────────────────────────
+import shutil
+import tempfile
+
+from core.research_priors import compute_research_priors_ingest
+
+_SAMPLE_FIX = str(_REPO / "tests" / "fixtures" / "research_priors_sample.json")
+
+
+def _run_priors(cache_dir, *cmd_args):
+    """Run query.py with SPACE_RESEARCH_PRIORS_DIR pointed at cache_dir."""
+    env = {**_ENV, "SPACE_RESEARCH_PRIORS_DIR": cache_dir}
+    proc = subprocess.run(
+        [sys.executable, str(_REPO / "query.py"), *cmd_args],
+        capture_output=True, text=True, cwd=str(_REPO), env=env,
+    )
+    try:
+        payload = json.loads(proc.stdout)
+    except Exception:
+        payload = None
+    return proc.returncode, payload, proc.stderr
+
+
+class GenerateSystemResearchPolicy(unittest.TestCase):
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def test_permissive_equals_no_flag(self):
+        base = ("generate-system", "--seed", "88", "--spectral-class", "K2V", "--planets", "5")
+        c0, a, _ = _run(*base)
+        c1, b, _ = _run(*base, "--research-policy", "permissive")
+        self.assertEqual((c0, c1), (0, 0))
+        self.assertEqual(a, b)
+        self.assertEqual(a["star"]["grounding"], "default-extrapolation")
+
+    def test_strict_with_cache(self):
+        res = compute_research_priors_ingest(path=_SAMPLE_FIX, cache_dir=self.cache)
+        self.assertNotIn("error", res)
+        code, payload, _ = _run_priors(
+            self.cache, "generate-system", "--seed", "88",
+            "--spectral-class", "K2V", "--planets", "5", "--research-policy", "strict")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["star"]["grounding"], "research-calibrated")
+        self.assertTrue(any("sample-2026-06-24" in n for n in payload["notes"]))
+
+    def test_strict_without_cache_exit1(self):
+        code, payload, _ = _run_priors(
+            self.cache, "generate-system", "--seed", "1",
+            "--spectral-class", "K2V", "--planets", "3", "--research-policy", "strict")
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
+        self.assertIn("strict", payload["error"])
+
+    def test_bad_policy_exit2(self):
+        code, payload, err = _run("generate-system", "--seed", "1",
+                                  "--spectral-class", "K2V", "--research-policy", "bogus")
+        self.assertEqual(code, 2)
+        self.assertIsNone(payload)
+
+
 if __name__ == "__main__":
     unittest.main()

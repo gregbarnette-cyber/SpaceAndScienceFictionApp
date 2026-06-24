@@ -319,6 +319,31 @@ def _create_schema(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_hyp_cache_teff ON hypatia_cache(teff);
         CREATE INDEX IF NOT EXISTS idx_hyp_cache_ly   ON hypatia_cache(light_years);
         CREATE INDEX IF NOT EXISTS idx_hyp_abund_elem ON hypatia_abundance(element, mean);
+
+        -- Project Workspaces (Phase S). Two additive, NOT-auto-seeded tables: a
+        -- named project collects real (looked-up) + procedurally-generated systems
+        -- with freeform notes, exported as one multi-system dossier. A generated
+        -- member stores its generate_system PARAMS (generated_spec JSON) so it
+        -- re-creates byte-identically (the R determinism contract), never a frozen
+        -- body. Mutations are GUI-only; query.py exposes read-only project-list /
+        -- project-get.
+        CREATE TABLE IF NOT EXISTS projects (
+            project_id   INTEGER PRIMARY KEY,
+            name         TEXT UNIQUE NOT NULL,
+            description  TEXT,
+            created_date TEXT
+        );
+        CREATE TABLE IF NOT EXISTS project_members (
+            project_id     INTEGER NOT NULL,
+            star_name      TEXT NOT NULL,
+            note           TEXT,
+            source         TEXT NOT NULL,        -- 'looked_up' | 'generated'
+            generated_seed INTEGER,              -- generated only (display convenience)
+            generated_spec TEXT,                 -- generated only: JSON of the generate_system params
+            added_date     TEXT,
+            PRIMARY KEY (project_id, star_name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_members_pid ON project_members(project_id);
     """)
     conn.commit()
     _migrate_schema(conn)
@@ -526,6 +551,8 @@ def get_table_status() -> list:
         ("dwarf_planets",      "Dwarf Planets"),
         ("asteroids",          "Asteroids"),
         ("honorverse_hyper",   "Honorverse Hyper Limits"),
+        ("projects",           "Projects"),
+        ("project_members",    "Project Members"),
     ]
     result = []
     for table, label in tables:

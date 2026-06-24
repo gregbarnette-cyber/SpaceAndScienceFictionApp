@@ -17,6 +17,7 @@ import core.dust_routing as dust_routing
 import core.equations as equations
 import core.feasibility as feasibility
 import core.generate as generate
+import core.projects as projects
 import core.regions as regions
 import core.report as report
 import core.science as science
@@ -367,6 +368,16 @@ def cmd_ice_lines(args):
 # offline reference-origin path. Bad fmt/section or a SIMBAD-lookup failure → {"error"} exit 1.
 def cmd_dossier(args):
     _out(report.build_system_dossier(args.star, sections=args.sections, fmt=args.fmt))
+
+
+# Phase S — project workspaces (read-only; mutations are GUI-only). Local-DB reads,
+# no network. project-get on an unknown name → {"error"} exit 1.
+def cmd_project_list(args):
+    _out({"projects": projects.list_projects()})
+
+
+def cmd_project_get(args):
+    _out(projects.get_project(args.name))
 
 
 # ── Velocity & constant-speed travel converters (opts 25–28, 31, 32) ──────────
@@ -756,6 +767,7 @@ def cmd_generate_system(args):
         constraints=constraints or None,
         companion=companion,
         nbody=args.nbody,
+        research_policy=args.research_policy,
     ))
 
 
@@ -1503,6 +1515,17 @@ def main():
                         "(default: all available; 'moons' is Sol-only opt-in)")
     p.set_defaults(func=cmd_dossier)
 
+    # project-list (Phase S — read-only)
+    p = sub.add_parser("project-list",
+                       help="List project workspaces (name, description, member count)")
+    p.set_defaults(func=cmd_project_list)
+
+    # project-get (Phase S — read-only)
+    p = sub.add_parser("project-get",
+                       help="A project workspace + its members (generated_spec echoed parsed)")
+    p.add_argument("--name", required=True, help="Project name")
+    p.set_defaults(func=cmd_project_get)
+
     # generate-system
     p = sub.add_parser("generate-system",
                        help="Procedurally generate a planetary system (synthetic or real-anchor)")
@@ -1525,6 +1548,10 @@ def main():
                    help="Multi-star companion hint 'mass_solar,sma_au[,ecc]' for S/P-type checks")
     p.add_argument("--nbody", dest="nbody", action="store_true",
                    help="N-body confirmation of marginal packing verdicts (opt-in)")
+    p.add_argument("--research-policy", dest="research_policy",
+                   choices=("permissive", "strict"), default="permissive",
+                   help="permissive (default; DefaultPriors) | strict (research-calibrated "
+                        "priors — requires an ingested dataset, else a curated error)")
     p.set_defaults(func=cmd_generate_system)
 
     args = parser.parse_args()

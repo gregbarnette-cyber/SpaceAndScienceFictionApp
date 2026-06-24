@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phase S — Project Workspaces (mockup)</title>
+<style>
+  :root{
+    --bg:#f5f5f5; --panel:#ffffff; --line:#c8c8c8; --line2:#e2e2e2;
+    --ink:#222; --muted:#666; --accent:#2b6cb0; --accent2:#1a4e84;
+    --looked:#1f7a3d; --gen:#2b6cb0; --chip:#eef2f7;
+    --ok:#155f33; --okbg:#e7f6ec; --okln:#aedcbd;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#dcdcdc;font-family:"Segoe UI",system-ui,Arial,sans-serif;color:var(--ink);font-size:13px}
+  .app{max-width:1180px;margin:18px auto;background:var(--bg);border:1px solid #b5b5b5;border-radius:6px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+  .titlebar{background:linear-gradient(#fbfbfb,#ececec);border-bottom:1px solid var(--line);padding:7px 12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .titlebar .dot{width:11px;height:11px;border-radius:50%;background:#e0524d;box-shadow:18px 0 #e3b341,36px 0 #5bbf5b;margin-right:34px}
+  .body{display:flex;min-height:660px}
+  .nav{width:206px;background:#efefef;border-right:1px solid var(--line);padding:8px 0;font-size:12.5px}
+  .nav .cat{color:var(--muted);padding:8px 14px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  .nav .item{padding:5px 14px 5px 24px;color:#333}
+  .nav .item.active{background:#d6e6f7;border-left:3px solid var(--accent);padding-left:21px;font-weight:600;color:var(--accent2)}
+  .main{flex:1;padding:14px 18px;overflow:auto}
+  h2{margin:0 0 4px;font-size:16px}
+  h3{margin:16px 0 6px;font-size:13.5px}
+  .sub{color:var(--muted);margin-bottom:12px;font-size:12px}
+  .note{color:var(--muted);font-size:11.5px;margin:5px 0 0}
+  .btn{padding:5px 12px;border:1px solid #9fb6cf;background:linear-gradient(#fafcff,#e8f0fb);border-radius:4px;cursor:default;font-size:12.5px}
+  .btn.primary{border-color:#2b6cb0;background:linear-gradient(#3d86d6,#2b6cb0);color:#fff;font-weight:600}
+  .btn.small{padding:3px 9px;font-size:12px}
+  .pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .pill.looked{background:#e7f6ec;color:var(--looked);border:1px solid #aedcbd}
+  .pill.gen{background:#e6effa;color:var(--gen);border:1px solid #a9c6e6}
+  .tag{font-size:10.5px;color:#fff;background:#7a869a;border-radius:3px;padding:1px 5px;margin-left:6px}
+
+  .md{display:flex;gap:14px}
+  .col-list{width:240px;flex:none}
+  .col-detail{flex:1}
+  .frame{border:1px solid var(--line);border-radius:5px;overflow:hidden;background:var(--panel)}
+  .frame .cap{background:#f0f3f7;border-bottom:1px solid var(--line2);padding:6px 10px;font-weight:600;font-size:12px;display:flex;align-items:center;gap:6px}
+  .frame .cap .sp{flex:1}
+  .frame .bd{padding:8px 10px}
+  .plist .row{padding:6px 8px;border-radius:4px;cursor:default;display:flex;justify-content:space-between;align-items:center}
+  .plist .row.sel{background:#d6e6f7;font-weight:600;color:var(--accent2)}
+  .plist .cnt{color:#789;font-size:11px;font-weight:400}
+  table{border-collapse:collapse;width:100%;font-size:12px;margin:4px 0}
+  th,td{border:1px solid var(--line2);padding:5px 8px;text-align:left;vertical-align:top}
+  th{background:#f0f3f7}
+  td .edit{outline:1px dashed #b9c6d6;background:#fffef5;border-radius:2px;padding:0 3px}
+  .toolbar{display:flex;gap:8px;align-items:center;margin:8px 0 2px;flex-wrap:wrap}
+
+  .menu{display:inline-block;border:1px solid var(--line);border-radius:5px;background:#fff;font-size:12px;min-width:210px;box-shadow:0 4px 14px rgba(0,0,0,.14)}
+  .menu .mi{padding:6px 10px;border-bottom:1px solid var(--line2);cursor:default}
+  .menu .mi:last-child{border-bottom:none}
+  .menu .mi.add{color:var(--accent2);font-weight:600}
+  pre{margin:0;background:#0b1020;color:#cfe3ff;border-radius:5px;padding:11px 13px;font-size:11.5px;line-height:1.45;overflow:auto;border:1px solid #1a2448}
+  pre .c{color:#7fa9cc}
+  pre .k{color:#9fd0ff}
+  .two{display:flex;gap:14px;flex-wrap:wrap}
+  .two > div{flex:1;min-width:340px}
+  .dialog{border:1px solid #9aa6b8;border-radius:6px;background:#fff;box-shadow:0 8px 26px rgba(0,0,0,.22);max-width:420px}
+  .dialog .hd{background:linear-gradient(#fbfbfb,#eee);border-bottom:1px solid var(--line);padding:7px 11px;font-weight:600}
+  .dialog .bd{padding:11px 13px}
+  .radio{display:block;margin:5px 0}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar"><span class="dot"></span>Space &amp; Science Fiction App — Phase S mockup (project workspaces)</div>
+  <div class="body">
+    <div class="nav">
+      <div class="cat">Generator</div>
+      <div class="item">System Generator</div>
+      <div class="cat">Reports</div>
+      <div class="item">System Dossier Export</div>
+      <div class="cat">Projects <span class="tag">S</span></div>
+      <div class="item active">Project Workspace</div>
+      <div class="cat">Utilities</div>
+      <div class="item">Database Table Status</div>
+    </div>
+
+    <div class="main">
+      <h2>Project Workspace <span class="tag">Phase S</span></h2>
+      <div class="sub">Named projects collect real (looked-up) + procedurally-generated systems with notes, then export as one multi-system dossier. Mutations are GUI-only; <code>query.py project-list / project-get</code> are read-only.</div>
+
+      <!-- master-detail -->
+      <div class="md">
+        <div class="col-list">
+          <div class="frame">
+            <div class="cap"><span class="sp">Projects</span><button class="btn small">+ New</button></div>
+            <div class="bd plist">
+              <div class="row sel">The Frontier Campaign <span class="cnt">7</span></div>
+              <div class="row">Novel — Ashfall <span class="cnt">3</span></div>
+              <div class="row">Local Bubble setting <span class="cnt">12</span></div>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="btn small">Rename</button>
+            <button class="btn small">Delete</button>
+          </div>
+          <div class="note">Delete cascades to its members (one transaction).</div>
+        </div>
+
+        <div class="col-detail">
+          <div class="frame">
+            <div class="cap"><span class="sp">The Frontier Campaign — 7 systems</span>
+              <button class="btn small primary">Export Project Dossier</button></div>
+            <div class="bd">
+              <table>
+                <tr><th>Star</th><th>Note (double-click to edit)</th><th>Source</th><th>Added</th><th></th></tr>
+                <tr><td>Tau Ceti</td><td><span class="edit">capital world; 5-planet system</span></td>
+                    <td><span class="pill looked">looked-up</span></td><td>2026-06-24</td>
+                    <td><button class="btn small">Open</button> <button class="btn small">✕</button></td></tr>
+                <tr><td>Epsilon Eridani</td><td><span class="edit">contested border</span></td>
+                    <td><span class="pill looked">looked-up</span></td><td>2026-06-24</td>
+                    <td><button class="btn small">Open</button> <button class="btn small">✕</button></td></tr>
+                <tr><td>Gen-4173</td><td><span class="edit">the "lost colony" — K2V, 6 planets</span></td>
+                    <td><span class="pill gen">generated · seed 4173</span></td><td>2026-06-24</td>
+                    <td><button class="btn small">Open</button> <button class="btn small">✕</button></td></tr>
+                <tr><td>Gen-88</td><td><span class="edit">pirate haven (strict priors)</span></td>
+                    <td><span class="pill gen">generated · seed 88</span></td><td>2026-06-24</td>
+                    <td><button class="btn small">Open</button> <button class="btn small">✕</button></td></tr>
+              </table>
+              <div class="note">"Open" → real members embed a SIMBAD panel; generated members re-run <code>generate_system(spec)</code> (byte-identical) in a generator view. Notes are plain-text, inline-edited.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- entry points + export dialog -->
+      <h3>Entry points (additive — ≤1 button per panel) &amp; export</h3>
+      <div class="two">
+        <div>
+          <div class="frame">
+            <div class="cap">SIMBAD Lookup / System Generator → "Add to project ▾"</div>
+            <div class="bd">
+              <div class="menu">
+                <div class="mi">The Frontier Campaign</div>
+                <div class="mi">Novel — Ashfall</div>
+                <div class="mi">Local Bubble setting</div>
+                <div class="mi add">+ New project…</div>
+              </div>
+              <div class="note">SIMBAD → <code>add_member(source="looked_up")</code>. Generator → stores the current generation <b>spec</b> (seed + params) → <code>add_member(source="generated", seed, spec)</code>.</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="dialog">
+            <div class="hd">Export Project Dossier — The Frontier Campaign</div>
+            <div class="bd">
+              <div><b>Format</b></div>
+              <label class="radio"><input type="radio" checked> Markdown &nbsp; <input type="radio"> HTML &nbsp; <input type="radio"> JSON</label>
+              <div style="margin-top:6px"><b>Layout</b></div>
+              <label class="radio"><input type="radio" checked> One combined document (all 7 systems)</label>
+              <label class="radio"><input type="radio"> One file per system (Q-batch style)</label>
+              <div style="margin-top:6px"><b>Sections</b> <span class="note">(Q <code>--sections</code>: identity · regions · habitable_zone · planets · hypatia · gcns)</span></div>
+              <div style="text-align:right;margin-top:10px"><button class="btn">Cancel</button> <button class="btn primary">Export</button></div>
+              <div class="note">Real members → <code>build_system_dossier(name)</code>; generated members → the new <code>build_generated_dossier(result)</code> (the R→Q "Send to Dossier" link, finally built in S). Background thread (real members hit the network).</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- data model -->
+      <h3>Data model — two additive tables (not auto-seeded) + the generated spec</h3>
+<pre><span class="c">-- core/db.py (_migrate_schema — idempotent; existing DBs pick these up)</span>
+CREATE TABLE IF NOT EXISTS <span class="k">projects</span> (
+    project_id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_date TEXT);
+CREATE TABLE IF NOT EXISTS <span class="k">project_members</span> (
+    project_id INTEGER, star_name TEXT, note TEXT,
+    source TEXT,                 <span class="c">-- 'looked_up' | 'generated'</span>
+    generated_seed INTEGER,      <span class="c">-- display convenience (generated only)</span>
+    generated_spec TEXT,         <span class="c">-- JSON: the FULL generate_system params → faithful re-creation</span>
+    added_date TEXT, PRIMARY KEY (project_id, star_name));
+
+<span class="c">// generated_spec — a generated member reproduces byte-identically (R determinism):</span>
+{ <span class="k">"seed"</span>:88, <span class="k">"mode"</span>:"synthetic", <span class="k">"spectral_class"</span>:"K2V", <span class="k">"n_planets"</span>:6,
+  <span class="k">"anchor_star"</span>:null, <span class="k">"constraints"</span>:null, <span class="k">"companion"</span>:null, <span class="k">"research_policy"</span>:"permissive" }</pre>
+      <div class="note">Storing the <b>spec</b> (not a frozen body) means a member never drifts from the generator, and a <code>research_policy:"strict"</code> member honestly records its dataset dependency. (Brainstorm stored only the bare seed — insufficient, since class/count are sampled and constraints/anchor change everything; see mockup §4 / D1.)</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

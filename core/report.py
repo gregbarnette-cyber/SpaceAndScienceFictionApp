@@ -750,3 +750,326 @@ def build_system_dossier(star, sections=None, fmt="markdown"):
     document = render(star, rendered, data, warnings, notes)
     return {"star": star, "fmt": fmt, "sections": rendered,
             "warnings": warnings, "notes": notes, "document": document}
+
+
+# ── Generated-system dossier (Phase S-C2 — the R→Q "Send to Dossier" link) ────
+#
+# Renders a core.generate.generate_system result dict as a dossier document. Pure
+# composition — NO re-analysis, no SIMBAD (a generated/synthetic name like "Gen-88"
+# would not resolve, which is exactly why build_system_dossier can't serve these).
+# Its own small section vocabulary + a self-contained renderer (it deliberately
+# does NOT touch _SECTION_BLOCKS / _render_markdown / _render_html, which are
+# guarded byte-identical for build_system_dossier).
+
+_GEN_SECTION_ORDER = ["identity", "star", "planets", "feasibility"]
+
+
+def _gen_identity_data(result):
+    star = result.get("star") or {}
+    return {
+        "name": star.get("name"),
+        "mode": result.get("mode"),
+        "seed": result.get("seed"),
+        "anchor_star": result.get("anchor_star"),
+        "spectral_class": star.get("spectral_class"),
+        "source": star.get("source"),
+        "grounding": star.get("grounding"),
+        "multiplicity": (star.get("multiplicity") or {}).get("note")
+        if isinstance(star.get("multiplicity"), dict) else None,
+    }
+
+
+def _gen_star_data(result):
+    s = result.get("star") or {}
+    return {
+        "teff": s.get("teff"), "mass_solar": s.get("mass_solar"),
+        "radius_solar": s.get("radius_solar"), "luminosity": s.get("luminosity"),
+        "hz_inner_au": s.get("hz_inner_au"), "hz_outer_au": s.get("hz_outer_au"),
+        "hz_opt_inner_au": s.get("hz_opt_inner_au"), "hz_opt_outer_au": s.get("hz_opt_outer_au"),
+        "snow_line_au": s.get("snow_line_au"),
+    }
+
+
+def _gen_planets_data(result):
+    return {"planets": list(result.get("planets") or [])}
+
+
+def _gen_feasibility_data(result):
+    return {"feasible": result.get("feasible"),
+            "constraints": list(result.get("constraints") or [])}
+
+
+def _gen_blocks_identity(d):
+    rows = [
+        ["Name", d.get("name")],
+        ["Mode", d.get("mode")],
+        ["Seed", d.get("seed")],
+        ["Spectral class", d.get("spectral_class")],
+        ["Source", d.get("source")],
+        ["Grounding", d.get("grounding")],
+    ]
+    if d.get("anchor_star"):
+        rows.insert(2, ["Anchor star", d["anchor_star"]])
+    if d.get("multiplicity"):
+        rows.append(["Multiplicity", d["multiplicity"]])
+    return "Identity", [("kv", rows)]
+
+
+def _gen_blocks_star(d):
+    rows = [
+        ["Effective temperature (K)", _n(d.get("teff"), 1)],
+        ["Mass (M☉)", _n(d.get("mass_solar"), 4)],
+        ["Radius (R☉)", _n(d.get("radius_solar"), 4)],
+        ["Luminosity (L☉)", _n(d.get("luminosity"), 6)],
+        ["Conservative HZ (AU)", f"{_n(d.get('hz_inner_au'))} – {_n(d.get('hz_outer_au'))}"],
+        ["Optimistic HZ (AU)", f"{_n(d.get('hz_opt_inner_au'))} – {_n(d.get('hz_opt_outer_au'))}"],
+        ["Snow line (AU)", _n(d.get("snow_line_au"))],
+    ]
+    return "Star", [("kv", rows)]
+
+
+def _gen_blocks_planets(d):
+    planets = d.get("planets") or []
+    if not planets:
+        return "Planets", [("em", "No planets.")]
+    headers = ["#", "Name", "a (AU)", "Mass (M⊕)", "Radius (R⊕)", "Type",
+               "T_eq (K)", "In HZ", "Source", "Moons"]
+    rows = []
+    for i, p in enumerate(planets, 1):
+        rows.append([
+            i, p.get("name"), _n(p.get("a_au")), _n(p.get("mass_earth"), 2),
+            _n(p.get("radius_earth"), 2), p.get("type"), _n(p.get("t_eq_k"), 1),
+            "Yes" if p.get("in_hz") else "No", p.get("source"),
+            len(p.get("moons") or []),
+        ])
+    return "Planets", [("table", headers, rows)]
+
+
+def _gen_blocks_feasibility(d):
+    blocks = [("strong", "Overall: " + ("feasible" if d.get("feasible") else "not feasible"))]
+    cons = d.get("constraints") or []
+    if cons:
+        headers = ["Constraint", "Type", "Verdict", "Why", "Mechanism"]
+        rows = []
+        for c in cons:
+            l1 = c.get("layer1") or {}
+            l2 = c.get("layer2") or {}
+            rows.append([c.get("id"), c.get("type"), c.get("verdict"),
+                         l1.get("reason"), l2.get("mechanism")])
+        blocks.append(("table", headers, rows))
+    return "Feasibility", blocks
+
+
+_GEN_SECTION_BLOCKS = {
+    "identity": _gen_blocks_identity,
+    "star": _gen_blocks_star,
+    "planets": _gen_blocks_planets,
+    "feasibility": _gen_blocks_feasibility,
+}
+_GEN_SECTION_DATA = {
+    "identity": _gen_identity_data,
+    "star": _gen_star_data,
+    "planets": _gen_planets_data,
+    "feasibility": _gen_feasibility_data,
+}
+
+
+def _render_generated(star, rendered, data, warnings, notes, fmt):
+    if fmt == "html":
+        body = [f"<h1>{_esc(star)} — Generated System Dossier</h1>",
+                f"<p><em>Generated by Space &amp; Science Fiction App (procedural) · "
+                f"sections: {_esc(', '.join(rendered))}</em></p>"]
+        for key in rendered:
+            body.append(_html_section(*_GEN_SECTION_BLOCKS[key](data[key])))
+        foot = [f"<p>End of dossier · {len(warnings)} warning(s) · {len(notes)} note(s).</p>"]
+        foot += [f'<p class="warn">⚠ {_esc(w)}</p>' for w in warnings]
+        foot += [f'<p class="note">ℹ {_esc(n)}</p>' for n in notes]
+        body.append("<footer>" + "\n".join(foot) + "</footer>")
+        return (f"<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+                f"<title>{_esc(star)} — Generated System Dossier</title>{_HTML_STYLE}"
+                f"</head><body>\n" + "\n".join(body) + "\n</body></html>")
+    parts = [f"# {star} — Generated System Dossier",
+             "*Generated by Space & Science Fiction App (procedural) · sections: "
+             + ", ".join(rendered) + "*"]
+    for key in rendered:
+        parts.append(_md_section(*_GEN_SECTION_BLOCKS[key](data[key])))
+    footer = f"*End of dossier · {len(warnings)} warning(s) · {len(notes)} note(s).*"
+    if warnings:
+        footer += "\n\n" + "\n".join(f"> ⚠ {w}" for w in warnings)
+    if notes:
+        footer += "\n\n" + "\n".join(f"> ℹ {n}" for n in notes)
+    parts.append(footer)
+    return "\n\n".join(parts)
+
+
+def build_generated_dossier(result, sections=None, fmt="markdown"):
+    """Render a ``generate_system`` result dict as a dossier (the R→Q link, S-C2).
+
+    Pure composition over the already-generated dict — no SIMBAD, no re-analysis.
+    Returns one of:
+      - {"star", "fmt", "mode", "seed", "sections", "warnings", "notes", "document"}  (md/html)
+      - {"star", "fmt": "json", "mode", "seed", "sections", "warnings", "notes", "data"}  (json)
+      - {"error": str}  (bad fmt/section, or a result that isn't a generated system)
+
+    The ``feasibility`` section is available only when the result carries
+    ``constraints`` (Phase R2 feasibility mode); requesting it otherwise drops it
+    with a note (never an error). ``sections`` defaults to all available.
+    """
+    if fmt not in _FORMATS:
+        return {"error": f"unknown format '{fmt}' (valid: {', '.join(sorted(_FORMATS))})"}
+    if not isinstance(result, dict) or "error" in result:
+        return {"error": "not a valid generated-system result"}
+    if "star" not in result or "planets" not in result:
+        return {"error": "result is not a generate_system output (missing star/planets)"}
+    if sections is not None:
+        bad = [s for s in sections if s not in _GEN_SECTION_ORDER]
+        if bad:
+            return {"error": f"unknown section '{bad[0]}' "
+                             f"(valid: {', '.join(_GEN_SECTION_ORDER)})"}
+
+    has_feasibility = "constraints" in result
+    requested = list(sections) if sections else list(_GEN_SECTION_ORDER)
+    warnings = list(result.get("warnings") or [])
+    notes = list(result.get("notes") or [])
+
+    rendered = []
+    for key in _GEN_SECTION_ORDER:
+        if key not in requested:
+            continue
+        if key == "feasibility" and not has_feasibility:
+            notes.append("feasibility: no constraints in this result (nothing to evaluate)")
+            continue
+        rendered.append(key)
+
+    data = {k: _GEN_SECTION_DATA[k](result) for k in rendered}
+    star_name = (result.get("star") or {}).get("name") or "Generated system"
+
+    if fmt == "json":
+        return {"star": star_name, "fmt": "json", "mode": result.get("mode"),
+                "seed": result.get("seed"), "sections": rendered,
+                "warnings": warnings, "notes": notes,
+                "data": {k: data[k] for k in rendered}}
+
+    document = _render_generated(star_name, rendered, data, warnings, notes, fmt)
+    return {"star": star_name, "fmt": fmt, "mode": result.get("mode"),
+            "seed": result.get("seed"), "sections": rendered,
+            "warnings": warnings, "notes": notes, "document": document}
+
+
+# ── Project dossier (Phase S-C5 — fan Q/the generated composer over a project) ─
+
+def _html_inner(doc):
+    """Return the <body> contents of a self-contained dossier HTML doc (for merging)."""
+    lo = doc.find("<body>")
+    hi = doc.rfind("</body>")
+    if lo != -1 and hi != -1:
+        return doc[lo + len("<body>"):hi].strip()
+    return doc
+
+
+def _member_dossier(member, sections, fmt):
+    """Render one project member: real → build_system_dossier; generated →
+    re-run generate_system(spec) → build_generated_dossier. (`sections` is the Q
+    vocabulary, applied to real members only; generated members render in full.)"""
+    if member.get("source") == "generated":
+        from core.generate import generate_from_spec   # function-local (one-way dep)
+        spec = member.get("generated_spec") or {"seed": member.get("generated_seed")}
+        res = generate_from_spec(spec)
+        if isinstance(res, dict) and "error" in res:
+            return {"error": res["error"]}
+        return build_generated_dossier(res, fmt=fmt)
+    return build_system_dossier(member["star_name"], sections=sections, fmt=fmt)
+
+
+def build_project_dossier(project_name, sections=None, fmt="markdown", combined=True):
+    """Compose a whole project workspace as a dossier (the Phase S export fan-out).
+
+    Real members → Q's ``build_system_dossier``; generated members → the R→Q
+    ``build_generated_dossier`` (re-created from the stored spec). Returns:
+      - combined md/html: {project, fmt, combined:True, members:[{star_name, source,
+        ok}], document, warnings}
+      - combined json:    {project, fmt:"json", combined:True, members:[...], data}
+      - per-file (any fmt): {project, fmt, combined:False, members:[{star_name,
+        source, ok, document|data|error}], warnings}
+      - {"error": str} for an unknown project / bad fmt.
+    A per-member failure is isolated (that member ``ok=False`` + its error + a
+    top-level warning); it never aborts the export. ``sections`` is the Q vocabulary
+    (real members); generated members always render in full.
+    """
+    if fmt not in _FORMATS:
+        return {"error": f"unknown format '{fmt}' (valid: {', '.join(sorted(_FORMATS))})"}
+    from core.projects import get_project            # function-local (one-way dep)
+    proj = get_project(project_name)
+    if "error" in proj:
+        return proj
+    name = proj["project"]["name"]
+    desc = proj["project"].get("description") or ""
+
+    rendered, warnings = [], []
+    for m in proj["members"]:
+        r = _member_dossier(m, sections, fmt)
+        entry = {"star_name": m["star_name"], "source": m.get("source")}
+        if isinstance(r, dict) and "error" in r:
+            entry["ok"] = False
+            entry["error"] = r["error"]
+            warnings.append(f"{m['star_name']}: {r['error']}")
+        else:
+            entry["ok"] = True
+            entry["result"] = r
+        rendered.append(entry)
+
+    ok = [e for e in rendered if e["ok"]]
+
+    if not combined:
+        members = []
+        for e in rendered:
+            row = {"star_name": e["star_name"], "source": e["source"], "ok": e["ok"]}
+            if not e["ok"]:
+                row["error"] = e["error"]
+            elif fmt == "json":
+                row["data"] = e["result"].get("data")
+            else:
+                row["document"] = e["result"].get("document")
+            members.append(row)
+        return {"project": name, "fmt": fmt, "combined": False,
+                "members": members, "warnings": warnings}
+
+    # combined
+    member_summ = [{"star_name": e["star_name"], "source": e["source"], "ok": e["ok"]}
+                   for e in rendered]
+    if fmt == "json":
+        data = {"project": proj["project"],
+                "members": [{"star_name": e["star_name"], "source": e["source"],
+                             "data": e["result"].get("data")} for e in ok]}
+        return {"project": name, "fmt": "json", "combined": True,
+                "members": member_summ, "warnings": warnings, "data": data}
+
+    if fmt == "html":
+        parts = [f"<h1>{_esc(name)} — Project Dossier</h1>"]
+        if desc:
+            parts.append(f"<p><em>{_esc(desc)}</em></p>")
+        parts.append(f"<p>{len(ok)} of {len(rendered)} system(s).</p>")
+        for e in ok:
+            parts.append("<hr>")
+            parts.append(_html_inner(e["result"]["document"]))
+        if warnings:
+            parts.append("<hr>")
+            parts += [f'<p class="warn">⚠ {_esc(w)}</p>' for w in warnings]
+        document = (f"<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+                    f"<title>{_esc(name)} — Project Dossier</title>{_HTML_STYLE}"
+                    f"</head><body>\n" + "\n".join(parts) + "\n</body></html>")
+    else:  # markdown
+        parts = [f"# {name} — Project Dossier"]
+        if desc:
+            parts.append(f"*{desc}*")
+        parts.append(f"*{len(ok)} of {len(rendered)} system(s).*")
+        for e in ok:
+            parts.append("---")
+            parts.append(e["result"]["document"])
+        if warnings:
+            parts.append("---")
+            parts += [f"> ⚠ {w}" for w in warnings]
+        document = "\n\n".join(parts)
+
+    return {"project": name, "fmt": fmt, "combined": True,
+            "members": member_summ, "warnings": warnings, "document": document}

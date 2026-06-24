@@ -507,5 +507,93 @@ class TestRealAnchor(unittest.TestCase):
         self.assertIn("error", r)
 
 
+# ── R3-C4 · research_policy wiring through generation ─────────────────────────
+import os
+import shutil
+import tempfile
+
+from core.research_priors import compute_research_priors_ingest
+
+_FIX_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
+_IDENTITY_FIX = os.path.join(_FIX_DIR, "research_priors_identity.json")
+_SAMPLE_FIX = os.path.join(_FIX_DIR, "research_priors_sample.json")
+
+
+class TestResearchPolicyWiring(unittest.TestCase):
+    """The research_policy seam through core/generate.py (offline)."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _ingest(self, fixture):
+        res = compute_research_priors_ingest(path=fixture, cache_dir=self.cache)
+        self.assertNotIn("error", res)
+
+    def _strict(self, **kw):
+        # Point the provider's default cache at our tmp cache, then run strict.
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return generate_system(research_policy="strict", **kw)
+
+    # ── permissive is the unchanged R1 path ──
+    def test_default_equals_explicit_permissive(self):
+        a = generate_system(7, spectral_class="K2V", n_planets=5)
+        b = generate_system(7, spectral_class="K2V", n_planets=5,
+                            research_policy="permissive")
+        self.assertEqual(a, b)
+        self.assertEqual(a["star"]["grounding"], "default-extrapolation")
+        self.assertIn("DefaultPriors (grounding=default-extrapolation)", a["notes"][0])
+
+    def test_unknown_policy_errors(self):
+        r = generate_system(7, spectral_class="K2V", n_planets=3,
+                            research_policy="bogus")
+        self.assertIn("error", r)
+        self.assertIn("research_policy", r["error"])
+
+    # ── strict with the IDENTITY dataset == permissive except the badge ──
+    def test_strict_identity_matches_permissive_except_grounding(self):
+        self._ingest(_IDENTITY_FIX)
+        perm = generate_system(42, spectral_class="G2V", n_planets=6)
+        strict = self._strict(seed=42, spectral_class="G2V", n_planets=6)
+        self.assertNotIn("error", strict)
+        # sampling identical (identity values == DefaultPriors) → planets byte-equal
+        self.assertEqual(strict["planets"], perm["planets"])
+        # star equal except the grounding tag
+        s_star = dict(strict["star"]); p_star = dict(perm["star"])
+        self.assertEqual(s_star.pop("grounding"), "research-calibrated")
+        self.assertEqual(p_star.pop("grounding"), "default-extrapolation")
+        self.assertEqual(s_star, p_star)
+        self.assertIn("ResearchPriors (grounding=research-calibrated, "
+                      "dataset identity-2026-06-24)", strict["notes"][0])
+
+    # ── strict with the PERTURBED sample: deterministic AND different ──
+    def test_strict_sample_deterministic_and_different(self):
+        self._ingest(_SAMPLE_FIX)
+        r1 = self._strict(seed=99, spectral_class="K2V", n_planets=5)
+        r2 = self._strict(seed=99, spectral_class="K2V", n_planets=5)
+        self.assertEqual(r1, r2)                                   # determinism
+        perm = generate_system(99, spectral_class="K2V", n_planets=5)
+        self.assertNotEqual(r1["planets"], perm["planets"])        # sampling re-drawn
+        self.assertEqual(r1["star"]["grounding"], "research-calibrated")
+        self.assertIn("sample-2026-06-24", r1["notes"][0])
+
+    # ── strict with no ingested dataset → curated error ──
+    def test_strict_without_cache_errors(self):
+        r = self._strict(seed=1, spectral_class="K2V", n_planets=3)  # empty cache
+        self.assertIn("error", r)
+        self.assertIn("strict", r["error"])
+
+    # ── real-anchor: star stays observed; only the synthetic-infill note re-tags ──
+    def test_real_anchor_note_retag_strict(self):
+        self._ingest(_IDENTITY_FIX)
+        with _readers(_simbad(), _regions(), _nasa([_EARTH_ROW]), {"error": "x"}):
+            with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+                r = generate_system(5, anchor_star="Tau Ceti",
+                                    research_policy="strict", n_planets=2)
+        self.assertNotIn("error", r)
+        self.assertEqual(r["star"]["grounding"], "observed")
+        self.assertIn("ResearchPriors (grounding=research-calibrated", " ".join(r["notes"]))
+
+
 if __name__ == "__main__":
     unittest.main()

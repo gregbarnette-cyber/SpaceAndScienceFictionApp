@@ -54,12 +54,13 @@ from gui.panels.comparison       import (StarComparisonPanel, EsiRankingPanel,
                                          StellarEvolutionPanel)
 from gui.panels.reports          import DossierExportPanel
 from gui.panels.generator        import SystemGeneratorPanel
+from gui.panels.projects         import ProjectPanel
 from gui.panels.csv_utility      import (CsvUtilityPanel, ExportStarSystemsPanel,
                                          ImportHwcPanel, ImportMissionExocatPanel,
                                          ImportMainSequencePanel, ImportSolarSystemPanel,
                                          ImportHonorversePanel, ImportGcnsPanel,
                                          ImportHypatiaPanel, DbStatusPanel,
-                                         FetchDustMapPanel)
+                                         FetchDustMapPanel, ImportResearchPriorsPanel)
 
 # ── Phase E panels (lazy-loaded to break circular import) ─────────────────────
 # gui/visualizations/*.py imports gui.panels.base, so direct imports here would

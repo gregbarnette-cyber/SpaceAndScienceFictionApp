@@ -457,5 +457,205 @@ class Deterministic(unittest.TestCase):
         self.assertEqual(a["document"], b["document"])
 
 
+# ── Phase S-C2 · build_generated_dossier (the R→Q link) ──────────────────────
+# Pure over a generate_system result dict — no DB/network, so hand-built fixtures.
+
+def _gen_result(constraints=False):
+    r = {
+        "seed": 88, "mode": "synthetic", "anchor_star": None,
+        "star": {"name": "Gen-88", "spectral_class": "K2V", "teff": 4800.0,
+                 "mass_solar": 0.72, "radius_solar": 0.73, "luminosity": 0.21,
+                 "hz_inner_au": 0.41, "hz_outer_au": 0.74, "hz_opt_inner_au": 0.33,
+                 "hz_opt_outer_au": 0.78, "snow_line_au": 1.9, "source": "synthetic",
+                 "grounding": "default-extrapolation", "multiplicity": None},
+        "planets": [
+            {"name": "Gen-88 b", "a_au": 0.2, "mass_earth": 1.1, "radius_earth": 1.0,
+             "ecc": 0.02, "type": "rocky", "t_eq_k": 360.0, "in_hz": False,
+             "hz_class": None, "source": "synthetic", "atmosphere": None, "moons": []},
+            {"name": "Gen-88 c", "a_au": 0.55, "mass_earth": 3.0, "radius_earth": 1.5,
+             "ecc": 0.01, "type": "super_earth", "t_eq_k": 255.0, "in_hz": True,
+             "hz_class": "conservative", "source": "synthetic", "atmosphere": "thick",
+             "moons": [{"name": "m1"}]},
+        ],
+        "warnings": [], "notes": ["All bodies are synthetic; realism priors = DefaultPriors."],
+    }
+    if constraints:
+        r["feasible"] = True
+        r["constraints"] = [{
+            "id": "c1", "type": "planet_at_location", "verdict": "feasible",
+            "layer1": {"stable": True, "reason": "Δ ≥ 10 to both neighbours", "metrics": {}},
+            "layer2": {"mechanism": "hill_packing", "checked": [], "note": None},
+            "layer3": {"hypotheses": [], "grounding": "default-extrapolation"},
+            "layer4": {"alternatives": []},
+        }]
+    return r
+
+
+class BuildGeneratedDossier(unittest.TestCase):
+    def test_markdown_shape(self):
+        r = report.build_generated_dossier(_gen_result())
+        self.assertEqual(r["fmt"], "markdown")
+        self.assertEqual(r["star"], "Gen-88")
+        self.assertEqual(r["seed"], 88)
+        self.assertEqual(r["sections"], ["identity", "star", "planets"])
+        doc = r["document"]
+        self.assertIn("# Gen-88 — Generated System Dossier", doc)
+        self.assertIn("## Planets", doc)
+        self.assertIn("Gen-88 c", doc)
+        self.assertNotIn("## Feasibility", doc)   # no constraints
+
+    def test_json_structured_only(self):
+        r = report.build_generated_dossier(_gen_result(), fmt="json")
+        self.assertEqual(r["fmt"], "json")
+        self.assertNotIn("document", r)
+        self.assertIn("data", r)
+        self.assertEqual(len(r["data"]["planets"]["planets"]), 2)
+        self.assertEqual(r["data"]["identity"]["grounding"], "default-extrapolation")
+
+    def test_html_self_contained(self):
+        r = report.build_generated_dossier(_gen_result(), fmt="html")
+        doc = r["document"]
+        self.assertTrue(doc.startswith("<!DOCTYPE html>"))
+        self.assertIn("<style>", doc)
+        self.assertNotIn("<img", doc)              # text + tables only
+        self.assertIn("Generated System Dossier", doc)
+
+    def test_feasibility_section_when_constraints(self):
+        r = report.build_generated_dossier(_gen_result(constraints=True))
+        self.assertIn("feasibility", r["sections"])
+        self.assertIn("## Feasibility", r["document"])
+        self.assertIn("feasible", r["document"])
+
+    def test_feasibility_requested_without_constraints_is_note_not_error(self):
+        r = report.build_generated_dossier(_gen_result(), sections=["identity", "feasibility"])
+        self.assertNotIn("error", r)
+        self.assertEqual(r["sections"], ["identity"])
+        self.assertTrue(any("feasibility" in n for n in r["notes"]))
+
+    def test_section_subset(self):
+        r = report.build_generated_dossier(_gen_result(), sections=["star"])
+        self.assertEqual(r["sections"], ["star"])
+        self.assertIn("## Star", r["document"])
+        self.assertNotIn("## Planets", r["document"])
+
+    def test_determinism(self):
+        a = report.build_generated_dossier(_gen_result())
+        b = report.build_generated_dossier(_gen_result())
+        self.assertEqual(a["document"], b["document"])
+
+    def test_errors(self):
+        self.assertIn("error", report.build_generated_dossier(_gen_result(), fmt="pdf"))
+        self.assertIn("error", report.build_generated_dossier({"error": "boom"}))
+        self.assertIn("error", report.build_generated_dossier({"not": "a result"}))
+        self.assertIn("error", report.build_generated_dossier(
+            _gen_result(), sections=["identity", "bogus"]))
+
+
+# ── Phase S-C5 · build_project_dossier (the export fan-out) ──────────────────
+import pathlib
+import shutil
+import core.db as _db
+import core.projects as _projects
+
+
+def _fake_bsd(star, sections=None, fmt="markdown"):
+    """Stand-in for build_system_dossier (real members) — no network."""
+    if fmt == "json":
+        return {"star": star, "fmt": "json", "sections": ["identity"],
+                "warnings": [], "notes": [], "data": {"identity": {"name": star}}}
+    doc = (f"# {star} — System Dossier\n\nbody" if fmt == "markdown"
+           else f"<!DOCTYPE html><html><head></head><body><h1>{star}</h1></body></html>")
+    return {"star": star, "fmt": fmt, "sections": ["identity"],
+            "warnings": [], "notes": [], "document": doc}
+
+
+def _fake_gen(spec):
+    return {"seed": spec.get("seed"), "mode": "synthetic", "anchor_star": None,
+            "star": {"name": "Gen-5", "spectral_class": "M0V", "teff": 3800.0,
+                     "mass_solar": 0.5, "radius_solar": 0.5, "luminosity": 0.05,
+                     "hz_inner_au": 0.2, "hz_outer_au": 0.4, "hz_opt_inner_au": 0.18,
+                     "hz_opt_outer_au": 0.42, "snow_line_au": 0.9, "source": "synthetic",
+                     "grounding": "default-extrapolation", "multiplicity": None},
+            "planets": [{"name": "Gen-5 b", "a_au": 0.1, "mass_earth": 1.0,
+                         "radius_earth": 1.0, "type": "rocky", "t_eq_k": 300.0,
+                         "in_hz": True, "hz_class": "conservative", "source": "synthetic",
+                         "atmosphere": None, "moons": []}],
+            "warnings": [], "notes": []}
+
+
+class BuildProjectDossier(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self._saved = (_db._DB_PATH, _db._conn, _db._auto_seed)
+        _db._DB_PATH = pathlib.Path(self.tmpdir) / "p.db"
+        _db._conn = None
+        _db._auto_seed = lambda conn: None
+        _db.get_conn()
+        _projects.create_project("P", "a setting")
+        _projects.add_member("P", "Tau Ceti", note="real")
+        _projects.add_member("P", "Gen-5", source="generated", seed=5, spec={"seed": 5})
+
+    def tearDown(self):
+        _db.close_conn()
+        _db._DB_PATH, _db._conn, _db._auto_seed = self._saved
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _patches(self):
+        return (mock.patch("core.report.build_system_dossier", _fake_bsd),
+                mock.patch("core.generate.generate_from_spec", _fake_gen))
+
+    def test_combined_markdown(self):
+        p1, p2 = self._patches()
+        with p1, p2:
+            r = report.build_project_dossier("P", fmt="markdown", combined=True)
+        self.assertEqual(r["combined"], True)
+        self.assertEqual(len(r["members"]), 2)
+        doc = r["document"]
+        self.assertIn("# P — Project Dossier", doc)
+        self.assertIn("Tau Ceti — System Dossier", doc)
+        self.assertIn("Gen-5 — Generated System Dossier", doc)
+
+    def test_combined_html_single_doc(self):
+        p1, p2 = self._patches()
+        with p1, p2:
+            r = report.build_project_dossier("P", fmt="html", combined=True)
+        doc = r["document"]
+        self.assertEqual(doc.count("<!DOCTYPE html>"), 1)   # one merged doc
+        self.assertIn("P — Project Dossier", doc)
+        self.assertIn("Gen-5", doc)
+
+    def test_combined_json(self):
+        p1, p2 = self._patches()
+        with p1, p2:
+            r = report.build_project_dossier("P", fmt="json", combined=True)
+        self.assertNotIn("document", r)
+        self.assertEqual(len(r["data"]["members"]), 2)
+
+    def test_per_file(self):
+        p1, p2 = self._patches()
+        with p1, p2:
+            r = report.build_project_dossier("P", fmt="markdown", combined=False)
+        self.assertFalse(r["combined"])
+        docs = {m["star_name"]: m for m in r["members"]}
+        self.assertIn("document", docs["Tau Ceti"])
+        self.assertIn("document", docs["Gen-5"])
+
+    def test_member_failure_isolated(self):
+        def _boom(star, sections=None, fmt="markdown"):
+            return {"error": f"SIMBAD failed for {star}"}
+        with mock.patch("core.report.build_system_dossier", _boom), \
+             mock.patch("core.generate.generate_from_spec", _fake_gen):
+            r = report.build_project_dossier("P", combined=True)
+        members = {m["star_name"]: m for m in r["members"]}
+        self.assertFalse(members["Tau Ceti"]["ok"])     # real one failed
+        self.assertTrue(members["Gen-5"]["ok"])         # generated still ok
+        self.assertTrue(r["warnings"])
+        self.assertIn("Gen-5 — Generated System Dossier", r["document"])
+
+    def test_unknown_project_and_bad_fmt(self):
+        self.assertIn("error", report.build_project_dossier("Ghost"))
+        self.assertIn("error", report.build_project_dossier("P", fmt="pdf"))
+
+
 if __name__ == "__main__":
     unittest.main()

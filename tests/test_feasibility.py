@@ -661,5 +661,97 @@ class TestBinaryGate(unittest.TestCase):
         self.assertFalse(any("known multiple" in n.lower() for n in r["notes"]))
 
 
+# ── R3-C5 · Layer-3 research-priors calibration ──────────────────────────────
+import json as _json
+import os as _os
+import shutil as _shutil
+import tempfile as _tempfile
+from unittest import mock as _mock
+
+from core.priors import ResearchPriors
+from core.research_priors import compute_research_priors_ingest
+
+_FIXD = _os.path.join(_os.path.dirname(__file__), "fixtures")
+_SAMPLE_FIX = _os.path.join(_FIXD, "research_priors_sample.json")
+_IDENTITY_FIX = _os.path.join(_FIXD, "research_priors_identity.json")
+
+# A feasible body beyond the snow line (drives the in_situ_beyond_snow context).
+_RES_BEYOND = {"verdict": "feasible", "layer1": {"metrics": {"target_au": 5.0}},
+               "layer2": {"mechanism": None}}
+_DERIVED = {"snow_line": 2.7}
+
+
+class TestLayer3Calibration(unittest.TestCase):
+    """_origin_hypotheses reads ResearchPriors.origin_priors with per-key fallback."""
+
+    def test_calibrated_context_uses_dataset_and_grounding(self):
+        prov = ResearchPriors.from_file(_SAMPLE_FIX)
+        o = _origin_hypotheses({"type": "planet_at_location"}, _base([]),
+                               _DERIVED, _RES_BEYOND, prov)
+        # sample calibrates in_situ_beyond_snow with TWO pathways
+        self.assertTrue(any("modest inward migration" in h["pathway"]
+                            for h in o["hypotheses"]))
+        self.assertTrue(all(h["grounding"] == "research-calibrated"
+                            for h in o["hypotheses"]))
+        self.assertEqual(o["grounding"], "research-calibrated")
+
+    def test_absent_context_falls_back_to_heuristic_even_under_research(self):
+        with open(_SAMPLE_FIX, encoding="utf-8") as _fh:
+            contract = _json.load(_fh)
+        del contract["origin_priors"]["planet_at_location:in_situ_beyond_snow"]
+        prov = ResearchPriors.from_contract(contract)
+        o = _origin_hypotheses({"type": "planet_at_location"}, _base([]),
+                               _DERIVED, _RES_BEYOND, prov)
+        # the omitted context → heuristic pathway, tagged default-extrapolation,
+        # even though the provider itself is research-calibrated (honest mixing)
+        self.assertEqual(len(o["hypotheses"]), 1)
+        self.assertIn("snow line", o["hypotheses"][0]["pathway"])
+        self.assertEqual(o["hypotheses"][0]["grounding"], "default-extrapolation")
+        self.assertEqual(o["grounding"], "research-calibrated")   # top-level = provider
+
+    def test_default_provider_byte_identical_to_r2(self):
+        # priors=None → DefaultPriors → the pre-R3 heuristic output exactly.
+        o = _origin_hypotheses({"type": "planet_at_location"}, _base([]),
+                               _DERIVED, _RES_BEYOND)
+        self.assertEqual(o["grounding"], "default-extrapolation")
+        self.assertEqual(o["hypotheses"][0]["pathway"],
+                         "in-situ accretion beyond the snow line")
+        self.assertEqual(o["hypotheses"][0]["grounding"], "default-extrapolation")
+
+
+class TestEvaluateFeasibilityResearchPolicy(unittest.TestCase):
+    """research_policy threaded through evaluate_feasibility's base build + Layer-3."""
+
+    _CONS = [{"type": "planet_at_location", "planet_type": "terrestrial",
+              "mass_earth": 1.0, "location": {"kind": "in_hz"}}]
+
+    def setUp(self):
+        self.cache = _tempfile.mkdtemp()
+        self.addCleanup(_shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _strict(self, **kw):
+        with _mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return evaluate_feasibility(research_policy="strict", constraints=self._CONS, **kw)
+
+    def test_permissive_layer3_default_grounded(self):
+        r = evaluate_feasibility(7, spectral_class="G2V", n_planets=4, constraints=self._CONS)
+        self.assertEqual(r["constraints"][0]["layer3"]["grounding"], "default-extrapolation")
+        self.assertTrue(any("grounding=default-extrapolation" in n for n in r["notes"]))
+
+    def test_strict_calibrated_and_deterministic(self):
+        compute_research_priors_ingest(path=_SAMPLE_FIX, cache_dir=self.cache)
+        a = self._strict(seed=7, spectral_class="G2V", n_planets=4)
+        b = self._strict(seed=7, spectral_class="G2V", n_planets=4)
+        self.assertEqual(a, b)                                      # determinism
+        self.assertEqual(a["constraints"][0]["layer3"]["grounding"], "research-calibrated")
+        self.assertEqual(a["star"]["grounding"], "research-calibrated")   # base sampling too (D5)
+        self.assertTrue(any("dataset sample-2026-06-24" in n for n in a["notes"]))
+
+    def test_strict_without_cache_errors(self):
+        r = self._strict(seed=7, spectral_class="G2V", n_planets=4)   # empty cache
+        self.assertIn("error", r)
+        self.assertIn("strict", r["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

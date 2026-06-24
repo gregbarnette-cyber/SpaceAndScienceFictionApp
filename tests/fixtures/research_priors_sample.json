@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "dataset_version": "sample-2026-06-24",
+  "provenance": {
+    "source": "SAMPLE / synthetic placeholder — NOT research-derived",
+    "description": "Scaffold dataset proving the R3 research-priors hook end-to-end before the sister-project formation priors exist. Values are deliberately PERTURBED from DefaultPriors so tests can prove that research_policy='strict' actually changes the sampling (and the Layer-3 narrative) deterministically. Landing real priors later is a data swap, not a code change — same schema.",
+    "citations": []
+  },
+
+  "spectral_class_weights": { "M": 0.70, "K": 0.15, "G": 0.09, "F": 0.04, "A": 0.015, "B": 0.005 },
+  "n_planet_dist": { "0": 0.03, "1": 0.07, "2": 0.15, "3": 0.22, "4": 0.20, "5": 0.14, "6": 0.09, "7": 0.05, "8": 0.03, "9": 0.01, "10": 0.01 },
+  "spacing_ratio": [1.5, 1.9],
+  "mass_by_zone": { "hot": [0.10, 4.0], "hz": [0.20, 5.0], "cold": [1.0, 400.0], "far": [0.50, 60.0] },
+  "moon_count": [0, 6],
+  "moon_mass_frac": [1e-5, 4e-4],
+
+  "origin_priors": {
+    "planet_at_location:in_situ_beyond_snow": [ { "pathway": "in-situ accretion beyond the snow line", "plausibility": "high" },
+                                                { "pathway": "modest inward migration from the cold disk", "plausibility": "medium" } ],
+    "planet_at_location:in_situ_inner":       [ { "pathway": "in-situ accretion", "plausibility": "high" } ],
+    "planet_at_location:resonant_migration":  [ { "pathway": "convergent migration into resonance", "plausibility": "high" } ],
+    "planet_at_location:infeasible":          [ { "pathway": "captured / scattered survivor", "plausibility": "low" } ],
+    "trojan:feasible":                        [ { "pathway": "in-situ co-accretion / capture into the Lagrange point", "plausibility": "high" } ],
+    "trojan:infeasible":                      [ { "pathway": "no stable co-orbital pathway (host too massive)", "plausibility": "low" } ],
+    "moon:feasible":                          [ { "pathway": "capture / circumplanetary-disk formation", "plausibility": "high" } ],
+    "moon:infeasible":                        [ { "pathway": "no stable satellite pathway", "plausibility": "low" } ],
+    "resonance:feasible":                     [ { "pathway": "convergent migration into resonance", "plausibility": "high" } ],
+    "resonance:infeasible":                   [ { "pathway": "would require migration / capture into resonance", "plausibility": "medium" } ]
+  }
+}

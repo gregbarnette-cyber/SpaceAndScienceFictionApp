@@ -71,7 +71,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
 | `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …`] | SIMBAD + NASA + Hypatia (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json) |
-| `generate-system` | `--seed` [`--anchor-star` `--spectral-class` `--planets` `--require-habitable` `--constraint…` `--companion` `--nbody`] | none (synthetic) · SIMBAD + NASA + HWC (with `--anchor-star`) | `seed, mode, anchor_star, star, planets[], warnings, notes` — plus `feasible, constraints[]` with `--constraint` |
+| `generate-system` | `--seed` [`--anchor-star` `--spectral-class` `--planets` `--require-habitable` `--constraint…` `--companion` `--nbody` `--research-policy`] | none (synthetic) · SIMBAD + NASA + HWC (with `--anchor-star`) | `seed, mode, anchor_star, star, planets[], warnings, notes` — plus `feasible, constraints[]` with `--constraint` |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
 | `stellar-evolution` | `--mass-solar` [`--current-age-gyr`] | none | `stages[], total_gyr, ms_end_gyr, current_stage, low_mass, high_mass` |
@@ -101,6 +101,8 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `dust-sightline` | one of (`--l --b`)\|(`--ra --dec`)\|(`--star`\|`--id`) `--dist-end` [`--dist-start --steps`\|`--step-pc` `--map`] | none (local dust cache)§ | `map, frame, l, b, dist_start_pc, dist_end_pc, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
 | `dust-between` | (`--star1`\|`--id1`) (`--star2`\|`--id2`) [`--steps`\|`--step-pc` `--map`] | SIMBAD‡ (local dust cache)§ | `map, frame, star1_info, star2_info, separation_pc/ly, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
 | `compare-stars` | `--stars N [N …]` (2–4) | SIMBAD + NASA + Hypatia | `stars[]` (per-star error isolation) |
+| `project-list` | _(none)_ | none (local DB) | `projects[]` (name, description, member_count, created_date) |
+| `project-get` | `--name` | none (local DB) | `project, members[]` (each member's `generated_spec` echoed parsed) |
 | `main-sequence` | _(none)_ | none (local DB) | **list** of 24 spectral-class rows |
 | `solar-system` | _(none)_ | none (local DB) | `planets[], moons[], dwarf_planets[], asteroids[]` |
 | `sol-regions` | _(none)_ | none | flat dict of Sol region values (`hzil, hzol, snowLine, …`) |
@@ -487,6 +489,18 @@ Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=
   count when anchored); sampled from the planet-count distribution if omitted.
 - **`--require-habitable`** (store-true): retry (bounded) until a conservative-HZ rocky
   world is placed, else a curated error.
+- **`--research-policy {permissive,strict}`** (Phase R3; default `permissive`): which priors
+  provider the synthetic sampling **and** the Layer-3 origin narrative draw from. `permissive`
+  → `DefaultPriors` (literature-informed defaults; `grounding=default-extrapolation`) — the
+  default, **byte-identical** to R1/R2. `strict` → `ResearchPriors`, a versioned
+  formation-priors dataset ingested via the **Import Research Priors** utility (GUI) /
+  `core.research_priors.compute_research_priors_ingest`; emitted fields are re-tagged
+  `grounding=research-calibrated` and the `notes` name the `dataset_version`. **`strict` with
+  no dataset ingested → a curated `{"error"}` (exit 1)** — no silent fallback, no fabricated
+  tag. The cache lives in the gitignored `data/research_priors/` (override with the
+  `SPACE_RESEARCH_PRIORS_DIR` env var, mirroring `SPACE_APP_DB`). The data-contract schema +
+  the sample/identity fixtures are documented in `docs/research-priors-contract.md`. A bad
+  `--research-policy` value → argparse exit 2.
 - **Output:** `{seed, mode ("synthetic"|"real_anchor"), anchor_star, star, planets[],
   warnings[], notes[]}`. `star` carries `name, spectral_class, teff, mass_solar,
   radius_solar, luminosity, hz_inner_au/hz_outer_au` (conservative) + `hz_opt_inner_au/
@@ -494,8 +508,9 @@ Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=
   planet carries `name, a_au, mass_earth, radius_earth, ecc, type
   (rocky|super_earth|ice|gas|super_jovian|brown_dwarf), t_eq_k, in_hz, hz_class
   (conservative|optimistic|null), source, atmosphere, moons[]`. Every synthetic field is
-  grounded `default-extrapolation` (the `DefaultPriors` provider — research-calibrated
-  priors are Phase R3). Multi-star anchors are **detected, warned, and safe-capped** (no
+  grounded `default-extrapolation` (the `DefaultPriors` provider) under the default
+  `permissive` policy, or `research-calibrated` under `--research-policy strict` with an
+  ingested dataset (Phase R3 — above). Multi-star anchors are **detected, warned, and safe-capped** (no
   synthetic body beyond a conservative cap; observed bodies are never capped); a quantitative
   S/P-type verdict needs a `--companion` hint (Phase R2 — below).
 
@@ -1189,6 +1204,43 @@ numerics `null`; the **only top-level `{"error"}` (exit 1)** is the arg-count ch
 `"Sol"`/`"Sun"` are injected from reference constants (G2V, 5778 K, 1 M/R/L☉, [X/H]≡0 baseline) with no SIMBAD call, so
 `--stars Sol Sun` resolves fully offline. Missing/non-numeric `--stars` (or fewer than one value) is an argparse
 **exit 2**.
+
+### Project workspaces (Phase S — local DB, read-only)
+
+Read-only views of the **project workspaces** (named sets of real + procedurally-generated
+systems with notes), created/edited in the GUI **Projects** panel. **Mutations are GUI-only** —
+`query.py` exposes only these two readers (the "no DB-write subcommands" principle), so the sibling
+repo can enumerate a setting and pull each member, then call `dossier` / `generate-system` /
+`simbad-lookup` per member. Local-DB reads (no network); the DB path is overridable via
+`SPACE_APP_DB`. Both backed by `core/projects.py` (the additive `projects` / `project_members`
+tables; see `docs/gui-architecture.md` Phase S).
+
+#### `project-list`
+All project workspaces with member counts.
+```bash
+query.py project-list
+```
+Core function: `projects.list_projects()`. Output: `{"projects": [{project_id, name, description,
+created_date, member_count}]}` (sorted by name, case-insensitive). Empty store → `{"projects": []}`.
+
+#### `project-get`
+A project + its members.
+```bash
+query.py project-get --name "The Frontier Campaign"
+```
+Core function: `projects.get_project(name)`. Output: `{project: {project_id, name, description,
+created_date}, members: [{star_name, note, source ("looked_up"|"generated"), generated_seed,
+generated_spec, added_date}]}`. A **generated** member's `generated_spec` is echoed as a **parsed
+JSON object** (the `generate_system` params that re-create it byte-identically — seed, mode,
+spectral_class, n_planets, anchor_star, constraints, companion, research_policy); `null` for
+looked-up members. Unknown project name → `{"error": str}` exit 1; missing `--name` → argparse
+exit 2.
+
+> **Export note:** the GUI's *Export Project Dossier* (real members via Q's `build_system_dossier`,
+> generated members via the R→Q `build_generated_dossier`, combined or per-file) is **GUI-only** in
+> Phase S — it spans network + offline members. The composing core functions
+> (`report.build_generated_dossier`, `report.build_project_dossier`) exist and are tested, but no
+> `project-dossier` subcommand is exposed (additive later if the consumer asks).
 
 ### Reference data (Phase B — local DB / hardcoded, no arguments)
 
