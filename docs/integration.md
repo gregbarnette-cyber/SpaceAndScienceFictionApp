@@ -69,6 +69,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `trojan-stability` | `--host-mass-earth --companion-mass-earth --star-mass-solar` | none | `mass_ratio, criterion, stable` |
 | `lorentz-factor` | `--velocity-c` | none | `velocity_c, lorentz_factor, time_dilation_pct` |
 | `circumbinary-hz` | (`--teff1 --lum1 --teff2 --lum2`) \| (`--star1 --star2`) | none \| SIMBAD (`--star`) | `combined_lum, eff_teff, out_of_range_teff, zones[]` |
+| `cooling-hz` | `--track {wd,bd}` [`--mass-solar`\|`--mass-mjup` · one of `--teff`\|`--cooling-age-gyr`\|`--sma-au` · `--chz-threshold-gyr --hz-edge --age-max-gyr --satellite-density`] | none (bundled cooling table) | mode 1: `teff_k, lum_lsun, radius_rsun, zones[], out_of_range_teff`; mode 2: `ever_habitable, entry/exit_age_gyr, residence_gyr`; mode 3: `chz_inner/outer_au, inner_edge_roche_limited, roche_limit_au`; all: `mode, model_note, any_out_of_range, hz_model_valid_teff_k` |
 | `rv-semi-amplitude` | `--planet-mass-earth --star-mass-solar` (`--period-days`\|`--sma-au`) [`--ecc --inclination-deg`] | none | `k_ms, period_days, sma_au, ecc, inclination_deg` |
 | `transit-signal` | `--planet-radius-earth --star-radius-solar` (`--sma-au` \| `--period-days --star-mass-solar`) | none | `depth_ppm, depth_frac, transit_prob, duration_hours, sma_au, period_days` |
 | `astrometric-signal` | `--planet-mass-earth --star-mass-solar --sma-au --distance-pc` | none | `signal_microarcsec, signal_arcsec` |
@@ -378,6 +379,88 @@ time `2·(c/a)·sinh X`, proper (ship) time `2·(c/a)·X`; midpoint `peak_veloci
 query.py relativistic-brachistochrone --accel-g 1 --distance-ly 4.37
 ```
 Core: `calculators.compute_relativistic_brachistochrone(accel_g, distance_ly)`. Output: `{accel_g, distance_ly, coord_time_yr, proper_time_yr, peak_velocity_c, peak_lorentz_factor}`. **Validation:** `accel_g>0`, `distance_ly>0`. **Anchor:** 1 g over 4.37 ly → coord `≈ 6.0 yr`, proper `≈ 3.58 yr`, peak `≈ 0.95 c`; at low speed it converges to the Newtonian flip-burn `2√(D/a)` with proper ≈ coordinate time.
+
+### Cooling-primary HZ (Phase U — bundled cooling table, no network)
+
+A cooling primary (white or brown dwarf) has **no equilibrium luminosity**: its habitable
+zone migrates inward as it cools, so a planet at a fixed orbit is habitable only for a
+finite *residence time*. `cooling-hz` models this with **bundled static cooling tracks** +
+the existing `habitable-zone` Kopparapu engine (reused verbatim per epoch) + the
+`roche-limit` core (CHZ inner-edge cross-check). Self-validating (curated `{"error"}` →
+exit 1; argparse → exit 2), pure-math, no network/DB/RNG. Out-of-Kopparapu-range Teff is
+**flagged, not clamped** (the `circumbinary-hz` convention).
+
+**Cooling tables (bundled static data, transcribed not fitted):** WD = **Bédard et al. 2020
+(ApJ 901, 93) / Montreal "thick-H" (DA) cooling sequences** (`seq_0XX_thick.txt` at
+`astro.umontreal.ca/~bergeron/CoolingModels/`); BD = **ATMO 2020 (Phillips et al. 2020,
+A&A 637 A38)** substellar tracks. Stored in `core/cooling_tables.py` as
+`(age_gyr, teff_k, log10_l_lsun, radius_rsun)` rows per mass; every row is verified against
+`L/L_sun = (R/R_sun)²(Teff/Teff_sun)⁴` at transcription. **Luminosity is derived from the
+interpolated (Teff, R) by that identity** (not interpolated independently), so every
+interpolated epoch is physically self-consistent. *(Grid: WD 0.4–1.0 M☉ in 0.1 steps; BD
+~13.6–75.4 M_Jup. A mass off the grid returns a clean error.)*
+
+**Three modes**, selected by which of `--teff` / `--cooling-age-gyr` / `--sma-au` is given
+(a single argparse mutually-exclusive group; at most one):
+
+```bash
+query.py cooling-hz --track wd --mass-solar 0.6 --teff 5000              # mode 1 snapshot
+query.py cooling-hz --track wd --mass-solar 0.6 --sma-au 0.01 --hz-edge optimistic  # mode 2 residence
+query.py cooling-hz --track wd --mass-solar 0.6                          # mode 3 CHZ band (default)
+```
+Core function: `cooling.compute_cooling_hz(track, mass_solar=None, mass_mjup=None,
+cooling_age_gyr=None, teff=None, sma_au=None, chz_threshold_gyr=3.0,
+hz_edge="conservative", age_max_gyr=13.8, satellite_density=5.5)`.
+
+- **`--track {wd,bd}`** (required). **Mass** via the mutex group `--mass-solar` /
+  `--mass-mjup` (WD default 0.6 M☉; BD primary unit `--mass-mjup`, default 50 M_Jup;
+  conversion 1 M_Jup = 9.543×10⁻⁴ M☉, documented and applied internally).
+- **`--hz-edge {conservative,optimistic}`** (default conservative = runaway-greenhouse →
+  maximum-greenhouse; optimistic = recent-venus → early-mars).
+- **`--chz-threshold-gyr`** (mode 3 residence threshold, default 3.0 — Agol's definition),
+  **`--age-max-gyr`** (integration ceiling, default 13.8), **`--satellite-density`** (mode-3
+  Roche cross-check, default 5.5 g/cc rocky).
+
+**Mode 1 — snapshot** (`--teff` *or* `--cooling-age-gyr`): `{mode:"snapshot",
+cooling_age_gyr, teff_k, lum_lsun, radius_rsun, zones[], out_of_range_teff, notes}` —
+`zones[]` is the same 6-dict list as `habitable-zone`. **Anchor:** 0.6 M☉ @ 5000 K →
+`lum_lsun ≈ 8.6×10⁻⁵`, conservative HZ ≈ 0.0092–0.0167 AU.
+
+**Mode 2 — residence** (`--sma-au`): `{mode:"residence", sma_au, ever_habitable,
+entry_age_gyr, exit_age_gyr, residence_gyr, entry_teff_k, exit_teff_k,
+entry_out_of_range, exit_out_of_range, truncated_at_age_max}`. **The Kopparapu validity
+gate is asymmetric — hot-side only.** Above ~7200 K the polynomial is unreliable (and
+eventually returns a negative S_eff), so the young hot-dwarf phase is gated out — without
+this a far orbit would falsely read habitable while the dwarf blazes. The cool side is a
+*gentle* extrapolation (S_eff stays positive and smooth well below 2600 K) and is *needed*
+for cooling-dwarf residence, so a crossing below 2600 K is **allowed and flagged**
+(`entry/exit_out_of_range`), not gated — this is what lets a planet track a cooling BD's HZ
+for Gyr. "Never habitable" is a normal result (`ever_habitable:false`), not an error.
+**Anchors:** 0.6 M☉ WD, a=0.01 AU → `residence_gyr ≈ 7.4` (optimistic, reproducing Fossati
+2012's ~8 Gyr) / ≈ 4.5 (conservative). BD peak residence rises with mass — ~0.3 Gyr at
+13.6 M_Jup up to ~9 Gyr at 75 M_Jup (multi-Gyr only for the most massive BDs, ~>52 M_Jup,
+matching Bolmont 2011/2017), the cold-host portion carrying `exit_out_of_range:true`.
+
+**Mode 3 — CHZ band** (default; none of the three): `{mode:"chz", chz_threshold_gyr,
+chz_inner_au, chz_outer_au, inner_edge_roche_limited, roche_limit_au, roche_rigid_au,
+chz_inner_out_of_range, chz_outer_out_of_range, satellite_density}`. `roche_limit_au`
+is the **fluid** (rubble-pile) tidal-disruption radius; `inner_edge_roche_limited` is true
+when the CHZ inner edge falls inside it (Pkt 7 R2 — the cool-WD collision). **Anchor:**
+0.6 M☉, threshold 3 Gyr → CHZ ≈ 0.0065–0.0198 AU (Agol 2011's ~0.005–0.02), reproduced
+across 0.4–0.9 M☉, with the optimistic-edge inner edge Roche-limited.
+
+**All modes** carry `track, mass_solar, mass_mjup, hz_edge, age_max_gyr, model_note`
+(names the bundled table source), `any_out_of_range`, and `hz_model_valid_teff_k`
+(`[2600, 7200]`).
+
+> **Validation (self-validating — Phase-H/P):** curated `{"error"}` exit 1 for `--track`
+> not in {wd,bd}, a mass off the bundled grid, or any of `--cooling-age-gyr` / `--teff` /
+> `--sma-au` / `--chz-threshold-gyr` / `--age-max-gyr` / `--satellite-density` ≤ 0. Argparse
+> exit 2 for a missing `--track`, a bad `--track`/`--hz-edge` choice, two mode args, two mass
+> args, or a non-numeric value. **Root-find:** entry/exit crossings by bisection on age to a
+> 1×10⁻⁴ Gyr tolerance over `[0, age_max]`; the CHZ band by a 600-point log-spaced orbit
+> sweep. The cooling output is **order-of-magnitude where the track is sparsely sampled**;
+> the snapshot luminosity is exact (closure-derived).
 
 ### Solvent zones (Phase P — no network)
 

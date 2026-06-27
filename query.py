@@ -11,6 +11,7 @@ import json
 import sys
 
 import core.calculators as calculators
+import core.cooling as cooling
 import core.databases as databases
 import core.dust as dust
 import core.dust_routing as dust_routing
@@ -241,6 +242,16 @@ def cmd_circumbinary_hz(args):
     sys.stderr.write("error: provide all of --teff1/--lum1/--teff2/--lum2, "
                      "or both --star1 and --star2\n")
     sys.exit(2)
+
+
+def cmd_cooling_hz(args):
+    _out(cooling.compute_cooling_hz(
+        args.track,
+        mass_solar=args.mass_solar, mass_mjup=args.mass_mjup,
+        cooling_age_gyr=args.cooling_age_gyr, teff=args.teff, sma_au=args.sma_au,
+        chz_threshold_gyr=args.chz_threshold_gyr, hz_edge=args.hz_edge,
+        age_max_gyr=args.age_max_gyr, satellite_density=args.satellite_density,
+    ))
 
 
 # ── Phase T1b — detectability / exomoon / triple / relativistic calculators ───
@@ -1010,6 +1021,28 @@ def main():
     p.add_argument("--star1", help="Star 1 by name (SIMBAD; alt to --teff1/--lum1)")
     p.add_argument("--star2", help="Star 2 by name (SIMBAD; alt to --teff2/--lum2)")
     p.set_defaults(func=cmd_circumbinary_hz)
+
+    # cooling-hz (Phase U — cooling-primary WD/BD HZ residence & CHZ)
+    p = sub.add_parser("cooling-hz",
+                       help="Cooling-primary (white/brown dwarf) HZ snapshot / residence / CHZ band")
+    p.add_argument("--track", required=True, choices=["wd", "bd"],
+                   help="Cooling track: wd (white dwarf) or bd (brown dwarf)")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--mass-solar", type=float, help="Primary mass in solar masses (WD default 0.6)")
+    g.add_argument("--mass-mjup",  type=float, help="Primary mass in Jupiter masses (BD primary unit, default 50)")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--cooling-age-gyr", type=float, help="Snapshot epoch by cooling age (mode 1)")
+    mode.add_argument("--teff",            type=float, help="Snapshot epoch by effective temperature K (mode 1)")
+    mode.add_argument("--sma-au",          type=float, help="Residence at this orbit AU (mode 2); omit all three for the CHZ band (mode 3)")
+    p.add_argument("--chz-threshold-gyr", type=float, default=3.0,
+                   help="CHZ residence threshold in Gyr (mode 3, default 3.0)")
+    p.add_argument("--hz-edge", choices=["conservative", "optimistic"], default="conservative",
+                   help="HZ edge set (default conservative: runaway->maximum greenhouse)")
+    p.add_argument("--age-max-gyr", type=float, default=13.8,
+                   help="Integration ceiling in Gyr (default 13.8)")
+    p.add_argument("--satellite-density", type=float, default=5.5,
+                   help="Satellite bulk density g/cc for the CHZ Roche cross-check (default 5.5 rocky)")
+    p.set_defaults(func=cmd_cooling_hz)
 
     # rv-semi-amplitude (A1)
     p = sub.add_parser("rv-semi-amplitude",
