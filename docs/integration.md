@@ -20,6 +20,14 @@
 python query.py <subcommand> [arguments]
 ```
 
+**Shell note (zsh on WSL2).** Callers driving `query.py` from the Bash tool are running **zsh**, which does
+**not** word-split unquoted variables the way bash does. A loop like
+`for pair in "10000 1.48e-3" ...; do set -- $pair` will leave `$1` = the whole string and `$2` empty
+(failing *silently* — e.g. an empty `--luminosity` that breaks the output JSON parse). For multi-value
+recompute loops use `read t l <<< "$pair"`, `${=pair}`, real arrays, or one invocation per case. Also: the
+Bash tool's working directory resets between calls, so use the absolute venv/`query.py` paths above rather
+than relying on a prior `cd`.
+
 ## Output and exit codes
 
 - Always writes JSON to **stdout** — result dict (or list for `habitable-zone`) on success, `{"error": "..."}` on failure.
