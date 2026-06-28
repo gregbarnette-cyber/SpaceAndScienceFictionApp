@@ -1114,7 +1114,7 @@ def main():
 
     # relativistic-brachistochrone (D1)
     p = sub.add_parser("relativistic-brachistochrone",
-                       help="Flip-and-burn under constant proper acceleration (relativistic; lifts the 3%c cap)")
+                       help="Flip-and-burn under constant proper acceleration (relativistic; lifts the 3%% c cap)")
     p.add_argument("--accel-g",     required=True, type=float)
     p.add_argument("--distance-ly", required=True, type=float)
     p.set_defaults(func=cmd_relativistic_brachistochrone)
