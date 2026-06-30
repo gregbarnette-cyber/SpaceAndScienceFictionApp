@@ -22,6 +22,7 @@ import core.projects as projects
 import core.regions as regions
 import core.report as report
 import core.science as science
+import core.thermal as thermal
 
 
 def _out(result):
@@ -251,6 +252,37 @@ def cmd_cooling_hz(args):
         cooling_age_gyr=args.cooling_age_gyr, teff=args.teff, sma_au=args.sma_au,
         chz_threshold_gyr=args.chz_threshold_gyr, hz_edge=args.hz_edge,
         age_max_gyr=args.age_max_gyr, satellite_density=args.satellite_density,
+    ))
+
+
+# ── Phase V — power / thermal / shielding calculators ─────────────────────────
+
+def cmd_waste_heat(args):
+    _out(thermal.compute_waste_heat(
+        input_power_watts=args.input_power_watts,
+        useful_power_watts=args.useful_power_watts,
+        efficiency=args.efficiency,
+        hot_temp_k=args.hot_temp_k, cold_temp_k=args.cold_temp_k,
+    ))
+
+
+def cmd_radiator_area(args):
+    _out(thermal.compute_radiator_area(
+        heat_watts=args.heat_watts,
+        input_power_watts=args.input_power_watts, efficiency=args.efficiency,
+        radiator_temp_k=args.radiator_temp_k, emissivity=args.emissivity,
+        sides=args.sides, sink_temp_k=args.sink_temp_k,
+        areal_mass_kgm2=args.areal_mass_kgm2,
+    ))
+
+
+def cmd_shielding_attenuation(args):
+    _out(thermal.compute_shielding_attenuation(
+        areal_density_gcm2=args.areal_density_gcm2,
+        thickness_cm=args.thickness_cm, density_gcm3=args.density_gcm3,
+        mass_atten_coeff_cm2g=args.mass_atten_coeff_cm2g,
+        attenuation_length_gcm2=args.attenuation_length_gcm2,
+        material=args.material, energy_mev=args.energy_mev, mode=args.mode,
     ))
 
 
@@ -1043,6 +1075,48 @@ def main():
     p.add_argument("--satellite-density", type=float, default=5.5,
                    help="Satellite bulk density g/cc for the CHZ Roche cross-check (default 5.5 rocky)")
     p.set_defaults(func=cmd_cooling_hz)
+
+    # waste-heat (Phase V — power → rejected-heat budget, with Carnot ceiling)
+    p = sub.add_parser("waste-heat",
+                       help="Waste heat a device must reject from a power figure + efficiency (with Carnot ceiling)")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--input-power-watts",  type=float, help="Gross input/thermal power, W")
+    g.add_argument("--useful-power-watts", type=float, help="Net useful output power, W")
+    p.add_argument("--efficiency", type=float, help="Conversion/thermal efficiency η (0 < η ≤ 1)")
+    p.add_argument("--hot-temp-k",  type=float, help="Hot-reservoir temperature K (for the Carnot ceiling)")
+    p.add_argument("--cold-temp-k", type=float, help="Cold-reservoir temperature K (for the Carnot ceiling)")
+    p.set_defaults(func=cmd_waste_heat)
+
+    # radiator-area (Phase V — Stefan–Boltzmann thermal-rejection wall)
+    p = sub.add_parser("radiator-area",
+                       help="Radiating area (and optional mass) to reject a heat load (Stefan–Boltzmann)")
+    p.add_argument("--heat-watts", type=float, help="Heat load to reject, W")
+    p.add_argument("--input-power-watts", type=float, help="Gross input power W (chain with --efficiency → Q=P_in·(1−η))")
+    p.add_argument("--efficiency", type=float, help="Efficiency η for the input-power chain (0 < η ≤ 1)")
+    p.add_argument("--radiator-temp-k", type=float, required=True, help="Radiator surface temperature K (> 0)")
+    p.add_argument("--emissivity", type=float, default=0.9, help="Surface emissivity ε (0 < ε ≤ 1, default 0.9)")
+    p.add_argument("--sides", type=int, choices=[1, 2], default=2,
+                   help="Radiating faces: 1 (one hemisphere) or 2 (flat panel, default)")
+    p.add_argument("--sink-temp-k", type=float, default=0.0,
+                   help="Effective sink temperature K (default 0 = idealized deep space)")
+    p.add_argument("--areal-mass-kgm2", type=float, default=None,
+                   help="Radiator areal mass kg/m² (optional → radiator_mass_kg)")
+    p.set_defaults(func=cmd_radiator_area)
+
+    # shielding-attenuation (Phase V — Lambert–Beer photon / GCR order-of-magnitude)
+    p = sub.add_parser("shielding-attenuation",
+                       help="Radiation attenuation by shielding mass (photon Lambert–Beer / GCR order-of-mag)")
+    p.add_argument("--mode", choices=["photon", "gcr"], default="photon",
+                   help="photon (exact Lambert–Beer, default) or gcr (order-of-magnitude)")
+    p.add_argument("--areal-density-gcm2", type=float, help="Shield areal density Σ, g/cm²")
+    p.add_argument("--thickness-cm", type=float, help="Shield thickness cm (with --density-gcm3 → Σ=ρ·x)")
+    p.add_argument("--density-gcm3", type=float, help="Shield density g/cm³ (with --thickness-cm)")
+    p.add_argument("--mass-atten-coeff-cm2g", type=float, help="Photon μ/ρ, cm²/g (explicit; photon mode)")
+    p.add_argument("--attenuation-length-gcm2", type=float, help="GCR attenuation length Λ, g/cm² (explicit; gcr mode)")
+    p.add_argument("--material", help="Bundled material for the coefficient lookup "
+                                      "(water/polyethylene/aluminum/regolith/lead/liquid_h2/hydrogen/iron)")
+    p.add_argument("--energy-mev", type=float, help="Photon energy MeV for the bundled μ/ρ lookup")
+    p.set_defaults(func=cmd_shielding_attenuation)
 
     # rv-semi-amplitude (A1)
     p = sub.add_parser("rv-semi-amplitude",

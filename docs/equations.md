@@ -87,7 +87,7 @@ Five pure-math calculators in `core/equations.py` for authors/worldbuilders. **G
 
 ### Shared constants block + helper
 
-A module-level constants block at the top of `core/equations.py` (so H1–H5 don't re-declare and drift): `_G = 6.674e-11`, `_K_B = 1.380649e-23`, `_EARTH_MASS_KG = 5.972e24`, `_EARTH_RADIUS_KM = 6371.0`, `_EARTH_RADIUS_M = 6.371e6`, `_SOLAR_MASS_KG = 1.989e30`, `_M_PER_AU = 149597870700.0`, `_KM_PER_AU = 149597870.7`, `_AMU_KG = 1.66054e-27`, `_SEC_PER_YEAR = 3.15576e7` (Julian year). The older functions keep their own inline constants (out of scope).
+A module-level constants block at the top of `core/equations.py` (so H1–H5 don't re-declare and drift): `_G = 6.674e-11`, `_K_B = 1.380649e-23`, `_EARTH_MASS_KG = 5.972e24`, `_EARTH_RADIUS_KM = 6371.0`, `_EARTH_RADIUS_M = 6.371e6`, `_SOLAR_MASS_KG = 1.989e30`, `_M_PER_AU = 149597870700.0`, `_KM_PER_AU = 149597870.7`, `_AMU_KG = 1.66054e-27`, `_SEC_PER_YEAR = 3.15576e7` (Julian year), and `_STEFAN_BOLTZMANN = 5.670374419e-8` (W·m⁻²·K⁻⁴, CODATA — added for the Phase V `radiator-area` calculator in `core/thermal.py`, kept here so σ can't drift). The older functions keep their own inline constants (out of scope).
 
 `_rocky_radius_km(mass_earth) -> float` — approximate rocky-body radius from mass (`R = _EARTH_RADIUS_KM × mass_earth^0.55`); shared by H1 and H2.
 

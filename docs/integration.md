@@ -77,6 +77,9 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `tidal-heating` | `--primary-mass-earth --satellite-radius-km --sma-km --ecc` [`--k2 --tidal-q`] | none | `heating_power_w, surface_flux_wm2, mean_motion_rad_s, io_flux_ratio` (order-of-mag) |
 | `kozai-lidov` | `--m1-solar --m2-solar --m3-solar` (`--period-inner-yr --period-outer-yr` \| `--sma-inner-au --sma-outer-au`) [`--ecc-outer`] | none | `timescale_years` (order-of-mag) |
 | `relativistic-brachistochrone` | `--accel-g --distance-ly` | none | `coord_time_yr, proper_time_yr, peak_velocity_c, peak_lorentz_factor` |
+| `waste-heat` | (`--input-power-watts`\|`--useful-power-watts`) [`--efficiency` \| `--hot-temp-k --cold-temp-k`] | none | `waste_heat_w, useful_power_w, input_power_w, efficiency, carnot_efficiency, carnot_min_waste_heat_w, carnot_limited, notes` |
+| `radiator-area` | (`--heat-watts` \| `--input-power-watts --efficiency`) `--radiator-temp-k` [`--emissivity --sides --sink-temp-k --areal-mass-kgm2`] | none | `radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_mass_kg, scaling_note` |
+| `shielding-attenuation` | (`--areal-density-gcm2` \| `--thickness-cm --density-gcm3`) + coeff (`--mass-atten-coeff-cm2g`\|`--attenuation-length-gcm2`\|`--material [--energy-mev]`) [`--mode {photon,gcr}`] | none (bundled XCOM table) | `transmitted_fraction, attenuation_factor, areal_density_gcm2, half_value_layer_gcm2, tenth_value_layer_gcm2, mode, model_note, buildup_caveat, is_order_of_magnitude` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
 | `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …`] | SIMBAD + NASA + Hypatia (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json) |
@@ -461,6 +464,58 @@ across 0.4–0.9 M☉, with the optimistic-edge inner edge Roche-limited.
 > 1×10⁻⁴ Gyr tolerance over `[0, age_max]`; the CHZ band by a 600-point log-spaced orbit
 > sweep. The cooling output is **order-of-magnitude where the track is sparsely sampled**;
 > the snapshot luminosity is exact (closure-derived).
+
+### Power / Thermal / Shielding (Phase V — pure math + bundled XCOM table, no network)
+
+Three `query.py`-only **mission-engineering** calculators (Group F of
+`calculator-extensions-request.md`; the pre-scope-lock prerequisite for the sibling repo's
+Packet 13). They model the **floor physics** — the radiative-rejection and attenuation
+limits no future engineering can repeal — and are agnostic about mature-tech
+*implementation*. Self-validating (curated `{"error"}` exit 1; argparse exit 2). Pure-math;
+F3 reads a **bundled NIST XCOM coefficient table** (`core/shielding_tables.py`), no live
+dataset. `core/thermal.py`; the Stefan–Boltzmann constant lives in `core/equations.py`.
+
+#### `waste-heat` (F1)
+Waste heat a device must reject, with an optional Carnot ceiling. `Q = P_in·(1−η)` (gross)
+or `P_useful·(1−η)/η` (net). Optional Carnot floor from reservoir temps:
+`η_carnot = 1 − T_cold/T_hot`, `Q_min = P_useful·T_cold/(T_hot−T_cold)`.
+```bash
+query.py waste-heat --input-power-watts 3e9 --efficiency 0.4
+query.py waste-heat --useful-power-watts 1e9 --efficiency 0.9 --hot-temp-k 1500 --cold-temp-k 300
+```
+Core: `thermal.compute_waste_heat(input_power_watts=None, useful_power_watts=None, efficiency=None, hot_temp_k=None, cold_temp_k=None)`. Power anchor (`--input-power-watts` | `--useful-power-watts`) is a **required argparse mutex group** (both/neither → exit 2). Efficiency anchor: `--efficiency` (0<η≤1) **or** `--hot-temp-k`+`--cold-temp-k` (derives η_carnot). If both an explicit efficiency and reservoir temps are given, device waste-heat uses `--efficiency` and the Carnot floor is reported alongside; `carnot_limited:true` flags a stated η above the Carnot ceiling (physically impossible — flagged, still returned). Output: `{waste_heat_w, useful_power_w, input_power_w, efficiency, carnot_efficiency|null, carnot_min_waste_heat_w|null, carnot_limited|null, hot_temp_k, cold_temp_k, notes}`. **Validation:** non-positive powers; η ∉ (0,1]; `T_hot ≤ T_cold`; incomplete reservoir pair; no efficiency anchor → curated `{"error"}` exit 1. **Anchor:** 3 GW @ η=0.4 → useful 1.2e9 / waste 1.8e9 W; T_hot=1500/T_cold=300 → η_carnot=0.8, claimed η=0.9 → `carnot_limited:true`.
+
+#### `radiator-area` (F2)
+Radiating **area** (and optional mass) to reject a heat load by Stefan–Boltzmann radiation.
+`q = ε·σ·(T_rad⁴ − T_sink⁴)·n_sides` [W/m²], `A = Q/q`; σ = 5.670374419e-8.
+```bash
+query.py radiator-area --heat-watts 1e9 --radiator-temp-k 300 --emissivity 0.9 --sides 2
+query.py radiator-area --input-power-watts 3e9 --efficiency 0.4 --radiator-temp-k 350
+```
+Core: `thermal.compute_radiator_area(heat_watts=None, input_power_watts=None, efficiency=None, radiator_temp_k=None, emissivity=0.9, sides=2, sink_temp_k=0.0, areal_mass_kgm2=None)`. Heat load: `--heat-watts` **or** the inline F1 chain `--input-power-watts`+`--efficiency` (computes `Q=P_in·(1−η)`). `--radiator-temp-k` required (>0); `--emissivity` default 0.9 (0<ε≤1); `--sides {1,2}` default 2 (a flat panel radiates from both faces); `--sink-temp-k` default 0 (idealized deep space); `--areal-mass-kgm2` optional → `radiator_mass_kg`. Output: `{radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_temp_k, sink_temp_k, emissivity, sides, radiator_mass_kg|null, areal_mass_kgm2|null, scaling_note}`. `blackside_flux_wm2 = σ·T_rad⁴` makes the T⁴ dependence legible; `scaling_note` states the A ∝ T⁻⁴ rule, the Carnot coupling, and the `T_sink → T_rad` collapse. **Validation:** non-positive heat/temp; ε ∉ (0,1]; `sides ∉ {1,2}`; `T_sink ≥ T_rad` (a radiator can't reject below its environment — curated error); `T_sink < 0`; both/neither heat anchor → curated `{"error"}` exit 1. **Anchors (verified):** σT⁴ = 459 W/m² @300 K / 5.67e4 @1000 K (ε=1, 1 side); **1 GW @300 K, ε=0.9, double-sided → ≈1.21×10⁶ m² ≈ 1.21 km²**.
+
+#### `shielding-attenuation` (F3)
+Attenuation of penetrating radiation by shielding **mass**, two modes.
+**Photon (default, exact Lambert–Beer):** `I/I₀ = exp(−(μ/ρ)·Σ)`, `HVL = ln2/(μ/ρ)`,
+`TVL = ln10/(μ/ρ)` [g/cm²]. **GCR (order-of-magnitude):** `D/D₀ = exp(−Σ/Λ)` with a
+mandatory secondary-buildup caveat (a thin shield can *raise* GCR dose).
+```bash
+query.py shielding-attenuation --material water --energy-mev 1.0 --areal-density-gcm2 20
+query.py shielding-attenuation --material lead --energy-mev 1.0 --thickness-cm 1 --density-gcm3 11.35
+query.py shielding-attenuation --mode gcr --material water --areal-density-gcm2 30
+```
+Core: `thermal.compute_shielding_attenuation(areal_density_gcm2=None, thickness_cm=None, density_gcm3=None, mass_atten_coeff_cm2g=None, attenuation_length_gcm2=None, material=None, energy_mev=None, mode="photon")`. Thickness via `--areal-density-gcm2` **or** `--thickness-cm`+`--density-gcm3` (Σ = ρ·x). Coefficient (photon) via explicit `--mass-atten-coeff-cm2g`, or `--material`+`--energy-mev` **bundled NIST XCOM lookup**; (gcr) via `--attenuation-length-gcm2` or `--material` (bundled Λ). **Bundled photon grid** (`core/shielding_tables.py`, transcribed from NIST XCOM/XAAMDI): materials `water, polyethylene, aluminum, regolith, lead, liquid_h2` (alias `hydrogen`)`, iron` × energies `0.1, 0.5, 1, 2, 5, 10 MeV` (nearest-energy lookup; the chosen energy is echoed in `energy_mev` with an `energy_exact` flag). `regolith` is an SiO₂-dominant silicate approximation and `liquid_h2` carries a per-gram-vs-per-cm note (both surfaced in `notes`). **Bundled GCR Λ** (water/polyethylene/aluminum/regolith; NCRP 153 / NASA HRP, order-of-magnitude). Output: `{transmitted_fraction, attenuation_factor, areal_density_gcm2, half_value_layer_gcm2, tenth_value_layer_gcm2, mass_atten_coeff_cm2g|attenuation_length_gcm2, material|null, energy_mev|null, energy_exact|null, mode, model_note, buildup_caveat, is_order_of_magnitude, notes}` (+ `thickness_cm, density_gcm3, half_value_layer_cm, tenth_value_layer_cm` when thickness+density given). `is_order_of_magnitude` is `false` for photon, `true` for gcr; `model_note` names NIST XCOM (photon) / NCRP-153 (gcr). **Validation:** `--mode` ∉ {photon,gcr} → argparse exit 2; non-positive Σ/thickness/density/coeff/Λ, both Σ paths, an off-grid `--material`/`--energy-mev`, or a missing coefficient → curated `{"error"}` exit 1. **Anchors (photon, transcribed from NIST XCOM):** water @1 MeV (μ/ρ ≈ 0.0707) → HVL ≈ 9.8 cm, TVL ≈ 32.6 cm; 20 g/cm² → transmitted ≈ 0.243; lead @1 MeV → linear HVL ≈ 0.86 cm (ρ = 11.35).
+
+> **Caveat — F3 coefficients & GCR mode.** The photon μ/ρ grid was **reconciled cell-by-cell
+> against the live NIST XAAMDI tables (2026-06-30)** and is pinned by a golden test
+> (`tests/test_thermal.py::test_nist_pinned_grid`): water/polyethylene from the ComTab
+> compound tables; aluminum/lead/hydrogen/iron from the ElemTab element tables; `regolith` is
+> an SiO₂-dominant silicate analog **computed** from the NIST elemental Si+O tables via the
+> mixture rule (an approximation, flagged in `notes`). The water- and lead-@1-MeV HVL anchors
+> are additionally checked. The GCR mode is **explicitly order-of-magnitude**
+> (`is_order_of_magnitude:true`) and a v1 single-exponential stand-in; proton/ion CSDA range,
+> broad-beam photon buildup factors, and active (magnetic/electrostatic) shielding are out of
+> scope (packet prose).
 
 ### Solvent zones (Phase P — no network)
 
