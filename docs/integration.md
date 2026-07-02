@@ -81,6 +81,9 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `radiator-area` | (`--heat-watts` \| `--input-power-watts --efficiency`) `--radiator-temp-k` [`--emissivity --sides --sink-temp-k --areal-mass-kgm2`] | none | `radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_mass_kg, scaling_note` |
 | `shielding-attenuation` | (`--areal-density-gcm2` \| `--thickness-cm --density-gcm3`) + coeff (`--mass-atten-coeff-cm2g`\|`--attenuation-length-gcm2`\|`--material [--energy-mev]`) [`--mode {photon,gcr}`] | none (bundled XCOM table) | `transmitted_fraction, attenuation_factor, areal_density_gcm2, half_value_layer_gcm2, tenth_value_layer_gcm2, mode, model_note, buildup_caveat, is_order_of_magnitude` |
 | `spin-comfort` | exactly two of (`--radius-m` \| `--rpm` \| `--gravity-g`\|`--accel-ms2` \| `--tangential-velocity-ms`) [`--occupant-height-m --walk-speed-ms --criteria {conservative,moderate,relaxed,all}` + per-threshold overrides] | none (bundled comfort bands) | `radius_m, rpm, angular_velocity_rads, accel_ms2, gravity_g, tangential_velocity_ms, head_gravity_g, gravity_gradient_pct, coriolis_ratio_pct, anchors, criteria{…}, overridden_thresholds, model_note, notes` |
+| `life-support` | [`--crew --days --closure-scenario {open,iss,advanced,bioregen}` + per-stream `--*-closure` + per-rate `--*-rate`/`--kcal-per-day`] | none (bundled BVAD Rev2) | `crew, days, per_person_daily{…}, totals{…}, closure{water,o2,food}, scenario, makeup_mass_kg{o2,water,food,total}, model_note` |
+| `bioregen-area` | exactly one light anchor (`--ppfd-umol` \| `--dli-mol` \| `--par-wm2`) [`--kcal-per-day --crew --crop --photoperiod-h --photo-efficiency --harvest-index --artificial --led-par-efficiency --f-edible-energy`] | none (bundled crops) | `area_m2_per_person, area_m2_total, area_m2_per_person_measured, dli_mol, ppfd_umol, photo_efficiency, harvest_index, lighting{…}, crop_gas_exchange{o2_kg_day,co2_kg_day}, transpiration_water_kg_day, par_is_input_note` |
+| `population-capacity` | ≥1 budget of (`--crop-area-m2` \| `--power-w` \| `--water-kg-day` \| `--fixed-nitrogen-kg-yr` \| `--food-dry-kg-day`) [per-person `--per-person-*` overrides] | none (X1/X2 defaults) | `per_resource{…{budget,per_person,source,population}}, sustainable_population, binding_constraint, slack{…}` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
 | `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …`] | SIMBAD + NASA + Hypatia (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json) |
@@ -587,6 +590,97 @@ round inputs) isn't spuriously failed by a 1.0 g ceiling.
 > two** state anchors, or an out-of-range override (non-positive threshold; percentage outside
 > (0, 100]). Argparse exit 2 for `--gravity-g` **and** `--accel-ms2` both given (mutex), a bad
 > `--criteria` choice, or a non-numeric value.
+
+### Closed-loop life support & bioregeneration (Phase X — bundled BVAD Rev2, no network)
+
+Three `query.py`-only mission-ecology calculators for the sibling repo's Packet 15 — crew
+consumables/waste budgeting, bioregenerative grow-area + lighting-power sizing, and
+resource-limited population capacity. Pure arithmetic / energy balance over one bundled static
+reference table (`core/life_support_tables.py`, transcribed verbatim from **NASA BVAD Rev2**,
+NASA/TP-2015-218570/REV2, Feb 2022, Tables 3-31/4-20/4-90/4-91). Self-validating (curated
+`{"error"}` exit 1; argparse exit 2). No GUI, no CLI menu, no DB, no network, no RNG. Every
+bundled rate/efficiency is overridable (Mature-Technology Assumption; `model_note` names the
+edition and the exercising-reference-astronaut caveat). `core/life_support.py`.
+
+> **BVAD edition note.** The bundled human loads are Rev2's exercising ~82 kg reference set —
+> O₂ **0.895**, CO₂ **1.085** (RQ 0.860), food solids **0.800** kg/CM·d, food energy **3054**
+> kcal, drinking water **2.0** kg/CM·d, total water incl. full hygiene **9.12** kg/CM·d (Mature
+> Planetary Base). The older textbook 2500-kcal/0.816-O₂/0.617-food set is reachable through the
+> `--kcal-per-day`/`--*-rate` overrides. The PAR photon energy is `0.2177 J/µmol` (~550 nm) and
+> the LED wall-plug→PAR efficiency defaults to `0.4` (~1.9 µmol/J, a conservative present-day
+> mid-grade fixture).
+
+#### `life-support` (X1)
+Crew consumables and metabolic-waste budget, with closure-loop makeup mass. Every rate starts
+from BVAD Rev2 and is overridable; `--closure-scenario` sets water/O₂/food recycle fractions and
+per-stream `--*-closure` flags override.
+```bash
+query.py life-support --crew 6 --days 180 --closure-scenario iss
+query.py life-support --o2-rate 0.816 --food-dry-rate 0.617 --kcal-per-day 2500   # older textbook set
+```
+Core: `life_support.compute_life_support(crew=1, days=1, water_closure=None, o2_closure=None,
+food_closure=None, closure_scenario=None, o2_rate=None, co2_rate=None, potable_water_rate=None,
+total_water_rate=None, food_dry_rate=None, kcal_per_day=None, solid_waste_rate=None,
+liquid_waste_rate=None)`. `--closure-scenario` ∈ `{open,iss,advanced,bioregen}` (default `open`
+= no recycling). Output: `{crew, days, per_person_daily{o2_kg, co2_kg, potable_water_kg,
+total_water_kg, food_dry_kg, kcal, solid_waste_kg, liquid_waste_kg}, totals{…×crew×days},
+closure{water,o2,food}, scenario, makeup_mass_kg{o2, water, food, total}, model_note, notes}`.
+`makeup[stream] = rate·crew·days·(1−closure)`; open-loop → makeup == total. **Validation:**
+`crew>0`, `days>0`, each overridden rate `>0`, each closure ∈ [0,1], known scenario → else curated
+`{"error"}` exit 1. **Anchor:** per person / open / 1 day → O₂ 0.895, CO₂ 1.085, food 0.800 kg,
+3054 kcal, potable 2.0 kg; `--closure-scenario iss --days 365` water makeup = 0.10× the open total.
+
+#### `bioregen-area` (X2)
+Grow area (and optional LED electrical power) to feed a crew. **Default area path is the PAR
+energy balance** `A = E_d / (PAR_energy·η_photo·HI·f_edible)`; when a **BVAD `--crop`** is named,
+its measured edible productivity is reported as `area_m2_per_person_measured` (cross-check).
+**Algae crops** (`chlorella`/`spirulina`) take the productivity path as the primary area (no
+HI/PAR chain) and still report gas exchange. **Exactly one light anchor is required.**
+```bash
+query.py bioregen-area --kcal-per-day 2500 --crop wheat --dli-mol 30 --artificial
+query.py bioregen-area --crop wheat --ppfd-umol 520.8 --photoperiod-h 16
+query.py bioregen-area --crop chlorella --dli-mol 30
+```
+Core: `life_support.compute_bioregen_area(kcal_per_day=None, crew=1, crop=None, ppfd_umol=None,
+photoperiod_h=16, dli_mol=None, par_wm2=None, photo_efficiency=None, harvest_index=None,
+artificial=False, led_par_efficiency=None, f_edible_energy=1.0)`. Light anchor: `--ppfd-umol`
+(+`--photoperiod-h`), `--dli-mol`, or `--par-wm2` (a **required argparse mutex** — 0/2 → exit 2);
+all three describing the same light give the same area. `--kcal-per-day` default 2500;
+`--photo-efficiency` default **0.10** (biomass-energy/incident-PAR); `--harvest-index` defaults
+from `--crop` and is **required** when no BVAD crop is given; `--led-par-efficiency` default 0.4.
+Output: `{kcal_per_day, crew, crop, area_m2_per_person, area_m2_total,
+area_m2_per_person_measured, dli_mol, ppfd_umol, photoperiod_h, photo_efficiency, harvest_index,
+f_edible_energy, lighting{artificial, par_wm2_delivered, electrical_power_w_per_person,
+electrical_power_w_total, led_par_efficiency}, crop_gas_exchange{o2_kg_day, co2_kg_day},
+transpiration_water_kg_day, model_note, par_is_input_note, notes}` — `electrical_power_*` are
+`null` without `--artificial`; `crop_gas_exchange`/`transpiration` are `null` without `--crop`
+(and `transpiration` is `null` for algae). **`--star`/`--spectral-type` are deliberately
+rejected** (unknown-arg exit 2) — PAR is a caller-supplied parameter (`par_is_input_note`;
+stellar-type-resolved PAR is Packet 18). **Validation:** exactly one light anchor;
+`kcal_per_day>0`, `crew>0`, `photoperiod_h ∈ (0,24]`, `photo_efficiency`/`harvest_index`/
+`led_par_efficiency`/`f_edible_energy ∈ (0,1]`, known crop → else curated `{"error"}` exit 1.
+**Anchors:** 2500 kcal, DLI≈30, wheat → area ≈ 40 m²/person (measured cross-check ≈ 37 m²);
+`--artificial --led-par-efficiency 0.4` → ≈ 7.6 kW/person; `--crop chlorella` gives a smaller area.
+
+#### `population-capacity` (X3)
+Sustainable population from resource budgets; reports the binding constraint. Any omitted
+per-person requirement is filled from a nominal X1 (BVAD water/food) / X2 (area/power) run + the
+bundled per-person fixed-nitrogen figure (~5 kg N/person·yr); any `--per-person-*` flag overrides.
+Only resources with a supplied budget are evaluated.
+```bash
+query.py population-capacity --power-w 1e6 --per-person-power-w 1e4
+query.py population-capacity --crop-area-m2 5000 --power-w 1e6 --fixed-nitrogen-kg-yr 100
+```
+Core: `life_support.compute_population_capacity(crop_area_m2=None, power_w=None, water_kg_day=None,
+fixed_nitrogen_kg_yr=None, food_dry_kg_day=None, per_person_area_m2=None, per_person_power_w=None,
+per_person_water_kg_day=None, per_person_nitrogen_kg_yr=None, per_person_food_kg_day=None)`. Output:
+`{per_resource{<resource>{budget, per_person, source ("default"|"flag"), population}},
+sustainable_population, binding_constraint, slack{<non-binding resource>: population − sustainable},
+model_note, notes}` — `population = budget/per_person`; `sustainable_population = min`;
+`binding_constraint = argmin`. **Validation:** at least one budget, every supplied budget `>0` and
+every per-person requirement `>0` → else curated `{"error"}` exit 1. **Anchor:** `--power-w 1e6
+--per-person-power-w 1e4` → 100 (power-bound); a tight `--fixed-nitrogen-kg-yr` flips
+`binding_constraint` to `"fixed_nitrogen"` with slack reported on the others.
 
 ### Solvent zones (Phase P — no network)
 

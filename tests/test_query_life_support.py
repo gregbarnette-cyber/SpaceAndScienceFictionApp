@@ -1,0 +1,105 @@
+# tests/test_query_life_support.py — Phase X life-support query.py contract.
+#
+# Offline subprocess tests mirroring tests/test_query_spin.py: happy-path JSON shape, core parity
+# (subprocess == in-process), and the self-validating exit-code matrix (curated {"error"} -> exit 1;
+# argparse -> exit 2). No network / DB / Qt. SPACE_APP_DB throwaway env set for family parity.
+
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import unittest
+
+import core.life_support as ls
+
+_REPO = pathlib.Path(__file__).resolve().parent.parent
+_ENV = {"SPACE_APP_DB": "/tmp/phase_x_throwaway.db", "PATH": os.environ.get("PATH", "")}
+
+
+def _run(*cmd_args):
+    proc = subprocess.run(
+        [sys.executable, str(_REPO / "query.py"), *cmd_args],
+        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
+    )
+    try:
+        payload = json.loads(proc.stdout)
+    except Exception:
+        payload = None
+    return proc.returncode, payload, proc.stderr
+
+
+class HappyPathTest(unittest.TestCase):
+    def test_x1_and_parity(self):
+        rc, d, _ = _run("life-support", "--crew", "6", "--days", "180")
+        self.assertEqual(rc, 0)
+        self.assertAlmostEqual(d["per_person_daily"]["o2_kg"], 0.895)
+        self.assertAlmostEqual(d["totals"]["food_dry_kg"], 0.800 * 6 * 180)
+        self.assertIn("model_note", d)
+        ref = ls.compute_life_support(crew=6, days=180)
+        self.assertEqual(d["totals"], ref["totals"])
+
+    def test_x1_iss_makeup(self):
+        rc, d, _ = _run("life-support", "--closure-scenario", "iss", "--days", "365")
+        self.assertEqual(rc, 0)
+        self.assertLess(d["makeup_mass_kg"]["water"], 0.2 * d["totals"]["total_water_kg"])
+
+    def test_x2_and_parity(self):
+        rc, d, _ = _run("bioregen-area", "--kcal-per-day", "2500", "--crop", "wheat",
+                        "--dli-mol", "30", "--artificial")
+        self.assertEqual(rc, 0)
+        self.assertTrue(30.0 <= d["area_m2_per_person"] <= 50.0)
+        self.assertTrue(5000.0 <= d["lighting"]["electrical_power_w_per_person"] <= 15000.0)
+        self.assertIn("par_is_input_note", d)
+        ref = ls.compute_bioregen_area(kcal_per_day=2500, crop="wheat", dli_mol=30, artificial=True)
+        self.assertAlmostEqual(d["area_m2_per_person"], ref["area_m2_per_person"], places=6)
+
+    def test_x2_algae(self):
+        rc, d, _ = _run("bioregen-area", "--crop", "chlorella", "--dli-mol", "30")
+        self.assertEqual(rc, 0)
+        self.assertIsNone(d["photo_efficiency"])
+        self.assertIsNotNone(d["crop_gas_exchange"]["o2_kg_day"])
+
+    def test_x3_and_parity(self):
+        rc, d, _ = _run("population-capacity", "--power-w", "1e6", "--per-person-power-w", "1e4")
+        self.assertEqual(rc, 0)
+        self.assertAlmostEqual(d["sustainable_population"], 100.0)
+        self.assertEqual(d["binding_constraint"], "power")
+
+    def test_x3_nitrogen_binding(self):
+        rc, d, _ = _run("population-capacity", "--power-w", "1e6", "--per-person-power-w", "1e4",
+                        "--fixed-nitrogen-kg-yr", "100")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["binding_constraint"], "fixed_nitrogen")
+
+
+class ExitCodeTest(unittest.TestCase):
+    def test_curated_errors_exit_1(self):
+        for args in (
+            ["life-support", "--crew", "0"],
+            ["life-support", "--days", "0"],
+            ["life-support", "--water-closure", "1.5"],
+            ["bioregen-area", "--dli-mol", "30"],                        # no crop, no HI
+            ["bioregen-area", "--crop", "wheat", "--dli-mol", "0"],      # non-positive anchor
+            ["population-capacity"],                                     # no budget
+        ):
+            rc, d, _ = _run(*args)
+            self.assertEqual(rc, 1, args)
+            self.assertIn("error", d, args)
+
+    def test_argparse_errors_exit_2(self):
+        for args in (
+            ["life-support", "--closure-scenario", "bogus"],                        # bad choice
+            ["life-support", "--crew", "abc"],                                      # non-numeric
+            ["bioregen-area", "--crop", "wheat"],                                   # missing light group
+            ["bioregen-area", "--crop", "wheat", "--dli-mol", "30", "--ppfd-umol", "500"],  # two anchors
+            ["bioregen-area", "--crop", "bogus", "--dli-mol", "30"],                # bad crop choice
+            ["bioregen-area", "--crop", "wheat", "--dli-mol", "30", "--star", "Sol"],  # unknown arg
+            ["population-capacity", "--power-w", "xyz"],                            # non-numeric
+        ):
+            rc, _, _ = _run(*args)
+            self.assertEqual(rc, 2, args)
+
+
+if __name__ == "__main__":
+    unittest.main()

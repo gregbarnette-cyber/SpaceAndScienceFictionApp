@@ -18,6 +18,7 @@ import core.dust_routing as dust_routing
 import core.equations as equations
 import core.feasibility as feasibility
 import core.generate as generate
+import core.life_support as life_support
 import core.projects as projects
 import core.regions as regions
 import core.report as report
@@ -695,6 +696,43 @@ def cmd_spin_comfort(args):
     ))
 
 
+# ── Phase X — closed-loop life-support & bioregenerative calculators ──────────
+
+def cmd_life_support(args):
+    _out(life_support.compute_life_support(
+        crew=args.crew, days=args.days,
+        water_closure=args.water_closure, o2_closure=args.o2_closure,
+        food_closure=args.food_closure, closure_scenario=args.closure_scenario,
+        o2_rate=args.o2_rate, co2_rate=args.co2_rate,
+        potable_water_rate=args.potable_water_rate, total_water_rate=args.total_water_rate,
+        food_dry_rate=args.food_dry_rate, kcal_per_day=args.kcal_per_day,
+        solid_waste_rate=args.solid_waste_rate, liquid_waste_rate=args.liquid_waste_rate,
+    ))
+
+
+def cmd_bioregen_area(args):
+    _out(life_support.compute_bioregen_area(
+        kcal_per_day=args.kcal_per_day, crew=args.crew, crop=args.crop,
+        ppfd_umol=args.ppfd_umol, photoperiod_h=args.photoperiod_h,
+        dli_mol=args.dli_mol, par_wm2=args.par_wm2,
+        photo_efficiency=args.photo_efficiency, harvest_index=args.harvest_index,
+        artificial=args.artificial, led_par_efficiency=args.led_par_efficiency,
+        f_edible_energy=args.f_edible_energy,
+    ))
+
+
+def cmd_population_capacity(args):
+    _out(life_support.compute_population_capacity(
+        crop_area_m2=args.crop_area_m2, power_w=args.power_w,
+        water_kg_day=args.water_kg_day, fixed_nitrogen_kg_yr=args.fixed_nitrogen_kg_yr,
+        food_dry_kg_day=args.food_dry_kg_day,
+        per_person_area_m2=args.per_person_area_m2, per_person_power_w=args.per_person_power_w,
+        per_person_water_kg_day=args.per_person_water_kg_day,
+        per_person_nitrogen_kg_yr=args.per_person_nitrogen_kg_yr,
+        per_person_food_kg_day=args.per_person_food_kg_day,
+    ))
+
+
 _BURN_UNITS = {"H": ("Hours", 3600.0), "D": ("Days", 86400.0), "W": ("Weeks", 604800.0)}
 
 
@@ -1158,6 +1196,68 @@ def main():
     p.add_argument("--max-gradient-pct", type=float, help="Override the max head-foot gradient threshold (%%)")
     p.add_argument("--max-coriolis-pct", type=float, help="Override the max Coriolis-ratio threshold (%%)")
     p.set_defaults(func=cmd_spin_comfort)
+
+    # life-support (Phase X1 — crew consumables/waste budget + closure-loop makeup mass)
+    p = sub.add_parser("life-support",
+                       help="Closed-loop crew consumables/waste budget (BVAD Rev2 rates) + "
+                            "closure-scenario makeup mass")
+    p.add_argument("--crew", type=int, default=1, help="Crew size (default 1)")
+    p.add_argument("--days", type=int, default=1, help="Mission duration in days (default 1)")
+    p.add_argument("--closure-scenario", choices=sorted(life_support._t.get_closure_scenarios()),
+                   help="Recycle scenario: open (default) | iss | advanced | bioregen")
+    p.add_argument("--water-closure", type=float, help="Override water recycle fraction [0,1]")
+    p.add_argument("--o2-closure", type=float, help="Override O2 recycle fraction [0,1]")
+    p.add_argument("--food-closure", type=float, help="Override food recycle fraction [0,1]")
+    p.add_argument("--o2-rate", type=float, help="Override O2 consumed, kg/CM·d")
+    p.add_argument("--co2-rate", type=float, help="Override CO2 produced, kg/CM·d")
+    p.add_argument("--potable-water-rate", type=float, help="Override drinking water, kg/CM·d")
+    p.add_argument("--total-water-rate", type=float, help="Override total (incl. hygiene) water, kg/CM·d")
+    p.add_argument("--food-dry-rate", type=float, help="Override food solids (dry), kg/CM·d")
+    p.add_argument("--kcal-per-day", type=float, help="Override food energy, kcal/CM·d")
+    p.add_argument("--solid-waste-rate", type=float, help="Override dry metabolic solids, kg/CM·d")
+    p.add_argument("--liquid-waste-rate", type=float, help="Override liquid (water) waste, kg/CM·d")
+    p.set_defaults(func=cmd_life_support)
+
+    # bioregen-area (Phase X2 — grow area + lighting power to feed a crew)
+    p = sub.add_parser("bioregen-area",
+                       help="Bioregenerative grow area + lighting power (PAR energy balance; "
+                            "BVAD-crop measured cross-check; algae productivity path)")
+    p.add_argument("--kcal-per-day", type=float, help="Dietary energy per person, kcal/day (default 2500)")
+    p.add_argument("--crew", type=int, default=1, help="Crew size (default 1)")
+    p.add_argument("--crop", choices=sorted(life_support._t.get_crops()),
+                   help="Bundled crop (wheat/…/lettuce = BVAD; chlorella/spirulina = algae)")
+    light = p.add_mutually_exclusive_group(required=True)
+    light.add_argument("--ppfd-umol", type=float, help="Photosynthetic photon flux density, µmol/m²·s")
+    light.add_argument("--dli-mol", type=float, help="Daily light integral, mol/m²·d")
+    light.add_argument("--par-wm2", type=float, help="PAR irradiance over the photoperiod, W/m²")
+    p.add_argument("--photoperiod-h", type=float, default=16.0, help="Photoperiod, hours (default 16)")
+    p.add_argument("--photo-efficiency", type=float,
+                   help="Biomass-energy/incident-PAR efficiency (default 0.10)")
+    p.add_argument("--harvest-index", type=float,
+                   help="Edible/total biomass fraction (default from --crop; required otherwise)")
+    p.add_argument("--artificial", action="store_true",
+                   help="Compute LED electrical power (omit for natural/concentrated light)")
+    p.add_argument("--led-par-efficiency", type=float,
+                   help="Wall-plug→PAR LED efficiency (default 0.4)")
+    p.add_argument("--f-edible-energy", type=float, default=1.0,
+                   help="Fraction of edible dry mass that is metabolizable energy (default 1.0)")
+    p.set_defaults(func=cmd_bioregen_area)
+
+    # population-capacity (Phase X3 — sustainable population from resource budgets)
+    p = sub.add_parser("population-capacity",
+                       help="Sustainable population from resource budgets; reports the binding "
+                            "constraint (per-person defaults from X1/X2)")
+    p.add_argument("--crop-area-m2", type=float, help="Total available crop area budget, m²")
+    p.add_argument("--power-w", type=float, help="Total available electrical power budget, W")
+    p.add_argument("--water-kg-day", type=float, help="Total available water budget, kg/day")
+    p.add_argument("--fixed-nitrogen-kg-yr", type=float, help="Total available fixed nitrogen budget, kg/yr")
+    p.add_argument("--food-dry-kg-day", type=float, help="Total available food (dry) budget, kg/day")
+    p.add_argument("--per-person-area-m2", type=float, help="Override per-person crop area, m²")
+    p.add_argument("--per-person-power-w", type=float, help="Override per-person power, W")
+    p.add_argument("--per-person-water-kg-day", type=float, help="Override per-person water, kg/day")
+    p.add_argument("--per-person-nitrogen-kg-yr", type=float, help="Override per-person fixed nitrogen, kg/yr")
+    p.add_argument("--per-person-food-kg-day", type=float, help="Override per-person food (dry), kg/day")
+    p.set_defaults(func=cmd_population_capacity)
 
     # rv-semi-amplitude (A1)
     p = sub.add_parser("rv-semi-amplitude",

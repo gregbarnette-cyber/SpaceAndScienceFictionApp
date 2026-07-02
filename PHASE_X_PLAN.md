@@ -1,6 +1,12 @@
 # PHASE_X_PLAN.md — Closed-Loop Life-Support & Bioregenerative Calculators
 
-**Status:** Planned — awaiting go-ahead to implement.
+**Status:** ✅ Complete — built 2026-07-02. Three `query.py` subcommands (`life-support` /
+`bioregen-area` / `population-capacity`) + `core/life_support.py` + `core/life_support_tables.py`
++ `tests/test_life_support.py` + `tests/test_query_life_support.py`; `docs/integration.md` +
+`docs/gui-architecture.md` updated. Full suite green (1129 passed). **One decided deviation:** the
+X2 biomass-energy/incident-PAR default `η_photo` is **0.10**, not the 0.03 first drafted below — see
+the note in §1 D2 (0.03 was the total-solar figure and yielded ~130 m², contradicting the 30–50 m²
+acceptance anchor; 0.10 is RUE-derived and hits both the area and the lighting-power anchors).
 **Designation:** Phase X (next free letter after Phase W `spin-comfort`).
 **Consumer:** sibling repo `scifiWorldBuilding-Claude`, Packet 15.
 **Request spec:** `scifiWorldBuilding-Claude/research/query-api-methods/closed-loop-life-support-calculator-request.md`.
@@ -69,6 +75,13 @@ white potato 3.55, sweet potato 3.60, soybean 4.40, lettuce 2.50, chlorella 3.80
   `A = E_d / (PAR_daily_energy_per_m2 · η_photo · HI · f_edible_energy)`; BVAD's measured edible
   productivity is bundled as a **cross-check field** (`area_m2_per_person_measured`) and is the sole
   path for algae (areal-productivity × energy-density). Both reported; neither silently hidden.
+  **`η_photo` default = 0.10 (biomass-energy/incident-PAR), NOT 0.03.** 0.03 is the biomass fraction
+  of *total incident solar*; PAR is only ~45% of solar and controlled-environment absorption is high,
+  so the PAR-referenced figure is ~3× larger. 0.10 is independently RUE-derived (wheat canopy ≈ 1.35 g
+  dry/mol PAR × ~17 kJ/g ÷ 217.7 kJ/mol ≈ 0.105) and calibrated so the energy-balance area lands at
+  ~40 m²/person at DLI 30 / wheat HI 0.40 / 2500 kcal — matching **both** the 30–50 m² acceptance
+  anchor and the BVAD measured cross-check (~37 m²). 0.03 would give ~130 m² and ~25 kW, failing both
+  X2 acceptance anchors. Overridable via `--photo-efficiency`.
 - **D3 — X3 calls X1/X2 internally** for per-person defaults (spec open-item 4, "recommended"): if a
   per-person requirement flag is omitted, derive it from a nominal X1 (BVAD) / X2 run; any flag
   overrides. Echo which came from defaults vs. flags.
@@ -132,8 +145,8 @@ No edits to any GUI, CLI menu, DB, or network module.
   (convert W/m² PAR → mol/m²·d via the 0.2177 J/µmol). `PAR_daily_energy_per_m2 [kJ/m²·d] =
   dli·_PAR_J_PER_UMOL·1000`.
 - **Area (energy-balance, default):** `A = E_d / (PAR_daily_energy_per_m2 · η_photo · HI ·
-  f_edible_energy)`. `η_photo` default 0.03 (biomass-energy/incident-PAR), `HI` default from `--crop`
-  (Table 4-90) else required. **Cross-check:** `area_measured = E_d /
+  f_edible_energy)`. `η_photo` default **0.10** (biomass-energy/incident-PAR; see §1 D2), `HI` default
+  from `--crop` (Table 4-90) else required. **Cross-check:** `area_measured = E_d /
   (edible_dry_g_m2_d · energy_density_kcal_g · _KCAL_TO_KJ)` when `--crop` given.
 - **Algae mode** (`--crop chlorella|spirulina`): area from areal productivity × energy density only
   (no HI/PAR chain); still reports gas exchange.
@@ -180,8 +193,8 @@ No edits to any GUI, CLI menu, DB, or network module.
   total (0.90 recycle); `open` makeup == total.
 - **X1 overrides:** `--o2-rate 0.816 --food-dry-rate 0.617 --kcal-per-day 2500` reproduces the older
   textbook set exactly (proves override path).
-- **X2 anchors:** 2500 kcal/day, DLI≈30 mol/m²·d, `η_photo=0.03`, wheat HI 0.40 → `area_m2_per_person`
-  lands in **30–50 m²** (spec anchor). `--artificial --led-par-efficiency 0.4` →
+- **X2 anchors:** 2500 kcal/day, DLI≈30 mol/m²·d, `η_photo=0.10` (default), wheat HI 0.40 →
+  `area_m2_per_person` lands in **30–50 m²** (spec anchor; ≈ 40 m² actual). `--artificial --led-par-efficiency 0.4` →
   `electrical_power_w_per_person` in **5,000–15,000 W** (spec anchor). PPFD↔DLI↔PAR-W/m² parity
   (three light anchors that describe the same light give the same area). `--crop chlorella` → smaller
   area than wheat at equal demand. `par_is_input_note` present; `area_m2_per_person_measured` within a
