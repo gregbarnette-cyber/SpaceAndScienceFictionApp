@@ -22,6 +22,7 @@ import core.projects as projects
 import core.regions as regions
 import core.report as report
 import core.science as science
+import core.spin as spin
 import core.thermal as thermal
 
 
@@ -679,6 +680,21 @@ def cmd_gravity_rpm(args):
     _out(equations.compute_centrifugal_gravity_rpm(args.accel_ms2, args.radius_m))
 
 
+def cmd_spin_comfort(args):
+    accel = args.accel_ms2
+    if args.gravity_g is not None:
+        accel = args.gravity_g * equations._STANDARD_GRAVITY
+    _out(spin.compute_spin_comfort(
+        radius_m=args.radius_m, rpm=args.rpm, accel_ms2=accel,
+        tangential_velocity_ms=args.tangential_velocity_ms,
+        occupant_height_m=args.occupant_height_m, walk_speed_ms=args.walk_speed_ms,
+        criteria=args.criteria,
+        max_rpm=args.max_rpm, min_gravity_g=args.min_gravity_g, max_gravity_g=args.max_gravity_g,
+        min_tangential_velocity_ms=args.min_tangential_velocity_ms,
+        max_gradient_pct=args.max_gradient_pct, max_coriolis_pct=args.max_coriolis_pct,
+    ))
+
+
 _BURN_UNITS = {"H": ("Hours", 3600.0), "D": ("Days", 86400.0), "W": ("Weeks", 604800.0)}
 
 
@@ -1117,6 +1133,31 @@ def main():
                                       "(water/polyethylene/aluminum/regolith/lead/liquid_h2/hydrogen/iron)")
     p.add_argument("--energy-mev", type=float, help="Photon energy MeV for the bundled μ/ρ lookup")
     p.set_defaults(func=cmd_shielding_attenuation)
+
+    # spin-comfort (Phase W — rotating-habitat comfort readout + criteria verdict)
+    p = sub.add_parser("spin-comfort",
+                       help="Rotating-habitat comfort: solve spin state from any two anchors + "
+                            "rim velocity / gravity gradient / Coriolis ratio + tiered comfort verdict "
+                            "(complements the terse gravity-acceleration/-distance/-rpm solves)")
+    p.add_argument("--radius-m", type=float, help="Radius to the occupant's feet, m (state anchor)")
+    p.add_argument("--rpm", type=float, help="Spin rate, revolutions per minute (state anchor)")
+    grav = p.add_mutually_exclusive_group()
+    grav.add_argument("--gravity-g", type=float, help="Centrifugal gravity in g (state anchor)")
+    grav.add_argument("--accel-ms2", type=float, help="Centrifugal gravity in m/s² (state anchor)")
+    p.add_argument("--tangential-velocity-ms", type=float, help="Rim tangential velocity, m/s (state anchor)")
+    p.add_argument("--occupant-height-m", type=float, default=1.8,
+                   help="Head height for the gravity gradient, m (default 1.8; must be < radius)")
+    p.add_argument("--walk-speed-ms", type=float, default=1.0,
+                   help="Reference occupant walking speed for the Coriolis ratio, m/s (default 1.0)")
+    p.add_argument("--criteria", choices=["conservative", "moderate", "relaxed", "all"], default="all",
+                   help="Comfort tier(s) to report (default all)")
+    p.add_argument("--max-rpm", type=float, help="Override the max spin rate threshold (RPM)")
+    p.add_argument("--min-gravity-g", type=float, help="Override the min gravity threshold (g)")
+    p.add_argument("--max-gravity-g", type=float, help="Override the max gravity threshold (g)")
+    p.add_argument("--min-tangential-velocity-ms", type=float, help="Override the min rim-velocity threshold (m/s)")
+    p.add_argument("--max-gradient-pct", type=float, help="Override the max head-foot gradient threshold (%%)")
+    p.add_argument("--max-coriolis-pct", type=float, help="Override the max Coriolis-ratio threshold (%%)")
+    p.set_defaults(func=cmd_spin_comfort)
 
     # rv-semi-amplitude (A1)
     p = sub.add_parser("rv-semi-amplitude",

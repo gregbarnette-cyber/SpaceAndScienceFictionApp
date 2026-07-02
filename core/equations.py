@@ -20,6 +20,7 @@ _KM_PER_AU       = 149_597_870.7
 _AMU_KG          = 1.66054e-27
 _SEC_PER_YEAR    = 3.15576e7          # Julian year (365.25 d)
 _STEFAN_BOLTZMANN = 5.670374419e-8    # Stefan–Boltzmann constant, W·m⁻²·K⁻⁴ (CODATA; Phase V thermal)
+_STANDARD_GRAVITY = 9.80665           # standard gravity g₀, m/s² (CGPM; Phase W spin-comfort)
 
 
 def _rocky_radius_km(mass_earth: float) -> float:

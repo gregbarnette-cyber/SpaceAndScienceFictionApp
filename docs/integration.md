@@ -80,6 +80,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `waste-heat` | (`--input-power-watts`\|`--useful-power-watts`) [`--efficiency` \| `--hot-temp-k --cold-temp-k`] | none | `waste_heat_w, useful_power_w, input_power_w, efficiency, carnot_efficiency, carnot_min_waste_heat_w, carnot_limited, notes` |
 | `radiator-area` | (`--heat-watts` \| `--input-power-watts --efficiency`) `--radiator-temp-k` [`--emissivity --sides --sink-temp-k --areal-mass-kgm2`] | none | `radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_mass_kg, scaling_note` |
 | `shielding-attenuation` | (`--areal-density-gcm2` \| `--thickness-cm --density-gcm3`) + coeff (`--mass-atten-coeff-cm2g`\|`--attenuation-length-gcm2`\|`--material [--energy-mev]`) [`--mode {photon,gcr}`] | none (bundled XCOM table) | `transmitted_fraction, attenuation_factor, areal_density_gcm2, half_value_layer_gcm2, tenth_value_layer_gcm2, mode, model_note, buildup_caveat, is_order_of_magnitude` |
+| `spin-comfort` | exactly two of (`--radius-m` \| `--rpm` \| `--gravity-g`\|`--accel-ms2` \| `--tangential-velocity-ms`) [`--occupant-height-m --walk-speed-ms --criteria {conservative,moderate,relaxed,all}` + per-threshold overrides] | none (bundled comfort bands) | `radius_m, rpm, angular_velocity_rads, accel_ms2, gravity_g, tangential_velocity_ms, head_gravity_g, gravity_gradient_pct, coriolis_ratio_pct, anchors, criteria{…}, overridden_thresholds, model_note, notes` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
 | `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …`] | SIMBAD + NASA + Hypatia (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json) |
@@ -516,6 +517,76 @@ Core: `thermal.compute_shielding_attenuation(areal_density_gcm2=None, thickness_
 > (`is_order_of_magnitude:true`) and a v1 single-exponential stand-in; proton/ion CSDA range,
 > broad-beam photon buildup factors, and active (magnetic/electrostatic) shielding are out of
 > scope (packet prose).
+
+### Rotating-habitat comfort (Phase W — no network)
+
+#### `spin-comfort`
+The in-house analog of Theodore Hall's *SpinCalc*: given exactly **two** of the four spin-state
+variables it solves the other two **plus** the three comfort-relevant derived quantities the
+`gravity-*` solves don't expose — **rim tangential velocity, head-to-foot gravity gradient, and
+Coriolis ratio for a walking occupant** — then classifies the design against tiered comfort
+bands. Pure-math, self-validating, `query.py`-only; **extends (does not replace)**
+`gravity-acceleration` / `gravity-distance` / `gravity-rpm` (those stay the terse single-scalar
+solves).
+```bash
+query.py spin-comfort --radius-m 224 --rpm 2.0
+query.py spin-comfort --radius-m 10 --gravity-g 1.0
+query.py spin-comfort --gravity-g 1.0 --tangential-velocity-ms 6 --criteria moderate
+```
+Core function: `spin.compute_spin_comfort(radius_m=None, rpm=None, accel_ms2=None,
+tangential_velocity_ms=None, occupant_height_m=1.8, walk_speed_ms=1.0, criteria="all",
+max_rpm=None, min_gravity_g=None, max_gravity_g=None, min_tangential_velocity_ms=None,
+max_gradient_pct=None, max_coriolis_pct=None)`.
+
+- **State anchors — supply exactly two:** `--radius-m` (m), `--rpm`, gravity (`--gravity-g`
+  **or** `--accel-ms2` m/s²; argparse-mutex), `--tangential-velocity-ms` (m/s). All six pairings
+  are determinate (`ω`,`r` derived, then everything). Fewer/more than two → curated error.
+- **Occupant / reference:** `--occupant-height-m` (default **1.8**; head height for the gradient;
+  must be `<` the *solved* radius), `--walk-speed-ms` (default **1.0**; the Coriolis reference speed).
+- **Verdict:** `--criteria {conservative,moderate,relaxed,all}` (default **all**). Optional
+  per-threshold overrides `--max-rpm`, `--min-gravity-g`, `--max-gravity-g`,
+  `--min-tangential-velocity-ms`, `--max-gradient-pct`, `--max-coriolis-pct` each replace that
+  threshold across **all** evaluated tiers; the output lists which were overridden.
+
+**Formulas (exact):** `ω = rpm·2π/60`; `a = ω²r` (`gravity_g = a/g₀`, g₀ = 9.80665);
+`v = ωr`; gradient fraction `= h/r` (head accel `ω²(r−h)`); Coriolis ratio `= 2u/v` (u = walk speed).
+
+**Output (units on every field):** `{radius_m (m), rpm, angular_velocity_rads (rad/s), accel_ms2,
+gravity_g, tangential_velocity_ms (m/s), occupant_height_m (m), head_accel_ms2, head_gravity_g,
+gravity_gradient_fraction, gravity_gradient_pct (%), walk_speed_ms (m/s), coriolis_accel_ms2,
+coriolis_ratio, coriolis_ratio_pct (%), anchors [the two supplied], criteria {tier: {pass,
+checks: {name: {value, threshold, pass}}}}, overridden_thresholds[], model_note, notes}`. A check
+with a `null` threshold reports `pass: null` (not checked for that tier); a tier's `pass` is the
+AND of its non-null checks. `--criteria <tier>` returns only that tier's block. All inputs echoed.
+
+**Bundled comfort bands** (`core/spin_tables.py`; transcribed from Hall's SpinCalc comfort-chart
+literature — Hill & Schnitzer 1962 / Gilruth 1969 / Gordon & Gervais 1969 / Stone 1973 /
+Cramer 1985 / Hall 1999 Table 1). **The bands are a human-factors design *choice*, not physics** —
+the kinematic outputs are exact; only the pass/fail bands are a choice, and every threshold is
+overridable. Comparisons carry a **1 % relative tolerance** so a nominal-1 g design (1.0019 g from
+round inputs) isn't spuriously failed by a 1.0 g ceiling.
+
+| Threshold | Conservative | Moderate | Relaxed |
+|---|--:|--:|--:|
+| Max spin rate (RPM) | 2.0 | 4.0 | 6.0 |
+| Min gravity (g) | 0.30 | 0.20 | 0.10 |
+| Max gravity (g) | 1.0 | 1.0 | (none) |
+| Min tangential velocity (m/s) | 6 | 3 | (none) |
+| Max head-foot gradient (%) | 10 | 15 | 25 |
+| Max Coriolis ratio @ walk (%) | 25 | 25 | (none) |
+
+> **Provenance footnotes (echoed in `model_note`):** the RPM ladder and the min-gravity column
+> are verbatim from Table 1; the conservative gradient **10 %** has no direct published basis
+> (Table 1 gives 8 % and 25 %); published gradient caps are defined over a **2 m** head-to-foot
+> span (default height 1.8 m); Stone's 25 % Coriolis cap is at a **1.2 m/s** carry speed (default
+> walk-speed 1.0). Per the Mature-Technology Assumption these are present-day *unadapted*
+> constraints — design anchors, not 2500-yr ceilings.
+
+> **Validation (self-validating — Phase-H/P):** curated `{"error"}` exit 1 for a non-positive
+> anchor / occupant-height / walk-speed, `occupant-height-m ≥` the solved radius, **not exactly
+> two** state anchors, or an out-of-range override (non-positive threshold; percentage outside
+> (0, 100]). Argparse exit 2 for `--gravity-g` **and** `--accel-ms2` both given (mutex), a bad
+> `--criteria` choice, or a non-numeric value.
 
 ### Solvent zones (Phase P — no network)
 
@@ -1481,4 +1552,5 @@ The `gcns-within-sol`, `gcns-source`, and `gcns-system` subcommands are **local 
 - `--ly-hr` and `--times-c` are a mutually exclusive required group for `travel-time`, `optimal-tour`, and `multi-stop`; supplying both or neither is rejected by `argparse` with exit code 2.
 - The `gcns-*` calculators use one required mutually-exclusive group **per endpoint** (`--star1`/`--id1`, `--star2`/`--id2`, or `--star`/`--id`), plus the `--ly-hr`/`--times-c` group for `gcns-travel-time`. Supplying both or neither within any group is rejected by `argparse` with **exit code 2** and a message on **stderr** — this is the argparse path, **not** the JSON-`{"error"}`/exit-1 path, so do not parse stdout as JSON for those invocations. A resolvable-but-invalid request (e.g. a name not in GCNS, an ambiguous name, or an empty `gcns_stars` table) instead returns `{"error": ...}` on stdout with exit 1.
 - **Phase T mode-selection groups:** `rv-semi-amplitude` uses a real **argparse** required mutually-exclusive group `--period-days`/`--sma-au` (both/neither → exit 2). `circumbinary-hz` (numeric `--teff1/--lum1/--teff2/--lum2` vs `--star1/--star2`) enforces its mode exclusivity **in the handler** — both modes, one star only, or a partial numeric set → a stderr message + **exit 2**. `kozai-lidov` requires exactly one complete pair (both periods **or** both SMAs); a partial/both-pair input is a **core** check → curated `{"error"}` **exit 1**. `solar-analogs --mode` is an argparse `choices` (bad value → exit 2). `substellar --classes` is `nargs="+"`.
+- **Phase W `spin-comfort` anchors:** the two gravity forms `--gravity-g` / `--accel-ms2` are an **optional** argparse mutually-exclusive group (both → exit 2), but the "**exactly two** state anchors" rule is a **core** check → curated `{"error"}` **exit 1** (so 0 / 1 / 3 / 4 anchors is exit 1, not the argparse exit 2). `--criteria` is an argparse `choices` (bad value → exit 2); the per-threshold overrides and `occupant-height-m ≥` the *solved* radius are core checks (exit 1).
 - **Phase N validation asymmetry** (see "Integration expansion (Phase N)" above): the pure-compute Phase-N subcommands (`habitable-zone-sma`, `star-luminosity`, `brachistochrone-au`, `brachistochrone-lm`) wrap **non-self-validating** legacy core functions, so out-of-range numerics surface via the generic top-level handler as `{"error": str(e)}` with a **raw exception message** (not a curated sentence), exit 1 — except `star-luminosity`, which has no out-of-range error path (only argparse exit 2). Only `travel-time-solar` returns curated `{"error": ...}` dicts. This is intentional (Phase N adds no `core/` validation); key on `"error"` + exit code, never on the message text.
