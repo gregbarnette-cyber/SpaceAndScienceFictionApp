@@ -20,12 +20,14 @@ import core.feasibility as feasibility
 import core.generate as generate
 import core.life_support as life_support
 import core.megastructure as megastructure
+import core.par_flux as par_flux
 import core.projects as projects
 import core.propulsion as propulsion
 import core.regions as regions
 import core.report as report
 import core.science as science
 import core.spin as spin
+import core.terraforming as terraforming
 import core.thermal as thermal
 
 
@@ -340,6 +342,48 @@ def cmd_dyson_collector(args):
     _out(megastructure.compute_dyson_collector(
         luminosity_lsun=lum, fraction=args.fraction, orbit_au=args.orbit_au,
         areal_mass_kgm2=args.areal_mass_kgm2,
+    ))
+
+
+# ── Phase AA — PAR / photosynthesis by stellar type ───────────────────────────
+
+def cmd_par_flux(args):
+    # Teff (teff_k/spectral_type/star) and insolation source resolution both
+    # happen inside the core (curated exit-1 on 0/2+ sources); --star is the
+    # only networked path (SIMBAD, resolved lazily in core.par_flux).
+    _out(par_flux.compute_par_flux(
+        teff_k=args.teff_k, spectral_type=args.spectral_type, star=args.star,
+        insolation_wm2=args.insolation_wm2, luminosity_lsun=args.luminosity_lsun,
+        distance_au=args.distance_au, par_band_nm=tuple(args.par_band_nm),
+    ))
+
+
+# ── Phase AB — planetary energy balance / terraforming ────────────────────────
+
+def cmd_equilibrium_temp(args):
+    _out(terraforming.compute_equilibrium_temp(
+        insolation_wm2=args.insolation_wm2, luminosity_lsun=args.luminosity_lsun,
+        distance_au=args.distance_au, albedo=args.albedo,
+        greenhouse_delta_k=args.greenhouse_delta_k, optical_depth=args.optical_depth,
+        target_surface_k=args.target_surface_k,
+    ))
+
+
+def cmd_insolation_shift(args):
+    _out(terraforming.compute_insolation_shift(
+        planet_radius_km=args.planet_radius_km,
+        delta_insolation_wm2=args.delta_insolation_wm2,
+        solar_flux_wm2=args.solar_flux_wm2, luminosity_lsun=args.luminosity_lsun,
+        distance_au=args.distance_au,
+    ))
+
+
+def cmd_atmosphere_mass(args):
+    _out(terraforming.compute_atmosphere_mass(
+        planet_radius_km=args.planet_radius_km,
+        surface_gravity_ms2=args.surface_gravity_ms2,
+        planet_mass_earth=args.planet_mass_earth, pressure_bar=args.pressure_bar,
+        volatile_mass_kg=args.volatile_mass_kg, species=args.species,
     ))
 
 
@@ -1302,6 +1346,56 @@ def main():
     p.add_argument("--orbit-au", required=True, type=float, help="Collector orbital radius, AU")
     p.add_argument("--areal-mass-kgm2", type=float, default=0.01, help="Collector areal mass, kg/m² (default 0.01)")
     p.set_defaults(func=cmd_dyson_collector)
+
+    # par-flux (Phase AA — PAR fraction / PPFD / red-dwarf photosynthesis deficit by stellar type)
+    p = sub.add_parser("par-flux",
+                       help="PAR fraction, PAR irradiance, PPFD & red-dwarf deficit from a blackbody SED")
+    # Teff source — exactly one (the count check is a core exit-1, like spin-comfort's anchors).
+    p.add_argument("--teff-k", type=float, help="Effective temperature K (offline)")
+    p.add_argument("--spectral-type", help="Spectral type, e.g. G2V → main-sequence Teff (offline)")
+    p.add_argument("--star", help="Star name → SIMBAD-resolved Teff (network)")
+    # Insolation source — exactly one (core exit-1).
+    p.add_argument("--insolation-wm2", type=float, help="Total insolation at the surface, W/m²")
+    p.add_argument("--luminosity-lsun", type=float, help="Stellar luminosity in solar units (with --distance-au)")
+    p.add_argument("--distance-au", type=float, help="Orbital distance, AU (with --luminosity-lsun)")
+    p.add_argument("--par-band-nm", type=float, nargs=2, default=[400.0, 700.0],
+                   metavar=("LO", "HI"), help="PAR band in nm (default 400 700)")
+    p.set_defaults(func=cmd_par_flux)
+
+    # equilibrium-temp (Phase AB — planetary equilibrium + greenhouse surface temperature)
+    p = sub.add_parser("equilibrium-temp",
+                       help="Planetary equilibrium temperature + greenhouse surface temp (offset/grey/inverse)")
+    p.add_argument("--insolation-wm2", type=float, help="Insolation at the planet, W/m²")
+    p.add_argument("--luminosity-lsun", type=float, help="Stellar luminosity in solar units (with --distance-au)")
+    p.add_argument("--distance-au", type=float, help="Orbital distance, AU (with --luminosity-lsun)")
+    p.add_argument("--albedo", type=float, default=0.3, help="Bond albedo, [0,1) (default 0.3)")
+    # Forcing form — exactly one (a core exit-1 check, like par-flux's anchors).
+    p.add_argument("--greenhouse-delta-k", type=float, help="Additive greenhouse offset ΔT, K")
+    p.add_argument("--optical-depth", type=float, help="Grey-atmosphere IR optical depth τ (≥0)")
+    p.add_argument("--target-surface-k", type=float, help="Target surface temp K → required forcing (inverse)")
+    p.set_defaults(func=cmd_equilibrium_temp)
+
+    # insolation-shift (Phase AB — orbital mirror/shade area for a flux change)
+    p = sub.add_parser("insolation-shift",
+                       help="Orbital mirror (warm) / shade (cool) area for a sphere-averaged flux change")
+    p.add_argument("--planet-radius-km", required=True, type=float, help="Planet radius, km")
+    p.add_argument("--delta-insolation-wm2", required=True, type=float,
+                   help="Signed flux change ΔS, W/m² (+ mirror / − shade)")
+    p.add_argument("--solar-flux-wm2", type=float, help="Solar flux at the planet's orbit, W/m²")
+    p.add_argument("--luminosity-lsun", type=float, help="Stellar luminosity in solar units (with --distance-au)")
+    p.add_argument("--distance-au", type=float, help="Orbital distance, AU (with --luminosity-lsun)")
+    p.set_defaults(func=cmd_insolation_shift)
+
+    # atmosphere-mass (Phase AB — hydrostatic atmosphere mass ↔ surface pressure)
+    p = sub.add_parser("atmosphere-mass",
+                       help="Hydrostatic atmosphere mass for a surface pressure (and the inverse)")
+    p.add_argument("--planet-radius-km", required=True, type=float, help="Planet radius, km")
+    p.add_argument("--surface-gravity-ms2", type=float, help="Surface gravity, m/s²")
+    p.add_argument("--planet-mass-earth", type=float, help="Planet mass in Earth masses (→ g = GM/R²)")
+    p.add_argument("--pressure-bar", type=float, help="Surface pressure, bar (→ mass)")
+    p.add_argument("--volatile-mass-kg", type=float, help="Atmosphere mass, kg (→ pressure)")
+    p.add_argument("--species", choices=["n2", "co2", "o2", "h2o"], help="Optional volatile species label")
+    p.set_defaults(func=cmd_atmosphere_mass)
 
     # spin-comfort (Phase W — rotating-habitat comfort readout + criteria verdict)
     p = sub.add_parser("spin-comfort",

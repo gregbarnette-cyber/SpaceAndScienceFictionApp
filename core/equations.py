@@ -22,6 +22,9 @@ _AMU_KG          = 1.66054e-27
 _SEC_PER_YEAR    = 3.15576e7          # Julian year (365.25 d)
 _STEFAN_BOLTZMANN = 5.670374419e-8    # Stefan–Boltzmann constant, W·m⁻²·K⁻⁴ (CODATA; Phase V thermal)
 _STANDARD_GRAVITY = 9.80665           # standard gravity g₀, m/s² (CGPM; Phase W spin-comfort)
+_PLANCK_H         = 6.62607015e-34    # Planck constant, J·s (CODATA; Phase AA par-flux)
+_AVOGADRO         = 6.02214076e23     # Avogadro constant, mol⁻¹ (CODATA; Phase AA par-flux PPFD)
+_SOLAR_LUMINOSITY_W = 3.828e26        # nominal solar luminosity, W (IAU 2015 B3; Phase AA insolation)
 
 
 def _rocky_radius_km(mass_earth: float) -> float:

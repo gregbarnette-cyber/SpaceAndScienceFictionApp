@@ -82,6 +82,10 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `spin-stress` | (`--material` \| `--density-kgm3 --tensile-strength-mpa`) + one of (`--target-gravity-g` \| `--radius-m` \| `--rpm --radius-m`) [`--safety-factor`] | none (bundled materials) | `material, density_kgm3, tensile_strength_mpa, safety_factor, allowable_stress_mpa, max_tangential_velocity_ms, target_gravity_g, radius_m, rpm, max_radius_m, max_radius_km, max_gravity_g, hoop_stress_mpa, margin, specific_strength_note, notes, model_note` |
 | `tether-taper` | (`--material` \| `--density-kgm3 --tensile-strength-mpa`) (`--body` \| `--surface-gravity-ms2 --surface-radius-km --geo-radius-km`) [`--safety-factor`] | none (bundled materials/bodies) | `material, density_kgm3, tensile_strength_mpa, safety_factor, body, surface_gravity_ms2, surface_radius_km, geo_radius_km, characteristic_velocity_ms, characteristic_length_km, taper_ratio, feasible, notes, model_note` |
 | `dyson-collector` | (`--luminosity-lsun` \| `--star`) `--fraction --orbit-au` [`--areal-mass-kgm2`] | none \| SIMBAD (`--star`) | `intercepted_power_w, collector_area_m2, collector_area_au2, collector_mass_kg, incident_flux_wm2, fraction, orbit_au, luminosity_lsun, areal_mass_kgm2, model_note` |
+| `par-flux` | one Teff (`--teff-k` \| `--spectral-type` \| `--star`) + one insolation (`--insolation-wm2` \| `--luminosity-lsun --distance-au`) [`--par-band-nm LO HI`] | none \| SIMBAD (`--star`) | `teff_k, par_fraction, insolation_wm2, par_irradiance_wm2, ppfd_umol_m2_s, par_deficit_vs_g2, photon_energy_mean_j, j_per_umol, band_nm, sed_model, feeds_note, model_note` |
+| `equilibrium-temp` | one insolation (`--insolation-wm2` \| `--luminosity-lsun --distance-au`) + one forcing (`--greenhouse-delta-k` \| `--optical-depth` \| `--target-surface-k`) [`--albedo`] | none | `insolation_wm2, albedo, t_eq_k, greenhouse_delta_k, optical_depth, t_surface_k, required_forcing, model_note` |
+| `insolation-shift` | `--planet-radius-km --delta-insolation-wm2` + one flux (`--solar-flux-wm2` \| `--luminosity-lsun --distance-au`) | none | `planet_radius_km, delta_insolation_wm2, solar_flux_wm2, mode, mirror_area_m2, mirror_area_km2, area_vs_planet_cross_section, model_note` |
+| `atmosphere-mass` | `--planet-radius-km` + one gravity (`--surface-gravity-ms2` \| `--planet-mass-earth`) + one of (`--pressure-bar` \| `--volatile-mass-kg`) [`--species`] | none | `planet_radius_km, surface_gravity_ms2, species, surface_pressure_bar, atmosphere_mass_kg, atmosphere_mass_earth_atm, model_note` |
 | `waste-heat` | (`--input-power-watts`\|`--useful-power-watts`) [`--efficiency` \| `--hot-temp-k --cold-temp-k`] | none | `waste_heat_w, useful_power_w, input_power_w, efficiency, carnot_efficiency, carnot_min_waste_heat_w, carnot_limited, notes` |
 | `radiator-area` | (`--heat-watts` \| `--input-power-watts --efficiency`) `--radiator-temp-k` [`--emissivity --sides --sink-temp-k --areal-mass-kgm2`] | none | `radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_mass_kg, scaling_note` |
 | `shielding-attenuation` | (`--areal-density-gcm2` \| `--thickness-cm --density-gcm3`) + coeff (`--mass-atten-coeff-cm2g`\|`--attenuation-length-gcm2`\|`--material [--energy-mev]`) [`--mode {photon,gcr}`] | none (bundled XCOM table) | `transmitted_fraction, attenuation_factor, areal_density_gcm2, half_value_layer_gcm2, tenth_value_layer_gcm2, mode, model_note, buildup_caveat, is_order_of_magnitude` |
@@ -661,7 +665,8 @@ transpiration_water_kg_day, model_note, par_is_input_note, notes}` — `electric
 `null` without `--artificial`; `crop_gas_exchange`/`transpiration` are `null` without `--crop`
 (and `transpiration` is `null` for algae). **`--star`/`--spectral-type` are deliberately
 rejected** (unknown-arg exit 2) — PAR is a caller-supplied parameter (`par_is_input_note`;
-stellar-type-resolved PAR is Packet 18). **Validation:** exactly one light anchor;
+stellar-type-resolved PAR is the **Phase-AA `par-flux`** tool, whose `ppfd_umol_m2_s` output feeds
+this tool's `--ppfd-umol` anchor — see "PAR / photosynthesis by stellar type"). **Validation:** exactly one light anchor;
 `kcal_per_day>0`, `crew>0`, `photoperiod_h ∈ (0,24]`, `photo_efficiency`/`harvest_index`/
 `led_par_efficiency`/`f_edible_energy ∈ (0,1]`, known crop → else curated `{"error"}` exit 1.
 **Anchors:** 2500 kcal, DLI≈30, wheat → area ≈ 40 m²/person (measured cross-check ≈ 37 m²);
@@ -833,6 +838,149 @@ luminosity_lsun, areal_mass_kgm2, model_note}`. **Validation:** `L≤0`; `fracti
 `areal_mass≤0` → curated `{"error"}` exit 1; `--luminosity-lsun` **and** `--star` both, or neither,
 or missing `--fraction`/`--orbit-au` → argparse exit 2. **Anchor:** Sun, f 0.01, 1 AU → P ≈ 3.828×10²⁴
 W, area ≈ 2.81×10²¹ m², incident flux ≈ 1361 W/m² (the solar constant).
+
+### PAR / photosynthesis by stellar type (Phase AA — pure math, network only on `--star`)
+
+One `query.py`-only, pure-math, self-validating calculator for the sibling repo's Packet 18
+(Astrobiology / Planetary Protection). It answers the *natural-light* / native-photosynthesis
+question: **PAR** (photosynthetically active radiation, ~400–700 nm) is a *fraction* of a star's
+output that shifts by spectral type — G ≈ 0.37 (blackbody), but K/M shift redward so far fewer
+usable PAR photons reach a leaf per W/m² of insolation (the red-dwarf photosynthesis-deficit
+question). Its **PPFD output feeds back into the Phase-X `bioregen-area` tool**, which takes PAR
+as a caller-supplied input. `core/par_flux.py`; the two new constants (`_PLANCK_H`, `_AVOGADRO`,
+plus the nominal `_SOLAR_LUMINOSITY_W`) live in `core/equations.py`. No DB, no RNG, no time.
+
+> **SED model — blackbody, an explicit approximation.** The SED is a **Planck blackbody at Teff**
+> (`sed_model: "blackbody (approx — real SED deviates)"`). The physics — the Planck function +
+> PAR-band integration — is durable; the blackbody *SED* is the approximation. Real stellar SEDs
+> deviate, and the deviation is one-directional for cool stars: **M-dwarf line blanketing suppresses
+> the visible/blue**, so a real red dwarf's PAR fraction is **lower** than its blackbody value and the
+> true photosynthesis deficit is **larger** than reported here (blackbody is *optimistic* for K/M
+> stars). Concretely, a **3000 K blackbody gives f_PAR ≈ 0.081**, whereas real late-M SEDs sit nearer
+> **0.04–0.07** — the blackbody reproduces that lower band only at **Teff ≈ 2700 K** (a late-M dwarf).
+> Real-spectrum (PHOENIX / BT-Settl) SEDs are a v2 refinement; the gap is spelled out in `model_note`.
+
+#### `par-flux`
+PAR fraction, PAR irradiance, PPFD, and the red-star deficit vs G2 from a blackbody SED.
+- **PAR fraction:** `f_PAR = ∫_{lo}^{hi} B_λ(T) dλ / (σT⁴/π)` — in-band Planck energy over the
+  Stefan–Boltzmann total (which closes ∫₀^∞, avoiding an unbounded integral). Integrated by
+  composite Simpson's rule.
+- **PAR irradiance:** `par_irradiance_wm2 = insolation_wm2 · f_PAR`.
+- **PPFD** [µmol photons·m⁻²·s⁻¹]: the in-band **photon** flux — `par_irradiance` divided by the
+  **band-mean photon energy** `Ē = (∫B_λ dλ)/(∫B_λ·λ/hc dλ)`, then ÷ N_A · 1e6. Cross-checks against
+  the standard PAR mean ≈ **0.219 J/µmol** (echoed as `j_per_umol`) and the ≈2000 µmol full-sun anchor.
+- **Deficit vs G2:** `par_deficit_vs_g2 = f_PAR(5772 K) / f_PAR(Teff)` — how many × more insolation a
+  redder star needs for the same PAR (computed at the same band, so an override is apples-to-apples).
+```bash
+query.py par-flux --teff-k 5772 --insolation-wm2 1361                 # Sun: f_PAR≈0.37, PPFD≈2277
+query.py par-flux --spectral-type K2V --luminosity-lsun 0.29 --distance-au 0.5
+query.py par-flux --teff-k 2700 --insolation-wm2 1361                 # late-M: f_PAR≈0.05, deficit≈7.3
+query.py par-flux --star "Tau Ceti" --insolation-wm2 1361 --par-band-nm 400 750
+```
+Core: `par_flux.compute_par_flux(teff_k=None, spectral_type=None, star=None, insolation_wm2=None,
+luminosity_lsun=None, distance_au=None, par_band_nm=(400.0, 700.0))`.
+- **Teff — exactly one source:** `--teff-k` (offline) / `--spectral-type` (→ `main_sequence_stars`
+  ceiling-rule lookup, offline local DB) / `--star` (→ SIMBAD + regions, **the only networked path**;
+  resolved inside the core, lazily). **Insolation — exactly one source:** `--insolation-wm2` (direct)
+  / (`--luminosity-lsun` + `--distance-au`, → `S = L_sun·L/(4π(d·AU)²)`; 1 L☉ @ 1 AU ≈ 1361 W/m²).
+- **`--par-band-nm LO HI`** (nm, default `400 700`).
+- **Output (units on every field):** `{teff_k (K), par_fraction, insolation_wm2 (W/m²),
+  par_irradiance_wm2 (W/m²), ppfd_umol_m2_s (µmol·m⁻²·s⁻¹), par_deficit_vs_g2 (× vs 5772 K),
+  photon_energy_mean_j (J/photon), j_per_umol (J/µmol), band_nm ([lo, hi] nm),
+  sed_model ("blackbody (approx — real SED deviates)"), feeds_note ("PPFD → bioregen-area PAR input
+  (Phase X)"), model_note}`. **The `ppfd_umol_m2_s` value is what feeds `bioregen-area`'s
+  `--ppfd-umol` anchor** — that is the whole synergy (`bioregen-area` treats PAR/PPFD as an input;
+  `par-flux` derives it from the star).
+- **Anchors:** Sun (`--teff-k 5772`) → f_PAR ≈ 0.366 (blackbody; real solar ≈ 0.40–0.45), and at
+  `--insolation-wm2 1361` → PAR ≈ 499 W/m², PPFD ≈ 2277 µmol·m⁻²·s⁻¹, deficit 1.0; late-M
+  (`--teff-k 2700`) → f_PAR ≈ 0.050, `par_deficit_vs_g2` ≈ 7.3.
+
+> **Validation (self-validating — Phase-H/P):** curated `{"error"}` exit 1 for `teff_k ≤ 0`;
+> `insolation_wm2 ≤ 0`; `luminosity_lsun ≤ 0` or `distance_au ≤ 0`; **not exactly one** Teff source
+> **or** insolation source; a PAR band with `lo ≥ hi` or ≤ 0; an unresolvable `--spectral-type`; a
+> SIMBAD failure on `--star` (returned immediately). Argparse exit 2 for a non-numeric value or a
+> malformed `--par-band-nm` (not two numbers). *(The "exactly one Teff / one insolation source" rules
+> are **core** checks → exit 1, like `spin-comfort`'s anchors — not the argparse path.)*
+
+### Planetary energy balance / terraforming (Phase AB — pure math, no network)
+
+Three `query.py`-only, pure-math, self-validating calculators for the sibling repo's Packet 19
+(Planetary Transformation / Terraforming) — **Group J**, the last of the combined four-group
+request. They model terraforming feasibility as a **radiative / mass balance** — can a planet be
+warmed to habitable temperatures, how much greenhouse forcing or mirror area that takes, and how
+much volatile mass an atmosphere/ocean needs — reporting the **demand** side only (volatile
+*supply* is the volatile-geography canon's authority). `core/terraforming.py`; **no bundled table**
+— reuses `_STEFAN_BOLTZMANN` / `_M_PER_AU` / `_G` / `_EARTH_MASS_KG` / `_SOLAR_LUMINOSITY_W` from
+`core/equations.py`, with one inline reference `_EARTH_ATM_MASS_KG = 5.15e18`. No network, no DB,
+no RNG, no time. The physics is durable textbook closed form; present-day albedos are overridable
+ancestors. The `--luminosity-lsun` + `--distance-au` → S conversion is the same expression as
+Phase-AA `par-flux`. Complements `atmosphere-retention` (Jeans escape) and `habitable-zone`.
+
+#### `equilibrium-temp` (J1)
+Planetary equilibrium temperature + a greenhouse surface temperature. `T_eq = [S(1−A)/(4σ)]^¼`;
+surface via **exactly one forcing form** — additive offset `T_s = T_eq + ΔT`, grey-atmosphere
+`T_s = T_eq·(1 + ¾τ)^¼`, or the **inverse** (`--target-surface-k` → the ΔT and τ required to reach it).
+```bash
+query.py equilibrium-temp --insolation-wm2 1361 --albedo 0.3 --greenhouse-delta-k 33   # Earth: 255→288 K
+query.py equilibrium-temp --insolation-wm2 589 --albedo 0.25 --greenhouse-delta-k 0     # Mars: T_eq≈210 K
+query.py equilibrium-temp --luminosity-lsun 1 --distance-au 1 --target-surface-k 288    # inverse → required forcing
+```
+Core: `terraforming.compute_equilibrium_temp(insolation_wm2=None, luminosity_lsun=None,
+distance_au=None, albedo=0.3, greenhouse_delta_k=None, optical_depth=None, target_surface_k=None)`.
+Insolation — exactly one source (`--insolation-wm2` **or** `--luminosity-lsun` + `--distance-au`,
+→ 1 L☉ @ 1 AU ≈ 1361 W/m²). `--albedo` default 0.3, valid `[0, 1)`. Output: `{insolation_wm2 (W/m²),
+albedo, t_eq_k (K), greenhouse_delta_k (K)|null, optical_depth|null, t_surface_k (K), required_forcing
+|null, model_note}` — the given forcing is echoed and the other is `null`; **`required_forcing`**
+(only for the inverse `--target-surface-k`) is `{greenhouse_delta_k (K), optical_depth,
+cooling_required (bool)}` (both values go **negative** when the target is below the bare equilibrium,
+flagging that *cooling*, not greenhouse warming, is needed). **Validation:** insolation ≤ 0 (or
+L/distance ≤ 0); albedo ∉ [0, 1); **not exactly one** insolation source **or** forcing form;
+`optical_depth < 0`; `target_surface_k ≤ 0` → curated `{"error"}` exit 1. **Anchors:** Earth (S1361,
+A0.3) → T_eq ≈ 255 K, +ΔT 33 → 288 K (τ ≈ 0.85 reproduces the same 288 K); Mars (S589, A0.25) →
+T_eq ≈ 210 K.
+
+#### `insolation-shift` (J2)
+Orbital mirror (warm) / shade (cool) area to change the **sphere-averaged** absorbed flux by ΔS:
+`A_m = |ΔS|·4πR_p² / solar_flux_at_planet`. Signed ΔS: **+ = mirror, − = shade** (carried in `mode`;
+the area is a magnitude).
+```bash
+query.py insolation-shift --planet-radius-km 3390 --delta-insolation-wm2 20 --solar-flux-wm2 589
+query.py insolation-shift --planet-radius-km 6371 --delta-insolation-wm2 -10 --luminosity-lsun 1 --distance-au 1
+```
+Core: `terraforming.compute_insolation_shift(planet_radius_km, delta_insolation_wm2,
+solar_flux_wm2=None, luminosity_lsun=None, distance_au=None)`. Solar-flux — exactly one source
+(`--solar-flux-wm2` **or** `--luminosity-lsun` + `--distance-au`). Output: `{planet_radius_km (km),
+delta_insolation_wm2 (W/m², signed), solar_flux_wm2 (W/m²), mode ("mirror"|"shade"), mirror_area_m2
+(m²), mirror_area_km2 (km²), area_vs_planet_cross_section (× πR_p²), model_note}`. **Validation:**
+`planet_radius_km ≤ 0`; `delta_insolation_wm2 = 0` (no-op); not exactly one / non-positive solar-flux
+source → curated `{"error"}` exit 1; missing required `--planet-radius-km`/`--delta-insolation-wm2` →
+argparse exit 2. **Anchor:** a modest ΔS over Mars's `4πR² ≈ 1.44×10¹⁴ m²` → a mirror area of that
+order (the cross-section ratio is exactly `4·|ΔS|/solar_flux`).
+
+#### `atmosphere-mass` (J3)
+Hydrostatic atmosphere mass ↔ surface pressure: `m = 4πR²·P / g` (and the inverse `P = m·g/(4πR²)`).
+```bash
+query.py atmosphere-mass --planet-radius-km 3390 --surface-gravity-ms2 3.71 --pressure-bar 1   # Mars 1 bar
+query.py atmosphere-mass --planet-radius-km 6371 --planet-mass-earth 1 --volatile-mass-kg 5.15e18 --species n2
+```
+Core: `terraforming.compute_atmosphere_mass(planet_radius_km, surface_gravity_ms2=None,
+planet_mass_earth=None, pressure_bar=None, volatile_mass_kg=None, species=None)`. Gravity — exactly
+one source (`--surface-gravity-ms2` **or** `--planet-mass-earth` → `g = GM/R²`). Then exactly one of
+`--pressure-bar` (→ mass) or `--volatile-mass-kg` (→ pressure). `1 bar = 10⁵ Pa`;
+`atmosphere_mass_earth_atm` is the fraction of Earth's 5.15×10¹⁸ kg. `--species {n2,co2,o2,h2o}` is
+an optional **echoed label** — the total column mass is species-independent. Output:
+`{planet_radius_km (km), surface_gravity_ms2 (m/s²), species, surface_pressure_bar (bar),
+atmosphere_mass_kg (kg), atmosphere_mass_earth_atm (× Earth), model_note}`. **Validation:**
+`planet_radius_km ≤ 0`; not exactly one gravity source; not exactly one of pressure/mass;
+non-positive g/pressure/mass; unknown `--species` → curated `{"error"}` exit 1; a bad `--species`
+choice / non-numeric value → argparse exit 2. **Anchor:** Mars 1 bar (R 3390 km, g 3.71) →
+m ≈ 3.9×10¹⁸ kg (~0.76 Earth atmospheres); the g derived from `--planet-mass-earth 0.107` matches
+the explicit 3.71.
+
+> **Validation (self-validating — Phase-H/P):** all three follow the Phase-H/P contract — the §range
+> and source-count checks return a curated `{"error"}` (exit 1); an unknown `--species` choice or any
+> non-numeric value is argparse exit 2. *(The "exactly one insolation / forcing form / gravity /
+> pressure-or-mass" rules are **core** checks → exit 1.)*
 
 ### Solvent zones (Phase P — no network)
 
