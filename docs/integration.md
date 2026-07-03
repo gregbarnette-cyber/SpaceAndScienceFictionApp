@@ -77,6 +77,11 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `tidal-heating` | `--primary-mass-earth --satellite-radius-km --sma-km --ecc` [`--k2 --tidal-q`] | none | `heating_power_w, surface_flux_wm2, mean_motion_rad_s, io_flux_ratio` (order-of-mag) |
 | `kozai-lidov` | `--m1-solar --m2-solar --m3-solar` (`--period-inner-yr --period-outer-yr` \| `--sma-inner-au --sma-outer-au`) [`--ecc-outer`] | none | `timescale_years` (order-of-mag) |
 | `relativistic-brachistochrone` | `--accel-g --distance-ly` | none | `coord_time_yr, proper_time_yr, peak_velocity_c, peak_lorentz_factor` |
+| `rocket-equation` | two of (`--delta-v-kms`\|`--beta`) · (`--exhaust-velocity-kms`\|`--isp-s`\|`--fuel`) · `--mass-ratio` [`--relativistic --legs {flyby,rendezvous,round-trip} --payload-mass-t --structure-fraction`] | none (bundled fuel presets) | `mass_ratio, mass_ratio_single_burn, propellant_fraction, delta_v_kms, beta, exhaust_velocity_kms, isp_s, fuel, legs, relativistic, payload_mass_t, propellant_mass_t, wet_mass_t, structure_fraction, model_note` |
+| `beam-sail` | `--beam-power-w` (`--sail-mass-kg` \| `--areal-mass-gm2 --sail-area-m2`) [`--payload-mass-kg --reflectivity --wavelength-nm --transmit-aperture-m` · (`--accel-distance-au`\|`--accel-time-days`)] | none | `thrust_n, acceleration_ms2, final_velocity_kms, beta, beam_energy_j, sail_area_m2, total_mass_kg, sail_mass_kg, payload_mass_kg, reflectivity, beam_range_note, model_note` |
+| `spin-stress` | (`--material` \| `--density-kgm3 --tensile-strength-mpa`) + one of (`--target-gravity-g` \| `--radius-m` \| `--rpm --radius-m`) [`--safety-factor`] | none (bundled materials) | `material, density_kgm3, tensile_strength_mpa, safety_factor, allowable_stress_mpa, max_tangential_velocity_ms, target_gravity_g, radius_m, rpm, max_radius_m, max_radius_km, max_gravity_g, hoop_stress_mpa, margin, specific_strength_note, notes, model_note` |
+| `tether-taper` | (`--material` \| `--density-kgm3 --tensile-strength-mpa`) (`--body` \| `--surface-gravity-ms2 --surface-radius-km --geo-radius-km`) [`--safety-factor`] | none (bundled materials/bodies) | `material, density_kgm3, tensile_strength_mpa, safety_factor, body, surface_gravity_ms2, surface_radius_km, geo_radius_km, characteristic_velocity_ms, characteristic_length_km, taper_ratio, feasible, notes, model_note` |
+| `dyson-collector` | (`--luminosity-lsun` \| `--star`) `--fraction --orbit-au` [`--areal-mass-kgm2`] | none \| SIMBAD (`--star`) | `intercepted_power_w, collector_area_m2, collector_area_au2, collector_mass_kg, incident_flux_wm2, fraction, orbit_au, luminosity_lsun, areal_mass_kgm2, model_note` |
 | `waste-heat` | (`--input-power-watts`\|`--useful-power-watts`) [`--efficiency` \| `--hot-temp-k --cold-temp-k`] | none | `waste_heat_w, useful_power_w, input_power_w, efficiency, carnot_efficiency, carnot_min_waste_heat_w, carnot_limited, notes` |
 | `radiator-area` | (`--heat-watts` \| `--input-power-watts --efficiency`) `--radiator-temp-k` [`--emissivity --sides --sink-temp-k --areal-mass-kgm2`] | none | `radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_mass_kg, scaling_note` |
 | `shielding-attenuation` | (`--areal-density-gcm2` \| `--thickness-cm --density-gcm3`) + coeff (`--mass-atten-coeff-cm2g`\|`--attenuation-length-gcm2`\|`--material [--energy-mev]`) [`--mode {photon,gcr}`] | none (bundled XCOM table) | `transmitted_fraction, attenuation_factor, areal_density_gcm2, half_value_layer_gcm2, tenth_value_layer_gcm2, mode, model_note, buildup_caveat, is_order_of_magnitude` |
@@ -681,6 +686,153 @@ model_note, notes}` — `population = budget/per_person`; `sustainable_populatio
 every per-person requirement `>0` → else curated `{"error"}` exit 1. **Anchor:** `--power-w 1e6
 --per-person-power-w 1e4` → 100 (power-bound); a tight `--fixed-nitrogen-kg-yr` flips
 `binding_constraint` to `"fixed_nitrogen"` with slack reported on the others.
+
+### STL mission energetics (Phase Y — pure math + bundled fuel presets, no network)
+
+Two `query.py`-only mission-propulsion calculators for the sibling repo's Packet 16 (STL
+Colonization Propulsion). They add the **mass/energy** side of sub-light travel — `query.py`
+already has the *kinematics* (`brachistochrone-*`, `distance-at-acceleration`,
+`travel-time-custom-thrust`). Energetics = "can you carry the fuel"; kinematics = "how long is
+the trip." Pure-math, self-validating (curated `{"error"}` exit 1; argparse exit 2). `core/propulsion.py`;
+the bundled ideal fuel exhaust velocities live in `core/propulsion_tables.py`. The **physics is
+durable** (Tsiolkovsky + the relativistic rocket equation); the fuel `v_e` values are **ideal /
+present-day ancestors, overridable** (Mature-Technology Assumption). Full propulsion taxonomy
+defers to Packet 25 — this is the STL scoping *envelope*.
+
+#### `rocket-equation` (G1)
+Mass ratio + propellant fraction from **any two of** {velocity, exhaust, mass_ratio}. Classical
+`MR = exp(Δv/v_e)`; relativistic (β anchor) `MR = exp((c/v_e)·atanh β)`; photon rocket (`v_e=c`)
+`MR = √((1+β)/(1−β))`. The input `--mass-ratio` (and payload budget) is the **single-burn** ratio;
+`--legs` raises it: flyby `MR¹` / rendezvous `MR²` / round-trip `MR⁴`; `propellant_fraction =
+1 − 1/MR_total`.
+```bash
+query.py rocket-equation --delta-v-kms 30 --exhaust-velocity-kms 30       # MR ≈ 2.718
+query.py rocket-equation --beta 0.1 --fuel fusion-dt --legs rendezvous     # MR ≈ 804
+query.py rocket-equation --beta 0.1 --exhaust-velocity-kms 299792.458      # photon, MR ≈ 1.105
+```
+Core: `propulsion.compute_rocket_equation(delta_v_kms=None, beta=None, exhaust_velocity_kms=None,
+isp_s=None, fuel=None, mass_ratio=None, relativistic=False, legs="flyby", payload_mass_t=None,
+structure_fraction=None)`. Velocity anchor: `--delta-v-kms` (classical) **or** `--beta` (final
+v/c, relativistic). Exhaust anchor: `--exhaust-velocity-kms` **or** `--isp-s` (→ `v_e = Isp·g₀`)
+**or** `--fuel` (bundled ideal `v_e`). **Regime is chosen by the velocity form** — `--beta` →
+relativistic; `--delta-v-kms` → classical. `--relativistic` only affects the exhaust+mass_ratio
+case (which velocity to emit); combining it with `--delta-v-kms` is a curated error (relativistic
+mode is defined against β). **Bundled fuels** (`--fuel`, ideal `v_e`; all MTA-movable): `chemical`
+(4.4 km/s), `fission-thermal` (9 km/s), `fusion-dt` (**0.03c** effective — see the caveat below),
+`fusion-catalyzed` (0.10c, extrapolated), `antimatter` (0.30c, extrapolated). Output:
+`{mass_ratio (total, incl. legs), mass_ratio_single_burn, propellant_fraction, delta_v_kms (proper
+Δv in relativistic mode), beta, exhaust_velocity_kms, isp_s, fuel, legs, relativistic,
+payload_mass_t|null, propellant_mass_t|null, wet_mass_t|null, structure_fraction, model_note}`.
+**Validation:** not exactly two anchor groups; >1 form within the exhaust group; `β∉[0,1)`;
+non-positive Δv/v_e/isp/payload; `mass_ratio≤1`; `structure_fraction∉[0,1)`; unknown `--fuel`;
+`--relativistic` with `--delta-v-kms` → curated `{"error"}` exit 1. Bad `--fuel`/`--legs` choice
+or a non-numeric value → argparse exit 2. **Anchors:** Δv30/v_e30 → MR≈2.718, frac≈0.632;
+β0.1/v_e0.1c → MR≈2.73 flyby / 7.44 rendezvous; β0.1/`fusion-dt` → MR≈28 flyby / ~804 rendezvous
+(the "marginal generation ship"); β0.1/photon → MR≈1.105.
+
+> **Caveat — `fusion-dt` v_e (confirm at shipment).** The request quotes an ideal D-T band of
+> ~0.05–0.09 c but its own **acceptance anchor** pins `fusion-dt` at *v_e ≈ 0.03 c* (0.05 c gives
+> only MR≈7.4, not the anchor's ≈28). The testable anchor wins: it is bundled at **0.03 c** as a
+> conservative *effective* exhaust velocity. Flagged in the per-fuel note + `model_note`; every
+> value is overridable via `--exhaust-velocity-kms`/`--isp-s`.
+
+#### `beam-sail` (G2)
+Thrust, acceleration, and (optional) final velocity of a beam-driven sail. Thrust
+`F = (1+R)·P/c` (R = reflectivity: R→1 reflective `2P/c`, R→0 absorptive `P/c`); `a = F/m`
+(m = sail + payload). Optional final velocity over an acceleration length (`--accel-distance-au`,
+`v=√(2·a·d)`) or time (`--accel-time-days`, `v=a·t`) — first-order non-relativistic.
+```bash
+query.py beam-sail --beam-power-w 100e9 --reflectivity 1.0 --sail-mass-kg 1000   # F ≈ 667 N
+query.py beam-sail --beam-power-w 100e9 --sail-area-m2 1e6 --areal-mass-gm2 1.0 --payload-mass-kg 100 --accel-time-days 10
+```
+Core: `propulsion.compute_beam_sail(beam_power_w, sail_area_m2=None, areal_mass_gm2=None,
+sail_mass_kg=None, payload_mass_kg=0.0, reflectivity=0.9, wavelength_nm=None,
+transmit_aperture_m=None, accel_distance_au=None, accel_time_days=None)`. Sail mass from
+`--sail-mass-kg` **or** `--areal-mass-gm2 + --sail-area-m2`. `--wavelength-nm + --transmit-aperture-m`
+(both or neither) → a diffraction `beam_range_note`. Output: `{thrust_n, acceleration_ms2,
+final_velocity_kms|null, beta|null, beam_energy_j|null, sail_area_m2, total_mass_kg, sail_mass_kg,
+payload_mass_kg, reflectivity, beam_range_note, model_note}`. **Validation:** non-positive
+beam_power/area/mass; `reflectivity∉[0,1]`; negative payload; no mass source; both
+`--accel-distance-au` and `--accel-time-days` (argparse mutex → exit 2); only one of
+wavelength/aperture → curated `{"error"}` exit 1. **Anchor:** P=100 GW reflective (R=1) → F≈667 N.
+
+### Megastructure scale (Phase Z — pure math + bundled material/body tables, no network)
+
+Three `query.py`-only calculators for the sibling repo's Packet 17 (Settlement / Megastructure).
+They give the **material size limit** — the ceiling that pairs with `spin-comfort` (Phase W)'s
+human-comfort *minimum*: hoop stress caps how big a spinning shell can be for a given tensile
+strength (why steel O'Neills top out at a few km and ringworlds need unobtanium). Self-validating
+(curated `{"error"}` exit 1; argparse exit 2). `core/megastructure.py`; the material + body tables
+live in `core/materials_tables.py`. The **physics is durable** (`σ=ρv²`, the Pearson uniform-stress
+taper); the material strengths are **present-day/near-term ancestors, overridable** (MTA);
+nanomaterials are bundled at their theoretical/measured-intrinsic strength and **hard-flagged that
+bulk material is 1–2 orders weaker**. Values researched 2026-07-02.
+
+**Bundled materials** (`--material`; ρ kg/m³ / σ_tensile MPa): structural-steel 7850/400,
+titanium-alloy 4430/950, aluminium-alloy 2700/500, carbon-fiber 1600/4000 (**raw filament**, not
+a laminate), kevlar 1440/3600, uhmwpe 970/2700, basalt-fiber 2700/4100, silicon-carbide 3200/400
+(brittle), cnt-theoretical 1350/100000, graphene-theoretical 2200/130000 (both extrapolated).
+`σ/ρ` (specific strength) is the sole figure of merit for a thin shell. **Bundled bodies**
+(`--body`): earth/mars/moon/ceres (surface radius, synchronous-orbit radius, surface gravity).
+
+#### `spin-stress` (H1)
+Max spin state a material can hold: `σ_allow = σ_tensile/SF`, `v_max = √(σ_allow/ρ)`; then one
+solve form — `--target-gravity-g` → `max_radius = v_max²/a`; `--radius-m` alone → `max_gravity_g
+= v_max²/(r·g₀)`; `--rpm` + `--radius-m` → the actual `hoop_stress_mpa` + `margin`.
+```bash
+query.py spin-stress --material structural-steel --target-gravity-g 1 --safety-factor 1   # r_max ≈ 5.2 km
+query.py spin-stress --material carbon-fiber --target-gravity-g 1 --safety-factor 1        # r_max ≈ 254 km
+```
+Core: `megastructure.compute_spin_stress(material=None, density_kgm3=None,
+tensile_strength_mpa=None, safety_factor=3.0, target_gravity_g=None, radius_m=None, rpm=None)`.
+Material via `--material` **or** explicit `--density-kgm3 + --tensile-strength-mpa` (not both).
+`--safety-factor` default 3 (≥1). Output includes `max_radius_m/_km` | `max_gravity_g` |
+`hoop_stress_mpa`+`margin` (the non-active forms are `null`), plus `allowable_stress_mpa`,
+`max_tangential_velocity_ms`, `specific_strength_note`, `notes` (material caveats). **Validation:**
+unknown material; ρ or σ ≤ 0; `SF<1`; not exactly one solve form; material *and* explicit both;
+`--rpm` without `--radius-m`; non-positive anchors → curated `{"error"}` exit 1; bad `--material`
+choice / non-numeric → argparse exit 2. **Anchors:** steel SF1/1 g → v_max ≈ 226 m/s, r_max ≈ 5.2
+km; carbon-fiber → v_max ≈ 1580 m/s, r_max ≈ 254 km (the "steel = km-scale, composite = 100-km-scale"
+result). Default SF 3 shrinks these ~√3× in v_max (3× in radius).
+
+#### `tether-taper` (H2)
+Pearson uniform-constant-stress space-elevator taper ratio:
+`T = exp[(ρ·g₀/σ_allow)·(R − 1.5R²/R_s + 0.5R⁴/R_s³)]` (the synchronous-orbit ω is Kepler-derived
+from R/R_s). Feasibility band: ≲2 practical, ≫10 impractical; a material that can't span the well
+overflows → `taper_ratio: null`, `feasible: false` (a **normal result, exit 0** — not an error).
+```bash
+query.py tether-taper --material cnt-theoretical --body earth --safety-factor 1   # taper ≈ 1.9 (feasible)
+query.py tether-taper --material structural-steel --body earth                     # taper null, feasible false
+```
+Core: `megastructure.compute_tether_taper(material=None, density_kgm3=None,
+tensile_strength_mpa=None, safety_factor=3.0, body=None, surface_gravity_ms2=None,
+surface_radius_km=None, geo_radius_km=None)`. Body via `--body` **or** explicit
+`--surface-gravity-ms2 + --surface-radius-km + --geo-radius-km` (not both). Output:
+`{…material fields…, body, surface_gravity_ms2, surface_radius_km, geo_radius_km,
+characteristic_velocity_ms, characteristic_length_km, taper_ratio (or null on overflow), feasible,
+notes, model_note}`. **Validation:** unknown material/body; ρ/σ/g/R ≤ 0; `SF<1`; `geo_radius ≤
+surface_radius`; not exactly one material source / one body source → curated `{"error"}` exit 1;
+bad `--material`/`--body` choice / non-numeric → argparse exit 2. **Validated anchors:** Earth steel
+→ infeasible (∞); Earth CNT@100 GPa (SF 1) → **taper ≈ 1.9** (the canonical "modest taper, excellent
+material" result); graphene ≈ 2.3; kevlar → ~10⁸ (impractical). The **Moon** carries a caveat (its
+naive synchronous radius lies beyond the Hill sphere — a real lunar elevator is the L1/L2 form).
+
+#### `dyson-collector` (H3)
+Swarm/shell area & mass to intercept a fraction `f` of a star's luminosity at orbit `R`:
+`P = f·L`, area `A = f·4πR²`, mass `= A·areal_mass`, incident flux `= L/(4πR²)`.
+```bash
+query.py dyson-collector --luminosity-lsun 1 --fraction 0.01 --orbit-au 1   # P ≈ 3.8e24 W, area ≈ 2.8e21 m²
+query.py dyson-collector --star "Tau Ceti" --fraction 1 --orbit-au 0.7      # --star → SIMBAD luminosity
+```
+Core: `megastructure.compute_dyson_collector(luminosity_lsun=None, fraction=None, orbit_au=None,
+areal_mass_kgm2=0.01)`. Luminosity via `--luminosity-lsun` **or** `--star` (SIMBAD + regions
+resolution in the query.py handler — the group's only networked entry; a SIMBAD failure returns
+`{"error"}`). `--fraction` (0,1] and `--orbit-au` required. Output: `{intercepted_power_w,
+collector_area_m2, collector_area_au2, collector_mass_kg, incident_flux_wm2, fraction, orbit_au,
+luminosity_lsun, areal_mass_kgm2, model_note}`. **Validation:** `L≤0`; `fraction∉(0,1]`; `orbit_au≤0`;
+`areal_mass≤0` → curated `{"error"}` exit 1; `--luminosity-lsun` **and** `--star` both, or neither,
+or missing `--fraction`/`--orbit-au` → argparse exit 2. **Anchor:** Sun, f 0.01, 1 AU → P ≈ 3.828×10²⁴
+W, area ≈ 2.81×10²¹ m², incident flux ≈ 1361 W/m² (the solar constant).
 
 ### Solvent zones (Phase P — no network)
 

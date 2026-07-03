@@ -10,6 +10,7 @@ import math
 # functions above keep their inline constants (out of scope).
 
 _G               = 6.674e-11          # gravitational constant, m³ kg⁻¹ s⁻²
+_C_MS            = 299_792_458.0      # speed of light, m/s (Phase Y — shared by calculators/propulsion)
 _K_B             = 1.380649e-23       # Boltzmann constant, J/K
 _EARTH_MASS_KG   = 5.972e24
 _EARTH_RADIUS_KM = 6371.0

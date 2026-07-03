@@ -11,6 +11,7 @@ import math
 import os
 from collections import deque
 
+from .equations import _C_MS  # single source of truth (Phase Y promoted it to equations)
 from .shared import _make_simbad, _network_error_msg, _timeout_ctx, _with_retries
 
 HOURS_PER_JULIAN_YEAR = 8765.8128  # 365.25 * 24
@@ -462,7 +463,7 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
 
 # ── Physical constants for brachistochrone calculations ───────────────────────
 _G_MS2     = 9.80665              # 1 g in m/s²
-_C_MS      = 299_792_458.0        # speed of light in m/s
+# _C_MS imported from core.equations (Phase Y — single source of truth)
 _M_PER_AU  = 149_597_870_700.0    # metres per AU
 _M_PER_LM  = _C_MS * 60.0        # metres per light-minute
 

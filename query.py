@@ -19,7 +19,9 @@ import core.equations as equations
 import core.feasibility as feasibility
 import core.generate as generate
 import core.life_support as life_support
+import core.megastructure as megastructure
 import core.projects as projects
+import core.propulsion as propulsion
 import core.regions as regions
 import core.report as report
 import core.science as science
@@ -285,6 +287,59 @@ def cmd_shielding_attenuation(args):
         mass_atten_coeff_cm2g=args.mass_atten_coeff_cm2g,
         attenuation_length_gcm2=args.attenuation_length_gcm2,
         material=args.material, energy_mev=args.energy_mev, mode=args.mode,
+    ))
+
+
+# ── Phase Y — STL mission energetics (Group G) ────────────────────────────────
+
+def cmd_rocket_equation(args):
+    _out(propulsion.compute_rocket_equation(
+        delta_v_kms=args.delta_v_kms, beta=args.beta,
+        exhaust_velocity_kms=args.exhaust_velocity_kms, isp_s=args.isp_s, fuel=args.fuel,
+        mass_ratio=args.mass_ratio, relativistic=args.relativistic, legs=args.legs,
+        payload_mass_t=args.payload_mass_t, structure_fraction=args.structure_fraction,
+    ))
+
+
+def cmd_beam_sail(args):
+    _out(propulsion.compute_beam_sail(
+        beam_power_w=args.beam_power_w, sail_area_m2=args.sail_area_m2,
+        areal_mass_gm2=args.areal_mass_gm2, sail_mass_kg=args.sail_mass_kg,
+        payload_mass_kg=args.payload_mass_kg, reflectivity=args.reflectivity,
+        wavelength_nm=args.wavelength_nm, transmit_aperture_m=args.transmit_aperture_m,
+        accel_distance_au=args.accel_distance_au, accel_time_days=args.accel_time_days,
+    ))
+
+
+# ── Phase Z — rotating-structure & megastructure scale (Group H) ──────────────
+
+def cmd_spin_stress(args):
+    _out(megastructure.compute_spin_stress(
+        material=args.material, density_kgm3=args.density_kgm3,
+        tensile_strength_mpa=args.tensile_strength_mpa, safety_factor=args.safety_factor,
+        target_gravity_g=args.target_gravity_g, radius_m=args.radius_m, rpm=args.rpm,
+    ))
+
+
+def cmd_tether_taper(args):
+    _out(megastructure.compute_tether_taper(
+        material=args.material, density_kgm3=args.density_kgm3,
+        tensile_strength_mpa=args.tensile_strength_mpa, safety_factor=args.safety_factor,
+        body=args.body, surface_gravity_ms2=args.surface_gravity_ms2,
+        surface_radius_km=args.surface_radius_km, geo_radius_km=args.geo_radius_km,
+    ))
+
+
+def cmd_dyson_collector(args):
+    lum = args.luminosity_lsun
+    if args.star:
+        resolved = _resolve_star_teff_lum(args.star)   # SIMBAD + regions (like circumbinary-hz)
+        if "error" in resolved:
+            _out(resolved)
+        lum = resolved["lum"]
+    _out(megastructure.compute_dyson_collector(
+        luminosity_lsun=lum, fraction=args.fraction, orbit_au=args.orbit_au,
+        areal_mass_kgm2=args.areal_mass_kgm2,
     ))
 
 
@@ -1171,6 +1226,82 @@ def main():
                                       "(water/polyethylene/aluminum/regolith/lead/liquid_h2/hydrogen/iron)")
     p.add_argument("--energy-mev", type=float, help="Photon energy MeV for the bundled μ/ρ lookup")
     p.set_defaults(func=cmd_shielding_attenuation)
+
+    # rocket-equation (Phase Y — Tsiolkovsky classical + relativistic; complements the
+    # brachistochrone-* kinematics with the mass/energy side of STL travel)
+    p = sub.add_parser("rocket-equation",
+                       help="Tsiolkovsky (classical + relativistic) mass ratio & propellant "
+                            "fraction from any two of {velocity, exhaust, mass_ratio}")
+    p.add_argument("--delta-v-kms", type=float, help="Mission Δv, km/s (classical velocity anchor)")
+    p.add_argument("--beta", type=float, help="Final velocity as a fraction of c (relativistic anchor, 0≤β<1)")
+    p.add_argument("--exhaust-velocity-kms", type=float, help="Exhaust velocity v_e, km/s (exhaust anchor)")
+    p.add_argument("--isp-s", type=float, help="Specific impulse, s (→ v_e = Isp·g₀; exhaust anchor)")
+    p.add_argument("--fuel", choices=sorted(propulsion.propulsion_tables._FUELS),
+                   help="Bundled ideal exhaust velocity by fuel (exhaust anchor)")
+    p.add_argument("--mass-ratio", type=float, help="Single-burn wet/dry mass ratio (anchor)")
+    p.add_argument("--relativistic", action="store_true",
+                   help="Emit the relativistic velocity when solving from exhaust+mass-ratio")
+    p.add_argument("--legs", choices=["flyby", "rendezvous", "round-trip"], default="flyby",
+                   help="flyby MR¹ / rendezvous MR² / round-trip MR⁴ (default flyby)")
+    p.add_argument("--payload-mass-t", type=float, help="Payload/dry mass, t (→ propellant & wet mass)")
+    p.add_argument("--structure-fraction", type=float, help="Structure mass fraction [0,1) (echoed; v1 note)")
+    p.set_defaults(func=cmd_rocket_equation)
+
+    # beam-sail (Phase Y — laser / photon-sail thrust & energetics)
+    p = sub.add_parser("beam-sail",
+                       help="Laser / photon-sail thrust, acceleration, and (optional) final velocity")
+    p.add_argument("--beam-power-w", required=True, type=float, help="Intercepted beam power, W")
+    p.add_argument("--sail-area-m2", type=float, help="Sail area, m² (for areal-mass + beam-range note)")
+    p.add_argument("--areal-mass-gm2", type=float, help="Sail areal mass, g/m² (with --sail-area-m2 → sail mass)")
+    p.add_argument("--sail-mass-kg", type=float, help="Sail mass, kg (explicit; overrides areal-mass path)")
+    p.add_argument("--payload-mass-kg", type=float, default=0.0, help="Payload mass, kg (default 0)")
+    p.add_argument("--reflectivity", type=float, default=0.9, help="Sail reflectivity R, 0≤R≤1 (default 0.9)")
+    p.add_argument("--wavelength-nm", type=float, help="Beam wavelength, nm (with --transmit-aperture-m → range note)")
+    p.add_argument("--transmit-aperture-m", type=float, help="Transmitter aperture, m (with --wavelength-nm)")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--accel-distance-au", type=float, help="Acceleration length, AU (→ final velocity)")
+    g.add_argument("--accel-time-days", type=float, help="Acceleration time, days (→ final velocity)")
+    p.set_defaults(func=cmd_beam_sail)
+
+    # spin-stress (Phase Z — hoop stress σ=ρv² → max habitat size for a material)
+    p = sub.add_parser("spin-stress",
+                       help="Hoop-stress size limit: max habitat radius/gravity a material can spin "
+                            "(complements spin-comfort's human-comfort minimum)")
+    p.add_argument("--material", choices=sorted(megastructure.materials_tables._MATERIALS),
+                   help="Bundled material (ρ + σ_tensile)")
+    p.add_argument("--density-kgm3", type=float, help="Explicit density, kg/m³ (with --tensile-strength-mpa)")
+    p.add_argument("--tensile-strength-mpa", type=float, help="Explicit tensile strength, MPa (with --density-kgm3)")
+    p.add_argument("--safety-factor", type=float, default=3.0, help="Safety factor SF ≥ 1 (default 3)")
+    p.add_argument("--target-gravity-g", type=float, help="Target gravity in g (→ max radius)")
+    p.add_argument("--radius-m", type=float, help="Radius, m (alone → max gravity; with --rpm → hoop stress)")
+    p.add_argument("--rpm", type=float, help="Spin rate, RPM (with --radius-m → actual hoop stress + margin)")
+    p.set_defaults(func=cmd_spin_stress)
+
+    # tether-taper (Phase Z — Pearson uniform-stress space-elevator taper ratio)
+    p = sub.add_parser("tether-taper",
+                       help="Space-elevator / skyhook taper ratio for a material + body (Pearson uniform stress)")
+    p.add_argument("--material", choices=sorted(megastructure.materials_tables._MATERIALS),
+                   help="Bundled material (ρ + σ_tensile)")
+    p.add_argument("--density-kgm3", type=float, help="Explicit density, kg/m³ (with --tensile-strength-mpa)")
+    p.add_argument("--tensile-strength-mpa", type=float, help="Explicit tensile strength, MPa (with --density-kgm3)")
+    p.add_argument("--safety-factor", type=float, default=3.0, help="Safety factor SF ≥ 1 (default 3)")
+    p.add_argument("--body", choices=sorted(megastructure.materials_tables._BODIES),
+                   help="Bundled body (earth/mars/moon/ceres): surface radius, synchronous radius, g")
+    p.add_argument("--surface-gravity-ms2", type=float, help="Explicit surface gravity, m/s²")
+    p.add_argument("--surface-radius-km", type=float, help="Explicit surface radius, km")
+    p.add_argument("--geo-radius-km", type=float, help="Explicit synchronous-orbit radius from centre, km")
+    p.set_defaults(func=cmd_tether_taper)
+
+    # dyson-collector (Phase Z — swarm/shell area & mass to intercept a luminosity fraction)
+    p = sub.add_parser("dyson-collector",
+                       help="Collector area & mass to intercept a fraction of a star's luminosity")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--luminosity-lsun", type=float, help="Stellar luminosity in solar units")
+    g.add_argument("--star", help="Star name → SIMBAD-resolved luminosity (network)")
+    p.add_argument("--fraction", required=True, type=float, help="Fraction of the full sphere to intercept (0–1]")
+    p.add_argument("--orbit-au", required=True, type=float, help="Collector orbital radius, AU")
+    p.add_argument("--areal-mass-kgm2", type=float, default=0.01, help="Collector areal mass, kg/m² (default 0.01)")
+    p.set_defaults(func=cmd_dyson_collector)
 
     # spin-comfort (Phase W — rotating-habitat comfort readout + criteria verdict)
     p = sub.add_parser("spin-comfort",
