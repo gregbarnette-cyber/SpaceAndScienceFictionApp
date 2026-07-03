@@ -10,6 +10,9 @@ kinematics = "how long is the trip".
   * ``compute_rocket_equation`` (G1) — Tsiolkovsky (classical + relativistic), mass ratio,
     propellant fraction; flyby/rendezvous/round-trip legs; optional payload mass budget.
   * ``compute_beam_sail``       (G2) — laser / photon-sail thrust, acceleration, final velocity.
+  * ``compute_pellet_stream``   (C2, Phase AD) — pellet-stream (momentum-beam) drive: thrust /
+    power / drive-or-no-thrust verdict from the closing velocity. The mass analog of the
+    ``ramscoop`` drag-vs-thrust balance.
 
 No network, no DB, no RNG, no time. ``query.py``-only (no GUI). Shares ``_C_MS`` /
 ``_STANDARD_GRAVITY`` with ``core.equations``; the ideal fuel presets live in
@@ -25,6 +28,37 @@ from core import propulsion_tables
 
 _C_KMS = _C_MS / 1000.0
 _LEGS = {"flyby": 1, "rendezvous": 2, "round-trip": 4}
+_PELLET_COUPLING = {"reflect": 2.0, "absorb": 1.0}   # elastic 2·ṁu / inelastic 1·ṁu
+
+_MODEL_NOTE_PELLET = (
+    "Pellet-stream (momentum-beam) drive: a station-fired stream of pellets travelling at "
+    "stream velocity v_s strikes a vehicle moving at v; the closing velocity is u = v_s − v. "
+    "Thrust F = g·ṁ·u (g = 2 perfectly reflecting / elastic, g = 1 absorbing / inelastic); "
+    "the power imparted in the vehicle frame is ½·ṁ·u². Thrust falls to zero at the crossover "
+    "v = v_s and there is no push once v ≥ v_s (verdict 'no-thrust') — the mass analog of the "
+    "ramscoop's drive/brake crossover. Non-relativistic momentum bookkeeping (exact for "
+    "v, v_s ≪ c; an overestimate of the effective push as u → c — use the relativistic rocket "
+    "equation near c). Pellet guidance, beam divergence, and interception efficiency are out of "
+    "scope (they only lower the effective coupling below g)."
+)
+
+
+def _resolve_vehicle_velocity(velocity_kms, beta):
+    """Return (v_ms, velocity_kms, beta) or a {"error"} dict. Exactly one anchor required.
+
+    ``--velocity-kms`` admits a vehicle at rest (v = 0); ``--beta`` is strictly sublight (0<β<1).
+    """
+    if (velocity_kms is not None) + (beta is not None) != 1:
+        return {"error": "Provide exactly one velocity anchor: --velocity-kms or --beta."}
+    if beta is not None:
+        if not (0.0 < beta < 1.0):
+            return {"error": "beta must be in the range 0 < β < 1 (sublight)."}
+        v_ms = beta * _C_MS
+        return (v_ms, v_ms / 1000.0, beta)
+    if velocity_kms < 0:
+        return {"error": "velocity_kms must be ≥ 0."}
+    v_ms = velocity_kms * 1000.0
+    return (v_ms, velocity_kms, v_ms / _C_MS)
 
 
 # ── G1 — Tsiolkovsky rocket equation (classical + relativistic) ──────────────
@@ -268,4 +302,85 @@ def compute_beam_sail(beam_power_w=None, sail_area_m2=None, areal_mass_gm2=None,
         "reflectivity": reflectivity,
         "beam_range_note": beam_range_note,
         "model_note": model_note,
+    }
+
+
+# ── C2 (Phase AD) — pellet-stream (momentum-beam) drive ───────────────────────
+
+def compute_pellet_stream(stream_velocity_kms=None, mass_flow_rate_kgs=None,
+                          pellet_mass_kg=None, pellet_rate_hz=None,
+                          velocity_kms=None, beta=None, coupling="reflect",
+                          vehicle_mass_t=None):
+    """Thrust / power / drive-verdict of a pellet-stream drive.
+
+    Closing velocity ``u = v_s − v``; thrust ``F = g·ṁ·u`` (g = 2 reflect / 1 absorb); power
+    ``½·ṁ·u²``. ``verdict = "drive"`` while ``v_s > v`` else ``"no-thrust"`` (crossover at
+    ``v = v_s``). The mass analog of ``compute_ramscoop`` — mirror of its structure.
+
+    Mass-flow anchor: ``mass_flow_rate_kgs`` OR (``pellet_mass_kg`` + ``pellet_rate_hz`` → ṁ).
+    Velocity anchor: ``velocity_kms`` (admits v = 0) OR ``beta``. Optional ``vehicle_mass_t``
+    → acceleration.
+    """
+    if stream_velocity_kms is None or stream_velocity_kms <= 0:
+        return {"error": "stream_velocity_kms must be > 0."}
+    if coupling not in _PELLET_COUPLING:
+        return {"error": "coupling must be one of reflect, absorb."}
+
+    # ── mass-flow anchor: --mass-flow-rate-kgs OR (--pellet-mass-kg + --pellet-rate-hz) ──
+    have_mdot = mass_flow_rate_kgs is not None
+    have_pellet = pellet_mass_kg is not None or pellet_rate_hz is not None
+    if have_mdot + have_pellet != 1:
+        return {"error": "Provide exactly one mass-flow anchor: --mass-flow-rate-kgs, or "
+                         "(--pellet-mass-kg + --pellet-rate-hz)."}
+    if have_mdot:
+        if mass_flow_rate_kgs <= 0:
+            return {"error": "mass_flow_rate_kgs must be > 0."}
+        m_dot = mass_flow_rate_kgs
+    else:
+        if pellet_mass_kg is None or pellet_rate_hz is None:
+            return {"error": "Provide both --pellet-mass-kg and --pellet-rate-hz for the "
+                             "pellet anchor."}
+        if pellet_mass_kg <= 0:
+            return {"error": "pellet_mass_kg must be > 0."}
+        if pellet_rate_hz <= 0:
+            return {"error": "pellet_rate_hz must be > 0."}
+        m_dot = pellet_mass_kg * pellet_rate_hz
+
+    vel = _resolve_vehicle_velocity(velocity_kms, beta)
+    if isinstance(vel, dict):
+        return vel
+    v_ms, vehicle_velocity_kms, beta_out = vel
+
+    if vehicle_mass_t is not None and vehicle_mass_t <= 0:
+        return {"error": "vehicle_mass_t must be > 0."}
+
+    v_s_ms = stream_velocity_kms * 1000.0
+    u_ms = v_s_ms - v_ms                                  # closing (relative) velocity
+    g = _PELLET_COUPLING[coupling]
+    if u_ms > 0.0:
+        thrust_n = g * m_dot * u_ms
+        delivered_power_w = 0.5 * m_dot * u_ms ** 2
+        verdict = "drive"
+    else:                                                 # v ≥ v_s → the stream can't catch up
+        thrust_n = 0.0
+        delivered_power_w = 0.0
+        verdict = "no-thrust"
+
+    acceleration_ms2 = None
+    if vehicle_mass_t is not None:
+        acceleration_ms2 = thrust_n / (vehicle_mass_t * 1000.0)
+
+    return {
+        "stream_velocity_kms": stream_velocity_kms,
+        "vehicle_velocity_kms": vehicle_velocity_kms,
+        "beta": beta_out,
+        "relative_velocity_kms": u_ms / 1000.0,
+        "mass_flow_rate_kgs": m_dot,
+        "coupling": coupling,
+        "thrust_n": thrust_n,
+        "delivered_power_w": delivered_power_w,
+        "verdict": verdict,
+        "crossover_velocity_kms": stream_velocity_kms,
+        "acceleration_ms2": acceleration_ms2,
+        "model_note": _MODEL_NOTE_PELLET,
     }

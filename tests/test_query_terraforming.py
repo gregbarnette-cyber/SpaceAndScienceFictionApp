@@ -42,7 +42,16 @@ class EquilibriumTempTest(unittest.TestCase):
     def test_inverse(self):
         rc, d, _ = _run("equilibrium-temp", "--insolation-wm2", "1361", "--target-surface-k", "288")
         self.assertEqual(rc, 0)
+        self.assertEqual(d["regime"], "inverse")
         self.assertAlmostEqual(d["required_forcing"]["greenhouse_delta_k"], 33.0, delta=1.0)
+
+    def test_airless(self):
+        # B — no forcing form → bare airless equilibrium (exit 0, regime "airless")
+        rc, d, _ = _run("equilibrium-temp", "--insolation-wm2", "1361", "--albedo", "0.3")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["regime"], "airless")
+        self.assertAlmostEqual(d["t_surface_k"], d["t_eq_k"], places=9)
+        self.assertAlmostEqual(d["t_eq_k"], 254.6, delta=0.5)
 
 
 class InsolationShiftTest(unittest.TestCase):
@@ -79,8 +88,7 @@ class ExitCodeMatrixTest(unittest.TestCase):
         for args in (
             ("equilibrium-temp", "--insolation-wm2", "1361", "--albedo", "1.0", "--greenhouse-delta-k", "33"),
             ("equilibrium-temp", "--insolation-wm2", "1361", "--greenhouse-delta-k", "33", "--optical-depth", "0.5"),
-            ("equilibrium-temp", "--insolation-wm2", "1361"),                       # no forcing
-            ("equilibrium-temp", "--greenhouse-delta-k", "33"),                     # no insolation
+            ("equilibrium-temp", "--greenhouse-delta-k", "33"),                     # no insolation (airless, but no S)
             ("insolation-shift", "--planet-radius-km", "3390", "--delta-insolation-wm2", "0",
              "--solar-flux-wm2", "589"),
             ("atmosphere-mass", "--planet-radius-km", "3390", "--surface-gravity-ms2", "3.71"),   # no P/m

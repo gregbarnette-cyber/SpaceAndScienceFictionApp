@@ -166,5 +166,69 @@ class TableIntegrityTest(unittest.TestCase):
         self.assertEqual(a, c)
 
 
+# ── C4 (Phase AD) — orbital-ring rotor velocity & support balance ─────────────
+
+O = megastructure.compute_orbital_ring
+
+
+class OrbitalRingTest(unittest.TestCase):
+    def test_earth_alt300_anchor(self):
+        # Earth (g0=9.81, R=6371 km), alt 300 → r=6671 km; g=g0·(R/r)²≈8.95;
+        # v_orb=√(g·r)≈7.73 km/s; equal masses → v_rotor=√2·v_orb≈10.93 km/s; ratio √2.
+        d = O(body="earth", altitude_km=300, ring_mass_per_length_kgm=100)
+        self.assertAlmostEqual(d["orbital_radius_km"], 6671, places=6)
+        self.assertAlmostEqual(d["local_gravity_ms2"], 9.81 * (6371 / 6671) ** 2, places=9)
+        self.assertAlmostEqual(d["orbital_velocity_kms"], 7.73, delta=0.02)
+        self.assertAlmostEqual(d["rotor_velocity_kms"], 10.93, delta=0.02)
+        self.assertAlmostEqual(d["rotor_velocity_over_orbital"], math.sqrt(2), places=6)
+        self.assertEqual(d["support_ratio"], 1.0)
+        # v_orb core-parity: v_orb = √(g·r)
+        g = d["local_gravity_ms2"]
+        r = d["orbital_radius_km"] * 1000.0
+        self.assertAlmostEqual(d["orbital_velocity_kms"], math.sqrt(g * r) / 1000.0, places=9)
+        # rotor KE per length = ½·λ_rotor·v_rotor²
+        self.assertAlmostEqual(d["rotor_ke_per_length_jm"],
+                               0.5 * 100 * (d["rotor_velocity_kms"] * 1000.0) ** 2, places=0)
+
+    def test_double_ring_mass_raises_rotor_by_sqrt_1_5(self):
+        base = O(body="earth", altitude_km=300, ring_mass_per_length_kgm=100,
+                 rotor_mass_per_length_kgm=100)
+        heavy = O(body="earth", altitude_km=300, ring_mass_per_length_kgm=200,
+                  rotor_mass_per_length_kgm=100)
+        self.assertEqual(heavy["support_ratio"], 2.0)
+        self.assertAlmostEqual(heavy["rotor_velocity_kms"],
+                               base["rotor_velocity_kms"] * math.sqrt(1.5), places=6)
+
+    def test_explicit_body_parity(self):
+        bundled = O(body="earth", altitude_km=300, ring_mass_per_length_kgm=100)
+        explicit = O(surface_gravity_ms2=9.81, body_radius_km=6371,
+                     altitude_km=300, ring_mass_per_length_kgm=100)
+        self.assertAlmostEqual(bundled["orbital_velocity_kms"],
+                               explicit["orbital_velocity_kms"], places=9)
+        self.assertAlmostEqual(bundled["rotor_velocity_kms"],
+                               explicit["rotor_velocity_kms"], places=9)
+
+    def _err(self, **kw):
+        self.assertIn("error", O(**kw), kw)
+
+    def test_validation_matrix(self):
+        base = dict(altitude_km=300, ring_mass_per_length_kgm=100)
+        self._err(**base)                                                    # no body anchor
+        self._err(body="earth", surface_gravity_ms2=9.81, **base)           # body + explicit
+        self._err(surface_gravity_ms2=9.81, **base)                         # partial explicit (no R)
+        self._err(body="bogus", **base)                                     # unknown body
+        self._err(surface_gravity_ms2=0, body_radius_km=6371, **base)       # g ≤ 0
+        self._err(surface_gravity_ms2=9.81, body_radius_km=0, **base)       # R ≤ 0
+        self._err(body="earth", altitude_km=0, ring_mass_per_length_kgm=100)   # altitude ≤ 0
+        self._err(body="earth", altitude_km=300, ring_mass_per_length_kgm=0)   # ring λ ≤ 0
+        self._err(body="earth", altitude_km=300, ring_mass_per_length_kgm=100,
+                  rotor_mass_per_length_kgm=0)                              # rotor λ ≤ 0
+
+    def test_determinism(self):
+        kw = dict(body="earth", altitude_km=300, ring_mass_per_length_kgm=100,
+                  rotor_mass_per_length_kgm=50)
+        self.assertEqual(O(**kw), O(**kw))
+
+
 if __name__ == "__main__":
     unittest.main()

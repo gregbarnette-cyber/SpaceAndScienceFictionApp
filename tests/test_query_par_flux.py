@@ -66,6 +66,22 @@ class HappyPathTest(unittest.TestCase):
         self.assertEqual(d["band_nm"], [400.0, 750.0])
         self.assertGreater(d["par_fraction"], 0.40)
 
+    def test_sed_real_and_parity(self):
+        # C1: real SED path — 3000 K real f_PAR well below the blackbody value
+        rc, d, _ = _run("par-flux", "--teff-k", "3000", "--insolation-wm2", "1361", "--sed", "real")
+        self.assertEqual(rc, 0)
+        self.assertAlmostEqual(d["par_fraction"], 0.0228, places=4)
+        self.assertIn("BT-Settl", d["sed_model"])
+        ref = par_flux.compute_par_flux(teff_k=3000, insolation_wm2=1361, sed="real")
+        self.assertEqual(d, ref)
+
+    def test_sed_blackbody_is_default(self):
+        bare, _, _ = _run("par-flux", "--teff-k", "3000", "--insolation-wm2", "1361")
+        expl, _, _ = _run("par-flux", "--teff-k", "3000", "--insolation-wm2", "1361",
+                          "--sed", "blackbody")
+        self.assertEqual(bare, 0)
+        self.assertEqual(expl, 0)
+
 
 class ExitCodeMatrixTest(unittest.TestCase):
     def test_exit1_curated(self):
@@ -76,6 +92,10 @@ class ExitCodeMatrixTest(unittest.TestCase):
             ("par-flux", "--insolation-wm2", "1361"),                            # no Teff
             ("par-flux", "--teff-k", "5772", "--luminosity-lsun", "1", "--distance-au", "0"),
             ("par-flux", "--teff-k", "5772", "--insolation-wm2", "1361", "--par-band-nm", "700", "400"),
+            # C1: --sed real with a non-default band (band-fixed table) / off-grid Teff
+            ("par-flux", "--teff-k", "3000", "--insolation-wm2", "1361", "--sed", "real",
+             "--par-band-nm", "400", "750"),
+            ("par-flux", "--teff-k", "2000", "--insolation-wm2", "1361", "--sed", "real"),
         ):
             rc, d, _ = _run(*args)
             self.assertEqual(rc, 1, msg=f"{args}")
@@ -85,6 +105,7 @@ class ExitCodeMatrixTest(unittest.TestCase):
         for args in (
             ("par-flux", "--teff-k", "abc", "--insolation-wm2", "1361"),         # non-numeric
             ("par-flux", "--teff-k", "5772", "--insolation-wm2", "1361", "--par-band-nm", "400"),  # 1 band num
+            ("par-flux", "--teff-k", "3000", "--insolation-wm2", "1361", "--sed", "bogus"),  # bad --sed choice
         ):
             rc, d, _ = _run(*args)
             self.assertEqual(rc, 2, msg=f"{args}")

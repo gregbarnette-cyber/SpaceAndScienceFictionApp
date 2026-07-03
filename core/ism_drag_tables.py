@@ -103,11 +103,15 @@ _IONIZATION_NOTE = (
 )
 
 _MODEL_NOTE_MAGSAIL = (
-    "Magsail braking: magnetopause standoff R_mp = [μ₀·m_dip²/(8π²·k·ρv²)]^(1/6) from the pressure "
-    "balance B²/2μ₀ = k·ρv²; drag F = C_d·½·ρv²·π·R_mp². Because R_mp ∝ v^(−1/3), F_drag ∝ v^(4/3) "
-    "(fast initial braking, long tail). Instantaneous force at the given v; the optional stopping "
-    "distance/time integrate the single v^(4/3) drag law (coefficient frozen at v₀ — a first "
-    "estimate, not a multi-leg trajectory). Far-field dipole assumed (R_mp ≳ R_coil). "
+    "Magsail braking. The coil-pair anchor uses the EXACT on-axis current-loop field "
+    "B(z) = μ₀·I·R²/(2(R²+z²)^{3/2}), inverting the pressure balance B(R_mp)²/2μ₀ = k·ρv² "
+    "algebraically for R_mp; the moment-only anchor (no geometry) keeps the far-field dipole "
+    "R_mp = [μ₀·m_dip²/(8π²·k·ρv²)]^(1/6). Both are echoed (magnetopause_radius_km vs "
+    "magnetopause_radius_farfield_km); they converge once R_mp ≳ 3·R_coil. Drag "
+    "F = C_d·½·ρv²·π·R_mp²; because R_mp ∝ v^(−1/3) in the far field, F_drag ∝ v^(4/3) (fast "
+    "initial braking, long tail). For CONSTANT ISM the closed-form stopping distance/time from the "
+    "single v^(4/3) drag law are EXACT (not an estimate); a real varying-ISM multi-leg trajectory "
+    "optimisation is a separate consuming tool. Only ions couple — ionization_fraction scales ρ. "
     "Momentum/energy balance only — no coil mass / quench / plasma engineering (Pkt 25). " + _SOURCES
 )
 

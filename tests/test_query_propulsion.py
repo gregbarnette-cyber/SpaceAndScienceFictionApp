@@ -98,5 +98,54 @@ class BeamSailQueryTest(unittest.TestCase):
             self.assertTrue(err)
 
 
+class PelletStreamQueryTest(unittest.TestCase):
+    def test_drive_happy_and_parity(self):
+        rc, d, _ = _run("pellet-stream", "--stream-velocity-kms", "30000",
+                        "--mass-flow-rate-kgs", "1", "--beta", "0.05")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["verdict"], "drive")
+        self.assertAlmostEqual(d["thrust_n"], 3.0e7, delta=5e4)
+        ref = propulsion.compute_pellet_stream(stream_velocity_kms=30000,
+                                               mass_flow_rate_kgs=1, beta=0.05)
+        self.assertAlmostEqual(d["thrust_n"], ref["thrust_n"], places=6)
+        self.assertEqual(d, ref)
+
+    def test_no_thrust_is_exit0(self):
+        # v = v_s → clean-negative result, still exit 0
+        rc, d, _ = _run("pellet-stream", "--stream-velocity-kms", "30000",
+                        "--mass-flow-rate-kgs", "1", "--velocity-kms", "30000")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["verdict"], "no-thrust")
+        self.assertEqual(d["thrust_n"], 0.0)
+
+    def test_exit1_curated_errors(self):
+        for args in (["pellet-stream", "--stream-velocity-kms", "0",
+                      "--mass-flow-rate-kgs", "1", "--beta", "0.05"],              # v_s ≤ 0
+                     ["pellet-stream", "--stream-velocity-kms", "30000", "--beta", "0.05"],  # no mass
+                     ["pellet-stream", "--stream-velocity-kms", "30000",
+                      "--pellet-mass-kg", "1", "--beta", "0.05"],                  # partial pellet
+                     ["pellet-stream", "--stream-velocity-kms", "30000",
+                      "--mass-flow-rate-kgs", "1"],                                # no velocity
+                     ["pellet-stream", "--stream-velocity-kms", "30000",
+                      "--mass-flow-rate-kgs", "1", "--beta", "1.0"]):              # β=1
+            rc, d, _ = _run(*args)
+            self.assertEqual(rc, 1, args)
+            self.assertIn("error", d, args)
+
+    def test_exit2_argparse(self):
+        for args in (["pellet-stream", "--mass-flow-rate-kgs", "1", "--beta", "0.05"],  # missing v_s
+                     ["pellet-stream", "--stream-velocity-kms", "30000",
+                      "--mass-flow-rate-kgs", "1", "--velocity-kms", "1000", "--beta", "0.05"],  # v mutex
+                     ["pellet-stream", "--stream-velocity-kms", "30000",
+                      "--mass-flow-rate-kgs", "1", "--pellet-mass-kg", "1", "--beta", "0.05"],  # mass mutex
+                     ["pellet-stream", "--stream-velocity-kms", "30000",
+                      "--mass-flow-rate-kgs", "1", "--beta", "0.05", "--coupling", "bogus"],  # choice
+                     ["pellet-stream", "--stream-velocity-kms", "abc",
+                      "--mass-flow-rate-kgs", "1", "--beta", "0.05"]):             # non-numeric
+            rc, _, err = _run(*args)
+            self.assertEqual(rc, 2, args)
+            self.assertTrue(err)
+
+
 if __name__ == "__main__":
     unittest.main()

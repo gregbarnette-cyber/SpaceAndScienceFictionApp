@@ -140,6 +140,24 @@ class _SeededQueryTest(unittest.TestCase):
                                     "--destination", "AX3")
         self.assertEqual(code, 2)
 
+    # ── jump-route --weight blend (C11, Phase AD) ─────────────────────────────
+    # The blended-cost route itself needs the dust extra + fetched maps (exercised
+    # in-process with a mocked _seg in test_dust_routing.py); here we cover the two
+    # weight-flag guards that are pure argparse/handler (no dust needed).
+
+    def test_jump_route_alpha_without_blend_exit1(self):
+        code, payload, _ = self._run("jump-route", "--origin", "Sol",
+                                     "--destination", "AX3", "--max-jump", "4", "--alpha", "2")
+        self.assertEqual(code, 1)               # handler guard: α/β require --weight blend
+        self.assertIn("error", payload)
+
+    def test_jump_route_bad_weight_exit2(self):
+        code, _, stderr = self._run("jump-route", "--origin", "Sol",
+                                    "--destination", "AX3", "--max-jump", "4",
+                                    "--weight", "bogus")
+        self.assertEqual(code, 2)               # argparse choices rejection
+        self.assertTrue(stderr)
+
     # ── jump-network ─────────────────────────────────────────────────────────
 
     def test_jump_network_happy(self):

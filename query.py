@@ -10,11 +10,15 @@ import argparse
 import json
 import sys
 
+import core.active_shield as active_shield
 import core.calculators as calculators
 import core.cooling as cooling
 import core.databases as databases
-import core.dust as dust
-import core.dust_routing as dust_routing
+import core.dust_impact as dust_impact   # pure-math (no astropy/numpy) — safe at module load
+# core.dust / core.dust_routing are imported lazily inside their handlers — they pull
+# astropy + numpy (dust coordinate math), so keeping them out of module load makes every
+# non-dust query.py invocation ~0.5 s faster (matters for the sister repo's per-call cost
+# and the subprocess test suite). All dust references live inside cmd_* handlers.
 import core.equations as equations
 import core.feasibility as feasibility
 import core.generate as generate
@@ -30,6 +34,7 @@ import core.science as science
 import core.spin as spin
 import core.terraforming as terraforming
 import core.thermal as thermal
+import core.volatile_delivery as volatile_delivery
 
 
 def _out(result):
@@ -270,6 +275,9 @@ def cmd_waste_heat(args):
         useful_power_watts=args.useful_power_watts,
         efficiency=args.efficiency,
         hot_temp_k=args.hot_temp_k, cold_temp_k=args.cold_temp_k,
+        peak_w=args.peak_w, mean_w=args.mean_w, duty=args.duty,
+        pulse_period_s=args.pulse_period_s, storage_mass_kg=args.storage_mass_kg,
+        specific_heat_jkgk=args.specific_heat_jkgk,
     ))
 
 
@@ -290,6 +298,17 @@ def cmd_shielding_attenuation(args):
         mass_atten_coeff_cm2g=args.mass_atten_coeff_cm2g,
         attenuation_length_gcm2=args.attenuation_length_gcm2,
         material=args.material, energy_mev=args.energy_mev, mode=args.mode,
+        particle=args.particle, csda_range_gcm2=args.csda_range_gcm2, layers=args.layers,
+    ))
+
+
+def cmd_active_shield(args):
+    _out(active_shield.compute_active_shield(
+        shield_radius_m=args.shield_radius_m,
+        coil_current_a=args.coil_current_a, coil_radius_m=args.coil_radius_m,
+        magnetic_moment_am2=args.magnetic_moment_am2,
+        field_tesla=args.field_tesla, field_radius_m=args.field_radius_m,
+        spectrum_characteristic_rigidity_gv=args.spectrum_characteristic_rigidity_gv,
     ))
 
 
@@ -324,6 +343,7 @@ def cmd_magsail(args):
         magnetic_moment_am2=args.magnetic_moment_am2,
         standoff_coeff=args.standoff_coeff, drag_coeff=args.drag_coeff,
         vehicle_mass_t=args.vehicle_mass_t, velocity_final_kms=args.velocity_final_kms,
+        ionization_fraction=args.ionization_fraction,
     ))
 
 
@@ -336,6 +356,49 @@ def cmd_ramscoop(args):
         fuel=args.fuel, fusion_efficiency=args.fusion_efficiency,
         exhaust_velocity_kms=args.exhaust_velocity_kms,
         standoff_coeff=args.standoff_coeff, drag_coeff=args.drag_coeff,
+        ionization_fraction=args.ionization_fraction,
+    ))
+
+
+# ── Phase AD — momentum / impact tools (C2 pellet-stream, C3 dust-impact) ──────
+
+def cmd_pellet_stream(args):
+    _out(propulsion.compute_pellet_stream(
+        stream_velocity_kms=args.stream_velocity_kms,
+        mass_flow_rate_kgs=args.mass_flow_rate_kgs,
+        pellet_mass_kg=args.pellet_mass_kg, pellet_rate_hz=args.pellet_rate_hz,
+        velocity_kms=args.velocity_kms, beta=args.beta,
+        coupling=args.coupling, vehicle_mass_t=args.vehicle_mass_t,
+    ))
+
+
+def cmd_dust_impact(args):
+    _out(dust_impact.compute_dust_impact(
+        grain_radius_um=args.grain_radius_um, grain_density_kgm3=args.grain_density_kgm3,
+        grain_mass_kg=args.grain_mass_kg,
+        velocity_kms=args.velocity_kms, beta=args.beta,
+        dust_density_m3=args.dust_density_m3, frontal_area_m2=args.frontal_area_m2,
+        path_length_ly=args.path_length_ly,
+    ))
+
+
+# ── Phase AD — megastructure / terraforming tools (C4 orbital-ring, C5 volatile-delivery) ──
+
+def cmd_orbital_ring(args):
+    _out(megastructure.compute_orbital_ring(
+        body=args.body, surface_gravity_ms2=args.surface_gravity_ms2,
+        body_radius_km=args.body_radius_km, altitude_km=args.altitude_km,
+        ring_mass_per_length_kgm=args.ring_mass_per_length_kgm,
+        rotor_mass_per_length_kgm=args.rotor_mass_per_length_kgm,
+    ))
+
+
+def cmd_volatile_delivery(args):
+    _out(volatile_delivery.compute_volatile_delivery(
+        body_mass_kg=args.body_mass_kg, volatile_fraction=args.volatile_fraction,
+        delta_v_kms=args.delta_v_kms, impact_velocity_kms=args.impact_velocity_kms,
+        target_atmosphere_mass_kg=args.target_atmosphere_mass_kg,
+        fuel=args.fuel, exhaust_velocity_kms=args.exhaust_velocity_kms,
     ))
 
 
@@ -381,6 +444,7 @@ def cmd_par_flux(args):
         teff_k=args.teff_k, spectral_type=args.spectral_type, star=args.star,
         insolation_wm2=args.insolation_wm2, luminosity_lsun=args.luminosity_lsun,
         distance_au=args.distance_au, par_band_nm=tuple(args.par_band_nm),
+        sed=args.sed,
     ))
 
 
@@ -485,6 +549,7 @@ def cmd_substellar(args):
 # leaving a map box is NOT an error (per-bin null + note).
 
 def cmd_dust_sightline(args):
+    import core.dust as dust
     _out(dust.compute_dust_sightline(
         l=args.l, b=args.b, ra=args.ra, dec=args.dec, star=args.star, id=args.id,
         dist_start_pc=args.dist_start, dist_end_pc=args.dist_end,
@@ -493,6 +558,7 @@ def cmd_dust_sightline(args):
 
 
 def cmd_dust_between(args):
+    import core.dust as dust
     _out(dust.compute_dust_between(
         star1=args.star1, id1=args.id1, star2=args.star2, id2=args.id2,
         n_steps=args.steps, step_pc=args.step_pc, map_sel=args.map,
@@ -626,6 +692,7 @@ def cmd_optimal_tour(args):
     use_times_c = args.times_c is not None
     velocity = args.times_c if use_times_c else args.ly_hr
     if getattr(args, "weight", "distance") == "dust":
+        import core.dust_routing as dust_routing
         _out(dust_routing.compute_optimal_tour_dust(
             args.stars, velocity, use_times_c, closed=args.closed,
             map_sel=args.map, dust_step_pc=args.dust_step_pc,
@@ -637,9 +704,23 @@ def cmd_optimal_tour(args):
 
 
 def cmd_jump_route(args):
-    if getattr(args, "weight", "distance") == "dust":
+    weight = getattr(args, "weight", "distance")
+    alpha = getattr(args, "alpha", None)
+    beta = getattr(args, "beta", None)
+    if (alpha is not None or beta is not None) and weight != "blend":
+        _out({"error": "--alpha/--beta apply only with --weight blend."})
+        return
+    if weight == "dust":
+        import core.dust_routing as dust_routing
         _out(dust_routing.compute_jump_route_dust(
             args.origin, args.destination, args.max_jump, optimize=args.optimize,
+            map_sel=args.map, dust_step_pc=args.dust_step_pc,
+        ))
+    elif weight == "blend":
+        import core.dust_routing as dust_routing
+        _out(dust_routing.compute_jump_route_blend(
+            args.origin, args.destination, args.max_jump, optimize=args.optimize,
+            alpha=1.0 if alpha is None else alpha, beta=1.0 if beta is None else beta,
             map_sel=args.map, dust_step_pc=args.dust_step_pc,
         ))
     else:
@@ -658,6 +739,7 @@ def cmd_multi_stop(args):
     use_times_c = args.times_c is not None
     velocity = args.times_c if use_times_c else args.ly_hr
     if getattr(args, "weight", "distance") == "dust":
+        import core.dust_routing as dust_routing
         _out(dust_routing.compute_multi_stop_dust(
             args.stars, velocity, use_times_c,
             map_sel=args.map, dust_step_pc=args.dust_step_pc,
@@ -668,6 +750,7 @@ def cmd_multi_stop(args):
 
 def cmd_nearest_neighbor(args):
     if getattr(args, "weight", "distance") == "dust":
+        import core.dust_routing as dust_routing
         _out(dust_routing.compute_nearest_neighbor_dust(
             args.start, args.hops, args.max_ly,
             map_sel=args.map, dust_step_pc=args.dust_step_pc,
@@ -686,6 +769,7 @@ def cmd_farthest_first(args):
 
 def cmd_trade_route(args):
     if getattr(args, "weight", "distance") == "dust":
+        import core.dust_routing as dust_routing
         _out(dust_routing.compute_trade_route_dust(
             args.stars, map_sel=args.map, dust_step_pc=args.dust_step_pc,
         ))
@@ -837,7 +921,7 @@ def cmd_life_support(args):
 
 def cmd_bioregen_area(args):
     _out(life_support.compute_bioregen_area(
-        kcal_per_day=args.kcal_per_day, crew=args.crew, crop=args.crop,
+        kcal_per_day=args.kcal_per_day, crew=args.crew, crop=args.crop, crops=args.crops,
         ppfd_umol=args.ppfd_umol, photoperiod_h=args.photoperiod_h,
         dli_mol=args.dli_mol, par_wm2=args.par_wm2,
         photo_efficiency=args.photo_efficiency, harvest_index=args.harvest_index,
@@ -1258,12 +1342,21 @@ def main():
     # waste-heat (Phase V — power → rejected-heat budget, with Carnot ceiling)
     p = sub.add_parser("waste-heat",
                        help="Waste heat a device must reject from a power figure + efficiency (with Carnot ceiling)")
-    g = p.add_mutually_exclusive_group(required=True)
+    # Not required: transient mode (below) uses no steady power anchor. Both given → mutex exit 2;
+    # neither given + not transient → the core "no power anchor" error (exit 1).
+    g = p.add_mutually_exclusive_group()
     g.add_argument("--input-power-watts",  type=float, help="Gross input/thermal power, W")
     g.add_argument("--useful-power-watts", type=float, help="Net useful output power, W")
     p.add_argument("--efficiency", type=float, help="Conversion/thermal efficiency η (0 < η ≤ 1)")
     p.add_argument("--hot-temp-k",  type=float, help="Hot-reservoir temperature K (for the Carnot ceiling)")
     p.add_argument("--cold-temp-k", type=float, help="Cold-reservoir temperature K (for the Carnot ceiling)")
+    # C9 — transient/pulsed thermal-buffer mode (all six together)
+    p.add_argument("--peak-w", type=float, help="Peak dissipated power W (transient mode)")
+    p.add_argument("--mean-w", type=float, help="Time-average power W the radiator is sized for (transient mode)")
+    p.add_argument("--duty", type=float, help="On-fraction of the pulse cycle, 0 < d ≤ 1 (transient mode)")
+    p.add_argument("--pulse-period-s", type=float, help="Pulse cycle period s (transient mode)")
+    p.add_argument("--storage-mass-kg", type=float, help="Thermal-buffer mass kg (transient mode)")
+    p.add_argument("--specific-heat-jkgk", type=float, help="Buffer specific heat J/kg·K (transient mode)")
     p.set_defaults(func=cmd_waste_heat)
 
     # radiator-area (Phase V — Stefan–Boltzmann thermal-rejection wall)
@@ -1294,8 +1387,30 @@ def main():
     p.add_argument("--attenuation-length-gcm2", type=float, help="GCR attenuation length Λ, g/cm² (explicit; gcr mode)")
     p.add_argument("--material", help="Bundled material for the coefficient lookup "
                                       "(water/polyethylene/aluminum/regolith/lead/liquid_h2/hydrogen/iron)")
-    p.add_argument("--energy-mev", type=float, help="Photon energy MeV for the bundled μ/ρ lookup")
+    p.add_argument("--energy-mev", type=float, help="Photon/particle energy MeV for the bundled lookup")
+    # C6 — charged-particle CSDA range
+    p.add_argument("--particle", choices=["photon", "proton", "alpha", "ion"], default="photon",
+                   help="photon (default; Lambert–Beer/GCR) or a charged particle (CSDA stopping range)")
+    p.add_argument("--csda-range-gcm2", type=float,
+                   help="Explicit CSDA range g/cm² for a charged particle (overrides the bundled table)")
+    # C7 — multi-layer stack
+    p.add_argument("--layers", help="Stacked shield 'mat:gcm2, mat:gcm2, …' → per-layer product transmitted fraction")
     p.set_defaults(func=cmd_shielding_attenuation)
+
+    # active-shield (Phase AD C8 — magnetic rigidity cutoff / deflection)
+    p = sub.add_parser("active-shield",
+                       help="Active magnetic-shield rigidity cutoff (Störmer) + deflected fraction "
+                            "+ field, from a dipole moment / coil / field×scale")
+    p.add_argument("--shield-radius-m", type=float, required=True,
+                   help="Protected-region radius r (m) at which the cutoff is evaluated")
+    p.add_argument("--magnetic-moment-am2", type=float, help="Magnetic dipole moment A·m² (field source)")
+    p.add_argument("--coil-current-a", type=float, help="Coil current A (with --coil-radius-m; field source)")
+    p.add_argument("--coil-radius-m", type=float, help="Coil radius m (with --coil-current-a)")
+    p.add_argument("--field-tesla", type=float, help="Field magnitude T at --field-radius-m (field source)")
+    p.add_argument("--field-radius-m", type=float, help="Radius m at which --field-tesla is specified")
+    p.add_argument("--spectrum-characteristic-rigidity-gv", type=float,
+                   help="Characteristic rigidity R_s (GV) of the incident spectrum → deflected fraction")
+    p.set_defaults(func=cmd_active_shield)
 
     # rocket-equation (Phase Y — Tsiolkovsky classical + relativistic; complements the
     # brachistochrone-* kinematics with the mass/energy side of STL travel)
@@ -1352,6 +1467,8 @@ def main():
     p.add_argument("--vehicle-mass-t", type=float, help="Vehicle mass, t (→ deceleration; needed for stopping)")
     p.add_argument("--velocity-final-kms", type=float,
                    help="Target final velocity, km/s (→ stopping distance/time; requires --vehicle-mass-t)")
+    p.add_argument("--ionization-fraction", type=float,
+                   help="Ionized fraction of the ISM that couples magnetically, 0<x≤1 (default 1.0)")
     p.set_defaults(func=cmd_magsail)
 
     # ramscoop (Phase AC — Bussard ramjet drag-vs-thrust verdict: drive or brake?)
@@ -1375,7 +1492,80 @@ def main():
     p.add_argument("--exhaust-velocity-kms", type=float, help="Explicit exhaust velocity v_e, km/s (exhaust anchor)")
     p.add_argument("--standoff-coeff", type=float, help="Standoff coefficient k (default 1.0)")
     p.add_argument("--drag-coeff", type=float, help="Drag coefficient C_d (default 1.0)")
+    p.add_argument("--ionization-fraction", type=float,
+                   help="Ionized fraction of the ISM that couples magnetically, 0<x≤1 (default 1.0)")
     p.set_defaults(func=cmd_ramscoop)
+
+    # pellet-stream (Phase AD C2 — momentum-beam drive: thrust/power/drive-verdict; the mass
+    # analog of ramscoop)
+    p = sub.add_parser("pellet-stream",
+                       help="Pellet-stream (momentum-beam) drive: thrust, delivered power, and "
+                            "drive/no-thrust verdict from the closing velocity")
+    p.add_argument("--stream-velocity-kms", type=float, required=True,
+                   help="Pellet stream velocity v_s, km/s")
+    m = p.add_mutually_exclusive_group()
+    m.add_argument("--mass-flow-rate-kgs", type=float, help="Stream mass-flow rate ṁ, kg/s (mass anchor)")
+    m.add_argument("--pellet-mass-kg", type=float, help="Per-pellet mass, kg (with --pellet-rate-hz → ṁ)")
+    p.add_argument("--pellet-rate-hz", type=float, help="Pellet arrival rate, Hz (with --pellet-mass-kg)")
+    v = p.add_mutually_exclusive_group()
+    v.add_argument("--velocity-kms", type=float, help="Vehicle velocity, km/s (velocity anchor; admits 0)")
+    v.add_argument("--beta", type=float, help="Vehicle velocity as a fraction of c, 0<β<1 (velocity anchor)")
+    p.add_argument("--coupling", choices=["reflect", "absorb"], default="reflect",
+                   help="reflect (elastic, g=2) / absorb (inelastic, g=1); default reflect")
+    p.add_argument("--vehicle-mass-t", type=float, help="Vehicle mass, t (→ acceleration)")
+    p.set_defaults(func=cmd_pellet_stream)
+
+    # dust-impact (Phase AD C3 — hypervelocity grain impact energetics; penetration handed off
+    # to the Packet-13 shielding tools)
+    p = sub.add_parser("dust-impact",
+                       help="Hypervelocity dust-grain impact: kinetic energy, TNT-equivalent, "
+                            "momentum, and optional cumulative impacts/fluence over an ISM column")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--grain-radius-um", type=float, help="Grain radius, µm (with --grain-density-kgm3 → mass)")
+    g.add_argument("--grain-mass-kg", type=float, help="Explicit grain mass, kg (grain anchor)")
+    p.add_argument("--grain-density-kgm3", type=float, help="Grain density, kg/m³ (with --grain-radius-um)")
+    v = p.add_mutually_exclusive_group()
+    v.add_argument("--velocity-kms", type=float, help="Impact velocity, km/s (velocity anchor)")
+    v.add_argument("--beta", type=float, help="Impact velocity as a fraction of c, 0<β<1 (velocity anchor)")
+    p.add_argument("--dust-density-m3", type=float,
+                   help="ISM grain number density, m⁻³ (with --frontal-area-m2 + --path-length-ly)")
+    p.add_argument("--frontal-area-m2", type=float, help="Vehicle frontal area, m² (cumulative set)")
+    p.add_argument("--path-length-ly", type=float, help="Path length through the column, ly (cumulative set)")
+    p.set_defaults(func=cmd_dust_impact)
+
+    # orbital-ring (Phase AD C4 — stationary ring held up by a faster-than-orbital rotor)
+    p = sub.add_parser("orbital-ring",
+                       help="Orbital-ring rotor velocity & support balance: local gravity, "
+                            "orbital vs rotor velocity, and rotor KE per unit length")
+    p.add_argument("--body", choices=sorted(megastructure.materials_tables._BODIES),
+                   help="Bundled body (g₀ + surface radius); mutually exclusive with the explicit pair")
+    p.add_argument("--surface-gravity-ms2", type=float, help="Explicit surface gravity g₀, m/s²")
+    p.add_argument("--body-radius-km", type=float, help="Explicit body surface radius, km")
+    p.add_argument("--altitude-km", required=True, type=float, help="Ring altitude above the surface, km")
+    p.add_argument("--ring-mass-per-length-kgm", required=True, type=float,
+                   help="Ring (sheath) mass per unit length λ_ring, kg/m")
+    p.add_argument("--rotor-mass-per-length-kgm", type=float,
+                   help="Rotor mass per unit length λ_rotor, kg/m (default = λ_ring → v_rotor=√2·v_orb)")
+    p.set_defaults(func=cmd_orbital_ring)
+
+    # volatile-delivery (Phase AD C5 — cometary bombardment for terraforming; the supply side of
+    # atmosphere-mass)
+    p = sub.add_parser("volatile-delivery",
+                       help="Volatile delivery by icy-body redirect: delivered mass, redirect mass "
+                            "ratio, impact energy, and bodies needed for a target atmosphere")
+    p.add_argument("--body-mass-kg", required=True, type=float, help="Redirected body mass M, kg")
+    p.add_argument("--volatile-fraction", type=float, default=0.5,
+                   help="Volatile mass fraction f of the body, (0,1] (default 0.5)")
+    p.add_argument("--delta-v-kms", type=float,
+                   help="Redirect Δv, km/s (with one exhaust anchor → redirect mass ratio)")
+    p.add_argument("--fuel", choices=sorted(propulsion.propulsion_tables._FUELS),
+                   help="Bundled ideal exhaust velocity by fuel (exhaust anchor, with --delta-v-kms)")
+    p.add_argument("--exhaust-velocity-kms", type=float,
+                   help="Explicit exhaust velocity v_e, km/s (exhaust anchor, with --delta-v-kms)")
+    p.add_argument("--impact-velocity-kms", type=float, help="Impact velocity, km/s (→ impact energy)")
+    p.add_argument("--target-atmosphere-mass-kg", type=float,
+                   help="Target atmosphere mass, kg (→ bodies needed)")
+    p.set_defaults(func=cmd_volatile_delivery)
 
     # spin-stress (Phase Z — hoop stress σ=ρv² → max habitat size for a material)
     p = sub.add_parser("spin-stress",
@@ -1430,6 +1620,9 @@ def main():
     p.add_argument("--distance-au", type=float, help="Orbital distance, AU (with --luminosity-lsun)")
     p.add_argument("--par-band-nm", type=float, nargs=2, default=[400.0, 700.0],
                    metavar=("LO", "HI"), help="PAR band in nm (default 400 700)")
+    p.add_argument("--sed", choices=["blackbody", "real"], default="blackbody",
+                   help="SED model: blackbody (default, Planck at Teff) or real (BT-Settl "
+                        "f_PAR table, band-fixed 400–700 nm, 2600–7000 K)")
     p.set_defaults(func=cmd_par_flux)
 
     # equilibrium-temp (Phase AB — planetary equilibrium + greenhouse surface temperature)
@@ -1521,6 +1714,9 @@ def main():
     p.add_argument("--crew", type=int, default=1, help="Crew size (default 1)")
     p.add_argument("--crop", choices=sorted(life_support._t.get_crops()),
                    help="Bundled crop (wheat/…/lettuce = BVAD; chlorella/spirulina = algae)")
+    p.add_argument("--crops",
+                   help="Diet mix as \"crop:frac, crop:frac, …\" (calorie fractions summing to 1.0); "
+                        "per-crop area at each crop's HI/productivity. Mutually exclusive with --crop.")
     light = p.add_mutually_exclusive_group(required=True)
     light.add_argument("--ppfd-umol", type=float, help="Photosynthetic photon flux density, µmol/m²·s")
     light.add_argument("--dli-mol", type=float, help="Daily light integral, mol/m²·d")
@@ -1850,7 +2046,18 @@ def main():
                    help="Maximum single-jump distance in light years")
     p.add_argument("--optimize", choices=["distance", "jumps"], default="distance",
                    help="Minimize total distance (default) or number of jumps")
-    _add_dust_weight_flags(p)
+    # jump-route gets the extra `blend` weight (C11) + α/β on top of the shared distance/dust flags.
+    p.add_argument("--weight", choices=["distance", "dust", "blend"], default="distance",
+                   help="Edge weight: distance (default, 3D ly), dust (integrated A_V), or "
+                        "blend (α·ly + β·A_V)")
+    p.add_argument("--alpha", type=float, default=None,
+                   help="Distance weight for --weight blend (default 1.0; --beta 0 → distance route)")
+    p.add_argument("--beta", type=float, default=None,
+                   help="A_V weight for --weight blend (default 1.0; --alpha 0 → dust route)")
+    p.add_argument("--map", choices=["near-field", "edenhofer", "auto"], default="auto",
+                   help="Dust map when --weight dust/blend (default auto)")
+    p.add_argument("--dust-step-pc", dest="dust_step_pc", type=float, default=5.0,
+                   help="Dust integration step in pc when --weight dust/blend (default 5)")
     p.set_defaults(func=cmd_jump_route)
 
     # jump-network

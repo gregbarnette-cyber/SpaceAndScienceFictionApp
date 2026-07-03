@@ -69,8 +69,36 @@ def _resolve_dipole(coil_current_a, coil_radius_m, magnetic_moment_am2):
 
 
 def _standoff_radius_m(mu0, m_dip, k, rho, v_ms):
-    """R_mp = [ μ₀·m_dip² / (8π²·k·ρv²) ]^(1/6)."""
+    """Far-field dipole standoff: R_mp = [ μ₀·m_dip² / (8π²·k·ρv²) ]^(1/6)."""
     return (mu0 * m_dip ** 2 / (8.0 * math.pi ** 2 * k * rho * v_ms ** 2)) ** (1.0 / 6.0)
+
+
+def _exact_loop_standoff_m(mu0, current_a, radius_m, k, rho, v_ms):
+    """Exact on-axis current-loop magnetopause standoff (A1).
+
+    On-axis field of a single circular loop: B(z) = μ₀·I·R²/(2(R²+z²)^{3/2}),
+    finite at the centre (z=0) and monotonically decreasing outward. The pressure
+    balance B(R_mp)²/(2μ₀) = k·ρv² inverts *algebraically* (no root-find):
+
+        (R² + R_mp²)³ = μ₀·I²·R⁴ / (8·k·ρv²)  ≡ bracket
+        R_mp = sqrt( bracket^(1/3) − R² ).
+
+    The far-field limit R_mp ≫ R recovers ``_standoff_radius_m`` exactly. Because
+    the field peaks at the coil centre, a standoff exists only while the ram
+    pressure stays below that peak — i.e. ``bracket^(1/3) ≥ R²``. When it does not
+    (bracket^(1/3) < R²) the ISM overwhelms the field: R_mp is clamped to R_coil
+    and ``clamped=True`` is returned. Returns ``(r_mp_m, clamped)``.
+    """
+    bracket = mu0 * current_a ** 2 * radius_m ** 4 / (8.0 * k * rho * v_ms ** 2)
+    inner = bracket ** (1.0 / 3.0) - radius_m ** 2
+    if inner <= 0.0:
+        return (radius_m, True)
+    return (math.sqrt(inner), False)
+
+
+def _ism_mass_density(density_cm3, ion_mass_amu, ionization_fraction):
+    """ρ = n · 1e6 · m_ion · amu · x_ion  (cm⁻³ → m⁻³ = ×1e6; only ions couple)."""
+    return density_cm3 * 1e6 * ion_mass_amu * _AMU_KG * ionization_fraction
 
 
 # ── K1 — magnetic-sail braking against the ISM ────────────────────────────────
@@ -78,17 +106,23 @@ def _standoff_radius_m(mu0, m_dip, k, rho, v_ms):
 def compute_magsail(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None, beta=None,
                     coil_current_a=None, coil_radius_m=None, magnetic_moment_am2=None,
                     standoff_coeff=None, drag_coeff=None, vehicle_mass_t=None,
-                    velocity_final_kms=None):
+                    velocity_final_kms=None, ionization_fraction=None):
     """Magsail braking: magnetopause standoff → drag force (∝ v^(4/3)) → deceleration →
     optional stopping distance/time.
 
     ISM defaults flag to the Local Interstellar Cloud (n ≈ 0.1 cm⁻³, mean ion mass ≈ 1.3 amu);
     k/C_d default to the confirmed order-unity coefficients. See ``core.ism_drag_tables``.
+
+    A1: the **coil-pair** anchor uses the *exact on-axis loop field* standoff
+    (``_exact_loop_standoff_m``); the **moment-only** anchor has no geometry and keeps the
+    far-field dipole standoff. Both echo ``magnetopause_radius_farfield_km`` for comparison.
+    A3: ``ionization_fraction`` (default 1.0) scales the interacting density (only ions couple).
     """
     density = _t._DEFAULT_N_CM3 if ism_density_cm3 is None else ism_density_cm3
     ion_mass = _t._MEAN_ION_MASS_AMU if ion_mass_amu is None else ion_mass_amu
     k = _t._STANDOFF_COEFF_K if standoff_coeff is None else standoff_coeff
     cd = _t._DRAG_COEFF_CD if drag_coeff is None else drag_coeff
+    x_ion = 1.0 if ionization_fraction is None else ionization_fraction
 
     if density <= 0:
         return {"error": "ism_density_cm3 must be > 0."}
@@ -98,6 +132,8 @@ def compute_magsail(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None, 
         return {"error": "standoff_coeff (k) must be > 0."}
     if cd <= 0:
         return {"error": "drag_coeff (C_d) must be > 0."}
+    if not (0.0 < x_ion <= 1.0):
+        return {"error": "ionization_fraction must be in (0, 1]."}
 
     vel = _resolve_velocity(velocity_kms, beta)
     if isinstance(vel, dict):
@@ -122,8 +158,27 @@ def compute_magsail(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None, 
             return {"error": "velocity_final_kms must be < the current velocity (this is braking)."}
 
     # ── momentum balance ──
-    rho = density * 1e6 * ion_mass * _AMU_KG            # kg/m³ (cm⁻³ → m⁻³ = ×1e6)
-    r_mp_m = _standoff_radius_m(_MU_0, m_dip, k, rho, v_ms)
+    rho = _ism_mass_density(density, ion_mass, x_ion)   # kg/m³ (only ions couple)
+    r_mp_farfield_m = _standoff_radius_m(_MU_0, m_dip, k, rho, v_ms)
+    near_field_warning = None
+    if coil_radius_out is not None:
+        # A1 — exact on-axis loop field (coil geometry known).
+        r_mp_m, clamped = _exact_loop_standoff_m(_MU_0, coil_current_out, coil_radius_out,
+                                                 k, rho, v_ms)
+        if clamped:
+            near_field_warning = (
+                "Ram pressure exceeds the peak on-axis field at the coil centre — no magnetopause "
+                "standoff exists at this v/ρ; R_mp clamped to R_coil (%.3g m). The magsail cannot "
+                "hold off the flow here (raise the field or lower v/ρ)." % coil_radius_out)
+        elif r_mp_m <= coil_radius_out:
+            near_field_warning = (
+                "R_mp (%.3g m) is within the coil radius (%.3g m): the exact on-axis loop field is "
+                "used (valid), but the thin-loop idealisation and real coil geometry matter here."
+                % (r_mp_m, coil_radius_out))
+    else:
+        # Moment-only anchor: no geometry → far-field dipole standoff.
+        r_mp_m = r_mp_farfield_m
+
     ram_pressure_pa = rho * v_ms ** 2                   # ρv² momentum-flux ram pressure
     eff_area_m2 = math.pi * r_mp_m ** 2
     drag_force_n = cd * 0.5 * rho * v_ms ** 2 * eff_area_m2
@@ -141,16 +196,10 @@ def compute_magsail(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None, 
             stopping_time_yr = t_s / _SEC_PER_YEAR
             stopping_distance_ly = x_m / _LY_M
 
-    near_field_warning = None
-    if coil_radius_out is not None and r_mp_m <= coil_radius_out:
-        near_field_warning = (
-            "R_mp (%.3g m) ≲ R_coil (%.3g m): the far-field dipole assumption breaks down — the "
-            "standoff/drag are unreliable in this regime (raise the field or lower v/ρ)."
-            % (r_mp_m, coil_radius_out))
-
     return {
         "ism_density_cm3": density,
         "ion_mass_amu": ion_mass,
+        "ionization_fraction": x_ion,
         "ism_mass_density_kgm3": rho,
         "velocity_kms": velocity_kms_out,
         "beta": beta_out,
@@ -158,6 +207,7 @@ def compute_magsail(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None, 
         "coil_current_a": coil_current_out,
         "coil_radius_m": coil_radius_out,
         "magnetopause_radius_km": r_mp_m / 1000.0,
+        "magnetopause_radius_farfield_km": r_mp_farfield_m / 1000.0,
         "ram_pressure_pa": ram_pressure_pa,
         "effective_area_km2": eff_area_m2 / 1e6,
         "standoff_coeff": k,
@@ -179,16 +229,19 @@ def compute_magsail(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None, 
 def compute_ramscoop(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None, beta=None,
                      coil_current_a=None, coil_radius_m=None, scoop_area_km2=None,
                      magnetic_moment_am2=None, fuel=None, fusion_efficiency=None,
-                     exhaust_velocity_kms=None, standoff_coeff=None, drag_coeff=None):
+                     exhaust_velocity_kms=None, standoff_coeff=None, drag_coeff=None,
+                     ionization_fraction=None):
     """Bussard ramjet drag-vs-thrust: F_net = ṁ(v_e − v) − F_drag → "drive"/"brake" + crossover.
 
     Scoop area from the coil/moment magnetopause (like K1) or a supplied physical --scoop-area-km2.
     Exhaust from a bundled fuel (v_e = √(2·η·f·c²)) or an explicit --exhaust-velocity-kms.
+    A3: ``ionization_fraction`` (default 1.0) scales the interacting density (only ions couple).
     """
     density = _t._DEFAULT_N_CM3 if ism_density_cm3 is None else ism_density_cm3
     ion_mass = _t._MEAN_ION_MASS_AMU if ion_mass_amu is None else ion_mass_amu
     k = _t._STANDOFF_COEFF_K if standoff_coeff is None else standoff_coeff
     cd = _t._DRAG_COEFF_CD if drag_coeff is None else drag_coeff
+    x_ion = 1.0 if ionization_fraction is None else ionization_fraction
 
     if density <= 0:
         return {"error": "ism_density_cm3 must be > 0."}
@@ -198,6 +251,8 @@ def compute_ramscoop(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None,
         return {"error": "standoff_coeff (k) must be > 0."}
     if cd <= 0:
         return {"error": "drag_coeff (C_d) must be > 0."}
+    if not (0.0 < x_ion <= 1.0):
+        return {"error": "ionization_fraction must be in (0, 1]."}
 
     vel = _resolve_velocity(velocity_kms, beta)
     if isinstance(vel, dict):
@@ -211,7 +266,7 @@ def compute_ramscoop(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None,
     if have_area and have_field:
         return {"error": "Provide one scoop anchor: --scoop-area-km2, or the field "
                          "(--coil-current-a + --coil-radius-m / --magnetic-moment-am2), not both."}
-    rho = density * 1e6 * ion_mass * _AMU_KG
+    rho = _ism_mass_density(density, ion_mass, x_ion)
     if have_area:
         if scoop_area_km2 <= 0:
             return {"error": "scoop_area_km2 must be > 0."}
@@ -267,6 +322,7 @@ def compute_ramscoop(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None,
         "beta": beta_out,
         "ism_density_cm3": density,
         "ion_mass_amu": ion_mass,
+        "ionization_fraction": x_ion,
         "magnetopause_radius_km": r_mp_m / 1000.0,
         "magnetic_moment_am2": m_dip,
         "scoop_area_km2": a_mp_m2 / 1e6,

@@ -20,10 +20,29 @@ class EquilibriumTempTest(unittest.TestCase):
         self.assertAlmostEqual(r["t_surface_k"], 288.0, delta=1.0)
         self.assertEqual(r["greenhouse_delta_k"], 33.0)
         self.assertIsNone(r["optical_depth"])
+        self.assertEqual(r["regime"], "offset")
 
     def test_mars_anchor(self):
         r = tf.compute_equilibrium_temp(insolation_wm2=589, albedo=0.25, greenhouse_delta_k=0)
         self.assertAlmostEqual(r["t_eq_k"], 210.0, delta=1.0)
+        self.assertEqual(r["regime"], "offset")
+
+    def test_airless_anchor(self):
+        # B — no forcing form → bare airless equilibrium, t_surface = t_eq, no error.
+        r = tf.compute_equilibrium_temp(insolation_wm2=1361, albedo=0.3)
+        self.assertNotIn("error", r)
+        self.assertAlmostEqual(r["t_eq_k"], 254.6, delta=0.5)
+        self.assertEqual(r["t_surface_k"], r["t_eq_k"])
+        self.assertEqual(r["regime"], "airless")
+        self.assertIsNone(r["greenhouse_delta_k"])
+        self.assertIsNone(r["optical_depth"])
+        self.assertIsNone(r["required_forcing"])
+
+    def test_airless_mars(self):
+        r = tf.compute_equilibrium_temp(insolation_wm2=589, albedo=0.25)
+        self.assertAlmostEqual(r["t_eq_k"], 210.1, delta=0.5)
+        self.assertEqual(r["t_surface_k"], r["t_eq_k"])
+        self.assertEqual(r["regime"], "airless")
 
     def test_grey_atmosphere_form(self):
         # τ ≈ 0.851 reproduces Earth's 288 K surface from T_eq ≈ 255 K.
@@ -31,11 +50,13 @@ class EquilibriumTempTest(unittest.TestCase):
         self.assertAlmostEqual(r["t_surface_k"], 288.0, delta=0.5)
         self.assertEqual(r["optical_depth"], 0.851)
         self.assertIsNone(r["greenhouse_delta_k"])
+        self.assertEqual(r["regime"], "grey")
 
     def test_inverse_target(self):
         # Inverse: 288 K target → required ΔT ≈ 33 K and the equivalent τ ≈ 0.85.
         r = tf.compute_equilibrium_temp(insolation_wm2=1361, albedo=0.3, target_surface_k=288)
         self.assertAlmostEqual(r["t_surface_k"], 288.0, places=6)
+        self.assertEqual(r["regime"], "inverse")
         rf = r["required_forcing"]
         self.assertAlmostEqual(rf["greenhouse_delta_k"], 33.0, delta=1.0)
         self.assertAlmostEqual(rf["optical_depth"], 0.851, delta=0.01)
@@ -116,9 +137,11 @@ class ValidationMatrixTest(unittest.TestCase):
     def test_curated_errors(self):
         cases = [
             tf.compute_equilibrium_temp(insolation_wm2=1361, albedo=1.0, greenhouse_delta_k=33),
-            tf.compute_equilibrium_temp(insolation_wm2=1361, greenhouse_delta_k=33, optical_depth=0.5),
-            tf.compute_equilibrium_temp(insolation_wm2=1361),                       # no forcing
+            tf.compute_equilibrium_temp(insolation_wm2=1361, greenhouse_delta_k=33, optical_depth=0.5),  # >1 forcing
+            tf.compute_equilibrium_temp(insolation_wm2=1361, greenhouse_delta_k=33,
+                                        target_surface_k=288),                      # >1 forcing (2 forms)
             tf.compute_equilibrium_temp(albedo=0.3, greenhouse_delta_k=33),         # no insolation
+            tf.compute_equilibrium_temp(),                                          # no insolation, no forcing
             tf.compute_equilibrium_temp(insolation_wm2=1361, optical_depth=-0.1),   # τ<0
             tf.compute_equilibrium_temp(insolation_wm2=1361, target_surface_k=0),   # target≤0
             tf.compute_insolation_shift(planet_radius_km=3390, delta_insolation_wm2=0, solar_flux_wm2=589),

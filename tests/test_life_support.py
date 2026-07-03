@@ -172,6 +172,52 @@ class X2BioregenAreaTest(unittest.TestCase):
         self.assertIn("error", ls.compute_bioregen_area(crop="wheat", dli_mol=30, ppfd_umol=500))
 
 
+class C10CropMixTest(unittest.TestCase):
+    """Phase AD (C10) — the --crops diet-mix (calorie-split area sum)."""
+
+    def test_single_crop_mix_matches_single_crop(self):
+        single = ls.compute_bioregen_area(kcal_per_day=2500, crop="wheat", dli_mol=30)
+        mix = ls.compute_bioregen_area(kcal_per_day=2500, crops="wheat:1.0", dli_mol=30)
+        self.assertAlmostEqual(mix["area_m2_per_person"], single["area_m2_per_person"], places=9)
+        self.assertAlmostEqual(mix["area_m2_total"], single["area_m2_total"], places=9)
+        self.assertAlmostEqual(mix["crop_gas_exchange"]["o2_kg_day"],
+                               single["crop_gas_exchange"]["o2_kg_day"], places=9)
+        self.assertEqual(len(mix["per_crop_area_m2"]), 1)
+        self.assertEqual(mix["per_crop_area_m2"][0]["crop"], "wheat")
+
+    def test_mix_is_calorie_weighted_sum(self):
+        d = ls.compute_bioregen_area(kcal_per_day=2500,
+                                     crops="wheat:0.5, white_potato:0.3, soybean:0.2", dli_mol=30)
+        self.assertEqual([c["crop"] for c in d["per_crop_area_m2"]],
+                         ["wheat", "white_potato", "soybean"])
+        # total = Σ per-crop; each crop's area = its calorie share at its own HI
+        self.assertAlmostEqual(d["area_m2_total"],
+                               sum(c["area_m2_total"] for c in d["per_crop_area_m2"]), places=9)
+        # per-crop = single-crop area × that crop's calorie fraction
+        for name, frac in (("wheat", 0.5), ("white_potato", 0.3), ("soybean", 0.2)):
+            single = ls.compute_bioregen_area(kcal_per_day=2500, crop=name, dli_mol=30)
+            row = next(c for c in d["per_crop_area_m2"] if c["crop"] == name)
+            self.assertAlmostEqual(row["area_m2_per_person"],
+                                   single["area_m2_per_person"] * frac, places=9)
+
+    def test_lp_deferral_note_present(self):
+        d = ls.compute_bioregen_area(kcal_per_day=2500, crops="wheat:1.0", dli_mol=30)
+        self.assertIn("linear-programming", d["model_note"])
+
+    def test_validation(self):
+        self.assertIn("error", ls.compute_bioregen_area(crops="wheat:0.5, potato:0.6", dli_mol=30))   # not summing 1
+        self.assertIn("error", ls.compute_bioregen_area(crops="wheat:0.5, bogus:0.5", dli_mol=30))    # unknown crop
+        self.assertIn("error", ls.compute_bioregen_area(crops="wheatnocolon", dli_mol=30))            # malformed token
+        self.assertIn("error", ls.compute_bioregen_area(crops="wheat:xyz", dli_mol=30))               # bad fraction
+        self.assertIn("error", ls.compute_bioregen_area(crops="wheat:-0.5, potato:1.5", dli_mol=30))  # negative frac
+        self.assertIn("error", ls.compute_bioregen_area(crops="", dli_mol=30))                        # empty
+        self.assertIn("error", ls.compute_bioregen_area(crop="wheat", crops="wheat:1.0", dli_mol=30)) # both
+
+    def test_determinism(self):
+        kw = dict(kcal_per_day=2500, crops="wheat:0.6, soybean:0.4", dli_mol=30, crew=4)
+        self.assertEqual(ls.compute_bioregen_area(**kw), ls.compute_bioregen_area(**kw))
+
+
 class X3PopulationCapacityTest(unittest.TestCase):
     def test_power_bound(self):
         d = ls.compute_population_capacity(power_w=1e6, per_person_power_w=1e4)

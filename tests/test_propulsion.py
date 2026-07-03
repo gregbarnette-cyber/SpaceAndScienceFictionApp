@@ -176,5 +176,86 @@ class TableIntegrityTest(unittest.TestCase):
             self.assertIn("note", v)
 
 
+# ── C2 (Phase AD) — pellet-stream drive ───────────────────────────────────────
+
+P = propulsion.compute_pellet_stream
+
+
+class PelletStreamTest(unittest.TestCase):
+    def test_drive_anchor(self):
+        # v_s 30000 km/s, ṁ 1 kg/s, β 0.05 (v ≈ 14989.6 km/s), reflect (g=2):
+        # u ≈ 15010 km/s → F = 2·1·u ≈ 3.0×10⁷ N; verdict drive.
+        d = P(stream_velocity_kms=30000, mass_flow_rate_kgs=1, beta=0.05)
+        self.assertAlmostEqual(d["relative_velocity_kms"], 30000 - 0.05 * _C_KMS, places=3)
+        self.assertAlmostEqual(d["relative_velocity_kms"], 15010.4, delta=0.5)
+        self.assertAlmostEqual(d["thrust_n"], 3.0e7, delta=5e4)
+        self.assertEqual(d["verdict"], "drive")
+        self.assertEqual(d["coupling"], "reflect")
+        self.assertEqual(d["crossover_velocity_kms"], 30000)
+        # power ½·ṁ·u² self-consistent
+        u_ms = d["relative_velocity_kms"] * 1000.0
+        self.assertAlmostEqual(d["delivered_power_w"], 0.5 * 1 * u_ms ** 2, places=0)
+        # thrust core-parity: F = g·ṁ·u
+        self.assertAlmostEqual(d["thrust_n"], 2 * 1 * u_ms, places=3)
+
+    def test_no_thrust_at_crossover(self):
+        # v = v_s → u = 0 → no push (clean-negative, not an error)
+        d = P(stream_velocity_kms=30000, mass_flow_rate_kgs=1, velocity_kms=30000)
+        self.assertEqual(d["verdict"], "no-thrust")
+        self.assertEqual(d["thrust_n"], 0.0)
+        self.assertEqual(d["delivered_power_w"], 0.0)
+        self.assertNotIn("error", d)
+        # v > v_s also no-thrust
+        d2 = P(stream_velocity_kms=30000, mass_flow_rate_kgs=1, velocity_kms=40000)
+        self.assertEqual(d2["verdict"], "no-thrust")
+        self.assertEqual(d2["thrust_n"], 0.0)
+
+    def test_absorb_is_half_reflect(self):
+        kw = dict(stream_velocity_kms=30000, mass_flow_rate_kgs=1, beta=0.05)
+        refl = P(coupling="reflect", **kw)
+        absb = P(coupling="absorb", **kw)
+        self.assertAlmostEqual(absb["thrust_n"], refl["thrust_n"] / 2.0, places=6)
+        self.assertEqual(absb["coupling"], "absorb")
+
+    def test_pellet_mass_rate_matches_mass_flow(self):
+        # ṁ = pellet_mass · rate; the two mass-flow anchors agree
+        a = P(stream_velocity_kms=30000, mass_flow_rate_kgs=2.0, beta=0.05)
+        b = P(stream_velocity_kms=30000, pellet_mass_kg=0.5, pellet_rate_hz=4.0, beta=0.05)
+        self.assertAlmostEqual(a["mass_flow_rate_kgs"], b["mass_flow_rate_kgs"], places=9)
+        self.assertAlmostEqual(a["thrust_n"], b["thrust_n"], places=3)
+
+    def test_acceleration_optional(self):
+        base = dict(stream_velocity_kms=30000, mass_flow_rate_kgs=1, beta=0.05)
+        self.assertIsNone(P(**base)["acceleration_ms2"])
+        d = P(vehicle_mass_t=1000, **base)
+        self.assertAlmostEqual(d["acceleration_ms2"], d["thrust_n"] / (1000 * 1000.0), places=9)
+
+    def test_vehicle_at_rest_allowed(self):
+        d = P(stream_velocity_kms=30000, mass_flow_rate_kgs=1, velocity_kms=0)
+        self.assertEqual(d["verdict"], "drive")
+        self.assertAlmostEqual(d["relative_velocity_kms"], 30000, places=6)
+
+    def _err(self, **kw):
+        self.assertIn("error", P(**kw), kw)
+
+    def test_validation_matrix(self):
+        self._err(stream_velocity_kms=0, mass_flow_rate_kgs=1, beta=0.05)          # v_s ≤ 0
+        self._err(stream_velocity_kms=30000, beta=0.05)                            # no mass anchor
+        self._err(stream_velocity_kms=30000, pellet_mass_kg=1, beta=0.05)          # partial pellet
+        self._err(stream_velocity_kms=30000, mass_flow_rate_kgs=1,
+                  pellet_rate_hz=2, beta=0.05)                                     # two mass anchors
+        self._err(stream_velocity_kms=30000, mass_flow_rate_kgs=1)                 # no velocity anchor
+        self._err(stream_velocity_kms=30000, mass_flow_rate_kgs=1, beta=1.0)       # β ∉ (0,1)
+        self._err(stream_velocity_kms=30000, mass_flow_rate_kgs=1,
+                  beta=0.05, vehicle_mass_t=0)                                     # mass ≤ 0
+        self._err(stream_velocity_kms=30000, mass_flow_rate_kgs=1,
+                  beta=0.05, coupling="bogus")                                     # bad coupling
+
+    def test_determinism(self):
+        kw = dict(stream_velocity_kms=30000, pellet_mass_kg=0.5, pellet_rate_hz=4,
+                  beta=0.05, vehicle_mass_t=1000, coupling="absorb")
+        self.assertEqual(P(**kw), P(**kw))
+
+
 if __name__ == "__main__":
     unittest.main()

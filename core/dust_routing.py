@@ -228,6 +228,123 @@ def compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance
     }
 
 
+# ── C11 (Phase AD): jump-route --weight blend (α·distance + β·A_V) ────────────
+
+def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distance",
+                             alpha=1.0, beta=1.0, map_sel="auto", dust_step_pc=5.0):
+    """Blended-cost route origin→destination: each edge costs ``α·distance_ly + β·A_V``,
+    fed to the same Dijkstra (`_grid_search`) as `compute_jump_route`/`_dust`.
+
+    ``β=0`` reproduces the distance-optimal route; ``α=0`` reproduces the least-dust
+    (`--weight dust`) route; an intermediate blend is a compromise between the two.
+    Reachability stays geometric (``max_jump_ly`` unchanged). Mirrors the dust variant's
+    output plus the echoed ``alpha``/``beta``/``total_blend_cost``.
+    """
+    pf = _preflight(map_sel)
+    if pf:
+        return pf
+    if max_jump_ly is None or max_jump_ly <= 0:
+        return {"error": "Max jump distance must be positive."}
+    if optimize not in ("distance", "jumps"):
+        return {"error": "optimize must be 'distance' or 'jumps'."}
+    if alpha is None or beta is None or alpha < 0 or beta < 0:
+        return {"error": "alpha and beta must be ≥ 0."}
+    if alpha == 0 and beta == 0:
+        return {"error": "alpha and beta cannot both be 0 (a zero cost has no optimum)."}
+
+    o = _resolve_star_position(origin)
+    if "error" in o:
+        return {"error": f"Origin: {o['error']}"}
+    d = _resolve_star_position(destination)
+    if "error" in d:
+        return {"error": f"Destination: {d['error']}"}
+    if o["name"].strip().lower() == d["name"].strip().lower() or _node_dist(o, d) <= 1e-3:
+        return {"error": "Origin and destination are the same star."}
+
+    pool_res = _load_star_systems_positions()
+    nodes = list(pool_res["stars"]) if "stars" in pool_res else []
+    s = _merge_endpoint(nodes, o)
+    t = _merge_endpoint(nodes, d)
+    grid = _SpatialGrid(nodes, max_jump_ly)
+
+    cost_cache, errors = {}, []
+
+    def blend_cost(u, v, w):
+        key = (u, v) if u < v else (v, u)
+        if key in cost_cache:
+            return cost_cache[key]
+        seg = _seg(nodes[u], nodes[v], map_sel, dust_step_pc)
+        if "error" in seg:
+            errors.append(seg["error"])
+            val = float("inf")
+        else:
+            val = alpha * w + beta * seg["a_v"]
+        cost_cache[key] = val
+        return val
+
+    prev, dist_arr = _grid_search(nodes, grid, s, t, max_jump_ly, optimize, blend_cost)
+    if errors:
+        return {"error": errors[0]}
+
+    direct_ly = _node_dist(o, d)
+    reachable = dist_arr[t] != float("inf")
+    if not reachable:
+        return {
+            "origin_info": o, "dest_info": d, "reachable": False, "weight": "blend",
+            "alpha": alpha, "beta": beta, "optimize": optimize, "jumps": 0,
+            "total_ly": 0.0, "total_av": 0.0, "total_blend_cost": 0.0,
+            "direct_ly": direct_ly, "route": [], "max_jump_ly": max_jump_ly,
+            "map": map_sel, "stars": [_map_node(o), _map_node(d)],
+        }
+
+    path = []
+    cur = t
+    while cur != -1:
+        path.append(cur)
+        cur = prev[cur]
+    path.reverse()
+    seq = [nodes[i] for i in path]
+
+    route = []
+    cum_ly = cum_av = cum_cost = cum_var = 0.0
+    all_cov = True
+    for i in range(len(seq) - 1):
+        a, b = seq[i], seq[i + 1]
+        ly = _node_dist(a, b)
+        seg = _seg(a, b, map_sel, dust_step_pc)
+        cum_ly += ly
+        cum_av += seg["a_v"]
+        cum_cost += alpha * ly + beta * seg["a_v"]
+        cum_var += max(0.0, seg["a_v_hi"] - seg["a_v"]) ** 2
+        all_cov = all_cov and seg["covered"]
+        route.append({
+            "jump": i + 1, "from": a["name"], "to": b["name"], "jump_ly": ly,
+            "a_v": seg["a_v"], "a_v_lo": seg["a_v_lo"], "a_v_hi": seg["a_v_hi"],
+            "fully_covered": seg["covered"], "weight_value": alpha * ly + beta * seg["a_v"],
+            "cumulative_ly": cum_ly, "cumulative_av": cum_av,
+        })
+
+    # Distance-optimal comparison (same graph, min-ly route).
+    dref = calc.compute_jump_route(origin, destination, max_jump_ly, "distance")
+    if "error" not in dref and dref.get("reachable"):
+        cmp = _compare(cum_ly, cum_av, _nodes_from_stars(dref["stars"]),
+                       map_sel, dust_step_pc, dref["total_ly"])
+    else:
+        cmp = {"distance_optimal_ly": None, "distance_optimal_av": None,
+               "extra_ly": None, "saved_av": None}
+
+    sig = math.sqrt(cum_var)
+    return {
+        "origin_info": o, "dest_info": d, "reachable": True, "weight": "blend",
+        "alpha": alpha, "beta": beta, "optimize": optimize, "jumps": len(path) - 1,
+        "total_ly": cum_ly, "total_av": cum_av, "total_blend_cost": cum_cost,
+        "total_av_lo": max(0.0, cum_av - sig), "total_av_hi": cum_av + sig,
+        "all_legs_covered": all_cov, "direct_ly": direct_ly, "route": route,
+        "max_jump_ly": max_jump_ly, "map": map_sel,
+        "stars": [_map_node(n) for n in seq], **cmp,
+    }
+
+
 # ── multi-stop --weight dust (ordered, no route choice) ──────────────────────
 
 def compute_multi_stop_dust(star_names, velocity_input, use_times_c,

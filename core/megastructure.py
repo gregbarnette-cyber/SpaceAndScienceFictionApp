@@ -7,6 +7,8 @@ limit — the ceiling that pairs with ``spin-comfort`` (Phase W)'s human-comfort
   * ``compute_spin_stress``      (H1) — hoop stress σ=ρv² → max habitat radius for a material.
   * ``compute_tether_taper``     (H2) — Pearson uniform-stress space-elevator taper ratio.
   * ``compute_dyson_collector``  (H3) — swarm/shell area & mass to intercept a luminosity fraction.
+  * ``compute_orbital_ring``     (C4, Phase AD) — orbital-ring rotor velocity & support balance
+    (a stationary ring held up by a faster-than-orbital rotor) over the bundled ``_BODIES`` table.
 
 No network, no DB, no RNG, no time. ``query.py``-only (no GUI); the ``dyson-collector --star``
 name→luminosity resolution happens in the ``query.py`` handler (SIMBAD stays out of the core, like
@@ -22,6 +24,18 @@ from core import materials_tables
 
 _L_SUN_W = 3.828e26   # nominal solar luminosity, W (IAU 2015 B3)
 _TAPER_OVERFLOW_EXP = 700.0   # exp() overflows ~709; a material past this can't span the well.
+
+_MODEL_NOTE_ORBITAL_RING = (
+    "Orbital ring: a stationary ring/sheath at altitude is held up against gravity by a "
+    "faster-than-orbital rotor (mass stream) magnetically coupled inside it. Local gravity "
+    "g(r) = g₀·(R/r)² (r = R + altitude); orbital velocity v_orb = √(g·r). The rotor's excess "
+    "centrifugal force supports the ring: λ_rotor·(v_rotor²/r − g) = λ_ring·g ⟹ "
+    "v_rotor = √(r·g·(1 + λ_ring/λ_rotor)) (support_ratio = λ_ring/λ_rotor; equal masses → "
+    "v_rotor = √2·v_orb). Momentum/energy balance only — the rotor↔sheath electromagnetic "
+    "coupling, deflection-station spacing, and rotor confinement/failure modes are out of scope. "
+    "A non-rotating rigid shell at this radius is instead the statite / light-pressure case (see "
+    "dyson-collector). Geometry-exact for the stated point-mass body."
+)
 
 
 def _resolve_material(material, density_kgm3, tensile_strength_mpa):
@@ -261,4 +275,75 @@ def compute_dyson_collector(luminosity_lsun=None, fraction=None, orbit_au=None,
         "luminosity_lsun": luminosity_lsun,
         "areal_mass_kgm2": areal_mass_kgm2,
         "model_note": materials_tables._MODEL_NOTE,
+    }
+
+
+# ── C4 (Phase AD) — orbital-ring rotor velocity & support balance ─────────────
+
+def compute_orbital_ring(body=None, surface_gravity_ms2=None, body_radius_km=None,
+                         altitude_km=None, ring_mass_per_length_kgm=None,
+                         rotor_mass_per_length_kgm=None):
+    """Orbital-ring rotor velocity & support balance.
+
+    Local gravity ``g(r) = g₀·(R/r)²`` (r = R + altitude); orbital velocity ``v_orb = √(g·r)``;
+    the supporting rotor runs at ``v_rotor = √(r·g·(1 + λ_ring/λ_rotor))`` (support_ratio =
+    λ_ring/λ_rotor). Body from the bundled ``_BODIES`` table (``g0``/``R_km``, no table edit —
+    Locked decision C4-7) or explicit ``surface_gravity_ms2`` + ``body_radius_km``. Rotor mass
+    per length defaults to the ring's (→ v_rotor = √2·v_orb).
+    """
+    # ── body anchor: bundled --body OR explicit (g0 + R) ──
+    explicit = surface_gravity_ms2 is not None or body_radius_km is not None
+    if body is not None and explicit:
+        return {"error": "Provide either --body or explicit --surface-gravity-ms2 + "
+                         "--body-radius-km, not both."}
+    if body is not None:
+        if body not in materials_tables._BODIES:
+            return {"error": "Unknown body '%s'. Known: %s." %
+                    (body, ", ".join(sorted(materials_tables._BODIES)))}
+        b = materials_tables._BODIES[body]
+        g0, R_km = b["g0"], b["R_km"]
+    else:
+        if surface_gravity_ms2 is None or body_radius_km is None:
+            return {"error": "Provide --body, or both --surface-gravity-ms2 and --body-radius-km."}
+        g0, R_km = surface_gravity_ms2, body_radius_km
+    if g0 <= 0:
+        return {"error": "surface_gravity_ms2 must be > 0."}
+    if R_km <= 0:
+        return {"error": "body_radius_km must be > 0."}
+
+    if altitude_km is None or altitude_km <= 0:
+        return {"error": "altitude_km must be > 0."}
+    if ring_mass_per_length_kgm is None or ring_mass_per_length_kgm <= 0:
+        return {"error": "ring_mass_per_length_kgm must be > 0."}
+    lam_ring = ring_mass_per_length_kgm
+    if rotor_mass_per_length_kgm is None:
+        lam_rotor = lam_ring
+    elif rotor_mass_per_length_kgm <= 0:
+        return {"error": "rotor_mass_per_length_kgm must be > 0."}
+    else:
+        lam_rotor = rotor_mass_per_length_kgm
+
+    R_m = R_km * 1000.0
+    r_m = R_m + altitude_km * 1000.0
+    g_local = g0 * (R_m / r_m) ** 2
+    v_orb = math.sqrt(g_local * r_m)
+    support_ratio = lam_ring / lam_rotor
+    v_rotor = math.sqrt(r_m * g_local * (1.0 + support_ratio))
+    rotor_ke_per_length = 0.5 * lam_rotor * v_rotor ** 2
+
+    return {
+        "body": body,
+        "surface_gravity_ms2": g0,
+        "body_radius_km": R_km,
+        "altitude_km": altitude_km,
+        "orbital_radius_km": r_m / 1000.0,
+        "local_gravity_ms2": g_local,
+        "orbital_velocity_kms": v_orb / 1000.0,
+        "rotor_velocity_kms": v_rotor / 1000.0,
+        "rotor_velocity_over_orbital": v_rotor / v_orb,
+        "ring_mass_per_length_kgm": lam_ring,
+        "rotor_mass_per_length_kgm": lam_rotor,
+        "support_ratio": support_ratio,
+        "rotor_ke_per_length_jm": rotor_ke_per_length,
+        "model_note": _MODEL_NOTE_ORBITAL_RING,
     }

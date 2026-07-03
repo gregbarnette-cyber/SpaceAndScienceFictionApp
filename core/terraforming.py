@@ -80,17 +80,19 @@ def compute_equilibrium_temp(insolation_wm2=None, luminosity_lsun=None,
     """Planetary equilibrium temperature + a greenhouse surface temperature.
 
     Insolation — exactly one source (``insolation_wm2`` OR
-    ``luminosity_lsun`` + ``distance_au``). Forcing — exactly one form:
+    ``luminosity_lsun`` + ``distance_au``). Forcing — **at most one** form:
     ``greenhouse_delta_k`` (additive offset), ``optical_depth`` (grey-atmosphere),
-    or ``target_surface_k`` (inverse → the ΔT and τ required to reach it).
+    or ``target_surface_k`` (inverse → the ΔT and τ required to reach it). With
+    **no** forcing form the result is the bare airless equilibrium
+    (``t_surface_k = t_eq_k``, ``regime = "airless"``).
     """
     if albedo is None or albedo < 0 or albedo >= 1:
         return {"error": "albedo must be in [0, 1)."}
 
     forcing_forms = [greenhouse_delta_k is not None, optical_depth is not None,
                      target_surface_k is not None]
-    if sum(forcing_forms) != 1:
-        return {"error": "Provide exactly one forcing form: greenhouse_delta_k, "
+    if sum(forcing_forms) > 1:
+        return {"error": "Provide at most one forcing form: greenhouse_delta_k, "
                          "optical_depth, or target_surface_k."}
 
     sf = _solar_flux(insolation_wm2, luminosity_lsun, distance_au)
@@ -108,20 +110,24 @@ def compute_equilibrium_temp(insolation_wm2=None, luminosity_lsun=None,
         "optical_depth": None,
         "t_surface_k": None,
         "required_forcing": None,
+        "regime": None,
         "model_note": _GREY_MODEL_NOTE,
     }
 
     if greenhouse_delta_k is not None:
+        out["regime"] = "offset"
         out["greenhouse_delta_k"] = float(greenhouse_delta_k)
         out["t_surface_k"] = t_eq + greenhouse_delta_k
     elif optical_depth is not None:
         if optical_depth < 0:
             return {"error": "optical_depth must be >= 0."}
+        out["regime"] = "grey"
         out["optical_depth"] = float(optical_depth)
         out["t_surface_k"] = t_eq * (1.0 + 0.75 * optical_depth) ** 0.25
-    else:  # target_surface_k — inverse
+    elif target_surface_k is not None:  # inverse
         if target_surface_k <= 0:
             return {"error": "target_surface_k must be > 0."}
+        out["regime"] = "inverse"
         req_delta = target_surface_k - t_eq
         # τ from the grey form: (T_s/T_eq)^4 = 1 + ¾τ  →  τ = ((T_s/T_eq)^4 − 1)/¾
         req_tau = ((target_surface_k / t_eq) ** 4 - 1.0) / 0.75
@@ -133,6 +139,9 @@ def compute_equilibrium_temp(insolation_wm2=None, luminosity_lsun=None,
             # greenhouse — both required values go negative to signal it.
             "cooling_required": req_delta < 0,
         }
+    else:  # no forcing form → bare airless equilibrium
+        out["regime"] = "airless"
+        out["t_surface_k"] = t_eq
 
     return out
 

@@ -9,10 +9,20 @@ shift redward so far fewer usable PAR photons reach a leaf per W/m² of insolati
 (the red-dwarf photosynthesis-deficit question). Its PPFD output **feeds back**
 into the Phase-X ``bioregen-area`` tool, which takes PAR as a caller-supplied input.
 
-**SED model — blackbody at Teff, flagged as an approximation.** Real stellar SEDs
-(esp. M-dwarf line blanketing) deviate: a real M-dwarf's PAR fraction is *lower*
-than its blackbody, so blackbody is *optimistic* about red-dwarf PAR (the true
-deficit is larger). Real-spectrum (PHOENIX / BT-Settl) SEDs are a v2 refinement.
+**SED model — blackbody (default) or real (Phase AD C1).** ``--sed blackbody``
+(the default; see below) integrates a Planck SED at Teff. ``--sed real`` instead
+looks up a bundled **BT-Settl (CIFIST2011)** f_PAR table (``core.par_flux_tables``),
+which captures the M-dwarf TiO/VO/H₂O line blanketing a blackbody misses — so a real
+red dwarf's f_PAR is far *below* its blackbody value (3000 K real ≈ 0.023 vs
+blackbody ≈ 0.081; the deficit is *larger*), while a Sun-like star's real f_PAR
+(≈ 0.39) sits slightly above blackbody (≈ 0.37).
+
+**Default is ``blackbody`` (deviation from PHASE_AD_PLAN.md, user decision
+2026-07-03):** the plan specified ``--sed real`` as the default, but that would change
+the existing ``par-flux`` output for the downstream consumer, so the default stays
+backward-compatible and ``real`` is opt-in. The real table is **band-fixed at
+400–700 nm** (a non-default ``--par-band-nm`` with ``--sed real`` errors → use
+blackbody) and covers **2600–7000 K** (outside → error).
 
 No DB write, no RNG, no time; **network only** on the ``--star`` Teff-resolution
 path (SIMBAD, lazily imported so the module stays lightweight offline). The
@@ -31,6 +41,7 @@ from core.equations import (
     _M_PER_AU,
     _SOLAR_LUMINOSITY_W,
 )
+from core import par_flux_tables as _t
 
 # G2V (nominal solar) reference temperature for the PAR-deficit ratio (IAU 2015).
 _T_SUN_PAR_REF = 5772.0
@@ -41,6 +52,15 @@ _T_SUN_PAR_REF = 5772.0
 _N_SIMPSON = 1000
 
 _SED_MODEL = "blackbody (approx — real SED deviates)"
+_SED_MODEL_REAL = "real (BT-Settl CIFIST2011, band-fixed 400–700 nm)"
+_MODEL_NOTE_REAL = (
+    "Real-SED PAR fraction from the bundled BT-Settl (CIFIST2011) f_PAR table (log g 4.5, "
+    "[M/H] 0; " + _t._SOURCE + ") — linear-interpolated in Teff, band-fixed at 400–700 nm, "
+    "grid 2600–7000 K. Captures the M-dwarf visible-band line blanketing a blackbody misses, so "
+    "the red-dwarf photosynthesis deficit is LARGER (and more realistic) than the blackbody "
+    "value. PPFD / band-mean photon energy still use the Planck band shape at Teff (a documented "
+    "approximation — the table carries only the energy fraction, not the in-band photon spectrum)."
+)
 _FEEDS_NOTE = "PPFD → bioregen-area PAR input (Phase X)"
 _MODEL_NOTE = (
     "PAR fraction from a blackbody (Planck) SED at Teff, integrated 400–700 nm "
@@ -161,7 +181,7 @@ def _resolve_insolation(insolation_wm2, luminosity_lsun, distance_au):
 
 def compute_par_flux(teff_k=None, spectral_type=None, star=None,
                      insolation_wm2=None, luminosity_lsun=None, distance_au=None,
-                     par_band_nm=(400.0, 700.0)):
+                     par_band_nm=(400.0, 700.0), sed="blackbody"):
     """PAR fraction, PAR irradiance, PPFD, and the red-star deficit vs G2.
 
     Teff — exactly one source: ``teff_k`` (offline) / ``spectral_type``
@@ -169,8 +189,14 @@ def compute_par_flux(teff_k=None, spectral_type=None, star=None,
     Insolation — exactly one source: ``insolation_wm2`` / (``luminosity_lsun``
     + ``distance_au``). ``par_band_nm`` is the (lo, hi) PAR band in nm.
 
+    ``sed`` — ``"blackbody"`` (default; Planck SED at Teff) or ``"real"`` (Phase AD C1;
+    the bundled BT-Settl f_PAR table, band-fixed at 400–700 nm, grid 2600–7000 K).
+
     Returns a dict (see docs/integration.md) or a curated ``{"error": str}``.
     """
+    if sed not in ("blackbody", "real"):
+        return {"error": "sed must be 'blackbody' or 'real'."}
+
     # ── band validation ──
     try:
         lo_nm, hi_nm = float(par_band_nm[0]), float(par_band_nm[1])
@@ -180,6 +206,9 @@ def compute_par_flux(teff_k=None, spectral_type=None, star=None,
         return {"error": "PAR band wavelengths must be > 0 nm."}
     if lo_nm >= hi_nm:
         return {"error": "PAR band lower bound must be < upper bound."}
+    if sed == "real" and (lo_nm, hi_nm) != _t._REAL_BAND_NM:
+        return {"error": "The --sed real f_PAR table is band-fixed at 400–700 nm; use "
+                         "--sed blackbody for a custom --par-band-nm."}
 
     # ── Teff ──
     tr = _resolve_teff(teff_k, spectral_type, star)
@@ -195,18 +224,33 @@ def compute_par_flux(teff_k=None, spectral_type=None, star=None,
 
     lo_m, hi_m = lo_nm * 1e-9, hi_nm * 1e-9
 
-    # ── PAR fraction + band-mean photon energy ──
+    # ── band-mean photon energy (always the Planck band shape — used for the PPFD
+    #    photon conversion in both SED modes; the real table carries only f_PAR) ──
     band_energy, band_photons = _band_energy_and_photons(teff, lo_m, hi_m)
     total = _STEFAN_BOLTZMANN * teff ** 4 / math.pi
-    f_par = band_energy / total
     e_photon_mean = band_energy / band_photons          # J per photon (band mean)
+
+    # ── PAR fraction + G2 reference: blackbody (default) or real (BT-Settl table) ──
+    if sed == "real":
+        f_par = _t.real_f_par(teff)
+        if f_par is None:
+            return {"error": "Teff %.0f K is outside the --sed real BT-Settl table "
+                             "(%.0f–%.0f K); use --sed blackbody." %
+                             (teff, _t._REAL_TEFF_MIN, _t._REAL_TEFF_MAX)}
+        f_par_g2 = _t.real_f_par(_T_SUN_PAR_REF)
+        sed_model = _SED_MODEL_REAL
+        model_note = _MODEL_NOTE_REAL
+    else:
+        f_par = band_energy / total
+        f_par_g2 = _f_par(_T_SUN_PAR_REF, lo_m, hi_m)
+        sed_model = _SED_MODEL
+        model_note = _MODEL_NOTE
 
     par_irradiance = S * f_par                           # W/m²
     # W/m² ÷ (J/photon) → photons/s/m² ÷ N_A → mol/s/m² ×1e6 → µmol/s/m²
     ppfd = par_irradiance / e_photon_mean / _AVOGADRO * 1e6
 
-    # ── deficit vs G2 (same band, so an override is apples-to-apples) ──
-    f_par_g2 = _f_par(_T_SUN_PAR_REF, lo_m, hi_m)
+    # ── deficit vs G2 (same SED model + band → apples-to-apples) ──
     par_deficit = f_par_g2 / f_par
 
     return {
@@ -219,7 +263,7 @@ def compute_par_flux(teff_k=None, spectral_type=None, star=None,
         "photon_energy_mean_j": e_photon_mean,
         "j_per_umol": e_photon_mean * _AVOGADRO * 1e-6,
         "band_nm": [lo_nm, hi_nm],
-        "sed_model": _SED_MODEL,
+        "sed_model": sed_model,
         "feeds_note": _FEEDS_NOTE,
-        "model_note": _MODEL_NOTE,
+        "model_note": model_note,
     }

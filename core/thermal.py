@@ -24,7 +24,9 @@ from core import shielding_tables
 # ── F1 — waste-heat budget (with Carnot ceiling) ─────────────────────────────
 
 def compute_waste_heat(input_power_watts=None, useful_power_watts=None,
-                       efficiency=None, hot_temp_k=None, cold_temp_k=None):
+                       efficiency=None, hot_temp_k=None, cold_temp_k=None,
+                       peak_w=None, mean_w=None, duty=None, pulse_period_s=None,
+                       storage_mass_kg=None, specific_heat_jkgk=None):
     """Waste heat a device must reject, given a power figure + an efficiency.
 
     Power anchor (exactly one): ``input_power_watts`` (gross input/thermal) OR
@@ -34,7 +36,55 @@ def compute_waste_heat(input_power_watts=None, useful_power_watts=None,
     and the Carnot floor is reported alongside; ``carnot_limited`` flags a device whose
     stated efficiency exceeds the Carnot ceiling (physically impossible — flagged, still
     returned).
+
+    C9 — transient/pulsed mode: supply ``peak_w``, ``mean_w``, ``duty`` (on-fraction),
+    ``pulse_period_s``, ``storage_mass_kg`` and ``specific_heat_jkgk`` (all together) to size
+    a thermal buffer. The radiator handles the time-average ``mean_w``; the excess
+    (``peak_w − mean_w``) charges the buffer during the on-phase → per-cycle
+    ``temp_swing_k`` and a ``buffer_time_s`` ride-through.
     """
+    # ── C9 — transient/pulsed thermal-buffer mode ──
+    transient = [peak_w, mean_w, duty, pulse_period_s, storage_mass_kg, specific_heat_jkgk]
+    if any(v is not None for v in transient):
+        if any(v is None for v in transient):
+            return {"error": "Transient mode needs all of peak_w, mean_w, duty, pulse_period_s, "
+                             "storage_mass_kg, specific_heat_jkgk."}
+        if peak_w <= 0 or mean_w <= 0:
+            return {"error": "peak_w and mean_w must be > 0."}
+        if peak_w < mean_w:
+            return {"error": "peak_w must be >= mean_w."}
+        if not (0.0 < duty <= 1.0):
+            return {"error": "duty must be in (0, 1]."}
+        if pulse_period_s <= 0:
+            return {"error": "pulse_period_s must be > 0."}
+        if storage_mass_kg <= 0 or specific_heat_jkgk <= 0:
+            return {"error": "storage_mass_kg and specific_heat_jkgk must be > 0."}
+        on_time_s = duty * pulse_period_s
+        excess_w = peak_w - mean_w
+        heat_cap = storage_mass_kg * specific_heat_jkgk           # J/K
+        temp_swing_k = excess_w * on_time_s / heat_cap
+        # ride-through: how long the charged buffer covers the mean load if rejection stops
+        buffer_time_s = heat_cap * temp_swing_k / mean_w if mean_w > 0 else None
+        return {
+            "mode": "transient",
+            "peak_power_w": peak_w,
+            "mean_power_w": mean_w,
+            "duty": duty,
+            "pulse_period_s": pulse_period_s,
+            "on_time_s": on_time_s,
+            "excess_power_w": excess_w,
+            "storage_mass_kg": storage_mass_kg,
+            "specific_heat_jkgk": specific_heat_jkgk,
+            "heat_capacity_j_per_k": heat_cap,
+            "buffered_energy_j": excess_w * on_time_s,
+            "temp_swing_k": temp_swing_k,
+            "buffer_time_s": buffer_time_s,
+            "notes": ["Radiator sized for the time-average mean_w; the buffer absorbs the "
+                      "(peak−mean) excess over each on-phase. temp_swing_k is the per-cycle "
+                      "swing; buffer_time_s is the ride-through if rejection stops. Steady "
+                      "refrigeration/pump work is out of scope (packet prose)."],
+        }
+
     # ── power anchor ──
     if (input_power_watts is None) == (useful_power_watts is None):
         return {"error": "Provide exactly one of input_power_watts or useful_power_watts."}
@@ -166,10 +216,73 @@ def compute_radiator_area(heat_watts=None, input_power_watts=None, efficiency=No
 
 # ── F3 — shielding attenuation (Lambert–Beer photon / GCR order-of-mag) ──────
 
+def _layer_transmitted(material, sigma, energy_mev, mode):
+    """Per-layer transmitted fraction for the C7 multi-layer path → (frac, info) or {"error"}."""
+    if sigma <= 0:
+        return {"error": f"layer '{material}': areal density must be > 0."}
+    if mode == "photon":
+        if energy_mev is None:
+            return {"error": "photon layers require --energy-mev for the bundled μ/ρ lookup."}
+        found = shielding_tables.lookup_mu_rho(material, energy_mev)
+        if found is None:
+            return {"error": f"layer material '{material}' is not in the bundled XCOM table "
+                             f"(have: {', '.join(shielding_tables.material_names())})."}
+        mu_rho, chosen_e, exact = found
+        frac = math.exp(-mu_rho * sigma)
+        return frac, {"material": material, "areal_density_gcm2": sigma,
+                      "mass_atten_coeff_cm2g": mu_rho, "energy_mev": chosen_e,
+                      "energy_exact": exact, "transmitted_fraction": frac}
+    lam = shielding_tables.lookup_gcr_lambda(material)
+    if lam is None:
+        return {"error": f"layer material '{material}' has no bundled GCR attenuation length "
+                         f"(have: {', '.join(shielding_tables.gcr_material_names())})."}
+    frac = math.exp(-sigma / lam)
+    return frac, {"material": material, "areal_density_gcm2": sigma,
+                  "attenuation_length_gcm2": lam, "transmitted_fraction": frac}
+
+
+def _parse_layers(spec):
+    """Parse a C7 --layers spec → list of (material, areal_density_gcm2) or {"error"}.
+
+    Accepts a string "mat:gcm2, mat:gcm2, …" or an already-parsed list of (material, σ) pairs.
+    """
+    if isinstance(spec, (list, tuple)):
+        out = []
+        for item in spec:
+            try:
+                mat, sigma = item
+                out.append((str(mat), float(sigma)))
+            except (TypeError, ValueError):
+                return {"error": f"malformed layer entry {item!r} (want (material, areal_density))."}
+        if not out:
+            return {"error": "layers is empty."}
+        return out
+    layers = []
+    for tok in str(spec).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if tok.count(":") != 1:
+            return {"error": f"malformed --layers token '{tok}' (want 'material:areal_density_gcm2')."}
+        mat, s = tok.split(":")
+        mat = mat.strip()
+        if not mat:
+            return {"error": f"malformed --layers token '{tok}' (empty material)."}
+        try:
+            sigma = float(s.strip())
+        except ValueError:
+            return {"error": f"malformed --layers token '{tok}' (areal density not a number)."}
+        layers.append((mat, sigma))
+    if not layers:
+        return {"error": "--layers is empty."}
+    return layers
+
+
 def compute_shielding_attenuation(areal_density_gcm2=None, thickness_cm=None,
                                   density_gcm3=None, mass_atten_coeff_cm2g=None,
                                   attenuation_length_gcm2=None, material=None,
-                                  energy_mev=None, mode="photon"):
+                                  energy_mev=None, mode="photon", particle="photon",
+                                  csda_range_gcm2=None, layers=None):
     """Transmitted fraction + half/tenth-value layers through a shield.
 
     Photon mode (default, exact): I/I₀ = exp(−(μ/ρ)·Σ), HVL = ln2/(μ/ρ), TVL = ln10/(μ/ρ).
@@ -177,9 +290,41 @@ def compute_shielding_attenuation(areal_density_gcm2=None, thickness_cm=None,
 
     Thickness via ``areal_density_gcm2`` OR ``thickness_cm``+``density_gcm3`` (Σ = ρ·x).
     Coefficient via an explicit value, OR ``material``+``energy_mev`` bundled lookup.
+
+    C6 — ``particle`` ∈ {photon, proton, alpha, ion}: a charged particle takes the CSDA-range
+    path (a hard stopping depth, not exponential attenuation) via the bundled NIST PSTAR table
+    (proton/water) or an explicit ``csda_range_gcm2``. C7 — ``layers`` (a "mat:gcm2, …" spec or
+    list) computes a stacked-shield transmitted fraction (photon/GCR) as the per-layer product.
     """
     if mode not in ("photon", "gcr"):
         return {"error": "mode must be 'photon' or 'gcr'."}
+    if particle not in ("photon",) + shielding_tables._CHARGED_PARTICLES:
+        return {"error": "particle must be one of photon, proton, alpha, ion."}
+
+    # ── C7 — multi-layer stack (photon/GCR) ──
+    if layers is not None:
+        parsed = _parse_layers(layers)
+        if isinstance(parsed, dict):
+            return parsed
+        layer_out = []
+        total = 1.0
+        for mat, sigma in parsed:
+            res = _layer_transmitted(mat, sigma, energy_mev, mode)
+            if isinstance(res, dict):
+                return res
+            frac, info = res
+            total *= frac
+            layer_out.append(info)
+        return {
+            "mode": mode,
+            "layers": layer_out,
+            "total_transmitted_fraction": total,
+            "total_attenuation": 1.0 / total,
+            "total_areal_density_gcm2": sum(s for _, s in parsed),
+            "is_order_of_magnitude": (mode == "gcr"),
+            "model_note": (shielding_tables._XCOM_SOURCE if mode == "photon"
+                           else shielding_tables._GCR_SOURCE),
+        }
 
     # ── areal density Σ ──
     if areal_density_gcm2 is not None and (thickness_cm is not None or density_gcm3 is not None):
@@ -194,6 +339,61 @@ def compute_shielding_attenuation(areal_density_gcm2=None, thickness_cm=None,
         if thickness_cm <= 0 or density_gcm3 <= 0:
             return {"error": "thickness_cm and density_gcm3 must be > 0."}
         sigma = density_gcm3 * thickness_cm
+
+    # ── C6 — charged particle: CSDA range (hard stopping depth, not attenuation) ──
+    if particle in shielding_tables._CHARGED_PARTICLES:
+        if csda_range_gcm2 is not None:
+            if csda_range_gcm2 <= 0:
+                return {"error": "csda_range_gcm2 must be > 0."}
+            rng = float(csda_range_gcm2)
+            csda_material = None
+            csda_energy = energy_mev
+            csda_exact = None
+        else:
+            if energy_mev is None or energy_mev <= 0:
+                return {"error": "Provide energy_mev (> 0) for the bundled CSDA-range lookup, "
+                                 "or an explicit csda_range_gcm2."}
+            if material is None:
+                return {"error": "Provide material (+ energy_mev) for the bundled CSDA-range "
+                                 "lookup, or an explicit csda_range_gcm2."}
+            found = shielding_tables.lookup_csda_range(particle, material, energy_mev)
+            if found is None:
+                have = shielding_tables.csda_material_names(particle)
+                have_str = ", ".join(have) if have else "(none)"
+                return {"error": f"no bundled CSDA range for {particle} in '{material}' "
+                                 f"(bundled {particle} materials: {have_str}). Supply an "
+                                 f"explicit --csda-range-gcm2."}
+            rng, csda_energy, csda_exact = found
+            csda_material = material
+        csda_notes = []
+        if csda_exact is False:
+            csda_notes.append(f"energy {energy_mev} MeV not on the grid; used nearest "
+                              f"{csda_energy} MeV.")
+        stops = sigma >= rng
+        out = {
+            "mode": "csda",
+            "particle": particle,
+            "material": csda_material,
+            "energy_mev": csda_energy,
+            "energy_exact": csda_exact,
+            "areal_density_gcm2": sigma,
+            "csda_range_gcm2": rng,
+            "residual_range_gcm2": max(rng - sigma, 0.0),
+            "stops_primary": stops,
+            "penetrates": not stops,
+            "is_order_of_magnitude": False,
+            "model_note": shielding_tables._PSTAR_SOURCE,
+            "buildup_caveat": ("CSDA is a hard range cutoff for the PRIMARY only; secondary "
+                               "particles (spallation neutrons/fragments) produced in the shield "
+                               "are not modelled — hand off to a transport code for dose behind "
+                               "a stopping shield."),
+        }
+        if thickness_cm is not None:
+            out["thickness_cm"] = thickness_cm
+            out["density_gcm3"] = density_gcm3
+            out["csda_range_cm"] = rng / density_gcm3
+        out["notes"] = csda_notes
+        return out
 
     out = {
         "areal_density_gcm2": sigma,

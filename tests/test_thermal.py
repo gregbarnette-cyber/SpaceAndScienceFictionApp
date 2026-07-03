@@ -57,6 +57,49 @@ class WasteHeatTest(unittest.TestCase):
         ):
             self.assertIn("error", thermal.compute_waste_heat(**kw), kw)
 
+    def test_steady_state_no_mode_key(self):
+        # C9 regression pin: the steady-state result carries no "mode" key (byte-identical shape)
+        r = thermal.compute_waste_heat(input_power_watts=3e9, efficiency=0.4)
+        self.assertNotIn("mode", r)
+
+
+class WasteHeatTransientTest(unittest.TestCase):
+    # C9 — pulsed thermal-buffer mode
+    def _t(self, **kw):
+        base = dict(peak_w=3e9, mean_w=1e9, duty=0.5, pulse_period_s=100,
+                    storage_mass_kg=1000, specific_heat_jkgk=500)
+        base.update(kw)
+        return thermal.compute_waste_heat(**base)
+
+    def test_anchor(self):
+        r = self._t()
+        self.assertEqual(r["mode"], "transient")
+        self.assertEqual(r["on_time_s"], 50.0)
+        self.assertEqual(r["excess_power_w"], 2e9)
+        # temp_swing_k = excess·on_time/(m·c) = 2e9·50/(1000·500) = 2e5
+        self.assertAlmostEqual(r["temp_swing_k"], 2e5, places=3)
+        self.assertGreater(r["buffer_time_s"], 0)
+
+    def test_temp_swing_scales(self):
+        # doubling the buffer heat capacity halves the swing
+        base = self._t()
+        big = self._t(storage_mass_kg=2000)
+        self.assertAlmostEqual(big["temp_swing_k"], base["temp_swing_k"] / 2.0, places=6)
+
+    def test_validation(self):
+        for kw in (
+            {"peak_w": 3e9},                                          # incomplete set
+            {"peak_w": 1e9, "mean_w": 3e9, "duty": 0.5, "pulse_period_s": 100,
+             "storage_mass_kg": 1000, "specific_heat_jkgk": 500},     # peak < mean
+            {"peak_w": 3e9, "mean_w": 1e9, "duty": 1.5, "pulse_period_s": 100,
+             "storage_mass_kg": 1000, "specific_heat_jkgk": 500},     # duty > 1
+            {"peak_w": 3e9, "mean_w": 1e9, "duty": 0.5, "pulse_period_s": 0,
+             "storage_mass_kg": 1000, "specific_heat_jkgk": 500},     # period 0
+            {"peak_w": 3e9, "mean_w": 1e9, "duty": 0.5, "pulse_period_s": 100,
+             "storage_mass_kg": 0, "specific_heat_jkgk": 500},        # mass 0
+        ):
+            self.assertIn("error", thermal.compute_waste_heat(**kw), kw)
+
 
 class RadiatorAreaTest(unittest.TestCase):
     def test_blackside_flux_anchors(self):
@@ -206,9 +249,108 @@ class ShieldingGcrTest(unittest.TestCase):
         self.assertAlmostEqual(d["transmitted_fraction"], math.exp(-1.0), places=12)
 
 
+class ShieldingCsdaTest(unittest.TestCase):
+    # C6 — charged-particle CSDA range
+    def test_proton_water_100mev_anchor(self):
+        # NIST PSTAR 100 MeV proton in water → CSDA range 7.718 g/cm² (web-verified).
+        r = thermal.compute_shielding_attenuation(areal_density_gcm2=5.0, particle="proton",
+                                                  material="water", energy_mev=100.0)
+        self.assertEqual(r["mode"], "csda")
+        self.assertAlmostEqual(r["csda_range_gcm2"], 7.718, places=3)
+        self.assertFalse(r["stops_primary"])           # 5 < 7.718 g/cm²
+        self.assertTrue(r["penetrates"])
+        self.assertAlmostEqual(r["residual_range_gcm2"], 7.718 - 5.0, places=3)
+        self.assertFalse(r["is_order_of_magnitude"])
+
+    def test_stops_when_thick_enough(self):
+        r = thermal.compute_shielding_attenuation(areal_density_gcm2=10.0, particle="proton",
+                                                  material="water", energy_mev=100.0)
+        self.assertTrue(r["stops_primary"])
+        self.assertEqual(r["residual_range_gcm2"], 0.0)
+
+    def test_csda_range_cm_with_density(self):
+        r = thermal.compute_shielding_attenuation(thickness_cm=5.0, density_gcm3=1.0,
+                                                  particle="proton", material="water",
+                                                  energy_mev=100.0)
+        # water ρ=1 → range in cm equals range in g/cm²
+        self.assertAlmostEqual(r["csda_range_cm"], r["csda_range_gcm2"], places=6)
+
+    def test_explicit_range_for_alpha(self):
+        # alpha/other materials are supported via the explicit override
+        r = thermal.compute_shielding_attenuation(areal_density_gcm2=1.0, particle="alpha",
+                                                  csda_range_gcm2=0.65)
+        self.assertEqual(r["particle"], "alpha")
+        self.assertAlmostEqual(r["csda_range_gcm2"], 0.65, places=6)
+        self.assertTrue(r["stops_primary"])
+
+    def test_csda_range_monotone_in_energy(self):
+        # table closure: CSDA range strictly increases with energy
+        rng = [thermal.compute_shielding_attenuation(areal_density_gcm2=1.0, particle="proton",
+                                                     material="water", energy_mev=e)["csda_range_gcm2"]
+               for e in (10, 50, 100, 150, 200, 250)]
+        self.assertEqual(rng, sorted(rng))
+        self.assertEqual(len(set(rng)), len(rng))
+
+    def test_golden_pin(self):
+        from core import shielding_tables as st
+        self.assertEqual(st._CSDA_RANGE["proton"]["water"][100.0], 7.718)
+        self.assertEqual(st._CSDA_RANGE["proton"]["water"][10.0], 0.1230)
+        self.assertEqual(st._CSDA_RANGE["proton"]["water"][250.0], 37.94)
+
+    def test_validation(self):
+        for kw in (
+            {"areal_density_gcm2": 10, "particle": "proton", "material": "water"},  # no energy
+            {"areal_density_gcm2": 10, "particle": "proton", "material": "water", "energy_mev": 0},  # E≤0
+            {"areal_density_gcm2": 10, "particle": "alpha", "material": "water", "energy_mev": 100},  # no bundled alpha
+            {"areal_density_gcm2": 10, "particle": "proton", "material": "lead", "energy_mev": 100},  # no bundled mat
+            {"areal_density_gcm2": 10, "particle": "proton", "csda_range_gcm2": 0},  # explicit range ≤0
+            {"areal_density_gcm2": 10, "particle": "proton", "energy_mev": 100},     # no material, no override
+        ):
+            self.assertIn("error", thermal.compute_shielding_attenuation(**kw), kw)
+
+
+class ShieldingLayersTest(unittest.TestCase):
+    # C7 — multi-layer stacks
+    def test_single_layer_parity(self):
+        stacked = thermal.compute_shielding_attenuation(layers="water:20", energy_mev=1.0)
+        single = thermal.compute_shielding_attenuation(areal_density_gcm2=20, material="water",
+                                                       energy_mev=1.0)
+        self.assertAlmostEqual(stacked["total_transmitted_fraction"],
+                               single["transmitted_fraction"], places=12)
+
+    def test_two_layers_product(self):
+        r = thermal.compute_shielding_attenuation(layers="water:10, lead:5", energy_mev=1.0)
+        self.assertEqual(len(r["layers"]), 2)
+        prod = r["layers"][0]["transmitted_fraction"] * r["layers"][1]["transmitted_fraction"]
+        self.assertAlmostEqual(r["total_transmitted_fraction"], prod, places=12)
+        self.assertAlmostEqual(r["total_areal_density_gcm2"], 15.0, places=9)
+
+    def test_order_independence(self):
+        a = thermal.compute_shielding_attenuation(layers="water:10, lead:5", energy_mev=1.0)
+        b = thermal.compute_shielding_attenuation(layers="lead:5, water:10", energy_mev=1.0)
+        self.assertAlmostEqual(a["total_transmitted_fraction"],
+                               b["total_transmitted_fraction"], places=12)
+
+    def test_gcr_layers(self):
+        r = thermal.compute_shielding_attenuation(mode="gcr", layers="polyethylene:30, water:10")
+        self.assertTrue(r["is_order_of_magnitude"])
+        self.assertEqual(len(r["layers"]), 2)
+
+    def test_validation(self):
+        for kw in (
+            {"layers": "water 20", "energy_mev": 1.0},                # malformed token (no colon)
+            {"layers": "water:abc", "energy_mev": 1.0},               # non-numeric σ
+            {"layers": "unobtainium:10", "energy_mev": 1.0},          # unknown material
+            {"layers": "water:-5", "energy_mev": 1.0},                # non-positive σ
+            {"layers": "water:20"},                                   # photon layer, no energy
+        ):
+            self.assertIn("error", thermal.compute_shielding_attenuation(**kw), kw)
+
+
 class ShieldingValidationTest(unittest.TestCase):
     def test_validation(self):
         for kw in (
+            {"particle": "muon", "areal_density_gcm2": 10},                             # bad particle
             {"mode": "bogus", "areal_density_gcm2": 10, "mass_atten_coeff_cm2g": 0.07},  # bad mode
             {"areal_density_gcm2": 10, "thickness_cm": 5, "mass_atten_coeff_cm2g": 0.07},  # both Σ paths
             {"areal_density_gcm2": -1, "mass_atten_coeff_cm2g": 0.07},        # neg Σ

@@ -79,21 +79,26 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `relativistic-brachistochrone` | `--accel-g --distance-ly` | none | `coord_time_yr, proper_time_yr, peak_velocity_c, peak_lorentz_factor` |
 | `rocket-equation` | two of (`--delta-v-kms`\|`--beta`) · (`--exhaust-velocity-kms`\|`--isp-s`\|`--fuel`) · `--mass-ratio` [`--relativistic --legs {flyby,rendezvous,round-trip} --payload-mass-t --structure-fraction`] | none (bundled fuel presets) | `mass_ratio, mass_ratio_single_burn, propellant_fraction, delta_v_kms, beta, exhaust_velocity_kms, isp_s, fuel, legs, relativistic, payload_mass_t, propellant_mass_t, wet_mass_t, structure_fraction, model_note` |
 | `beam-sail` | `--beam-power-w` (`--sail-mass-kg` \| `--areal-mass-gm2 --sail-area-m2`) [`--payload-mass-kg --reflectivity --wavelength-nm --transmit-aperture-m` · (`--accel-distance-au`\|`--accel-time-days`)] | none | `thrust_n, acceleration_ms2, final_velocity_kms, beta, beam_energy_j, sail_area_m2, total_mass_kg, sail_mass_kg, payload_mass_kg, reflectivity, beam_range_note, model_note` |
-| `magsail` | (`--velocity-kms` \| `--beta`) + ((`--coil-current-a --coil-radius-m`) \| `--magnetic-moment-am2`) [`--ism-density-cm3 --ion-mass-amu --standoff-coeff --drag-coeff --vehicle-mass-t --velocity-final-kms`] | none (bundled ISM/coeffs) | `magnetopause_radius_km, ram_pressure_pa, effective_area_km2, drag_force_n, drag_scaling_note, deceleration_ms2, stopping_distance_ly, stopping_time_yr, near_field_warning, magnetic_moment_am2, ism_mass_density_kgm3, ionization_note, model_note` |
-| `ramscoop` | (`--velocity-kms` \| `--beta`) + ((`--coil-current-a --coil-radius-m`) \| `--scoop-area-km2` \| `--magnetic-moment-am2`) + ((`--fuel {pp,cno,dd}` [`--fusion-efficiency`]) \| `--exhaust-velocity-kms`) [`--ism-density-cm3 --ion-mass-amu --standoff-coeff --drag-coeff`] | none (bundled ISM/fusion) | `collected_mass_flux_kgs, magnetopause_radius_km, scoop_area_km2, exhaust_velocity_kms, exhaust_beta, reaction_thrust_n, collection_drag_n, magnetic_drag_n, net_force_n, verdict, crossover_velocity_kms, fusion_yield_fraction, fusion_efficiency, ionization_note, model_note` |
+| `magsail` | (`--velocity-kms` \| `--beta`) + ((`--coil-current-a --coil-radius-m`) \| `--magnetic-moment-am2`) [`--ism-density-cm3 --ion-mass-amu --standoff-coeff --drag-coeff --vehicle-mass-t --velocity-final-kms --ionization-fraction`] | none (bundled ISM/coeffs) | `magnetopause_radius_km, magnetopause_radius_farfield_km, ram_pressure_pa, effective_area_km2, drag_force_n, drag_scaling_note, deceleration_ms2, stopping_distance_ly, stopping_time_yr, near_field_warning, magnetic_moment_am2, ionization_fraction, ism_mass_density_kgm3, ionization_note, model_note` |
+| `ramscoop` | (`--velocity-kms` \| `--beta`) + ((`--coil-current-a --coil-radius-m`) \| `--scoop-area-km2` \| `--magnetic-moment-am2`) + ((`--fuel {pp,cno,dd}` [`--fusion-efficiency`]) \| `--exhaust-velocity-kms`) [`--ism-density-cm3 --ion-mass-amu --standoff-coeff --drag-coeff --ionization-fraction`] | none (bundled ISM/fusion) | `collected_mass_flux_kgs, magnetopause_radius_km, scoop_area_km2, exhaust_velocity_kms, exhaust_beta, reaction_thrust_n, collection_drag_n, magnetic_drag_n, net_force_n, verdict, crossover_velocity_kms, fusion_yield_fraction, fusion_efficiency, ionization_fraction, ionization_note, model_note` |
+| `pellet-stream` (AD C2) | `--stream-velocity-kms` + (`--mass-flow-rate-kgs` \| `--pellet-mass-kg --pellet-rate-hz`) + (`--velocity-kms` \| `--beta`) [`--coupling {reflect,absorb}` (default reflect) `--vehicle-mass-t`] | none | `stream_velocity_kms, vehicle_velocity_kms, beta, relative_velocity_kms, mass_flow_rate_kgs, coupling, thrust_n, delivered_power_w, verdict, crossover_velocity_kms, acceleration_ms2, model_note` |
+| `dust-impact` (AD C3) | (`--grain-radius-um --grain-density-kgm3` \| `--grain-mass-kg`) + (`--velocity-kms` \| `--beta`) [cumulative set: all of `--dust-density-m3 --frontal-area-m2 --path-length-ly`] | none | `grain_mass_kg, velocity_kms, beta, relativistic, lorentz_factor, impact_energy_j, impact_energy_tnt_kg, momentum_kgms, impacts_total, energy_fluence_j_m2, penetration_handoff_note, model_note` |
 | `spin-stress` | (`--material` \| `--density-kgm3 --tensile-strength-mpa`) + one of (`--target-gravity-g` \| `--radius-m` \| `--rpm --radius-m`) [`--safety-factor`] | none (bundled materials) | `material, density_kgm3, tensile_strength_mpa, safety_factor, allowable_stress_mpa, max_tangential_velocity_ms, target_gravity_g, radius_m, rpm, max_radius_m, max_radius_km, max_gravity_g, hoop_stress_mpa, margin, specific_strength_note, notes, model_note` |
 | `tether-taper` | (`--material` \| `--density-kgm3 --tensile-strength-mpa`) (`--body` \| `--surface-gravity-ms2 --surface-radius-km --geo-radius-km`) [`--safety-factor`] | none (bundled materials/bodies) | `material, density_kgm3, tensile_strength_mpa, safety_factor, body, surface_gravity_ms2, surface_radius_km, geo_radius_km, characteristic_velocity_ms, characteristic_length_km, taper_ratio, feasible, notes, model_note` |
 | `dyson-collector` | (`--luminosity-lsun` \| `--star`) `--fraction --orbit-au` [`--areal-mass-kgm2`] | none \| SIMBAD (`--star`) | `intercepted_power_w, collector_area_m2, collector_area_au2, collector_mass_kg, incident_flux_wm2, fraction, orbit_au, luminosity_lsun, areal_mass_kgm2, model_note` |
-| `par-flux` | one Teff (`--teff-k` \| `--spectral-type` \| `--star`) + one insolation (`--insolation-wm2` \| `--luminosity-lsun --distance-au`) [`--par-band-nm LO HI`] | none \| SIMBAD (`--star`) | `teff_k, par_fraction, insolation_wm2, par_irradiance_wm2, ppfd_umol_m2_s, par_deficit_vs_g2, photon_energy_mean_j, j_per_umol, band_nm, sed_model, feeds_note, model_note` |
-| `equilibrium-temp` | one insolation (`--insolation-wm2` \| `--luminosity-lsun --distance-au`) + one forcing (`--greenhouse-delta-k` \| `--optical-depth` \| `--target-surface-k`) [`--albedo`] | none | `insolation_wm2, albedo, t_eq_k, greenhouse_delta_k, optical_depth, t_surface_k, required_forcing, model_note` |
+| `orbital-ring` (AD C4) | (`--body` \| `--surface-gravity-ms2 --body-radius-km`) `--altitude-km --ring-mass-per-length-kgm` [`--rotor-mass-per-length-kgm`] | none (bundled `_BODIES`) | `orbital_radius_km, local_gravity_ms2, orbital_velocity_kms, rotor_velocity_kms, rotor_velocity_over_orbital, ring_mass_per_length_kgm, rotor_mass_per_length_kgm, support_ratio, rotor_ke_per_length_jm, model_note` |
+| `par-flux` | one Teff (`--teff-k` \| `--spectral-type` \| `--star`) + one insolation (`--insolation-wm2` \| `--luminosity-lsun --distance-au`) [`--par-band-nm LO HI` `--sed blackbody\|real` (AD C1)] | none \| SIMBAD (`--star`) | `teff_k, par_fraction, insolation_wm2, par_irradiance_wm2, ppfd_umol_m2_s, par_deficit_vs_g2, photon_energy_mean_j, j_per_umol, band_nm, sed_model, feeds_note, model_note` |
+| `equilibrium-temp` | one insolation (`--insolation-wm2` \| `--luminosity-lsun --distance-au`) + **at most one** forcing (`--greenhouse-delta-k` \| `--optical-depth` \| `--target-surface-k`) [`--albedo`] | none | `insolation_wm2, albedo, t_eq_k, greenhouse_delta_k, optical_depth, t_surface_k, required_forcing, regime, model_note` |
 | `insolation-shift` | `--planet-radius-km --delta-insolation-wm2` + one flux (`--solar-flux-wm2` \| `--luminosity-lsun --distance-au`) | none | `planet_radius_km, delta_insolation_wm2, solar_flux_wm2, mode, mirror_area_m2, mirror_area_km2, area_vs_planet_cross_section, model_note` |
 | `atmosphere-mass` | `--planet-radius-km` + one gravity (`--surface-gravity-ms2` \| `--planet-mass-earth`) + one of (`--pressure-bar` \| `--volatile-mass-kg`) [`--species`] | none | `planet_radius_km, surface_gravity_ms2, species, surface_pressure_bar, atmosphere_mass_kg, atmosphere_mass_earth_atm, model_note` |
-| `waste-heat` | (`--input-power-watts`\|`--useful-power-watts`) [`--efficiency` \| `--hot-temp-k --cold-temp-k`] | none | `waste_heat_w, useful_power_w, input_power_w, efficiency, carnot_efficiency, carnot_min_waste_heat_w, carnot_limited, notes` |
+| `volatile-delivery` (AD C5) | `--body-mass-kg` [`--volatile-fraction` · (`--delta-v-kms` + (`--fuel`\|`--exhaust-velocity-kms`)) · `--impact-velocity-kms` · `--target-atmosphere-mass-kg`] | none | `body_mass_kg, volatile_fraction, delivered_volatile_mass_kg, delta_v_kms, redirect_mass_ratio, impact_velocity_kms, impact_energy_j, impact_energy_tnt_kg, target_atmosphere_mass_kg, bodies_needed, model_note` |
+| `waste-heat` | steady: (`--input-power-watts`\|`--useful-power-watts`) [`--efficiency` \| `--hot-temp-k --cold-temp-k`]; **transient (C9)**: all of `--peak-w --mean-w --duty --pulse-period-s --storage-mass-kg --specific-heat-jkgk` | none | steady: `waste_heat_w, useful_power_w, input_power_w, efficiency, carnot_efficiency, carnot_min_waste_heat_w, carnot_limited, notes`; transient: `mode, on_time_s, excess_power_w, heat_capacity_j_per_k, temp_swing_k, buffer_time_s, notes` |
 | `radiator-area` | (`--heat-watts` \| `--input-power-watts --efficiency`) `--radiator-temp-k` [`--emissivity --sides --sink-temp-k --areal-mass-kgm2`] | none | `radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_mass_kg, scaling_note` |
-| `shielding-attenuation` | (`--areal-density-gcm2` \| `--thickness-cm --density-gcm3`) + coeff (`--mass-atten-coeff-cm2g`\|`--attenuation-length-gcm2`\|`--material [--energy-mev]`) [`--mode {photon,gcr}`] | none (bundled XCOM table) | `transmitted_fraction, attenuation_factor, areal_density_gcm2, half_value_layer_gcm2, tenth_value_layer_gcm2, mode, model_note, buildup_caveat, is_order_of_magnitude` |
+| `shielding-attenuation` | photon/gcr: (`--areal-density-gcm2` \| `--thickness-cm --density-gcm3`) + coeff (`--mass-atten-coeff-cm2g`\|`--attenuation-length-gcm2`\|`--material [--energy-mev]`) [`--mode {photon,gcr}`]; **charged (C6)** `--particle {proton,alpha,ion} --energy-mev` (`--material`\|`--csda-range-gcm2`); **stack (C7)** `--layers "mat:gcm2,…"` | none (bundled XCOM/PSTAR) | photon: `transmitted_fraction, half_value_layer_gcm2, tenth_value_layer_gcm2, …, is_order_of_magnitude`; csda: `mode:"csda", csda_range_gcm2, csda_range_cm, stops_primary, penetrates, residual_range_gcm2`; layers: `layers[], total_transmitted_fraction, total_attenuation` |
+| `active-shield` | `--shield-radius-m` + one field source (`--magnetic-moment-am2` \| `--coil-current-a --coil-radius-m` \| `--field-tesla --field-radius-m`) [`--spectrum-characteristic-rigidity-gv`] | none | `rigidity_cutoff_gv, rigidity_cutoff_v, magnetic_field_t, magnetic_moment_am2, field_source, deflected_fraction, is_order_of_magnitude, model_note` |
 | `spin-comfort` | exactly two of (`--radius-m` \| `--rpm` \| `--gravity-g`\|`--accel-ms2` \| `--tangential-velocity-ms`) [`--occupant-height-m --walk-speed-ms --criteria {conservative,moderate,relaxed,all}` + per-threshold overrides] | none (bundled comfort bands) | `radius_m, rpm, angular_velocity_rads, accel_ms2, gravity_g, tangential_velocity_ms, head_gravity_g, gravity_gradient_pct, coriolis_ratio_pct, anchors, criteria{…}, overridden_thresholds, model_note, notes` |
 | `life-support` | [`--crew --days --closure-scenario {open,iss,advanced,bioregen}` + per-stream `--*-closure` + per-rate `--*-rate`/`--kcal-per-day`] | none (bundled BVAD Rev2) | `crew, days, per_person_daily{…}, totals{…}, closure{water,o2,food}, scenario, makeup_mass_kg{o2,water,food,total}, model_note` |
-| `bioregen-area` | exactly one light anchor (`--ppfd-umol` \| `--dli-mol` \| `--par-wm2`) [`--kcal-per-day --crew --crop --photoperiod-h --photo-efficiency --harvest-index --artificial --led-par-efficiency --f-edible-energy`] | none (bundled crops) | `area_m2_per_person, area_m2_total, area_m2_per_person_measured, dli_mol, ppfd_umol, photo_efficiency, harvest_index, lighting{…}, crop_gas_exchange{o2_kg_day,co2_kg_day}, transpiration_water_kg_day, par_is_input_note` |
+| `bioregen-area` | exactly one light anchor (`--ppfd-umol` \| `--dli-mol` \| `--par-wm2`) [`--kcal-per-day --crew --crop` \| **`--crops "c:f,…"` (AD C10)** ` --photoperiod-h --photo-efficiency --harvest-index --artificial --led-par-efficiency --f-edible-energy`] | none (bundled crops) | `area_m2_per_person, area_m2_total, area_m2_per_person_measured, crops, per_crop_area_m2[], dli_mol, ppfd_umol, photo_efficiency, harvest_index, lighting{…}, crop_gas_exchange{o2_kg_day,co2_kg_day}, transpiration_water_kg_day, par_is_input_note` |
 | `population-capacity` | ≥1 budget of (`--crop-area-m2` \| `--power-w` \| `--water-kg-day` \| `--fixed-nitrogen-kg-yr` \| `--food-dry-kg-day`) [per-person `--per-person-*` overrides] | none (X1/X2 defaults) | `per_resource{…{budget,per_person,source,population}}, sustainable_population, binding_constraint, slack{…}` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
@@ -113,7 +118,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `travel-time-times-c` | `--distance-ly --times-c` | none | `distance_ly, times_c, ly_hr, total_hours, travel_time_str` |
 | `travel-time-solar` | `--origin --destination --accel-g` [`--v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles[], …` |
 | `optimal-tour` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--closed` `--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `legs[], total_ly, total_time, naive_total_ly, optimized_total_ly, saved_ly, saved_pct, closed, stars[]` |
-| `jump-route` | `--origin --destination --max-jump` [`--optimize distance\|jumps` `--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `origin_info, dest_info, reachable, jumps, total_ly, direct_ly, route[], stars[]` |
+| `jump-route` | `--origin --destination --max-jump` [`--optimize distance\|jumps` `--weight distance\|dust\|`**`blend`**` --alpha --beta --map --dust-step-pc`] | SIMBAD† (names) | `origin_info, dest_info, reachable, jumps, total_ly, direct_ly, route[], stars[]`; blend adds `weight:"blend", alpha, beta, total_av, total_blend_cost` |
 | `jump-network` | `--start --max-jump` [`--max-jumps`] | SIMBAD† (names) | `start_name, max_tier, reachable_count, total_in_pool, unreachable_count, tiers[], stars[]` |
 | `multi-stop` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `legs[], total_ly, total_hours, total_time, stars[]` |
 | `nearest-neighbor` | `--start --hops --max-ly` [`--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `chain[], stars[], total_ly, stopped_early, start_name` |
@@ -332,7 +337,7 @@ Eight new self-validating (Phase-H/P contract) pure-math calculators for the sib
 survey-bias and dynamics research. Curated `{"error"}` → exit 1; argparse → exit 2. **B1 `tidal-heating`
 and C2 `kozai-lidov` are explicitly order-of-magnitude** (fixed-Q / secular approximations) — treat their
 single numbers as scale estimates, not precise predictions. The three load-bearing coefficients were
-verified against the cited papers (see `PHASE_T_PLAN.md` T1b).
+verified against the cited papers.
 
 #### `rv-semi-amplitude` (A1)
 Radial-velocity semi-amplitude a planet induces on its star (Lovis & Fischer 2010):
@@ -498,7 +503,8 @@ or `P_useful·(1−η)/η` (net). Optional Carnot floor from reservoir temps:
 query.py waste-heat --input-power-watts 3e9 --efficiency 0.4
 query.py waste-heat --useful-power-watts 1e9 --efficiency 0.9 --hot-temp-k 1500 --cold-temp-k 300
 ```
-Core: `thermal.compute_waste_heat(input_power_watts=None, useful_power_watts=None, efficiency=None, hot_temp_k=None, cold_temp_k=None)`. Power anchor (`--input-power-watts` | `--useful-power-watts`) is a **required argparse mutex group** (both/neither → exit 2). Efficiency anchor: `--efficiency` (0<η≤1) **or** `--hot-temp-k`+`--cold-temp-k` (derives η_carnot). If both an explicit efficiency and reservoir temps are given, device waste-heat uses `--efficiency` and the Carnot floor is reported alongside; `carnot_limited:true` flags a stated η above the Carnot ceiling (physically impossible — flagged, still returned). Output: `{waste_heat_w, useful_power_w, input_power_w, efficiency, carnot_efficiency|null, carnot_min_waste_heat_w|null, carnot_limited|null, hot_temp_k, cold_temp_k, notes}`. **Validation:** non-positive powers; η ∉ (0,1]; `T_hot ≤ T_cold`; incomplete reservoir pair; no efficiency anchor → curated `{"error"}` exit 1. **Anchor:** 3 GW @ η=0.4 → useful 1.2e9 / waste 1.8e9 W; T_hot=1500/T_cold=300 → η_carnot=0.8, claimed η=0.9 → `carnot_limited:true`.
+Core: `thermal.compute_waste_heat(input_power_watts=None, useful_power_watts=None, efficiency=None, hot_temp_k=None, cold_temp_k=None, peak_w=None, mean_w=None, duty=None, pulse_period_s=None, storage_mass_kg=None, specific_heat_jkgk=None)`. Power anchor (`--input-power-watts` | `--useful-power-watts`) is an **argparse mutex group** — no longer `required` (transient mode uses no steady anchor), so both → exit 2, but **neither + not transient → the core "no power anchor" error (exit 1)**. Efficiency anchor: `--efficiency` (0<η≤1) **or** `--hot-temp-k`+`--cold-temp-k` (derives η_carnot). If both an explicit efficiency and reservoir temps are given, device waste-heat uses `--efficiency` and the Carnot floor is reported alongside; `carnot_limited:true` flags a stated η above the Carnot ceiling (physically impossible — flagged, still returned). Output: `{waste_heat_w, useful_power_w, input_power_w, efficiency, carnot_efficiency|null, carnot_min_waste_heat_w|null, carnot_limited|null, hot_temp_k, cold_temp_k, notes}` (no `mode` key — steady-state is byte-identical to Phase V). **Validation:** non-positive powers; η ∉ (0,1]; `T_hot ≤ T_cold`; incomplete reservoir pair; no efficiency anchor → curated `{"error"}` exit 1. **Anchor:** 3 GW @ η=0.4 → useful 1.2e9 / waste 1.8e9 W; T_hot=1500/T_cold=300 → η_carnot=0.8, claimed η=0.9 → `carnot_limited:true`.
+- **Phase AD (C9) — transient / pulsed thermal-buffer mode.** Supplying **any** of `--peak-w --mean-w --duty --pulse-period-s --storage-mass-kg --specific-heat-jkgk` selects transient mode; **all six are required together**. The radiator is sized for the time-average `mean_w`; the excess `peak_w − mean_w` charges a thermal buffer over each on-phase `on_time_s = duty·pulse_period_s` → per-cycle `temp_swing_k = (peak_w−mean_w)·on_time_s/(m·c)` and a ride-through `buffer_time_s = m·c·temp_swing_k/mean_w`. (The plan's formula needs an absolute on-time; `--pulse-period-s` supplies it — a documented clarification of the input set.) Output: `{mode:"transient", peak_power_w, mean_power_w, duty, pulse_period_s, on_time_s, excess_power_w, storage_mass_kg, specific_heat_jkgk, heat_capacity_j_per_k, buffered_energy_j, temp_swing_k, buffer_time_s, notes}`. **Validation:** an incomplete set; `peak_w < mean_w`; `duty ∉ (0,1]`; non-positive `pulse_period_s`/`storage_mass_kg`/`specific_heat_jkgk` → curated `{"error"}` exit 1. Refrigeration/pump work stays packet prose.
 
 #### `radiator-area` (F2)
 Radiating **area** (and optional mass) to reject a heat load by Stefan–Boltzmann radiation.
@@ -519,7 +525,9 @@ query.py shielding-attenuation --material water --energy-mev 1.0 --areal-density
 query.py shielding-attenuation --material lead --energy-mev 1.0 --thickness-cm 1 --density-gcm3 11.35
 query.py shielding-attenuation --mode gcr --material water --areal-density-gcm2 30
 ```
-Core: `thermal.compute_shielding_attenuation(areal_density_gcm2=None, thickness_cm=None, density_gcm3=None, mass_atten_coeff_cm2g=None, attenuation_length_gcm2=None, material=None, energy_mev=None, mode="photon")`. Thickness via `--areal-density-gcm2` **or** `--thickness-cm`+`--density-gcm3` (Σ = ρ·x). Coefficient (photon) via explicit `--mass-atten-coeff-cm2g`, or `--material`+`--energy-mev` **bundled NIST XCOM lookup**; (gcr) via `--attenuation-length-gcm2` or `--material` (bundled Λ). **Bundled photon grid** (`core/shielding_tables.py`, transcribed from NIST XCOM/XAAMDI): materials `water, polyethylene, aluminum, regolith, lead, liquid_h2` (alias `hydrogen`)`, iron` × energies `0.1, 0.5, 1, 2, 5, 10 MeV` (nearest-energy lookup; the chosen energy is echoed in `energy_mev` with an `energy_exact` flag). `regolith` is an SiO₂-dominant silicate approximation and `liquid_h2` carries a per-gram-vs-per-cm note (both surfaced in `notes`). **Bundled GCR Λ** (water/polyethylene/aluminum/regolith; NCRP 153 / NASA HRP, order-of-magnitude). Output: `{transmitted_fraction, attenuation_factor, areal_density_gcm2, half_value_layer_gcm2, tenth_value_layer_gcm2, mass_atten_coeff_cm2g|attenuation_length_gcm2, material|null, energy_mev|null, energy_exact|null, mode, model_note, buildup_caveat, is_order_of_magnitude, notes}` (+ `thickness_cm, density_gcm3, half_value_layer_cm, tenth_value_layer_cm` when thickness+density given). `is_order_of_magnitude` is `false` for photon, `true` for gcr; `model_note` names NIST XCOM (photon) / NCRP-153 (gcr). **Validation:** `--mode` ∉ {photon,gcr} → argparse exit 2; non-positive Σ/thickness/density/coeff/Λ, both Σ paths, an off-grid `--material`/`--energy-mev`, or a missing coefficient → curated `{"error"}` exit 1. **Anchors (photon, transcribed from NIST XCOM):** water @1 MeV (μ/ρ ≈ 0.0707) → HVL ≈ 9.8 cm, TVL ≈ 32.6 cm; 20 g/cm² → transmitted ≈ 0.243; lead @1 MeV → linear HVL ≈ 0.86 cm (ρ = 11.35).
+Core: `thermal.compute_shielding_attenuation(areal_density_gcm2=None, thickness_cm=None, density_gcm3=None, mass_atten_coeff_cm2g=None, attenuation_length_gcm2=None, material=None, energy_mev=None, mode="photon", particle="photon", csda_range_gcm2=None, layers=None)`. Thickness via `--areal-density-gcm2` **or** `--thickness-cm`+`--density-gcm3` (Σ = ρ·x). Coefficient (photon) via explicit `--mass-atten-coeff-cm2g`, or `--material`+`--energy-mev` **bundled NIST XCOM lookup**; (gcr) via `--attenuation-length-gcm2` or `--material` (bundled Λ).
+- **Phase AD (C6) — charged-particle CSDA range.** `--particle {photon,proton,alpha,ion}` (default `photon` = the unchanged behaviour). A **charged particle** takes the CSDA-range path — a *hard stopping depth*, not exponential attenuation: `--material`+`--energy-mev` looks up the bundled **NIST PSTAR** proton/water grid, or `--csda-range-gcm2` supplies an explicit range (for alpha/ion or any un-bundled material). Output `{mode:"csda", particle, csda_range_gcm2, csda_range_cm (with density), stops_primary, penetrates, residual_range_gcm2, energy_mev, energy_exact, is_order_of_magnitude:false, model_note, buildup_caveat}`. **Data scope (surfaced):** the bundled convenience table currently covers **protons in water** (the anchor); alpha/ion beams and other materials use `--csda-range-gcm2` — a documented data-scope decision (additional PSTAR/ASTAR materials are a pure data swap). Secondary-particle production behind a partial shield is **not** modelled (hand off to a transport code). **Anchor (web-verified 2026-07-03):** 100 MeV proton in water → CSDA range **7.718 g/cm²**.
+- **Phase AD (C7) — multi-layer stacks.** `--layers "mat:gcm2, mat:gcm2, …"` computes a stacked-shield transmitted fraction as the **per-layer product** (photon/GCR by `--mode`; the shared `--energy-mev` is used for photon layers). Output `{mode, layers:[{material, areal_density_gcm2, transmitted_fraction, …}], total_transmitted_fraction, total_attenuation, total_areal_density_gcm2, is_order_of_magnitude}`. A **single layer reproduces the single-material result** (parity); `total_transmitted_fraction` is order-independent. **Validation:** a malformed `--layers` token, an unknown/negative layer, or (photon) a missing `--energy-mev` → curated `{"error"}` exit 1. **Bundled photon grid** (`core/shielding_tables.py`, transcribed from NIST XCOM/XAAMDI): materials `water, polyethylene, aluminum, regolith, lead, liquid_h2` (alias `hydrogen`)`, iron` × energies `0.1, 0.5, 1, 2, 5, 10 MeV` (nearest-energy lookup; the chosen energy is echoed in `energy_mev` with an `energy_exact` flag). `regolith` is an SiO₂-dominant silicate approximation and `liquid_h2` carries a per-gram-vs-per-cm note (both surfaced in `notes`). **Bundled GCR Λ** (water/polyethylene/aluminum/regolith; NCRP 153 / NASA HRP, order-of-magnitude). Output: `{transmitted_fraction, attenuation_factor, areal_density_gcm2, half_value_layer_gcm2, tenth_value_layer_gcm2, mass_atten_coeff_cm2g|attenuation_length_gcm2, material|null, energy_mev|null, energy_exact|null, mode, model_note, buildup_caveat, is_order_of_magnitude, notes}` (+ `thickness_cm, density_gcm3, half_value_layer_cm, tenth_value_layer_cm` when thickness+density given). `is_order_of_magnitude` is `false` for photon, `true` for gcr; `model_note` names NIST XCOM (photon) / NCRP-153 (gcr). **Validation:** `--mode` ∉ {photon,gcr} → argparse exit 2; non-positive Σ/thickness/density/coeff/Λ, both Σ paths, an off-grid `--material`/`--energy-mev`, or a missing coefficient → curated `{"error"}` exit 1. **Anchors (photon, transcribed from NIST XCOM):** water @1 MeV (μ/ρ ≈ 0.0707) → HVL ≈ 9.8 cm, TVL ≈ 32.6 cm; 20 g/cm² → transmitted ≈ 0.243; lead @1 MeV → linear HVL ≈ 0.86 cm (ρ = 11.35).
 
 > **Caveat — F3 coefficients & GCR mode.** The photon μ/ρ grid was **reconciled cell-by-cell
 > against the live NIST XAAMDI tables (2026-06-30)** and is pinned by a golden test
@@ -528,9 +536,36 @@ Core: `thermal.compute_shielding_attenuation(areal_density_gcm2=None, thickness_
 > an SiO₂-dominant silicate analog **computed** from the NIST elemental Si+O tables via the
 > mixture rule (an approximation, flagged in `notes`). The water- and lead-@1-MeV HVL anchors
 > are additionally checked. The GCR mode is **explicitly order-of-magnitude**
-> (`is_order_of_magnitude:true`) and a v1 single-exponential stand-in; proton/ion CSDA range,
-> broad-beam photon buildup factors, and active (magnetic/electrostatic) shielding are out of
-> scope (packet prose).
+> (`is_order_of_magnitude:true`) and a v1 single-exponential stand-in; broad-beam photon buildup
+> factors and electrostatic shielding remain out of scope (packet prose). *(Charged-particle CSDA
+> range is now the Phase-AD C6 path above; active magnetic shielding is `active-shield` below.)*
+
+#### `active-shield` (Phase AD C8 — magnetic rigidity cutoff, no network)
+The **field** side of radiation shielding (complementing the mass side of `shielding-attenuation`):
+a magnetic dipole deflects charged particles whose magnetic **rigidity** (R = pc/q) falls below a
+geometry-set cutoff. Pure-math, self-validating, `query.py`-only. `core/active_shield.py`; reuses
+`μ₀`/`c` from `core/equations.py`.
+```bash
+query.py active-shield --shield-radius-m 6.371e6 --magnetic-moment-am2 8e22       # Earth cross-check ≈ 14.8 GV
+query.py active-shield --shield-radius-m 10 --field-tesla 5 --field-radius-m 10 --spectrum-characteristic-rigidity-gv 1.0
+query.py active-shield --shield-radius-m 10 --coil-current-a 1e8 --coil-radius-m 10
+```
+Core: `active_shield.compute_active_shield(shield_radius_m=None, coil_current_a=None,
+coil_radius_m=None, magnetic_moment_am2=None, field_tesla=None, field_radius_m=None,
+spectrum_characteristic_rigidity_gv=None)`. `--shield-radius-m` (r, the protected-region radius) is
+**required**. Field source — **exactly one** of `--magnetic-moment-am2`, the coil pair
+(`--coil-current-a`+`--coil-radius-m`, m = I·π·R²), or field×scale (`--field-tesla`+`--field-radius-m`,
+m = 4π·r₀³·B/μ₀). **Störmer equatorial cutoff** `R_c = (μ₀·c/16π)·m/r²` [V] — the constant
+(≈ 7.495 V·m/A·m²) reproduces Earth's ≈ 14.8 GV geomagnetic equatorial cutoff (anchored). Optional
+`--spectrum-characteristic-rigidity-gv` R_s → an **order-of-magnitude** deflected fraction
+`1 − exp(−R_c/R_s)` (monotone in R_c, ∈ [0,1)). Output: `{shield_radius_m, magnetic_moment_am2,
+field_source, coil_current_a|null, coil_radius_m|null, rigidity_cutoff_gv, rigidity_cutoff_v,
+magnetic_field_t (= μ₀·m/4πr³), spectrum_characteristic_rigidity_gv, deflected_fraction|null,
+is_order_of_magnitude:true, model_note}`. **Validation:** `shield_radius_m ≤ 0`; not exactly one
+field source (partial/none/double); non-positive moment/current/radius/field; `R_s ≤ 0` → curated
+`{"error"}` exit 1; a missing required `--shield-radius-m` / non-numeric → argparse exit 2. The dipole
+idealisation ignores real coil geometry, un-shielded polar cusps, and secondary production — a
+first-cut feasibility screen, not a transport simulation.
 
 ### Rotating-habitat comfort (Phase W — no network)
 
@@ -674,6 +709,17 @@ this tool's `--ppfd-umol` anchor — see "PAR / photosynthesis by stellar type")
 **Anchors:** 2500 kcal, DLI≈30, wheat → area ≈ 40 m²/person (measured cross-check ≈ 37 m²);
 `--artificial --led-par-efficiency 0.4` → ≈ 7.6 kW/person; `--crop chlorella` gives a smaller area.
 
+> **Phase AD (C10) — `--crops` diet mix.** Instead of a single `--crop`, pass a **calorie split**
+> `--crops "wheat:0.5, white_potato:0.3, soybean:0.2"` (fractions must sum to 1.0). Each crop supplies
+> its calorie share at its own harvest index / productivity; the result adds `per_crop_area_m2[]`
+> (`{crop, calorie_fraction, harvest_index, area_m2_per_person, area_m2_total}` per crop) and
+> `area_m2_total = Σ`. Gas exchange / transpiration sum across the mix. `--crop` and `--crops` are
+> mutually exclusive (both → exit 1). A single-entry mix (`"wheat:1.0"`) reproduces the `--crop wheat`
+> areas exactly. **Validation (exit 1):** malformed token, unknown crop in the list, non-positive
+> fraction, or fractions **not summing to 1.0** — the tool **rejects rather than normalizes** (Locked
+> C10 decision). **The protein/vitamin-target diet LP is a surfaced v2 decision** — the mix is a pure
+> calorie split (noted in `model_note`).
+
 #### `population-capacity` (X3)
 Sustainable population from resource budgets; reports the binding constraint. Any omitted
 per-person requirement is filled from a nominal X1 (BVAD water/food) / X2 (area/power) run + the
@@ -737,7 +783,7 @@ or a non-numeric value → argparse exit 2. **Anchors:** Δv30/v_e30 → MR≈2.
 β0.1/v_e0.1c → MR≈2.73 flyby / 7.44 rendezvous; β0.1/`fusion-dt` → MR≈28 flyby / ~804 rendezvous
 (the "marginal generation ship"); β0.1/photon → MR≈1.105.
 
-> **Caveat — `fusion-dt` v_e (confirm at shipment).** The request quotes an ideal D-T band of
+> **Caveat — `fusion-dt` v_e.** The request quotes an ideal D-T band of
 > ~0.05–0.09 c but its own **acceptance anchor** pins `fusion-dt` at *v_e ≈ 0.03 c* (0.05 c gives
 > only MR≈7.4, not the anchor's ≈28). The testable anchor wins: it is bundled at **0.03 c** as a
 > conservative *effective* exhaust velocity. Flagged in the per-fuel note + `model_note`; every
@@ -784,41 +830,47 @@ added to `core/equations.py`.
 > `--ion-mass-amu` **1.3** (H+He). **Ionization caveat (in every output as `ionization_note`):** the
 > real LIC is only ~22% H / ~39% He ionized and a magsail/ramscoop couples to *charged* particles
 > only, so "fully ionized" overestimates the interacting density ~4× — pass the *ion* density if
-> accuracy matters. **Coefficient provenance (confirmed 2026-07-02):** drag `C_d`=1.0 (Zubrin &
+> accuracy matters. **Coefficient provenance:** drag `C_d`=1.0 (Zubrin &
 > Andrews' explicit "unity over the magnetospheric boundary area"); standoff `k`=1.0 (simple pressure
 > balance; the compressed-to-dipole field factor is f=2 / 2.44 Chapman-Ferraro — set `--standoff-coeff`
-> for that convention); fusion `f` p-p/CNO **0.71%**, D-D **0.38%** (catalyzed cycle; the request's
-> stated 0.43% was reconciled down — flag on shipment); default `η`=0.1 (low directed-exhaust
-> fraction; ideal η=1 gives p-p `v_e`≈0.12c). Echoed in each `model_note`.
+> for that convention); fusion `f` p-p/CNO **0.71%**, D-D **0.38%** (catalyzed cycle); default `η`=0.1
+> (low directed-exhaust fraction; ideal η=1 gives p-p `v_e`≈0.12c). Echoed in each `model_note`.
 
 #### `magsail` (K1)
-Magnetic-sail braking against the ISM. `ρ = n·m̄`; magnetopause standoff
-`R_mp = [μ₀·m_dip²/(8π²·k·ρv²)]^(1/6)` (`m_dip = I·π·R_coil²` or supplied); drag
-`F = C_d·½·ρv²·π·R_mp²`. Because `R_mp ∝ v^(−1/3)`, **`F_drag ∝ v^(4/3)`** (fast initial braking, long
-tail — `drag_scaling_note`). Optional deceleration (`--vehicle-mass-t`) and a single-law
+Magnetic-sail braking against the ISM. `ρ = n·m̄·x_ion`; magnetopause standoff → drag
+`F = C_d·½·ρv²·π·R_mp²`. Optional deceleration (`--vehicle-mass-t`) and a single-law
 stopping distance/time (`--velocity-final-kms`, requires the mass) from the analytic `v^(4/3)`
-integral (coefficient frozen at v₀ — a first estimate, not a multi-leg trajectory).
+integral.
+> **Phase AD (A1) — the standoff now depends on the sail anchor.** The **coil-pair** anchor uses
+> the **exact on-axis current-loop field** `B(z)=μ₀·I·R²/(2(R²+z²)^{3/2})`, inverting the pressure
+> balance `B(R_mp)²/2μ₀ = kρv²` algebraically: `R_mp = √([μ₀·I²·R⁴/(8kρv²)]^{1/3} − R²)`. The
+> **moment-only** anchor (no geometry) keeps the **far-field dipole** `R_mp =
+> [μ₀·m_dip²/(8π²·k·ρv²)]^(1/6)`. Both are echoed — `magnetopause_radius_km` (the reported value)
+> and `magnetopause_radius_farfield_km` (the far-field cross-check); they converge once
+> `R_mp ≳ 3·R_coil`, but for a large coil the exact standoff sits **inside** the coil (deep near
+> field) and is far smaller than the far-field value. `F_drag ∝ v^(4/3)` holds only in the far
+> field. **(A2)** For constant ISM the closed-form stopping distance/time are **exact** (not an
+> estimate); a varying-ISM multi-leg optimisation is a separate consuming tool.
 ```bash
-query.py magsail --ism-density-cm3 0.1 --ion-mass-amu 1.0 --beta 0.1 \
-  --coil-radius-m 100000 --coil-current-a 100000 --vehicle-mass-t 1000
-query.py magsail --beta 0.1 --magnetic-moment-am2 3.14e15 --vehicle-mass-t 1000 --velocity-final-kms 1000
+query.py magsail --ism-density-cm3 0.1 --ion-mass-amu 1.0 --beta 0.1 --magnetic-moment-am2 3.14e15 --vehicle-mass-t 1000
+query.py magsail --beta 0.1 --coil-radius-m 100000 --coil-current-a 100000        # exact near-field standoff
+query.py magsail --beta 0.1 --magnetic-moment-am2 1e15 --ionization-fraction 0.5   # only ions couple
 ```
 Core: `ism_drag.compute_magsail(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None,
 beta=None, coil_current_a=None, coil_radius_m=None, magnetic_moment_am2=None, standoff_coeff=None,
-drag_coeff=None, vehicle_mass_t=None, velocity_final_kms=None)`. Velocity — exactly one of
-`--velocity-kms`/`--beta` (argparse mutex; `0<β<1`). Sail — exactly one of the coil pair
-(`--coil-current-a`+`--coil-radius-m`) or `--magnetic-moment-am2`. Output: `{ism_density_cm3,
-ion_mass_amu, ism_mass_density_kgm3, velocity_kms, beta, magnetic_moment_am2, coil_current_a|null,
-coil_radius_m|null, magnetopause_radius_km, ram_pressure_pa, effective_area_km2, standoff_coeff,
-drag_coeff, drag_force_n, drag_scaling_note ("F ∝ v^4/3"), deceleration_ms2|null,
-stopping_distance_ly|null, stopping_time_yr|null, near_field_warning|null, ionization_note,
-model_note}`. **Validation:** non-positive density/ion-mass/current/radius/moment/mass/k/C_d;
-`β∉(0,1)`; velocity not exactly one anchor; partial or double sail anchor; `--velocity-final-kms`
-without `--vehicle-mass-t`, ≥ the current velocity, or ≤ 0 → curated `{"error"}` exit 1; the velocity
-mutex / non-numeric → argparse exit 2. **`near_field_warning`** when `R_mp ≲ R_coil` (the far-field
-dipole assumption weakens) — a note, not an error. **Anchor:** `n0.1/m1.0/β0.1/R_coil 1e5/I 1e5` →
-R_mp ≈ 101 km, drag ≈ 2.38 kN (C_d=k=1), a ≈ 2.4×10⁻³ m/s² for 10³ t; halving β drops drag ~2^(4/3)
-≈ 2.52×.
+drag_coeff=None, vehicle_mass_t=None, velocity_final_kms=None, ionization_fraction=None)`. Velocity —
+exactly one of `--velocity-kms`/`--beta` (argparse mutex; `0<β<1`). Sail — exactly one of the coil
+pair (`--coil-current-a`+`--coil-radius-m`) or `--magnetic-moment-am2`. **Phase AD (A3)**
+`--ionization-fraction` (default 1.0, valid `(0,1]`) scales the interacting density — only charged
+particles couple. Output adds `magnetopause_radius_farfield_km` and `ionization_fraction` to the
+prior keys. **Validation:** the prior matrix **plus** `ionization_fraction ∉ (0,1]` → curated
+`{"error"}` exit 1; the velocity mutex / non-numeric → argparse exit 2. **`near_field_warning`** is
+now informational (the exact loop field is valid in the near field): set when `R_mp ≲ R_coil`, or
+when the ram pressure exceeds the peak central field (no standoff — `R_mp` clamped to `R_coil`).
+**Anchors:** the R_mp ≈ 101 km / drag ≈ 2.38 kN / a ≈ 2.4×10⁻³ m/s² headline is the **moment-only**
+(far-field) anchor (`m_dip = I·π·R²`, I=R=1e5), byte-identical to Phase AC; the **coil-pair** anchor
+with the same I/R gives the exact near-field `R_mp ≈ 13 km` (far-field cross-check ≈ 101 km);
+`--ionization-fraction 1.0` is byte-identical to Phase AC.
 
 #### `ramscoop` (K2)
 Bussard ramjet drag-vs-thrust verdict. Scoop area `A_mp = π R_mp²` (magnetopause, like K1) or a
@@ -835,7 +887,10 @@ query.py ramscoop --exhaust-velocity-kms 50000 --beta 0.05 --scoop-area-km2 1000
 ```
 Core: `ism_drag.compute_ramscoop(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None,
 beta=None, coil_current_a=None, coil_radius_m=None, scoop_area_km2=None, magnetic_moment_am2=None,
-fuel=None, fusion_efficiency=None, exhaust_velocity_kms=None, standoff_coeff=None, drag_coeff=None)`.
+fuel=None, fusion_efficiency=None, exhaust_velocity_kms=None, standoff_coeff=None, drag_coeff=None,
+ionization_fraction=None)`. **Phase AD (A3)** `--ionization-fraction` (default 1.0) scales the
+interacting density (a fixed `--scoop-area-km2` → drag & collected mass flux both ∝ ρ, so
+`--ionization-fraction 0.5` halves both; echoed as `ionization_fraction`).
 Velocity — exactly one of `--velocity-kms`/`--beta`. Scoop — exactly one of the coil pair /
 `--magnetic-moment-am2` / `--scoop-area-km2`. Exhaust — exactly one of `--fuel {pp,cno,dd}`
 (+ optional `--fusion-efficiency`, default 0.1) or `--exhaust-velocity-kms`. Output: `{velocity_kms,
@@ -843,12 +898,74 @@ beta, ism_density_cm3, ion_mass_amu, magnetopause_radius_km, magnetic_moment_am2
 collected_mass_flux_kgs, fuel, fusion_yield_fraction, fusion_efficiency, exhaust_velocity_kms,
 exhaust_beta, standoff_coeff, drag_coeff, reaction_thrust_n, collection_drag_n, magnetic_drag_n,
 net_force_n, verdict ("drive"|"brake"), crossover_velocity_kms, ionization_note, model_note}`.
-**Validation:** non-positive density/ion-mass/area/v_e/k/C_d; `β∉(0,1)`; `η∉(0,1]`; velocity/scoop/
-exhaust not exactly one anchor; scoop area + field both; `--fusion-efficiency` with
-`--exhaust-velocity-kms`; unknown `--fuel` → curated `{"error"}` exit 1; the velocity mutex, a bad
-`--fuel` choice, or a non-numeric value → argparse exit 2. **Anchor:** `--fuel pp` at β0.1 →
+**Validation:** non-positive density/ion-mass/area/v_e/k/C_d; `β∉(0,1)`; `η∉(0,1]`;
+`ionization_fraction ∉ (0,1]`; velocity/scoop/exhaust not exactly one anchor; scoop area + field
+both; `--fusion-efficiency` with `--exhaust-velocity-kms`; unknown `--fuel` → curated `{"error"}`
+exit 1; the velocity mutex, a bad `--fuel` choice, or a non-numeric value → argparse exit 2. **Anchor:** `--fuel pp` at β0.1 →
 `v_e`≈11,300 km/s (η=0.1) → **brake**; the *ideal* η=1 case has `v_e`≈0.12c > v (reaction > collection)
 yet magnetic drag still flips it to **brake** (the Zubrin & Andrews result); low β + high η → **drive**.
+
+### Momentum / impact tools (Phase AD — pure math, no network)
+
+Two `query.py`-only calculators added in Phase AD Phase 2: a momentum-beam drive (`pellet-stream`,
+extending `core/propulsion.py` — the mass analog of `ramscoop`) and hypervelocity grain-impact
+energetics (`dust-impact`, new `core/dust_impact.py`). Both pure-math, self-validating (curated
+`{"error"}` exit 1; argparse exit 2).
+
+#### `pellet-stream` (C2)
+Pellet-stream (momentum-beam) drive: a station fires pellets at stream velocity `v_s`; the closing
+velocity on a vehicle at `v` is `u = v_s − v`; thrust `F = g·ṁ·u` (`g = 2` reflect / `1` absorb),
+delivered power `½·ṁ·u²`. `verdict = "drive"` while `v_s > v`, else `"no-thrust"` (crossover at
+`v = v_s`) — the mass analog of the `ramscoop` drive/brake crossover.
+```bash
+query.py pellet-stream --stream-velocity-kms 30000 --mass-flow-rate-kgs 1 --beta 0.05   # F ≈ 3.0e7 N, drive
+query.py pellet-stream --stream-velocity-kms 30000 --pellet-mass-kg 0.5 --pellet-rate-hz 2 --velocity-kms 30000  # no-thrust
+```
+Core: `propulsion.compute_pellet_stream(stream_velocity_kms=None, mass_flow_rate_kgs=None,
+pellet_mass_kg=None, pellet_rate_hz=None, velocity_kms=None, beta=None, coupling="reflect",
+vehicle_mass_t=None)`. Mass-flow anchor — exactly one of `--mass-flow-rate-kgs` or
+(`--pellet-mass-kg` + `--pellet-rate-hz`); the two are an argparse mutex (both → exit 2). Velocity —
+exactly one of `--velocity-kms` (admits `0`) / `--beta` (`0<β<1`; argparse mutex). Output:
+`{stream_velocity_kms, vehicle_velocity_kms, beta, relative_velocity_kms, mass_flow_rate_kgs,
+coupling, thrust_n, delivered_power_w, verdict, crossover_velocity_kms, acceleration_ms2|null,
+model_note}`. **Validation:** `stream_velocity_kms ≤ 0`; mass-flow anchor not exactly one (partial
+pellet pair); velocity anchor not exactly one; `β∉(0,1)`; `vehicle_mass_t ≤ 0` → curated `{"error"}`
+exit 1. The velocity mutex, mass-flow mutex, a bad `--coupling` choice, a missing required
+`--stream-velocity-kms`, or a non-numeric value → argparse exit 2. `verdict:"no-thrust"` (at/above
+crossover) is a **clean-negative** result (exit 0), not an error. **Anchor:** `v_s=30000, ṁ=1,
+β=0.05, reflect` → `u≈15010 km/s`, `F≈3.0×10⁷ N`, drive; `absorb` = half the thrust.
+
+#### `dust-impact` (C3)
+Hypervelocity dust-grain impact energetics: mass `m = (4/3)π r³ ρ` (or explicit); kinetic energy
+`½mv²` (Newtonian) → `(γ−1)mc²` once `β > 0.1` (the `relativistic` flag); momentum `mv → γmv`;
+TNT-equivalent `E / 4.184e6` kg; and, over a supplied ISM column, cumulative impacts `N = n·A·L`
+and energy fluence `N·E/A`.
+> **Penetration depth is deliberately NOT computed** (it needs material-specific stopping data) —
+> `penetration_handoff_note` directs to the Packet-13 `shielding-attenuation` (mass/CSDA) and
+> `radiator-area` (thermal) tools. This sizes the incident energy/momentum only.
+```bash
+query.py dust-impact --grain-radius-um 1 --grain-density-kgm3 1000 --beta 0.1   # E ≈ 1.88 J, ~0.45 mg TNT
+query.py dust-impact --grain-radius-um 1 --grain-density-kgm3 1000 --beta 0.2 --dust-density-m3 1e-6 --frontal-area-m2 100 --path-length-ly 4
+```
+Core: `dust_impact.compute_dust_impact(grain_radius_um=None, grain_density_kgm3=None,
+grain_mass_kg=None, velocity_kms=None, beta=None, dust_density_m3=None, frontal_area_m2=None,
+path_length_ly=None)`. Grain anchor — (`--grain-radius-um` + `--grain-density-kgm3`) or
+`--grain-mass-kg` (radius/mass are an argparse mutex; radius without density → exit 1). Velocity —
+exactly one of `--velocity-kms`/`--beta` (argparse mutex; `0<β<1`). Cumulative-fluence set — all
+three of `--dust-density-m3` + `--frontal-area-m2` + `--path-length-ly`, or none (partial → exit 1);
+both cumulative fields are `null` when omitted. Output: `{grain_mass_kg, grain_radius_um,
+grain_density_kgm3, velocity_kms, beta, relativistic, lorentz_factor, impact_energy_j,
+impact_energy_tnt_kg, momentum_kgms, dust_density_m3, frontal_area_m2, path_length_ly,
+impacts_total|null, energy_fluence_j_m2|null, penetration_handoff_note, model_note}`.
+**Validation:** grain anchor not exactly one; non-positive radius/density/mass; velocity anchor not
+exactly one; `β∉(0,1)`; a partial or non-positive cumulative set → curated `{"error"}` exit 1; the
+grain/velocity mutexes and non-numeric values → argparse exit 2. **Build note (verified
+2026-07-03):** a 1 µm / 1000 kg·m⁻³ grain is `m ≈ 4.19×10⁻¹⁵ kg`; at β 0.1 the energy is `≈1.88 J`
+(≈1.9×10⁰ J) and the TNT-equivalent `≈0.45 mg` (1 kg TNT ≡ 4.184 MJ). *This corrects two
+transcription slips in `PHASE_AD_PLAN.md`:* the plan's "1.9×10² J / 40 mg" figures were computed at
+`v = c`, not β 0.1; and its `E/4.184e12` divisor yields **kilotons**, not kg (the kg divisor is
+`4.184×10⁶ J`). The relativistic auto-switch is `β > 0.1` (the plan prose said ~0.01, but its own
+acceptance cases require `false@β0.05` / `true@β0.2`).
 
 ### Megastructure scale (Phase Z — pure math + bundled material/body tables, no network)
 
@@ -928,6 +1045,30 @@ luminosity_lsun, areal_mass_kgm2, model_note}`. **Validation:** `L≤0`; `fracti
 or missing `--fraction`/`--orbit-au` → argparse exit 2. **Anchor:** Sun, f 0.01, 1 AU → P ≈ 3.828×10²⁴
 W, area ≈ 2.81×10²¹ m², incident flux ≈ 1361 W/m² (the solar constant).
 
+#### `orbital-ring` (Phase AD C4 — no network)
+Orbital-ring rotor velocity & support balance: a stationary ring/sheath at altitude is held up
+against gravity by a **faster-than-orbital rotor** magnetically coupled inside it. Local gravity
+`g(r) = g₀·(R/r)²` (r = R + altitude); orbital velocity `v_orb = √(g·r)`; the rotor's excess
+centrifugal force supports the ring — `λ_rotor·(v_rotor²/r − g) = λ_ring·g` ⟹
+`v_rotor = √(r·g·(1 + λ_ring/λ_rotor))` (`support_ratio = λ_ring/λ_rotor`; equal masses →
+`v_rotor = √2·v_orb`). Uses the bundled `_BODIES` `g₀`/`R_km` (no table edit — Locked decision C4-7).
+```bash
+query.py orbital-ring --body earth --altitude-km 300 --ring-mass-per-length-kgm 100   # v_orb≈7.7, v_rotor≈10.9 km/s
+query.py orbital-ring --surface-gravity-ms2 9.81 --body-radius-km 6371 --altitude-km 300 --ring-mass-per-length-kgm 100
+```
+Core: `megastructure.compute_orbital_ring(body=None, surface_gravity_ms2=None, body_radius_km=None,
+altitude_km=None, ring_mass_per_length_kgm=None, rotor_mass_per_length_kgm=None)`. Body — exactly one
+of the bundled `--body {earth,mars,moon,ceres}` or explicit `--surface-gravity-ms2` +
+`--body-radius-km`. `--rotor-mass-per-length-kgm` defaults to `--ring-mass-per-length-kgm`. Output:
+`{body, surface_gravity_ms2, body_radius_km, altitude_km, orbital_radius_km, local_gravity_ms2,
+orbital_velocity_kms, rotor_velocity_kms, rotor_velocity_over_orbital, ring_mass_per_length_kgm,
+rotor_mass_per_length_kgm, support_ratio, rotor_ke_per_length_jm, model_note}`. **Validation:** body
++ explicit both / a partial explicit pair / no body anchor; unknown `--body`; non-positive
+g/R/altitude/ring-λ/rotor-λ → curated `{"error"}` exit 1; a bad `--body` choice, missing required
+`--altitude-km`/`--ring-mass-per-length-kgm`, or a non-numeric value → argparse exit 2. **Anchor:**
+Earth (g₀=9.81, R=6371 km), alt 300 km → r=6671 km, g≈8.95 m/s², `v_orb≈7.73 km/s`,
+`v_rotor≈10.93 km/s`, `ratio=√2≈1.414`; doubling λ_ring (rotor fixed) raises `v_rotor` by √1.5≈1.22×.
+
 ### PAR / photosynthesis by stellar type (Phase AA — pure math, network only on `--star`)
 
 One `query.py`-only, pure-math, self-validating calculator for the sibling repo's Packet 18
@@ -980,16 +1121,33 @@ luminosity_lsun=None, distance_au=None, par_band_nm=(400.0, 700.0))`.
   (Phase X)"), model_note}`. **The `ppfd_umol_m2_s` value is what feeds `bioregen-area`'s
   `--ppfd-umol` anchor** — that is the whole synergy (`bioregen-area` treats PAR/PPFD as an input;
   `par-flux` derives it from the star).
-- **Anchors:** Sun (`--teff-k 5772`) → f_PAR ≈ 0.366 (blackbody; real solar ≈ 0.40–0.45), and at
+- **Anchors:** Sun (`--teff-k 5772`) → f_PAR ≈ 0.366 (blackbody; real solar ≈ 0.39 — see C1), and at
   `--insolation-wm2 1361` → PAR ≈ 499 W/m², PPFD ≈ 2277 µmol·m⁻²·s⁻¹, deficit 1.0; late-M
   (`--teff-k 2700`) → f_PAR ≈ 0.050, `par_deficit_vs_g2` ≈ 7.3.
+
+> **Phase AD (C1) — `--sed {blackbody,real}` (default `blackbody`).** `--sed real` swaps the Planck
+> f_PAR for a bundled **BT-Settl (CIFIST2011)** table (`core/par_flux_tables.py`; `_REAL_SED_FPAR`,
+> log g 4.5, [M/H] 0, `f_PAR = ∫400–700nm F_λ / ∫F_λ` computed at build from SVO Theoretical Spectra
+> — Allard+ 2012 / Baraffe+ 2015), linear-interpolated in Teff. It captures the **M-dwarf TiO/VO/H₂O
+> line blanketing** a blackbody misses, so a real red dwarf's f_PAR is far **below** blackbody
+> (**3000 K real ≈ 0.023 vs blackbody ≈ 0.081** — a *larger*, more realistic deficit), while a
+> Sun-like star's real f_PAR (**≈ 0.389**) sits just **above** blackbody (≈ 0.366) and matches the
+> measured ASTM-E490 solar ~0.39. *(This corrects the plan's Sun estimate — the true value is ~0.39,
+> not 0.40–0.45.)* PPFD / band-mean photon energy still use the Planck band shape at Teff (documented
+> approximation — the table carries only the energy fraction). **The table is band-fixed at 400–700 nm
+> and covers 2600–7000 K:** `--sed real` with a non-default `--par-band-nm` **errors** (→ use
+> `--sed blackbody`), as does a Teff off that grid. `sed_model` echoes the choice.
+> **Default note (deviation from PHASE_AD_PLAN.md, user decision 2026-07-03):** the plan specified
+> `--sed real` as the default, but that would change the existing `par-flux` output for the consumer,
+> so the default stays **`blackbody`** (backward-compatible) and `real` is opt-in.
 
 > **Validation (self-validating — Phase-H/P):** curated `{"error"}` exit 1 for `teff_k ≤ 0`;
 > `insolation_wm2 ≤ 0`; `luminosity_lsun ≤ 0` or `distance_au ≤ 0`; **not exactly one** Teff source
 > **or** insolation source; a PAR band with `lo ≥ hi` or ≤ 0; an unresolvable `--spectral-type`; a
-> SIMBAD failure on `--star` (returned immediately). Argparse exit 2 for a non-numeric value or a
-> malformed `--par-band-nm` (not two numbers). *(The "exactly one Teff / one insolation source" rules
-> are **core** checks → exit 1, like `spin-comfort`'s anchors — not the argparse path.)*
+> SIMBAD failure on `--star` (returned immediately); **(C1)** `--sed real` with a non-default
+> `--par-band-nm` or a Teff off the 2600–7000 K grid. Argparse exit 2 for a non-numeric value, a
+> malformed `--par-band-nm` (not two numbers), or a bad `--sed` choice. *(The "exactly one Teff / one
+> insolation source" rules are **core** checks → exit 1, like `spin-comfort`'s anchors.)*
 
 ### Planetary energy balance / terraforming (Phase AB — pure math, no network)
 
@@ -1007,10 +1165,14 @@ Phase-AA `par-flux`. Complements `atmosphere-retention` (Jeans escape) and `habi
 
 #### `equilibrium-temp` (J1)
 Planetary equilibrium temperature + a greenhouse surface temperature. `T_eq = [S(1−A)/(4σ)]^¼`;
-surface via **exactly one forcing form** — additive offset `T_s = T_eq + ΔT`, grey-atmosphere
+surface via **at most one forcing form** — additive offset `T_s = T_eq + ΔT`, grey-atmosphere
 `T_s = T_eq·(1 + ¾τ)^¼`, or the **inverse** (`--target-surface-k` → the ΔT and τ required to reach it).
+**Phase AD (B) — with NO forcing form the result is the bare airless equilibrium**
+(`t_surface_k = t_eq_k`, `regime = "airless"`); a `regime` field tags every result
+(`airless`/`offset`/`grey`/`inverse`).
 ```bash
-query.py equilibrium-temp --insolation-wm2 1361 --albedo 0.3 --greenhouse-delta-k 33   # Earth: 255→288 K
+query.py equilibrium-temp --insolation-wm2 1361 --albedo 0.3                            # airless: T_s = T_eq ≈ 254.6 K
+query.py equilibrium-temp --insolation-wm2 1361 --albedo 0.3 --greenhouse-delta-k 33    # Earth: 255→288 K
 query.py equilibrium-temp --insolation-wm2 589 --albedo 0.25 --greenhouse-delta-k 0     # Mars: T_eq≈210 K
 query.py equilibrium-temp --luminosity-lsun 1 --distance-au 1 --target-surface-k 288    # inverse → required forcing
 ```
@@ -1019,14 +1181,14 @@ distance_au=None, albedo=0.3, greenhouse_delta_k=None, optical_depth=None, targe
 Insolation — exactly one source (`--insolation-wm2` **or** `--luminosity-lsun` + `--distance-au`,
 → 1 L☉ @ 1 AU ≈ 1361 W/m²). `--albedo` default 0.3, valid `[0, 1)`. Output: `{insolation_wm2 (W/m²),
 albedo, t_eq_k (K), greenhouse_delta_k (K)|null, optical_depth|null, t_surface_k (K), required_forcing
-|null, model_note}` — the given forcing is echoed and the other is `null`; **`required_forcing`**
+|null, regime, model_note}` — the given forcing is echoed and the other is `null`; **`required_forcing`**
 (only for the inverse `--target-surface-k`) is `{greenhouse_delta_k (K), optical_depth,
 cooling_required (bool)}` (both values go **negative** when the target is below the bare equilibrium,
 flagging that *cooling*, not greenhouse warming, is needed). **Validation:** insolation ≤ 0 (or
-L/distance ≤ 0); albedo ∉ [0, 1); **not exactly one** insolation source **or** forcing form;
-`optical_depth < 0`; `target_surface_k ≤ 0` → curated `{"error"}` exit 1. **Anchors:** Earth (S1361,
-A0.3) → T_eq ≈ 255 K, +ΔT 33 → 288 K (τ ≈ 0.85 reproduces the same 288 K); Mars (S589, A0.25) →
-T_eq ≈ 210 K.
+L/distance ≤ 0); albedo ∉ [0, 1); **more than one** forcing form (0 is now valid — the airless fix);
+not exactly one insolation source; `optical_depth < 0`; `target_surface_k ≤ 0` → curated `{"error"}`
+exit 1. **Anchors:** Earth (S1361, A0.3) → T_eq ≈ 255 K (airless T_s = T_eq), +ΔT 33 → 288 K (τ ≈ 0.85
+reproduces the same 288 K); Mars (S589, A0.25) → T_eq ≈ 210 K.
 
 #### `insolation-shift` (J2)
 Orbital mirror (warm) / shade (cool) area to change the **sphere-averaged** absorbed flux by ΔS:
@@ -1066,10 +1228,36 @@ choice / non-numeric value → argparse exit 2. **Anchor:** Mars 1 bar (R 3390 k
 m ≈ 3.9×10¹⁸ kg (~0.76 Earth atmospheres); the g derived from `--planet-mass-earth 0.107` matches
 the explicit 3.71.
 
+#### `volatile-delivery` (Phase AD C5 — no network)
+The **supply** side of terraforming an atmosphere by redirecting icy bodies — the mass/energy
+complement to `atmosphere-mass`'s demand side. Delivered volatile mass `m_vol = f·M`; optional
+redirect burn mass ratio (classical Tsiolkovsky `MR = exp(Δv/v_e)` via `rocket-equation`'s bundled
+fuel presets); impact energy `½·M·v_impact²` (+ TNT-equivalent `E/4.184e6` kg); and bodies needed
+`N = M_atm_target / m_vol`.
+```bash
+query.py volatile-delivery --body-mass-kg 1e15 --volatile-fraction 0.5 --impact-velocity-kms 20 --target-atmosphere-mass-kg 5.15e18
+query.py volatile-delivery --body-mass-kg 1e15 --delta-v-kms 1 --fuel fusion-dt   # redirect mass ratio
+```
+Core: `volatile_delivery.compute_volatile_delivery(body_mass_kg, volatile_fraction=0.5,
+delta_v_kms=None, impact_velocity_kms=None, target_atmosphere_mass_kg=None, fuel=None,
+exhaust_velocity_kms=None)`. Each add-on's outputs are `null` when its input is omitted:
+`--delta-v-kms` (+ exactly one of `--fuel`/`--exhaust-velocity-kms`) → `redirect_mass_ratio`;
+`--impact-velocity-kms` → `impact_energy_j`/`impact_energy_tnt_kg`; `--target-atmosphere-mass-kg` →
+`bodies_needed`. Output: `{body_mass_kg, volatile_fraction, delivered_volatile_mass_kg, delta_v_kms,
+fuel, exhaust_velocity_kms, redirect_mass_ratio, impact_velocity_kms, impact_energy_j,
+impact_energy_tnt_kg, target_atmosphere_mass_kg, bodies_needed, model_note}`. **Validation:**
+`body_mass_kg ≤ 0`; `volatile_fraction ∉ (0,1]`; `delta_v_kms ≤ 0`; `impact_velocity_kms ≤ 0`;
+`target_atmosphere_mass_kg ≤ 0`; `--delta-v-kms` with zero or both exhaust anchors; `--fuel`/
+`--exhaust-velocity-kms` **without** `--delta-v-kms`; unknown `--fuel` → curated `{"error"}` exit 1;
+a bad `--fuel` choice, missing required `--body-mass-kg`, or a non-numeric value → argparse exit 2.
+**Anchor:** `M=1e15 kg, f=0.5, v_impact=20 km/s` → delivered `5×10¹⁴ kg`, `E≈2×10²³ J`; target
+`5.15×10¹⁸ kg` → `bodies_needed≈10 300`; `Δv=1 km/s` with `fusion-dt` → a modest `MR≈1.0001`.
+
 > **Validation (self-validating — Phase-H/P):** all three follow the Phase-H/P contract — the §range
 > and source-count checks return a curated `{"error"}` (exit 1); an unknown `--species` choice or any
-> non-numeric value is argparse exit 2. *(The "exactly one insolation / forcing form / gravity /
-> pressure-or-mass" rules are **core** checks → exit 1.)*
+> non-numeric value is argparse exit 2. *(The "exactly one insolation / gravity / pressure-or-mass"
+> and the "at most one forcing form" [Phase AD B — zero forcing → airless] rules are **core**
+> checks → exit 1.)*
 
 ### Solvent zones (Phase P — no network)
 
@@ -1288,9 +1476,8 @@ is the **only network-bound** entry (live JPL Horizons).
 > - **`travel-time-solar`** is the exception: it **does** return curated `{"error": str}` dicts (ambiguous Horizons
 >   name — with a disambiguation hint — same-object, and network failures), **exit 1**.
 >
-> This was a deliberate decision (honor "no `core/` changes"; the raw-exception path is the already-blessed behavior —
-> see `tests/test_equations.py::test_bad_input_raises`). Tests: `tests/test_query_phase_n.py` (offline subprocess
-> contracts + the mocked `travel-time-solar` wiring; live Horizons round-trip gated on reachability).
+> This is intentional (the raw-exception path is the pre-existing behavior of these legacy functions); key on
+> `"error"` + exit code, never on the message text.
 
 #### `habitable-zone-sma`
 Kopparapu HZ boundaries **plus** the object's S_eff at its orbit and a plain-language HZ-membership verdict (the opt-40 calculation). Complements `habitable-zone`, which lacks the per-object Seff/verdict.
@@ -1884,9 +2071,26 @@ An out-of-coverage leg integrates only its covered portion and is flagged `fully
 
 > **Validation:** `--weight dust` requires the dust extra + a fetched map (else the same curated `{"error"}`
 > exit 1 as `dust-sightline`); a bad `--weight`/`--map` is argparse exit 2; the underlying planner's own
-> validation (positive `--max-jump`, ≥2 stars, resolvable names) is unchanged. **Deferred (not in this
-> delivery):** the `blend` weight, `--max-leg-av` pruning, the `jump-network` cost-budget, and
-> `farthest-first` dust-weighting.
+> validation (positive `--max-jump`, ≥2 stars, resolvable names) is unchanged.
+
+##### `jump-route --weight blend` (Phase AD C11)
+
+**`jump-route` only** (the `_grid_search` planner) gains a third weight, **`--weight blend`**, with
+**`--alpha`** (distance weight) and **`--beta`** (A_V weight): each edge costs `α·distance_ly + β·A_V`,
+fed to the same Dijkstra. `--beta 0` reproduces the `--weight distance` route; `--alpha 0` reproduces the
+`--weight dust` route; an intermediate blend is a compromise (raising `--beta` flips the route from the
+distance corridor toward the least-dust detour). Both default to 1.0 when omitted under `--weight blend`.
+```bash
+query.py jump-route --origin Sol --destination Procyon --max-jump 9 --weight blend --alpha 1 --beta 50
+```
+Core: `dust_routing.compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distance",
+alpha=1.0, beta=1.0, map_sel="auto", dust_step_pc=5.0)`. Output mirrors the dust route's shape plus
+`weight:"blend"`, echoed `alpha`/`beta`, and `total_blend_cost` (= `α·total_ly + β·total_av`).
+**Validation:** negative `--alpha`/`--beta`, or both 0, → curated `{"error"}` exit 1; `--alpha`/`--beta`
+supplied **without** `--weight blend` → exit 1 (handler guard); the dust preflight (missing extra /
+unfetched map) applies as for `--weight dust`; a bad `--weight` choice is argparse exit 2. **Reachability
+stays geometric.** The other four planners keep `--weight {distance,dust}`. **Still deferred:**
+`--max-leg-av` pruning, the `jump-network` cost-budget, and `farthest-first` dust-weighting.
 
 #### `compare-stars`
 Side-by-side comparison of **2–4 stars** in one structured result (Phase L1). Live network (SIMBAD + an optional NASA

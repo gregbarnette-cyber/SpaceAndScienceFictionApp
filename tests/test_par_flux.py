@@ -150,5 +150,88 @@ class DeterminismTest(unittest.TestCase):
         self.assertEqual(a, b)
 
 
+class C1RealSedTest(unittest.TestCase):
+    """Phase AD (C1) — the --sed real BT-Settl f_PAR table path."""
+
+    def test_default_is_blackbody(self):
+        # bare call (no sed) must stay blackbody — backward-compatible (user decision)
+        d = par_flux.compute_par_flux(teff_k=3000, insolation_wm2=1361)
+        self.assertTrue(d["sed_model"].startswith("blackbody"))
+        d2 = par_flux.compute_par_flux(teff_k=3000, insolation_wm2=1361, sed="blackbody")
+        self.assertEqual(d, d2)                       # explicit blackbody == default
+
+    def test_m_dwarf_real_below_blackbody(self):
+        bb = par_flux.compute_par_flux(teff_k=3000, insolation_wm2=1361, sed="blackbody")
+        rl = par_flux.compute_par_flux(teff_k=3000, insolation_wm2=1361, sed="real")
+        self.assertLess(rl["par_fraction"], 0.081)    # real 3000 K well below blackbody ~0.081
+        self.assertLess(rl["par_fraction"], bb["par_fraction"])
+        self.assertAlmostEqual(rl["par_fraction"], 0.0228, places=4)   # table node
+        self.assertGreater(rl["par_deficit_vs_g2"], bb["par_deficit_vs_g2"])  # larger deficit
+        self.assertEqual(rl["sed_model"], par_flux._SED_MODEL_REAL)
+        self.assertIn("BT-Settl", rl["model_note"])
+
+    def test_sun_real_above_blackbody(self):
+        bb = par_flux.compute_par_flux(teff_k=5772, insolation_wm2=1361, sed="blackbody")
+        rl = par_flux.compute_par_flux(teff_k=5772, insolation_wm2=1361, sed="real")
+        # real solar f_PAR ≈ 0.39 (matches ASTM ~0.39; plan's 0.40–0.45 was slightly high),
+        # sits just above the blackbody ~0.37, and the G2 self-deficit is 1.0
+        self.assertAlmostEqual(rl["par_fraction"], 0.389, delta=0.01)
+        self.assertGreater(rl["par_fraction"], bb["par_fraction"])
+        self.assertAlmostEqual(rl["par_deficit_vs_g2"], 1.0, places=6)
+
+    def test_real_interpolates_between_nodes(self):
+        import core.par_flux_tables as t
+        # a Teff between grid nodes interpolates linearly
+        lo, hi = 4000, 4400
+        mid = par_flux.compute_par_flux(teff_k=4200, insolation_wm2=1361, sed="real")
+        expect = (t._REAL_SED_FPAR[lo] + t._REAL_SED_FPAR[hi]) / 2
+        self.assertAlmostEqual(mid["par_fraction"], expect, places=6)
+
+    def test_band_fixed_and_out_of_range(self):
+        # non-default band with --sed real → error (band-fixed table)
+        self.assertIn("error", par_flux.compute_par_flux(
+            teff_k=3000, insolation_wm2=1361, sed="real", par_band_nm=(400.0, 750.0)))
+        # off the grid → error (directs to blackbody)
+        self.assertIn("error", par_flux.compute_par_flux(
+            teff_k=2000, insolation_wm2=1361, sed="real"))
+        self.assertIn("error", par_flux.compute_par_flux(
+            teff_k=8000, insolation_wm2=1361, sed="real"))
+        # default band with real is fine
+        self.assertNotIn("error", par_flux.compute_par_flux(
+            teff_k=3000, insolation_wm2=1361, sed="real"))
+
+    def test_bad_sed_value(self):
+        self.assertIn("error", par_flux.compute_par_flux(
+            teff_k=3000, insolation_wm2=1361, sed="bogus"))
+
+    def test_determinism(self):
+        kw = dict(teff_k=4200, insolation_wm2=1361, sed="real")
+        self.assertEqual(par_flux.compute_par_flux(**kw), par_flux.compute_par_flux(**kw))
+
+
+class C1TableIntegrityTest(unittest.TestCase):
+    """Golden pin on the bundled BT-Settl f_PAR table (drift guard)."""
+
+    def test_table_golden_and_monotone(self):
+        import core.par_flux_tables as t
+        # monotonic increasing with Teff (redder → less visible-band flux)
+        teffs = sorted(t._REAL_SED_FPAR)
+        vals = [t._REAL_SED_FPAR[k] for k in teffs]
+        self.assertEqual(vals, sorted(vals))
+        # a few pinned nodes (computed from BT-Settl at build)
+        self.assertAlmostEqual(t._REAL_SED_FPAR[2600], 0.0044, places=4)
+        self.assertAlmostEqual(t._REAL_SED_FPAR[3000], 0.0228, places=4)
+        self.assertAlmostEqual(t._REAL_SED_FPAR[5800], 0.3910, places=4)
+        self.assertAlmostEqual(t._REAL_SED_FPAR[7000], 0.4436, places=4)
+        self.assertEqual((t._REAL_TEFF_MIN, t._REAL_TEFF_MAX), (2600, 7000))
+        self.assertEqual(t._REAL_BAND_NM, (400.0, 700.0))
+
+    def test_real_f_par_bounds(self):
+        import core.par_flux_tables as t
+        self.assertIsNone(t.real_f_par(2000))
+        self.assertIsNone(t.real_f_par(9000))
+        self.assertEqual(t.real_f_par(3000), 0.0228)   # exact node
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -92,7 +92,49 @@ def compute_life_support(crew=1, days=1,
 
 # ── X2 ────────────────────────────────────────────────────────────────────────
 
-def compute_bioregen_area(kcal_per_day=None, crew=1, crop=None,
+_CROP_MIX_LP_NOTE = (
+    "Diet mix (--crops): grow area is summed per crop at each crop's harvest index / "
+    "productivity for its calorie share; total = Σ per-crop areas. This is a pure CALORIE "
+    "split — optimising the mix to hit protein / vitamin / macronutrient targets (a "
+    "linear-programming diet problem) is a surfaced v2 decision, not computed here."
+)
+
+
+def _parse_crop_mix(crops_str, crop_table):
+    """Parse ``"wheat:0.5, potato:0.3"`` → ``[(name, frac), …]`` or ``{"error": str}``.
+
+    Fractions must be > 0 and sum to 1.0 (the tool **rejects** a non-summing mix rather than
+    silently normalizing — Locked C10 decision).
+    """
+    items = []
+    for tok in str(crops_str).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if ":" not in tok:
+            return {"error": f"Malformed --crops token '{tok}' (expected name:fraction)."}
+        name, _, frac_s = tok.partition(":")
+        name = name.strip()
+        try:
+            frac = float(frac_s.strip())
+        except ValueError:
+            return {"error": f"Malformed fraction in --crops token '{tok}'."}
+        if name not in crop_table:
+            return {"error": f"Unknown crop '{name}' in --crops. Choose from: "
+                             f"{', '.join(sorted(crop_table))}."}
+        if frac <= 0:
+            return {"error": f"--crops calorie fraction for '{name}' must be > 0 (got {frac:g})."}
+        items.append((name, frac))
+    if not items:
+        return {"error": "--crops is empty; provide at least one crop:fraction."}
+    total = sum(f for _, f in items)
+    if abs(total - 1.0) > 1e-6:
+        return {"error": f"--crops calorie fractions must sum to 1.0 (got {total:g}); the tool "
+                         f"rejects rather than normalizes — adjust the mix."}
+    return items
+
+
+def compute_bioregen_area(kcal_per_day=None, crew=1, crop=None, crops=None,
                           ppfd_umol=None, photoperiod_h=16.0, dli_mol=None, par_wm2=None,
                           photo_efficiency=None, harvest_index=None,
                           artificial=False, led_par_efficiency=None, f_edible_energy=1.0):
@@ -122,22 +164,30 @@ def compute_bioregen_area(kcal_per_day=None, crew=1, crop=None,
     if not (0.0 < f_edible_energy <= 1.0):
         return {"error": "f_edible_energy must be in (0, 1]."}
 
-    # ── crop resolution ──
-    crops = _t.get_crops()
+    # ── crop resolution: single --crop, or diet mix --crops (C10) ──
+    crop_table = _t.get_crops()
+    mix = None
+    if crops is not None:
+        if crop is not None:
+            return {"error": "Provide either --crop (single) or --crops (a diet mix), not both."}
+        mix = _parse_crop_mix(crops, crop_table)
+        if isinstance(mix, dict):        # {"error": ...}
+            return mix
+
     crop_row = None
     if crop is not None:
-        if crop not in crops:
-            return {"error": f"Unknown crop '{crop}'. Choose one of: {', '.join(sorted(crops))}."}
-        crop_row = crops[crop]
+        if crop not in crop_table:
+            return {"error": f"Unknown crop '{crop}'. Choose one of: {', '.join(sorted(crop_table))}."}
+        crop_row = crop_table[crop]
     is_algae = crop_row is not None and crop_row["source_tag"] == "algae"
 
-    # ── harvest index (energy-balance path needs one) ──
+    # ── harvest index (energy-balance path needs one; single-crop path only) ──
     hi = harvest_index
     if hi is None and crop_row is not None and crop_row["hi"] is not None:
         hi = crop_row["hi"]
     if hi is not None and not (0.0 < hi <= 1.0):
         return {"error": "harvest_index must be in (0, 1]."}
-    if not is_algae and hi is None:
+    if mix is None and not is_algae and hi is None:
         return {"error": "harvest_index is required when no BVAD crop is given (energy-balance path)."}
 
     # ── light anchor (exactly one) → DLI [mol/m²·d] ──
@@ -166,7 +216,43 @@ def compute_bioregen_area(kcal_per_day=None, crew=1, crop=None,
     # ── area (per person, then × crew) ──
     demand_kj = kcal * _KCAL_TO_KJ
     area_measured = None
-    if is_algae:
+    per_crop = None
+    gas = transpiration = None
+    if mix is not None:
+        # diet mix: each crop supplies its calorie fraction at its own HI / productivity;
+        # areas + gas + transpiration sum across the mix.
+        per_crop = []
+        area_pp = 0.0
+        gas_o2 = gas_co2 = transp = 0.0
+        any_transp = False
+        for name, frac in mix:
+            row = crop_table[name]
+            share_kj = frac * demand_kj
+            if row["source_tag"] == "algae":
+                edible_kj_m2 = row["edible_dry_g_m2_d"] * row["energy_density_kcal_g"] * _KCAL_TO_KJ
+                a_pp = share_kj / edible_kj_m2
+                hi_c = None
+            else:
+                hi_c = row["hi"]
+                if hi_c is None:
+                    return {"error": f"Crop '{name}' has no harvest index for the energy-balance path."}
+                a_pp = share_kj / (par_energy_kj_m2 * eta * hi_c * f_edible_energy)
+            a_total = a_pp * crew
+            area_pp += a_pp
+            gas_o2 += row["o2_g_m2_d"] * a_total / 1000.0
+            gas_co2 += row["co2_g_m2_d"] * a_total / 1000.0
+            wu = row["water_uptake_kg_m2_d"]
+            if wu is not None:
+                transp += wu * a_total
+                any_transp = True
+            per_crop.append({
+                "crop": name, "calorie_fraction": frac, "harvest_index": hi_c,
+                "area_m2_per_person": a_pp, "area_m2_total": a_total,
+            })
+        gas = {"o2_kg_day": gas_o2, "co2_kg_day": gas_co2}
+        transpiration = transp if any_transp else None
+        hi = None
+    elif is_algae:
         # productivity path is primary for algae (no HI/PAR chain)
         edible_kj_m2 = crop_row["edible_dry_g_m2_d"] * crop_row["energy_density_kcal_g"] * _KCAL_TO_KJ
         area_pp = demand_kj / edible_kj_m2
@@ -188,22 +274,29 @@ def compute_bioregen_area(kcal_per_day=None, crew=1, crop=None,
         elec_pp = None
         elec_total = None
 
-    # ── gas exchange + transpiration (from the crop, over the total area) ──
-    if crop_row is not None:
-        gas = {
-            "o2_kg_day": crop_row["o2_g_m2_d"] * area_total / 1000.0,
-            "co2_kg_day": crop_row["co2_g_m2_d"] * area_total / 1000.0,
-        }
-        water_uptake = crop_row["water_uptake_kg_m2_d"]
-        transpiration = None if water_uptake is None else water_uptake * area_total
-    else:
-        gas = {"o2_kg_day": None, "co2_kg_day": None}
-        transpiration = None
+    # ── gas exchange + transpiration (single-crop paths; the mix set these above) ──
+    if mix is None:
+        if crop_row is not None:
+            gas = {
+                "o2_kg_day": crop_row["o2_g_m2_d"] * area_total / 1000.0,
+                "co2_kg_day": crop_row["co2_g_m2_d"] * area_total / 1000.0,
+            }
+            water_uptake = crop_row["water_uptake_kg_m2_d"]
+            transpiration = None if water_uptake is None else water_uptake * area_total
+        else:
+            gas = {"o2_kg_day": None, "co2_kg_day": None}
+            transpiration = None
+
+    model_note = _t._MODEL_NOTE
+    if mix is not None:
+        model_note = model_note + " " + _CROP_MIX_LP_NOTE
 
     return {
         "kcal_per_day": kcal,
         "crew": crew,
         "crop": crop,
+        "crops": crops,
+        "per_crop_area_m2": per_crop,
         "area_m2_per_person": area_pp,
         "area_m2_total": area_total,
         "area_m2_per_person_measured": area_measured,
@@ -222,7 +315,7 @@ def compute_bioregen_area(kcal_per_day=None, crew=1, crop=None,
         },
         "crop_gas_exchange": gas,
         "transpiration_water_kg_day": transpiration,
-        "model_note": _t._MODEL_NOTE,
+        "model_note": model_note,
         "par_is_input_note": ("PAR is a caller-supplied light parameter, not resolved from a "
                               "star/spectral type (stellar-type-resolved PAR is Packet 18)."),
         "notes": _t._NOTES,

@@ -73,11 +73,66 @@ or a *surfaced decision* — never a silent v2).
 
 ## Build order
 
+> **Phase 1 — BUILT (2026-07-03).** B, A1, A2, A3, C6, C7, C9, C8 all implemented + tested (full
+> offline suite 1300 passed / 0 fail) + docs (`docs/integration.md`, `CLAUDE.md`, `docs/gui-architecture.md`
+> core tree). Two surfaced deviations: **C6** bundles NIST PSTAR proton/water only (100 MeV = 7.718 g/cm²,
+> web-verified) + `--csda-range-gcm2` override for alpha/ion/other materials (additional PSTAR/ASTAR
+> materials = a pure data swap); **C9** adds a required `--pulse-period-s` (the `temp_swing` formula needs an
+> absolute on-time). A1: coil-pair → exact on-axis loop field, moment-only → far-field (both echoed); the
+> R_mp≈101 km/2.38 kN headline is now the moment-only anchor. Phases 4–5 not yet started; request-file
+> FULFILLED flips deferred to whole-phase completion.
+>
+> **Phase 2 — BUILT (2026-07-03).** C2 (`pellet-stream`, extending `core/propulsion.py`) + C3
+> (`dust-impact`, new `core/dust_impact.py`) implemented + tested (4 test files, +26 cases; full
+> offline suite **1326 passed / 1 skipped / 0 fail**) + docs (`docs/integration.md` new "Momentum /
+> impact tools" section + quick-ref rows; `CLAUDE.md` tests list + core tree). **C3 anchor correction
+> (verified at build):** a 1 µm / 1000 kg·m⁻³ grain is m≈4.19e-15 kg → at β 0.1, E≈**1.88 J**
+> (≈1.9e0 J) / **0.45 mg TNT** (1 kg TNT ≡ 4.184e6 J). The plan's "1.9×10² J / 40 mg" were computed at
+> **v=c**, not β 0.1; and the plan's `E/4.184e12` divisor is **kilotons**, not kg (kg divisor = 4.184e6).
+> The relativistic auto-switch is **β>0.1** (plan prose said ~0.01, but its own acceptance cases pin
+> false@β0.05 / true@β0.2). C2 anchors as-specified (u≈15010 km/s, F≈3.0×10⁷ N).
+>
+> **Phase 3 — BUILT (2026-07-03).** C4 (`orbital-ring`, extending `core/megastructure.py`) + C5
+> (`volatile-delivery`, new `core/volatile_delivery.py`) implemented + tested (4 test files, +26
+> cases) + docs (`docs/integration.md` new detail sections + quick-ref rows; `CLAUDE.md` tests list +
+> core tree). C4 uses the bundled `_BODIES` `g₀`/`R_km` unchanged (Locked decision C4-7 — no table
+> edit); anchors as-specified (Earth alt-300 → v_orb≈7.73 / v_rotor≈10.93 km/s / ratio √2; doubling
+> λ_ring → √1.5× rotor velocity). C5 composes `compute_rocket_equation` (redirect MR) + ½mv² impact +
+> bodies-needed; anchors as-specified (delivered 5×10¹⁴ kg / E≈2×10²³ J / bodies≈10 300); uses the
+> same correct `E/4.184e6` kg-TNT constant as C3.
+>
+> **Phase 4 — C10 + C11 + C1 all BUILT (2026-07-03; see the Build-order note above for the C1
+> as-built + the two user decisions).** C10 (`bioregen-area --crops`
+> diet mix, `core/life_support.py`) + C11 (`jump-route --weight blend`, `core/dust_routing.py` +
+> `query.py`) implemented + tested + docs. C10 rejects (not normalizes) non-summing fractions; the
+> protein/vitamin LP is the surfaced v2. C11 is **jump-route only** (`_grid_search`): `cost=α·ly+β·A_V`,
+> β=0→distance / α=0→dust; other planners keep `{distance,dust}`. **C1 (`par-flux --sed real`) is
+> blocked on two decisions surfaced to the user (2026-07-03):** (1) the plan's default `--sed real` is a
+> **breaking change** to the existing `par-flux` output for the sibling consumer (blackbody is the
+> current default); (2) **no clean transcribable real-SED f_PAR(Teff) energy-fraction table exists** in
+> the literature (Covone 2021 uses Planck; Gale & Wandel report relative HZ PAR photon flux, not a
+> bolometric energy-fraction grid) — a defensible `_REAL_SED_FPAR` table must be **computed from the
+> BT-Settl/PHOENIX synthetic-spectrum grid** (a spectral-file download / data-provenance choice). Await
+> the user's call on sourcing + default before building C1.
+
 **Phase 1 (Pkt-16 gates — cheap, mostly closed-form): B, A1, A2, A3, C6, C7, C9, C8.**
 **Phase 2 (new momentum/impact tools): C2, C3.**
 **Phase 3 (megastructure/terraforming tools): C4, C5.**
 **Phase 4 (table/routing extensions): C1, C10, C11.**
-**Phase 5 (largest, needs paper-reading): A0.**
+**Phase 5 (largest, needs paper-reading): A0.** — not yet started.
+
+> **Phase 4 — COMPLETE (2026-07-03).** C10 + C11 + **C1** all built + tested + docs. **C1
+> (`par-flux --sed real`) as-built:** the `_REAL_SED_FPAR` table (`core/par_flux_tables.py`) was
+> **computed at build** from the **BT-Settl (CIFIST2011)** grid (log g 4.5, [M/H] 0) retrieved from the
+> **SVO Theoretical Spectra** service — 13 Teff nodes 2600–7000 K, `f_PAR = ∫400–700nm F_λ / ∫F_λ`
+> (trapezoidal, full range). Anchors hold: **3000 K real 0.0228 ≪ blackbody 0.081** (larger deficit),
+> **Sun 5800 K real 0.391** (matches ASTM ~0.39 — the plan's "0.40–0.45" was slightly high, a
+> documented finding). **Two user decisions (2026-07-03):** (1) **default stays `--sed blackbody`**
+> (backward-compatible; the plan's "default real" would have changed the consumer's existing output —
+> real is opt-in); (2) sourced by **computing from the BT-Settl grid** (not a published-table
+> transcription, which doesn't exist cleanly — Covone 2021 uses Planck; Gale & Wandel report relative
+> HZ photon flux). Band-fixed 400–700 nm + grid 2600–7000 K → `--sed real` errors on a non-default band
+> or off-grid Teff. PPFD/photon-energy still use the Planck band shape (documented approximation).
 
 Run each item's two test files (and the touched phase's existing suites) before moving on. Defaults must
 keep every existing anchor byte-identical (regression-pin the touched suites).
@@ -355,7 +410,9 @@ Teff crosses the distillation Teff and **hold (Teff,R,L) constant for Δt** befo
 ---
 
 ## Build-time verification checklist (cite in `docs/integration.md`)
-1. **C1** — PHOENIX/BT-Settl Teff→f_PAR table (source + version).
+1. **C1** — ✅ DONE: BT-Settl (CIFIST2011) Teff→f_PAR table computed at build from the SVO Theoretical
+   Spectra grid (log g 4.5, [M/H] 0; 2600–7000 K; `f_PAR = ∫400–700nm F_λ / ∫F_λ`). See `_SOURCE` in
+   `core/par_flux_tables.py`.
 2. **C6** — NIST PSTAR/ASTAR CSDA range values (100 MeV proton/water ≈ 10 g/cm²).
 3. **C8** — an active-shield study for the rigidity-cutoff anchor.
 4. **A0** — Vanderburg 2025 HZ-extension figure + 0.6 M☉ distillation-onset Teff.

@@ -31,16 +31,33 @@ def _run(*cmd_args):
 
 class MagsailQueryTest(unittest.TestCase):
     def test_happy_and_parity(self):
+        # A1: the R_mp ≈ 100 km / ~kN headline now belongs to the moment-only (far-field) anchor.
+        import math
+        m_dip = 1e5 * math.pi * (1e5) ** 2
         rc, d, _ = _run("magsail", "--ism-density-cm3", "0.1", "--ion-mass-amu", "1.0",
-                        "--beta", "0.1", "--coil-radius-m", "100000", "--coil-current-a", "100000",
+                        "--beta", "0.1", "--magnetic-moment-am2", repr(m_dip),
                         "--vehicle-mass-t", "1000")
         self.assertEqual(rc, 0)
         self.assertAlmostEqual(d["magnetopause_radius_km"], 100.0, delta=5.0)
         self.assertTrue(1e3 <= d["drag_force_n"] <= 1e4)
         self.assertIn("v^4/3", d["drag_scaling_note"])
         ref = ism.compute_magsail(ism_density_cm3=0.1, ion_mass_amu=1.0, beta=0.1,
-                                  coil_radius_m=1e5, coil_current_a=1e5, vehicle_mass_t=1000)
+                                  magnetic_moment_am2=m_dip, vehicle_mass_t=1000)
         self.assertAlmostEqual(d["drag_force_n"], ref["drag_force_n"], places=6)
+
+    def test_coil_exact_and_ionization(self):
+        # A1: coil-pair anchor → exact near-field R_mp + far-field cross-check echoed.
+        rc, d, _ = _run("magsail", "--ism-density-cm3", "0.1", "--ion-mass-amu", "1.0",
+                        "--beta", "0.1", "--coil-radius-m", "100000", "--coil-current-a", "100000")
+        self.assertEqual(rc, 0)
+        self.assertAlmostEqual(d["magnetopause_radius_km"], 13.12, delta=0.2)
+        self.assertAlmostEqual(d["magnetopause_radius_farfield_km"], 100.86, delta=0.5)
+        # A3: --ionization-fraction 0.5 halves the interacting density
+        rc2, h, _ = _run("magsail", "--ism-density-cm3", "0.1", "--ion-mass-amu", "1.0",
+                         "--beta", "0.1", "--magnetic-moment-am2", "1e15",
+                         "--ionization-fraction", "0.5")
+        self.assertEqual(rc2, 0)
+        self.assertEqual(h["ionization_fraction"], 0.5)
 
     def test_stopping(self):
         rc, d, _ = _run("magsail", "--beta", "0.1", "--coil-radius-m", "100000",
@@ -56,6 +73,8 @@ class MagsailQueryTest(unittest.TestCase):
                      ["magsail", "--beta", "0.1", "--coil-radius-m", "100000"],                # partial coil
                      ["magsail", "--beta", "0.1", "--magnetic-moment-am2", "1e15",
                       "--velocity-final-kms", "1000"],                                          # vf no mass
+                     ["magsail", "--beta", "0.1", "--magnetic-moment-am2", "1e15",
+                      "--ionization-fraction", "1.5"],                                          # x_ion>1
                      ["magsail", "--beta", "0.1", "--magnetic-moment-am2", "-1"]):              # neg moment
             rc, d, _ = _run(*args)
             self.assertEqual(rc, 1, args)

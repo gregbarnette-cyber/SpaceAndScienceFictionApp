@@ -114,5 +114,41 @@ class DysonCollectorQueryTest(unittest.TestCase):
             self.assertTrue(err)
 
 
+class OrbitalRingQueryTest(unittest.TestCase):
+    def test_happy_and_parity(self):
+        rc, d, _ = _run("orbital-ring", "--body", "earth", "--altitude-km", "300",
+                        "--ring-mass-per-length-kgm", "100")
+        self.assertEqual(rc, 0)
+        self.assertAlmostEqual(d["orbital_velocity_kms"], 7.73, delta=0.02)
+        self.assertAlmostEqual(d["rotor_velocity_kms"], 10.93, delta=0.02)
+        ref = megastructure.compute_orbital_ring(body="earth", altitude_km=300,
+                                                 ring_mass_per_length_kgm=100)
+        self.assertEqual(d, ref)
+
+    def test_exit1_curated_errors(self):
+        for args in (["orbital-ring", "--altitude-km", "300",
+                      "--ring-mass-per-length-kgm", "100"],                       # no body anchor
+                     ["orbital-ring", "--body", "earth", "--surface-gravity-ms2", "9.81",
+                      "--altitude-km", "300", "--ring-mass-per-length-kgm", "100"],  # body + explicit
+                     ["orbital-ring", "--surface-gravity-ms2", "9.81",
+                      "--altitude-km", "300", "--ring-mass-per-length-kgm", "100"],  # partial explicit
+                     ["orbital-ring", "--body", "earth", "--altitude-km", "300",
+                      "--ring-mass-per-length-kgm", "0"]):                        # ring λ ≤ 0
+            rc, d, _ = _run(*args)
+            self.assertEqual(rc, 1, args)
+            self.assertIn("error", d, args)
+
+    def test_exit2_argparse(self):
+        for args in (["orbital-ring", "--body", "bogus", "--altitude-km", "300",
+                      "--ring-mass-per-length-kgm", "100"],                       # bad --body choice
+                     ["orbital-ring", "--body", "earth", "--ring-mass-per-length-kgm", "100"],  # missing --altitude
+                     ["orbital-ring", "--body", "earth", "--altitude-km", "300"],  # missing --ring-mass
+                     ["orbital-ring", "--body", "earth", "--altitude-km", "abc",
+                      "--ring-mass-per-length-kgm", "100"]):                      # non-numeric
+            rc, _, err = _run(*args)
+            self.assertEqual(rc, 2, args)
+            self.assertTrue(err)
+
+
 if __name__ == "__main__":
     unittest.main()

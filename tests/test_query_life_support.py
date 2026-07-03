@@ -60,6 +60,19 @@ class HappyPathTest(unittest.TestCase):
         self.assertIsNone(d["photo_efficiency"])
         self.assertIsNotNone(d["crop_gas_exchange"]["o2_kg_day"])
 
+    def test_x2_crops_mix_and_parity(self):
+        rc, d, _ = _run("bioregen-area", "--kcal-per-day", "2500",
+                        "--crops", "wheat:0.5, white_potato:0.3, soybean:0.2", "--dli-mol", "30")
+        self.assertEqual(rc, 0)
+        self.assertEqual([c["crop"] for c in d["per_crop_area_m2"]],
+                         ["wheat", "white_potato", "soybean"])
+        self.assertAlmostEqual(d["area_m2_total"],
+                               sum(c["area_m2_total"] for c in d["per_crop_area_m2"]), places=6)
+        self.assertIn("linear-programming", d["model_note"])
+        ref = ls.compute_bioregen_area(kcal_per_day=2500,
+                                       crops="wheat:0.5, white_potato:0.3, soybean:0.2", dli_mol=30)
+        self.assertEqual(d, ref)
+
     def test_x3_and_parity(self):
         rc, d, _ = _run("population-capacity", "--power-w", "1e6", "--per-person-power-w", "1e4")
         self.assertEqual(rc, 0)
@@ -81,6 +94,10 @@ class ExitCodeTest(unittest.TestCase):
             ["life-support", "--water-closure", "1.5"],
             ["bioregen-area", "--dli-mol", "30"],                        # no crop, no HI
             ["bioregen-area", "--crop", "wheat", "--dli-mol", "0"],      # non-positive anchor
+            ["bioregen-area", "--crops", "wheat:0.5, soybean:0.6", "--dli-mol", "30"],  # not summing 1
+            ["bioregen-area", "--crops", "wheat:0.5, bogus:0.5", "--dli-mol", "30"],    # unknown crop in mix
+            ["bioregen-area", "--crops", "nocolon", "--dli-mol", "30"],  # malformed --crops token
+            ["bioregen-area", "--crop", "wheat", "--crops", "wheat:1.0", "--dli-mol", "30"],  # both crop+crops
             ["population-capacity"],                                     # no budget
         ):
             rc, d, _ = _run(*args)

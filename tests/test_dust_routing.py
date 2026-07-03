@@ -143,6 +143,67 @@ class JumpRouteDustTest(_DustRoutingBase):
         self.assertEqual(r["route"], [])
 
 
+class JumpRouteBlendTest(_DustRoutingBase):
+    """C11 (Phase AD) — the α·distance + β·A_V blended route."""
+
+    def _seed_detour(self):
+        self._seed_xyz("M", 6.0, 0.0, 0.0)          # dusty direct corridor
+        self._seed_xyz("N", 6.0, 5.0, 0.0)          # clean detour
+        self._seed_xyz("D", 12.0, 0.0, 0.0)
+
+    _COST = {frozenset({"Sol", "M"}): 1.0, frozenset({"M", "D"}): 1.0,
+             frozenset({"Sol", "N"}): 0.2, frozenset({"N", "D"}): 0.2}
+
+    def test_beta_zero_reproduces_distance_route(self):
+        self._seed_detour()
+        with mock.patch.object(dr, "_seg", _seg_factory(self._COST)):
+            b = dr.compute_jump_route_blend("Sol", "D", 9.0, alpha=1.0, beta=0.0, map_sel="auto")
+            dist = calc.compute_jump_route("Sol", "D", 9.0, "distance")
+        self.assertEqual(b["weight"], "blend")
+        self.assertEqual(b["alpha"], 1.0)
+        self.assertEqual(b["beta"], 0.0)
+        b_hops = [leg["to"] for leg in b["route"]]
+        d_hops = [leg["to"] for leg in dist["route"]]
+        self.assertEqual(b_hops, d_hops)             # β=0 → distance-optimal path
+        self.assertEqual(b_hops, ["M", "D"])
+        self.assertAlmostEqual(b["total_ly"], dist["total_ly"], places=4)
+        # blended cost = α·ly + β·A_V (β=0 → just ly)
+        self.assertAlmostEqual(b["total_blend_cost"], b["total_ly"], places=6)
+
+    def test_alpha_zero_reproduces_dust_route(self):
+        self._seed_detour()
+        with mock.patch.object(dr, "_seg", _seg_factory(self._COST)):
+            b = dr.compute_jump_route_blend("Sol", "D", 9.0, alpha=0.0, beta=1.0, map_sel="auto")
+            dust_r = dr.compute_jump_route_dust("Sol", "D", 9.0, "distance", map_sel="auto")
+        b_hops = [leg["to"] for leg in b["route"]]
+        self.assertEqual(b_hops, [leg["to"] for leg in dust_r["route"]])   # α=0 → least-dust path
+        self.assertEqual(b_hops, ["N", "D"])
+        self.assertAlmostEqual(b["total_av"], dust_r["total_av"], places=6)
+        self.assertAlmostEqual(b["total_blend_cost"], b["total_av"], places=6)
+
+    def test_beta_flips_route_between_the_two(self):
+        self._seed_detour()
+        with mock.patch.object(dr, "_seg", _seg_factory(self._COST)):
+            low = dr.compute_jump_route_blend("Sol", "D", 9.0, alpha=1.0, beta=1.0, map_sel="auto")
+            high = dr.compute_jump_route_blend("Sol", "D", 9.0, alpha=1.0, beta=100.0, map_sel="auto")
+        # small β → distance corridor; large β → dust detour (the blend spans the two)
+        self.assertEqual([leg["to"] for leg in low["route"]], ["M", "D"])
+        self.assertEqual([leg["to"] for leg in high["route"]], ["N", "D"])
+        # blended cost self-consistency: α·total_ly + β·total_av
+        self.assertAlmostEqual(high["total_blend_cost"],
+                               1.0 * high["total_ly"] + 100.0 * high["total_av"], places=4)
+        # a compromise never beats either pure optimum in its own metric
+        self.assertGreaterEqual(high["total_ly"], low["total_ly"] - 1e-9)
+
+    def test_validation_matrix(self):
+        self._seed_detour()
+        with mock.patch.object(dr, "_seg", _seg_factory(self._COST)):
+            self.assertIn("error", dr.compute_jump_route_blend("Sol", "D", 9.0, alpha=-1, beta=1))
+            self.assertIn("error", dr.compute_jump_route_blend("Sol", "D", 9.0, alpha=1, beta=-1))
+            self.assertIn("error", dr.compute_jump_route_blend("Sol", "D", 9.0, alpha=0, beta=0))
+            self.assertIn("error", dr.compute_jump_route_blend("Sol", "D", 0.0))   # bad max jump
+
+
 class OtherPlannersDustTest(_DustRoutingBase):
 
     def test_multi_stop_ordered(self):

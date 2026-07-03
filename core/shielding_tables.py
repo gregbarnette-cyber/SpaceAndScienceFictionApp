@@ -117,3 +117,52 @@ def lookup_gcr_lambda(material: str):
 
 def gcr_material_names():
     return sorted(_GCR_LAMBDA)
+
+
+# ── Charged-particle CSDA ranges [g/cm²] (NIST PSTAR / ASTAR) — C6 ────────────
+_PSTAR_SOURCE = (
+    "NIST PSTAR (proton) continuous-slowing-down-approximation (CSDA) range [g/cm^2] "
+    "vs kinetic energy [MeV], NIST Standard Reference Database 124 (Berger et al.). The "
+    "proton/water grid was web-verified 2026-07-03 against the PSTAR liquid-water table "
+    "(100 MeV -> 7.718 g/cm^2). CSDA range is a hard stopping depth (a shield of areal "
+    "density >= the range stops the primary), NOT an exponential-attenuation length. The "
+    "bundled convenience table currently covers PROTONS IN WATER (the anchor material); "
+    "alpha/ion beams and other materials are supported via the explicit --csda-range-gcm2 "
+    "override (a surfaced data-scope decision — additional PSTAR/ASTAR materials are a pure "
+    "data swap). Secondary-particle production behind a partial shield is NOT modelled."
+)
+
+# _CSDA_RANGE[particle][material] = {energy_mev: csda_range_gcm2}.
+# proton/water: web-verified 2026-07-03 (PSTAR liquid water; 1 MeV value is the standard
+# 2.458e-3 g/cm^2 reference point).
+_CSDA_RANGE = {
+    "proton": {
+        "water": {
+            1.0: 0.002458, 10.0: 0.1230, 50.0: 2.227, 70.0: 4.080,
+            100.0: 7.718, 150.0: 15.77, 200.0: 25.96, 250.0: 37.94,
+        },
+    },
+}
+
+_CHARGED_PARTICLES = ("proton", "alpha", "ion")
+
+
+def lookup_csda_range(particle: str, material: str, energy_mev: float):
+    """Nearest-energy CSDA range [g/cm²] for a bundled (particle, material).
+
+    Returns ``(range_gcm2, chosen_energy_mev, exact)`` or ``None`` if the
+    (particle, material) pair is not bundled. ``exact`` is True iff ``energy_mev``
+    matches a grid energy exactly.
+    """
+    mat = _MATERIAL_ALIASES.get(material, material) if material else material
+    grid = _CSDA_RANGE.get(particle, {}).get(mat)
+    if grid is None:
+        return None
+    chosen = min(grid, key=lambda e: abs(e - energy_mev))
+    exact = abs(chosen - energy_mev) < 1e-9
+    return grid[chosen], chosen, exact
+
+
+def csda_material_names(particle: str):
+    """Bundled materials for a charged particle, sorted (empty if none)."""
+    return sorted(_CSDA_RANGE.get(particle, {}))
