@@ -119,7 +119,26 @@ or a *surfaced decision* — never a silent v2).
 **Phase 2 (new momentum/impact tools): C2, C3.**
 **Phase 3 (megastructure/terraforming tools): C4, C5.**
 **Phase 4 (table/routing extensions): C1, C10, C11.**
-**Phase 5 (largest, needs paper-reading): A0.** — not yet started.
+**Phase 5 (largest, needs paper-reading): A0.** — **BUILT (2026-07-03).**
+
+> **Phase 5 — BUILT (2026-07-03).** A0 (`cooling-hz --cooling-delay-gyr` / `--distillation-teff-k`,
+> extending `core/cooling.py`) implemented + tested (11 new cases: 7 in `test_cooling_hz.py`, 4 in
+> `test_query_cooling_hz.py`; both suites 39/39, no pre-existing cooling test disturbed) + docs
+> (`docs/integration.md` cooling-hz A0 subsection + quick-ref row; `CLAUDE.md` tests list + core tree;
+> `PHASE_U_PLAN.md`). **As-built:** a wall-clock→track-age warp (`_warp_age` + a `pause=(a_pause,Δ)`
+> tuple threaded through every `_interp_track`/`_residence_at`/`_chz_band`/mode caller with default
+> `None`) freezes (Teff,L,R) at the intrinsic track age where Teff crosses `distillation_teff_k`, holds
+> for Δ, then resumes (later ages +Δ; integration ceiling extends by Δ). **Δt=0 stays byte-identical**
+> (pause=None → identity warp; no `pause_*` keys emitted) — the regression pin. Default onset **5500 K**
+> confirmed as the published 0.6 M☉ DA value (**Vanderburg, Bédard, Becker & Blouin 2025, arXiv:2501.06613
+> §2** — build-time literature verification, checklist item 4 ✅; the 0.8 M☉ 8100 K cross-checks
+> arXiv:2407.19289). **Anchors hold:** peak mode-2 residence **6.3 → 16.3 Gyr at Δ=10** (their Table 1:
+> 6.67 → 15.56); CHZ outer edge moves outward at long-residence thresholds. **Two surfaced findings:**
+> (1) for a 0.6 M☉ WD standard cooling *already* yields a ≥3 Gyr CHZ out to ~0.02 AU, so the outward
+> extension appears at **≥5 Gyr** thresholds, not the plan's "≥3 Gyr" (truer to Vanderburg's max-duration
+> framing; at thr 8 Gyr standard yields no CHZ while the pause creates one); (2) the mass-dependent onset
+> (5500/8100/12000 K at 0.6/0.8/1.0 M☉) is now pinned exactly, so a derive-from-mass onset is trivial but
+> stays deferred per Locked decision 2. **Phase AD is now COMPLETE — all 15 buildable items shipped.**
 
 > **Phase 4 — COMPLETE (2026-07-03).** C10 + C11 + **C1** all built + tested + docs. **C1
 > (`par-flux --sed real`) as-built:** the `_REAL_SED_FPAR` table (`core/par_flux_tables.py`) was
@@ -415,7 +434,9 @@ Teff crosses the distillation Teff and **hold (Teff,R,L) constant for Δt** befo
    `core/par_flux_tables.py`.
 2. **C6** — NIST PSTAR/ASTAR CSDA range values (100 MeV proton/water ≈ 10 g/cm²).
 3. **C8** — an active-shield study for the rigidity-cutoff anchor.
-4. **A0** — Vanderburg 2025 HZ-extension figure + 0.6 M☉ distillation-onset Teff.
+4. **A0** — ✅ DONE: Vanderburg, Bédard, Becker & Blouin 2025 (arXiv:2501.06613 §2 + Table 1) —
+   0.6 M☉ DA distillation onset **Teff ≈ 5500 K** (log L/L☉ ≈ −3.9), ~10 Gyr delay, CHZ max
+   duration **6.67 → 15.56 Gyr**, outer edge >50% outward; 0.8 M☉ 8100 K cross-checks arXiv:2407.19289.
 5. **C3/C5** — TNT conversion + impact-energy anchors.
 
 ## On completion

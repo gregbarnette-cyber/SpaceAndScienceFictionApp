@@ -93,5 +93,46 @@ class ExitCodeMatrixTest(unittest.TestCase):
             self.assertIsNone(d)
 
 
+class DistillationPauseTest(unittest.TestCase):
+    """Phase AD A0 — the `--cooling-delay-gyr` distillation pause via the subprocess CLI."""
+
+    def test_pause_happy_path_and_parity(self):
+        rc, d, _ = _run("cooling-hz", "--track", "wd", "--mass-solar", "0.6",
+                        "--chz-threshold-gyr", "6", "--cooling-delay-gyr", "8")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["mode"], "chz")
+        for k in ("cooling_delay_gyr", "distillation_teff_k", "pause_teff_k",
+                  "pause_hz_inner_au", "pause_hz_outer_au", "effective_age_max_gyr"):
+            self.assertIn(k, d)
+        self.assertAlmostEqual(d["pause_teff_k"], 5500.0, delta=5.0)
+        ref = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=6.0,
+                                         cooling_delay_gyr=8.0)
+        self.assertAlmostEqual(d["chz_outer_au"], ref["chz_outer_au"], places=5)
+
+    def test_delta_zero_matches_no_flag(self):
+        rc1, d1, _ = _run("cooling-hz", "--track", "wd", "--sma-au", "0.012")
+        rc2, d2, _ = _run("cooling-hz", "--track", "wd", "--sma-au", "0.012",
+                          "--cooling-delay-gyr", "0")
+        self.assertEqual(rc1, 0)
+        self.assertEqual(d1, d2)                    # byte-identical through the CLI too
+
+    def test_exit_1_matrix(self):
+        for args in (
+            ("cooling-hz", "--track", "wd", "--cooling-delay-gyr", "-1"),        # neg delay
+            ("cooling-hz", "--track", "wd", "--cooling-delay-gyr", "5",
+             "--distillation-teff-k", "200000"),                                 # distil Teff off track
+            ("cooling-hz", "--track", "bd", "--mass-mjup", "52.4",
+             "--sma-au", "0.05", "--cooling-delay-gyr", "5"),                    # bd + delay
+        ):
+            rc, d, _ = _run(*args)
+            self.assertEqual(rc, 1, args)
+            self.assertIn("error", d)
+
+    def test_exit_2_non_numeric(self):
+        rc, d, _ = _run("cooling-hz", "--track", "wd", "--cooling-delay-gyr", "abc")
+        self.assertEqual(rc, 2)
+        self.assertIsNone(d)
+
+
 if __name__ == "__main__":
     unittest.main()

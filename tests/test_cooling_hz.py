@@ -186,6 +186,112 @@ class BrownDwarfTest(unittest.TestCase):
         self.assertIn("ATMO 2020", r["model_note"])
 
 
+class DistillationPauseTest(unittest.TestCase):
+    """Phase AD A0 — the ²²Ne distillation cooling pause (--cooling-delay-gyr).
+
+    Anchored to Vanderburg, Bedard, Becker & Blouin 2025 (arXiv:2501.06613): a 0.6 M_sun DA
+    pauses at Teff ~ 5500 K, and the pause roughly doubles-to-triples the max HZ residence
+    (their Table 1: 6.67 -> 15.56 Gyr) while pushing the long-residence CHZ outward.
+    """
+
+    def test_delta_zero_byte_identical(self):
+        # The headline regression pin: Δt=0 (default) reproduces the pre-A0 result exactly,
+        # across all three modes.
+        for kw in (dict(teff=5000),
+                   dict(sma_au=0.01, hz_edge="optimistic"),
+                   dict(chz_threshold_gyr=3.0)):
+            base = cooling.compute_cooling_hz("wd", mass_solar=0.6, **kw)
+            zero = cooling.compute_cooling_hz("wd", mass_solar=0.6,
+                                              cooling_delay_gyr=0.0, **kw)
+            self.assertEqual(base, zero, kw)
+            # and no pause_* keys leak into the Δt=0 output
+            self.assertNotIn("pause_teff_k", base)
+            self.assertNotIn("cooling_delay_gyr", base)
+
+    def test_pause_fields_present_and_consistent(self):
+        r = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=3.0,
+                                       cooling_delay_gyr=8.0)
+        self.assertAlmostEqual(r["pause_teff_k"], 5500.0, delta=5.0)   # onset Teff (0.6 M_sun)
+        self.assertEqual(r["pause_duration_gyr"], 8.0)
+        self.assertEqual(r["cooling_delay_gyr"], 8.0)
+        self.assertEqual(r["distillation_teff_k"], 5500.0)
+        self.assertAlmostEqual(r["effective_age_max_gyr"], 13.8 + 8.0, places=6)
+        self.assertLess(r["pause_hz_inner_au"], r["pause_hz_outer_au"])
+        # pause HZ band ~ 0.011-0.019 AU for a 0.6 M_sun WD at 5500 K
+        self.assertTrue(0.009 < r["pause_hz_inner_au"] < 0.013, r["pause_hz_inner_au"])
+        self.assertTrue(0.017 < r["pause_hz_outer_au"] < 0.021, r["pause_hz_outer_au"])
+        self.assertIn("distillation pause", r["model_note"])
+        self.assertIn("Vanderburg", r["model_note"])
+
+    def test_residence_lengthens_by_delta(self):
+        # A planet inside the frozen pause-HZ band stays habitable for the whole pause, so its
+        # residence rises by ~Δt (Vanderburg direction).
+        a = 0.017
+        base = cooling.compute_cooling_hz("wd", mass_solar=0.6, sma_au=a)
+        paused = cooling.compute_cooling_hz("wd", mass_solar=0.6, sma_au=a,
+                                            cooling_delay_gyr=10.0)
+        self.assertTrue(base["ever_habitable"] and paused["ever_habitable"])
+        self.assertAlmostEqual(paused["residence_gyr"] - base["residence_gyr"], 10.0, delta=0.5)
+
+    def test_peak_residence_matches_vanderburg(self):
+        # Their Table 1: standard 6.67 Gyr -> distillation 15.56 Gyr for a 0.6 M_sun WD.
+        def peak(dt):
+            best, a = 0.0, 0.006
+            while a < 0.03:
+                r = cooling.compute_cooling_hz("wd", mass_solar=0.6, sma_au=a,
+                                               cooling_delay_gyr=dt)
+                if r.get("residence_gyr"):
+                    best = max(best, r["residence_gyr"])
+                a *= 1.03
+            return best
+        std, dist = peak(0.0), peak(10.0)
+        self.assertTrue(5.5 < std < 7.5, std)        # ~6.3, matches their 6.67
+        self.assertTrue(14.0 < dist < 18.0, dist)    # ~16, matches their 15.56 direction
+        self.assertGreater(dist, std + 8.0)          # pause adds ~Δt
+
+    def test_chz_moves_outward(self):
+        # At a long-residence threshold the standard CHZ can't reach the outer orbits the
+        # distillation pause freezes into — so the pause pushes the CHZ outer edge outward.
+        b6 = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=6.0)
+        p6 = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=6.0,
+                                        cooling_delay_gyr=8.0)
+        self.assertGreater(p6["chz_outer_au"], b6["chz_outer_au"])
+        # At 8 Gyr standard cooling yields NO CHZ, but the pause creates one.
+        b8 = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=8.0)
+        p8 = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=8.0,
+                                        cooling_delay_gyr=10.0)
+        self.assertIsNone(b8["chz_outer_au"])
+        self.assertIsNotNone(p8["chz_outer_au"])
+
+    def test_snapshot_through_pause(self):
+        # Snapshot by the pause Teff resolves to the pause epoch and carries the pause block.
+        r = cooling.compute_cooling_hz("wd", mass_solar=0.6, teff=5500, cooling_delay_gyr=10.0)
+        self.assertEqual(r["mode"], "snapshot")
+        self.assertAlmostEqual(r["teff_k"], 5500.0, delta=5.0)
+        self.assertIn("pause_teff_k", r)
+
+    def test_validation(self):
+        cases = [
+            dict(cooling_delay_gyr=-1.0),                                  # negative delay
+            dict(cooling_delay_gyr=5.0, distillation_teff_k=0.0),          # teff <= 0
+            dict(cooling_delay_gyr=5.0, distillation_teff_k=200000.0),     # distil Teff off track
+        ]
+        for kw in cases:
+            r = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=3.0, **kw)
+            self.assertIn("error", r, kw)
+        # distillation is a WD mechanism — rejected on the BD track
+        rbd = cooling.compute_cooling_hz("bd", mass_mjup=52.4, sma_au=0.05,
+                                         cooling_delay_gyr=5.0)
+        self.assertIn("error", rbd)
+
+    def test_determinism(self):
+        a = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=6.0,
+                                       cooling_delay_gyr=8.0)
+        b = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=6.0,
+                                       cooling_delay_gyr=8.0)
+        self.assertEqual(a, b)
+
+
 class ValidationTest(unittest.TestCase):
     def test_error_matrix(self):
         cases = [

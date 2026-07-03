@@ -35,6 +35,22 @@ _TEFF_SUN_K = 5772.0              # IAU nominal solar Teff (L↔Teff closure gua
 _WD_MASS_DEFAULT = 0.60           # M_sun
 _BD_MASS_DEFAULT_MJUP = 50.0      # M_Jup
 
+# ── Phase AD A0: ²²Ne distillation cooling pause ─────────────────────────────
+# A cooling WD whose C/O core is neon-rich undergoes ²²Ne "distillation" that releases
+# gravitational energy and *pauses* the cooling for several Gyr, greatly lengthening how
+# long a planet can reside in the (inward-migrating) HZ. Default onset Teff for a 0.6 M_sun
+# DA: Vanderburg, Bédard, Becker & Blouin 2025 ("Long-lived Habitable Zones around White
+# Dwarfs undergoing Neon-22 Distillation", arXiv:2501.06613, §2) — the 0.6/0.8/1.0 M_sun
+# models pause at (Teff/K, log L/Lsun) ≈ (5500, −3.9), (8100, −3.4), (12000, −2.9) with
+# cooling delays of ~10/9/6 Gyr (more massive WDs distil HOTTER). Cross-checked by
+# arXiv:2407.19289 (Fig. 2, an 0.8 M_sun remnant halting near ~7500 K). Distillation begins
+# only after ~60% core crystallization (Blouin, Daligault & Saumon 2021, ApJL 911 L5), so
+# this pause Teff sits *below* crystallization onset. ORDER-OF-MAGNITUDE: modelled as a
+# (Teff, L, R) freeze held for the user's delay, not a re-solved evolutionary track; the
+# realized delay (~10 Gyr) also depends strongly on the assumed ²²Ne fraction (~3% here) and
+# applies only to the ~0.6–2.5% high-neon WD subset.
+_DISTILLATION_TEFF_DEFAULT_K = 5500.0
+
 # conservative HZ = runaway-greenhouse → maximum-greenhouse; optimistic = recent-venus → early-mars
 _EDGE_KEYS = {
     "conservative": ("rg", "mg"),
@@ -79,16 +95,38 @@ def _interp_age(rows, age):
     return rows[-1][1], rows[-1][2], rows[-1][3]
 
 
-def _interp_track(track, grid_mass, age):
+def _warp_age(pause, age):
+    """Map a **wall-clock** age to the **intrinsic track** age given a distillation pause.
+
+    ``pause`` is ``(a_pause_gyr, delta_gyr)`` — the intrinsic track age at which the star
+    reaches the distillation Teff, and the pause duration — or ``None``. During the pause the
+    star holds at ``a_pause`` (constant Teff/L/R); after it, the track resumes shifted later
+    by ``delta``. With ``pause is None`` this is the identity, so every ``pause=None`` caller
+    is byte-identical to the pre-A0 path. The map is monotone non-decreasing in ``age``.
+    """
+    if pause is None:
+        return age
+    a_pause, delta = pause
+    if age <= a_pause:
+        return age
+    if age <= a_pause + delta:
+        return a_pause                    # frozen: Teff/L/R held constant through the pause
+    return age - delta                    # resumed: later epochs shifted +delta in wall time
+
+
+def _interp_track(track, grid_mass, age, pause=None):
     """(track, grid_mass, age) → (teff_k, lum_lsun, radius_rsun). Raises _OffGrid.
 
-    Teff and radius are interpolated linearly; **luminosity is then derived from them by
-    the exact identity ``L/L_sun = (R/R_sun)^2 (Teff/Teff_sun)^4``** rather than
-    interpolated independently. The table's stored ``log10_l`` column would otherwise
-    drift off that identity between sparse grid points; deriving L keeps every
-    interpolated epoch physically self-consistent (and matches each grid node, which
-    satisfies the identity by construction — see the table closure test).
+    ``age`` is a **wall-clock** age; a distillation ``pause`` (see ``_warp_age``) is applied
+    first, so during the pause the returned (Teff, L, R) are held constant. Teff and radius
+    are interpolated linearly; **luminosity is then derived from them by the exact identity
+    ``L/L_sun = (R/R_sun)^2 (Teff/Teff_sun)^4``** rather than interpolated independently. The
+    table's stored ``log10_l`` column would otherwise drift off that identity between sparse
+    grid points; deriving L keeps every interpolated epoch physically self-consistent (and
+    matches each grid node, which satisfies the identity by construction — see the table
+    closure test).
     """
+    age = _warp_age(pause, age)
     tracks, unit = _tracks_for(track)
     if not tracks:
         raise _OffGrid(f"no {track} cooling tracks are bundled yet")
@@ -111,26 +149,34 @@ def _interp_track(track, grid_mass, age):
     return t, lum, r
 
 
-def _track_max_age(track, grid_mass):
-    """Largest age covered for this mass (min over bracketing masses, to stay in-grid)."""
+def _track_max_age(track, grid_mass, pause=None):
+    """Largest **wall-clock** age covered for this mass (min over bracketing masses, to stay
+    in-grid). A distillation pause shifts every post-pause epoch later, so the reachable
+    wall-clock age extends by ``delta`` (``pause=None`` → unchanged, byte-identical)."""
     tracks, _ = _tracks_for(track)
     masses = sorted(tracks)
     if grid_mass in tracks:
-        return tracks[grid_mass][-1][0]
-    lo = [m for m in masses if m <= grid_mass] or [masses[0]]
-    hi = [m for m in masses if m >= grid_mass] or [masses[-1]]
-    return min(tracks[lo[-1]][-1][0], tracks[hi[0]][-1][0])
+        base = tracks[grid_mass][-1][0]
+    else:
+        lo = [m for m in masses if m <= grid_mass] or [masses[0]]
+        hi = [m for m in masses if m >= grid_mass] or [masses[-1]]
+        base = min(tracks[lo[-1]][-1][0], tracks[hi[0]][-1][0])
+    return base + (pause[1] if pause is not None else 0.0)
 
 
-def _age_for_teff(track, grid_mass, teff):
-    """Cooling age (Gyr) at which the track reaches ``teff`` (Teff decreases with age)."""
-    amax = _track_max_age(track, grid_mass)
-    t_young, _, _ = _interp_track(track, grid_mass, 0.0)
-    t_old, _, _ = _interp_track(track, grid_mass, amax)
+def _age_for_teff(track, grid_mass, teff, pause=None):
+    """Cooling age (Gyr) at which the track reaches ``teff`` (Teff decreases with age).
+
+    Works in **wall-clock** age when a ``pause`` is given (Teff is flat during the pause, so
+    the bisection target is monotone non-increasing throughout). ``pause=None`` is byte-identical.
+    """
+    amax = _track_max_age(track, grid_mass, pause)
+    t_young, _, _ = _interp_track(track, grid_mass, 0.0, pause)
+    t_old, _, _ = _interp_track(track, grid_mass, amax, pause)
     if teff > t_young + 1e-6 or teff < t_old - 1e-6:
         raise _OffGrid(f"Teff {teff:g} K is outside this track's range "
                        f"[{t_old:g}, {t_young:g}] K")
-    return _bisect(lambda a: _interp_track(track, grid_mass, a)[0] - teff, 0.0, amax)
+    return _bisect(lambda a: _interp_track(track, grid_mass, a, pause)[0] - teff, 0.0, amax)
 
 
 # ── HZ edge helpers (reuse compute_habitable_zone) ───────────────────────────
@@ -146,8 +192,8 @@ def _zone_au(teff, lum, key):
     return float("inf")
 
 
-def _edge_au(track, grid_mass, age, key):
-    teff, lum, _ = _interp_track(track, grid_mass, age)
+def _edge_au(track, grid_mass, age, key, pause=None):
+    teff, lum, _ = _interp_track(track, grid_mass, age, pause)
     return _zone_au(teff, lum, key)
 
 
@@ -173,8 +219,13 @@ def _out_of_range(teff):
     return teff < _KOPPARAPU_TEFF_MIN or teff > _KOPPARAPU_TEFF_MAX
 
 
+def _fin(x):
+    """None for a non-finite AU (an HZ edge the polynomial couldn't solve) — JSON-safe."""
+    return x if (x is not None and math.isfinite(x)) else None
+
+
 # ── mode 2: residence at a fixed orbit ───────────────────────────────────────
-def _residence_at(track, grid_mass, sma_au, hz_edge, age_max_gyr):
+def _residence_at(track, grid_mass, sma_au, hz_edge, age_max_gyr, pause=None):
     """Entry/exit ages and residence time for a planet at ``sma_au``.
 
     As the primary cools both HZ edges shrink in AU. A planet at fixed ``a`` is too hot
@@ -194,7 +245,7 @@ def _residence_at(track, grid_mass, sma_au, hz_edge, age_max_gyr):
     window still open at the integration ceiling.
     """
     ik, ok = _EDGE_KEYS[hz_edge]
-    amax = min(age_max_gyr, _track_max_age(track, grid_mass))
+    amax = min(age_max_gyr, _track_max_age(track, grid_mass, pause))
 
     res = {
         "ever_habitable": False, "entry_age_gyr": None, "exit_age_gyr": None,
@@ -205,17 +256,17 @@ def _residence_at(track, grid_mass, sma_au, hz_edge, age_max_gyr):
 
     # Hot-side gate only: search from the age where Teff has cooled to 7200 K (or 0 if the
     # track is already cooler than that) through the full track. No cold-side gate.
-    t_young = _interp_track(track, grid_mass, 0.0)[0]
+    t_young = _interp_track(track, grid_mass, 0.0, pause)[0]
     valid_lo = 0.0 if t_young <= _KOPPARAPU_TEFF_MAX else \
-        _bisect(lambda a: _interp_track(track, grid_mass, a)[0] - _KOPPARAPU_TEFF_MAX, 0.0, amax)
+        _bisect(lambda a: _interp_track(track, grid_mass, a, pause)[0] - _KOPPARAPU_TEFF_MAX, 0.0, amax)
     if amax <= valid_lo:
         return res
 
     def au_in(a):
-        return _edge_au(track, grid_mass, a, ik)
+        return _edge_au(track, grid_mass, a, ik, pause)
 
     def au_out(a):
-        return _edge_au(track, grid_mass, a, ok)
+        return _edge_au(track, grid_mass, a, ok, pause)
 
     # never habitable: hot edge never reaches a over the (in-range) track (always too hot),
     # or cold edge already interior to a at the hottest in-range epoch (always too cold).
@@ -242,8 +293,8 @@ def _residence_at(track, grid_mass, sma_au, hz_edge, age_max_gyr):
     if eff_exit <= entry:
         return res
 
-    entry_teff = _interp_track(track, grid_mass, entry)[0]
-    exit_teff = _interp_track(track, grid_mass, eff_exit)[0]
+    entry_teff = _interp_track(track, grid_mass, entry, pause)[0]
+    exit_teff = _interp_track(track, grid_mass, eff_exit, pause)[0]
     res["ever_habitable"] = True
     res["entry_age_gyr"] = entry
     res["exit_age_gyr"] = exit_age
@@ -256,20 +307,20 @@ def _residence_at(track, grid_mass, sma_au, hz_edge, age_max_gyr):
 
 
 # ── mode 3: continuously-habitable-zone band ─────────────────────────────────
-def _chz_band(track, grid_mass, threshold_gyr, hz_edge, age_max_gyr, n=600):
+def _chz_band(track, grid_mass, threshold_gyr, hz_edge, age_max_gyr, pause=None, n=600):
     """Orbit range whose residence ≥ threshold, plus the Roche-limited inner-edge flag inputs."""
-    amax = min(age_max_gyr, _track_max_age(track, grid_mass))
+    amax = min(age_max_gyr, _track_max_age(track, grid_mass, pause))
     ik, ok = _EDGE_KEYS[hz_edge]
     # bracket the search: from well inside the oldest-epoch inner edge to well outside the
     # youngest in-range outer edge.
-    inner_old = _edge_au(track, grid_mass, amax, ik)
+    inner_old = _edge_au(track, grid_mass, amax, ik, pause)
     # find the youngest age that is already in Kopparapu range, for a finite outer edge
     a_lo = 0.0
-    while a_lo < amax and _out_of_range(_interp_track(track, grid_mass, a_lo)[0]):
+    while a_lo < amax and _out_of_range(_interp_track(track, grid_mass, a_lo, pause)[0]):
         a_lo += amax / 200.0
-    outer_young = _edge_au(track, grid_mass, a_lo, ok)
+    outer_young = _edge_au(track, grid_mass, a_lo, ok, pause)
     if not math.isfinite(outer_young):
-        outer_young = _edge_au(track, grid_mass, amax, ok) * 4.0
+        outer_young = _edge_au(track, grid_mass, amax, ok, pause) * 4.0
     lo = max(inner_old * 0.3, 1e-5)
     hi = outer_young * 1.5
     if hi <= lo:
@@ -279,7 +330,7 @@ def _chz_band(track, grid_mass, threshold_gyr, hz_edge, age_max_gyr, n=600):
     qualifying = []
     for i in range(n + 1):
         a = lo * (hi / lo) ** (i / n)        # log-spaced sweep
-        r = _residence_at(track, grid_mass, a, hz_edge, age_max_gyr)
+        r = _residence_at(track, grid_mass, a, hz_edge, age_max_gyr, pause)
         if r["ever_habitable"] and r["residence_gyr"] is not None \
                 and r["residence_gyr"] >= threshold_gyr:
             qualifying.append((a, r))
@@ -303,8 +354,16 @@ def _chz_band(track, grid_mass, threshold_gyr, hz_edge, age_max_gyr, n=600):
 def compute_cooling_hz(track, mass_solar=None, mass_mjup=None,
                        cooling_age_gyr=None, teff=None, sma_au=None,
                        chz_threshold_gyr=3.0, hz_edge="conservative",
-                       age_max_gyr=13.8, satellite_density=5.5):
+                       age_max_gyr=13.8, satellite_density=5.5,
+                       cooling_delay_gyr=0.0,
+                       distillation_teff_k=_DISTILLATION_TEFF_DEFAULT_K):
     """Cooling-primary HZ residence / CHZ calculator. See module docstring for modes.
+
+    ``cooling_delay_gyr`` (Phase AD A0, WD only, default 0 = off) inserts a ²²Ne
+    distillation pause: the track is frozen at the ``distillation_teff_k`` epoch (default
+    5500 K, the 0.6 M_sun DA onset) for that many Gyr before resuming — lengthening HZ
+    residence and pushing the CHZ outward (Vanderburg et al. 2025). Δt=0 is byte-identical
+    to the pre-A0 result.
 
     Returns a mode-dependent dict (always carrying ``track``, ``mass_solar``,
     ``model_note``, ``any_out_of_range``, ``hz_model_valid_teff_k``) or ``{"error": str}``.
@@ -324,6 +383,13 @@ def compute_cooling_hz(track, mass_solar=None, mass_mjup=None,
         return {"error": "age_max_gyr must be positive."}
     if satellite_density <= 0:
         return {"error": "satellite_density must be positive."}
+    if cooling_delay_gyr < 0:
+        return {"error": "cooling_delay_gyr must be >= 0 (0 disables the pause)."}
+    if distillation_teff_k <= 0:
+        return {"error": "distillation_teff_k must be positive."}
+    if cooling_delay_gyr > 0 and track == "bd":
+        return {"error": "cooling_delay_gyr (²²Ne distillation) is a white-dwarf mechanism; "
+                         "not supported on --track bd."}
 
     # ── mass resolution (canonical M_sun + the grid's native unit) ────────────
     if track == "wd":
@@ -367,24 +433,54 @@ def compute_cooling_hz(track, mass_solar=None, mass_mjup=None,
     except _OffGrid as e:
         return {"error": str(e)}
 
+    # ── distillation pause (Phase AD A0) ──────────────────────────────────────
+    # Build the pause from the intrinsic track age at which Teff crosses distillation_teff_k,
+    # then freeze there for cooling_delay_gyr. Δt=0 → pause stays None → every downstream call
+    # is byte-identical to the pre-A0 result. The integration ceiling extends by the pause so
+    # the frozen HZ window isn't clipped by the default 13.8 Gyr.
+    pause = None
+    eff_age_max = age_max_gyr
+    if cooling_delay_gyr > 0:
+        try:
+            a_pause = _age_for_teff(track, grid_mass, distillation_teff_k)   # intrinsic track age
+        except _OffGrid:
+            return {"error": (f"distillation_teff_k {distillation_teff_k:g} K is outside the "
+                              f"{track} track's Teff range for this mass.")}
+        pause = (a_pause, cooling_delay_gyr)
+        eff_age_max = age_max_gyr + cooling_delay_gyr
+        tp, lp, _ = _interp_track(track, grid_mass, a_pause)
+        ik, ok = _EDGE_KEYS[hz_edge]
+        base.update({
+            "cooling_delay_gyr": cooling_delay_gyr,
+            "distillation_teff_k": distillation_teff_k,
+            "pause_teff_k": tp,
+            "pause_duration_gyr": cooling_delay_gyr,
+            "pause_hz_inner_au": _fin(_zone_au(tp, lp, ik)),
+            "pause_hz_outer_au": _fin(_zone_au(tp, lp, ok)),
+            "effective_age_max_gyr": eff_age_max,
+        })
+        base["model_note"] = model_note + (
+            f"; ²²Ne distillation pause: {cooling_delay_gyr:g} Gyr frozen at "
+            f"{distillation_teff_k:g} K (order-of-magnitude, Vanderburg et al. 2025)")
+
     # ── mode dispatch ─────────────────────────────────────────────────────────
     try:
         if teff is not None or cooling_age_gyr is not None:
-            return _mode_snapshot(track, grid_mass, base, cooling_age_gyr, teff)
+            return _mode_snapshot(track, grid_mass, base, cooling_age_gyr, teff, pause)
         if sma_au is not None:
-            return _mode_residence(track, grid_mass, base, sma_au, hz_edge, age_max_gyr)
+            return _mode_residence(track, grid_mass, base, sma_au, hz_edge, eff_age_max, pause)
         return _mode_chz(track, grid_mass, base, chz_threshold_gyr, hz_edge,
-                         age_max_gyr, satellite_density)
+                         eff_age_max, satellite_density, pause)
     except _OffGrid as e:
         return {"error": str(e)}
 
 
-def _mode_snapshot(track, grid_mass, base, cooling_age_gyr, teff_in):
+def _mode_snapshot(track, grid_mass, base, cooling_age_gyr, teff_in, pause=None):
     if teff_in is not None:
-        age = _age_for_teff(track, grid_mass, teff_in)
+        age = _age_for_teff(track, grid_mass, teff_in, pause)
     else:
         age = cooling_age_gyr
-    teff_k, lum, radius = _interp_track(track, grid_mass, age)
+    teff_k, lum, radius = _interp_track(track, grid_mass, age, pause)
     oor = _out_of_range(teff_k)
     notes = []
     try:
@@ -407,8 +503,8 @@ def _mode_snapshot(track, grid_mass, base, cooling_age_gyr, teff_in):
     return out
 
 
-def _mode_residence(track, grid_mass, base, sma_au, hz_edge, age_max_gyr):
-    r = _residence_at(track, grid_mass, sma_au, hz_edge, age_max_gyr)
+def _mode_residence(track, grid_mass, base, sma_au, hz_edge, age_max_gyr, pause=None):
+    r = _residence_at(track, grid_mass, sma_au, hz_edge, age_max_gyr, pause)
     out = dict(base)
     out.update({"mode": "residence", "sma_au": sma_au})
     out.update(r)
@@ -416,8 +512,8 @@ def _mode_residence(track, grid_mass, base, sma_au, hz_edge, age_max_gyr):
     return out
 
 
-def _mode_chz(track, grid_mass, base, threshold_gyr, hz_edge, age_max_gyr, satellite_density):
-    band = _chz_band(track, grid_mass, threshold_gyr, hz_edge, age_max_gyr)
+def _mode_chz(track, grid_mass, base, threshold_gyr, hz_edge, age_max_gyr, satellite_density, pause=None):
+    band = _chz_band(track, grid_mass, threshold_gyr, hz_edge, age_max_gyr, pause)
     out = dict(base)
     out.update({
         "mode": "chz",
@@ -434,7 +530,7 @@ def _mode_chz(track, grid_mass, base, threshold_gyr, hz_edge, age_max_gyr, satel
     roche_limit_au = None
     roche_rigid_au = None
     inner_roche = None
-    radius_rsun = _interp_track(track, grid_mass, _track_max_age(track, grid_mass))[2]
+    radius_rsun = _interp_track(track, grid_mass, _track_max_age(track, grid_mass, pause), pause)[2]
     roche = compute_roche_limit(
         base["mass_solar"] * _MSUN_TO_MEARTH,
         satellite_density,

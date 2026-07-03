@@ -4,6 +4,15 @@
 `scifiWorldBuilding-Claude/research/query-api-methods/cooling-hz-calculator-request.md`
 (Pkts 6/7; feeds 12).
 
+> **Phase AD A0 extension (2026-07-03):** added the WD-only **²²Ne distillation cooling pause**
+> (`cooling-hz --cooling-delay-gyr Δ` / `--distillation-teff-k`, default off/5500 K). A
+> wall-clock→track-age warp (`_warp_age` + a `pause=(a_pause, Δ)` tuple threaded through the
+> interpolators/modes with default `None`) freezes (Teff, L, R) at the distillation-onset epoch
+> for Δ Gyr, lengthening HZ residence and pushing the long-residence CHZ outward. **Δt=0 is
+> byte-identical** to the original Phase U output. Onset 5500 K = the published 0.6 M☉ DA value
+> (Vanderburg, Bédard, Becker & Blouin 2025, arXiv:2501.06613 §2); peak residence 6.3→16.3 Gyr at
+> Δ=10 reproduces their Table 1 (6.67→15.56). See `PHASE_AD_PLAN.md` §Phase 5 + `docs/integration.md`.
+
 > **Build notes (deviations from the plan, all validated):**
 > - **Cooling track:** WD = **Bédard et al. 2020 / Montreal** thick-H sequences (the modern
 >   successor to Fontaine 2001, served at the same site); BD = **ATMO 2020** CEQ tracks. Both

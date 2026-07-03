@@ -69,7 +69,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `trojan-stability` | `--host-mass-earth --companion-mass-earth --star-mass-solar` | none | `mass_ratio, criterion, stable` |
 | `lorentz-factor` | `--velocity-c` | none | `velocity_c, lorentz_factor, time_dilation_pct` |
 | `circumbinary-hz` | (`--teff1 --lum1 --teff2 --lum2`) \| (`--star1 --star2`) | none \| SIMBAD (`--star`) | `combined_lum, eff_teff, out_of_range_teff, zones[]` |
-| `cooling-hz` | `--track {wd,bd}` [`--mass-solar`\|`--mass-mjup` · one of `--teff`\|`--cooling-age-gyr`\|`--sma-au` · `--chz-threshold-gyr --hz-edge --age-max-gyr --satellite-density`] | none (bundled cooling table) | mode 1: `teff_k, lum_lsun, radius_rsun, zones[], out_of_range_teff`; mode 2: `ever_habitable, entry/exit_age_gyr, residence_gyr`; mode 3: `chz_inner/outer_au, inner_edge_roche_limited, roche_limit_au`; all: `mode, model_note, any_out_of_range, hz_model_valid_teff_k` |
+| `cooling-hz` | `--track {wd,bd}` [`--mass-solar`\|`--mass-mjup` · one of `--teff`\|`--cooling-age-gyr`\|`--sma-au` · `--chz-threshold-gyr --hz-edge --age-max-gyr --satellite-density` · `--cooling-delay-gyr --distillation-teff-k` (AD A0, WD-only ²²Ne pause)] | none (bundled cooling table) | mode 1: `teff_k, lum_lsun, radius_rsun, zones[], out_of_range_teff`; mode 2: `ever_habitable, entry/exit_age_gyr, residence_gyr`; mode 3: `chz_inner/outer_au, inner_edge_roche_limited, roche_limit_au`; all: `mode, model_note, any_out_of_range, hz_model_valid_teff_k`; +pause: `pause_teff_k, pause_hz_inner/outer_au, effective_age_max_gyr` |
 | `rv-semi-amplitude` | `--planet-mass-earth --star-mass-solar` (`--period-days`\|`--sma-au`) [`--ecc --inclination-deg`] | none | `k_ms, period_days, sma_au, ecc, inclination_deg` |
 | `transit-signal` | `--planet-radius-earth --star-radius-solar` (`--sma-au` \| `--period-days --star-mass-solar`) | none | `depth_ppm, depth_frac, transit_prob, duration_hours, sma_au, period_days` |
 | `astrometric-signal` | `--planet-mass-earth --star-mass-solar --sma-au --distance-pc` | none | `signal_microarcsec, signal_arcsec` |
@@ -433,7 +433,8 @@ query.py cooling-hz --track wd --mass-solar 0.6                          # mode 
 ```
 Core function: `cooling.compute_cooling_hz(track, mass_solar=None, mass_mjup=None,
 cooling_age_gyr=None, teff=None, sma_au=None, chz_threshold_gyr=3.0,
-hz_edge="conservative", age_max_gyr=13.8, satellite_density=5.5)`.
+hz_edge="conservative", age_max_gyr=13.8, satellite_density=5.5,
+cooling_delay_gyr=0.0, distillation_teff_k=5500.0)`.
 
 - **`--track {wd,bd}`** (required). **Mass** via the mutex group `--mass-solar` /
   `--mass-mjup` (WD default 0.6 M☉; BD primary unit `--mass-mjup`, default 50 M_Jup;
@@ -484,6 +485,29 @@ across 0.4–0.9 M☉, with the optimistic-edge inner edge Roche-limited.
 > 1×10⁻⁴ Gyr tolerance over `[0, age_max]`; the CHZ band by a 600-point log-spaced orbit
 > sweep. The cooling output is **order-of-magnitude where the track is sparsely sampled**;
 > the snapshot luminosity is exact (closure-derived).
+
+**Phase AD A0 — ²²Ne distillation cooling pause (WD only).** A neon-rich WD core undergoes
+²²Ne distillation that *pauses* cooling for several Gyr, greatly lengthening HZ residence.
+`--cooling-delay-gyr Δ` (default **0 = off**, so the whole path is **byte-identical** to the
+pre-AD result) freezes the track's (Teff, L, R) at the `--distillation-teff-k` epoch
+(default **5500 K** — the 0.6 M☉ DA onset of **Vanderburg, Bédard, Becker & Blouin 2025**,
+arXiv:2501.06613 §2, which pins 0.6/0.8/1.0 M☉ onsets at ≈5500/8100/12000 K with ~10/9/6 Gyr
+delays) for Δ Gyr, then resumes (later epochs shift +Δ; the integration ceiling extends by Δ).
+When Δ>0 every mode's result additionally carries `cooling_delay_gyr`, `distillation_teff_k`,
+`pause_teff_k`, `pause_duration_gyr`, `pause_hz_inner_au`, `pause_hz_outer_au`,
+`effective_age_max_gyr`, and a pause note appended to `model_note`. **Order-of-magnitude**: the
+pause is modelled as a (Teff, L, R) freeze (not a re-solved track), and the realized ~10 Gyr
+delay depends strongly on the assumed ²²Ne fraction (~3%), applying only to the ~0.6–2.5%
+high-neon WD subset. **Anchors:** 0.6 M☉ peak residence **6.3 Gyr → 16.3 Gyr at Δ=10**
+(Vanderburg Table 1: 6.67 → 15.56); a planet inside the frozen pause-HZ band gains ~Δ Gyr of
+residence; the long-residence CHZ outer edge moves **outward** (threshold 6 Gyr: 0.0147 →
+0.0193 AU; at threshold 8 Gyr standard cooling yields *no* CHZ while the pause creates one).
+**Finding (documented):** for a 0.6 M☉ WD standard cooling already yields a ≥3 Gyr CHZ out to
+~0.02 AU, so the outward extension appears at *long*-residence thresholds (≥5 Gyr), not at the
+plan's "≥3 Gyr" — which is truer to Vanderburg's max-duration framing. **Validation (exit 1):**
+`cooling_delay_gyr < 0`; `distillation_teff_k ≤ 0`; a `distillation_teff_k` outside the track's
+Teff range for the mass; **`--cooling-delay-gyr > 0` on `--track bd`** (distillation is a WD
+mechanism). **Exit 2:** non-numeric `--cooling-delay-gyr`/`--distillation-teff-k`.
 
 ### Power / Thermal / Shielding (Phase V — pure math + bundled XCOM table, no network)
 

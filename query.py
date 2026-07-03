@@ -264,6 +264,8 @@ def cmd_cooling_hz(args):
         cooling_age_gyr=args.cooling_age_gyr, teff=args.teff, sma_au=args.sma_au,
         chz_threshold_gyr=args.chz_threshold_gyr, hz_edge=args.hz_edge,
         age_max_gyr=args.age_max_gyr, satellite_density=args.satellite_density,
+        cooling_delay_gyr=args.cooling_delay_gyr,
+        distillation_teff_k=args.distillation_teff_k,
     ))
 
 
@@ -1337,6 +1339,12 @@ def main():
                    help="Integration ceiling in Gyr (default 13.8)")
     p.add_argument("--satellite-density", type=float, default=5.5,
                    help="Satellite bulk density g/cc for the CHZ Roche cross-check (default 5.5 rocky)")
+    p.add_argument("--cooling-delay-gyr", type=float, default=0.0,
+                   help="²²Ne distillation cooling pause in Gyr (WD only; default 0 = off). Freezes "
+                        "Teff/L/R at the distillation epoch for this long, lengthening HZ residence.")
+    p.add_argument("--distillation-teff-k", type=float, default=5500.0,
+                   help="Teff K at which the distillation pause onsets (default 5500, the 0.6 M_sun "
+                        "DA onset of Vanderburg et al. 2025, arXiv:2501.06613)")
     p.set_defaults(func=cmd_cooling_hz)
 
     # waste-heat (Phase V — power → rejected-heat budget, with Carnot ceiling)
