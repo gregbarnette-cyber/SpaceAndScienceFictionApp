@@ -79,6 +79,8 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `relativistic-brachistochrone` | `--accel-g --distance-ly` | none | `coord_time_yr, proper_time_yr, peak_velocity_c, peak_lorentz_factor` |
 | `rocket-equation` | two of (`--delta-v-kms`\|`--beta`) · (`--exhaust-velocity-kms`\|`--isp-s`\|`--fuel`) · `--mass-ratio` [`--relativistic --legs {flyby,rendezvous,round-trip} --payload-mass-t --structure-fraction`] | none (bundled fuel presets) | `mass_ratio, mass_ratio_single_burn, propellant_fraction, delta_v_kms, beta, exhaust_velocity_kms, isp_s, fuel, legs, relativistic, payload_mass_t, propellant_mass_t, wet_mass_t, structure_fraction, model_note` |
 | `beam-sail` | `--beam-power-w` (`--sail-mass-kg` \| `--areal-mass-gm2 --sail-area-m2`) [`--payload-mass-kg --reflectivity --wavelength-nm --transmit-aperture-m` · (`--accel-distance-au`\|`--accel-time-days`)] | none | `thrust_n, acceleration_ms2, final_velocity_kms, beta, beam_energy_j, sail_area_m2, total_mass_kg, sail_mass_kg, payload_mass_kg, reflectivity, beam_range_note, model_note` |
+| `magsail` | (`--velocity-kms` \| `--beta`) + ((`--coil-current-a --coil-radius-m`) \| `--magnetic-moment-am2`) [`--ism-density-cm3 --ion-mass-amu --standoff-coeff --drag-coeff --vehicle-mass-t --velocity-final-kms`] | none (bundled ISM/coeffs) | `magnetopause_radius_km, ram_pressure_pa, effective_area_km2, drag_force_n, drag_scaling_note, deceleration_ms2, stopping_distance_ly, stopping_time_yr, near_field_warning, magnetic_moment_am2, ism_mass_density_kgm3, ionization_note, model_note` |
+| `ramscoop` | (`--velocity-kms` \| `--beta`) + ((`--coil-current-a --coil-radius-m`) \| `--scoop-area-km2` \| `--magnetic-moment-am2`) + ((`--fuel {pp,cno,dd}` [`--fusion-efficiency`]) \| `--exhaust-velocity-kms`) [`--ism-density-cm3 --ion-mass-amu --standoff-coeff --drag-coeff`] | none (bundled ISM/fusion) | `collected_mass_flux_kgs, magnetopause_radius_km, scoop_area_km2, exhaust_velocity_kms, exhaust_beta, reaction_thrust_n, collection_drag_n, magnetic_drag_n, net_force_n, verdict, crossover_velocity_kms, fusion_yield_fraction, fusion_efficiency, ionization_note, model_note` |
 | `spin-stress` | (`--material` \| `--density-kgm3 --tensile-strength-mpa`) + one of (`--target-gravity-g` \| `--radius-m` \| `--rpm --radius-m`) [`--safety-factor`] | none (bundled materials) | `material, density_kgm3, tensile_strength_mpa, safety_factor, allowable_stress_mpa, max_tangential_velocity_ms, target_gravity_g, radius_m, rpm, max_radius_m, max_radius_km, max_gravity_g, hoop_stress_mpa, margin, specific_strength_note, notes, model_note` |
 | `tether-taper` | (`--material` \| `--density-kgm3 --tensile-strength-mpa`) (`--body` \| `--surface-gravity-ms2 --surface-radius-km --geo-radius-km`) [`--safety-factor`] | none (bundled materials/bodies) | `material, density_kgm3, tensile_strength_mpa, safety_factor, body, surface_gravity_ms2, surface_radius_km, geo_radius_km, characteristic_velocity_ms, characteristic_length_km, taper_ratio, feasible, notes, model_note` |
 | `dyson-collector` | (`--luminosity-lsun` \| `--star`) `--fraction --orbit-au` [`--areal-mass-kgm2`] | none \| SIMBAD (`--star`) | `intercepted_power_w, collector_area_m2, collector_area_au2, collector_mass_kg, incident_flux_wm2, fraction, orbit_au, luminosity_lsun, areal_mass_kgm2, model_note` |
@@ -760,6 +762,93 @@ payload_mass_kg, reflectivity, beam_range_note, model_note}`. **Validation:** no
 beam_power/area/mass; `reflectivity∉[0,1]`; negative payload; no mass source; both
 `--accel-distance-au` and `--accel-time-days` (argparse mutex → exit 2); only one of
 wavelength/aperture → curated `{"error"}` exit 1. **Anchor:** P=100 GW reflective (R=1) → F≈667 N.
+
+### ISM drag / magnetic sail (Phase AC — pure math + bundled ISM/fusion constants, no network)
+
+Two `query.py`-only calculators for the sibling repo's Packet 16 (STL Colonization Propulsion),
+**Group K** — the magnetic interaction of a vehicle with the interstellar medium: the one
+scope-shaping STL gap Groups G–J did not enumerate. They complement Group G (`rocket-equation` =
+"can you carry the fuel"; `beam-sail` = "can a photon beam push you"; **Group K = "what does the ISM
+do to you — brake you, or feed a ramjet"**) and the `dust-*` subcommands (ISM *column* for
+extinction, not magnetic momentum exchange). Pure-math, self-validating (curated `{"error"}` exit 1;
+argparse exit 2). `core/ism_drag.py`; the bundled ISM/fusion constants live in
+`core/ism_drag_tables.py` (isolated, like `core/propulsion_tables.py`). The **physics is durable**
+(magnetopause pressure balance `B²/2μ₀ = kρv²`; momentum flux `ṁ = ρvA`; the net-thrust inequality
+`v_e > v`); the *parameter values* (`k`, `C_d`, fusion `f`, `η`, the ISM defaults) are present-day /
+first-principles ancestors, **overridable** (Mature-Technology Assumption). `_MU_0`/`_M_PROTON` were
+added to `core/equations.py`.
+
+> **The ISM density is a caller-supplied parameter, never re-derived** (like `bioregen-area`'s PAR).
+> Defaults flag to the sibling **Local-Interstellar-Environment** packet: `--ism-density-cm3` default
+> **0.1** (Local Interstellar Cloud n(H I); the Local Bubble hot interior is ~0.005), mean
+> `--ion-mass-amu` **1.3** (H+He). **Ionization caveat (in every output as `ionization_note`):** the
+> real LIC is only ~22% H / ~39% He ionized and a magsail/ramscoop couples to *charged* particles
+> only, so "fully ionized" overestimates the interacting density ~4× — pass the *ion* density if
+> accuracy matters. **Coefficient provenance (confirmed 2026-07-02):** drag `C_d`=1.0 (Zubrin &
+> Andrews' explicit "unity over the magnetospheric boundary area"); standoff `k`=1.0 (simple pressure
+> balance; the compressed-to-dipole field factor is f=2 / 2.44 Chapman-Ferraro — set `--standoff-coeff`
+> for that convention); fusion `f` p-p/CNO **0.71%**, D-D **0.38%** (catalyzed cycle; the request's
+> stated 0.43% was reconciled down — flag on shipment); default `η`=0.1 (low directed-exhaust
+> fraction; ideal η=1 gives p-p `v_e`≈0.12c). Echoed in each `model_note`.
+
+#### `magsail` (K1)
+Magnetic-sail braking against the ISM. `ρ = n·m̄`; magnetopause standoff
+`R_mp = [μ₀·m_dip²/(8π²·k·ρv²)]^(1/6)` (`m_dip = I·π·R_coil²` or supplied); drag
+`F = C_d·½·ρv²·π·R_mp²`. Because `R_mp ∝ v^(−1/3)`, **`F_drag ∝ v^(4/3)`** (fast initial braking, long
+tail — `drag_scaling_note`). Optional deceleration (`--vehicle-mass-t`) and a single-law
+stopping distance/time (`--velocity-final-kms`, requires the mass) from the analytic `v^(4/3)`
+integral (coefficient frozen at v₀ — a first estimate, not a multi-leg trajectory).
+```bash
+query.py magsail --ism-density-cm3 0.1 --ion-mass-amu 1.0 --beta 0.1 \
+  --coil-radius-m 100000 --coil-current-a 100000 --vehicle-mass-t 1000
+query.py magsail --beta 0.1 --magnetic-moment-am2 3.14e15 --vehicle-mass-t 1000 --velocity-final-kms 1000
+```
+Core: `ism_drag.compute_magsail(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None,
+beta=None, coil_current_a=None, coil_radius_m=None, magnetic_moment_am2=None, standoff_coeff=None,
+drag_coeff=None, vehicle_mass_t=None, velocity_final_kms=None)`. Velocity — exactly one of
+`--velocity-kms`/`--beta` (argparse mutex; `0<β<1`). Sail — exactly one of the coil pair
+(`--coil-current-a`+`--coil-radius-m`) or `--magnetic-moment-am2`. Output: `{ism_density_cm3,
+ion_mass_amu, ism_mass_density_kgm3, velocity_kms, beta, magnetic_moment_am2, coil_current_a|null,
+coil_radius_m|null, magnetopause_radius_km, ram_pressure_pa, effective_area_km2, standoff_coeff,
+drag_coeff, drag_force_n, drag_scaling_note ("F ∝ v^4/3"), deceleration_ms2|null,
+stopping_distance_ly|null, stopping_time_yr|null, near_field_warning|null, ionization_note,
+model_note}`. **Validation:** non-positive density/ion-mass/current/radius/moment/mass/k/C_d;
+`β∉(0,1)`; velocity not exactly one anchor; partial or double sail anchor; `--velocity-final-kms`
+without `--vehicle-mass-t`, ≥ the current velocity, or ≤ 0 → curated `{"error"}` exit 1; the velocity
+mutex / non-numeric → argparse exit 2. **`near_field_warning`** when `R_mp ≲ R_coil` (the far-field
+dipole assumption weakens) — a note, not an error. **Anchor:** `n0.1/m1.0/β0.1/R_coil 1e5/I 1e5` →
+R_mp ≈ 101 km, drag ≈ 2.38 kN (C_d=k=1), a ≈ 2.4×10⁻³ m/s² for 10³ t; halving β drops drag ~2^(4/3)
+≈ 2.52×.
+
+#### `ramscoop` (K2)
+Bussard ramjet drag-vs-thrust verdict. Scoop area `A_mp = π R_mp²` (magnetopause, like K1) or a
+supplied `--scoop-area-km2`; collected flux `ṁ = ρ·v·A_mp`; ideal fusion exhaust
+`v_e = √(2·η·f·c²)` (or explicit `--exhaust-velocity-kms`). Reaction `ṁ·v_e`, collection cost `ṁ·v`,
+magnetic drag `C_d·½ρv²A_mp`, so **`F_net = ṁ(v_e − v) − F_drag`** → `verdict` "drive"/"brake". Net
+thrust needs at minimum `v_e > v`, and the drag makes the real threshold stricter — the crossover
+`v_crossover = v_e/(1 + C_d/2)` (the common `v^(1/3)` factor cancels, so this holds for both the
+field-derived and fixed-area scoop). Above it the ramjet is a net **brake** (Zubrin & Andrews 1985).
+```bash
+query.py ramscoop --fuel pp --beta 0.1 --coil-radius-m 100000 --coil-current-a 100000
+query.py ramscoop --fuel pp --fusion-efficiency 1.0 --beta 0.01 --scoop-area-km2 1000
+query.py ramscoop --exhaust-velocity-kms 50000 --beta 0.05 --scoop-area-km2 1000
+```
+Core: `ism_drag.compute_ramscoop(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None,
+beta=None, coil_current_a=None, coil_radius_m=None, scoop_area_km2=None, magnetic_moment_am2=None,
+fuel=None, fusion_efficiency=None, exhaust_velocity_kms=None, standoff_coeff=None, drag_coeff=None)`.
+Velocity — exactly one of `--velocity-kms`/`--beta`. Scoop — exactly one of the coil pair /
+`--magnetic-moment-am2` / `--scoop-area-km2`. Exhaust — exactly one of `--fuel {pp,cno,dd}`
+(+ optional `--fusion-efficiency`, default 0.1) or `--exhaust-velocity-kms`. Output: `{velocity_kms,
+beta, ism_density_cm3, ion_mass_amu, magnetopause_radius_km, magnetic_moment_am2|null, scoop_area_km2,
+collected_mass_flux_kgs, fuel, fusion_yield_fraction, fusion_efficiency, exhaust_velocity_kms,
+exhaust_beta, standoff_coeff, drag_coeff, reaction_thrust_n, collection_drag_n, magnetic_drag_n,
+net_force_n, verdict ("drive"|"brake"), crossover_velocity_kms, ionization_note, model_note}`.
+**Validation:** non-positive density/ion-mass/area/v_e/k/C_d; `β∉(0,1)`; `η∉(0,1]`; velocity/scoop/
+exhaust not exactly one anchor; scoop area + field both; `--fusion-efficiency` with
+`--exhaust-velocity-kms`; unknown `--fuel` → curated `{"error"}` exit 1; the velocity mutex, a bad
+`--fuel` choice, or a non-numeric value → argparse exit 2. **Anchor:** `--fuel pp` at β0.1 →
+`v_e`≈11,300 km/s (η=0.1) → **brake**; the *ideal* η=1 case has `v_e`≈0.12c > v (reaction > collection)
+yet magnetic drag still flips it to **brake** (the Zubrin & Andrews result); low β + high η → **drive**.
 
 ### Megastructure scale (Phase Z — pure math + bundled material/body tables, no network)
 

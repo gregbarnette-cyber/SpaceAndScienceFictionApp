@@ -25,6 +25,8 @@ _STANDARD_GRAVITY = 9.80665           # standard gravity g₀, m/s² (CGPM; Phas
 _PLANCK_H         = 6.62607015e-34    # Planck constant, J·s (CODATA; Phase AA par-flux)
 _AVOGADRO         = 6.02214076e23     # Avogadro constant, mol⁻¹ (CODATA; Phase AA par-flux PPFD)
 _SOLAR_LUMINOSITY_W = 3.828e26        # nominal solar luminosity, W (IAU 2015 B3; Phase AA insolation)
+_MU_0             = 1.25663706212e-6  # vacuum permeability, T·m/A (CODATA 2018; Phase AC ISM-drag)
+_M_PROTON         = 1.67262192369e-27 # proton mass, kg (CODATA 2018; Phase AC ISM-drag)
 
 
 def _rocky_radius_km(mass_earth: float) -> float:

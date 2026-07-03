@@ -18,6 +18,7 @@ import core.dust_routing as dust_routing
 import core.equations as equations
 import core.feasibility as feasibility
 import core.generate as generate
+import core.ism_drag as ism_drag
 import core.life_support as life_support
 import core.megastructure as megastructure
 import core.par_flux as par_flux
@@ -310,6 +311,31 @@ def cmd_beam_sail(args):
         payload_mass_kg=args.payload_mass_kg, reflectivity=args.reflectivity,
         wavelength_nm=args.wavelength_nm, transmit_aperture_m=args.transmit_aperture_m,
         accel_distance_au=args.accel_distance_au, accel_time_days=args.accel_time_days,
+    ))
+
+
+# ── Phase AC — ISM-drag / magnetic-sail calculators (Group K) ─────────────────
+
+def cmd_magsail(args):
+    _out(ism_drag.compute_magsail(
+        ism_density_cm3=args.ism_density_cm3, ion_mass_amu=args.ion_mass_amu,
+        velocity_kms=args.velocity_kms, beta=args.beta,
+        coil_current_a=args.coil_current_a, coil_radius_m=args.coil_radius_m,
+        magnetic_moment_am2=args.magnetic_moment_am2,
+        standoff_coeff=args.standoff_coeff, drag_coeff=args.drag_coeff,
+        vehicle_mass_t=args.vehicle_mass_t, velocity_final_kms=args.velocity_final_kms,
+    ))
+
+
+def cmd_ramscoop(args):
+    _out(ism_drag.compute_ramscoop(
+        ism_density_cm3=args.ism_density_cm3, ion_mass_amu=args.ion_mass_amu,
+        velocity_kms=args.velocity_kms, beta=args.beta,
+        coil_current_a=args.coil_current_a, coil_radius_m=args.coil_radius_m,
+        scoop_area_km2=args.scoop_area_km2, magnetic_moment_am2=args.magnetic_moment_am2,
+        fuel=args.fuel, fusion_efficiency=args.fusion_efficiency,
+        exhaust_velocity_kms=args.exhaust_velocity_kms,
+        standoff_coeff=args.standoff_coeff, drag_coeff=args.drag_coeff,
     ))
 
 
@@ -1306,6 +1332,50 @@ def main():
     g.add_argument("--accel-distance-au", type=float, help="Acceleration length, AU (→ final velocity)")
     g.add_argument("--accel-time-days", type=float, help="Acceleration time, days (→ final velocity)")
     p.set_defaults(func=cmd_beam_sail)
+
+    # magsail (Phase AC — magnetic-sail braking against the ISM: standoff → drag ∝ v^4/3 →
+    # deceleration → optional stopping distance/time)
+    p = sub.add_parser("magsail",
+                       help="Magnetic-sail braking against the ISM: magnetopause standoff, drag "
+                            "force (∝ v^4/3), deceleration, and optional stopping distance/time")
+    p.add_argument("--ism-density-cm3", type=float,
+                   help="ISM number density, cm⁻³ (default 0.1 = Local Interstellar Cloud)")
+    p.add_argument("--ion-mass-amu", type=float, help="Mean ISM ion mass, amu (default 1.3 = H+He)")
+    v = p.add_mutually_exclusive_group()
+    v.add_argument("--velocity-kms", type=float, help="Flight velocity, km/s (velocity anchor)")
+    v.add_argument("--beta", type=float, help="Flight velocity as a fraction of c, 0<β<1 (velocity anchor)")
+    p.add_argument("--coil-current-a", type=float, help="Superconducting-loop current, A (with --coil-radius-m)")
+    p.add_argument("--coil-radius-m", type=float, help="Coil radius, m (with --coil-current-a)")
+    p.add_argument("--magnetic-moment-am2", type=float, help="Magnetic dipole moment, A·m² (sail anchor)")
+    p.add_argument("--standoff-coeff", type=float, help="Standoff coefficient k (default 1.0; see docs)")
+    p.add_argument("--drag-coeff", type=float, help="Drag coefficient C_d (default 1.0; Zubrin & Andrews)")
+    p.add_argument("--vehicle-mass-t", type=float, help="Vehicle mass, t (→ deceleration; needed for stopping)")
+    p.add_argument("--velocity-final-kms", type=float,
+                   help="Target final velocity, km/s (→ stopping distance/time; requires --vehicle-mass-t)")
+    p.set_defaults(func=cmd_magsail)
+
+    # ramscoop (Phase AC — Bussard ramjet drag-vs-thrust verdict: drive or brake?)
+    p = sub.add_parser("ramscoop",
+                       help="Bussard ramjet drag-vs-thrust verdict (drive or brake?) + crossover "
+                            "velocity, from the ISM/scoop/fusion balance")
+    p.add_argument("--ism-density-cm3", type=float,
+                   help="ISM number density, cm⁻³ (default 0.1 = Local Interstellar Cloud)")
+    p.add_argument("--ion-mass-amu", type=float, help="Mean ISM ion mass, amu (default 1.3 = H+He)")
+    v = p.add_mutually_exclusive_group()
+    v.add_argument("--velocity-kms", type=float, help="Flight velocity, km/s (velocity anchor)")
+    v.add_argument("--beta", type=float, help="Flight velocity as a fraction of c, 0<β<1 (velocity anchor)")
+    p.add_argument("--coil-current-a", type=float, help="Loop current, A (with --coil-radius-m; scoop anchor)")
+    p.add_argument("--coil-radius-m", type=float, help="Coil radius, m (with --coil-current-a)")
+    p.add_argument("--magnetic-moment-am2", type=float, help="Magnetic dipole moment, A·m² (scoop anchor)")
+    p.add_argument("--scoop-area-km2", type=float, help="Physical scoop area, km² (scoop anchor)")
+    p.add_argument("--fuel", choices=sorted(ism_drag._t._FUSION),
+                   help="Bundled fusion mass→energy fraction (pp/cno/dd; exhaust anchor, with --fusion-efficiency)")
+    p.add_argument("--fusion-efficiency", type=float,
+                   help="Directed-exhaust efficiency η, 0<η≤1 (default 0.1, low; with --fuel)")
+    p.add_argument("--exhaust-velocity-kms", type=float, help="Explicit exhaust velocity v_e, km/s (exhaust anchor)")
+    p.add_argument("--standoff-coeff", type=float, help="Standoff coefficient k (default 1.0)")
+    p.add_argument("--drag-coeff", type=float, help="Drag coefficient C_d (default 1.0)")
+    p.set_defaults(func=cmd_ramscoop)
 
     # spin-stress (Phase Z — hoop stress σ=ρv² → max habitat size for a material)
     p = sub.add_parser("spin-stress",
