@@ -67,12 +67,12 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - Columns: Parallax (2dp), Trig Parallax (4dp), Parsecs (4dp), Light Years (4dp)
 - **Earth Equivalent Orbit Properties table** — rendered by `_display_earth_equivalent_orbit()`; uses `_print_table()` (two-line header row, all columns right-aligned):
   - `distAU = sqrt(bcLuminosity / sunlightIntensity)`
-  - `distKM = distAU × 149000000`
+  - `distKM = distAU × 149597870.7` (the canonical `_KM_PER_AU`; was `149000000`, 0.4% low)
   - `planetaryYear = sqrt(distAU³ / stellarMass)`
   - `planetaryTemperature = 314.9 × (1 - bondAlbedo)^0.25 × sunlightIntensity^0.25` (Phase P P1e — the M1 surface model; the corrected `(1−A)^0.25` albedo exponent. Identical to the legacy `374 × 1.1 × (1−A) × S^0.25` at A=0.3 → 288 K, but physically correct at every other albedo — the old linear `(1−A)` collapsed unrealistically at high albedo, e.g. Venus → ~110 K below its 227 K equilibrium temp.)
   - `planetaryTemperatureC = planetaryTemperature - 273.15`
   - `planetaryTemperatureF = (planetaryTemperatureC × 9/5) + 32`
-  - `starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)`; `sizeOfSun = f"{starAngularDiameter:.2f}°"`
+  - `starAngularDiameter = 57.3 × (stellarDiameterKM / distKM)` (small-angle rad→deg; was the buggy `57.3 **`, which rendered the Sun at ~1.04° instead of ~0.53°); `sizeOfSun = f"{starAngularDiameter:.2f}°"`
   - Columns: Distance AU (4dp), Distance KM (5e), Year (4dp), Temp K (2dp), Temp C (2dp), Temp F (2dp), Size of Sun (degree string)
 
 > **Phase P — two temperature models (M1 / M2).** The region rows below split across two

@@ -60,13 +60,32 @@ def _seg(a, b, map_sel, step_pc):
     return dust.integrate_segment_av(p1, p2, step_pc=step_pc, map_sel=map_sel)
 
 
-def _total_av_along(seq, map_sel, step_pc):
+def _seg_cached(a, b, map_sel, step_pc, memo):
+    """Memoizing wrapper over `_seg` for a single planner invocation (P2.6).
+
+    Keyed on the unordered name pair — A_V is symmetric and stars are uniquely
+    named within one route, so this matches the pairs the Dijkstra cost caches and
+    the O(n²) A_V matrices already integrate. A miss simply recomputes via `_seg`
+    (identical value), so this only removes redundant re-integration of edges — it
+    can never change a result. `_seg`'s own signature is untouched (the tests patch
+    `_seg` directly and mock it deterministically per pair)."""
+    key = frozenset((a["name"], b["name"]))
+    seg = memo.get(key)
+    if seg is None:
+        seg = _seg(a, b, map_sel, step_pc)
+        memo[key] = seg
+    return seg
+
+
+def _total_av_along(seq, map_sel, step_pc, memo=None):
     """Total integrated A_V along an ordered node sequence (for the distance-
-    optimal comparison). Returns (total_av, all_covered) or (None, None) on error."""
+    optimal comparison). Returns (total_av, all_covered) or (None, None) on error.
+    When `memo` is supplied, edges already integrated by the caller are reused."""
     total = 0.0
     covered = True
     for i in range(len(seq) - 1):
-        s = _seg(seq[i], seq[i + 1], map_sel, step_pc)
+        s = (_seg_cached(seq[i], seq[i + 1], map_sel, step_pc, memo)
+             if memo is not None else _seg(seq[i], seq[i + 1], map_sel, step_pc))
         if "error" in s:
             return None, None
         total += s["a_v"]
@@ -110,11 +129,13 @@ def _resolve_named(star_names, dedup):
     return nodes, None
 
 
-def _compare(our_total_ly, our_total_av, dist_seq, map_sel, step_pc, dist_total_ly):
+def _compare(our_total_ly, our_total_av, dist_seq, map_sel, step_pc, dist_total_ly,
+             memo=None):
     """Build the distance-optimal comparison block from the distance route's node
     sequence (its dust column integrated). dist_total_ly is the distance route's
-    own geometric length."""
-    d_av, _cov = _total_av_along(dist_seq, map_sel, step_pc)
+    own geometric length. `memo` (P2.6) lets edges shared with our route reuse the
+    integrals already computed."""
+    d_av, _cov = _total_av_along(dist_seq, map_sel, step_pc, memo=memo)
     if d_av is None:
         d_av = our_total_av
     return {
@@ -155,13 +176,14 @@ def compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance
     t = _merge_endpoint(nodes, d)
     grid = _SpatialGrid(nodes, max_jump_ly)
 
-    cost_cache, errors = {}, []
+    cost_cache, errors, seg_memo = {}, [], {}
 
     def dust_cost(u, v, w):
         key = (u, v) if u < v else (v, u)
         if key in cost_cache:
             return cost_cache[key]
         seg = _seg(nodes[u], nodes[v], map_sel, dust_step_pc)
+        seg_memo[frozenset((nodes[u]["name"], nodes[v]["name"]))] = seg  # P2.6 reuse
         val = float("inf") if "error" in seg else seg["a_v"]
         if "error" in seg:
             errors.append(seg["error"])
@@ -196,7 +218,7 @@ def compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance
     for i in range(len(seq) - 1):
         a, b = seq[i], seq[i + 1]
         ly = _node_dist(a, b)
-        seg = _seg(a, b, map_sel, dust_step_pc)
+        seg = _seg_cached(a, b, map_sel, dust_step_pc, seg_memo)  # P2.6: reuse Dijkstra integrals
         cum_ly += ly
         cum_av += seg["a_v"]
         cum_var += max(0.0, seg["a_v_hi"] - seg["a_v"]) ** 2
@@ -212,7 +234,7 @@ def compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance
     dref = calc.compute_jump_route(origin, destination, max_jump_ly, "distance")
     if "error" not in dref and dref.get("reachable"):
         cmp = _compare(cum_ly, cum_av, _nodes_from_stars(dref["stars"]),
-                       map_sel, dust_step_pc, dref["total_ly"])
+                       map_sel, dust_step_pc, dref["total_ly"], memo=seg_memo)
     else:
         cmp = {"distance_optimal_ly": None, "distance_optimal_av": None,
                "extra_ly": None, "saved_av": None}
@@ -267,13 +289,14 @@ def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distanc
     t = _merge_endpoint(nodes, d)
     grid = _SpatialGrid(nodes, max_jump_ly)
 
-    cost_cache, errors = {}, []
+    cost_cache, errors, seg_memo = {}, [], {}
 
     def blend_cost(u, v, w):
         key = (u, v) if u < v else (v, u)
         if key in cost_cache:
             return cost_cache[key]
         seg = _seg(nodes[u], nodes[v], map_sel, dust_step_pc)
+        seg_memo[frozenset((nodes[u]["name"], nodes[v]["name"]))] = seg  # P2.6 reuse
         if "error" in seg:
             errors.append(seg["error"])
             val = float("inf")
@@ -311,7 +334,7 @@ def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distanc
     for i in range(len(seq) - 1):
         a, b = seq[i], seq[i + 1]
         ly = _node_dist(a, b)
-        seg = _seg(a, b, map_sel, dust_step_pc)
+        seg = _seg_cached(a, b, map_sel, dust_step_pc, seg_memo)  # P2.6: reuse Dijkstra integrals
         cum_ly += ly
         cum_av += seg["a_v"]
         cum_cost += alpha * ly + beta * seg["a_v"]
@@ -328,7 +351,7 @@ def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distanc
     dref = calc.compute_jump_route(origin, destination, max_jump_ly, "distance")
     if "error" not in dref and dref.get("reachable"):
         cmp = _compare(cum_ly, cum_av, _nodes_from_stars(dref["stars"]),
-                       map_sel, dust_step_pc, dref["total_ly"])
+                       map_sel, dust_step_pc, dref["total_ly"], memo=seg_memo)
     else:
         cmp = {"distance_optimal_ly": None, "distance_optimal_av": None,
                "extra_ly": None, "saved_av": None}
@@ -371,10 +394,11 @@ def compute_multi_stop_dust(star_names, velocity_input, use_times_c,
     legs = []
     cum_ly = cum_av = cum_var = cum_hours = 0.0
     all_cov = True
+    seg_memo = {}
     for i in range(len(seq) - 1):
         a, b = seq[i], seq[i + 1]
         ly = _node_dist(a, b)
-        seg = _seg(a, b, map_sel, dust_step_pc)
+        seg = _seg_cached(a, b, map_sel, dust_step_pc, seg_memo)
         hours = ly / ly_hr
         cum_ly += ly
         cum_av += seg["a_v"]
@@ -420,11 +444,13 @@ def compute_optimal_tour_dust(star_names, velocity_input, use_times_c, closed=Fa
     ly_hr, times_c = _vel(velocity_input, use_times_c)
     n = len(nodes)
 
-    # A_V cost matrix (symmetric).
+    # A_V cost matrix (symmetric). seg_memo (P2.6) lets the leg-detail loop and the
+    # distance-optimal comparison reuse these integrals instead of recomputing them.
+    seg_memo = {}
     av = [[0.0] * n for _ in range(n)]
     for i in range(n):
         for j in range(i + 1, n):
-            seg = _seg(nodes[i], nodes[j], map_sel, dust_step_pc)
+            seg = _seg_cached(nodes[i], nodes[j], map_sel, dust_step_pc, seg_memo)
             av[i][j] = av[j][i] = seg["a_v"]
 
     def tour_av(order):
@@ -442,15 +468,20 @@ def compute_optimal_tour_dust(star_names, velocity_input, use_times_c, closed=Fa
         order.append(nxt)
         unvisited.discard(nxt)
 
-    # 2-opt (start fixed at index 0).
+    # 2-opt (start fixed at index 0). P2.7: hoist the current-tour cost out of the
+    # O(n²) (i,k) loop, recomputing only on an accepted swap — behavior-identical
+    # (cur_av always equals tour_av(order), same acceptance/tie-breaking).
+    cur_av = tour_av(order)
     improved = True
     while improved:
         improved = False
         for i in range(1, n - 1):
             for k in range(i + 1, n):
                 cand = order[:i] + order[i:k + 1][::-1] + order[k + 1:]
-                if tour_av(cand) + 1e-12 < tour_av(order):
+                cand_av = tour_av(cand)
+                if cand_av + 1e-12 < cur_av:
                     order = cand
+                    cur_av = cand_av
                     improved = True
 
     seq = [nodes[i] for i in order]
@@ -463,7 +494,7 @@ def compute_optimal_tour_dust(star_names, velocity_input, use_times_c, closed=Fa
     for i in range(len(seq) - 1):
         a, b = seq[i], seq[i + 1]
         ly = _node_dist(a, b)
-        seg = _seg(a, b, map_sel, dust_step_pc)
+        seg = _seg_cached(a, b, map_sel, dust_step_pc, seg_memo)  # P2.6: reuse matrix integrals
         hours = ly / ly_hr
         cum_ly += ly
         cum_av += seg["a_v"]
@@ -483,7 +514,7 @@ def compute_optimal_tour_dust(star_names, velocity_input, use_times_c, closed=Fa
     dref = calc.compute_optimal_tour(star_names, velocity_input, use_times_c, closed=closed)
     if "error" not in dref:
         cmp = _compare(cum_ly, cum_av, _nodes_from_stars(dref["stars"]),
-                       map_sel, dust_step_pc, dref["optimized_total_ly"])
+                       map_sel, dust_step_pc, dref["optimized_total_ly"], memo=seg_memo)
     else:
         cmp = {"distance_optimal_ly": None, "distance_optimal_av": None,
                "extra_ly": None, "saved_av": None}
@@ -531,12 +562,13 @@ def compute_nearest_neighbor_dust(start_star, num_hops, max_ly,
     cum_ly = cum_av = 0.0
     chain, chain_nodes = [], [nodes[s]]
     stopped_early = False
+    seg_memo = {}
     for hop in range(1, num_hops + 1):
         best = None  # (a_v, idx, ly, seg)
         for v, w in grid.neighbors(cur, max_ly):
             if v in visited:
                 continue
-            seg = _seg(nodes[cur], nodes[v], map_sel, dust_step_pc)
+            seg = _seg_cached(nodes[cur], nodes[v], map_sel, dust_step_pc, seg_memo)
             if best is None or seg["a_v"] < best[0]:
                 best = (seg["a_v"], v, w, seg)
         if best is None:
@@ -565,7 +597,7 @@ def compute_nearest_neighbor_dust(start_star, num_hops, max_ly,
     dref = calc.compute_nearest_neighbor_chain(start_star, num_hops, max_ly)
     if "error" not in dref:
         cmp = _compare(cum_ly, cum_av, _nodes_from_stars(dref["stars"]),
-                       map_sel, dust_step_pc, dref["total_ly"])
+                       map_sel, dust_step_pc, dref["total_ly"], memo=seg_memo)
     else:
         cmp = {"distance_optimal_ly": None, "distance_optimal_av": None,
                "extra_ly": None, "saved_av": None}
@@ -590,10 +622,11 @@ def compute_trade_route_dust(star_names, map_sel="auto", dust_step_pc=5.0):
         return err
     n = len(nodes)
 
+    seg_memo = {}  # P2.6: reused by the distance-optimal MST comparison below
     candidates = []  # (a_v, i, j, ly, seg)
     for i in range(n):
         for j in range(i + 1, n):
-            seg = _seg(nodes[i], nodes[j], map_sel, dust_step_pc)
+            seg = _seg_cached(nodes[i], nodes[j], map_sel, dust_step_pc, seg_memo)
             candidates.append((seg["a_v"], i, j, _node_dist(nodes[i], nodes[j]), seg))
     candidates.sort(key=lambda e: e[0])
 
@@ -620,7 +653,7 @@ def compute_trade_route_dust(star_names, map_sel="auto", dust_step_pc=5.0):
             a = name_to_node.get(e["from"])
             b = name_to_node.get(e["to"])
             if a and b:
-                d_av += _seg(a, b, map_sel, dust_step_pc)["a_v"]
+                d_av += _seg_cached(a, b, map_sel, dust_step_pc, seg_memo)["a_v"]
         cmp = {"distance_optimal_ly": dref["total_ly"], "distance_optimal_av": d_av,
                "extra_ly": total_ly - dref["total_ly"], "saved_av": d_av - total_av}
     else:

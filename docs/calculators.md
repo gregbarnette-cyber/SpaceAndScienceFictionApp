@@ -45,7 +45,7 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
 ## Speed / Velocity Converter Features
 
 ### Shared velocity conversion constant
-- `8765.8128` = hours in a Julian year (365.25 × 24). Used to convert between ly/hr and multiples of c: `times_c = ly_hr × 8765.8128`.
+- `8765.8128` = hours in a **tropical** year (365.2422 × 24), **not** the Julian year (365.25 × 24 = 8766.0). This tropical-year value is the legacy ly/hr↔×c anchor kept for output stability (golden pins and the downstream consumer depend on the exact value — see IMPROVEMENT_PLAN D1). Used to convert between ly/hr and multiples of c: `times_c = ly_hr × 8765.8128`.
 
 ### Option 31: Light Years per Hour to X Times the Speed of Light — `ly_per_hour_to_speed_of_light()`
 - Prompts: `Enter velocity in light years per hour`

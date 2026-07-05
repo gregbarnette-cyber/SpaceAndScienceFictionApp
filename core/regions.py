@@ -6,7 +6,9 @@ import math
 import re
 
 from core.db import get_conn
-from core.equations import compute_solvent_zone, compute_ice_lines, _t_ref_surface
+from core.equations import (
+    compute_solvent_zone, compute_ice_lines, _t_ref_surface, _KM_PER_AU,
+)
 
 # ── Spectral-class helpers (shared by options 9, 10, 13) ─────────────────────
 
@@ -133,6 +135,17 @@ def compute_star_system_regions(
     parsecs = 1000.0 / plx
     absMagnitude = vmag + 5.0 - (5.0 * math.log10(parsecs))
     bcAbsMagnitude = absMagnitude + boloLum
+    # P1.5 (D2) — LEGACY CALIBRATION, intentionally NOT "corrected":
+    #  • base 2.52 vs the exact 100**(1/5) = 2.511886 (a ~0.3%/mag drift that
+    #    compounds with magnitude);
+    #  • zero-point 4.85 is the legacy M_bol,☉ (IAU 2015 nominal is 4.74), so
+    #    the Sun computes to ≈1.085 L☉ rather than exactly 1.0;
+    #  • stellarMass = L**0.2632 (≈1/3.8) and luminosityFromMass = M**3.5 are
+    #    intentionally NON-inverse — two different legacy M–L relations, kept
+    #    as separate reported columns.
+    # The alternate-HZ divisors (and every region below) were tuned against
+    # these exact conventions, so changing any one shifts the whole table. Do
+    # not "fix" piecemeal — see IMPROVEMENT_PLAN D2.
     bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)
     stellarMass = bcLuminosity ** 0.2632
     luminosityFromMass = stellarMass ** 3.5
@@ -146,7 +159,9 @@ def compute_star_system_regions(
     lightYears = 3.26156 / trigParallax
 
     distAU = math.sqrt(bcLuminosity / sunlight_intensity)
-    distKM = distAU * 149000000.0
+    # P1.4: canonical AU→km (149597870.7) — was 149000000.0 (0.4% low, the only
+    # AU value in the app not sourced from equations._KM_PER_AU).
+    distKM = distAU * _KM_PER_AU
     planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
     # Phase P P1e: M1 surface model with the correct (1−A)^0.25 albedo exponent
     # (was the badly-wrong linear (1−A); identical at A=0.3 → 288 K, correct
@@ -154,7 +169,10 @@ def compute_star_system_regions(
     planetaryTemperature = _t_ref_surface(bond_albedo) * (sunlight_intensity ** 0.25)
     planetaryTemperatureC = planetaryTemperature - 273.15
     planetaryTemperatureF = (planetaryTemperatureC * 9.0 / 5.0) + 32.0
-    starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
+    # P1.1: small-angle diameter in degrees = (d/D) × 57.3 (rad→deg). Was the
+    # exponentiation 57.3 ** (d/D) — a bug that rendered the Sun at ~1.04°
+    # instead of ~0.53°, with non-linear error across stars.
+    starAngularDiameter = 57.3 * (stellarDiameterKM / distKM)
     sizeOfSun = f"{starAngularDiameter:.2f}\N{DEGREE SIGN}"
 
     sysilGrav = 0.2 * stellarMass
@@ -169,6 +187,9 @@ def compute_star_system_regions(
     lh2Line = math.sqrt(bcLuminosity / 0.0025)
     sysol = 40.0 * stellarMass
 
+    # 5778 K here is the legacy solar-Teff convention (vs IAU nominal 5772 used
+    # by core/cooling.py and core/par_flux.py); kept for output stability. See
+    # IMPROVEMENT_PLAN P1.5.
     calculatedLuminosity = stellarRadius ** 2 * (temp / 5778.0) ** 4
 
     ffInner  = math.sqrt(bcLuminosity / 52.0)

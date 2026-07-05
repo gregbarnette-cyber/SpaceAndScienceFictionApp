@@ -2442,18 +2442,29 @@ def compute_gcns_system(source_id: int) -> dict:
         (sysid,),
     ).fetchone()
 
-    members = []
-    for m in conn.execute(
+    member_rows = conn.execute(
         "SELECT gaia_source_id, in_gcns_stars FROM gcns_system_members "
         "WHERE system_id = ? ORDER BY gaia_source_id",
         (sysid,),
-    ).fetchall():
+    ).fetchall()
+    # P2.3: one batched lookup instead of a per-member SELECT (N+1). Members not
+    # present in gcns_stars (in_gcns_stars = 0) simply miss the dict → None fields,
+    # matching the prior retained-member behavior. Ordering follows member_rows.
+    msids = [m["gaia_source_id"] for m in member_rows]
+    star_by_id = {}
+    if msids:
+        placeholders = ",".join("?" * len(msids))
+        for star in conn.execute(
+            "SELECT gaia_source_id, star_name, spectral_type, dist_pc, light_years "
+            f"FROM gcns_stars WHERE gaia_source_id IN ({placeholders})",
+            msids,
+        ).fetchall():
+            star_by_id[star["gaia_source_id"]] = star
+
+    members = []
+    for m in member_rows:
         msid = m["gaia_source_id"]
-        star = conn.execute(
-            "SELECT star_name, spectral_type, dist_pc, light_years "
-            "FROM gcns_stars WHERE gaia_source_id = ?",
-            (msid,),
-        ).fetchone()
+        star = star_by_id.get(msid)
         members.append({
             "gaia_source_id": msid,
             "in_gcns_stars":  _gcns_bool(m["in_gcns_stars"]),
@@ -2860,11 +2871,12 @@ def search_star_systems(filters: dict) -> dict:
     try:
         conn = get_conn()
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+        # P2.5: the empty-table probe must be inside the guarded region so a
+        # failure returns {"error"} per contract instead of raising.
+        if not rows and conn.execute("SELECT COUNT(*) FROM star_systems").fetchone()[0] == 0:
+            return {"error": "star_systems table is empty — run option 50 first to populate it."}
     except Exception as e:
         return {"error": f"Error reading star_systems table: {e}"}
-
-    if not rows and conn.execute("SELECT COUNT(*) FROM star_systems").fetchone()[0] == 0:
-        return {"error": "star_systems table is empty — run option 50 first to populate it."}
 
     capped = len(rows) > _SEARCH_CAP
     if capped:

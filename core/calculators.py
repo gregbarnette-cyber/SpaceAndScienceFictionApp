@@ -14,7 +14,8 @@ from collections import deque
 from .equations import _C_MS  # single source of truth (Phase Y promoted it to equations)
 from .shared import _make_simbad, _network_error_msg, _timeout_ctx, _with_retries
 
-HOURS_PER_JULIAN_YEAR = 8765.8128  # 365.25 * 24
+HOURS_PER_JULIAN_YEAR = 8765.8128  # 365.2422 × 24 (tropical year) — legacy ly/hr↔×c anchor; NOT 365.25×24 (=8766.0).
+                                   # Golden pins and the downstream consumer depend on this exact value; see IMPROVEMENT_PLAN D1.
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
@@ -106,7 +107,7 @@ def format_travel_time(total_hours: float) -> str:
 
     Returns a comma-separated string such as '5 Months, 24 Days, 11 Hours'.
     """
-    HOURS_PER_YEAR  = 365.25 * 24          # 8765.82
+    HOURS_PER_YEAR  = 365.25 * 24          # 8766.0 (Julian year)
     HOURS_PER_MONTH = HOURS_PER_YEAR / 12  # ~730.485
     HOURS_PER_DAY   = 24.0
     HOURS_PER_MIN   = 1 / 60.0
@@ -2069,19 +2070,25 @@ def compute_optimal_tour(star_names, velocity_input: float,
                 bd, bi = d, ci
         order.append(remaining.pop(bi))
 
-    # 2-opt (start fixed at index 0; reverse segments [i..k]).
+    # 2-opt (start fixed at index 0; reverse segments [i..k]). P2.7: the current
+    # tour length is an invariant of `order`, so it's hoisted out of the O(n²) (i,k)
+    # loop and only recomputed when a swap is accepted — behavior-identical (cur
+    # always equals _tour_len(order, closed), same acceptance/tie-breaking).
     n = len(order)
+    cur_len = _tour_len(order, closed)
     improved = True
     while improved:
         improved = False
         for i in range(1, n - 1):
             for k in range(i + 1, n):
                 cand = order[:i] + order[i:k + 1][::-1] + order[k + 1:]
-                if _tour_len(cand, closed) + 1e-9 < _tour_len(order, closed):
+                cand_len = _tour_len(cand, closed)
+                if cand_len + 1e-9 < cur_len:
                     order = cand
+                    cur_len = cand_len
                     improved = True
 
-    optimized_total_ly = _tour_len(order, closed)
+    optimized_total_ly = cur_len
 
     # Build legs (consecutive; + wrap when closed).
     pairs = [(order[i], order[i + 1]) for i in range(len(order) - 1)]

@@ -2,6 +2,7 @@ import sqlite3
 import os
 import pathlib
 import csv
+import threading
 
 # DB location: overridable via the SPACE_APP_DB env var (used for test isolation
 # and alternate data stores); defaults to data/space_app.db under the repo root.
@@ -11,6 +12,19 @@ _DB_PATH = pathlib.Path(
         pathlib.Path(__file__).resolve().parent.parent / "data" / "space_app.db",
     )
 )
+
+# P2.4 — per-thread connections. The GUI runs DB work on background QThreads;
+# sharing one sqlite3.Connection across threads (even with check_same_thread=False)
+# lets transactions interleave and corrupt state. Each thread now gets its own
+# connection, cached in `_local.entry = (path_str, conn)` and reopened when the DB
+# path changes. `_open_lock` serializes the open+schema+seed critical section so
+# two threads can't race the auto-seed on a fresh DB. `_conn` is retained as a
+# module-global mirror of the most-recently-opened connection: nothing outside this
+# module reads it, but the test suite snapshots/restores it and uses `_conn = None`
+# as an explicit "reopen" signal (always paired with a `_DB_PATH` swap) — both
+# still honored below.
+_local = threading.local()
+_open_lock = threading.RLock()
 _conn: sqlite3.Connection | None = None
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -18,19 +32,49 @@ _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 def get_conn() -> sqlite3.Connection:
     global _conn
-    if _conn is None:
+    path = str(_DB_PATH)
+    entry = getattr(_local, "entry", None)
+    # Fast path: this thread already holds a live connection to the current DB
+    # path, and no test has reset the global reopen signal.
+    if entry is not None and entry[0] == path and _conn is not None:
+        return entry[1]
+    with _open_lock:
+        entry = getattr(_local, "entry", None)
+        if entry is not None and entry[0] == path and _conn is not None:
+            return entry[1]
+        if entry is not None:
+            try:
+                entry[1].close()
+            except Exception:
+                pass
+            _local.entry = None
         _DB_PATH.parent.mkdir(exist_ok=True)
-        _conn = sqlite3.connect(str(_DB_PATH), check_same_thread=False)
-        _conn.row_factory = sqlite3.Row
-        _create_schema(_conn)
-        _auto_seed(_conn)
-    return _conn
+        conn = sqlite3.connect(path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        # WAL + NORMAL keeps committed-transaction durability (the GCNS/Hypatia
+        # validate-before-destroy gates rely on it) while cutting fsync overhead
+        # on the ~331k/245k-row single-transaction imports; temp_store=MEMORY
+        # keeps sort/temp B-trees off disk.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        _create_schema(conn)
+        _auto_seed(conn)
+        _local.entry = (path, conn)
+        _conn = conn
+        return conn
 
 
 def close_conn():
     global _conn
-    if _conn is not None:
-        _conn.close()
+    with _open_lock:
+        entry = getattr(_local, "entry", None)
+        if entry is not None:
+            try:
+                entry[1].close()
+            except Exception:
+                pass
+            _local.entry = None
         _conn = None
 
 
@@ -223,6 +267,13 @@ def _create_schema(conn: sqlite3.Connection):
             ON gcns_stars (gaia_source_id);
         CREATE INDEX IF NOT EXISTS idx_gcns_light_years
             ON gcns_stars (light_years);
+        -- P2.2: name-lookup index for _resolve_gcns_row's
+        -- `WHERE star_name = ? COLLATE NOCASE` (was a ~331k-row full scan on every
+        -- name-based GCNS lookup). Declared COLLATE NOCASE so the case-insensitive
+        -- predicate can use it. _create_schema re-runs this script on every connect,
+        -- so existing databases pick the index up automatically.
+        CREATE INDEX IF NOT EXISTS idx_gcns_stars_star_name
+            ON gcns_stars (star_name COLLATE NOCASE);
 
         -- Single key/value provenance record for the GCNS build.
         CREATE TABLE IF NOT EXISTS gcns_meta (

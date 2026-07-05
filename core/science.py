@@ -8,7 +8,8 @@ from core.shared import _format_travel_time
 # coupling to core.calculators' private constants; values are universal).
 _C_MS = 299_792_458.0          # speed of light, m/s
 _G_MS2 = 9.80665               # 1 g, m/s²
-_HOURS_PER_JULIAN_YEAR = 8765.8128   # 365.25 × 24 (ly/hr ↔ ×c)
+_HOURS_PER_JULIAN_YEAR = 8765.8128   # 365.2422 × 24 (tropical year) — legacy ly/hr↔×c anchor; NOT 365.25×24 (=8766.0).
+                                     # Golden pins and the downstream consumer depend on this exact value; see IMPROVEMENT_PLAN D1.
 
 
 def compute_main_sequence_table() -> list:

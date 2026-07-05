@@ -320,6 +320,9 @@ def compute_star_luminosity(radius: float, temp: float) -> dict:
     Returns:
         dict with keys: radius, temp, luminosity (all floats)
     """
+    # 5778 K is the legacy solar-Teff convention (vs IAU nominal 5772 used by
+    # core/cooling.py and core/par_flux.py); kept for output stability. See
+    # IMPROVEMENT_PLAN P1.5.
     luminosity = radius ** 2 * (temp / 5778.0) ** 4
     return {"radius": radius, "temp": temp, "luminosity": luminosity}
 

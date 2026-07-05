@@ -485,7 +485,13 @@ class GcnsCalcTest(unittest.TestCase):
                      dist_pc=1.3, dist_lo_pc=None, dist_hi_pc=None,
                      star_name="alf Cen A", distance_method="gcns_missing_plx_inversion",
                      gcns_table="missing_10mas")
-        res = databases.compute_gcns_distance(id1=10, star2="alf Cen A")
+        # Mock SIMBAD (like every sibling resolver test): the name path calls
+        # compute_simbad_lookup first and treats a network error as fatal, so
+        # without this the test makes a real SIMBAD call and is flaky offline.
+        # A Gaia-id-less result makes star2 fall through to the name match.
+        fake = {"designations": {"Gaia EDR3": None}}
+        with mock.patch.object(databases, "compute_simbad_lookup", lambda n: fake):
+            res = databases.compute_gcns_distance(id1=10, star2="alf Cen A")
         self.assertNotIn("error", res)
         s2 = res["star2_info"]
         self.assertIsNone(s2["gaia_source_id"])

@@ -324,8 +324,11 @@ def _chz_band(track, grid_mass, threshold_gyr, hz_edge, age_max_gyr, pause=None,
     lo = max(inner_old * 0.3, 1e-5)
     hi = outer_young * 1.5
     if hi <= lo:
+        # P1.2: emit the same keys the consumer (_mode_chz) reads. The old
+        # ctrl_entry_teff/ctrl_exit_teff keys caused an uncaught KeyError on
+        # this degenerate branch.
         return {"chz_inner_au": None, "chz_outer_au": None,
-                "ctrl_entry_teff": None, "ctrl_exit_teff": None}
+                "ctrl_inner_oor": None, "ctrl_outer_oor": None}
 
     qualifying = []
     for i in range(n + 1):

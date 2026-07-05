@@ -48,8 +48,9 @@ _T_SUN_PAR_REF = 5772.0
 
 # Simpson-rule intervals for the in-band Planck integrations. The band integrand
 # is smooth, so the fraction converges to <1e-6 by n≈100 (verified at build);
-# 1000 leaves a wide margin and is still instant.
-_N_SIMPSON = 1000
+# 200 keeps a wide margin (5× the convergence point) at 1/5 the integrand
+# evaluations (P2.7).
+_N_SIMPSON = 200
 
 _SED_MODEL = "blackbody (approx — real SED deviates)"
 _SED_MODEL_REAL = "real (BT-Settl CIFIST2011, band-fixed 400–700 nm)"
@@ -112,6 +113,20 @@ def _f_par(teff_k: float, lo_m: float, hi_m: float) -> float:
     band_energy, _ = _band_energy_and_photons(teff_k, lo_m, hi_m)
     total = _STEFAN_BOLTZMANN * teff_k ** 4 / math.pi
     return band_energy / total
+
+
+# P2.7: the blackbody G2 reference f_PAR (the deficit denominator) depends only on
+# the band, so memoize it per (lo_m, hi_m) instead of re-integrating every call.
+_G2_FPAR_CACHE: dict = {}
+
+
+def _f_par_g2(lo_m: float, hi_m: float) -> float:
+    key = (lo_m, hi_m)
+    v = _G2_FPAR_CACHE.get(key)
+    if v is None:
+        v = _f_par(_T_SUN_PAR_REF, lo_m, hi_m)
+        _G2_FPAR_CACHE[key] = v
+    return v
 
 
 def _resolve_teff(teff_k, spectral_type, star):
@@ -242,7 +257,7 @@ def compute_par_flux(teff_k=None, spectral_type=None, star=None,
         model_note = _MODEL_NOTE_REAL
     else:
         f_par = band_energy / total
-        f_par_g2 = _f_par(_T_SUN_PAR_REF, lo_m, hi_m)
+        f_par_g2 = _f_par_g2(lo_m, hi_m)
         sed_model = _SED_MODEL
         model_note = _MODEL_NOTE
 

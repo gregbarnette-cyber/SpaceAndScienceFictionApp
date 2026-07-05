@@ -8,6 +8,7 @@
 
 import math
 import unittest
+from unittest import mock
 
 import core.cooling as cooling
 import core.cooling_tables as ct
@@ -319,6 +320,47 @@ class ValidationTest(unittest.TestCase):
             self.assertIn(k, r1)
         self.assertEqual(r1["hz_model_valid_teff_k"], [2600.0, 7200.0])
         self.assertIn("Bedard", r1["model_note"])
+
+
+class ChzDegenerateBandTest(unittest.TestCase):
+    """P1.2 regression — `_chz_band`'s `hi <= lo` early return must emit the keys
+    the consumer `_mode_chz` reads (`ctrl_inner_oor`/`ctrl_outer_oor`), NOT the old
+    `ctrl_entry_teff`/`ctrl_exit_teff`, which raised an uncaught KeyError.
+
+    `hi <= lo` requires the hot young outer edge to fall inside the cold old inner
+    edge — physically impossible with the real cooling tracks — so `_edge_au` is
+    patched to force the degenerate geometry while every other helper runs against
+    the real bundled 0.6 M_sun WD track.
+    """
+
+    @staticmethod
+    def _force_degenerate(track, grid_mass, age, key, pause=None):
+        # conservative hz_edge → ik="rg" (inner), ok="mg" (outer).
+        # inner_old large, outer_young small → hi = 0.1*1.5 < lo = 3.0.
+        return 10.0 if key == "rg" else 0.1
+
+    def test_chz_band_degenerate_keys(self):
+        with mock.patch.object(cooling, "_edge_au", side_effect=self._force_degenerate):
+            band = cooling._chz_band("wd", 0.6, 3.0, "conservative", 13.8)
+        self.assertEqual(
+            set(band),
+            {"chz_inner_au", "chz_outer_au", "ctrl_inner_oor", "ctrl_outer_oor"},
+        )
+        self.assertNotIn("ctrl_entry_teff", band)
+        self.assertNotIn("ctrl_exit_teff", band)
+        for k in band:
+            self.assertIsNone(band[k])
+
+    def test_mode_chz_no_keyerror_on_degenerate_band(self):
+        # The actual bug site: _mode_chz reads band["ctrl_inner_oor"]/["ctrl_outer_oor"].
+        base = {"mass_solar": 0.6}
+        with mock.patch.object(cooling, "_edge_au", side_effect=self._force_degenerate):
+            out = cooling._mode_chz("wd", 0.6, base, 3.0, "conservative", 13.8, 5.5)
+        self.assertIsNone(out["chz_inner_au"])
+        self.assertIsNone(out["chz_outer_au"])
+        self.assertIsNone(out["chz_inner_out_of_range"])
+        self.assertIsNone(out["chz_outer_out_of_range"])
+        self.assertFalse(out["any_out_of_range"])
 
 
 if __name__ == "__main__":
