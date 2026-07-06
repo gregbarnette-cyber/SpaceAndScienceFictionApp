@@ -11,6 +11,7 @@ import json
 import sys
 
 import core.active_shield as active_shield
+import core.black_hole as black_hole
 import core.calculators as calculators
 import core.cooling as cooling
 import core.databases as databases
@@ -20,13 +21,16 @@ import core.dust_impact as dust_impact   # pure-math (no astropy/numpy) — safe
 # non-dust query.py invocation ~0.5 s faster (matters for the sister repo's per-call cost
 # and the subprocess test suite). All dust references live inside cmd_* handlers.
 import core.equations as equations
+import core.exotic_physics as exotic_physics
 import core.feasibility as feasibility
+import core.gravitation as gravitation
 import core.generate as generate
 import core.ism_drag as ism_drag
 import core.life_support as life_support
 import core.megastructure as megastructure
 import core.par_flux as par_flux
 import core.projects as projects
+import core.relativity as relativity
 import core.propulsion as propulsion
 import core.regions as regions
 import core.report as report
@@ -35,6 +39,15 @@ import core.spin as spin
 import core.terraforming as terraforming
 import core.thermal as thermal
 import core.volatile_delivery as volatile_delivery
+import core.warp as warp
+
+
+def _add_object_mass_args(p):
+    """Add the shared black-hole mass flags (--mass-* + --object preset) to a parser."""
+    p.add_argument("--mass-kg", type=float); p.add_argument("--mass-msun", type=float)
+    p.add_argument("--mass-mearth", type=float); p.add_argument("--mass-mjup", type=float)
+    p.add_argument("--object", choices=black_hole.astro_bodies.OBJECT_PRESET_KEYS,
+                   help="Object preset (Sun, Sgr A*, M87*, …)")
 
 
 def _out(result):
@@ -206,6 +219,204 @@ def cmd_trojan_stability(args):
 
 def cmd_lorentz_factor(args):
     _out(calculators.compute_lorentz_factor(args.velocity_c))
+
+
+# ── Phase AE (Group K) — arrival geometry & gravitation ───────────────────────
+
+def cmd_escape_velocity(args):
+    _out(gravitation.compute_escape_velocity(
+        mass_kg=args.mass_kg, mass_msun=args.mass_msun, mass_mearth=args.mass_mearth,
+        mass_mjup=args.mass_mjup, radius_m=args.radius_m, radius_rsun=args.radius_rsun,
+        radius_rearth=args.radius_rearth, distance_au=args.distance_au, body=args.body))
+
+
+def cmd_gravitational_potential(args):
+    _out(gravitation.compute_gravitational_potential(
+        mass_kg=args.mass_kg, mass_msun=args.mass_msun, mass_mearth=args.mass_mearth,
+        mass_mjup=args.mass_mjup, body=args.body, r_from_m=args.r_from_m, r_from_au=args.r_from_au,
+        r_to_m=args.r_to_m, r_to_au=args.r_to_au, payload_kg=args.payload_kg))
+
+
+def cmd_sphere_of_influence(args):
+    _out(gravitation.compute_sphere_of_influence(
+        body_mass_kg=args.body_mass_kg, body_mass_msun=args.body_mass_msun,
+        body_mass_mearth=args.body_mass_mearth, body_mass_mjup=args.body_mass_mjup,
+        primary_mass_kg=args.primary_mass_kg, primary_mass_msun=args.primary_mass_msun,
+        primary_mass_mearth=args.primary_mass_mearth, primary_mass_mjup=args.primary_mass_mjup,
+        primary=args.primary, semimajor_au=args.semimajor_au))
+
+
+def cmd_hyperbolic_approach(args):
+    _out(gravitation.compute_hyperbolic_approach(
+        mass_kg=args.mass_kg, mass_msun=args.mass_msun, mass_mearth=args.mass_mearth,
+        mass_mjup=args.mass_mjup, body=args.body, v_infinity_kms=args.v_infinity_kms,
+        arrival_speed_kms=args.arrival_speed_kms, r_from_km=args.r_from_km, r_from_au=args.r_from_au,
+        periapsis_km=args.periapsis_km, periapsis_rbody=args.periapsis_rbody,
+        target=args.target, target_apoapsis_km=args.target_apoapsis_km,
+        target_apoapsis_au=args.target_apoapsis_au))
+
+
+# ── Phase AF (Group L) — special relativity & causality ───────────────────────
+
+def cmd_time_dilation(args):
+    _out(relativity.compute_time_dilation(
+        velocity_c=args.velocity_c, velocity_kms=args.velocity_kms,
+        proper_time=args.proper_time, coordinate_time=args.coordinate_time,
+        mass_kg=args.mass_kg, mass_msun=args.mass_msun, mass_mearth=args.mass_mearth,
+        mass_mjup=args.mass_mjup, body=args.body, radius_m=args.radius_m,
+        radius_rsun=args.radius_rsun, radius_rearth=args.radius_rearth,
+        distance_au=args.distance_au, combined=args.combined))
+
+
+def cmd_length_contraction(args):
+    _out(relativity.compute_length_contraction(
+        velocity_c=args.velocity_c, velocity_kms=args.velocity_kms,
+        proper_length=args.proper_length, contracted_length=args.contracted_length))
+
+
+def cmd_velocity_addition(args):
+    _out(relativity.compute_velocity_addition(args.u_c, args.v_c, perpendicular=args.perpendicular))
+
+
+def cmd_relativistic_doppler(args):
+    _out(relativity.compute_relativistic_doppler(
+        velocity_c=args.velocity_c, velocity_kms=args.velocity_kms,
+        approach=args.approach, recede=args.recede, angle_deg=args.angle_deg,
+        rest_wavelength_nm=args.rest_wavelength_nm, rest_frequency_hz=args.rest_frequency_hz))
+
+
+def cmd_rapidity(args):
+    add = None
+    if args.add is not None:
+        try:
+            add = [float(x) for x in args.add.split(",") if x.strip() != ""]
+        except ValueError:
+            _out({"error": "--add must be a comma-separated list of β values, e.g. '0.6,0.6,0.6'."})
+            return
+    _out(relativity.compute_rapidity(velocity_c=args.velocity_c, rapidity=args.rapidity, add=add))
+
+
+def cmd_relativistic_energy_momentum(args):
+    _out(relativity.compute_relativistic_energy_momentum(
+        mass_kg=args.mass_kg, mass_mev=args.mass_mev, velocity_c=args.velocity_c,
+        gamma=args.gamma, kinetic_energy_j=args.kinetic_energy_j, momentum=args.momentum))
+
+
+def cmd_lorentz_transform(args):
+    event2_t = event2_x = None
+    if args.event2 is not None:
+        parts = args.event2.split(",")
+        if len(parts) != 2:
+            _out({"error": "--event2 must be 't2,x2' (two comma-separated numbers)."})
+            return
+        try:
+            event2_t, event2_x = float(parts[0]), float(parts[1])
+        except ValueError:
+            _out({"error": "--event2 must be 't2,x2' (two comma-separated numbers)."})
+            return
+    _out(relativity.compute_lorentz_transform(
+        velocity_c=args.velocity_c, t=args.t, x=args.x, t_yr=args.t_yr, x_ly=args.x_ly,
+        inverse=args.inverse, event2_t=event2_t, event2_x=event2_x))
+
+
+def cmd_causality_check(args):
+    _out(relativity.compute_causality_check(
+        signal_speed_c=args.signal_speed_c, instant=args.instant,
+        frame_velocity_c=args.frame_velocity_c, preferred_frame=args.preferred_frame,
+        two_jump=args.two_jump))
+
+
+# ── Phase AG (Group M) — exotic vacuum & cosmology ────────────────────────────
+
+def cmd_casimir(args):
+    _out(exotic_physics.compute_casimir(
+        separation_m=args.separation_m, separation_nm=args.separation_nm, area_m2=args.area_m2,
+        geometry=args.geometry, sphere_radius_m=args.sphere_radius_m))
+
+
+def cmd_vacuum_energy(args):
+    _out(exotic_physics.compute_vacuum_energy(
+        omega_lambda=args.omega_lambda, hubble_kms_mpc=args.hubble_kms_mpc, cutoff=args.cutoff))
+
+
+def cmd_schwinger_limit(args):
+    _out(exotic_physics.compute_schwinger_limit(
+        field_vm=args.field_vm, intensity_wcm2=args.intensity_wcm2))
+
+
+def cmd_hubble_flow(args):
+    _out(exotic_physics.compute_hubble_flow(
+        distance_mpc=args.distance_mpc, distance_ly=args.distance_ly, mass_msun=args.mass_msun,
+        radius_ly=args.radius_ly, radius_mpc=args.radius_mpc, hubble_kms_mpc=args.hubble_kms_mpc,
+        omega_lambda=args.omega_lambda, omega_m=args.omega_m))
+
+
+# ── Phase AI (Group O) — black holes & relativistic thermodynamics ────────────
+
+def _bh_mass_kwargs(args):
+    return dict(mass_kg=args.mass_kg, mass_msun=args.mass_msun, mass_mearth=args.mass_mearth,
+                mass_mjup=args.mass_mjup, object=args.object)
+
+
+def cmd_schwarzschild_radius(args):
+    _out(black_hole.compute_schwarzschild_radius(**_bh_mass_kwargs(args)))
+
+
+def cmd_hawking_temperature(args):
+    _out(black_hole.compute_hawking_temperature(temperature_k=args.temperature_k, **_bh_mass_kwargs(args)))
+
+
+def cmd_black_hole_evaporation(args):
+    _out(black_hole.compute_black_hole_evaporation(lifetime_yr=args.lifetime_yr, **_bh_mass_kwargs(args)))
+
+
+def cmd_bekenstein_hawking_entropy(args):
+    _out(black_hole.compute_bekenstein_hawking_entropy(radius_m=args.radius_m, **_bh_mass_kwargs(args)))
+
+
+def cmd_isco(args):
+    _out(black_hole.compute_isco(spin=args.spin, prograde=not args.retrograde, **_bh_mass_kwargs(args)))
+
+
+def cmd_kerr_horizon(args):
+    _out(black_hole.compute_kerr_horizon(spin=args.spin, **_bh_mass_kwargs(args)))
+
+
+def cmd_bh_tidal_force(args):
+    _out(black_hole.compute_bh_tidal_force(
+        distance_m=args.distance_m, distance_rs=args.distance_rs,
+        object_length_m=args.object_length_m, threshold_g=args.threshold_g, **_bh_mass_kwargs(args)))
+
+
+def cmd_eddington_luminosity(args):
+    _out(black_hole.compute_eddington_luminosity(efficiency=args.efficiency, **_bh_mass_kwargs(args)))
+
+
+def cmd_unruh_temperature(args):
+    _out(black_hole.compute_unruh_temperature(
+        acceleration_ms2=args.acceleration_ms2, acceleration_g=args.acceleration_g,
+        temperature_k=args.temperature_k))
+
+
+def cmd_bekenstein_bound(args):
+    _out(black_hole.compute_bekenstein_bound(
+        radius_m=args.radius_m, energy_j=args.energy_j, mass_kg=args.mass_kg))
+
+
+# ── Phase AH (Group N) — Alcubierre / metric drive ────────────────────────────
+
+def cmd_alcubierre_energy(args):
+    _out(warp.compute_alcubierre_energy(
+        bubble_radius_m=args.bubble_radius_m, velocity_c=args.velocity_c,
+        wall_thickness_m=args.wall_thickness_m, formulation=args.formulation,
+        neck_radius_m=args.neck_radius_m))
+
+
+def cmd_warp_metric(args):
+    _out(warp.compute_warp_metric(
+        bubble_radius_m=args.bubble_radius_m, wall_thickness_sigma=args.wall_thickness_sigma,
+        velocity_c=args.velocity_c, r_eval_m=args.r_eval_m, profile=args.profile,
+        variant=args.variant))
 
 
 def _resolve_star_teff_lum(name):
@@ -1836,6 +2047,255 @@ def main(argv=None):
     p.add_argument("--accel-g",     required=True, type=float)
     p.add_argument("--distance-ly", required=True, type=float)
     p.set_defaults(func=cmd_relativistic_brachistochrone)
+
+    # ── Phase AE (Group K) — arrival geometry & gravitation (Pkt 20) ──────────
+
+    # escape-velocity (K1)
+    p = sub.add_parser("escape-velocity",
+                       help="Escape / circular speed from a body or at a distance in its field")
+    p.add_argument("--mass-kg", type=float); p.add_argument("--mass-msun", type=float)
+    p.add_argument("--mass-mearth", type=float); p.add_argument("--mass-mjup", type=float)
+    p.add_argument("--radius-m", type=float); p.add_argument("--radius-rsun", type=float)
+    p.add_argument("--radius-rearth", type=float); p.add_argument("--distance-au", type=float)
+    p.add_argument("--body", choices=gravitation.astro_bodies.BODY_PRESET_KEYS,
+                   help="Body preset (fills mass + radius)")
+    p.set_defaults(func=cmd_escape_velocity)
+
+    # gravitational-potential (K2)
+    p = sub.add_parser("gravitational-potential",
+                       help="Gravity-well depth, binding energy, and climb-out Δv between two radii")
+    p.add_argument("--mass-kg", type=float); p.add_argument("--mass-msun", type=float)
+    p.add_argument("--mass-mearth", type=float); p.add_argument("--mass-mjup", type=float)
+    p.add_argument("--body", choices=gravitation.astro_bodies.BODY_PRESET_KEYS,
+                   help="Body preset (fills mass)")
+    p.add_argument("--r-from-m", type=float); p.add_argument("--r-from-au", type=float)
+    p.add_argument("--r-to-m", type=float); p.add_argument("--r-to-au", type=float,
+                   help="Upper radius (default ∞)")
+    p.add_argument("--payload-kg", type=float, help="Payload mass → binding energy (J)")
+    p.set_defaults(func=cmd_gravitational_potential)
+
+    # sphere-of-influence (K3)
+    p = sub.add_parser("sphere-of-influence",
+                       help="Laplace sphere of influence + Hill radius for a body orbiting a primary")
+    p.add_argument("--body-mass-kg", type=float); p.add_argument("--body-mass-msun", type=float)
+    p.add_argument("--body-mass-mearth", type=float); p.add_argument("--body-mass-mjup", type=float)
+    p.add_argument("--primary-mass-kg", type=float); p.add_argument("--primary-mass-msun", type=float)
+    p.add_argument("--primary-mass-mearth", type=float); p.add_argument("--primary-mass-mjup", type=float)
+    p.add_argument("--primary", choices=gravitation.astro_bodies.BODY_PRESET_KEYS,
+                   help="Primary preset (fills primary mass)")
+    p.add_argument("--semimajor-au", type=float, help="Orbit semi-major axis (AU)")
+    p.set_defaults(func=cmd_sphere_of_influence)
+
+    # hyperbolic-approach (K4)
+    p = sub.add_parser("hyperbolic-approach",
+                       help="Braking-corridor geometry for a hyperbolic arrival (v_p, C3, capture Δv)")
+    p.add_argument("--mass-kg", type=float); p.add_argument("--mass-msun", type=float)
+    p.add_argument("--mass-mearth", type=float); p.add_argument("--mass-mjup", type=float)
+    p.add_argument("--body", choices=gravitation.astro_bodies.BODY_PRESET_KEYS,
+                   help="Body preset (fills mass + radius, enabling --periapsis-rbody)")
+    p.add_argument("--v-infinity-kms", type=float, help="Hyperbolic excess speed v∞ (km/s)")
+    p.add_argument("--arrival-speed-kms", type=float, help="Arrival speed at --r-from (km/s)")
+    p.add_argument("--r-from-km", type=float); p.add_argument("--r-from-au", type=float)
+    p.add_argument("--periapsis-km", type=float); p.add_argument("--periapsis-rbody", type=float,
+                   help="Periapsis in body radii (needs --body or a known radius)")
+    p.add_argument("--target", choices=["circular", "parabolic", "elliptical"], default="circular")
+    p.add_argument("--target-apoapsis-km", type=float); p.add_argument("--target-apoapsis-au", type=float)
+    p.set_defaults(func=cmd_hyperbolic_approach)
+
+    # ── Phase AF (Group L) — special relativity & causality (Pkt 23) ──────────
+
+    # time-dilation (L1)
+    p = sub.add_parser("time-dilation",
+                       help="Special and/or gravitational time dilation")
+    p.add_argument("--velocity-c", type=float); p.add_argument("--velocity-kms", type=float)
+    p.add_argument("--proper-time", type=float); p.add_argument("--coordinate-time", type=float)
+    p.add_argument("--mass-kg", type=float); p.add_argument("--mass-msun", type=float)
+    p.add_argument("--mass-mearth", type=float); p.add_argument("--mass-mjup", type=float)
+    p.add_argument("--body", choices=relativity.astro_bodies.BODY_PRESET_KEYS,
+                   help="Body preset for the gravitational source (fills mass + radius)")
+    p.add_argument("--radius-m", type=float); p.add_argument("--radius-rsun", type=float)
+    p.add_argument("--radius-rearth", type=float); p.add_argument("--distance-au", type=float)
+    p.add_argument("--combined", action="store_true",
+                   help="Multiply the special and gravitational factors")
+    p.set_defaults(func=cmd_time_dilation)
+
+    # length-contraction (L2)
+    p = sub.add_parser("length-contraction", help="Relativistic length contraction L = L₀/γ")
+    p.add_argument("--velocity-c", type=float); p.add_argument("--velocity-kms", type=float)
+    p.add_argument("--proper-length", type=float); p.add_argument("--contracted-length", type=float)
+    p.set_defaults(func=cmd_length_contraction)
+
+    # velocity-addition (L3)
+    p = sub.add_parser("velocity-addition", help="Relativistic velocity addition")
+    p.add_argument("--u-c", required=True, type=float, help="First velocity (fraction of c)")
+    p.add_argument("--v-c", required=True, type=float, help="Second velocity (fraction of c)")
+    p.add_argument("--perpendicular", action="store_true", help="Perpendicular (transverse) case")
+    p.set_defaults(func=cmd_velocity_addition)
+
+    # relativistic-doppler (L4)
+    p = sub.add_parser("relativistic-doppler", help="Relativistic Doppler factor + shifted λ/f")
+    p.add_argument("--velocity-c", type=float); p.add_argument("--velocity-kms", type=float)
+    p.add_argument("--approach", action="store_true"); p.add_argument("--recede", action="store_true")
+    p.add_argument("--angle-deg", type=float, help="Observation angle (0=approach, 180=recede, 90=transverse)")
+    p.add_argument("--rest-wavelength-nm", type=float); p.add_argument("--rest-frequency-hz", type=float)
+    p.set_defaults(func=cmd_relativistic_doppler)
+
+    # rapidity (L5)
+    p = sub.add_parser("rapidity", help="Rapidity φ = artanh(β); linear composition via --add")
+    p.add_argument("--velocity-c", type=float); p.add_argument("--rapidity", type=float)
+    p.add_argument("--add", help="Comma-separated β list to compose, e.g. '0.6,0.6,0.6'")
+    p.set_defaults(func=cmd_rapidity)
+
+    # relativistic-energy-momentum (L6)
+    p = sub.add_parser("relativistic-energy-momentum",
+                       help="Relativistic energy, momentum, and kinetic energy of a particle")
+    p.add_argument("--mass-kg", type=float); p.add_argument("--mass-mev", type=float)
+    p.add_argument("--velocity-c", type=float); p.add_argument("--gamma", type=float)
+    p.add_argument("--kinetic-energy-j", type=float); p.add_argument("--momentum", type=float)
+    p.set_defaults(func=cmd_relativistic_energy_momentum)
+
+    # lorentz-transform (L7)
+    p = sub.add_parser("lorentz-transform", help="Lorentz coordinate transform + simultaneity offset")
+    p.add_argument("--velocity-c", required=True, type=float, help="Boost velocity (fraction of c)")
+    p.add_argument("--t", type=float, help="Event time (s)"); p.add_argument("--x", type=float, help="Event position (m)")
+    p.add_argument("--t-yr", type=float, help="Event time (years)"); p.add_argument("--x-ly", type=float, help="Event position (ly)")
+    p.add_argument("--inverse", action="store_true", help="Apply the inverse transform")
+    p.add_argument("--event2", help="Second event 't2,x2' → relativity-of-simultaneity offset")
+    p.set_defaults(func=cmd_lorentz_transform)
+
+    # causality-check (L8)
+    p = sub.add_parser("causality-check",
+                       help="FTL tachyonic-antitelephone causality guardrail")
+    p.add_argument("--signal-speed-c", type=float, help="FTL signal speed (units of c, >1 for FTL)")
+    p.add_argument("--instant", action="store_true", help="Instantaneous signal (u → ∞)")
+    p.add_argument("--frame-velocity-c", type=float, help="Relative frame velocity (fraction of c)")
+    p.add_argument("--preferred-frame", action="store_true", help="Assert a universal FTL rest frame")
+    p.add_argument("--two-jump", action="store_true", help="Explicit two-jump antitelephone framing")
+    p.set_defaults(func=cmd_causality_check)
+
+    # ── Phase AG (Group M) — exotic vacuum & cosmology (Pkt 21) ───────────────
+
+    # casimir (M1)
+    p = sub.add_parser("casimir", help="Casimir pressure / negative energy density (or sphere-plate force)")
+    p.add_argument("--separation-m", type=float); p.add_argument("--separation-nm", type=float)
+    p.add_argument("--area-m2", type=float, help="Plate area (default 1 m²)")
+    p.add_argument("--geometry", choices=["parallel-plate", "sphere-plate"], default="parallel-plate")
+    p.add_argument("--sphere-radius-m", type=float, help="Sphere radius (sphere-plate geometry)")
+    p.set_defaults(func=cmd_casimir)
+
+    # vacuum-energy (M2)
+    p = sub.add_parser("vacuum-energy", help="Dark-energy density + the QED vacuum-catastrophe ratio")
+    p.add_argument("--omega-lambda", type=float, help="Dark-energy density parameter (default 0.685)")
+    p.add_argument("--hubble-kms-mpc", type=float, help="Hubble constant (default 67.4)")
+    p.add_argument("--cutoff", default="planck",
+                   help="QED cutoff: planck/electroweak/qcd or a number in GeV")
+    p.set_defaults(func=cmd_vacuum_energy)
+
+    # schwinger-limit (M3)
+    p = sub.add_parser("schwinger-limit", help="Schwinger critical field / intensity for pair production")
+    p.add_argument("--field-vm", type=float, help="Field to compare (V/m) → ratio to critical")
+    p.add_argument("--intensity-wcm2", type=float, help="Intensity to compare (W/cm²) → ratio to critical")
+    p.set_defaults(func=cmd_schwinger_limit)
+
+    # hubble-flow (M4)
+    p = sub.add_parser("hubble-flow", help="Cosmological recession, or local-binding turnaround test")
+    p.add_argument("--distance-mpc", type=float); p.add_argument("--distance-ly", type=float)
+    p.add_argument("--mass-msun", type=float); p.add_argument("--radius-ly", type=float)
+    p.add_argument("--radius-mpc", type=float)
+    p.add_argument("--hubble-kms-mpc", type=float, help="Hubble constant (default 67.4)")
+    p.add_argument("--omega-lambda", type=float, help="Dark-energy density parameter (default 0.685)")
+    p.add_argument("--omega-m", type=float, help="Matter density parameter (default 0.315)")
+    p.set_defaults(func=cmd_hubble_flow)
+
+    # ── Phase AI (Group O) — black holes & relativistic thermodynamics (Pkt 24) ─
+
+    # schwarzschild-radius (O1)
+    p = sub.add_parser("schwarzschild-radius", help="Schwarzschild radius r_s = 2GM/c²")
+    _add_object_mass_args(p)
+    p.set_defaults(func=cmd_schwarzschild_radius)
+
+    # hawking-temperature (O2)
+    p = sub.add_parser("hawking-temperature", help="Hawking temperature (or inverse T → mass)")
+    _add_object_mass_args(p)
+    p.add_argument("--temperature-k", type=float, help="Inverse: temperature → black-hole mass")
+    p.set_defaults(func=cmd_hawking_temperature)
+
+    # black-hole-evaporation (O3)
+    p = sub.add_parser("black-hole-evaporation", help="Hawking power + evaporation lifetime (or inverse)")
+    _add_object_mass_args(p)
+    p.add_argument("--lifetime-yr", type=float, help="Inverse: lifetime → black-hole mass")
+    p.set_defaults(func=cmd_black_hole_evaporation)
+
+    # bekenstein-hawking-entropy (O4)
+    p = sub.add_parser("bekenstein-hawking-entropy", help="Bekenstein-Hawking horizon entropy")
+    _add_object_mass_args(p)
+    p.add_argument("--radius-m", type=float, help="Horizon radius (alternative to mass)")
+    p.set_defaults(func=cmd_bekenstein_hawking_entropy)
+
+    # isco (O5)
+    p = sub.add_parser("isco", help="Innermost stable circular orbit + binding efficiency")
+    _add_object_mass_args(p)
+    p.add_argument("--spin", type=float, default=0.0, help="Dimensionless spin a* (−1…1, default 0)")
+    p.add_argument("--retrograde", action="store_true", help="Retrograde orbit (default prograde)")
+    p.set_defaults(func=cmd_isco)
+
+    # kerr-horizon (O6)
+    p = sub.add_parser("kerr-horizon", help="Kerr outer/inner horizons + ergosphere")
+    _add_object_mass_args(p)
+    p.add_argument("--spin", type=float, default=0.0, help="Dimensionless spin a* (−1…1, default 0)")
+    p.set_defaults(func=cmd_kerr_horizon)
+
+    # bh-tidal-force (O7)
+    p = sub.add_parser("bh-tidal-force", help="Tidal (spaghettification) gradient + threshold radius")
+    _add_object_mass_args(p)
+    p.add_argument("--distance-m", type=float); p.add_argument("--distance-rs", type=float,
+                   help="Distance in Schwarzschild radii (default 1 = at the horizon)")
+    p.add_argument("--object-length-m", type=float, default=1.8, help="Body length Δr (default 1.8 m)")
+    p.add_argument("--threshold-g", type=float, help="Solve the spaghettification radius at this g")
+    p.set_defaults(func=cmd_bh_tidal_force)
+
+    # eddington-luminosity (O8)
+    p = sub.add_parser("eddington-luminosity", help="Eddington luminosity + accretion rate")
+    _add_object_mass_args(p)
+    p.add_argument("--efficiency", type=float, default=0.1, help="Radiative efficiency η (default 0.1)")
+    p.set_defaults(func=cmd_eddington_luminosity)
+
+    # unruh-temperature (O9)
+    p = sub.add_parser("unruh-temperature", help="Unruh temperature for an accelerated observer")
+    p.add_argument("--acceleration-ms2", type=float); p.add_argument("--acceleration-g", type=float)
+    p.add_argument("--temperature-k", type=float, help="Inverse: temperature → acceleration")
+    p.set_defaults(func=cmd_unruh_temperature)
+
+    # bekenstein-bound (O10)
+    p = sub.add_parser("bekenstein-bound", help="Bekenstein entropy/information bound in a region")
+    p.add_argument("--radius-m", required=True, type=float, help="Region radius (m)")
+    p.add_argument("--energy-j", type=float); p.add_argument("--mass-kg", type=float)
+    p.set_defaults(func=cmd_bekenstein_bound)
+
+    # ── Phase AH (Group N) — Alcubierre / metric drive (Pkt 22) ───────────────
+
+    # alcubierre-energy (N1) — AH·1: 'original' formulation only (ladder added in AH·2)
+    p = sub.add_parser("alcubierre-energy",
+                       help="Negative-energy budget of an Alcubierre warp bubble")
+    p.add_argument("--bubble-radius-m", type=float, help="Bubble radius R (m)")
+    p.add_argument("--velocity-c", type=float, help="Bubble velocity v_s (fraction of c; may be >1)")
+    p.add_argument("--wall-thickness-m", type=float, help="Wall thickness Δ (m)")
+    p.add_argument("--formulation", choices=warp.FORMULATIONS, default="original",
+                   help="Warp-drive formulation: original (computed) or a reduction (reported)")
+    p.add_argument("--neck-radius-m", type=float, help="Van Den Broeck neck radius (echoed)")
+    p.set_defaults(func=cmd_alcubierre_energy)
+
+    # warp-metric (N2)
+    p = sub.add_parser("warp-metric",
+                       help="Alcubierre metric geometry: shape function, expansion scalar, wall region")
+    p.add_argument("--bubble-radius-m", type=float, help="Bubble radius R (m)")
+    p.add_argument("--wall-thickness-sigma", type=float, help="Wall steepness σ (1/m)")
+    p.add_argument("--velocity-c", type=float, help="Bubble velocity v_s (fraction of c; may be >1)")
+    p.add_argument("--r-eval-m", type=float, help="Evaluate f, df/dr, θ at this radius")
+    p.add_argument("--profile", action="store_true", help="Sample f/df/θ across r_s")
+    p.add_argument("--variant", choices=["alcubierre", "natario"], default="alcubierre",
+                   help="natario = zero-expansion metric (space slides around; θ≡0)")
+    p.set_defaults(func=cmd_warp_metric)
 
     # ── Phase T1c — census-filter presets ────────────────────────────────────
 

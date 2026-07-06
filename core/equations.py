@@ -32,6 +32,24 @@ _C_KMS           = _C_MS / 1000.0     # speed of light, km/s (≈299 792.458; pr
 _LY_M            = _C_MS * _SEC_PER_YEAR  # metres per (Julian) light-year (ism_drag/dust_impact/calculators)
 _TNT_J_PER_KG    = 4.184e6            # 1 kg TNT ≡ 4.184e6 J (4.184 kJ/g); E/this → kg TNT (dust_impact/volatile_delivery)
 
+# ── Exotic-physics / relativity / black-hole constants (Phases AE–AI) ─────────
+# CODATA-2018 values, added for the Pkt 20–24 calculator groups (gravitation,
+# relativity, exotic_physics, warp, black_hole). Every one is flag-overridable in
+# query.py; kept here so the five new modules share one non-drifting definition.
+_HBAR                  = _PLANCK_H / (2.0 * math.pi)  # reduced Planck constant ℏ, J·s (≈1.054571817e-34)
+_M_ELECTRON            = 9.1093837015e-31  # electron mass, kg (CODATA 2018)
+_ELEMENTARY_CHARGE     = 1.602176634e-19   # elementary charge e, C (CODATA 2018, exact)
+_EPSILON_0             = 8.8541878128e-12  # vacuum permittivity ε₀, F/m (CODATA 2018)
+_THOMSON_CROSS_SECTION = 6.6524587321e-29  # Thomson cross section σ_T, m² (CODATA 2018)
+_PLANCK_LENGTH         = 1.616255e-35      # Planck length l_p, m (CODATA 2018)
+_JUP_MASS_KG           = 1.898e27          # Jupiter mass, kg
+_SUN_RADIUS_M          = 6.957e8           # nominal solar radius R☉, m (IAU 2015 B3)
+_JUP_RADIUS_M          = 7.1492e7          # Jupiter 1-bar equatorial radius, m
+_MPC_M                 = 3.0857e22         # metres per megaparsec
+_HUBBLE_DEFAULT_KMS_MPC = 67.4             # Hubble constant H₀, km/s/Mpc (Planck 2018 default; overridable)
+_OMEGA_LAMBDA_DEFAULT   = 0.685            # dark-energy density parameter Ω_Λ (Planck 2018 default)
+_OMEGA_M_DEFAULT        = 0.315            # matter density parameter Ω_m (Planck 2018 default)
+
 
 def _rocky_radius_km(mass_earth: float) -> float:
     """Approximate rocky-body radius from mass (R ∝ M^0.55). Shared by H1, H2."""

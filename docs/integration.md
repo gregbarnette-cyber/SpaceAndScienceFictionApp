@@ -1001,6 +1001,317 @@ transcription slips in `PHASE_AD_PLAN.md`:* the plan's "1.9×10² J / 40 mg" fig
 `4.184×10⁶ J`). The relativistic auto-switch is `β > 0.1` (the plan prose said ~0.01, but its own
 acceptance cases require `false@β0.05` / `true@β0.2`).
 
+### Arrival geometry & gravitation (Phase AE — Group K, no network)
+
+Four `query.py`-only, pure-math, self-validating (Phase-H/P contract) gravitational-geometry calculators
+(`core/gravitation.py`) for Packet 20's arrival/departure energetics — closing the escape-velocity /
+well-depth / Laplace-SOI / hyperbolic-capture gap over the existing `gravity-*`/`hill-sphere`/`roche-limit`
+set. Closed-form on fundamental constants; curated `{"error"}` exit 1, argparse exit 2, `model_note` on
+every object. Masses/radii resolve through the shared **`core/astro_bodies.py`** multi-unit gate + presets
+(`--body`/`--primary`/`--object` share one body table across Groups K–O; every constant is flag-overridable
+in `core/equations.py`). All four functions accept mass in **exactly one** of `--mass-kg`/`--mass-msun`/
+`--mass-mearth`/`--mass-mjup` (or a `--body` preset that fills mass — and, for K1/K4, radius).
+
+#### `escape-velocity` (K1)
+`v_esc = √(2GM/r)`, `v_circ = v_esc/√2`, specific escape energy `½v_esc²`.
+```bash
+query.py escape-velocity --body earth                       # 11.19 km/s
+query.py escape-velocity --mass-msun 1 --radius-rsun 1      # 617.7 km/s
+```
+Core: `gravitation.compute_escape_velocity(mass_*, radius_m|radius_rsun|radius_rearth|distance_au, body)`.
+Radius via exactly one of `--radius-m`/`--radius-rsun`/`--radius-rearth`/`--distance-au`, or a `--body`
+preset. Output: `{escape_velocity_kms, escape_velocity_c, circular_velocity_kms, specific_energy_j_per_kg,
+mass_kg, radius_m, body|null, model_note}`. **Validation:** not exactly one mass/radius unit, `--body` +
+explicit flags together, or non-positive → curated exit 1; bad `--body` choice / non-numeric → exit 2.
+**Anchors:** Earth → **11.19 km/s**; Sun → **617.7 km/s**; Jupiter (1-bar equatorial R) → **59.5 km/s**;
+Earth specific energy ≈ **6.26×10⁷ J/kg**.
+
+#### `gravitational-potential` (K2)
+`Φ = −GM/r`; well-depth `r_from→r_to` = `GM(1/r_from − 1/r_to)` (default `r_to = ∞`); binding energy =
+`payload · well_depth`; Δv-equivalent = `√(2·|well_depth|)`.
+```bash
+query.py gravitational-potential --body earth --r-from-m 6.371e6                # well 6.26e7 J/kg, Δv 11.19
+query.py gravitational-potential --body sun --r-from-m 6.957e8 --payload-kg 1000
+```
+Core: `gravitation.compute_gravitational_potential(mass_*, body, r_from_m|r_from_au, r_to_m|r_to_au,
+payload_kg)`. `--r-from-*` required (exactly one unit); `--r-to-*` optional (default ∞). Output:
+`{potential_j_per_kg, well_depth_j_per_kg, binding_energy_j|null, delta_v_kms, r_from_m, r_to_m|null,
+mass_kg, body|null, model_note}`. **Validation:** missing/duplicate r-from unit, non-positive payload, mass
+gate → exit 1. **Anchors:** Earth surface→∞ = **6.26×10⁷ J/kg** (= K1 ½v_esc²); Sun surface→∞ =
+**1.91×10¹¹ J/kg**.
+
+#### `sphere-of-influence` (K3)
+Laplace `r_SOI = a·(m/M)^(2/5)`, reported beside Hill `r_Hill = a·(m/3M)^(1/3)`.
+```bash
+query.py sphere-of-influence --body-mass-mearth 1 --primary sun --semimajor-au 1     # SOI 0.00618 AU
+query.py sphere-of-influence --body-mass-mjup 1 --primary-mass-msun 1 --semimajor-au 5.2
+```
+Core: `gravitation.compute_sphere_of_influence(body_mass_*, primary_mass_*, primary, semimajor_au)`. Body
+mass via `--body-mass-*` (no preset); primary mass via `--primary-mass-*` or a `--primary` body preset.
+Output: `{soi_laplace_au, soi_laplace_km, hill_radius_au, hill_radius_km, ratio_soi_hill, body_mass_kg,
+primary_mass_kg, primary|null, semimajor_au, model_note}`. **Validation:** either mass gate, non-positive
+`--semimajor-au` → exit 1. **Anchors:** Earth about Sun → SOI ≈ **0.924×10⁶ km (0.00618 AU)**, Hill ≈
+1.50×10⁶ km; Jupiter → SOI ≈ **4.82×10⁷ km**.
+
+#### `hyperbolic-approach` (K4)
+At periapsis `r_p`: `v_p = √(v∞² + 2GM/r_p)`, `C₃ = v∞²`, capture Δv = `v_p − v_capture` (circular
+`√(GM/r_p)` | parabolic `√(2GM/r_p)` | elliptical vis-viva with `--target-apoapsis-*`).
+```bash
+query.py hyperbolic-approach --body earth --v-infinity-kms 3 --periapsis-km 6771   # v_p 11.26, capture Δv 3.59
+query.py hyperbolic-approach --body earth --arrival-speed-kms 11.2 --r-from-km 1e6 --periapsis-rbody 1.06 --target elliptical --target-apoapsis-km 100000
+```
+Core: `gravitation.compute_hyperbolic_approach(mass_*, body, v_infinity_kms|arrival_speed_kms(+r_from_km|
+r_from_au), periapsis_km|periapsis_rbody, target, target_apoapsis_km|target_apoapsis_au)`. Provide **exactly
+one** v-mode (direct `--v-infinity-kms`, or `--arrival-speed-kms` + `--r-from-*`) and **exactly one**
+periapsis (`--periapsis-km`, or `--periapsis-rbody` which needs a known body radius via `--body`). `--target`
+∈ `{circular(default),parabolic,elliptical}`; elliptical requires `--target-apoapsis-*`. Output:
+`{v_periapsis_kms, capture_delta_v_kms, c3_km2s2, v_infinity_kms, periapsis_km, target, mass_kg, body|null,
+model_note}`. **Validation:** v-mode/periapsis not exactly one, `--periapsis-rbody` without a radius, an
+arrival speed at/below escape at `--r-from` (bound, not hyperbolic), missing/too-small elliptical apoapsis →
+exit 1; bad `--target` choice / non-numeric → exit 2. **Anchor:** v∞ = 3 km/s at Earth, periapsis = 6771 km
+→ v_p ≈ **11.26 km/s**, capture-to-circular Δv ≈ **3.59 km/s**.
+
+### Special relativity & causality (Phase AF — Group L, no network)
+
+Eight `query.py`-only, pure-math, self-validating (Phase-H/P contract) calculators (`core/relativity.py`)
+for Packet 23 — the full special-relativity toolkit plus the load-bearing `causality-check` FTL guardrail.
+Extends the `lorentz-factor` (γ) seed. Curated `{"error"}` exit 1, argparse exit 2, `model_note` on every
+object; constants from `core/equations.py`; L1's gravitational source resolves through `core/astro_bodies.py`.
+Velocity inputs take **exactly one** of `--velocity-c` / `--velocity-kms` (0 ≤ β < 1) throughout.
+
+#### `time-dilation` (L1)
+Special `Δt = γΔτ`; gravitational `Δτ/Δt = √(1 − r_s/r)` (`r_s = 2GM/c²`); optional `--combined` product
+`γ/√(1 − r_s/r)`. `--proper-time` **or** `--coordinate-time` solves the other; gravitational source via
+`--body` or `--mass-* + --radius-*`/`--distance-au`.
+```bash
+query.py time-dilation --velocity-c 0.866 --proper-time 1     # γ 2.0, coordinate_time 2.0
+query.py time-dilation --body earth                           # gravitational_factor ≈ 1 − 6.95e-10
+```
+Core: `relativity.compute_time_dilation(velocity_c|velocity_kms, proper_time, coordinate_time, mass_*|body,
+radius_*|distance_au, combined)`. Output: `{gamma, dilation_factor, proper_time, coordinate_time,
+gravitational_factor|null, combined_factor|null, model_note}`. **Validation:** neither velocity nor gravity,
+β≥1, `--combined` without both, both times, radius ≤ r_s → exit 1. **Anchors:** β=0.866 → γ=**2.000**;
+β=0.99 → γ≈**7.089**; Earth surface gravitational factor ≈ **1 − 6.95×10⁻¹⁰**.
+
+#### `length-contraction` (L2)
+`L = L₀/γ`; `--proper-length` or `--contracted-length` solves the other. Output: `{gamma, proper_length,
+contracted_length, contraction_factor, model_note}`. **Anchor:** β=0.866 → L = **0.5 L₀**.
+
+#### `velocity-addition` (L3)
+Collinear `w = (u+v)/(1+uv/c²)`; `--perpendicular` → `w = √(v² + u²(1−v²))`. Required `--u-c`, `--v-c`
+(−1 ≤ β ≤ 1). Output: `{combined_velocity_c, combined_velocity_kms, gamma_combined|null, model_note}`
+(`gamma_combined` null at exactly c). **Anchors:** 0.75c ⊕ 0.75c = **0.96c**; c ⊕ anything = **c**.
+
+#### `relativistic-doppler` (L4)
+`f_obs/f_src = 1/(γ(1 − β cosθ))` via exactly one of `--approach` (θ=0) / `--recede` (180°) / `--angle-deg`;
+optional `--rest-wavelength-nm` or `--rest-frequency-hz`. Output: `{doppler_factor, angle_deg,
+observed_wavelength_nm|null, observed_frequency_hz|null, redshift_z, model_note}`. **Anchors:** β=0.6 approach
+→ factor **2.0** (z=**−0.5**); transverse (90°) → **0.8**.
+
+#### `rapidity` (L5)
+`φ = artanh(β)`, `β = tanh(φ)`, `γ = cosh(φ)`; exactly one of `--velocity-c` / `--rapidity` / `--add`
+(comma-separated β list → `tanh(Σ artanh(βᵢ))`). Output: `{rapidity, velocity_c, gamma,
+composed_velocity_c|null, model_note}`. **Anchors:** β=0.6 → φ≈**0.6931**; `--add "0.6,0.6,0.6"` → φ=**2.079**,
+composed ≈ **0.9695c**.
+
+#### `relativistic-energy-momentum` (L6)
+`E = γmc²`, `p = γmv`, `KE = (γ−1)mc²`, `E² = (pc)² + (mc²)²`. Mass via exactly one of `--mass-kg` /
+`--mass-mev`; state via exactly one of `--velocity-c` / `--gamma` / `--kinetic-energy-j` / `--momentum`.
+Output: `{gamma, total_energy_j, rest_energy_j, kinetic_energy_j, momentum_kgms, velocity_c, mass_kg,
+model_note}`. **Anchor:** proton (938.272 MeV) at β=0.99 → γ≈**7.089**, KE ≈ **5.72 GeV**.
+
+#### `lorentz-transform` (L7)
+`t' = γ(t − vx/c²)`, `x' = γ(x − vt)`; `--inverse`; `--event2 "t2,x2"` → simultaneity offset. Event in SI
+(`--t` s, `--x` m) **or** astro (`--t-yr`, `--x-ly`, c = 1 ly/yr); required `--velocity-c`. Output:
+`{t_prime, x_prime, gamma, simultaneity_offset|null, model_note}`. **Validation:** β≥1, incomplete/mixed-unit
+event, partial `--event2` → exit 1. **Anchor:** β=0.6, event (t=0, x=1 ly) → t' = **−0.75 yr**, x' = **1.25 ly**.
+
+#### `causality-check` (L8) ⭐
+FTL tachyonic-antitelephone guardrail: a closed causal loop is possible when `u·v > c²`; `v_crit = c²/u`;
+a universal `--preferred-frame` removes it. Signal speed via exactly one of `--signal-speed-c` / `--instant`
+(u → ∞); required `--frame-velocity-c` (0 ≤ β < 1); optional `--two-jump` framing.
+```bash
+query.py causality-check --signal-speed-c 2 --frame-velocity-c 0.6   # loop_possible true, v_crit 0.5
+query.py causality-check --instant --frame-velocity-c 0.01           # loop_possible true (any v>0)
+```
+Core: `relativity.compute_causality_check(signal_speed_c|instant, frame_velocity_c, preferred_frame,
+two_jump)`. Output: `{loop_possible, condition_value|null, critical_frame_velocity_c, margin|null,
+preferred_frame_safe, signal_speed_c|null, frame_velocity_c, instant, explanation, model_note}` (`--instant`
+→ `condition_value`/`margin` null, `v_crit` 0). **Anchors:** u=2c, v=0.6c → `u·v/c²`=**1.2** → loop **true**,
+v_crit **0.5c**; u=2c, v=0.4c → **0.8** → false; `--preferred-frame` → `preferred_frame_safe` **true**
+regardless. A `loop_possible=false` verdict is a clean result (exit 0), not an error.
+
+### Exotic vacuum & cosmology (Phase AG — Group M, no network)
+
+Four `query.py`-only, pure-math, self-validating (Phase-H/P contract) calculators (`core/exotic_physics.py`)
+for Packet 21 — vacuum/negative energy, the vacuum catastrophe, the pair-production threshold, and the
+expansion-vs-binding accounting. Closed-form on fundamental constants; curated `{"error"}` exit 1, argparse
+exit 2, `model_note` on every object; cosmology constants (H₀, Ω_Λ, Ω_m) flag-overridable from
+`core/equations.py`.
+
+#### `casimir` (M1)
+Parallel-plate `P = π²ℏc/(240 d⁴)`, energy density `u = −π²ℏc/(720 d³)` (the negative, NEC-relevant quantity
+feeding Group N); `--geometry sphere-plate` gives the proximity-force `F = −π³ℏcR/(360 d³)`.
+```bash
+query.py casimir --separation-nm 1000                                      # P 1.30e-3 Pa, u −4.33e-10 J/m³
+query.py casimir --separation-nm 100 --geometry sphere-plate --sphere-radius-m 1e-4
+```
+Core: `exotic_physics.compute_casimir(separation_m|separation_nm, area_m2, geometry, sphere_radius_m)`.
+Separation via exactly one unit; `--area-m2` default 1. Output: `{pressure_pa, force_n, energy_density_j_m3,
+total_energy_j, separation_m, area_m2, geometry, sphere_radius_m, model_note}` (sphere-plate → pressure /
+energy-density `null`, force only). **Validation:** no/duplicate separation, non-positive, `--sphere-radius-m`
+with parallel-plate, sphere-plate without radius → exit 1. **Anchors:** d=1 µm → P ≈ **1.30×10⁻³ Pa**, u ≈
+**−4.33×10⁻¹⁰ J/m³**; d=10 nm → P ≈ **1.30×10⁵ Pa** (∝ 1/d⁴).
+
+#### `vacuum-energy` (M2)
+`ρ_Λ = Ω_Λ·ρ_crit` (`ρ_crit = 3H₀²c²/8πG`), `Λ = 3Ω_ΛH₀²/c²`, `w = −1`; the QED cutoff estimate
+`ρ_vac ~ E_cutoff⁴/(ℏc)³` and the catastrophe ratio.
+```bash
+query.py vacuum-energy                              # ρ_Λ 5.3e-10, ρ_crit 7.7e-10 J/m³, ratio ~1e122
+query.py vacuum-energy --cutoff electroweak
+```
+Core: `exotic_physics.compute_vacuum_energy(omega_lambda, hubble_kms_mpc, cutoff)`. `--cutoff` ∈
+`{planck(default), electroweak, qcd}` or a number in GeV. Output: `{rho_lambda_j_m3, rho_crit_j_m3,
+lambda_m2, equation_of_state_w, cutoff, qed_estimate_j_m3, catastrophe_ratio, omega_lambda, hubble_kms_mpc,
+model_note}`. **Validation:** `Ω_Λ ∉ (0,1]`, `H₀ ≤ 0`, unparseable cutoff → exit 1. **Anchors:** default →
+ρ_Λ ≈ **5.3×10⁻¹⁰**, ρ_crit ≈ **7.7×10⁻¹⁰ J/m³**, Λ ≈ 1.09×10⁻⁵² m⁻², Planck-cutoff ratio ~**10¹²²**.
+
+#### `schwinger-limit` (M3)
+`E_c = m_e²c³/(eℏ)`, `B_c = E_c/c`, `I_c = ½ε₀cE_c²`; optional `--field-vm` or `--intensity-wcm2` → ratio to
+critical. Output: `{critical_field_vm, critical_magnetic_field_t, critical_intensity_wcm2, ratio_to_critical
+|null, model_note}`. **Validation:** both compare-flags together, non-positive → exit 1. **Anchors:** E_c ≈
+**1.32×10¹⁸ V/m**, B_c ≈ **4.41×10⁹ T**, I_c ≈ **2.3×10²⁹ W/cm²** (½ε₀cE² convention; `model_note` flags the
+~4.6×10²⁹ no-½ convention).
+
+#### `hubble-flow` (M4)
+Recession `v = H₀·d`, or the local-binding turnaround test `r_ta = (GM/(Ω_ΛH₀²))^(1/3)`, `binding_ratio =
+(r_ta/r)³`.
+```bash
+query.py hubble-flow --distance-mpc 100                          # v ≈ 6740 km/s
+query.py hubble-flow --mass-msun 3e12 --radius-mpc 1            # Local Group → bound, r_ta ≈ 1.6 Mpc
+```
+Core: `exotic_physics.compute_hubble_flow(distance_mpc|distance_ly, mass_msun + radius_ly|radius_mpc,
+hubble_kms_mpc, omega_lambda, omega_m)`. Provide **either** a recession distance **or** a binding test (mass +
+radius), not both. Output: `{recession_velocity_kms|null, recession_fraction_c|null, binding_ratio|null,
+turnaround_radius_mpc|null, bound|null, hubble_kms_mpc, omega_lambda, omega_m, model_note}` (+ the echoed
+distance/mass/radius). **Validation:** both/neither mode, missing radius in binding mode, duplicate distance/
+radius unit, non-positive → exit 1. **Anchors:** d=100 Mpc → v ≈ **6740 km/s**; Local Group (3×10¹² M☉, 1 Mpc)
+→ **bound**, r_ta ≈ **1.6 Mpc**; a 10¹¹ M☉ galaxy at 10 kpc → binding_ratio ≫ 1 (bound). A `bound=false`
+verdict is a clean result, not an error.
+
+### Black holes & relativistic thermodynamics (Phase AI — Group O, no network)
+
+Ten `query.py`-only, pure-math, self-validating (Phase-H/P contract) calculators (`core/black_hole.py`) for
+Packet 24 — the horizon / Hawking-thermodynamics / accretion toolkit. Closed-form on fundamental constants;
+curated `{"error"}` exit 1, argparse exit 2, `model_note` on every object. Mass resolves through
+`core/astro_bodies.py` (multi-unit `--mass-kg`/`--mass-msun`/`--mass-mearth`/`--mass-mjup` or an `--object`
+preset: `sun`, `earth`, `cygnus-x1`, `sgr-a-star`, `m87-star`, `ton-618`).
+
+#### `schwarzschild-radius` (O1)
+`r_s = 2GM/c²`. Output: `{schwarzschild_radius_m, schwarzschild_radius_km, schwarzschild_radius_au, mass_kg,
+object|null, model_note}`. **Anchors:** Sun → **2.953 km**; Earth → 8.87 mm; Sgr A* → **0.082 AU**.
+
+#### `hawking-temperature` (O2)
+`T_H = ℏc³/(8πGMk_B)`, or the inverse `--temperature-k` → mass. Output: `{hawking_temperature_k, mass_kg,
+mass_msun, object|null, model_note}`. **Anchors:** 1 M☉ → **6.17×10⁻⁸ K**; T=2.725 K → M ≈ **4.5×10²² kg**.
+
+#### `black-hole-evaporation` (O3)
+`P = ℏc⁶/(15360πG²M²)`, `τ = 5120πG²M³/(ℏc⁴)`, or the inverse `--lifetime-yr` → mass. Output: `{power_w,
+lifetime_s, lifetime_yr, mass_kg, object|null, model_note}`. **Anchors:** 1 M☉ → τ ≈ **2.1×10⁶⁷ yr**, P ≈
+9.0×10⁻²⁹ W; M ≈ **1.7×10¹¹ kg** → τ ≈ age of universe (photon-only 5120π coefficient — stated in
+`model_note`).
+
+#### `bekenstein-hawking-entropy` (O4)
+`S = k_B·A/(4l_p²)`, `A = 4πr_s²`; mass **or** `--radius-m`. Output: `{entropy_j_per_k, entropy_over_kb,
+horizon_area_m2, schwarzschild_radius_m, mass_kg|null, model_note}`. **Anchor:** 1 M☉ → S/k_B ≈ **1.05×10⁷⁷**.
+
+#### `isco` (O5)
+Schwarzschild `r_ISCO = 6GM/c² = 3r_s`; Kerr via Bardeen-Press-Teukolsky. `--spin` (a*, −1…1, default 0),
+`--retrograde` (default prograde). Output: `{isco_radius_m, isco_radius_rs, orbital_velocity_c|null,
+binding_efficiency, spin, prograde, mass_kg, object|null, model_note}` (`orbital_velocity_c` = 0.5c for a*=0,
+null for spin≠0). **Anchors:** Schwarzschild → r_ISCO ≈ **8.86 km**, efficiency **5.72%**; extremal Kerr
+prograde → efficiency **42.3%** (retrograde 3.8%).
+
+#### `kerr-horizon` (O6)
+`r± = (GM/c²)(1 ± √(1−a*²))`, equatorial ergosphere `r_E = 2GM/c²`. `--spin`. Output: `{outer_horizon_m,
+inner_horizon_m, ergosphere_equatorial_m, extremal, spin, mass_kg, object|null, frame_dragging_note,
+model_note}`. **Anchors:** a*=0 → r₊ = r_s; a*=1 → r₊ = GM/c² (half r_s), ergosphere = 2GM/c².
+
+#### `bh-tidal-force` (O7)
+`Δa = 2GM·Δr/r³` (at the horizon `Δr·c⁶/(4G²M²)`); `--distance-m`/`--distance-rs` (default = horizon),
+`--object-length-m` (Δr, default 1.8), `--threshold-g` → spaghettification radius. Output:
+`{tidal_acceleration_ms2, tidal_gees, distance_m, schwarzschild_radius_m, object_length_m,
+spaghettification_radius_m|null, inside_horizon|null, mass_kg, object|null, model_note}`. **Anchors:** 10 M☉
+horizon, 1.8 m body → ≈ **2×10⁷ g**; 10⁸ M☉ SMBH horizon → ≈ **2×10⁻⁷ g** (spaghettification radius inside
+the horizon → `inside_horizon=true`).
+
+#### `eddington-luminosity` (O8)
+`L_Edd = 4πGM m_p c/σ_T`, `Ṁ_Edd = L_Edd/(ηc²)`; `--efficiency` (η, default 0.1). Output:
+`{eddington_luminosity_w, eddington_luminosity_lsun, eddington_accretion_rate_kg_s,
+eddington_accretion_msun_yr, efficiency, mass_kg, object|null, model_note}`. **Anchor:** 1 M☉ → L_Edd ≈
+**1.26×10³¹ W** (≈3.3×10⁴ L☉), Ṁ ≈ **1.4×10¹⁵ kg/s** at η=0.1.
+
+#### `unruh-temperature` (O9)
+`T_U = ℏa/(2πck_B)`; exactly one of `--acceleration-ms2` / `--acceleration-g` / `--temperature-k` (inverse).
+Output: `{unruh_temperature_k, acceleration_ms2, acceleration_g, model_note}`. **Anchors:** a=2.47×10²⁰ m/s²
+→ ≈ **1 K**; 1 g → ≈ **4.0×10⁻²⁰ K**.
+
+#### `bekenstein-bound` (O10)
+`S ≤ 2πk_B RE/(ℏc)`, `I ≤ 2πRE/(ℏc·ln2)` bits; required `--radius-m` + exactly one of `--energy-j` /
+`--mass-kg`. Output: `{max_entropy_j_per_k, max_entropy_over_kb, max_information_bits, radius_m, energy_j,
+model_note}`. **Anchors:** 1 kg, 0.1 m → I ≈ **2.58×10⁴² bits**; human (70 kg, 1 m) → ≈ **1.80×10⁴⁵ bits**.
+
+### Alcubierre / metric drive (Phase AH — Group N, no network)
+
+`query.py`-only, pure-math, self-validating (Phase-H/P contract) calculators (`core/warp.py`) for Packet 22 —
+the warp-bubble negative-energy budget. **These compute real general relativity; whether the setting's drive
+uses these mechanisms is the packet's job and is not asserted by the tool** (the physics/canon separation).
+Curated `{"error"}` exit 1, argparse exit 2, `model_note` on every object. No numpy (the N1 integral is
+plain-Python Simpson — keeps query.py's cold start ~0.1 s).
+
+#### `alcubierre-energy` (N1)
+The `original` (Alcubierre 1994) formulation is **computed** from the T⁰⁰ integral `E = −(c⁴v_s²/12G)·∫₀^∞
+(df/dr_s)² r_s² dr_s` over the tanh shape function (always negative → exotic matter; `E ∝ −v_s²·R²/Δ`). The six
+**reduction formulations report** their published literature results + energy-condition status (not
+first-principles recomputations of each modified metric).
+```bash
+query.py alcubierre-energy --bubble-radius-m 100 --velocity-c 1 --wall-thickness-m 10          # −3.37e45 kg-equiv
+query.py alcubierre-energy --bubble-radius-m 10 --velocity-c 10 --wall-thickness-m 1 --formulation white
+query.py alcubierre-energy --bubble-radius-m 100 --velocity-c 0.5 --wall-thickness-m 10 --formulation bobrick-martire
+```
+Core: `warp.compute_alcubierre_energy(bubble_radius_m, velocity_c, wall_thickness_m, formulation, neck_radius_m)`.
+`--formulation` ∈ `{original(default), van-den-broeck, krasnikov, white, bobrick-martire, physical-2024,
+lentz}`. Output: `{energy_j, energy_kg_equiv, formulation, bubble_radius_m, velocity_c, wall_thickness_m,
+subluminal, energy_condition_status, published_figure|null, positive_energy_j|null, contested, source,
+integration_points|null, resolution_capped|null, model_note}`. For `original`, `energy_j`/`energy_kg_equiv`
+are the numeric integral (+ `integration_points`, `resolution_capped`) and `published_figure` is null; for the
+reductions, `energy_j`/`energy_kg_equiv` are null and `published_figure` carries the literature string.
+**Energy-condition regime flag (Santiago–Schuster–Visser 2021):** any superluminal (v_s ≥ c) →
+`energy_condition_status="NEC-violating-exotic"` regardless of formulation; subluminal (v_s < c) with a
+positive-energy framework (`bobrick-martire`/`physical-2024`) → `"positive-energy-possible"`. **Validation:**
+non-positive radius/velocity/wall, unknown formulation → exit 1; bad `--formulation` choice / non-numeric →
+exit 2. **Anchors:** R=100 m, v_s=c, Δ=10 m → |E| ≈ **3.37×10⁴⁵ kg-equiv** (∝1/Δ: Δ=1 → 3.36×10⁴⁶);
+`van-den-broeck` → ~a few M☉; `krasnikov` → ~a few mg; `white` → ~700 kg (Voyager, contested);
+`bobrick-martire`/`physical-2024` subluminal → positive-energy; `lentz` → contested.
+
+#### `warp-metric` (N2)
+The geometry of the Alcubierre metric: shape function `f(r_s) = [tanh(σ(r_s+R)) − tanh(σ(r_s−R))]/[2 tanh(σR)]`
+(≈1 inside, ≈0 outside), expansion scalar `θ = v_s·(x_s/r_s)·(df/dr_s)` (on the forward axis: <0 = contraction
+ahead, mirrored by expansion behind), and the wall region (the 10–90% f-transition, ±artanh(0.8)/σ about R).
+`--variant natario` (Natário 2002) is the zero-expansion metric — space slides around the ship, θ ≡ 0.
+```bash
+query.py warp-metric --bubble-radius-m 100 --wall-thickness-sigma 0.1 --velocity-c 1 --r-eval-m 100
+query.py warp-metric --bubble-radius-m 100 --wall-thickness-sigma 0.1 --velocity-c 1 --profile
+query.py warp-metric --bubble-radius-m 100 --wall-thickness-sigma 0.1 --velocity-c 1 --r-eval-m 100 --variant natario
+```
+Core: `warp.compute_warp_metric(bubble_radius_m, wall_thickness_sigma, velocity_c, r_eval_m, profile,
+variant)`. Optional `--r-eval-m` (evaluate f/df/θ at a radius) and `--profile` (sample across r_s). Output:
+`{f_at_r|null, df_dr_at_r|null, theta_at_r|null, wall_inner_m, wall_outer_m, max_expansion, max_contraction,
+profile[]|null, bubble_radius_m, wall_thickness_sigma, velocity_c, variant, model_note}` (θ in s⁻¹; natário →
+θ / max_expansion / max_contraction all 0). **Validation:** non-positive radius/σ/velocity, negative
+`--r-eval-m`, bad `--variant` → exit 1/2. **Anchors:** f(0) ≈ 1 (flat interior), f(≫R) ≈ 0 (flat exterior);
+θ antisymmetric front/back (contraction ahead, equal expansion behind); `natario` → θ = 0.
+
 ### Megastructure scale (Phase Z — pure math + bundled material/body tables, no network)
 
 Three `query.py`-only calculators for the sibling repo's Packet 17 (Settlement / Megastructure).
