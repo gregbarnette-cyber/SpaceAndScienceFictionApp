@@ -15,21 +15,15 @@ import unittest
 import core.propulsion as propulsion
 from core.equations import _C_MS
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_y_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_y_throwaway.db")
 _C_KMS = _C_MS / 1000.0
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class RocketEquationQueryTest(unittest.TestCase):
@@ -55,7 +49,7 @@ class RocketEquationQueryTest(unittest.TestCase):
                      ["rocket-equation", "--delta-v-kms", "30", "--mass-ratio", "0.5"],     # MR<1
                      ["rocket-equation", "--delta-v-kms", "30", "--relativistic",
                       "--exhaust-velocity-kms", "30"]):                                # rel+Δv
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -64,7 +58,7 @@ class RocketEquationQueryTest(unittest.TestCase):
                      ["rocket-equation", "--delta-v-kms", "30", "--exhaust-velocity-kms",
                       "30", "--legs", "orbit"],                                          # bad legs
                      ["rocket-equation", "--beta", "abc", "--exhaust-velocity-kms", "30"]):  # non-numeric
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 
@@ -83,7 +77,7 @@ class BeamSailQueryTest(unittest.TestCase):
                      ["beam-sail", "--beam-power-w", "1e9", "--reflectivity", "1.5",
                       "--sail-mass-kg", "10"],                                           # reflectivity
                      ["beam-sail", "--beam-power-w", "1e9"]):                            # no mass source
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -93,7 +87,7 @@ class BeamSailQueryTest(unittest.TestCase):
                      ["beam-sail", "--beam-power-w", "1e9", "--sail-mass-kg", "10",
                       "--accel-distance-au", "1", "--accel-time-days", "1"],
                      ["beam-sail", "--beam-power-w", "abc", "--sail-mass-kg", "10"]):
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 
@@ -128,7 +122,7 @@ class PelletStreamQueryTest(unittest.TestCase):
                       "--mass-flow-rate-kgs", "1"],                                # no velocity
                      ["pellet-stream", "--stream-velocity-kms", "30000",
                       "--mass-flow-rate-kgs", "1", "--beta", "1.0"]):              # β=1
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -142,7 +136,7 @@ class PelletStreamQueryTest(unittest.TestCase):
                       "--mass-flow-rate-kgs", "1", "--beta", "0.05", "--coupling", "bogus"],  # choice
                      ["pellet-stream", "--stream-velocity-kms", "abc",
                       "--mass-flow-rate-kgs", "1", "--beta", "0.05"]):             # non-numeric
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 

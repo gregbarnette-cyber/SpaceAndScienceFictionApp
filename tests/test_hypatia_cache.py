@@ -31,6 +31,8 @@ from pathlib import Path
 import core.db as db
 import core.databases as dbs
 
+from tests._queryharness import run_query
+
 _REPO = Path(__file__).resolve().parent.parent
 
 
@@ -284,16 +286,7 @@ class SearchHypatiaQueryCliTest(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _run(self, *args):
-        proc = subprocess.run(
-            [sys.executable, str(_REPO / "query.py"), *args],
-            capture_output=True, text=True, cwd=str(_REPO),
-            env={"SPACE_APP_DB": self.db_path, "PATH": os.environ.get("PATH", "")},
-        )
-        try:
-            payload = json.loads(proc.stdout)
-        except Exception:
-            payload = None
-        return proc.returncode, payload
+        return run_query(*args, db_path=self.db_path)[:2]
 
     def test_happy(self):
         code, payload = self._run("search-hypatia", "--fe-h-max", "0",

@@ -29,18 +29,14 @@ import numpy as np
 import core.dust as dust
 from tests._dustcheck import dustmaps_importable, maps_fetched
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/dust_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("dust_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run([sys.executable, str(_REPO / "query.py"), *cmd_args],
-                          capture_output=True, text=True, cwd=str(_REPO), env=_ENV)
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 # A fake map query: Leike → constant density 10.0 e-fold/kpc (σ 1.0); Edenhofer →

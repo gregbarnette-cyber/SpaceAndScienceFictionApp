@@ -14,20 +14,14 @@ import unittest
 
 import core.megastructure as megastructure
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_z_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_z_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class SpinStressQueryTest(unittest.TestCase):
@@ -46,14 +40,14 @@ class SpinStressQueryTest(unittest.TestCase):
                       "--target-gravity-g", "1"],                                            # SF<1
                      ["spin-stress", "--material", "structural-steel", "--density-kgm3", "1000",
                       "--target-gravity-g", "1"]):                                           # material+explicit
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
     def test_exit2_argparse(self):
         for args in (["spin-stress", "--material", "steelx", "--target-gravity-g", "1"],     # bad choice
                      ["spin-stress", "--material", "structural-steel", "--target-gravity-g", "x"]):  # non-numeric
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 
@@ -79,7 +73,7 @@ class TetherTaperQueryTest(unittest.TestCase):
         for args in (["tether-taper", "--material", "kevlar"],                               # no body
                      ["tether-taper", "--material", "kevlar", "--body", "earth",
                       "--surface-gravity-ms2", "9.81"]):                                      # body+explicit
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -109,7 +103,7 @@ class DysonCollectorQueryTest(unittest.TestCase):
                      ["dyson-collector", "--luminosity-lsun", "1", "--star", "Sol",
                       "--fraction", "0.01", "--orbit-au", "1"],                               # both mutex
                      ["dyson-collector", "--luminosity-lsun", "1", "--orbit-au", "1"]):       # missing required --fraction
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 
@@ -134,7 +128,7 @@ class OrbitalRingQueryTest(unittest.TestCase):
                       "--altitude-km", "300", "--ring-mass-per-length-kgm", "100"],  # partial explicit
                      ["orbital-ring", "--body", "earth", "--altitude-km", "300",
                       "--ring-mass-per-length-kgm", "0"]):                        # ring λ ≤ 0
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -145,7 +139,7 @@ class OrbitalRingQueryTest(unittest.TestCase):
                      ["orbital-ring", "--body", "earth", "--altitude-km", "300"],  # missing --ring-mass
                      ["orbital-ring", "--body", "earth", "--altitude-km", "abc",
                       "--ring-mass-per-length-kgm", "100"]):                      # non-numeric
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 

@@ -13,20 +13,14 @@ import unittest
 
 import core.life_support as ls
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_x_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_x_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class HappyPathTest(unittest.TestCase):
@@ -100,7 +94,7 @@ class ExitCodeTest(unittest.TestCase):
             ["bioregen-area", "--crop", "wheat", "--crops", "wheat:1.0", "--dli-mol", "30"],  # both crop+crops
             ["population-capacity"],                                     # no budget
         ):
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -114,7 +108,7 @@ class ExitCodeTest(unittest.TestCase):
             ["bioregen-area", "--crop", "wheat", "--dli-mol", "30", "--star", "Sol"],  # unknown arg
             ["population-capacity", "--power-w", "xyz"],                            # non-numeric
         ):
-            rc, _, _ = _run(*args)
+            rc, _, _ = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
 
 

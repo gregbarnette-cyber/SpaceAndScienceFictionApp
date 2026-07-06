@@ -23,10 +23,10 @@ present-day ancestors and caller-overridable (Mature-Technology Assumption).
 
 import math
 
-from core.equations import _C_MS, _M_PER_AU, _STANDARD_GRAVITY
+from core.equations import _C_MS, _M_PER_AU, _STANDARD_GRAVITY, _C_KMS  # shared (P4.5)
+from core.equations import _resolve_velocity as _resolve_velocity_shared
 from core import propulsion_tables
 
-_C_KMS = _C_MS / 1000.0
 _LEGS = {"flyby": 1, "rendezvous": 2, "round-trip": 4}
 _PELLET_COUPLING = {"reflect": 2.0, "absorb": 1.0}   # elastic 2·ṁu / inelastic 1·ṁu
 
@@ -47,18 +47,9 @@ def _resolve_vehicle_velocity(velocity_kms, beta):
     """Return (v_ms, velocity_kms, beta) or a {"error"} dict. Exactly one anchor required.
 
     ``--velocity-kms`` admits a vehicle at rest (v = 0); ``--beta`` is strictly sublight (0<β<1).
+    Thin wrapper over the canonical ``equations._resolve_velocity`` (P4.3, allow_zero=True).
     """
-    if (velocity_kms is not None) + (beta is not None) != 1:
-        return {"error": "Provide exactly one velocity anchor: --velocity-kms or --beta."}
-    if beta is not None:
-        if not (0.0 < beta < 1.0):
-            return {"error": "beta must be in the range 0 < β < 1 (sublight)."}
-        v_ms = beta * _C_MS
-        return (v_ms, v_ms / 1000.0, beta)
-    if velocity_kms < 0:
-        return {"error": "velocity_kms must be ≥ 0."}
-    v_ms = velocity_kms * 1000.0
-    return (v_ms, velocity_kms, v_ms / _C_MS)
+    return _resolve_velocity_shared(velocity_kms, beta, allow_zero=True)
 
 
 # ── G1 — Tsiolkovsky rocket equation (classical + relativistic) ──────────────

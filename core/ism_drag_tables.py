@@ -49,9 +49,7 @@ magnetically-interacting density by ~4× in the LIC — a caller who needs accur
 *ion* number density as --ism-density-cm3 rather than the total n.
 """
 
-from core.equations import _C_MS
-
-_C_KMS = _C_MS / 1000.0
+from core.equations import _C_KMS  # speed of light, km/s; shared (P4.5)
 
 # ── ISM defaults (Local-Interstellar-Environment packet; overridable) ────────
 _DEFAULT_N_CM3        = 0.1    # Local Interstellar Cloud n(H I); LB interior ~0.005

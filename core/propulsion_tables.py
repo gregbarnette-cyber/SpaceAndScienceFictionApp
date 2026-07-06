@@ -20,9 +20,7 @@ exhaust velocity (below the ideal band once realistic burn/directionality losses
 in), reproducing the packet's scoping conclusion. Flag back to the requester on shipment.
 """
 
-from core.equations import _C_MS
-
-_C_KMS = _C_MS / 1000.0   # speed of light, km/s (≈ 299 792.458)
+from core.equations import _C_KMS   # speed of light, km/s (≈ 299 792.458); shared (P4.5)
 
 # fuel key -> {v_e_kms (ideal exhaust velocity), note}. All ideal; MTA-movable.
 _FUELS = {

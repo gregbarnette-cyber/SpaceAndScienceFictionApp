@@ -26,10 +26,8 @@ Self-validating: bad input returns a curated ``{"error": str}``.
 
 import math
 
-from core.equations import _C_MS, _SEC_PER_YEAR
-
-_LY_M = _C_MS * _SEC_PER_YEAR       # metres per (Julian) light-year (matches ism_drag/calculators)
-_TNT_J_PER_KG = 4.184e6             # 1 kg TNT ≡ 4.184e6 J (4.184 kJ/g); E/this → kg TNT
+from core.equations import _C_MS, _LY_M, _TNT_J_PER_KG  # shared constants (P4.5)
+from core.equations import _resolve_velocity as _resolve_velocity_shared
 _REL_BETA_THRESHOLD = 0.1           # β above which the relativistic KE/momentum form is used
 
 _PENETRATION_HANDOFF_NOTE = (
@@ -51,18 +49,9 @@ _MODEL_NOTE = (
 
 
 def _resolve_velocity(velocity_kms, beta):
-    """Return (v_ms, velocity_kms, beta) or a {"error"} dict. Exactly one anchor required."""
-    if (velocity_kms is not None) + (beta is not None) != 1:
-        return {"error": "Provide exactly one velocity anchor: --velocity-kms or --beta."}
-    if beta is not None:
-        if not (0.0 < beta < 1.0):
-            return {"error": "beta must be in the range 0 < β < 1 (sublight)."}
-        v_ms = beta * _C_MS
-        return (v_ms, v_ms / 1000.0, beta)
-    if velocity_kms <= 0:
-        return {"error": "velocity_kms must be > 0."}
-    v_ms = velocity_kms * 1000.0
-    return (v_ms, velocity_kms, v_ms / _C_MS)
+    """Return (v_ms, velocity_kms, beta) or a {"error"} dict. Exactly one anchor required
+    (velocity > 0). Thin wrapper over the canonical ``equations._resolve_velocity`` (P4.3)."""
+    return _resolve_velocity_shared(velocity_kms, beta, allow_zero=False)
 
 
 def compute_dust_impact(grain_radius_um=None, grain_density_kgm3=None, grain_mass_kg=None,

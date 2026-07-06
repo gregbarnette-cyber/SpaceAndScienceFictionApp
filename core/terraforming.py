@@ -28,6 +28,7 @@ from core.equations import (
     _EARTH_MASS_KG,
     _SOLAR_LUMINOSITY_W,
 )
+from core.equations import _resolve_insolation as _resolve_insolation_shared
 
 # Earth's total atmospheric mass, kg — the reference for the
 # ``atmosphere_mass_earth_atm`` fraction only (Trenberth & Smith 2005; the widely
@@ -48,28 +49,8 @@ _GREY_MODEL_NOTE = (
 
 def _solar_flux(insolation_wm2, luminosity_lsun, distance_au):
     """Resolve exactly one insolation/solar-flux source → {"S": float} or error.
-
-    Direct ``insolation_wm2``, or ``luminosity_lsun`` + ``distance_au`` via
-    ``S = L_sun·L / (4π(d·AU)²)`` (1 L☉ @ 1 AU ≈ 1361 W/m²; the shared Phase-AA
-    expression).
-    """
-    has_direct = insolation_wm2 is not None
-    has_lumdist = luminosity_lsun is not None or distance_au is not None
-    if has_direct == has_lumdist:
-        return {"error": "Provide exactly one insolation source: insolation_wm2, "
-                         "or luminosity_lsun + distance_au."}
-    if has_direct:
-        if insolation_wm2 <= 0:
-            return {"error": "insolation_wm2 must be > 0."}
-        return {"S": float(insolation_wm2)}
-    if luminosity_lsun is None or distance_au is None:
-        return {"error": "Provide both luminosity_lsun and distance_au."}
-    if luminosity_lsun <= 0:
-        return {"error": "luminosity_lsun must be > 0."}
-    if distance_au <= 0:
-        return {"error": "distance_au must be > 0."}
-    d_m = distance_au * _M_PER_AU
-    return {"S": _SOLAR_LUMINOSITY_W * luminosity_lsun / (4.0 * math.pi * d_m * d_m)}
+    Thin wrapper over the canonical ``equations._resolve_insolation`` (P4.4)."""
+    return _resolve_insolation_shared(insolation_wm2, luminosity_lsun, distance_au)
 
 
 # ── J1 — equilibrium / greenhouse-offset temperature ─────────────────────────

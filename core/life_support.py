@@ -86,7 +86,7 @@ def compute_life_support(crew=1, days=1,
         "scenario": scenario_name,
         "makeup_mass_kg": makeup,
         "model_note": _t._MODEL_NOTE,
-        "notes": _t._NOTES,
+        "notes": list(_t._NOTES),  # normalize tuple → list (P4.4, JSON-identical)
     }
 
 
@@ -318,7 +318,7 @@ def compute_bioregen_area(kcal_per_day=None, crew=1, crop=None, crops=None,
         "model_note": model_note,
         "par_is_input_note": ("PAR is a caller-supplied light parameter, not resolved from a "
                               "star/spectral type (stellar-type-resolved PAR is Packet 18)."),
-        "notes": _t._NOTES,
+        "notes": list(_t._NOTES),  # normalize tuple → list (P4.4, JSON-identical)
     }
 
 
@@ -401,5 +401,5 @@ def compute_population_capacity(crop_area_m2=None, power_w=None, water_kg_day=No
         "binding_constraint": binding,
         "slack": slack,
         "model_note": _t._MODEL_NOTE,
-        "notes": _t._NOTES,
+        "notes": list(_t._NOTES),  # normalize tuple → list (P4.4, JSON-identical)
     }

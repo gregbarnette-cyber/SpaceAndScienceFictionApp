@@ -58,6 +58,8 @@ def _resolve_moment(coil_current_a, coil_radius_m, magnetic_moment_am2,
             return {"error": "Provide both --coil-current-a and --coil-radius-m for the coil source."}
         if coil_current_a <= 0 or coil_radius_m <= 0:
             return {"error": "coil_current_a and coil_radius_m must be > 0."}
+        # Single-loop magnetic moment m = I·π·R² (also in ism_drag._resolve_dipole;
+        # the two resolvers' source-sets/return shapes diverge too much to share — P4.4).
         return (coil_current_a * math.pi * coil_radius_m ** 2, "coil")
     if have_moment:
         if magnetic_moment_am2 <= 0:

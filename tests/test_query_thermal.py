@@ -4,29 +4,16 @@
 # shape, core parity (subprocess == in-process), and the self-validating exit-code
 # matrix (curated {"error"} -> exit 1; argparse -> exit 2).
 
-import json
-import os
-import pathlib
-import subprocess
-import sys
 import unittest
 
 import core.thermal as thermal
+from tests._queryharness import make_env, run_query, run_query_inproc
 
-_REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_v_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_v_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class WasteHeatTest(unittest.TestCase):
@@ -125,7 +112,7 @@ class ExitCodeMatrixTest(unittest.TestCase):
              "--pulse-period-s", "100", "--storage-mass-kg", "1000",
              "--specific-heat-jkgk", "500"),                                         # C9 peak<mean
         ):
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -138,7 +125,7 @@ class ExitCodeMatrixTest(unittest.TestCase):
             ("shielding-attenuation", "--mode", "bogus", "--areal-density-gcm2", "10"),  # bad choice
             ("shielding-attenuation", "--particle", "muon", "--areal-density-gcm2", "10"),  # bad particle choice
         ):
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
 
 

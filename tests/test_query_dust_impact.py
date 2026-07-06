@@ -13,20 +13,14 @@ import unittest
 
 import core.dust_impact as dust_impact
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_ad_dust_impact_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_ad_dust_impact_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class DustImpactQueryTest(unittest.TestCase):
@@ -58,7 +52,7 @@ class DustImpactQueryTest(unittest.TestCase):
                       "--grain-density-kgm3", "1000", "--beta", "1.0"],             # β=1
                      ["dust-impact", "--grain-radius-um", "1", "--grain-density-kgm3", "1000",
                       "--beta", "0.1", "--frontal-area-m2", "100"]):                # partial cumulative
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -69,7 +63,7 @@ class DustImpactQueryTest(unittest.TestCase):
                       "--velocity-kms", "1000", "--beta", "0.1"],                   # velocity mutex
                      ["dust-impact", "--grain-radius-um", "abc",
                       "--grain-density-kgm3", "1000", "--beta", "0.1"]):            # non-numeric
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 

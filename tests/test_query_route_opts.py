@@ -22,6 +22,8 @@ from pathlib import Path
 
 import core.db as db
 
+from tests._queryharness import run_query
+
 _REPO = Path(__file__).resolve().parent.parent
 
 
@@ -59,16 +61,7 @@ class _SeededQueryTest(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _run(self, *cmd_args):
-        proc = subprocess.run(
-            [sys.executable, str(_REPO / "query.py"), *cmd_args],
-            capture_output=True, text=True, cwd=str(_REPO),
-            env={"SPACE_APP_DB": self.db_path, "PATH": os.environ.get("PATH", "")},
-        )
-        try:
-            payload = json.loads(proc.stdout)
-        except Exception:
-            payload = None
-        return proc.returncode, payload, proc.stderr
+        return run_query(*cmd_args, db_path=self.db_path)
 
     # ── optimal-tour ─────────────────────────────────────────────────────────
 

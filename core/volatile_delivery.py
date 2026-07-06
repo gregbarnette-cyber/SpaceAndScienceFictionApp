@@ -16,8 +16,7 @@ presets). Self-validating: bad input returns a curated ``{"error": str}``.
 """
 
 from core import propulsion
-
-_TNT_J_PER_KG = 4.184e6   # 1 kg TNT ≡ 4.184e6 J (4.184 kJ/g); E/this → kg TNT
+from core.equations import _TNT_J_PER_KG  # shared constant (P4.5)
 
 _MODEL_NOTE = (
     "Volatile delivery (cometary / icy-body bombardment): a redirected body of mass M delivers "

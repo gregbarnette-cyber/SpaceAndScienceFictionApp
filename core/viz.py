@@ -4,19 +4,13 @@ import csv
 import math
 import os
 
+from core.equations import _kopparapu_seff  # single Kopparapu Seff source (P4.6)
+from core.shared import _to_cartesian  # single canonical copy (P4.6)
+
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
 
 # ── Kopparapu et al. 2014 HZ coefficients ─────────────────────────────────────
-
-_KOPPARAPU_PARAMS = {
-    "rv":   (1.776,  2.136e-4,  2.533e-8,  -1.332e-11, -3.097e-15),
-    "rg5":  (1.188,  1.433e-4,  1.707e-8,  -8.968e-12, -2.084e-15),
-    "rg01": (0.99,   1.209e-4,  1.404e-8,  -7.418e-12, -1.713e-15),
-    "rg":   (1.107,  1.332e-4,  1.580e-8,  -8.308e-12, -1.931e-15),
-    "mg":   (0.356,  6.171e-5,  1.698e-9,  -3.198e-12, -5.575e-16),
-    "em":   (0.320,  5.547e-5,  1.526e-9,  -2.874e-12, -5.011e-16),
-}
 
 # Zone boundary definitions, ordered inner → outer.
 # Each entry is the fill color of the region INSIDE this boundary line.
@@ -54,11 +48,7 @@ _ORBIT_COLORS = [
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
-
-def _kopparapu_seff(teff: float, key: str) -> float:
-    tS = teff - 5780.0
-    S0, a, b, c, d = _KOPPARAPU_PARAMS[key]
-    return S0 + a * tS + b * tS**2 + c * tS**3 + d * tS**4
+# _kopparapu_seff is imported from core.equations (P4.6 — one canonical copy).
 
 
 def _parse_ra_hms(s: str):
@@ -85,13 +75,7 @@ def _parse_dec_dms(s: str):
         return None
 
 
-def _to_cartesian(ra_deg: float, dec_deg: float, ly: float):
-    ra_r  = math.radians(ra_deg)
-    dec_r = math.radians(dec_deg)
-    x = ly * math.cos(dec_r) * math.cos(ra_r)
-    y = ly * math.cos(dec_r) * math.sin(ra_r)
-    z = ly * math.sin(dec_r)
-    return x, y, z
+# _to_cartesian imported from core.shared (P4.6 — one canonical copy).
 
 
 def _compute_hz_zones(teff: float, lum: float) -> list:

@@ -17,21 +17,15 @@ from pathlib import Path
 
 from core.equations import compute_solvent_zone, compute_ice_lines, get_solvents
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_p_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_p_throwaway.db")
 
 
 def _run(*cmd_args):
     """Run query.py with args; return (returncode, parsed_stdout_or_None, stderr)."""
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 # ── M1 anchors: reproduce the legacy alternate-HZ divisors at A=0.3 ───────────
@@ -149,6 +143,13 @@ class SolventZoneQueryTest(unittest.TestCase):
         self.assertAlmostEqual(payload["outer_au"], core["outer_au"], places=6)
         self.assertEqual(payload["name"], "Water")
 
+    def test_luminosity_lsun_alias(self):
+        # P4.2: --luminosity-lsun is an accepted synonym for --luminosity here.
+        rc, payload, _ = _run("solvent-zone", "--luminosity-lsun", "1.0", "--solvent", "water")
+        self.assertEqual(rc, 0)
+        self.assertAlmostEqual(payload["inner_au"], compute_solvent_zone(1.0, "water")["inner_au"],
+                               places=6)
+
     def test_custom_range_happy_path(self):
         rc, payload, _ = _run("solvent-zone", "--luminosity", "1.0",
                               "--t-low", "273.15", "--t-high", "373.15")
@@ -162,26 +163,32 @@ class SolventZoneQueryTest(unittest.TestCase):
         self.assertAlmostEqual(payload["t_ref_k"], 314.9, delta=0.1)
 
     def test_out_of_range_is_exit_1(self):
-        rc, payload, _ = _run("solvent-zone", "--luminosity", "0", "--solvent", "water")
+        rc, payload, _ = run_query_inproc("solvent-zone", "--luminosity", "0", "--solvent", "water")
         self.assertEqual(rc, 1)
         self.assertIn("error", payload)
 
     def test_unknown_solvent_is_exit_1(self):
-        rc, payload, _ = _run("solvent-zone", "--luminosity", "1", "--solvent", "zzz")
+        rc, payload, _ = run_query_inproc("solvent-zone", "--luminosity", "1", "--solvent", "zzz")
         self.assertEqual(rc, 1)
         self.assertIn("error", payload)
 
-    def test_both_mutex_is_exit_2(self):
-        rc, _, _ = _run("solvent-zone", "--luminosity", "1", "--solvent", "water",
-                        "--t-low", "100", "--t-high", "200")
-        self.assertEqual(rc, 2)
+    def test_both_mutex_is_exit_1(self):
+        # P4.1: solvent/custom mutex is a handler validation failure → curated
+        # {"error"} on stdout with exit 1 (was stderr/exit 2).
+        rc, payload, _ = run_query_inproc("solvent-zone", "--luminosity", "1", "--solvent", "water",
+                                          "--t-low", "100", "--t-high", "200")
+        self.assertEqual(rc, 1)
+        self.assertIn("error", payload)
 
-    def test_neither_is_exit_2(self):
-        rc, _, _ = _run("solvent-zone", "--luminosity", "1")
-        self.assertEqual(rc, 2)
+    def test_neither_is_exit_1(self):
+        # P4.1: "neither source" is likewise a handler validation failure → exit 1.
+        rc, payload, _ = run_query_inproc("solvent-zone", "--luminosity", "1")
+        self.assertEqual(rc, 1)
+        self.assertIn("error", payload)
 
     def test_missing_luminosity_is_exit_2(self):
-        rc, _, _ = _run("solvent-zone", "--solvent", "water")
+        # --luminosity is argparse-required, so this stays a real argparse exit 2.
+        rc, _, _ = run_query_inproc("solvent-zone", "--solvent", "water")
         self.assertEqual(rc, 2)
 
 
@@ -280,12 +287,12 @@ class IceLinesQueryTest(unittest.TestCase):
         self.assertAlmostEqual(payload["t_ref_k"], 278.5 * (0.7 ** 0.25), places=3)
 
     def test_out_of_range_is_exit_1(self):
-        rc, payload, _ = _run("ice-lines", "--luminosity", "0")
+        rc, payload, _ = run_query_inproc("ice-lines", "--luminosity", "0")
         self.assertEqual(rc, 1)
         self.assertIn("error", payload)
 
     def test_missing_luminosity_is_exit_2(self):
-        rc, _, _ = _run("ice-lines")
+        rc, _, _ = run_query_inproc("ice-lines")
         self.assertEqual(rc, 2)
 
 

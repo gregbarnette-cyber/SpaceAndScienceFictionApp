@@ -27,20 +27,14 @@ import core.databases as databases
 import core.equations as equations
 import core.viz as viz
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_l_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_l_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 # ── L3: compute_stellar_evolution ────────────────────────────────────────────

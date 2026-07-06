@@ -13,6 +13,8 @@ import sys
 import tempfile
 import unittest
 
+from tests._queryharness import run_query
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
 
 
@@ -42,14 +44,7 @@ class _QueryProjectsCase(unittest.TestCase):
             db._DB_PATH, db._conn, db._auto_seed = saved
 
     def _run(self, *args):
-        proc = subprocess.run(
-            [sys.executable, str(_REPO / "query.py"), *args],
-            capture_output=True, text=True, cwd=str(_REPO), env=self.env)
-        try:
-            payload = json.loads(proc.stdout)
-        except Exception:
-            payload = None
-        return proc.returncode, payload, proc.stderr
+        return run_query(*args, env=self.env)
 
 
 class ProjectList(_QueryProjectsCase):

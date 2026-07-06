@@ -6,36 +6,54 @@ import csv
 import math
 import os
 import re
+import threading
 
 from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
-                     _escape_like, spectral_where, spectral_adql, LY_PER_PC)
+                     _escape_like, spectral_where, spectral_adql, LY_PER_PC,
+                     _fval, _fmt,  # _fval/_fmt: one canonical copy (P4.6)
+                     _parse_designations_from_ids as _parse_designations_from_ids_shared)
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
 
-# Module-level caches
+# Module-level caches (+ per-cache locks for the GUI worker threads that build them
+# lazily; double-checked locking in the _load_* helpers — P6.4). _OEC_DATA is out of
+# scope (OEC pending rebuild).
 _HWC_DATA      = None
 _OEC_DATA      = None
 _MISSION_EXOCAT = None
+_HWC_LOCK      = threading.Lock()
+_MISSION_EXOCAT_LOCK = threading.Lock()
 
 
 # ── Shared numeric helpers ────────────────────────────────────────────────────
 
-def _fval(v):
-    """Convert to float; return None if missing or NaN."""
-    if v is None:
-        return None
-    try:
-        f = float(v)
-        return None if math.isnan(f) else f
-    except (ValueError, TypeError):
-        return None
+# _fval/_fmt are imported from core.shared (P4.6 — one canonical copy).
 
 
-def _fmt(v, decimals=3, default="N/A"):
-    """Format value to fixed-decimal string, or return default."""
-    f = _fval(v)
-    return f"{f:.{decimals}f}" if f is not None else default
+_CSV_HEADER_RE = re.compile(r"[A-Za-z0-9_ .\-/()%]+")
+
+
+def _validate_csv_headers(headers):
+    """Return None if every CSV header is a safe column identifier, else an ``{"error"}``
+    dict (P6.3). Guards the CSV-header→DDL/DML interpolation in the HWC / Mission-Exocat
+    importers (the real files use only ``[A-Za-z0-9_]``; the allowed set is a small
+    superset that still excludes quotes and control chars, so no injection via a column
+    name)."""
+    for h in headers:
+        if not h or not _CSV_HEADER_RE.fullmatch(h):
+            return {"error": f"invalid column header: {h!r}"}
+    return None
+
+
+def _adql_quote(value) -> str:
+    """Escape a value for safe inclusion inside a single-quoted ADQL string literal
+    (P6.2): strip control characters, then double any single quotes. The caller keeps
+    the surrounding quotes. For a normal designation (no quotes/control chars) the
+    output is byte-identical to the raw value, so existing built queries are unchanged."""
+    s = "" if value is None else str(value)
+    s = "".join(ch for ch in s if ord(ch) >= 32)
+    return s.replace("'", "''")
 
 
 def compute_habitable_zone(st_teff, st_lum_log10=None, st_rad=None):
@@ -43,6 +61,11 @@ def compute_habitable_zone(st_teff, st_lum_log10=None, st_rad=None):
 
     Returns list of (zone_name, au_value) tuples, or [] if insufficient data.
     Luminosity source: prefers (st_rad² × (teff/5778)⁴); falls back to 10**st_lum_log10.
+
+    P4.6: thin adapter over ``equations.compute_habitable_zone`` — resolves the
+    st_rad/st_lum_log10 luminosity here (databases-specific), then maps the dict
+    zones → the (zone_name, au) tuple shape three GUI panels consume. The Kopparapu
+    math now lives in exactly one place; zone names/order/values are unchanged.
     """
     teff = _fval(st_teff)
     if teff is None:
@@ -60,31 +83,8 @@ def compute_habitable_zone(st_teff, st_lum_log10=None, st_rad=None):
     if lum is None:
         return []
 
-    seffsun = [1.776, 1.107, 0.356, 0.320, 1.188, 0.99]
-    a = [2.136e-4,  1.332e-4,  6.171e-5,  5.547e-5,  1.433e-4,  1.209e-4]
-    b = [2.533e-8,  1.580e-8,  1.698e-9,  1.526e-9,  1.707e-8,  1.404e-8]
-    c = [-1.332e-11,-8.308e-12,-3.198e-12,-2.874e-12,-8.968e-12,-7.418e-12]
-    d = [-3.097e-15,-1.931e-15,-5.575e-16,-5.011e-16,-2.084e-15,-1.713e-15]
-
-    tstar = teff - 5780.0
-    seff  = [seffsun[i] + a[i]*tstar + b[i]*tstar**2 + c[i]*tstar**3 + d[i]*tstar**4
-             for i in range(6)]
-
-    rv   = math.sqrt(lum / seff[0])
-    rg5  = math.sqrt(lum / seff[4])
-    rg   = math.sqrt(lum / seff[1])
-    rg01 = math.sqrt(lum / seff[5])
-    mg   = math.sqrt(lum / seff[2])
-    em   = math.sqrt(lum / seff[3])
-
-    return [
-        ("Optimistic Inner HZ (Recent Venus)",                          rv),
-        ("Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass)",  rg5),
-        ("Conservative Inner HZ (Runaway Greenhouse)",                  rg),
-        ("Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass)",rg01),
-        ("Conservative Outer HZ (Maximum Greenhouse)",                  mg),
-        ("Optimistic Outer HZ (Early Mars)",                            em),
-    ]
+    from core.equations import compute_habitable_zone as _hz_dicts
+    return [(z["zone_name"], z["au"]) for z in _hz_dicts(teff, lum)]
 
 
 def _simbad_gcns_block(designations):
@@ -352,7 +352,7 @@ def compute_exoplanet_archive(simbad_result: dict,
     if progress_callback:
         progress_callback(f"Querying NASA Exoplanet Archive ({value})…")
     try:
-        planets = _query_tap("pscomppars", f"{field}='{value}'", "pl_orbsmax")
+        planets = _query_tap("pscomppars", f"{field}='{_adql_quote(value)}'", "pl_orbsmax")
     except Exception as e:
         return {"error": _network_error_msg(e, "NASA Exoplanet Archive")}
 
@@ -366,7 +366,7 @@ def compute_exoplanet_archive(simbad_result: dict,
         if progress_callback:
             progress_callback(f"Querying HWO ExEP archive ({hwo_value})…")
         try:
-            rows = _query_tap("di_stars_exep", f"{hwo_field}='{hwo_value}'", "sy_dist")
+            rows = _query_tap("di_stars_exep", f"{hwo_field}='{_adql_quote(hwo_value)}'", "sy_dist")
             if rows:
                 hwo = rows
         except Exception:
@@ -404,7 +404,7 @@ def compute_planetary_systems_composite(simbad_result: dict,
     if progress_callback:
         progress_callback(f"Querying NASA Exoplanet Archive ({value})…")
     try:
-        planets = _query_tap("pscomppars", f"{field}='{value}'", "pl_orbsmax")
+        planets = _query_tap("pscomppars", f"{field}='{_adql_quote(value)}'", "pl_orbsmax")
     except Exception as e:
         return {"error": _network_error_msg(e, "NASA Exoplanet Archive")}
 
@@ -433,7 +433,7 @@ def compute_hwo_exep(simbad_result: dict,
     if progress_callback:
         progress_callback(f"Querying HWO ExEP archive ({value})…")
     try:
-        rows = _query_tap("di_stars_exep", f"{field}='{value}'", "sy_dist")
+        rows = _query_tap("di_stars_exep", f"{field}='{_adql_quote(value)}'", "sy_dist")
     except Exception as e:
         return {"error": _network_error_msg(e, "HWO ExEP archive")}
 
@@ -444,8 +444,8 @@ def compute_hwo_exep(simbad_result: dict,
 
 
 # ── Option 5: Mission Exocat ─────────────────────────────────────────────────
-
-_MISSION_EXOCAT = None
+# (the module-level _MISSION_EXOCAT cache + its lock are declared at the top — P6.4
+# removed a duplicate `_MISSION_EXOCAT = None` that shadowed the canonical one here.)
 
 
 def _load_mission_exocat():
@@ -453,20 +453,23 @@ def _load_mission_exocat():
     global _MISSION_EXOCAT
     if _MISSION_EXOCAT is not None:
         return _MISSION_EXOCAT
-    from core.db import get_conn, table_exists
-    hip_idx, hd_idx, gj_idx = {}, {}, {}
-    try:
-        if table_exists("mission_exocat"):
-            for row in get_conn().execute("SELECT * FROM mission_exocat").fetchall():
-                row = dict(row)
-                for idx, key in [(hip_idx, "hip_name"), (hd_idx, "hd_name"), (gj_idx, "gj_name")]:
-                    v = (row.get(key) or "").strip().upper()
-                    if v:
-                        idx.setdefault(v, row)
-    except Exception:
-        pass
-    _MISSION_EXOCAT = (hip_idx, hd_idx, gj_idx)
-    return _MISSION_EXOCAT
+    with _MISSION_EXOCAT_LOCK:
+        if _MISSION_EXOCAT is not None:      # re-check under the lock
+            return _MISSION_EXOCAT
+        from core.db import get_conn, table_exists
+        hip_idx, hd_idx, gj_idx = {}, {}, {}
+        try:
+            if table_exists("mission_exocat"):
+                for row in get_conn().execute("SELECT * FROM mission_exocat").fetchall():
+                    row = dict(row)
+                    for idx, key in [(hip_idx, "hip_name"), (hd_idx, "hd_name"), (gj_idx, "gj_name")]:
+                        v = (row.get(key) or "").strip().upper()
+                        if v:
+                            idx.setdefault(v, row)
+        except Exception:
+            pass
+        _MISSION_EXOCAT = (hip_idx, hd_idx, gj_idx)
+        return _MISSION_EXOCAT
 
 
 def _query_mission_exocat_by_designations(designations):
@@ -499,20 +502,23 @@ def _load_hwc():
     global _HWC_DATA
     if _HWC_DATA is not None:
         return _HWC_DATA
-    from core.db import get_conn, table_exists
-    hip_idx, hd_idx, name_idx = {}, {}, {}
-    try:
-        if table_exists("hwc"):
-            for row in get_conn().execute("SELECT * FROM hwc").fetchall():
-                row = dict(row)
-                for idx, col in [(hip_idx, "S_NAME_HIP"), (hd_idx, "S_NAME_HD"), (name_idx, "S_NAME")]:
-                    k = (row.get(col) or "").strip().upper()
-                    if k:
-                        idx.setdefault(k, []).append(row)
-    except Exception:
-        pass
-    _HWC_DATA = (hip_idx, hd_idx, name_idx)
-    return _HWC_DATA
+    with _HWC_LOCK:
+        if _HWC_DATA is not None:             # re-check under the lock
+            return _HWC_DATA
+        from core.db import get_conn, table_exists
+        hip_idx, hd_idx, name_idx = {}, {}, {}
+        try:
+            if table_exists("hwc"):
+                for row in get_conn().execute("SELECT * FROM hwc").fetchall():
+                    row = dict(row)
+                    for idx, col in [(hip_idx, "S_NAME_HIP"), (hd_idx, "S_NAME_HD"), (name_idx, "S_NAME")]:
+                        k = (row.get(col) or "").strip().upper()
+                        if k:
+                            idx.setdefault(k, []).append(row)
+        except Exception:
+            pass
+        _HWC_DATA = (hip_idx, hd_idx, name_idx)
+        return _HWC_DATA
 
 
 def compute_hwc(simbad_result: dict) -> dict:
@@ -698,59 +704,20 @@ def compute_oec(simbad_result: dict, progress_callback=None) -> dict:
 
 # ── Option 50: Star Systems CSV Query ────────────────────────────────────────
 
+# P4.6: the opt-50 CSV key set — deliberately NAME-less (drift preserved as config).
+# The prefix map + parser are the single canonical copies in core.shared; this caller
+# just supplies its own key set. (shared's default key set INCLUDES "NAME".)
 _CSV_DESIG_KEYS = [
     "GJ", "HD", "HIP", "HR", "Wolf", "LHS", "BD",
     "K2", "Kepler", "KOI", "TOI", "CoRoT", "COCONUTS", "HAT_P", "WASP",
     "TIC", "Gaia EDR3", "2MASS",
 ]
 
-_CSV_PREFIX_MAP = [
-    ("GJ ",         "GJ"),
-    ("HD ",         "HD"),
-    ("HIP ",        "HIP"),
-    ("HR ",         "HR"),
-    ("Wolf ",       "Wolf"),
-    ("LHS ",        "LHS"),
-    ("BD+",         "BD"),
-    ("BD-",         "BD"),
-    ("BD ",         "BD"),
-    ("K2 ",         "K2"),
-    ("Kepler-",     "Kepler"),
-    ("Kepler ",     "Kepler"),
-    ("KOI-",        "KOI"),
-    ("KOI ",        "KOI"),
-    ("TOI-",        "TOI"),
-    ("TOI ",        "TOI"),
-    ("CoRoT-",      "CoRoT"),
-    ("CoRoT ",      "CoRoT"),
-    ("COCONUTS-",   "COCONUTS"),
-    ("HAT-P-",      "HAT_P"),
-    ("WASP-",       "WASP"),
-    ("TIC ",        "TIC"),
-    # SIMBAD's `ids` output labels the Gaia source as "Gaia DR3 <id>" (and DR1/DR2);
-    # it no longer emits "Gaia EDR3". DR3 and EDR3 source_ids are identical, so both
-    # prefixes map to the same slot; DR1/DR2 are deliberately NOT captured (their
-    # source_ids differ). Capturing DR3 is what lets the GCNS cross-match join.
-    ("Gaia EDR3 ",  "Gaia EDR3"),
-    ("Gaia DR3 ",   "Gaia EDR3"),
-    ("2MASS J",     "2MASS"),
-    ("2MASS ",      "2MASS"),
-]
-
 
 def _parse_designations_from_ids(ids_string: str) -> str:
-    """Parse a pipe-separated SIMBAD ids string into a comma-separated designation string."""
-    desig = {k: None for k in _CSV_DESIG_KEYS}
-    if not ids_string:
-        return ""
-    for id_str in ids_string.split("|"):
-        id_str = id_str.strip()
-        for prefix, key in _CSV_PREFIX_MAP:
-            if id_str.startswith(prefix) and desig[key] is None:
-                desig[key] = id_str
-                break
-    parts = [desig[k] for k in _CSV_DESIG_KEYS if desig[k] is not None]
-    return ", ".join(parts)
+    """Parse a pipe-separated SIMBAD ids string into a comma-separated designation string.
+    Delegates to the canonical shared parser with this module's NAME-less key set (P4.6)."""
+    return _parse_designations_from_ids_shared(ids_string, keys=_CSV_DESIG_KEYS)
 
 
 def _masked_to_none(val):
@@ -801,16 +768,19 @@ def _run_simbad_csv_query(simbad, criteria, query_num, total_queries,
             plx_raw = _masked_to_none(row["plx_value"])
             plx_f   = float(plx_raw)
             plx     = f"{plx_f:.4f}"
-            parsecs = f"{1000.0 / plx_f:.3f}" if plx_f > 0 else ""
-            ly      = f"{1000.0 / plx_f * 3.26156:.3f}" if plx_f > 0 else ""
+            # P6.5: write None (→ SQL NULL) not "" for the REAL columns on a failed/
+            # degenerate parse, so a blank cell is a true NULL rather than an empty
+            # string papered over by NULLIF later.
+            parsecs = f"{1000.0 / plx_f:.3f}" if plx_f > 0 else None
+            ly      = f"{1000.0 / plx_f * 3.26156:.3f}" if plx_f > 0 else None
         except (TypeError, ValueError, ZeroDivisionError):
-            plx = parsecs = ly = ""
+            plx = parsecs = ly = None
 
         try:
             v_raw = _masked_to_none(row['V'])
             vmag  = f"{float(v_raw):.3f}"
         except (TypeError, ValueError):
-            vmag = ""
+            vmag = None
 
         try:
             ra_raw = _masked_to_none(row["ra"])
@@ -1027,6 +997,10 @@ def import_hwc_csv(csv_path: str) -> dict:
     if missing:
         return {"error": f"Missing required columns: {', '.join(sorted(missing))}"}
 
+    bad = _validate_csv_headers(headers)
+    if bad:
+        return bad
+
     conn = get_conn()
     cols_ddl = ", ".join(f'"{col}" TEXT' for col in headers)
     placeholders = ", ".join("?" for _ in headers)
@@ -1044,7 +1018,8 @@ def import_hwc_csv(csv_path: str) -> dict:
         return {"error": f"Database error: {e}"}
 
     global _HWC_DATA
-    _HWC_DATA = None
+    with _HWC_LOCK:                          # flush the lazy cache under its lock (P6.4)
+        _HWC_DATA = None
 
     return {"count": len(rows), "path": csv_path}
 
@@ -1072,6 +1047,10 @@ def import_mission_exocat_csv(csv_path: str) -> dict:
     if missing:
         return {"error": f"Missing required columns: {', '.join(sorted(missing))}"}
 
+    bad = _validate_csv_headers(headers)
+    if bad:
+        return bad
+
     conn = get_conn()
     # First column is rowid (INTEGER PRIMARY KEY); remaining are TEXT.
     rest = [col for col in headers if col != "rowid"]
@@ -1092,7 +1071,8 @@ def import_mission_exocat_csv(csv_path: str) -> dict:
         return {"error": f"Database error: {e}"}
 
     global _MISSION_EXOCAT
-    _MISSION_EXOCAT = None
+    with _MISSION_EXOCAT_LOCK:               # flush the lazy cache under its lock (P6.4)
+        _MISSION_EXOCAT = None
 
     return {"count": len(rows), "path": csv_path}
 
@@ -3418,7 +3398,7 @@ def compare_stars(names: list) -> dict:
         field, value = _get_archive_query_params(sl.get("designations", {}))
         if field and value:
             try:
-                rows = _query_tap("pscomppars", f"{field}='{value}'",
+                rows = _query_tap("pscomppars", f"{field}='{_adql_quote(value)}'",
                                   order_by="pl_orbsmax", top=1,
                                   select="st_teff,st_rad,st_mass,st_lum")
                 if rows:

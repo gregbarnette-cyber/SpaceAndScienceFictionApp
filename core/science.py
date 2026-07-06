@@ -3,11 +3,7 @@ import os
 
 from core.db import get_conn
 from core.shared import _format_travel_time
-
-# Physical constants for the Phase K Honorverse calculators (kept local to avoid
-# coupling to core.calculators' private constants; values are universal).
-_C_MS = 299_792_458.0          # speed of light, m/s
-_G_MS2 = 9.80665               # 1 g, m/s²
+from core.equations import _C_MS, _STANDARD_GRAVITY as _G_MS2  # shared constants (P4.5)
 _HOURS_PER_JULIAN_YEAR = 8765.8128   # 365.2422 × 24 (tropical year) — legacy ly/hr↔×c anchor; NOT 365.25×24 (=8766.0).
                                      # Golden pins and the downstream consumer depend on this exact value; see IMPROVEMENT_PLAN D1.
 

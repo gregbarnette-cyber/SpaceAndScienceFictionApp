@@ -14,20 +14,14 @@ import unittest
 
 import core.par_flux as par_flux
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_aa_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_aa_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class HappyPathTest(unittest.TestCase):
@@ -44,6 +38,13 @@ class HappyPathTest(unittest.TestCase):
         ref = par_flux.compute_par_flux(teff_k=5772, insolation_wm2=1361)
         self.assertAlmostEqual(d["par_fraction"], ref["par_fraction"], places=6)
         self.assertAlmostEqual(d["ppfd_umol_m2_s"], ref["ppfd_umol_m2_s"], places=3)
+
+    def test_luminosity_alias(self):
+        # P4.2: --luminosity is an accepted synonym for --luminosity-lsun here.
+        rc, d, _ = _run("par-flux", "--teff-k", "5772", "--luminosity", "1", "--distance-au", "1")
+        self.assertEqual(rc, 0)
+        ref = par_flux.compute_par_flux(teff_k=5772, luminosity_lsun=1, distance_au=1)
+        self.assertAlmostEqual(d["par_fraction"], ref["par_fraction"], places=6)
 
     def test_spectral_type_autoseed(self):
         # The main_sequence_stars table auto-seeds in the throwaway DB.
@@ -97,7 +98,7 @@ class ExitCodeMatrixTest(unittest.TestCase):
              "--par-band-nm", "400", "750"),
             ("par-flux", "--teff-k", "2000", "--insolation-wm2", "1361", "--sed", "real"),
         ):
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, msg=f"{args}")
             self.assertIn("error", d)
 
@@ -107,7 +108,7 @@ class ExitCodeMatrixTest(unittest.TestCase):
             ("par-flux", "--teff-k", "5772", "--insolation-wm2", "1361", "--par-band-nm", "400"),  # 1 band num
             ("par-flux", "--teff-k", "3000", "--insolation-wm2", "1361", "--sed", "bogus"),  # bad --sed choice
         ):
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 2, msg=f"{args}")
             self.assertIsNone(d)
 

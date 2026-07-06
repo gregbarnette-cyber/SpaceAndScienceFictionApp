@@ -30,8 +30,9 @@ import core.dust as dust
 import core.dust_routing as dr
 from tests._dustcheck import dustmaps_importable
 
+from tests._queryharness import run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/dust_routing_throwaway.db", "PATH": os.environ.get("PATH", "")}
 
 
 def _plx_for_ly(ly):
@@ -290,12 +291,11 @@ class DustRoutingPreflightTest(unittest.TestCase):
         self.assertIn("error", r)
 
     def test_subprocess_weight_argparse(self):
-        # bad --weight value → argparse exit 2.
-        proc = subprocess.run(
-            [sys.executable, str(_REPO / "query.py"), "jump-route", "--origin", "Sol",
-             "--destination", "Sirius", "--max-jump", "5", "--weight", "bogus"],
-            capture_output=True, text=True, cwd=str(_REPO), env=_ENV)
-        self.assertEqual(proc.returncode, 2)
+        # bad --weight value → argparse exit 2 (rejected before any DB access).
+        code, _, _ = run_query_inproc("jump-route", "--origin", "Sol",
+                                      "--destination", "Sirius", "--max-jump", "5",
+                                      "--weight", "bogus")
+        self.assertEqual(code, 2)
 
 
 class WeightDistanceDelegationTest(_DustRoutingBase):

@@ -235,9 +235,9 @@ def cmd_circumbinary_hz(args):
     both_star = bool(args.star1) and bool(args.star2)
 
     if any_star and any_numeric:
-        sys.stderr.write("error: provide either --teff1/--lum1/--teff2/--lum2 OR "
-                         "--star1/--star2, not both\n")
-        sys.exit(2)
+        _out({"error": "provide either --teff1/--lum1/--teff2/--lum2 OR "
+                       "--star1/--star2, not both"})
+        return
     if both_star:
         r1 = _resolve_star_teff_lum(args.star1)
         if "error" in r1:
@@ -252,9 +252,8 @@ def cmd_circumbinary_hz(args):
     if all_numeric:
         _out(equations.compute_circumbinary_hz(args.teff1, args.lum1, args.teff2, args.lum2))
         return
-    sys.stderr.write("error: provide all of --teff1/--lum1/--teff2/--lum2, "
-                     "or both --star1 and --star2\n")
-    sys.exit(2)
+    _out({"error": "provide all of --teff1/--lum1/--teff2/--lum2, "
+                   "or both --star1 and --star2"})
 
 
 def cmd_cooling_hz(args):
@@ -586,11 +585,11 @@ def _add_dust_weight_flags(p):
 def cmd_solvent_zone(args):
     has_custom = args.t_low is not None or args.t_high is not None
     if args.solvent and has_custom:
-        sys.stderr.write("error: --solvent and --t-low/--t-high are mutually exclusive\n")
-        sys.exit(2)
+        _out({"error": "--solvent and --t-low/--t-high are mutually exclusive"})
+        return
     if not args.solvent and not has_custom:
-        sys.stderr.write("error: provide --solvent NAME or both --t-low and --t-high\n")
-        sys.exit(2)
+        _out({"error": "provide --solvent NAME or both --t-low and --t-high"})
+        return
     _out(equations.compute_solvent_zone(
         args.luminosity, solvent=args.solvent,
         t_low_k=args.t_low, t_high_k=args.t_high, albedo=args.albedo,
@@ -1081,7 +1080,7 @@ def cmd_generate_system(args):
 
 # ── Argument parser ───────────────────────────────────────────────────────────
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Query SpaceAndScienceFictionApp core functions; outputs JSON to stdout.",
         epilog=(
@@ -1145,7 +1144,8 @@ def main():
     # habitable-zone
     p = sub.add_parser("habitable-zone", help="Kopparapu HZ boundaries from stellar parameters")
     p.add_argument("--teff",       required=True, type=float, help="Stellar temperature in K")
-    p.add_argument("--luminosity", required=True, type=float, help="Stellar luminosity in solar units")
+    p.add_argument("--luminosity", "--luminosity-lsun", dest="luminosity",
+                   required=True, type=float, help="Stellar luminosity in solar units")
     p.set_defaults(func=cmd_habitable_zone)
 
     # exoplanets
@@ -1608,7 +1608,8 @@ def main():
     p = sub.add_parser("dyson-collector",
                        help="Collector area & mass to intercept a fraction of a star's luminosity")
     g = p.add_mutually_exclusive_group(required=True)
-    g.add_argument("--luminosity-lsun", type=float, help="Stellar luminosity in solar units")
+    g.add_argument("--luminosity-lsun", "--luminosity", dest="luminosity_lsun",
+                   type=float, help="Stellar luminosity in solar units")
     g.add_argument("--star", help="Star name → SIMBAD-resolved luminosity (network)")
     p.add_argument("--fraction", required=True, type=float, help="Fraction of the full sphere to intercept (0–1]")
     p.add_argument("--orbit-au", required=True, type=float, help="Collector orbital radius, AU")
@@ -1624,7 +1625,8 @@ def main():
     p.add_argument("--star", help="Star name → SIMBAD-resolved Teff (network)")
     # Insolation source — exactly one (core exit-1).
     p.add_argument("--insolation-wm2", type=float, help="Total insolation at the surface, W/m²")
-    p.add_argument("--luminosity-lsun", type=float, help="Stellar luminosity in solar units (with --distance-au)")
+    p.add_argument("--luminosity-lsun", "--luminosity", dest="luminosity_lsun",
+                   type=float, help="Stellar luminosity in solar units (with --distance-au)")
     p.add_argument("--distance-au", type=float, help="Orbital distance, AU (with --luminosity-lsun)")
     p.add_argument("--par-band-nm", type=float, nargs=2, default=[400.0, 700.0],
                    metavar=("LO", "HI"), help="PAR band in nm (default 400 700)")
@@ -1637,7 +1639,8 @@ def main():
     p = sub.add_parser("equilibrium-temp",
                        help="Planetary equilibrium temperature + greenhouse surface temp (offset/grey/inverse)")
     p.add_argument("--insolation-wm2", type=float, help="Insolation at the planet, W/m²")
-    p.add_argument("--luminosity-lsun", type=float, help="Stellar luminosity in solar units (with --distance-au)")
+    p.add_argument("--luminosity-lsun", "--luminosity", dest="luminosity_lsun",
+                   type=float, help="Stellar luminosity in solar units (with --distance-au)")
     p.add_argument("--distance-au", type=float, help="Orbital distance, AU (with --luminosity-lsun)")
     p.add_argument("--albedo", type=float, default=0.3, help="Bond albedo, [0,1) (default 0.3)")
     # Forcing form — exactly one (a core exit-1 check, like par-flux's anchors).
@@ -1653,7 +1656,8 @@ def main():
     p.add_argument("--delta-insolation-wm2", required=True, type=float,
                    help="Signed flux change ΔS, W/m² (+ mirror / − shade)")
     p.add_argument("--solar-flux-wm2", type=float, help="Solar flux at the planet's orbit, W/m²")
-    p.add_argument("--luminosity-lsun", type=float, help="Stellar luminosity in solar units (with --distance-au)")
+    p.add_argument("--luminosity-lsun", "--luminosity", dest="luminosity_lsun",
+                   type=float, help="Stellar luminosity in solar units (with --distance-au)")
     p.add_argument("--distance-au", type=float, help="Orbital distance, AU (with --luminosity-lsun)")
     p.set_defaults(func=cmd_insolation_shift)
 
@@ -1901,8 +1905,8 @@ def main():
     # solvent-zone
     p = sub.add_parser("solvent-zone",
                        help="Solvent Habitable Zone band (M1 surface model)")
-    p.add_argument("--luminosity", required=True, type=float,
-                   help="Stellar luminosity (L_sun)")
+    p.add_argument("--luminosity", "--luminosity-lsun", dest="luminosity",
+                   required=True, type=float, help="Stellar luminosity (L_sun)")
     p.add_argument("--solvent",
                    help="Named solvent key (water, ammonia, methane, co2, ...)")
     p.add_argument("--t-low", dest="t_low", type=float,
@@ -1916,8 +1920,8 @@ def main():
     # ice-lines
     p = sub.add_parser("ice-lines",
                        help="Volatile condensation / ice lines (M2 equilibrium model)")
-    p.add_argument("--luminosity", required=True, type=float,
-                   help="Stellar luminosity (L_sun)")
+    p.add_argument("--luminosity", "--luminosity-lsun", dest="luminosity",
+                   required=True, type=float, help="Stellar luminosity (L_sun)")
     p.add_argument("--albedo", type=float, default=0.0,
                    help="Bond albedo (default 0.0, bare ice grains)")
     p.set_defaults(func=cmd_ice_lines)
@@ -1978,7 +1982,8 @@ def main():
     p = sub.add_parser("habitable-zone-sma",
                        help="HZ boundaries + object's Seff and HZ-membership verdict")
     p.add_argument("--teff",       required=True, type=float, help="Stellar temperature in K")
-    p.add_argument("--luminosity", required=True, type=float, help="Stellar luminosity in solar units")
+    p.add_argument("--luminosity", "--luminosity-lsun", dest="luminosity",
+                   required=True, type=float, help="Stellar luminosity in solar units")
     p.add_argument("--sma",        required=True, type=float, help="Object's semi-major axis in AU")
     p.set_defaults(func=cmd_habitable_zone_sma)
 
@@ -2312,7 +2317,7 @@ def main():
                         "priors — requires an ingested dataset, else a curated error)")
     p.set_defaults(func=cmd_generate_system)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         args.func(args)
     except Exception as e:

@@ -341,8 +341,8 @@ semantics). Capped at `_EXO_SEARCH_CAP` (200). Network failures are classified v
 ## Phase L — Comparison Dashboard (L1–L3)
 
 GUI-only "Comparison" nav category (`gui/panels/comparison.py`) plus one `query.py`
-subcommand. L4 (Hypatia cache + abundance search) is **deferred** — see
-`PHASE_L_PLAN.md` and `future_phases.md`.
+subcommand. L4 (Hypatia cache + abundance search) is **complete** — see the
+"Phase L4 — Hypatia Abundance Cache & Search" section below.
 
 ### L1 — `compare_stars(names: list) -> dict`
 

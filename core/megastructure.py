@@ -19,10 +19,9 @@ returns a curated ``{"error": str}``.
 
 import math
 
-from core.equations import _STANDARD_GRAVITY, _M_PER_AU
+from core.equations import _STANDARD_GRAVITY, _M_PER_AU, _SOLAR_LUMINOSITY_W as _L_SUN_W
 from core import materials_tables
 
-_L_SUN_W = 3.828e26   # nominal solar luminosity, W (IAU 2015 B3)
 _TAPER_OVERFLOW_EXP = 700.0   # exp() overflows ~709; a material past this can't span the well.
 
 _MODEL_NOTE_ORBITAL_RING = (

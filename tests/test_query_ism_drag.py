@@ -13,20 +13,14 @@ import unittest
 
 import core.ism_drag as ism
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_ac_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_ac_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class MagsailQueryTest(unittest.TestCase):
@@ -76,7 +70,7 @@ class MagsailQueryTest(unittest.TestCase):
                      ["magsail", "--beta", "0.1", "--magnetic-moment-am2", "1e15",
                       "--ionization-fraction", "1.5"],                                          # x_ion>1
                      ["magsail", "--beta", "0.1", "--magnetic-moment-am2", "-1"]):              # neg moment
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -84,7 +78,7 @@ class MagsailQueryTest(unittest.TestCase):
         for args in (["magsail", "--velocity-kms", "100", "--beta", "0.1",
                       "--magnetic-moment-am2", "1e15"],                       # velocity mutex
                      ["magsail", "--beta", "abc", "--magnetic-moment-am2", "1e15"]):  # non-numeric
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 
@@ -116,7 +110,7 @@ class RamscoopQueryTest(unittest.TestCase):
                       "--coil-radius-m", "100000", "--coil-current-a", "100000",
                       "--fuel", "pp"],                                                # area + field
                      ["ramscoop", "--fuel", "pp", "--scoop-area-km2", "1000"]):       # no velocity
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -125,7 +119,7 @@ class RamscoopQueryTest(unittest.TestCase):
                      ["ramscoop", "--velocity-kms", "100", "--beta", "0.1",
                       "--scoop-area-km2", "1000", "--fuel", "pp"],                                 # velocity mutex
                      ["ramscoop", "--beta", "0.1", "--scoop-area-km2", "abc", "--fuel", "pp"]):    # non-numeric
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 

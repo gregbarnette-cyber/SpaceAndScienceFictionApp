@@ -9,6 +9,8 @@ import socket
 import time
 from contextlib import contextmanager
 
+from core.equations import _kopparapu_seff  # single Kopparapu Seff source (P4.6)
+
 # ─── Physical Constants ───────────────────────────────────────────────────────
 
 G_MS2        = 9.80665                # 1 g in m/s²
@@ -117,6 +119,18 @@ def _format_travel_time(total_hours):
     return ", ".join(parts) if parts else "0 Seconds"
 
 
+def _to_cartesian(ra_deg: float, dec_deg: float, ly: float):
+    """Convert spherical (RA/DEC + distance) to Cartesian light-year coordinates.
+    One canonical copy (P4.6) shared by core.calculators and core.viz."""
+    ra_r = math.radians(ra_deg)
+    dec_r = math.radians(dec_deg)
+    return (
+        ly * math.cos(dec_r) * math.cos(ra_r),
+        ly * math.cos(dec_r) * math.sin(ra_r),
+        ly * math.sin(dec_r),
+    )
+
+
 def _fval(v):
     """Convert to float; return None if missing or NaN."""
     if v is None:
@@ -165,62 +179,39 @@ def _parse_designations(result, ids_result):
     if ids_result is None:
         return designations
 
-    prefix_map = [
-        ("NAME ",       "NAME"),
-        ("GJ ",         "GJ"),
-        ("HD ",         "HD"),
-        ("HIP ",        "HIP"),
-        ("HR ",         "HR"),
-        ("Wolf ",       "Wolf"),
-        ("LHS ",        "LHS"),
-        ("BD+",         "BD"),
-        ("BD-",         "BD"),
-        ("BD ",         "BD"),
-        ("K2 ",         "K2"),
-        ("Kepler-",     "Kepler"),
-        ("Kepler ",     "Kepler"),
-        ("KOI-",        "KOI"),
-        ("KOI ",        "KOI"),
-        ("TOI-",        "TOI"),
-        ("TOI ",        "TOI"),
-        ("CoRoT-",      "CoRoT"),
-        ("CoRoT ",      "CoRoT"),
-        ("COCONUTS-",   "COCONUTS"),
-        ("HAT-P-",      "HAT_P"),
-        ("WASP-",       "WASP"),
-        ("TIC ",        "TIC"),
-        # SIMBAD now emits "Gaia DR3 <id>" (not "Gaia EDR3"); DR3 ≡ EDR3 source_ids.
-        ("Gaia EDR3 ",  "Gaia EDR3"),
-        ("Gaia DR3 ",   "Gaia EDR3"),
-        ("2MASS J",     "2MASS"),
-        ("2MASS ",      "2MASS"),
-    ]
-
+    # P4.6: reuse the module-level _CSV_PREFIX_MAP (this inline list was a duplicate of it).
     for row in ids_result:
         id_str = str(row["id"]).strip()
-        for prefix, key in prefix_map:
-            if id_str.startswith(prefix) and designations[key] is None:
+        for prefix, key in _CSV_PREFIX_MAP:
+            if id_str.startswith(prefix) and key in designations and designations[key] is None:
                 designations[key] = id_str
                 break
 
     return designations
 
 
-def _parse_designations_from_ids(ids_string):
+def _parse_designations_from_ids(ids_string, keys=None):
     """Parse a pipe-separated SIMBAD ids string into a comma-separated designation string.
 
     Returns a string of found designations (excluding MAIN_ID), or an empty string.
+
+    P4.6: this is the single canonical parser; ``keys`` selects the caller's key set
+    (default: the NAME-including ``_CSV_DESIG_KEYS``). ``core.databases`` passes its own
+    NAME-less key set to preserve its historical output — the ``key in desig`` guard means
+    the shared prefix map may name keys the caller omits (they're simply skipped), so one
+    prefix map serves both key sets.
     """
-    desig = {k: None for k in _CSV_DESIG_KEYS}
+    keys = _CSV_DESIG_KEYS if keys is None else keys
+    desig = {k: None for k in keys}
     if not ids_string:
         return ""
     for id_str in ids_string.split("|"):
         id_str = id_str.strip()
         for prefix, key in _CSV_PREFIX_MAP:
-            if id_str.startswith(prefix) and desig[key] is None:
+            if id_str.startswith(prefix) and key in desig and desig[key] is None:
                 desig[key] = id_str
                 break
-    parts = [desig[k] for k in _CSV_DESIG_KEYS if desig[k] is not None]
+    parts = [desig[k] for k in keys if desig[k] is not None]
     return ", ".join(parts)
 
 
@@ -314,19 +305,7 @@ def _load_main_sequence_data():
     return _MAIN_SEQUENCE_DATA
 
 
-def _kopparapu_seff(teff, zone):
-    """Return Seff boundary (Kopparapu et al. 2014) for the given zone key."""
-    tS = teff - 5780.0
-    params = {
-        "rv":   (1.776,  2.136e-4,  2.533e-8,  -1.332e-11, -3.097e-15),
-        "rg5":  (1.188,  1.433e-4,  1.707e-8,  -8.968e-12, -2.084e-15),
-        "rg01": (0.99,   1.209e-4,  1.404e-8,  -7.418e-12, -1.713e-15),
-        "rg":   (1.107,  1.332e-4,  1.580e-8,  -8.308e-12, -1.931e-15),
-        "mg":   (0.356,  6.171e-5,  1.698e-9,  -3.198e-12, -5.575e-16),
-        "em":   (0.320,  5.547e-5,  1.526e-9,  -2.874e-12, -5.011e-16),
-    }
-    SeffSUN, a, b, c, d = params[zone]
-    return SeffSUN + a*tS + b*tS**2 + c*tS**3 + d*tS**4
+# _kopparapu_seff is imported from core.equations (P4.6 — one canonical copy).
 
 
 # ─── Search Filter Helpers (Phase G) ─────────────────────────────────────────
@@ -411,15 +390,45 @@ def spectral_adql(column: str, classes, refine: str) -> str:
 
 # ─── Network Reliability Helpers ─────────────────────────────────────────────
 
+def _retry_after_seconds(exc):
+    """If *exc* is an HTTP error whose response carries a ``Retry-After`` header in the
+    integer-seconds form, return ``min(seconds, 60.0)``; otherwise None (P6.1).
+
+    Duck-typed on ``exc.response.headers`` so it works for ``requests.HTTPError`` without
+    importing requests here. The HTTP-date form of Retry-After is not honored (falls back
+    to exponential backoff)."""
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return None
+    try:
+        header = resp.headers.get("Retry-After")
+    except Exception:
+        return None
+    if not header:
+        return None
+    try:
+        return min(float(header), 60.0)
+    except (ValueError, TypeError):
+        return None
+
+
 def _with_retries(fn, *args, retries=3, base_delay=2.0, **kwargs):
-    """Call fn(*args, **kwargs) up to `retries` times with exponential backoff."""
+    """Call fn(*args, **kwargs) up to `retries` times with exponential backoff.
+
+    P6.1: when the failure is an HTTP error whose response carries a ``Retry-After``
+    header (integer seconds), honor it (capped at 60 s) for that attempt instead of the
+    exponential backoff — so any NASA-TAP / SIMBAD-over-requests caller gets 429/503
+    throttling respect for free (previously only ``_hypatia_data_fetch`` did)."""
     for attempt in range(retries):
         try:
             return fn(*args, **kwargs)
-        except Exception:
+        except Exception as e:
             if attempt == retries - 1:
                 raise
-            time.sleep(base_delay * (2 ** attempt) + random.uniform(0, 0.5))
+            delay = _retry_after_seconds(e)
+            if delay is None:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+            time.sleep(delay)
 
 
 @contextmanager

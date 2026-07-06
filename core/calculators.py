@@ -11,8 +11,8 @@ import math
 import os
 from collections import deque
 
-from .equations import _C_MS  # single source of truth (Phase Y promoted it to equations)
-from .shared import _make_simbad, _network_error_msg, _timeout_ctx, _with_retries
+from .equations import _C_MS, _LY_M  # single source of truth (Phase Y/P4.5 promoted to equations)
+from .shared import _make_simbad, _network_error_msg, _timeout_ctx, _with_retries, _to_cartesian
 
 HOURS_PER_JULIAN_YEAR = 8765.8128  # 365.2422 × 24 (tropical year) — legacy ly/hr↔×c anchor; NOT 365.25×24 (=8766.0).
                                    # Golden pins and the downstream consumer depend on this exact value; see IMPROVEMENT_PLAN D1.
@@ -189,15 +189,7 @@ def _fmt_dec(deg: float) -> str:
     return f"{sign}{d:02d} {m:02d} {s:06.3f}"
 
 
-def _to_cartesian(ra_deg: float, dec_deg: float, ly: float):
-    """Convert spherical (RA/DEC + distance) to Cartesian light-year coordinates."""
-    ra_r  = math.radians(ra_deg)
-    dec_r = math.radians(dec_deg)
-    return (
-        ly * math.cos(dec_r) * math.cos(ra_r),
-        ly * math.cos(dec_r) * math.sin(ra_r),
-        ly * math.sin(dec_r),
-    )
+# _to_cartesian imported from core.shared (P4.6 — one canonical copy).
 
 
 def compute_lookup_star_for_distance(designation: str) -> dict:
@@ -475,7 +467,7 @@ _R_SUN_AU            = 0.00465047          # solar radius in AU
 _R_EARTH_AU          = 4.25875e-5          # Earth radius in AU
 _ARCSEC_PER_RAD      = 206_264.806         # arcsec per radian
 _SEC_PER_JULIAN_YEAR = 365.25 * 86400.0    # 31,557,600 s (Julian year)
-_LY_M                = _C_MS * _SEC_PER_JULIAN_YEAR  # metres per light-year
+# _LY_M imported from core.equations (P4.5 — identical to _C_MS * _SEC_PER_JULIAN_YEAR)
 
 
 # ── Phase T1b · planet-detectability calculators (group A) ────────────────────

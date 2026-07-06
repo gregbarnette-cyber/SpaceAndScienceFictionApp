@@ -16,6 +16,8 @@ import unittest
 import core.db as db
 import core.regions as regions
 
+from tests._queryharness import restore_main_sequence_cache, save_main_sequence_cache
+
 
 # A deliberately sparse, known main-sequence set: F0/F2/F5/F8 and G0/G2/G5/G8.
 # No F9 and no G1, so the ceiling rule and cross-letter fallthrough are testable.
@@ -40,12 +42,12 @@ class SpectralLookupTest(unittest.TestCase):
              for sc in _FIXTURE_CLASSES],
         )
         self.conn.commit()
-        # Reset the module-level cache so it reloads from the fixture DB.
-        self._saved_cache = regions._MAIN_SEQUENCE_DATA
-        regions._MAIN_SEQUENCE_DATA = None
+        # Reset the module-level caches so they reload from the fixture DB (and can't
+        # poison a later test — resets both the regions and shared caches).
+        self._saved_cache = save_main_sequence_cache()
 
     def tearDown(self):
-        regions._MAIN_SEQUENCE_DATA = self._saved_cache
+        restore_main_sequence_cache(self._saved_cache)
         db.close_conn()
         db._DB_PATH, db._conn, db._auto_seed = self._saved
         shutil.rmtree(self.tmpdir, ignore_errors=True)

@@ -53,7 +53,11 @@ _EFOLD_TO_AG = 2.5 / math.log(10.0)        # 1.085736 — optical depth → A_G 
 _AG_TO_AV = 1.202                          # A_G → A_V at R_V=3.1
 _LEIKE_TAU_TO_AV = _EFOLD_TO_AG * _AG_TO_AV  # ≈ 1.30506
 
-_LY_PER_PC = 3.2615637771  # matches the app's 3.26156 light-years/pc
+# Deliberately kept at full precision here (3.2615637771), NOT unified with
+# core.shared.LY_PER_PC (3.26156) — that rounded value is pinned across tests/docs
+# and the downstream consumer, so it stays. The ~1.2e-6 relative difference is
+# sub-ppm on any dust sightline length; not worth breaking the pinned 3.26156 (P4.5).
+_LY_PER_PC = 3.2615637771
 
 # Seam between the two maps under "auto" (Edenhofer's inner edge ≈ 69 pc).
 _SEAM_PC = 69.0

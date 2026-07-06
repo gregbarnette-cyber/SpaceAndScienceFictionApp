@@ -27,11 +27,69 @@ _AVOGADRO         = 6.02214076e23     # Avogadro constant, mol⁻¹ (CODATA; Pha
 _SOLAR_LUMINOSITY_W = 3.828e26        # nominal solar luminosity, W (IAU 2015 B3; Phase AA insolation)
 _MU_0             = 1.25663706212e-6  # vacuum permeability, T·m/A (CODATA 2018; Phase AC ISM-drag)
 _M_PROTON         = 1.67262192369e-27 # proton mass, kg (CODATA 2018; Phase AC ISM-drag)
+# Derived / secondary constants centralized here to kill duplicate module-local copies (P4.5):
+_C_KMS           = _C_MS / 1000.0     # speed of light, km/s (≈299 792.458; propulsion/ism_drag)
+_LY_M            = _C_MS * _SEC_PER_YEAR  # metres per (Julian) light-year (ism_drag/dust_impact/calculators)
+_TNT_J_PER_KG    = 4.184e6            # 1 kg TNT ≡ 4.184e6 J (4.184 kJ/g); E/this → kg TNT (dust_impact/volatile_delivery)
 
 
 def _rocky_radius_km(mass_earth: float) -> float:
     """Approximate rocky-body radius from mass (R ∝ M^0.55). Shared by H1, H2."""
     return _EARTH_RADIUS_KM * mass_earth ** 0.55
+
+
+def _resolve_velocity(velocity_kms=None, beta=None, *, allow_zero=False):
+    """Canonical sublight-velocity resolver (P4.3) — one source of the exactly-one
+    {velocity_kms | beta} gate shared by propulsion (pellet-stream), ism_drag and
+    dust_impact. Returns (v_ms, velocity_kms, beta) or a {"error"} dict.
+
+    ``beta`` is always strictly sublight (0 < β < 1). ``velocity_kms`` is > 0 by
+    default; pass ``allow_zero=True`` to admit a body at rest (v = 0) — the only
+    behavioral difference between the three former copies. Error strings are the
+    exact ones each module pinned (the > 0 vs ≥ 0 messages differ by allow_zero).
+    """
+    if (velocity_kms is not None) + (beta is not None) != 1:
+        return {"error": "Provide exactly one velocity anchor: --velocity-kms or --beta."}
+    if beta is not None:
+        if not (0.0 < beta < 1.0):
+            return {"error": "beta must be in the range 0 < β < 1 (sublight)."}
+        v_ms = beta * _C_MS
+        return (v_ms, v_ms / 1000.0, beta)
+    if allow_zero:
+        if velocity_kms < 0:
+            return {"error": "velocity_kms must be ≥ 0."}
+    elif velocity_kms <= 0:
+        return {"error": "velocity_kms must be > 0."}
+    v_ms = velocity_kms * 1000.0
+    return (v_ms, velocity_kms, v_ms / _C_MS)
+
+
+def _resolve_insolation(insolation_wm2=None, luminosity_lsun=None, distance_au=None):
+    """Canonical insolation resolver (P4.4) — one source of the exactly-one gate shared
+    by par_flux (_resolve_insolation) and terraforming (_solar_flux). Returns
+    ``{"S": float}`` (W/m²) or a ``{"error": str}`` dict.
+
+    Exactly one of a direct ``insolation_wm2`` OR ``luminosity_lsun`` + ``distance_au``
+    via ``S = L_sun·L / (4π(d·AU)²)`` (1 L☉ @ 1 AU ≈ 1361 W/m²). Error strings are the
+    exact ones both modules pinned.
+    """
+    has_direct = insolation_wm2 is not None
+    has_lumdist = luminosity_lsun is not None or distance_au is not None
+    if has_direct == has_lumdist:
+        return {"error": "Provide exactly one insolation source: insolation_wm2, "
+                         "or luminosity_lsun + distance_au."}
+    if has_direct:
+        if insolation_wm2 <= 0:
+            return {"error": "insolation_wm2 must be > 0."}
+        return {"S": float(insolation_wm2)}
+    if luminosity_lsun is None or distance_au is None:
+        return {"error": "Provide both luminosity_lsun and distance_au."}
+    if luminosity_lsun <= 0:
+        return {"error": "luminosity_lsun must be > 0."}
+    if distance_au <= 0:
+        return {"error": "distance_au must be > 0."}
+    d_m = distance_au * _M_PER_AU
+    return {"S": _SOLAR_LUMINOSITY_W * luminosity_lsun / (4.0 * math.pi * d_m * d_m)}
 
 
 # ── Phase P — two temperature-reference models ───────────────────────────────

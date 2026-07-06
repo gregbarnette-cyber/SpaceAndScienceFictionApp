@@ -162,5 +162,5 @@ def compute_spin_comfort(radius_m=None, rpm=None, accel_ms2=None,
         "criteria": criteria_out,
         "overridden_thresholds": overridden,
         "model_note": spin_tables._MODEL_NOTE,
-        "notes": spin_tables._NOTES,
+        "notes": list(spin_tables._NOTES),  # normalize tuple → list (P4.4, JSON-identical)
     }

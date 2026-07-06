@@ -250,11 +250,10 @@ class O2HrTest(unittest.TestCase):
     """prepare_hr_main_sequence + prepare_hr_from_stars (tmp DB w/ seeded MS table)."""
 
     def setUp(self):
-        import core.regions as regions
+        from tests._queryharness import save_main_sequence_cache
         self.tmpdir = tempfile.mkdtemp()
         self._saved = (db._DB_PATH, db._conn, db._auto_seed)
-        self._saved_ms = regions._MAIN_SEQUENCE_DATA
-        regions._MAIN_SEQUENCE_DATA = None   # force reload from the tmp DB
+        self._saved_ms = save_main_sequence_cache()   # force reload from the tmp DB
         db._DB_PATH = pathlib.Path(self.tmpdir) / "test.db"
         db._conn = None
         db._auto_seed = lambda conn: None
@@ -274,10 +273,10 @@ class O2HrTest(unittest.TestCase):
         self.conn.commit()
 
     def tearDown(self):
-        import core.regions as regions
+        from tests._queryharness import restore_main_sequence_cache
         db.close_conn()
         db._DB_PATH, db._conn, db._auto_seed = self._saved
-        regions._MAIN_SEQUENCE_DATA = self._saved_ms
+        restore_main_sequence_cache(self._saved_ms)
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_main_sequence_points_sorted_hot_to_cool(self):

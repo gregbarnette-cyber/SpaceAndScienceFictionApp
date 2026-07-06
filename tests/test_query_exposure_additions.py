@@ -22,23 +22,17 @@ from pathlib import Path
 import core.calculators as calculators
 import core.regions as regions
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = Path(__file__).resolve().parent.parent
 # Neither subcommand reads the DB, but pass a throwaway SPACE_APP_DB so a stray
 # seed never touches data/space_app.db.
-_ENV = {"SPACE_APP_DB": "/tmp/query_exposure_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("query_exposure_throwaway.db")
 
 
 def _run(*cmd_args):
     """Run query.py with args; return (returncode, parsed_stdout_or_None, stderr)."""
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class DistanceAtAccelerationTest(unittest.TestCase):
@@ -61,14 +55,14 @@ class DistanceAtAccelerationTest(unittest.TestCase):
             self.assertAlmostEqual(got["distance_lm"], exp["distance_lm"], places=6)
 
     def test_zero_accel_is_raw_exception_exit1(self):
-        code, payload, _ = _run("distance-at-acceleration", "--accel-g", "0", "--hours", "24")
+        code, payload, _ = run_query_inproc("distance-at-acceleration", "--accel-g", "0", "--hours", "24")
         self.assertEqual(code, 1)
         self.assertIn("error", payload)        # raw "division by zero" — not curated
 
     def test_argparse_exit2(self):
-        self.assertEqual(_run("distance-at-acceleration", "--accel-g", "1.0")[0], 2)   # missing --hours
-        self.assertEqual(_run("distance-at-acceleration", "--accel-g", "x",
-                              "--hours", "24")[0], 2)                                   # non-numeric
+        self.assertEqual(run_query_inproc("distance-at-acceleration", "--accel-g", "1.0")[0], 2)   # missing --hours
+        self.assertEqual(run_query_inproc("distance-at-acceleration", "--accel-g", "x",
+                                          "--hours", "24")[0], 2)                                   # non-numeric
 
 
 class StarRegionsManualTest(unittest.TestCase):
@@ -113,10 +107,10 @@ class StarRegionsManualTest(unittest.TestCase):
         self.assertIn("error", payload)
 
     def test_argparse_exit2(self):
-        self.assertEqual(_run("star-regions-manual", "--vmag", "5", "--bc", "-0.1",
-                              "--teff", "5500")[0], 2)                       # missing --parallax
-        self.assertEqual(_run("star-regions-manual", "--vmag", "x", "--bc", "-0.1",
-                              "--teff", "5500", "--parallax", "100")[0], 2)  # non-numeric
+        self.assertEqual(run_query_inproc("star-regions-manual", "--vmag", "5", "--bc", "-0.1",
+                                          "--teff", "5500")[0], 2)                       # missing --parallax
+        self.assertEqual(run_query_inproc("star-regions-manual", "--vmag", "x", "--bc", "-0.1",
+                                          "--teff", "5500", "--parallax", "100")[0], 2)  # non-numeric
 
 
 class VelocityTravelConvertersTest(unittest.TestCase):
@@ -158,17 +152,17 @@ class VelocityTravelConvertersTest(unittest.TestCase):
 
     def test_zero_velocity_is_exit_1(self):
         # Travel-time pair: division by zero → raw-exception {"error"} exit 1.
-        code, payload, _ = _run("travel-time-ly-hr", "--distance-ly", "4.37", "--ly-hr", "0")
+        code, payload, _ = run_query_inproc("travel-time-ly-hr", "--distance-ly", "4.37", "--ly-hr", "0")
         self.assertEqual(code, 1)
         self.assertIn("error", payload)
-        code, payload, _ = _run("travel-time-times-c", "--distance-ly", "4.37", "--times-c", "0")
+        code, payload, _ = run_query_inproc("travel-time-times-c", "--distance-ly", "4.37", "--times-c", "0")
         self.assertEqual(code, 1)
         self.assertIn("error", payload)
 
     def test_argparse_exit_2(self):
-        self.assertEqual(_run("distance-traveled-ly-hr", "--ly-hr", "0.01")[0], 2)   # missing --hours
-        self.assertEqual(_run("ly-hr-to-times-c", "--ly-hr", "abc")[0], 2)           # non-numeric
-        self.assertEqual(_run("travel-time-ly-hr", "--ly-hr", "0.01")[0], 2)         # missing --distance-ly
+        self.assertEqual(run_query_inproc("distance-traveled-ly-hr", "--ly-hr", "0.01")[0], 2)   # missing --hours
+        self.assertEqual(run_query_inproc("ly-hr-to-times-c", "--ly-hr", "abc")[0], 2)           # non-numeric
+        self.assertEqual(run_query_inproc("travel-time-ly-hr", "--ly-hr", "0.01")[0], 2)         # missing --distance-ly
 
 
 if __name__ == "__main__":

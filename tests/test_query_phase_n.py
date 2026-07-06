@@ -26,24 +26,18 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = Path(__file__).resolve().parent.parent
 
 # Phase N subcommands are pure-compute / network; none reads the DB, but we pass
 # a throwaway SPACE_APP_DB so a stray seed never touches data/space_app.db.
-_ENV = {"SPACE_APP_DB": "/tmp/phase_n_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_n_throwaway.db")
 
 
 def _run(*cmd_args):
     """Run query.py with args; return (returncode, parsed_stdout_or_None, stderr)."""
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 def _horizons_reachable(host="ssd.jpl.nasa.gov", port=443, timeout=3.0) -> bool:
@@ -114,19 +108,19 @@ class PhaseNParityTest(unittest.TestCase):
 class PhaseNExitCodeTest(unittest.TestCase):
 
     def test_n1_sma_zero_exit1(self):
-        code, payload, _ = _run("habitable-zone-sma", "--teff", "5778",
-                                "--luminosity", "1", "--sma", "0")
+        code, payload, _ = run_query_inproc("habitable-zone-sma", "--teff", "5778",
+                                            "--luminosity", "1", "--sma", "0")
         self.assertEqual(code, 1)
         self.assertIn("error", payload)
 
     def test_n1_negative_lum_exit1(self):
-        code, payload, _ = _run("habitable-zone-sma", "--teff", "5778",
-                                "--luminosity", "-1", "--sma", "1")
+        code, payload, _ = run_query_inproc("habitable-zone-sma", "--teff", "5778",
+                                            "--luminosity", "-1", "--sma", "1")
         self.assertEqual(code, 1)
         self.assertIn("error", payload)
 
     def test_n3_accel_zero_exit1(self):
-        code, payload, _ = _run("brachistochrone-au", "--accel-g", "0", "--au", "1")
+        code, payload, _ = run_query_inproc("brachistochrone-au", "--accel-g", "0", "--au", "1")
         self.assertEqual(code, 1)
         self.assertIn("error", payload)
 
@@ -138,15 +132,15 @@ class PhaseNExitCodeTest(unittest.TestCase):
         self.assertAlmostEqual(payload["luminosity"], 1.0, places=9)
 
     def test_missing_required_exit2(self):
-        code, payload, stderr = _run("habitable-zone-sma", "--teff", "5778",
-                                     "--luminosity", "1")  # no --sma
+        code, payload, stderr = run_query_inproc("habitable-zone-sma", "--teff", "5778",
+                                                 "--luminosity", "1")  # no --sma
         self.assertEqual(code, 2)
         self.assertIsNone(payload)       # argparse error → nothing on stdout
         self.assertTrue(stderr.strip())  # message on stderr
 
     def test_n5_missing_origin_exit2(self):
-        code, _payload, stderr = _run("travel-time-solar",
-                                      "--destination", "Mars", "--accel-g", "1")
+        code, _payload, stderr = run_query_inproc("travel-time-solar",
+                                                  "--destination", "Mars", "--accel-g", "1")
         self.assertEqual(code, 2)
         self.assertTrue(stderr.strip())
 

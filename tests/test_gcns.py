@@ -618,6 +618,7 @@ class GcnsCalcCliTest(unittest.TestCase):
             [sys.executable, str(_REPO / "query.py"), *argv],
             capture_output=True, text=True, cwd=str(_REPO),
             env={"SPACE_APP_DB": db_path, "PATH": os.environ.get("PATH", "")},
+            timeout=60,
         )
 
     def test_empty_db_contract_exit1_json_error(self):

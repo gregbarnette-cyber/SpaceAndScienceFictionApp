@@ -12,20 +12,14 @@ import unittest
 
 import core.active_shield as ashield
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_ad_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_ad_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class ActiveShieldQueryTest(unittest.TestCase):
@@ -54,7 +48,7 @@ class ActiveShieldQueryTest(unittest.TestCase):
             ["active-shield", "--shield-radius-m", "10", "--magnetic-moment-am2", "-1"],  # neg moment
             ["active-shield", "--shield-radius-m", "0", "--magnetic-moment-am2", "1e10"],  # radius ≤0
         ):
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -63,7 +57,7 @@ class ActiveShieldQueryTest(unittest.TestCase):
             ["active-shield", "--magnetic-moment-am2", "1e10"],                         # missing required radius
             ["active-shield", "--shield-radius-m", "abc", "--magnetic-moment-am2", "1e10"],  # non-numeric
         ):
-            rc, _, err = _run(*args)
+            rc, _, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertTrue(err)
 

@@ -4,29 +4,16 @@
 # core parity (subprocess == in-process), and the self-validating exit-code matrix
 # (curated {"error"} -> exit 1; argparse -> exit 2).
 
-import json
-import os
-import pathlib
-import subprocess
-import sys
 import unittest
 
 import core.spin as spin
+from tests._queryharness import make_env, run_query, run_query_inproc
 
-_REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_w_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_w_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class HappyPathTest(unittest.TestCase):
@@ -64,7 +51,7 @@ class ExitCodeTest(unittest.TestCase):
             ["spin-comfort", "--radius-m", "10", "--rpm", "2", "--tangential-velocity-ms", "5"],  # three
             ["spin-comfort", "--radius-m", "10", "--rpm", "2", "--max-rpm", "0"],  # bad override
         ):
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d, args)
 
@@ -74,7 +61,7 @@ class ExitCodeTest(unittest.TestCase):
             ["spin-comfort", "--radius-m", "10", "--rpm", "2", "--criteria", "bogus"],        # bad choice
             ["spin-comfort", "--radius-m", "abc", "--rpm", "2"],                              # non-numeric
         ):
-            rc, _, _ = _run(*args)
+            rc, _, _ = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
 
 

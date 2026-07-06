@@ -41,6 +41,7 @@ from core.equations import (
     _M_PER_AU,
     _SOLAR_LUMINOSITY_W,
 )
+from core.equations import _resolve_insolation as _resolve_insolation_shared
 from core import par_flux_tables as _t
 
 # G2V (nominal solar) reference temperature for the PAR-deficit ratio (IAU 2015).
@@ -171,27 +172,9 @@ def _resolve_teff(teff_k, spectral_type, star):
 
 
 def _resolve_insolation(insolation_wm2, luminosity_lsun, distance_au):
-    """Resolve exactly one insolation source → {"S": float} or {"error": str}."""
-    has_direct = insolation_wm2 is not None
-    has_lumdist = luminosity_lsun is not None or distance_au is not None
-    if has_direct == has_lumdist:
-        return {"error": "Provide exactly one insolation source: insolation_wm2, "
-                         "or luminosity_lsun + distance_au."}
-
-    if has_direct:
-        if insolation_wm2 <= 0:
-            return {"error": "insolation_wm2 must be > 0."}
-        return {"S": float(insolation_wm2)}
-
-    if luminosity_lsun is None or distance_au is None:
-        return {"error": "Provide both luminosity_lsun and distance_au."}
-    if luminosity_lsun <= 0:
-        return {"error": "luminosity_lsun must be > 0."}
-    if distance_au <= 0:
-        return {"error": "distance_au must be > 0."}
-    d_m = distance_au * _M_PER_AU
-    S = _SOLAR_LUMINOSITY_W * luminosity_lsun / (4.0 * math.pi * d_m * d_m)
-    return {"S": S}
+    """Resolve exactly one insolation source → {"S": float} or {"error": str}.
+    Thin wrapper over the canonical ``equations._resolve_insolation`` (P4.4)."""
+    return _resolve_insolation_shared(insolation_wm2, luminosity_lsun, distance_au)
 
 
 def compute_par_flux(teff_k=None, spectral_type=None, star=None,

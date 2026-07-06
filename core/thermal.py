@@ -145,6 +145,9 @@ def compute_waste_heat(input_power_watts=None, useful_power_watts=None,
         "hot_temp_k": hot_temp_k,
         "cold_temp_k": cold_temp_k,
         "notes": notes,
+        "model_note": ("Energy-balance efficiency split: waste = P·(1−η); when reservoir "
+                       "temps are given, η is capped at the Carnot ceiling 1−T_cold/T_hot "
+                       "(carnot_limited flags a stated η above it)."),
     }
 
 
@@ -211,6 +214,8 @@ def compute_radiator_area(heat_watts=None, input_power_watts=None, efficiency=No
         "radiator_mass_kg": radiator_mass_kg,
         "areal_mass_kgm2": areal_mass_kgm2,
         "scaling_note": scaling_note,
+        "model_note": ("Gray-body Stefan–Boltzmann rejection: A = Q / (ε·σ·(T_rad⁴ − T_sink⁴)·sides). "
+                       "Assumes uniform radiator temperature and a diffuse gray surface."),
     }
 
 

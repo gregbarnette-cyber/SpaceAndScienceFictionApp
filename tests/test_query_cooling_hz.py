@@ -13,20 +13,14 @@ import unittest
 
 import core.cooling as cooling
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_ENV = {"SPACE_APP_DB": "/tmp/phase_u_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_u_throwaway.db")
 
 
 def _run(*cmd_args):
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=_ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=_ENV)
 
 
 class HappyPathTest(unittest.TestCase):
@@ -67,7 +61,7 @@ class ExitCodeMatrixTest(unittest.TestCase):
             ("cooling-hz", "--track", "wd", "--sma-au", "0"),          # sma <= 0
             ("cooling-hz", "--track", "bd", "--mass-mjup", "200"),     # off-grid BD
         ):
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d)
 
@@ -88,7 +82,7 @@ class ExitCodeMatrixTest(unittest.TestCase):
             ("cooling-hz", "--track", "wd", "--teff", "abc"),           # non-numeric
             ("cooling-hz", "--track", "wd", "--hz-edge", "bogus"),      # bad choice
         ):
-            rc, d, err = _run(*args)
+            rc, d, err = run_query_inproc(*args)
             self.assertEqual(rc, 2, args)
             self.assertIsNone(d)
 
@@ -124,7 +118,7 @@ class DistillationPauseTest(unittest.TestCase):
             ("cooling-hz", "--track", "bd", "--mass-mjup", "52.4",
              "--sma-au", "0.05", "--cooling-delay-gyr", "5"),                    # bd + delay
         ):
-            rc, d, _ = _run(*args)
+            rc, d, _ = run_query_inproc(*args)
             self.assertEqual(rc, 1, args)
             self.assertIn("error", d)
 

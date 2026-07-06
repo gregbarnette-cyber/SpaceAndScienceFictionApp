@@ -32,22 +32,16 @@ import core.databases as databases
 import core.equations as equations
 import core.feasibility as feasibility
 
+from tests._queryharness import make_env, run_query, run_query_inproc
+
 _REPO = pathlib.Path(__file__).resolve().parent.parent
 
-_ENV = {"SPACE_APP_DB": "/tmp/phase_t_throwaway.db", "PATH": os.environ.get("PATH", "")}
+_ENV = make_env("phase_t_throwaway.db")
 
 
 def _run(*cmd_args, env=None):
     """Run query.py with args; return (returncode, parsed_stdout_or_None, stderr)."""
-    proc = subprocess.run(
-        [sys.executable, str(_REPO / "query.py"), *cmd_args],
-        capture_output=True, text=True, cwd=str(_REPO), env=env or _ENV,
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception:
-        payload = None
-    return proc.returncode, payload, proc.stderr
+    return run_query(*cmd_args, env=env or _ENV)
 
 
 # ── T1a-1 · trojan-stability (wraps R2 gascheau_coorbital_stable) ─────────────
@@ -174,9 +168,13 @@ class CircumbinaryHzTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("error", payload)
 
-    def test_argparse_exit2(self):
-        self.assertEqual(_run("circumbinary-hz", "--teff1", "5778", "--lum1", "1",
-                              "--teff2", "5778")[0], 2)  # missing --lum2
+    def test_incomplete_numeric_exit1(self):
+        # P4.1: partial numeric (missing --lum2) is a handler validation failure,
+        # now a curated {"error"} on stdout with exit 1 (was stderr/exit 2).
+        code, payload, _ = _run("circumbinary-hz", "--teff1", "5778", "--lum1", "1",
+                                "--teff2", "5778")  # missing --lum2
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
 
 
 # ── T1a-4 · hill-sphere Domingos exomoon keys (additive extension) ────────────
@@ -572,16 +570,21 @@ class CircumbinaryStarModeTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(len(p["zones"]), 6)
 
-    def test_both_modes_given_exit2(self):
-        code, _, err = _run("circumbinary-hz", "--teff1", "5778", "--lum1", "1",
-                            "--teff2", "5778", "--lum2", "1", "--star1", "Sun", "--star2", "Sun")
-        self.assertEqual(code, 2)
+    def test_both_modes_given_exit1(self):
+        # P4.1: numeric+star both given is a handler validation failure → curated
+        # {"error"} on stdout, exit 1 (was stderr/exit 2).
+        code, payload, _ = _run("circumbinary-hz", "--teff1", "5778", "--lum1", "1",
+                                "--teff2", "5778", "--lum2", "1", "--star1", "Sun", "--star2", "Sun")
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
 
-    def test_incomplete_exit2(self):
-        # one star only, or partial numeric → incomplete → exit 2
-        self.assertEqual(_run("circumbinary-hz", "--star1", "Sun")[0], 2)
+    def test_incomplete_exit1(self):
+        # P4.1: one star only, or partial numeric → incomplete → curated exit 1.
+        code, payload, _ = _run("circumbinary-hz", "--star1", "Sun")
+        self.assertEqual(code, 1)
+        self.assertIn("error", payload)
         self.assertEqual(_run("circumbinary-hz", "--teff1", "5778", "--lum1", "1",
-                              "--teff2", "5778")[0], 2)
+                              "--teff2", "5778")[0], 1)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
