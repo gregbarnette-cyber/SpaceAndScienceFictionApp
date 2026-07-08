@@ -50,6 +50,10 @@ _HUBBLE_DEFAULT_KMS_MPC = 67.4             # Hubble constant H₀, km/s/Mpc (Pla
 _OMEGA_LAMBDA_DEFAULT   = 0.685            # dark-energy density parameter Ω_Λ (Planck 2018 default)
 _OMEGA_M_DEFAULT        = 0.315            # matter density parameter Ω_m (Planck 2018 default)
 
+# ── Planet-formation constants (Phase AJ — Group P, core/formation.py) ────────
+_MU_GAS_DEFAULT = 2.34      # default mean molecular weight (H₂/He), Phase AJ formation disk model
+_Z_SUN          = 0.0134    # solar metallicity / dust-to-gas ratio, Phase AJ (F1 pin; Z = Z_⊙·10^[Fe/H])
+
 
 def _rocky_radius_km(mass_earth: float) -> float:
     """Approximate rocky-body radius from mass (R ∝ M^0.55). Shared by H1, H2."""

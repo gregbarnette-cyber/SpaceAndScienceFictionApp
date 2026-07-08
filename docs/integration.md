@@ -1312,6 +1312,110 @@ profile[]|null, bubble_radius_m, wall_thickness_sigma, velocity_c, variant, mode
 `--r-eval-m`, bad `--variant` → exit 1/2. **Anchors:** f(0) ≈ 1 (flat interior), f(≫R) ≈ 0 (flat exterior);
 θ antisymmetric front/back (contraction ahead, equal expansion behind); `natario` → θ = 0.
 
+### Planet formation (Phase AJ — Group P, no network)
+
+Six `query.py`-only, pure-math, self-validating (Phase-H/P contract) planet-formation calculators
+(`core/formation.py`) for Packet 3.5 — the disk-model + isolation / pebble-isolation / gap-opening /
+Toomre-Q / critical-core-mass spine the generator's `mass_by_zone` / `spacing_ratio` / `origin_priors` are
+derived from (nothing computed formation surface densities, masses, or instability thresholds before this
+group). Closed-form on the F1–F6 claim-map pins; curated `{"error"}` exit 1, argparse exit 2, `model_note`
+on every object; every bundled coefficient flag-overridable (constants in `core/equations.py`; new
+`_MU_GAS_DEFAULT = 2.34`, `_Z_SUN = 0.0134`). Numpy-free — P4's root find is a pure-Python bisection.
+
+**The calculators chain.** `disk-model` emits `sigma_solid_gcm2`, `temp_k`, and `aspect_ratio_hr` at a
+radius; those feed `isolation-mass` (Σ_p), `pebble-isolation-mass`/`gap-opening-mass` (H/r), and `toomre-q`
+(Σ, T). Each linking quantity is also a **direct flag**, so every tool stands alone.
+
+#### `disk-model` (P1) ⭐
+MMSN-scalable `Σ_gas(r) = Σ₀·(M_disk/M_MMSN)·(r/AU)^p`, `T(r) = T₀·(L★/L⊙)^¼·(r/AU)^q`,
+`Σ_solid = Z·f_ice·Σ_gas`, `H/r = c_s/v_K`. **Defaults reproduce the Approved-Canon MMSN exactly**
+(Σ₀=1700 g/cm², p=−3/2; T₀=280 K, q=−1/2). Snow line solved from **this** T-law at `--snowline-temp-k`
+(default 170 K → 2.71 AU at L=1, ∝ L^½) — **no `ice-lines` import** (followup-1 Ruling 2 / Option A).
+```bash
+query.py disk-model --r-au 1.0                       # Σ_gas 1700, T 280, H/r 0.0334, Σ_solid 22.78
+query.py disk-model --r-grid 1 30 40 --feh 0.2 --ms-luminosity --mstar-msun 1.2
+```
+Core: `formation.compute_disk_model(r_au|r_grid, mstar_msun, disk_mass_mmsn|disk_mass_msun,
+lstar_lsun|ms_luminosity, feh|z, snowline_au, snowline_temp_k, ice_factor, mu, sigma0, sigma_slope, temp0,
+temp_slope)`. Provide **exactly one** of `--r-au` / `--r-grid LO HI N` (log-spaced); at most one of each
+either/or pair. Output (per radius): `{r_au, sigma_gas_gcm2, sigma_solid_gcm2, temp_k, sound_speed_ms,
+aspect_ratio_hr, scale_height_au, omega_per_s, kepler_velocity_kms, interior_to_snowline, disk_mass_mmsn,
+metallicity_z, snowline_au, model_note}`; `--r-grid` → `{radii:[…], disk_mass_mmsn, metallicity_z,
+snowline_au, mstar_msun, lstar_lsun, model_note}` — each `radii[]` element carries the per-radius keys
+through `interior_to_snowline` only (the disk-wide `disk_mass_mmsn`/`metallicity_z`/`snowline_au`/`model_note`
+are hoisted to the top level, not repeated per row). **Σ_solid convention:** the default emits the Z_⊙-scaled
+**22.8 g/cm²** at 1 AU; the **10 g/cm²** planetesimal convention the isolation anchors use is a lower MMSN
+variant recovered via `--z`/`--ice-factor`. **Validation:** neither/both radius mode, non-positive
+radius/M★/μ/ice-factor/snow-temp, both metallicity/disk-mass/luminosity modes, bad grid (HI≤LO, N<2) → exit
+1; non-numeric → exit 2. **Anchors:** 1 AU → Σ_gas **1700**, T **280**, H/r **0.0334**, Σ_solid **22.78**;
+5.2 AU → **143.4 g/cm²**, **122.8 K**; snow line **2.71 AU** (L=4 → 5.43, L=0.1 → 0.858).
+
+#### `isolation-mass` (P2) ⭐
+Oligarchic `M_iso = (8/√3)·π^{3/2}·C^{3/2}·M★^{−1/2}·Σ_p^{3/2}·a³` (Armitage Eq. 201).
+```bash
+query.py isolation-mass --sigma-p-gcm2 10 --a-au 1     # 0.066 M⊕ (terrestrial)
+query.py isolation-mass --sigma-p-gcm2 10 --a-au 5.2   # 9.27 M⊕ (Jupiter-core)
+```
+Core: `formation.compute_isolation_mass(sigma_p_gcm2, a_au, mstar_msun, feeding_zone_c|feeding_zone_b)`.
+`--feeding-zone-c` = Armitage single-Hill half-width (default 2√3≈3.464); `--feeding-zone-b` = Kokubo & Ida
+oligarchic full width in **mutual** Hill radii (C = b/(2·2^{1/3})). Output: `{isolation_mass_mearth,
+isolation_mass_mjup, feeding_zone_width_hill, convention ("half-width-C"|"full-width-b"), sigma_p_gcm2, a_au,
+mstar_msun, model_note}`. **Validation:** non-positive Σ_p/a/M★, both conventions → exit 1. **Anchors:**
+0.066 M⊕ (a=1, Σ_p=10) / 9.27 M⊕ (a=5.2); scaling ∝ Σ_p^{3/2}·a³·M★^{−1/2}.
+
+#### `pebble-isolation-mass` (P3)
+`M_iso,peb = 25·f_fit·(H/r/0.05)³ M⊕`, `f_fit = 0.34·(log(0.001)/log(α))⁴ + 0.66` (Bitsch 2018); `--simple`
+→ Lambrechts `20·(H/r/0.05)³` (f_fit=1). The super-Earth ↔ giant switch.
+```bash
+query.py pebble-isolation-mass --hr 0.05               # 25 M⊕ (α=1e-3 → f_fit 1)
+query.py pebble-isolation-mass --temp-k 150 --mstar-msun 1 --a-au 5 --alpha 5e-3
+```
+Core: `formation.compute_pebble_isolation_mass(hr | (temp_k,mstar_msun,a_au), alpha, simple, dlnp_dlnr,
+peb_norm, mu)`. H/r via `--hr` **or** derived from `--temp-k --mstar-msun --a-au` (exactly one mode). Output:
+`{pebble_isolation_mass_mearth, hr, alpha, f_fit, dlnp_dlnr, mode ("bitsch2018"|"lambrechts2014"),
+model_note}`. **Validation:** no/both H/r mode, incomplete derive, non-positive hr/α → exit 1. **Anchors:**
+H/r=0.05 → **25** (bitsch) / **20** (`--simple`); H/r=0.03 → **5.4**. Higher α → higher mass (f_fit↑).
+
+#### `gap-opening-mass` (P4)
+Root-finds the **marginal-threshold** q where Crida (2006) Eq. 15 `P(q) = 3H/(4R_H) + 50/(qR) = --p-target`
+(default 1.0); `M_gap = q·M★`. Headline = the solved threshold (followup-1 Ruling 1a).
+```bash
+query.py gap-opening-mass --hr 0.05 --nu-code 3.162e-6 --mstar-msun 1 --a-au 5.2   # q 4.98e-4, 0.52 M_Jup
+```
+Core: `formation.compute_gap_opening_mass(hr | temp_k, mstar_msun, a_au, alpha|nu_code|reynolds, p_target,
+mu)`. `--mstar-msun`+`--a-au` **always required** (the q→mass conversion); H/r via `--hr` **or** `--temp-k`;
+viscosity via **exactly one** of `--alpha` (ν_code=α·(H/r)²), `--nu-code` (ν in a²Ω units), `--reynolds`
+(R=a²Ω/ν). Output: `{gap_opening_mass_mearth, gap_opening_mass_mjup, threshold_q, hr, alpha_or_reynolds,
+p_value_at_threshold, p_target, mstar_msun, a_au, model_note}`. **⚠ Reproduce Crida Case 1 with
+`--nu-code 3.162e-6` (=10⁻⁵·⁵), NOT `--alpha`** — α=1e-3 gives a different ν (10⁻⁵·⁶⁰²) and threshold.
+**Validation:** no/both H/r mode, missing M★/a, not exactly one viscosity, non-positive p-target, no
+threshold in (1e-9,1) → exit 1. **Anchors:** threshold_q **4.978e-4** → **0.52 M_Jup** at M⊙,
+p_at_threshold **1.000**; criterion cross-check P(q=1e-3)=**0.699** (a clear, super-marginal gap).
+`model_note` carries the Malik et al. 2015 necessary-but-not-sufficient-for-migrating caveat.
+
+#### `toomre-q` (P5)
+`Q = c_s·Ω/(πGΣ)`; `unstable` when `Q < --q-crit` (default 1). Reports `λ_crit = 2c_s²/(GΣ)` and an
+order-of-magnitude `M_frag ≈ πΣ(λ_crit/2)²`.
+```bash
+query.py toomre-q --sigma-gcm2 10.35 --temp-k 51.1 --mstar-msun 1 --a-au 30   # Q 23.7, stable
+```
+Core: `formation.compute_toomre_q(sigma_gcm2, temp_k|cs_ms|dispersion_ms, mstar_msun, a_au, mu, q_crit)`.
+Sound speed via **exactly one** of `--temp-k` (→ c_s via μ), `--cs-ms`, `--dispersion-ms` (particle disk).
+Output: `{toomre_q, unstable, q_crit, lambda_crit_au, fragment_mass_mjup, sound_speed_ms, omega_per_s,
+sigma_gcm2, a_au, model_note}`. **Validation:** non-positive Σ/M★/a/q-crit, not exactly one c_s mode → exit
+1. **Anchor:** MMSN at 30 AU → **Q ≈ 23.7** (stable, Q≫1); GI needs a disk ~1–2 orders more massive.
+
+#### `critical-core-mass` (P6)
+`M_crit = 12·(Ṁ/1e-6)^{1/4}·(κ/1)^{1/4} M⊕` (Armitage Eq. 236 / Ikoma+2000) — the envelope-runaway trigger.
+```bash
+query.py critical-core-mass                            # 12 M⊕ (fiducial)
+query.py critical-core-mass --mdot-core 1e-7           # 6.75 M⊕
+```
+Core: `formation.compute_critical_core_mass(mdot_core, opacity, index, crit_norm)`. `--index` (default 0.25)
+is the ±0.05 sensitivity knob. Output: `{critical_core_mass_mearth, mdot_core, opacity, index, model_note}`.
+**Validation:** non-positive mdot/opacity/crit-norm → exit 1. **Anchors:** fiducial **12 M⊕**; Ṁ=1e-7 or
+κ=0.1 → **6.75 M⊕** (weak ¼-power dependence, ~10 M⊕ scale).
+
 ### Megastructure scale (Phase Z — pure math + bundled material/body tables, no network)
 
 Three `query.py`-only calculators for the sibling repo's Packet 17 (Settlement / Megastructure).

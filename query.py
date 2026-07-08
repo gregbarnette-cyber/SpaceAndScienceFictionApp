@@ -23,6 +23,7 @@ import core.dust_impact as dust_impact   # pure-math (no astropy/numpy) — safe
 import core.equations as equations
 import core.exotic_physics as exotic_physics
 import core.feasibility as feasibility
+import core.formation as formation
 import core.gravitation as gravitation
 import core.generate as generate
 import core.ism_drag as ism_drag
@@ -417,6 +418,53 @@ def cmd_warp_metric(args):
         bubble_radius_m=args.bubble_radius_m, wall_thickness_sigma=args.wall_thickness_sigma,
         velocity_c=args.velocity_c, r_eval_m=args.r_eval_m, profile=args.profile,
         variant=args.variant))
+
+
+# ── Phase AJ (Group P) — planet formation (Packet 3.5) ────────────────────────
+
+def cmd_disk_model(args):
+    _out(formation.compute_disk_model(
+        r_au=args.r_au, r_grid=args.r_grid, mstar_msun=args.mstar_msun,
+        disk_mass_mmsn=args.disk_mass_mmsn, disk_mass_msun=args.disk_mass_msun,
+        lstar_lsun=args.lstar_lsun, ms_luminosity=args.ms_luminosity,
+        feh=args.feh, z=args.z,
+        snowline_au=args.snowline_au, snowline_temp_k=args.snowline_temp_k,
+        ice_factor=args.ice_factor, mu=args.mu,
+        sigma0=args.sigma0, sigma_slope=args.sigma_slope,
+        temp0=args.temp0, temp_slope=args.temp_slope))
+
+
+def cmd_isolation_mass(args):
+    _out(formation.compute_isolation_mass(
+        sigma_p_gcm2=args.sigma_p_gcm2, a_au=args.a_au, mstar_msun=args.mstar_msun,
+        feeding_zone_c=args.feeding_zone_c, feeding_zone_b=args.feeding_zone_b))
+
+
+def cmd_pebble_isolation_mass(args):
+    _out(formation.compute_pebble_isolation_mass(
+        hr=args.hr, temp_k=args.temp_k, mstar_msun=args.mstar_msun, a_au=args.a_au,
+        alpha=args.alpha, simple=args.simple, dlnp_dlnr=args.dlnp_dlnr,
+        peb_norm=args.peb_norm, mu=args.mu))
+
+
+def cmd_gap_opening_mass(args):
+    _out(formation.compute_gap_opening_mass(
+        hr=args.hr, temp_k=args.temp_k, mstar_msun=args.mstar_msun, a_au=args.a_au,
+        alpha=args.alpha, nu_code=args.nu_code, reynolds=args.reynolds,
+        p_target=args.p_target, mu=args.mu))
+
+
+def cmd_toomre_q(args):
+    _out(formation.compute_toomre_q(
+        sigma_gcm2=args.sigma_gcm2, temp_k=args.temp_k, cs_ms=args.cs_ms,
+        dispersion_ms=args.dispersion_ms, mstar_msun=args.mstar_msun, a_au=args.a_au,
+        mu=args.mu, q_crit=args.q_crit))
+
+
+def cmd_critical_core_mass(args):
+    _out(formation.compute_critical_core_mass(
+        mdot_core=args.mdot_core, opacity=args.opacity, index=args.index,
+        crit_norm=args.crit_norm))
 
 
 def _resolve_star_teff_lum(name):
@@ -2296,6 +2344,100 @@ def main(argv=None):
     p.add_argument("--variant", choices=["alcubierre", "natario"], default="alcubierre",
                    help="natario = zero-expansion metric (space slides around; θ≡0)")
     p.set_defaults(func=cmd_warp_metric)
+
+    # ── Phase AJ (Group P) — planet formation (Packet 3.5) ────────────────────
+
+    # disk-model (P1)
+    p = sub.add_parser("disk-model",
+                       help="MMSN-scalable disk Σ_gas/Σ_solid/T/(H/r) profile at a radius or grid")
+    p.add_argument("--r-au", type=float, help="Single radius (AU)")
+    p.add_argument("--r-grid", type=float, nargs=3, metavar=("LO", "HI", "N"),
+                   help="Log-spaced radius profile: LO HI N (AU, AU, count)")
+    p.add_argument("--mstar-msun", type=float, default=1.0, help="Stellar mass (M⊙, default 1)")
+    p.add_argument("--disk-mass-mmsn", type=float, help="Disk mass as MMSN multiplier (default 1)")
+    p.add_argument("--disk-mass-msun", type=float, help="Disk mass in M⊙ (alt to --disk-mass-mmsn)")
+    p.add_argument("--lstar-lsun", type=float, help="Stellar luminosity (L⊙, default 1, for T scaling)")
+    p.add_argument("--ms-luminosity", action="store_true",
+                   help="Derive L★ from M★ via the main-sequence L∝M^3.5 relation")
+    p.add_argument("--feh", type=float, help="Metallicity [Fe/H] dex (Z = Z_⊙·10^[Fe/H])")
+    p.add_argument("--z", type=float, help="Dust-to-gas ratio Z (default Z_⊙=0.0134)")
+    p.add_argument("--snowline-au", type=float, help="Override the water snow-line radius (AU)")
+    p.add_argument("--snowline-temp-k", type=float, default=170.0,
+                   help="Ice condensation temperature for the snow-line solve (default 170 K)")
+    p.add_argument("--ice-factor", type=float, default=2.0,
+                   help="Σ_solid ice enhancement exterior to the snow line (default 2)")
+    p.add_argument("--mu", type=float, default=2.34, help="Mean molecular weight (default 2.34)")
+    p.add_argument("--sigma0", type=float, default=1700.0, help="Σ_gas at 1 AU (g/cm², default 1700)")
+    p.add_argument("--sigma-slope", type=float, default=-1.5, help="Σ_gas power-law slope (default −3/2)")
+    p.add_argument("--temp0", type=float, default=280.0, help="T at 1 AU (K, default 280)")
+    p.add_argument("--temp-slope", type=float, default=-0.5, help="T power-law slope (default −1/2)")
+    p.set_defaults(func=cmd_disk_model)
+
+    # isolation-mass (P2)
+    p = sub.add_parser("isolation-mass",
+                       help="Oligarchic isolation mass M_iso (Armitage Eq. 201)")
+    p.add_argument("--sigma-p-gcm2", type=float, help="Planetesimal/solid surface density (g/cm²)")
+    p.add_argument("--a-au", type=float, help="Orbital radius (AU)")
+    p.add_argument("--mstar-msun", type=float, default=1.0, help="Stellar mass (M⊙, default 1)")
+    p.add_argument("--feeding-zone-c", type=float,
+                   help="Feeding-zone half-width in single Hill radii (default 2√3≈3.464)")
+    p.add_argument("--feeding-zone-b", type=float,
+                   help="Oligarchic full width in MUTUAL Hill radii (e.g. 10; Kokubo & Ida)")
+    p.set_defaults(func=cmd_isolation_mass)
+
+    # pebble-isolation-mass (P3)
+    p = sub.add_parser("pebble-isolation-mass",
+                       help="Pebble-accretion cutoff mass — the super-Earth ↔ giant switch (Bitsch 2018)")
+    p.add_argument("--hr", type=float, help="Disk aspect ratio H/r")
+    p.add_argument("--temp-k", type=float, help="Disk temperature (K, to derive H/r with --mstar/--a)")
+    p.add_argument("--mstar-msun", type=float, help="Stellar mass (M⊙, for H/r derivation)")
+    p.add_argument("--a-au", type=float, help="Orbital radius (AU, for H/r derivation)")
+    p.add_argument("--alpha", type=float, default=1e-3, help="Turbulent viscosity α (default 1e-3)")
+    p.add_argument("--simple", action="store_true",
+                   help="Base Lambrechts 2014 law 20·(H/r/0.05)³ (f_fit=1)")
+    p.add_argument("--dlnp-dlnr", type=float, default=-2.5,
+                   help="Global pressure-gradient index (echoed; default −2.5)")
+    p.add_argument("--peb-norm", type=float, help="Override the normalization (default 25; --simple→20)")
+    p.add_argument("--mu", type=float, default=2.34, help="Mean molecular weight (default 2.34)")
+    p.set_defaults(func=cmd_pebble_isolation_mass)
+
+    # gap-opening-mass (P4)
+    p = sub.add_parser("gap-opening-mass",
+                       help="Type-II gap-opening threshold via the Crida criterion (root-find)")
+    p.add_argument("--hr", type=float, help="Disk aspect ratio H/r")
+    p.add_argument("--temp-k", type=float, help="Disk temperature (K, to derive H/r)")
+    p.add_argument("--mstar-msun", type=float, help="Stellar mass (M⊙, required for the q→mass conversion)")
+    p.add_argument("--a-au", type=float, help="Orbital radius (AU, required for the q→mass conversion)")
+    p.add_argument("--alpha", type=float, help="Turbulent viscosity α (ν_code=α·(H/r)²)")
+    p.add_argument("--nu-code", type=float,
+                   help="Kinematic viscosity ν in a²Ω units (Crida Case 1: 3.162e-6 = 10⁻⁵·⁵)")
+    p.add_argument("--reynolds", type=float, help="Reynolds number R = a²Ω/ν directly")
+    p.add_argument("--p-target", type=float, default=1.0,
+                   help="Crida criterion target P (default 1.0, the marginal threshold)")
+    p.add_argument("--mu", type=float, default=2.34, help="Mean molecular weight (default 2.34)")
+    p.set_defaults(func=cmd_gap_opening_mass)
+
+    # toomre-q (P5)
+    p = sub.add_parser("toomre-q",
+                       help="Disk gravitational-instability parameter Q (core-accretion ↔ GI boundary)")
+    p.add_argument("--sigma-gcm2", type=float, help="Gas surface density (g/cm²)")
+    p.add_argument("--temp-k", type=float, help="Disk temperature (K, → c_s via μ)")
+    p.add_argument("--cs-ms", type=float, help="Sound speed directly (m/s)")
+    p.add_argument("--dispersion-ms", type=float, help="1-D velocity dispersion for a particle disk (m/s)")
+    p.add_argument("--mstar-msun", type=float, help="Stellar mass (M⊙, → Ω)")
+    p.add_argument("--a-au", type=float, help="Orbital radius (AU, → Ω)")
+    p.add_argument("--mu", type=float, default=2.34, help="Mean molecular weight (default 2.34)")
+    p.add_argument("--q-crit", type=float, default=1.0, help="Instability threshold Q_crit (default 1)")
+    p.set_defaults(func=cmd_toomre_q)
+
+    # critical-core-mass (P6)
+    p = sub.add_parser("critical-core-mass",
+                       help="Envelope-runaway (critical core) mass for gas-giant formation")
+    p.add_argument("--mdot-core", type=float, default=1e-6, help="Core accretion rate (M⊕/yr, default 1e-6)")
+    p.add_argument("--opacity", type=float, default=1.0, help="Rosseland opacity κ_R (cm²/g, default 1)")
+    p.add_argument("--index", type=float, default=0.25, help="Power-law index (default 0.25, ±0.05 knob)")
+    p.add_argument("--crit-norm", type=float, default=12.0, help="Normalization (default 12 M⊕)")
+    p.set_defaults(func=cmd_critical_core_mass)
 
     # ── Phase T1c — census-filter presets ────────────────────────────────────
 
