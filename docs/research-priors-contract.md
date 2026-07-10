@@ -102,6 +102,13 @@ contract minor-version).
   and the **identity** fixture (`tests/fixtures/research_priors_identity.json`, DefaultPriors clone)
   — `data/` being wholly gitignored, the canonical sample lives in `tests/fixtures/`. To try the
   hook before real data exists, the importer can ingest the sample fixture directly.
+- **To load the real research-calibrated dataset (Packet 3.5):** ingest from the sibling
+  `scifiWorldBuilding-Claude` repo —
+  `compute_research_priors_ingest(path='../scifiWorldBuilding-Claude/design-lab/star-system-generation-priors/research_priors_v1.json')`
+  (or the GUI **Import Research Priors** panel → that file). Because `data/` is gitignored, this cache is a
+  per-machine build — re-run once after cloning and after any dataset-version bump (a new `dataset_version`). Full
+  refresh workflow + verify steps live in that repo's
+  `research/star-and-planetary-system-generation/sister-project-coordination.md` §Phase I.
 
 ## Policy interaction
 
