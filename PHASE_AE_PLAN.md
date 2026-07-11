@@ -163,9 +163,13 @@ Builds on `calculators.compute_lorentz_factor`; import the γ helper rather than
 ## 5. Group N → Phase AH — `core/warp.py` (Packet 22) ⭐ highest risk, build last
 
 ### N1 — `alcubierre-energy`
-- **`original` (Alcubierre 1994):** compute from T⁰⁰ = −(c⁴/8πG)·v_s²(y²+z²)/(4r_s²)·(df/dr_s)²;
-  total E = −(c⁴v_s²/12G)·∫₀^∞ (df/dr_s)² r_s² dr_s with the tanh shape function. **Numeric integral in
+- **`original` (Alcubierre 1994):** compute from T⁰⁰ = −(c²/8πG)·v_s²(y²+z²)/(4r_s²)·(df/dr_s)²;
+  total E = −(c²v_s²/12G)·∫₀^∞ (df/dr_s)² r_s² dr_s with the tanh shape function. **Numeric integral in
   plain Python** (Simpson/adaptive — no numpy, to keep query.py fast). Signed J + kg-equiv (E/c²); E ∝ −v_s²R²/Δ.
+  > **Erratum 2026-07-11:** the original build used c⁴ (not c²) in the SI energy, an extra factor of c² — so
+  > the joule value was reported in the `energy_kg_equiv` field and `energy_j` was that × c². Corrected against
+  > the Pfenning–Ford ~¼ M☉ anchor (Δ=1 m). The geometrized→SI conversion is E_SI = E_geom·c⁴/G with v_s→v_s/c,
+  > i.e. E = −(c²·v_s²/12G)·∫…. Anchors below updated (they previously "verified the bug against itself").
 - **Reduction formulations** (`van-den-broeck`, `krasnikov`, `white`, `bobrick-martire`, `physical-2024`,
   `lentz`): report **published literature figures + source + energy-condition status**, hardcoded, with a
   `model_note` marking them literature values (not per-metric recomputation).
@@ -176,7 +180,8 @@ Builds on `calculators.compute_lorentz_factor`; import the γ helper rather than
 - **Outputs:** `{energy_j, energy_kg_equiv (both signed), formulation, bubble_radius_m, velocity_c,
   wall_thickness_m, subluminal, energy_condition_status, published_figure|null, positive_energy_j|null,
   source, model_note}`.
-- **Anchors:** `original` R=100 m, v_s=c, Δ=10 m → |E| ≈ **3.4×10⁴⁵ kg-equiv**; Δ=1 m → **3.4×10⁴⁶** (∝1/Δ).
+- **Anchors:** `original` R=100 m, v_s=c, Δ=10 m → |E| ≈ **3.4×10⁴⁵ J** (≈ 3.75×10²⁸ kg-equiv); Δ=1 m →
+  **3.4×10⁴⁶ J** ≈ 3.74×10²⁹ kg ≈ **0.19 M☉** (Pfenning–Ford ~¼ M☉) (∝1/Δ).
   `van-den-broeck` → ~few M☉; `krasnikov` → ~few mg; `white` → ~700 kg (10 m/v=10c); `bobrick-martire`
   subluminal → positive-energy. v_s≥c → NEC-violating-exotic.
 
@@ -267,7 +272,8 @@ N ships last: it is the highest-risk (numeric integral + literature ladder) and 
 helper for the Garattini external-gravity tie-in. Each group is an independent, green-tested commit.
 
 ## 9. Key risks
-- **N1 numeric integral** must reproduce 3.4×10⁴⁵ kg-equiv at (100 m, c, 10 m) and scale ∝1/Δ — pin both.
+- **N1 numeric integral** must reproduce 3.4×10⁴⁵ J (energy_j; ≈ 3.75×10²⁸ kg-equiv) at (100 m, c, 10 m) and
+  scale ∝1/Δ — pin both. (See the N1 Erratum 2026-07-11 on the c²-vs-c⁴ unit correction.)
 - **Corrected anchors are golden pins** (Schwinger ½-convention, evaporation 5120π photon-only coefficient,
   tidal Δr·c⁶/4G²M² at horizon). If a tool disagrees with an anchor, **re-derive before shipping** (spec rule).
 - **Inverse-solve mutexes** (O2/O3/O9 forward↔inverse, casimir/hubble dual modes, K4 v∞ vs arrival-speed) →

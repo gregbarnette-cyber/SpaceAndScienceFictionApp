@@ -1270,12 +1270,13 @@ Curated `{"error"}` exit 1, argparse exit 2, `model_note` on every object. No nu
 plain-Python Simpson — keeps query.py's cold start ~0.1 s).
 
 #### `alcubierre-energy` (N1)
-The `original` (Alcubierre 1994) formulation is **computed** from the T⁰⁰ integral `E = −(c⁴v_s²/12G)·∫₀^∞
-(df/dr_s)² r_s² dr_s` over the tanh shape function (always negative → exotic matter; `E ∝ −v_s²·R²/Δ`). The six
+The `original` (Alcubierre 1994) formulation is **computed** from the T⁰⁰ integral `E = −(c²v_s²/12G)·∫₀^∞
+(df/dr_s)² r_s² dr_s` **joules** over the tanh shape function (always negative → exotic matter; `E ∝ −v_s²·R²/Δ`;
+`energy_kg_equiv = energy_j / c²`). The six
 **reduction formulations report** their published literature results + energy-condition status (not
 first-principles recomputations of each modified metric).
 ```bash
-query.py alcubierre-energy --bubble-radius-m 100 --velocity-c 1 --wall-thickness-m 10          # −3.37e45 kg-equiv
+query.py alcubierre-energy --bubble-radius-m 100 --velocity-c 1 --wall-thickness-m 10          # energy_j −3.37e45 J (−3.75e28 kg-equiv)
 query.py alcubierre-energy --bubble-radius-m 10 --velocity-c 10 --wall-thickness-m 1 --formulation white
 query.py alcubierre-energy --bubble-radius-m 100 --velocity-c 0.5 --wall-thickness-m 10 --formulation bobrick-martire
 ```
@@ -1290,7 +1291,8 @@ reductions, `energy_j`/`energy_kg_equiv` are null and `published_figure` carries
 `energy_condition_status="NEC-violating-exotic"` regardless of formulation; subluminal (v_s < c) with a
 positive-energy framework (`bobrick-martire`/`physical-2024`) → `"positive-energy-possible"`. **Validation:**
 non-positive radius/velocity/wall, unknown formulation → exit 1; bad `--formulation` choice / non-numeric →
-exit 2. **Anchors:** R=100 m, v_s=c, Δ=10 m → |E| ≈ **3.37×10⁴⁵ kg-equiv** (∝1/Δ: Δ=1 → 3.36×10⁴⁶);
+exit 2. **Anchors:** R=100 m, v_s=c, Δ=10 m → |E| ≈ **3.37×10⁴⁵ J** (≈ 3.75×10²⁸ kg-equiv; ∝1/Δ: Δ=1 m →
+3.36×10⁴⁶ J ≈ 3.74×10²⁹ kg ≈ **0.19 M☉**, matching Pfenning–Ford ~¼ M☉);
 `van-den-broeck` → ~a few M☉; `krasnikov` → ~a few mg; `white` → ~700 kg (Voyager, contested);
 `bobrick-martire`/`physical-2024` subluminal → positive-energy; `lentz` → contested.
 

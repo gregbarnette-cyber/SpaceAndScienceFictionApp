@@ -1,8 +1,9 @@
 # tests/test_warp.py — Phase AH (Group N) core calculators.
 #
 # AH·1 checkpoint: N1 alcubierre-energy, 'original' formulation only — the numeric T⁰⁰ integral.
-# Golden pins: the 3.4e45 kg-equiv anchor, the ∝1/Δ scaling, a convergence pin (the value is
-# resolution-stable), determinism, and the self-validating error matrix. No network/Qt/DB.
+# Golden pins: the 3.4e45 J anchor (energy_j; energy_kg_equiv = E/c² ≈ -3.75e28), the ∝1/Δ scaling,
+# a convergence pin (the value is resolution-stable), determinism, and the self-validating error
+# matrix. No network/Qt/DB.
 
 import unittest
 
@@ -12,10 +13,20 @@ import core.warp as warp
 class AlcubierreEnergyOriginalTest(unittest.TestCase):
     def test_anchor(self):
         d = warp.compute_alcubierre_energy(bubble_radius_m=100, velocity_c=1.0, wall_thickness_m=10)
-        self.assertAlmostEqual(d["energy_kg_equiv"], -3.373e45, delta=2e42)
+        # energy_j is the joule value; energy_kg_equiv = energy_j / c² (mass-equivalent).
+        self.assertAlmostEqual(d["energy_j"], -3.373e45, delta=2e42)
+        self.assertAlmostEqual(d["energy_kg_equiv"], -3.753e28, delta=2e25)
+        from core.equations import _C_MS
+        self.assertAlmostEqual(d["energy_kg_equiv"], d["energy_j"] / _C_MS ** 2, delta=1)
         self.assertLess(d["energy_j"], 0)                       # always negative → exotic
         self.assertEqual(d["energy_condition_status"], "NEC-violating-exotic")
         self.assertEqual(d["formulation"], "original")
+
+    def test_pfenning_ford_solar_mass_anchor(self):
+        # Δ=1 m ⇒ ≈ 0.19 M☉ (Pfenning & Ford 1997 "~a quarter of a solar mass").
+        d = warp.compute_alcubierre_energy(bubble_radius_m=100, velocity_c=1.0, wall_thickness_m=1)
+        solar_masses = abs(d["energy_kg_equiv"]) / 1.989e30
+        self.assertAlmostEqual(solar_masses, 0.19, delta=0.02)
 
     def test_inverse_delta_scaling(self):
         # E ∝ 1/Δ: a 10× thinner wall → ~10× the magnitude
@@ -168,7 +179,7 @@ def _fine_integral(R, v_ms, wall, n):
     tot = ig(0.0) + ig(upper)
     for i in range(1, n):
         tot += (4.0 if i % 2 else 2.0) * ig(i * h)
-    return -(_C_MS ** 4 * v_ms ** 2 / (12.0 * _G)) * tot * h / 3.0
+    return -(_C_MS ** 2 * v_ms ** 2 / (12.0 * _G)) * tot * h / 3.0
 
 
 if __name__ == "__main__":

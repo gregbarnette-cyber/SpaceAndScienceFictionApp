@@ -15,9 +15,13 @@ Built in three checkpoints (see PHASE_AE_PLAN.md §7a):
     wall geometry, and the Natário zero-expansion variant.
 
 Physics (durable): the local (Eulerian) energy density of the Alcubierre metric is
-``T⁰⁰ = −(c⁴/8πG)·v_s²(y²+z²)/(4 r_s²)·(df/dr_s)²`` (negative → exotic matter); integrating over the
-bubble gives ``E = −(c⁴ v_s²/12G)·∫₀^∞ (df/dr_s)² r_s² dr_s`` (the ∫sin³θ dθ = 4/3 angular integral
-fixes the 1/12). With the tanh shape function this scales as ``E ∝ −v_s²·R²/Δ`` (Δ = wall thickness).
+``T⁰⁰ = −(c²/8πG)·v_s²(y²+z²)/(4 r_s²)·(df/dr_s)²`` (negative → exotic matter; v_s in m/s — the c's of
+the textbook geometrized ``c⁴/8πG·(v_s/c)²`` form collected into a single c²); integrating over the
+bubble gives ``E = −(c² v_s²/12G)·∫₀^∞ (df/dr_s)² r_s² dr_s`` **joules** (the ∫sin³θ dθ = 4/3 angular
+integral fixes the 1/12). With the tanh shape function this scales as ``E ∝ −v_s²·R²/Δ`` (Δ = wall
+thickness); the mass-equivalent is ``E/c²``. (A pre-2026-07-11 build used c⁴ here — off by one factor
+of c², so the joule value landed in the kg-equiv field; corrected against the Pfenning–Ford ~¼ M☉
+anchor at Δ=1 m.)
 
 Constants from ``core.equations``. No network, no DB, no RNG, no time.
 """
@@ -55,8 +59,8 @@ def _alcubierre_energy_j(bubble_radius_m, v_s_ms, wall_thickness_m):
     """Numerically integrate the Alcubierre total energy (joules, signed negative).
 
     Returns (energy_j, integration_points, resolution_capped). Pure-Python Simpson over the
-    tanh shape function's (df/dr)²·r² integrand; validated to reproduce the 3.4×10⁴⁵ kg-equiv
-    anchor at (R=100, v_s=c, Δ=10) and the ∝1/Δ scaling.
+    tanh shape function's (df/dr)²·r² integrand; validated to reproduce the 3.4×10⁴⁵ J
+    anchor (≈ −3.75×10²⁸ kg-equiv) at (R=100, v_s=c, Δ=10) and the ∝1/Δ scaling.
     """
     R = bubble_radius_m
     sigma = 1.0 / wall_thickness_m
@@ -78,7 +82,7 @@ def _alcubierre_energy_j(bubble_radius_m, v_s_ms, wall_thickness_m):
     for i in range(1, n):
         total += (4.0 if i % 2 else 2.0) * integrand(i * h)
     integral = total * h / 3.0
-    energy = -(_C_MS ** 4 * v_s_ms ** 2 / (12.0 * _G)) * integral
+    energy = -(_C_MS ** 2 * v_s_ms ** 2 / (12.0 * _G)) * integral   # joules (E/c² → kg-equiv)
     return energy, n, capped
 
 
@@ -183,7 +187,7 @@ def compute_alcubierre_energy(bubble_radius_m=None, velocity_c=None, wall_thickn
     if formulation == "original":
         v_s_ms = velocity_c * _C_MS
         energy_j, points, capped = _alcubierre_energy_j(bubble_radius_m, v_s_ms, wall_thickness_m)
-        note = ("Alcubierre-1994 total energy E = −(c⁴v_s²/12G)·∫₀^∞ (df/dr_s)² r_s² dr_s over the "
+        note = ("Alcubierre-1994 total energy E = −(c²v_s²/12G)·∫₀^∞ (df/dr_s)² r_s² dr_s over the "
                 "tanh shape function, integrated with a plain-Python Simpson rule. Always negative "
                 "→ the original bubble requires exotic matter (NEC-violating) at any velocity. "
                 "E ∝ −v_s²·R²/Δ (falls linearly with a thicker wall). " + _REGIME_NOTE)

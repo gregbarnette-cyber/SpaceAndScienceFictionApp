@@ -21,8 +21,10 @@ class AlcubierreQueryTest(unittest.TestCase):
         rc, d, _ = _run("alcubierre-energy", "--bubble-radius-m", "100",
                         "--velocity-c", "1", "--wall-thickness-m", "10")
         self.assertEqual(rc, 0)
-        self.assertAlmostEqual(d["energy_kg_equiv"], -3.373e45, delta=2e42)
+        self.assertAlmostEqual(d["energy_j"], -3.373e45, delta=2e42)          # joules
+        self.assertAlmostEqual(d["energy_kg_equiv"], -3.753e28, delta=2e25)   # E/c²
         ref = warp.compute_alcubierre_energy(bubble_radius_m=100, velocity_c=1.0, wall_thickness_m=10)
+        self.assertEqual(d["energy_j"], ref["energy_j"])
         self.assertEqual(d["energy_kg_equiv"], ref["energy_kg_equiv"])
         self.assertEqual(d["energy_condition_status"], "NEC-violating-exotic")
 
