@@ -21,9 +21,11 @@ import core.dust_impact as dust_impact   # pure-math (no astropy/numpy) — safe
 # non-dust query.py invocation ~0.5 s faster (matters for the sister repo's per-call cost
 # and the subprocess test suite). All dust references live inside cmd_* handlers.
 import core.equations as equations
+import core.exclusion_boundary as exclusion_boundary
 import core.exotic_physics as exotic_physics
 import core.feasibility as feasibility
 import core.formation as formation
+import core.metric_drive as metric_drive
 import core.gravitation as gravitation
 import core.generate as generate
 import core.ism_drag as ism_drag
@@ -465,6 +467,97 @@ def cmd_critical_core_mass(args):
     _out(formation.compute_critical_core_mass(
         mdot_core=args.mdot_core, opacity=args.opacity, index=args.index,
         crit_norm=args.crit_norm))
+
+
+# ── Phase AK (Group Q) — metric-drive power/fuel + exclusion boundary (Pkts 25 / 26.5) ──
+
+def cmd_metric_drive_power(args):
+    _out(metric_drive.compute_metric_drive_power(
+        mass_kg=args.mass_kg, mass_tonnes=args.mass_tonnes,
+        thrust_n=args.thrust_n, accel_g=args.accel_g, accel_ms2=args.accel_ms2,
+        delta_v_kms=args.delta_v_kms, delta_v_c=args.delta_v_c, rapidity=args.rapidity,
+        duration_days=args.duration_days,
+        k=args.k, fuel=args.fuel, f_conv=args.f_conv, eta_dir=args.eta_dir,
+        turn=args.turn, integrated_rapidity=args.integrated_rapidity,
+        beam_compare=args.beam_compare))
+
+
+def _resolve_star_mass_lum(name):
+    """Resolve a star name → {"mass": M⊙, "lum": L⊙} via SIMBAD + regions, or {"error"}.
+
+    Reuses the Star System Regions derivation (works for any main-sequence type).
+    """
+    simbad = databases.compute_simbad_lookup(name)
+    if "error" in simbad:
+        return simbad
+    reg = regions.compute_star_system_regions_from_simbad(simbad)
+    if "error" in reg:
+        return reg
+    mass = reg.get("stellarMass")
+    lum = reg.get("bcLuminosity")
+    if mass is None or lum is None:
+        return {"error": f"Could not derive mass/luminosity for '{name}'."}
+    return {"mass": mass, "lum": lum}
+
+
+def cmd_exclusion_boundary(args):
+    sources = [args.mass_msun is not None, bool(args.object),
+               bool(args.star), bool(args.spectral_type)]
+    if sum(sources) == 0:
+        _out({"error": "Provide a body: --mass-msun, --object, --star, or --spectral-type."})
+        return
+    if sum(sources) > 1:
+        _out({"error": "Provide only one body source "
+                       "(--mass-msun / --object / --star / --spectral-type)."})
+        return
+
+    obj_name = None
+    mass = args.mass_msun
+    lum = args.luminosity_lsun
+    wdot = args.mass_loss_msun_yr
+
+    if args.object:
+        key = args.object.lower()
+        if key not in exclusion_boundary._OBJECT_PRESETS:
+            _out({"error": f"Unknown --object '{args.object}'. Choose from: "
+                           f"{', '.join(sorted(exclusion_boundary._OBJECT_PRESETS))}."})
+            return
+        m_p, l_p, w_p = exclusion_boundary._OBJECT_PRESETS[key]
+        mass, obj_name = m_p, key
+        if lum is None:
+            lum = l_p
+        if wdot is None and w_p:
+            wdot = w_p
+    elif args.star:
+        r = _resolve_star_mass_lum(args.star)
+        if "error" in r:
+            _out(r)
+            return
+        mass, obj_name = r["mass"], args.star
+        if lum is None:
+            lum = r["lum"]
+    elif args.spectral_type:
+        row, key = regions._lookup_spectral_type(args.spectral_type)
+        if row is None:
+            _out({"error": f"Could not resolve spectral type '{args.spectral_type}'."})
+            return
+        try:
+            mass = float(row.get("M"))
+            row_lum = float(row.get("Lum"))
+        except (TypeError, ValueError):
+            _out({"error": f"Main-sequence row for '{key}' lacks a numeric mass/luminosity."})
+            return
+        obj_name = key
+        if lum is None:
+            lum = row_lum
+
+    _out(exclusion_boundary.compute_exclusion_boundary(
+        mass_msun=mass,
+        luminosity_lsun=(lum if lum is not None else 1.0),
+        mass_loss_msun_yr=wdot, wind_state=args.wind_state,
+        dial=args.dial, calibration_au=args.calibration_au,
+        alpha=args.alpha, beta=args.beta, gamma=args.gamma,
+        scan_alpha=args.scan_alpha, object_name=obj_name))
 
 
 def _resolve_star_teff_lum(name):
@@ -2438,6 +2531,61 @@ def main(argv=None):
     p.add_argument("--index", type=float, default=0.25, help="Power-law index (default 0.25, ±0.05 knob)")
     p.add_argument("--crit-norm", type=float, default=12.0, help="Normalization (default 12 M⊕)")
     p.set_defaults(func=cmd_critical_core_mass)
+
+    # ── Phase AK (Group Q) — metric-drive power/fuel + exclusion boundary (Pkts 25 / 26.5) ──
+
+    # metric-drive-power (Q1)
+    p = sub.add_parser("metric-drive-power",
+                       help="Metric-drive field-rocket radiated power + fuel/mass bill "
+                            "(P_rad=k*F*c; STL-mode law only)")
+    p.add_argument("--mass-kg", type=float, help="Ship mass, kg")
+    p.add_argument("--mass-tonnes", type=float, help="Ship mass, tonnes (1 t = 1000 kg)")
+    p.add_argument("--thrust-n", type=float, help="Thrust, N (drives radiated power k*F*c)")
+    p.add_argument("--accel-g", type=float, help="Acceleration in g (with mass -> thrust; with "
+                                                 "--duration-days -> a leg)")
+    p.add_argument("--accel-ms2", type=float, help="Acceleration, m/s^2 (alt to --accel-g)")
+    p.add_argument("--delta-v-kms", type=float, help="Net delta-v, km/s (-> rapidity via atanh)")
+    p.add_argument("--delta-v-c", type=float, help="Net delta-v as a fraction of c (-> rapidity)")
+    p.add_argument("--rapidity", type=float, help="Net rapidity change delta-eta directly")
+    p.add_argument("--duration-days", type=float, help="Burn duration, days (leg: dv = a*t)")
+    p.add_argument("--k", "--tsiolkovsky-k", dest="k", type=float, default=3.0,
+                   help="Tsiolkovsky constant k (GR baseline 3; B2 discount k<3, never 0; default 3)")
+    p.add_argument("--fuel", choices=sorted(metric_drive._FIELD_FUEL),
+                   help="Fuel preset for the mass->energy fraction f")
+    p.add_argument("--f-conv", type=float, help="Override the effective f_conv = f*eta_dir directly")
+    p.add_argument("--eta-dir", type=float, help="Override just the directed/usable fraction eta_dir "
+                                                 "(scales the fuel preset's f)")
+    p.add_argument("--turn", action="store_true",
+                   help="Use the integrated proper-acceleration arc (a turn costs >= |delta-eta|)")
+    p.add_argument("--integrated-rapidity", type=float,
+                   help="The integral of |a| du arc for --turn (>= |delta-eta|)")
+    p.add_argument("--beam-compare", action="store_true",
+                   help="Emit the beam-vs-onboard crossover block (crossover k = 0.5)")
+    p.set_defaults(func=cmd_metric_drive_power)
+
+    # exclusion-boundary (Q2)
+    p = sub.add_parser("exclusion-boundary",
+                       help="FTL exclusion-boundary radius r_ex (the 'Alcubierre Limit'); "
+                            "Rung-3 in-universe dial, Kuiper-edge calibrated")
+    p.add_argument("--mass-msun", type=float, help="Body mass, M_sun (primary body source)")
+    p.add_argument("--object", help="Body preset (sun, m-dwarf, o-star, brown-dwarf, rogue-planet)")
+    p.add_argument("--star", help="Resolve mass/luminosity from a star name (SIMBAD + regions)")
+    p.add_argument("--spectral-type", help="Resolve mass/luminosity from a spectral type (main-sequence)")
+    p.add_argument("--luminosity-lsun", type=float, help="Body luminosity, L_sun (default 1)")
+    p.add_argument("--mass-loss-msun-yr", type=float, help="Wind mass-loss rate W-dot, M_sun/yr")
+    p.add_argument("--wind-state", choices=["quiet", "solar", "active", "hot"],
+                   help="Wind-state preset -> a W-dot when the rate is unknown")
+    p.add_argument("--dial", type=float,
+                   help="Required-breakthrough calibration constant (default: auto to --calibration-au)")
+    p.add_argument("--calibration-au", type=float, default=47.5,
+                   help="Kuiper-edge anchor r_ex(Sun) in AU (default 47.5)")
+    p.add_argument("--alpha", type=float, default=1.0 / 3.0,
+                   help="Mass exponent (canon [1/3, 1/2]; default 1/3)")
+    p.add_argument("--beta", type=float, default=0.0, help="Luminosity exponent (default 0 = off)")
+    p.add_argument("--gamma", type=float, default=0.0, help="Wind exponent (default 0 = off)")
+    p.add_argument("--scan-alpha", action="store_true",
+                   help="Also emit r_ex at both alpha edges (1/3 and 1/2)")
+    p.set_defaults(func=cmd_exclusion_boundary)
 
     # ── Phase T1c — census-filter presets ────────────────────────────────────
 

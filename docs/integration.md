@@ -1418,6 +1418,71 @@ is the ±0.05 sensitivity knob. Output: `{critical_core_mass_mearth, mdot_core, 
 **Validation:** non-positive mdot/opacity/crit-norm → exit 1. **Anchors:** fiducial **12 M⊕**; Ṁ=1e-7 or
 κ=0.1 → **6.75 M⊕** (weak ¼-power dependence, ~10 M⊕ scale).
 
+### Metric-drive power & exclusion boundary (Phase AK — Group Q, network only on `exclusion-boundary --star`)
+
+Two `query.py`-only, pure-math, self-validating (Phase-H/P contract) calculators for the FTL-arc packets:
+`metric-drive-power` (`core/metric_drive.py`, Packet 25) and `exclusion-boundary`
+(`core/exclusion_boundary.py`, Packet 26.5). Curated `{"error"}` exit 1, argparse exit 2, `model_note` on
+every object. No numpy/RNG/time. **Two load-bearing caveats surfaced in `model_note`:** (1) the metric-drive
+power/fuel law is the **subluminal (STL) mode ONLY** — Le 2026's theorem hypotheses exclude the exotic-matter
+FTL mode, so it must NOT be inherited for FTL legs; (2) `exclusion-boundary` is a **required-breakthrough
+(Rung-3) in-universe mechanism**, not established science — the `DIAL` and scaling exponents are a Packet-26.5
+research output, calibrated (not measured) to Sol at the Kuiper edge.
+
+#### `metric-drive-power` (Q1)
+Field-rocket (photon-rocket) power + fuel/mass bill for the metric drive. `P_rad = k·F·c` (k = 3 the GR
+geometric baseline ⟨cos²θ⟩=1/3 → c/3 → ≈0.9 GW/N; k < 3 is the setting's Rung-3 **B2** exotic discount, never
+0). Fuel bill: `f_rad = 1 − e^(−k·Δη)`, `fuel_mass_fraction = f_rad / f_conv` with
+`f_conv = f(mass→energy) × η_dir(directed/usable)`. Constant velocity (F = 0) ⇒ zero propulsive power.
+```bash
+query.py metric-drive-power --thrust-n 1 --k 3                                    # power_gw_per_n 0.9
+query.py metric-drive-power --mass-tonnes 1000 --accel-g 1 --k 3                  # ≈8.83e15 W (9 PW)
+query.py metric-drive-power --mass-tonnes 1000 --accel-g 1 --duration-days 1 --k 3 --fuel d-t          # f_rad 0.84%, fuel 2.25× ship
+query.py metric-drive-power --mass-tonnes 1000 --accel-g 1 --duration-days 1 --k 3 --fuel antimatter-pp --eta-dir 1.0   # 0.84%
+query.py metric-drive-power --thrust-n 1 --k 3 --beam-compare                     # beam 0.15 vs onboard 0.9 GW/N, crossover k 0.5
+```
+Core: `metric_drive.compute_metric_drive_power(mass_kg, mass_tonnes, thrust_n, accel_g, accel_ms2,
+delta_v_kms, delta_v_c, rapidity, duration_days, k, fuel, f_conv, eta_dir, turn, integrated_rapidity,
+beam_compare)`. **Mass:** `--mass-kg` | `--mass-tonnes`. **Thrust source:** `--thrust-n` OR `--accel-g`/
+`--accel-ms2` (× mass). **Rapidity source:** `--rapidity` (Δη direct) OR `--delta-v-c`/`--delta-v-kms`
+(exact-relativistic atanh) OR a leg `--accel-* + --duration-days`. `--k` (alias `--tsiolkovsky-k`, default 3);
+`--fuel {d-t, d-he3, pp, dd, antimatter-pp, antimatter-ee}` (pp/dd f-values reused from
+`core.ism_drag_tables._FUSION`); `--f-conv`/`--eta-dir` overrides; `--turn` + `--integrated-rapidity` (a turn
+costs ≥ |Δη|); `--beam-compare`. Output: `{propulsion_power_w, power_gw_per_n, thrust_n, rapidity_delta,
+radiated_mass_fraction, leg_energy_j, fuel_mass_fraction, fuel_mass_kg, fuel_key, f_conv, eta_dir, k,
+ship_mass_kg, turn, beam_vs_onboard{beam_power_gw_per_n, onboard_power_gw_per_n, crossover_k, winner},
+model_note}` (`beam_vs_onboard` only with `--beam-compare`; power/fuel fields null when the relevant input is
+absent). **Validation:** k ≤ 0 (reactionless forbidden), f_conv ≤ 0, contradictory maneuver inputs, `--turn`
+without `--integrated-rapidity` (or arc < |Δη|), |β| ≥ 1 → exit 1. **Anchors:** 0.9 GW/N @k3; 9 PW @1g/1000t;
+4.4×10¹⁷ W @50g; 0.84% radiated @1 g-day; d-t → 2.25× ship mass; antimatter-pp η_dir 1.0 → 0.84%, default
+η_dir 0.5 → 1.69%; F=0 → power 0.
+
+#### `exclusion-boundary` (Q2)
+FTL exclusion-boundary radius **r_ex** (the "Alcubierre Limit") for a body:
+`r_ex = DIAL · (M/M☉)^α · (L/L☉)^β · (Ẇ/Ẇ_☉)^γ`, auto-calibrated so r_ex(Sun) = the Kuiper-edge anchor
+(47.5 AU) unless `--dial` is given. `α` (mass exponent, canon [1/3, 1/2], default 1/3), `β`/`γ` (luminosity /
+wind exponents, default 0 = off). Classifies the **graded forcing** geography (`forcing_class` ∈ `harbor` /
+`checkpoint` / `optional`, provisional bands: optional < 10 AU, harbor ≥ 95 AU).
+```bash
+query.py exclusion-boundary --object sun                          # r_ex 47.5 AU
+query.py exclusion-boundary --mass-msun 0.1 --scan-alpha          # third 22.05 / half 15.02 AU, checkpoint
+query.py exclusion-boundary --mass-msun 10 --scan-alpha           # third 102.3 / half 150.2 AU, harbor
+query.py exclusion-boundary --object sun --dial 100 --alpha 0.5   # explicit dial overrides auto-cal → 100
+query.py exclusion-boundary --mass-msun 1 --gamma 0.5 --mass-loss-msun-yr 1e-6   # hot-star wind pushes r_ex out
+```
+Core: `exclusion_boundary.compute_exclusion_boundary(mass_msun, luminosity_lsun, mass_loss_msun_yr, wind_state,
+dial, calibration_au, alpha, beta, gamma, scan_alpha, object_name)`. **Body source (exactly one):** `--mass-msun`
+| `--object {sun, m-dwarf, o-star, brown-dwarf, rogue-planet}` | `--star <name>` (SIMBAD + regions mass/lum,
+**network**) | `--spectral-type <type>` (main-sequence table, local DB). Optional environment: `--luminosity-lsun`,
+`--mass-loss-msun-yr` (Ẇ), `--wind-state {quiet, solar, active, hot}` (→ a Ẇ preset). Calibration/scaling:
+`--dial`, `--calibration-au` (default 47.5), `--alpha` (default 1/3), `--beta`/`--gamma` (default 0),
+`--scan-alpha` (emit both α edges). Output: `{r_ex_au, r_ex_au_alpha_third, r_ex_au_alpha_half, mass_msun,
+luminosity_lsun, mass_loss_msun_yr, dial, alpha, beta, gamma, calibration_au, forcing_class, object,
+model_note}` (`r_ex_au_alpha_*` only with `--scan-alpha`). **Validation:** M ≤ 0, negative exponents,
+non-positive dial/calibration, `β ≠ 0` with L ≤ 0, or a wind exponent (`γ ≠ 0`) with no wind input → exit 1.
+**Anchors:** Sun 47.5 AU; 0.1 M☉ → 22.05/15.02 AU (α 1/3, 1/2); 10 M☉ → 102.3/150.2 AU (harbor); explicit
+`--dial` overrides auto-cal; solar-wind term = 1 at the Ẇ=2×10⁻¹⁴ preset.
+
 ### Megastructure scale (Phase Z — pure math + bundled material/body tables, no network)
 
 Three `query.py`-only calculators for the sibling repo's Packet 17 (Settlement / Megastructure).
