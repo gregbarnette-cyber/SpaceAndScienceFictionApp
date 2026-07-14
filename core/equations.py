@@ -27,6 +27,8 @@ _AVOGADRO         = 6.02214076e23     # Avogadro constant, mol⁻¹ (CODATA; Pha
 _SOLAR_LUMINOSITY_W = 3.828e26        # nominal solar luminosity, W (IAU 2015 B3; Phase AA insolation)
 _MU_0             = 1.25663706212e-6  # vacuum permeability, T·m/A (CODATA 2018; Phase AC ISM-drag)
 _M_PROTON         = 1.67262192369e-27 # proton mass, kg (CODATA 2018; Phase AC ISM-drag)
+_MEV_J            = 1.602176634e-13   # joules per MeV (Phase AL — fission f = MeV/(u·931.494); antimatter threshold)
+_MP_C2_MEV        = 938.272           # proton rest energy, MeV (CODATA; Phase AL — antimatter 2m_p/6m_p threshold floor)
 # Derived / secondary constants centralized here to kill duplicate module-local copies (P4.5):
 _C_KMS           = _C_MS / 1000.0     # speed of light, km/s (≈299 792.458; propulsion/ism_drag)
 _LY_M            = _C_MS * _SEC_PER_YEAR  # metres per (Julian) light-year (ism_drag/dust_impact/calculators)

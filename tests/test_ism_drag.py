@@ -284,5 +284,25 @@ class BundledTableTest(unittest.TestCase):
         self.assertAlmostEqual(t._FUSION["pp"]["f"], 26.73 / (4 * 938.272), delta=2e-4)
 
 
+class FissionTableTest(unittest.TestCase):
+    """R5 (Phase AL) — the _FISSION mass→energy fractions (recoverable) + f·c² ceilings."""
+
+    def test_u235_pinned_and_first_principles(self):
+        # ~200 MeV recoverable / (235.04 u × 931.494 MeV/u) ≈ 9.14e-4.
+        self.assertAlmostEqual(t._FISSION["u235"]["f"], 9.14e-4, delta=2e-6)
+        self.assertAlmostEqual(t._FISSION["u235"]["f"], 200.0 / (235.04 * 931.494), delta=2e-6)
+
+    def test_u235_storage_energy_density(self):
+        # f·c² storage ceiling ≈ 8.21e13 J/kg (agrees with 8.31e13 precise within ~1.2%).
+        self.assertAlmostEqual(t._FISSION["u235"]["f"] * _C_MS ** 2, 8.21e13, delta=1e11)
+
+    def test_pu239_pinned(self):
+        self.assertAlmostEqual(t._FISSION["pu239"]["f"], 9.3e-4, delta=2e-6)
+
+    def test_rows_flag_antineutrino_loss(self):
+        for row in t._FISSION.values():
+            self.assertIn("antineutrino", row["note"].lower())
+
+
 if __name__ == "__main__":
     unittest.main()

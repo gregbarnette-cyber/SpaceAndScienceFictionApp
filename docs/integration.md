@@ -105,6 +105,16 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `radiator-area` | (`--heat-watts` \| `--input-power-watts --efficiency`) `--radiator-temp-k` [`--emissivity --sides --sink-temp-k --areal-mass-kgm2`] | none | `radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_mass_kg, scaling_note, model_note` |
 | `shielding-attenuation` | photon/gcr: (`--areal-density-gcm2` \| `--thickness-cm --density-gcm3`) + coeff (`--mass-atten-coeff-cm2g`\|`--attenuation-length-gcm2`\|`--material [--energy-mev]`) [`--mode {photon,gcr}`]; **charged (C6)** `--particle {proton,alpha,ion} --energy-mev` (`--material`\|`--csda-range-gcm2`); **stack (C7)** `--layers "mat:gcm2,…"` | none (bundled XCOM/PSTAR) | photon: `transmitted_fraction, half_value_layer_gcm2, tenth_value_layer_gcm2, …, is_order_of_magnitude`; csda: `mode:"csda", csda_range_gcm2, csda_range_cm, stops_primary, penetrates, residual_range_gcm2`; layers: `layers[], total_transmitted_fraction, total_attenuation` |
 | `active-shield` | `--shield-radius-m` + one field source (`--magnetic-moment-am2` \| `--coil-current-a --coil-radius-m` \| `--field-tesla --field-radius-m`) [`--spectrum-characteristic-rigidity-gv`] | none | `rigidity_cutoff_gv, rigidity_cutoff_v, magnetic_field_t, magnetic_moment_am2, field_source, deflected_fraction, is_order_of_magnitude, model_note` |
+| `annihilation-power-train` (AL R1) | (`--mass-flow-kgs`\|`--power-total-w`) [`--species {pp,ee}` · `--eta-dir`] | none | `power_total_w, power_directed_w, power_gamma_w, power_neutrino_w, eta_dir, species, model_note` |
+| `antimatter-production` (AL R2) | (`--stored-mass-kg`\|`--stored-energy-j`) `--production-efficiency` [`--trap-field-t`] | none | `energy_in_j, energy_stored_j, production_efficiency, threshold_floor_efficiency, energy_ratio_in_per_stored, storage_density_kg_m3, notes, model_note` |
+| `reactor-net-power` (AL R4) | `--gross-power-w --thermal-efficiency` [`--q-plasma --recirculating-fraction`] | none | `gross_power_w, electric_power_w, net_power_w, engineering_breakeven_q, thermal_efficiency, q_plasma, recirculating_fraction, model_note` |
+| `beamed-power-delivery` (AL R7) | (`--wavelength-m`\|`--frequency-hz`) `--tx-aperture-m --rx-aperture-m --range-m` [`--tx-power-w --pointing-efficiency`] | none | `spot_diameter_m, capture_fraction, delivered_power_w, aperture_product_m2, full_coupling_product_m2, coupling_margin, wavelength_m, model_note` |
+| `fusion-lawson` (AL R10) | `--fuel {d-t,d-he3,d-d,p-b11}` (`--density-m3 --temp-kev --confinement-s` \| `--triple-product`) [`--confinement-boost`] | none | `triple_product_kev_s_m3, ignition_threshold, q_fusion, ignited, confinement_boost, fuel, model_note` |
+| `heat-pump` (AL R3) | `--cold-temp-k --hot-temp-k` (`--heat-lifted-w`\|`--work-w`) [`--efficiency-fraction`] | none | `cop_cool_carnot, cop_heat_carnot, cop_cool_actual, work_w, heat_lifted_w, heat_rejected_w, model_note` |
+| `flywheel-storage` (AL R8) | `--tensile-strength-pa --density-kgm3` [`--shape-factor --mass-kg`] | none | `specific_energy_j_kg, specific_energy_wh_kg, stored_energy_j, shape_factor, model_note` |
+| `smes-storage` (AL R9) | `--field-t` [`--critical-field-t` · (`--tensile-strength-pa --density-kgm3`) · `--volume-m3`] | none | `energy_density_j_m3, stored_energy_j, specific_energy_j_kg, field_t, critical_field_exceeded, model_note` |
+| `energy-storage` (AL T1) | [`--class` · `--override-wh-kg` · (`--mass-kg --specific-heat-jkgk --delta-t-k` \| `--mass-kg --latent-heat-jkg`)] | bundled `_STORAGE` | lookup: `class, specific_energy_j_kg, specific_energy_wh_kg, volumetric_wh_l, round_trip_efficiency, leak_note, source_tag, note`; no class → `classes[]`; compute → `+stored_energy_j` |
+| `reactor-power` (AL T2) | [`--class` · `--override-kw-kg` · `--gross-power-w`] | bundled `_REACTOR_SPECIFIC_POWER` | `class, specific_power_kw_kg, core_mass_kg, source_tag, note, thermal_pointer`; no class → `classes[], thermal_pointer` |
 | `spin-comfort` | exactly two of (`--radius-m` \| `--rpm` \| `--gravity-g`\|`--accel-ms2` \| `--tangential-velocity-ms`) [`--occupant-height-m --walk-speed-ms --criteria {conservative,moderate,relaxed,all}` + per-threshold overrides] | none (bundled comfort bands) | `radius_m, rpm, angular_velocity_rads, accel_ms2, gravity_g, tangential_velocity_ms, head_gravity_g, gravity_gradient_pct, coriolis_ratio_pct, anchors, criteria{…}, overridden_thresholds, model_note, notes` |
 | `life-support` | [`--crew --days --closure-scenario {open,iss,advanced,bioregen}` + per-stream `--*-closure` + per-rate `--*-rate`/`--kcal-per-day`] | none (bundled BVAD Rev2) | `crew, days, per_person_daily{…}, totals{…}, closure{water,o2,food}, scenario, makeup_mass_kg{o2,water,food,total}, model_note` |
 | `bioregen-area` | exactly one light anchor (`--ppfd-umol` \| `--dli-mol` \| `--par-wm2`) [`--kcal-per-day --crew --crop` \| **`--crops "c:f,…"` (AD C10)** ` --photoperiod-h --photo-efficiency --harvest-index --artificial --led-par-efficiency --f-edible-energy`] | none (bundled crops) | `area_m2_per_person, area_m2_total, area_m2_per_person_measured, crops, per_crop_area_m2[], dli_mol, ppfd_umol, photo_efficiency, harvest_index, lighting{…}, crop_gas_exchange{o2_kg_day,co2_kg_day}, transpiration_water_kg_day, par_is_input_note` |
@@ -1457,6 +1467,26 @@ without `--integrated-rapidity` (or arc < |Δη|), |β| ≥ 1 → exit 1. **Anch
 4.4×10¹⁷ W @50g; 0.84% radiated @1 g-day; d-t → 2.25× ship mass; antimatter-pp η_dir 1.0 → 0.84%, default
 η_dir 0.5 → 1.69%; F=0 → power 0.
 
+**`--self-consistent` (R6 / Phase AL — self-consistent fuel-bill mode).** The first-order bill above treats
+ship mass as fixed; `--self-consistent` taxes the carried fuel + retained ash + η_dir waste that are part of
+the Bondi mass the law taxes (effective exponent k/η_dir). Requires a `--fuel` preset (to separate the
+mass→energy fraction `f` from `η_dir`) and a maneuver (Δη > 0). `--ash {keep,vent}` (default `keep`):
+**keep** yields the Packet-25 feasibility wall `X = (1−e^(−k·Δη/η_dir))/f < 1` and adds
+`fuel_mass_fraction_sc` (when feasible), `feasible`, `wall_ratio_x`, `k_wall = −η_dir·ln(1−f)/Δη`, and
+`lifetime_delta_v_budget_kms = c·tanh(−η_dir·ln(1−f)/k)`; **vent** (zero-relative-velocity dump) has no wall,
+`fuel_mass_fraction_sc = e^(k·Δη/f_conv) − 1`. The first-order fields are unchanged (sc → first-order as
+Δη → 0). Full-annihilation fuels (f = 1) have no finite `k_wall` (null) and a lightspeed Δv budget.
+```bash
+query.py metric-drive-power --mass-tonnes 1000 --accel-g 1 --duration-days 1 --fuel d-t --self-consistent          # infeasible, k_wall 1.329, budget 375.4 km/s
+query.py metric-drive-power --mass-tonnes 1000 --accel-g 1 --duration-days 1 --fuel d-t --k 1 --self-consistent     # feasible, fuel_mass_fraction_sc 3.04
+query.py metric-drive-power --mass-tonnes 1000 --accel-g 1 --duration-days 1 --fuel d-t --self-consistent --ash vent  # 8.59 (no wall)
+```
+Added output keys (only with `--self-consistent`): `{self_consistent, ash, feasible, fuel_mass_fraction_sc,
+wall_ratio_x, k_wall|null, lifetime_delta_v_budget_kms|null}`. **Validation:** `--ash vent` without
+`--self-consistent`, `keep` mode with only `--f-conv` (can't split f/η_dir), or no maneuver (Δη = 0) → exit 1.
+**Anchors:** D-T 1 g-day k=3 → infeasible / k_wall 1.329 / budget 375.4; k=1 → sc 3.04; antimatter-pp 25 g-day
+k=3 → sc 0.529; vent D-T k=3 → sc 8.59.
+
 #### `exclusion-boundary` (Q2)
 FTL exclusion-boundary radius **r_ex** (the "Alcubierre Limit") for a body:
 `r_ex = DIAL · (M/M☉)^α · (L/L☉)^β · (Ẇ/Ẇ_☉)^γ`, auto-calibrated so r_ex(Sun) = the Kuiper-edge anchor
@@ -1482,6 +1512,158 @@ model_note}` (`r_ex_au_alpha_*` only with `--scan-alpha`). **Validation:** M ≤
 non-positive dial/calibration, `β ≠ 0` with L ≤ 0, or a wind exponent (`γ ≠ 0`) with no wind input → exit 1.
 **Anchors:** Sun 47.5 AU; 0.1 M☉ → 22.05/15.02 AU (α 1/3, 1/2); 10 M☉ → 102.3/150.2 AU (harbor); explicit
 `--dial` overrides auto-cal; solar-wind term = 1 at the Ẇ=2×10⁻¹⁴ preset.
+
+### Power generation / storage / thermal (Phase AL — Group R, no network)
+
+Ten `query.py`-only, pure-math, self-validating calculators + two bundled-table subcommands for the
+sibling repo's **Packet 27** (Power Generation, Storage, Distribution, Thermal Management). Modules:
+`core/power.py` (R1/R2/R4/R7/R10), `core/energy_storage.py` (R8/R9), `core/thermal.py` (R3, beside the
+Phase V calcs), `core/power_tables.py` (T1/T2). Fission `f` rows added to `core/ism_drag_tables.py`
+(`_FISSION`). Every calc self-validates (curated `{"error"}` exit 1 / argparse exit 2) and carries a
+`model_note`; every bundled row carries a `source_tag` + `note` and is caller-overridable; load-bearing
+`[pin @ open]` values are flagged un-promoted. Composes with the existing `waste-heat` / `radiator-area` /
+`dyson-collector` / black-hole family for the full power→heat→rejection chain.
+
+#### `annihilation-power-train` (R1)
+Antimatter annihilation power partition: `P_total = ṁ·c²` split into directed / γ-heat / ν-loss.
+```bash
+query.py annihilation-power-train --mass-flow-kgs 1e-9                 # pp: total 8.99e7, directed 4.49e7, γ 3.0e7, ν 4.49e7
+query.py annihilation-power-train --power-total-w 1 --species ee       # ee → 2γ, no ν
+```
+Core: `power.compute_annihilation_power_train(mass_flow_kgs, power_total_w, species, eta_dir)`. Anchor
+(exactly one): `--mass-flow-kgs` (P=ṁc²) | `--power-total-w`. `--species {pp,ee}` (default pp); `--eta-dir`
+override (default 0.5 pp / 1.0 ee). Output: `{power_total_w, power_directed_w, power_gamma_w,
+power_neutrino_w, eta_dir, species, model_note}`. For `pp` the branching is fixed ≈½ν/⅓γ/⅙e± (γ = P/3, ν = P/2)
+and `power_directed_w = η_dir·P_total` is the design-capturable fraction (overlaps the channels, not a strict
+partition). **Validation:** both/neither anchor, non-positive value, bad species, η_dir ∉ (0,1] → exit 1.
+**Anchor:** pp, 1 µg/s → total 8.988e7 W; η_dir 0.5 → directed 4.494e7, γ 2.996e7, ν 4.494e7.
+
+#### `antimatter-production` (R2)
+Antimatter production energy floor + Penning-trap storage-density ceiling.
+```bash
+query.py antimatter-production --stored-mass-kg 1e-9 --production-efficiency 1e-4   # energy_in 8.99e11 J, floor 0.333
+query.py antimatter-production --stored-energy-j 8.99e7 --production-efficiency 1e-4 --trap-field-t 20
+```
+Core: `power.compute_antimatter_production(stored_mass_kg, stored_energy_j, production_efficiency,
+trap_field_t)`. Anchor (exactly one): `--stored-mass-kg` (E=mc²) | `--stored-energy-j`.
+**`--production-efficiency` is REQUIRED and un-defaulted** — the H-25-1 research input (Frisbee 2008;
+Schmidt/Gerrish/Martin NASA), never a shipped number. Optional `--trap-field-t` → the Brillouin
+space-charge mass-density ceiling ε₀·B²/2. Output: `{energy_in_j, energy_stored_j, production_efficiency,
+threshold_floor_efficiency, energy_ratio_in_per_stored, storage_density_kg_m3|null, trap_field_t, notes,
+model_note}`. `threshold_floor_efficiency = 2 m_p/6 m_p = 0.3333` (exact, baryon-conserving threshold).
+**Validation:** both/neither anchor, non-positive, missing efficiency, η ∉ (0,1], trap field ≤ 0 → exit 1.
+**Anchor:** stored 1 ng, η 1e-4 → stored 8.988e7 J, in 8.988e11 J, floor 0.3333, ratio 1e4.
+
+#### `reactor-net-power` (R4)
+Net-energy / Q-gate accounting: how much gross reactor output survives recirculation.
+```bash
+query.py reactor-net-power --gross-power-w 1e9 --thermal-efficiency 0.4 --q-plasma 10   # elec 4e8, net 3.6e8, breakeven 2.5
+```
+Core: `power.compute_reactor_net_power(gross_power_w, thermal_efficiency, q_plasma, recirculating_fraction)`.
+`--gross-power-w` + `--thermal-efficiency` required; `--q-plasma` (fusion Q-tax P_elec/Q → 0 at ignition);
+`--recirculating-fraction` [0,1) default 0. Output: `{gross_power_w, electric_power_w, net_power_w,
+engineering_breakeven_q, thermal_efficiency, q_plasma|null, recirculating_fraction, model_note}`. Net-energy
+only — specific power (W/kg) is `reactor-power` + the thermal pointer. `--q-plasma` can be fed from
+`fusion-lawson`. **Validation:** non-positive gross, η_th ∉ (0,1], q_plasma ≤ 0, recirc ∉ [0,1) → exit 1.
+**Anchor:** 1 GW / η 0.4 / Q 10 → electric 4.0e8, breakeven 2.5, net 3.6e8 W.
+
+#### `beamed-power-delivery` (R7)
+Diffraction-limited beamed-power link efficiency — the λL/D wall behind "beamed power".
+```bash
+query.py beamed-power-delivery --wavelength-m 1e-6 --tx-aperture-m 10 --rx-aperture-m 100 --range-m 1.496e11   # spot 36.5 km, capture 7.5e-6
+```
+Core: `power.compute_beamed_power_delivery(wavelength_m, frequency_hz, tx_aperture_m, rx_aperture_m, range_m,
+tx_power_w, pointing_efficiency)`. Wavelength anchor (exactly one): `--wavelength-m` | `--frequency-hz`;
+`--tx-aperture-m` / `--rx-aperture-m` / `--range-m` required; `--tx-power-w` (→ delivered), `--pointing-efficiency`
+default 1. `D_spot = 2.44·λ·L/D_t`, `capture = min(1, (D_r/D_spot)²)`, full coupling needs D_t·D_r ≳ 2.44·λ·L.
+Output: `{spot_diameter_m, capture_fraction, delivered_power_w|null, aperture_product_m2,
+full_coupling_product_m2, coupling_margin, wavelength_m, range_m, pointing_efficiency, model_note}`.
+**Validation:** both/neither wavelength anchor, any non-positive aperture/range, pointing ∉ (0,1] → exit 1.
+**Anchor:** λ 1 µm, D_t 10 m, L 1 AU → D_spot 3.65e4 m; D_r 100 m → capture 7.5e-6.
+
+#### `fusion-lawson` (R10)
+Lawson triple-product → fusion gain Q (grounds `reactor-net-power`'s `--q-plasma`). **General-power /
+civilian-reactor side ONLY** — does not reopen the metric-drive task-(d) f-wall.
+```bash
+query.py fusion-lawson --fuel d-t --triple-product 3e21                       # q 1, ignited (boundary)
+query.py fusion-lawson --fuel d-t --density-m3 1e21 --temp-kev 3 --confinement-s 1 --confinement-boost 3   # q 3
+```
+Core: `power.compute_fusion_lawson(fuel, density_m3, temp_kev, confinement_s, triple_product,
+confinement_boost)`. `--fuel {d-t,d-he3,d-d,p-b11}` required; supply the `(n,T,τ)` triple OR
+`--triple-product` directly; `--confinement-boost` (AG multiplier on n·τ, default 1). Output:
+`{triple_product_kev_s_m3, ignition_threshold, q_fusion, ignited, confinement_boost, fuel, model_note}`.
+Per-fuel ignition thresholds are **[pin @ open]** illustrative anchors (p-B11 ~10³× harder). **Validation:**
+bad fuel, no/partial triple + no `--triple-product`, both supplied, non-positive, boost ≤ 0 → exit 1.
+**Anchor:** D-T n·T·τ = 3e21 → q 1 (ignited boundary); boost 3 → q 3.
+
+#### `heat-pump` (R3)
+Active-refrigeration Carnot COP — the inverse of `waste-heat` (radiating from a cold reservoir).
+```bash
+query.py heat-pump --cold-temp-k 300 --hot-temp-k 320 --heat-lifted-w 1   # COP 15, work 0.0667 W, rejected 1.0667 W
+```
+Core: `thermal.compute_heat_pump(cold_temp_k, hot_temp_k, heat_lifted_w, work_w, efficiency_fraction)`.
+`--cold-temp-k` / `--hot-temp-k` required (T_h > T_c); load anchor (exactly one): `--heat-lifted-w` (Q_c) |
+`--work-w`; `--efficiency-fraction` (0,1] default 1 (fraction of Carnot COP). `COP_cool = T_c/(T_h−T_c)`;
+`W = Q_c/COP`; `heat_rejected = Q_c + W` (feeds `radiator-area` at T_h). Output: `{cop_cool_carnot,
+cop_heat_carnot, cop_cool_actual, work_w, heat_lifted_w, heat_rejected_w, cold_temp_k, hot_temp_k,
+efficiency_fraction, model_note}`. **Validation:** T ≤ 0, T_h ≤ T_c, both/neither load anchor, frac ∉ (0,1] →
+exit 1. **Anchor:** lift 1 W 300→320 K → COP 15, W 0.0667, rejected 1.0667 W.
+
+#### `flywheel-storage` (R8)
+Flywheel specific-energy ceiling `e = K·σ/ρ` (the material-strength wall, same σ as a rotating-habitat rim).
+```bash
+query.py flywheel-storage --tensile-strength-pa 5e9 --density-kgm3 1800 --shape-factor 0.5   # 1.39e6 J/kg (386 Wh/kg)
+```
+Core: `energy_storage.compute_flywheel_storage(tensile_strength_pa, density_kgm3, shape_factor, mass_kg)`.
+`--tensile-strength-pa` / `--density-kgm3` required; `--shape-factor` (0,1] default 0.5 (0.3 thin rim → 1.0
+constant-stress disk); `--mass-kg` → stored energy. Output: `{specific_energy_j_kg, specific_energy_wh_kg,
+stored_energy_j|null, shape_factor, tensile_strength_pa, density_kgm3, mass_kg, model_note}`. **Validation:**
+non-positive σ/ρ, K ∉ (0,1], mass ≤ 0 → exit 1. **Anchor:** σ 5e9 / ρ 1800 / K 0.5 → 1.389e6 J/kg; K 0.3 → 8.33e5.
+
+#### `smes-storage` (R9)
+SMES magnetic energy density `u = B²/2µ₀` + the structure-limited specific energy (same σ/ρ family as R8 — the
+magnetic pressure must be held by structure).
+```bash
+query.py smes-storage --field-t 20                                            # u 1.59e8 J/m³ (159 MJ/m³)
+query.py smes-storage --field-t 25 --critical-field-t 20 --tensile-strength-pa 5e9 --density-kgm3 1800
+```
+Core: `energy_storage.compute_smes_storage(field_t, critical_field_t, tensile_strength_pa, density_kgm3,
+volume_m3)`. `--field-t` required; `--critical-field-t` (flags `critical_field_exceeded` when B > B_c);
+`--tensile-strength-pa` + `--density-kgm3` **as a pair** → specific energy σ/ρ; `--volume-m3` → stored energy.
+Output: `{energy_density_j_m3, stored_energy_j|null, specific_energy_j_kg|null, field_t, critical_field_t,
+critical_field_exceeded|null, volume_m3, model_note}`. **Validation:** B ≤ 0, B_c ≤ 0, volume ≤ 0, only one of
+σ/ρ → exit 1. **Anchor:** B 20 T → u 1.592e8 J/m³.
+
+#### `energy-storage` (T1 — bundled table)
+Battery/chemical/thermal specific energies (where no clean floor law exists). No `--class` → all rows.
+```bash
+query.py energy-storage                                                       # all rows
+query.py energy-storage --class li-ion --override-wh-kg 500                    # single row, overridden
+query.py energy-storage --mass-kg 1000 --specific-heat-jkgk 4186 --delta-t-k 100   # sensible compute → 4.186e8 J
+query.py energy-storage --class latent-thermal --mass-kg 1000 --latent-heat-jkg 334000   # latent compute
+```
+Core: `power_tables.compute_energy_storage(class_name, override_wh_kg, mass_kg, specific_heat_jkgk, delta_t_k,
+latent_heat_jkg)`. Classes: `li-ion, supercapacitor, chemical-fuel, sensible-thermal, latent-thermal,
+gravitational` (all rows **[pin @ open]**). Compute branch: `--mass-kg` + `--specific-heat-jkgk` + `--delta-t-k`
+→ sensible `E=m·c_p·ΔT`; `--mass-kg` + `--latent-heat-jkg` → latent `E=m·L`. Output: lookup `{class,
+specific_energy_j_kg, specific_energy_wh_kg, volumetric_wh_l|null, round_trip_efficiency|null, leak_note,
+source_tag, note}` (+ `overridden` when `--override-wh-kg`, + `stored_energy_j` when computed); no-class → `{classes:[…]}`.
+Nuclear/antimatter ceilings come free from `f·c²` (not rows). **Validation:** unknown class → curated error
+listing valid keys; both compute branches, mass ≤ 0, non-positive override → exit 1.
+
+#### `reactor-power` (T2 — bundled table)
+Reactor specific power `α = P/m` [kW/kg] — no floor-physics law, so a table + a **mandatory thermal pointer**.
+```bash
+query.py reactor-power                                                         # all rows
+query.py reactor-power --class fusion --gross-power-w 1e9                       # implied core_mass_kg 2e5
+```
+Core: `power_tables.compute_reactor_power(class_name, override_kw_kg, gross_power_w)`. Classes: `fission,
+fusion, antimatter, rtg, solar-thermal` (all α **[pin @ open]**). `--override-kw-kg` substitutes α (echoed);
+`--gross-power-w` → implied `core_mass_kg = P/(α·1000)`. Output: `{class, specific_power_kw_kg, core_mass_kg|null,
+source_tag, note, thermal_pointer}` (+ `overridden`); no-class → `{classes:[…], thermal_pointer}`. **Every result
+carries `thermal_pointer`** — the real high-P ceiling is thermal (compose `reactor-net-power`/`waste-heat` →
+`radiator-area`), not core mass. **Validation:** unknown class → curated error listing valid keys; gross ≤ 0,
+override ≤ 0 → exit 1.
 
 ### Megastructure scale (Phase Z — pure math + bundled material/body tables, no network)
 

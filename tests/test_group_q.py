@@ -131,6 +131,73 @@ class MetricDrivePowerErrors(unittest.TestCase):
         self._err(rapidity=0.01, fuel="unobtainium")
 
 
+class MetricDriveSelfConsistent(unittest.TestCase):
+    """R6 (Phase AL) — the self-consistent fuel-bill / feasibility-wall anchors
+    (metric-drive-power-followups.md; all 7 hand-derived 2026-07-13)."""
+
+    def _leg(self, days, fuel, k, **kw):
+        return md.compute_metric_drive_power(
+            mass_tonnes=1000.0, accel_g=1.0, duration_days=days,
+            fuel=fuel, k=k, self_consistent=True, **kw)
+
+    def test_anchor1_dt_1gday_k3_infeasible(self):
+        r = self._leg(1, "d-t", 3)
+        self.assertFalse(r["feasible"])
+        self.assertIsNone(r["fuel_mass_fraction_sc"])
+        self.assertAlmostEqual(r["k_wall"], 1.3293, places=3)
+        self.assertAlmostEqual(r["lifetime_delta_v_budget_kms"], 375.4, delta=0.1)
+
+    def test_anchor2_dt_1gday_k1(self):
+        r = self._leg(1, "d-t", 1)
+        self.assertTrue(r["feasible"])
+        self.assertAlmostEqual(r["fuel_mass_fraction_sc"], 3.0422, places=3)
+        # first-order field must stay unchanged (0.753 at k=1).
+        self.assertAlmostEqual(r["fuel_mass_fraction"], 0.7526, places=3)
+
+    def test_anchor3_antimatter_25gday_k3(self):
+        r = self._leg(25, "antimatter-pp", 3)
+        self.assertAlmostEqual(r["fuel_mass_fraction_sc"], 0.5291, places=3)
+        self.assertAlmostEqual(r["fuel_mass_fraction"], 0.383, places=2)
+
+    def test_anchor4_antimatter_50gday(self):
+        self.assertAlmostEqual(self._leg(50, "antimatter-pp", 3)["fuel_mass_fraction_sc"],
+                               1.3481, places=3)
+        self.assertAlmostEqual(self._leg(50, "antimatter-pp", 1)["fuel_mass_fraction_sc"],
+                               0.3291, places=3)
+
+    def test_anchor5_vent_dt_1gday_k3(self):
+        r = self._leg(1, "d-t", 3, ash="vent")
+        self.assertTrue(r["feasible"])
+        self.assertIsNone(r["k_wall"])
+        self.assertAlmostEqual(r["fuel_mass_fraction_sc"], 8.5929, places=3)
+
+    def test_anchor6_small_delta_eta_agrees_with_first_order(self):
+        # sc → first-order as Δη → 0 (rapidity 1e-5, keep mode).
+        r = md.compute_metric_drive_power(rapidity=1e-5, fuel="d-t", k=3.0,
+                                          self_consistent=True)
+        fo, sc = r["fuel_mass_fraction"], r["fuel_mass_fraction_sc"]
+        self.assertLess(abs(sc - fo) / fo, 0.01)
+
+    def test_anchor7_vent_without_self_consistent_errors(self):
+        r = md.compute_metric_drive_power(rapidity=0.01, fuel="d-t", ash="vent")
+        self.assertIn("error", r)
+
+    def test_keep_requires_fuel_preset(self):
+        # --f-conv alone can't split f from η_dir for keep mode.
+        r = md.compute_metric_drive_power(rapidity=0.01, f_conv=0.001, self_consistent=True)
+        self.assertIn("error", r)
+
+    def test_no_maneuver_errors(self):
+        r = md.compute_metric_drive_power(thrust_n=1.0, fuel="d-t", self_consistent=True)
+        self.assertIn("error", r)
+
+    def test_back_compat_no_sc_keys_by_default(self):
+        r = md.compute_metric_drive_power(mass_tonnes=1000.0, accel_g=1.0, duration_days=1.0,
+                                          fuel="d-t")
+        self.assertNotIn("feasible", r)
+        self.assertNotIn("fuel_mass_fraction_sc", r)
+
+
 class MetricDriveBeamCrossCheck(unittest.TestCase):
     """Q1's beam side must agree with beam-sail's reflecting-sail momentum (2P/c)."""
 

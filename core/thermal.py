@@ -151,6 +151,65 @@ def compute_waste_heat(input_power_watts=None, useful_power_watts=None,
     }
 
 
+# ── R3 (Phase AL) — heat pump / active-refrigeration Carnot COP ──────────────
+
+def compute_heat_pump(cold_temp_k=None, hot_temp_k=None, heat_lifted_w=None,
+                      work_w=None, efficiency_fraction=1.0):
+    """Active-refrigeration Carnot COP — the inverse of ``compute_waste_heat``.
+
+    Fills the hole ``waste-heat``'s model note names ("Steady refrigeration/pump work is out of
+    scope"). Needed for radiating from a *cold* reservoir, cooling below ambient, and the
+    thermal-stealth question. ``COP_cool = T_c/(T_h−T_c)``; a real device reaches
+    ``efficiency_fraction`` of that ideal. Supply exactly one load anchor — the lifted heat
+    ``heat_lifted_w`` (Q_c) or the input ``work_w`` (W). Total heat rejected at T_h is Q_c + W,
+    which feeds ``compute_radiator_area`` at T_h.
+    """
+    if cold_temp_k is None or hot_temp_k is None:
+        return {"error": "Provide both cold_temp_k and hot_temp_k."}
+    if cold_temp_k <= 0 or hot_temp_k <= 0:
+        return {"error": "cold_temp_k and hot_temp_k must be > 0."}
+    if hot_temp_k <= cold_temp_k:
+        return {"error": "hot_temp_k must be > cold_temp_k (a heat pump rejects to a warmer "
+                         "reservoir; lifting heat requires T_hot > T_cold)."}
+    if not (0.0 < efficiency_fraction <= 1.0):
+        return {"error": "efficiency_fraction must be in (0, 1] (fraction of the Carnot COP)."}
+    if (heat_lifted_w is None) == (work_w is None):
+        return {"error": "Provide exactly one of heat_lifted_w or work_w."}
+    if heat_lifted_w is not None and heat_lifted_w <= 0:
+        return {"error": "heat_lifted_w must be > 0."}
+    if work_w is not None and work_w <= 0:
+        return {"error": "work_w must be > 0."}
+
+    cop_cool_carnot = cold_temp_k / (hot_temp_k - cold_temp_k)
+    cop_heat_carnot = hot_temp_k / (hot_temp_k - cold_temp_k)
+    cop_cool_actual = efficiency_fraction * cop_cool_carnot
+
+    if heat_lifted_w is not None:
+        q_c = heat_lifted_w
+        work = q_c / cop_cool_actual
+    else:
+        work = work_w
+        q_c = work * cop_cool_actual
+    heat_rejected = q_c + work
+
+    return {
+        "cop_cool_carnot": cop_cool_carnot,
+        "cop_heat_carnot": cop_heat_carnot,
+        "cop_cool_actual": cop_cool_actual,
+        "work_w": work,
+        "heat_lifted_w": q_c,
+        "heat_rejected_w": heat_rejected,
+        "cold_temp_k": cold_temp_k,
+        "hot_temp_k": hot_temp_k,
+        "efficiency_fraction": efficiency_fraction,
+        "model_note": ("Carnot refrigeration: COP_cool = T_c/(T_h−T_c), COP_heat = T_h/(T_h−T_c); "
+                       "a real device reaches efficiency_fraction × the Carnot COP. Work "
+                       "W = Q_c/COP_cool; total heat rejected at T_h = Q_c + W (feeds radiator-area "
+                       "at T_h). The inverse of waste-heat's forward engine; ideal/first-principles, "
+                       "efficiency_fraction is the single lumped device-quality knob."),
+    }
+
+
 # ── F2 — radiator area (Stefan–Boltzmann rejection wall) ─────────────────────
 
 def compute_radiator_area(heat_watts=None, input_power_watts=None, efficiency=None,

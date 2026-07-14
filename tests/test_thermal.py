@@ -366,6 +366,41 @@ class ShieldingValidationTest(unittest.TestCase):
             self.assertIn("error", thermal.compute_shielding_attenuation(**kw), kw)
 
 
+class HeatPumpTest(unittest.TestCase):
+    """R3 (Phase AL) — active-refrigeration Carnot COP (the inverse of waste-heat)."""
+
+    def test_anchor_lift_1w_300_to_320(self):
+        r = thermal.compute_heat_pump(cold_temp_k=300, hot_temp_k=320, heat_lifted_w=1.0)
+        self.assertAlmostEqual(r["cop_cool_carnot"], 15.0, places=6)
+        self.assertAlmostEqual(r["cop_heat_carnot"], 16.0, places=6)
+        self.assertAlmostEqual(r["work_w"], 1.0 / 15.0, places=9)
+        self.assertAlmostEqual(r["heat_rejected_w"], 1.0 + 1.0 / 15.0, places=9)
+        self.assertIn("model_note", r)
+
+    def test_work_anchor_consistent_with_heat_anchor(self):
+        # Q_c given and W given should round-trip to the same heat_rejected_w.
+        by_qc = thermal.compute_heat_pump(cold_temp_k=300, hot_temp_k=320, heat_lifted_w=1.0)
+        by_w = thermal.compute_heat_pump(cold_temp_k=300, hot_temp_k=320, work_w=by_qc["work_w"])
+        self.assertAlmostEqual(by_w["heat_lifted_w"], 1.0, places=9)
+        self.assertAlmostEqual(by_w["heat_rejected_w"], by_qc["heat_rejected_w"], places=9)
+
+    def test_efficiency_fraction_scales_cop(self):
+        r = thermal.compute_heat_pump(cold_temp_k=300, hot_temp_k=320, heat_lifted_w=1.0,
+                                      efficiency_fraction=0.5)
+        self.assertAlmostEqual(r["cop_cool_actual"], 7.5, places=6)
+
+    def test_errors(self):
+        for kw in (
+            {"cold_temp_k": 320, "hot_temp_k": 300, "heat_lifted_w": 1.0},   # T_h <= T_c
+            {"cold_temp_k": 300, "hot_temp_k": 320},                         # no load anchor
+            {"cold_temp_k": 300, "hot_temp_k": 320, "heat_lifted_w": 1.0, "work_w": 1.0},  # both
+            {"cold_temp_k": -1, "hot_temp_k": 320, "heat_lifted_w": 1.0},    # T <= 0
+            {"cold_temp_k": 300, "hot_temp_k": 320, "heat_lifted_w": 1.0,
+             "efficiency_fraction": 1.5},                                    # frac out of range
+        ):
+            self.assertIn("error", thermal.compute_heat_pump(**kw))
+
+
 class DeterminismTest(unittest.TestCase):
     def test_deterministic(self):
         for fn, kw in (
@@ -373,6 +408,8 @@ class DeterminismTest(unittest.TestCase):
             (thermal.compute_radiator_area, {"heat_watts": 1e9, "radiator_temp_k": 300}),
             (thermal.compute_shielding_attenuation,
              {"material": "water", "energy_mev": 1.0, "areal_density_gcm2": 20}),
+            (thermal.compute_heat_pump,
+             {"cold_temp_k": 300, "hot_temp_k": 320, "heat_lifted_w": 1.0}),
         ):
             self.assertEqual(fn(**kw), fn(**kw))
 

@@ -82,6 +82,29 @@ _FUSION = {
 
 _DEFAULT_FUSION_EFFICIENCY = 0.1   # directed-exhaust fraction η (low; ideal η=1 → pp v_e ≈ 0.12c)
 
+# ── fission mass→energy fractions f (Phase AL / Group R R5) ───────────────────
+# Sibling of _FUSION: the RECOVERABLE mass→energy fraction of nuclear fission, so fission is
+# consistent with the fusion/antimatter energetics and its storage ceiling falls out of f·c² for
+# free (≈8.2×10¹³ J/kg for U-235). Transcribed, not fitted; MTA-movable; caller-overridable.
+# f = E_recoverable[MeV] / (u · 931.494 MeV/u). ~8.8 MeV/fission of the ~210 MeV total leaves as
+# antineutrinos (unrecoverable) — the f here is the recoverable fraction (flagged in each note).
+_FISSION = {
+    "u235": {
+        "f": 9.14e-4,
+        "note": "²³⁵U thermal fission, ~200 MeV recoverable / (235.04 u · 931.494) = 9.14×10⁻⁴ "
+                "mass→energy (RECOVERABLE; ~8.8 MeV/fission of ~210 MeV total is lost to "
+                "antineutrinos). f·c² ≈ 8.21×10¹³ J/kg storage ceiling. Cross-check: the precise "
+                "202.5 MeV/atom → 8.31×10¹³ J/kg agrees within ~1.2% (Wikipedia Uranium-235, "
+                "verified 2026-07-14).",
+    },
+    "pu239": {
+        "f": 9.3e-4,
+        "note": "²³⁹Pu fast/thermal fission, ~207 MeV recoverable / (239.05 u · 931.494) = "
+                "9.3×10⁻⁴ mass→energy (RECOVERABLE; antineutrino loss excluded). f·c² ≈ "
+                "8.36×10¹³ J/kg storage ceiling.",
+    },
+}
+
 _SOURCES = (
     "Coefficients/fractions confirmed 2026-07-02: drag C_d=1.0 (Zubrin & Andrews explicit, "
     "Wikipedia Magnetic sail); standoff k=1.0 simple pressure balance (compressed factor f=2/2.44, "

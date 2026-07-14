@@ -32,6 +32,9 @@ import core.ism_drag as ism_drag
 import core.life_support as life_support
 import core.megastructure as megastructure
 import core.par_flux as par_flux
+import core.power as power
+import core.power_tables as power_tables
+import core.energy_storage as energy_storage
 import core.projects as projects
 import core.relativity as relativity
 import core.propulsion as propulsion
@@ -479,7 +482,76 @@ def cmd_metric_drive_power(args):
         duration_days=args.duration_days,
         k=args.k, fuel=args.fuel, f_conv=args.f_conv, eta_dir=args.eta_dir,
         turn=args.turn, integrated_rapidity=args.integrated_rapidity,
-        beam_compare=args.beam_compare))
+        beam_compare=args.beam_compare,
+        self_consistent=args.self_consistent, ash=args.ash))
+
+
+# ── Phase AL (Group R) — power generation / storage / thermal (Pkt 27) ────────
+
+def cmd_annihilation_power_train(args):
+    _out(power.compute_annihilation_power_train(
+        mass_flow_kgs=args.mass_flow_kgs, power_total_w=args.power_total_w,
+        species=args.species, eta_dir=args.eta_dir))
+
+
+def cmd_antimatter_production(args):
+    _out(power.compute_antimatter_production(
+        stored_mass_kg=args.stored_mass_kg, stored_energy_j=args.stored_energy_j,
+        production_efficiency=args.production_efficiency, trap_field_t=args.trap_field_t))
+
+
+def cmd_reactor_net_power(args):
+    _out(power.compute_reactor_net_power(
+        gross_power_w=args.gross_power_w, thermal_efficiency=args.thermal_efficiency,
+        q_plasma=args.q_plasma, recirculating_fraction=args.recirculating_fraction))
+
+
+def cmd_beamed_power_delivery(args):
+    _out(power.compute_beamed_power_delivery(
+        wavelength_m=args.wavelength_m, frequency_hz=args.frequency_hz,
+        tx_aperture_m=args.tx_aperture_m, rx_aperture_m=args.rx_aperture_m,
+        range_m=args.range_m, tx_power_w=args.tx_power_w,
+        pointing_efficiency=args.pointing_efficiency))
+
+
+def cmd_fusion_lawson(args):
+    _out(power.compute_fusion_lawson(
+        fuel=args.fuel, density_m3=args.density_m3, temp_kev=args.temp_kev,
+        confinement_s=args.confinement_s, triple_product=args.triple_product,
+        confinement_boost=args.confinement_boost))
+
+
+def cmd_heat_pump(args):
+    _out(thermal.compute_heat_pump(
+        cold_temp_k=args.cold_temp_k, hot_temp_k=args.hot_temp_k,
+        heat_lifted_w=args.heat_lifted_w, work_w=args.work_w,
+        efficiency_fraction=args.efficiency_fraction))
+
+
+def cmd_flywheel_storage(args):
+    _out(energy_storage.compute_flywheel_storage(
+        tensile_strength_pa=args.tensile_strength_pa, density_kgm3=args.density_kgm3,
+        shape_factor=args.shape_factor, mass_kg=args.mass_kg))
+
+
+def cmd_smes_storage(args):
+    _out(energy_storage.compute_smes_storage(
+        field_t=args.field_t, critical_field_t=args.critical_field_t,
+        tensile_strength_pa=args.tensile_strength_pa, density_kgm3=args.density_kgm3,
+        volume_m3=args.volume_m3))
+
+
+def cmd_energy_storage(args):
+    _out(power_tables.compute_energy_storage(
+        class_name=args.storage_class, override_wh_kg=args.override_wh_kg,
+        mass_kg=args.mass_kg, specific_heat_jkgk=args.specific_heat_jkgk,
+        delta_t_k=args.delta_t_k, latent_heat_jkg=args.latent_heat_jkg))
+
+
+def cmd_reactor_power(args):
+    _out(power_tables.compute_reactor_power(
+        class_name=args.reactor_class, override_kw_kg=args.override_kw_kg,
+        gross_power_w=args.gross_power_w))
 
 
 def _resolve_star_mass_lum(name):
@@ -2561,6 +2633,12 @@ def main(argv=None):
                    help="The integral of |a| du arc for --turn (>= |delta-eta|)")
     p.add_argument("--beam-compare", action="store_true",
                    help="Emit the beam-vs-onboard crossover block (crossover k = 0.5)")
+    p.add_argument("--self-consistent", action="store_true",
+                   help="R6: self-consistent fuel bill (taxes carried fuel/ash + η_dir waste); "
+                        "'keep' mode reports the feasibility wall + k_wall + lifetime Δv budget")
+    p.add_argument("--ash", choices=["keep", "vent"], default="keep",
+                   help="Ash retention for --self-consistent: keep (default; fuel-wall) or vent "
+                        "(zero-relative-velocity dump, no wall)")
     p.set_defaults(func=cmd_metric_drive_power)
 
     # exclusion-boundary (Q2)
@@ -2586,6 +2664,127 @@ def main(argv=None):
     p.add_argument("--scan-alpha", action="store_true",
                    help="Also emit r_ex at both alpha edges (1/3 and 1/2)")
     p.set_defaults(func=cmd_exclusion_boundary)
+
+    # ── Phase AL (Group R) — power generation / storage / thermal (Pkt 27) ────
+
+    # annihilation-power-train (R1)
+    p = sub.add_parser("annihilation-power-train",
+                       help="Antimatter annihilation power partition: directed / γ-heat / ν-loss")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--mass-flow-kgs", type=float, help="Annihilation mass flow, kg/s (P=ṁc²)")
+    g.add_argument("--power-total-w", type=float, help="Total annihilation power, W (alt to mass-flow)")
+    p.add_argument("--species", choices=["pp", "ee"], default="pp",
+                   help="pp (proton-antiproton, ½ν/⅓γ/⅙e±) or ee (positron-electron → 2γ); default pp")
+    p.add_argument("--eta-dir", type=float,
+                   help="Directed/usable fraction (default 0.5 pp / 1.0 ee)")
+    p.set_defaults(func=cmd_annihilation_power_train)
+
+    # antimatter-production (R2)
+    p = sub.add_parser("antimatter-production",
+                       help="Antimatter production energy floor + Penning-trap storage-density ceiling")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--stored-mass-kg", type=float, help="Stored antimatter mass, kg (E=mc²)")
+    g.add_argument("--stored-energy-j", type=float, help="Stored (annihilation-usable) energy, J")
+    p.add_argument("--production-efficiency", type=float,
+                   help="Wall-plug → stored efficiency (REQUIRED; the H-25-1 research input, no default)")
+    p.add_argument("--trap-field-t", type=float,
+                   help="Penning-trap field, T → the Brillouin storage-density ceiling ε₀B²/2")
+    p.set_defaults(func=cmd_antimatter_production)
+
+    # reactor-net-power (R4)
+    p = sub.add_parser("reactor-net-power",
+                       help="Net-energy / Q-gate accounting: gross → electric → net (survives recirc)")
+    p.add_argument("--gross-power-w", type=float, required=True, help="Gross thermal power, W")
+    p.add_argument("--thermal-efficiency", type=float, required=True,
+                   help="Thermal→electric efficiency η_th (0 < η ≤ 1)")
+    p.add_argument("--q-plasma", type=float,
+                   help="Fusion plasma gain Q (P_out/P_heat) → the Q-tax; omit for non-fusion")
+    p.add_argument("--recirculating-fraction", type=float, default=0.0,
+                   help="Aux + drive recirculating fraction [0, 1) (default 0)")
+    p.set_defaults(func=cmd_reactor_net_power)
+
+    # beamed-power-delivery (R7)
+    p = sub.add_parser("beamed-power-delivery",
+                       help="Diffraction-limited beamed-power link efficiency (the λL/D wall)")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--wavelength-m", type=float, help="Beam wavelength, m")
+    g.add_argument("--frequency-hz", type=float, help="Beam frequency, Hz (alt to wavelength)")
+    p.add_argument("--tx-aperture-m", type=float, required=True, help="Transmit aperture D_t, m")
+    p.add_argument("--rx-aperture-m", type=float, required=True, help="Receive aperture D_r, m")
+    p.add_argument("--range-m", type=float, required=True, help="Link range L, m")
+    p.add_argument("--tx-power-w", type=float, help="Transmit power, W (→ delivered_power_w)")
+    p.add_argument("--pointing-efficiency", type=float, default=1.0,
+                   help="Pointing efficiency (0 < η ≤ 1, default 1)")
+    p.set_defaults(func=cmd_beamed_power_delivery)
+
+    # fusion-lawson (R10)
+    p = sub.add_parser("fusion-lawson",
+                       help="Lawson triple-product → fusion gain Q (general-power / reactor side ONLY)")
+    p.add_argument("--fuel", choices=sorted(power._LAWSON_IGNITION), required=True,
+                   help="Fusion fuel (d-t, d-he3, d-d, p-b11)")
+    p.add_argument("--density-m3", type=float, help="Plasma number density n, m⁻³")
+    p.add_argument("--temp-kev", type=float, help="Ion temperature T, keV")
+    p.add_argument("--confinement-s", type=float, help="Energy confinement time τ, s")
+    p.add_argument("--triple-product", type=float,
+                   help="n·T·τ directly, keV·s·m⁻³ (alt to the n/T/τ triple)")
+    p.add_argument("--confinement-boost", type=float, default=1.0,
+                   help="AG confinement multiplier on n·τ (default 1.0; feeds reactor-net-power)")
+    p.set_defaults(func=cmd_fusion_lawson)
+
+    # heat-pump (R3)
+    p = sub.add_parser("heat-pump",
+                       help="Active-refrigeration Carnot COP (the inverse of waste-heat)")
+    p.add_argument("--cold-temp-k", type=float, required=True, help="Cold-reservoir temperature T_c, K")
+    p.add_argument("--hot-temp-k", type=float, required=True, help="Hot (reject) temperature T_h, K")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--heat-lifted-w", type=float, help="Heat lifted from the cold reservoir Q_c, W")
+    g.add_argument("--work-w", type=float, help="Input work W, W (alt to Q_c)")
+    p.add_argument("--efficiency-fraction", type=float, default=1.0,
+                   help="Fraction of the Carnot COP (0 < f ≤ 1, default 1 = ideal)")
+    p.set_defaults(func=cmd_heat_pump)
+
+    # flywheel-storage (R8)
+    p = sub.add_parser("flywheel-storage",
+                       help="Flywheel specific-energy ceiling e = K·σ/ρ (material-strength wall)")
+    p.add_argument("--tensile-strength-pa", type=float, required=True, help="Tensile strength σ, Pa")
+    p.add_argument("--density-kgm3", type=float, required=True, help="Rotor density ρ, kg/m³")
+    p.add_argument("--shape-factor", type=float, default=0.5,
+                   help="Shape factor K (0.3 thin rim → 1.0 constant-stress disk; default 0.5)")
+    p.add_argument("--mass-kg", type=float, help="Rotor mass, kg (→ stored_energy_j)")
+    p.set_defaults(func=cmd_flywheel_storage)
+
+    # smes-storage (R9)
+    p = sub.add_parser("smes-storage",
+                       help="SMES magnetic energy density u = B²/2µ₀ + structure-limited specific energy")
+    p.add_argument("--field-t", type=float, required=True, help="Magnetic field B, T")
+    p.add_argument("--critical-field-t", type=float,
+                   help="Critical field B_c, T (flags critical_field_exceeded when B > B_c)")
+    p.add_argument("--tensile-strength-pa", type=float,
+                   help="Structure tensile strength σ, Pa (with --density-kgm3 → specific energy σ/ρ)")
+    p.add_argument("--density-kgm3", type=float, help="Structure density ρ, kg/m³ (with σ)")
+    p.add_argument("--volume-m3", type=float, help="Coil volume, m³ (→ stored_energy_j)")
+    p.set_defaults(func=cmd_smes_storage)
+
+    # energy-storage (T1 table)
+    p = sub.add_parser("energy-storage",
+                       help="Bundled battery/chemical/thermal specific energies (+ sensible/latent compute)")
+    p.add_argument("--class", dest="storage_class",
+                   help="A storage class (omit → all rows); unknown → curated error listing valid keys")
+    p.add_argument("--override-wh-kg", type=float, help="Override the row's specific energy, Wh/kg")
+    p.add_argument("--mass-kg", type=float, help="Mass, kg (compute branch → stored_energy_j)")
+    p.add_argument("--specific-heat-jkgk", type=float, help="c_p, J/kg·K (sensible: E=m·c_p·ΔT)")
+    p.add_argument("--delta-t-k", type=float, help="ΔT, K (sensible compute)")
+    p.add_argument("--latent-heat-jkg", type=float, help="Latent heat L, J/kg (latent: E=m·L)")
+    p.set_defaults(func=cmd_energy_storage)
+
+    # reactor-power (T2 table)
+    p = sub.add_parser("reactor-power",
+                       help="Bundled reactor specific power α=P/m [kW/kg] + mandatory thermal pointer")
+    p.add_argument("--class", dest="reactor_class",
+                   help="A reactor class (omit → all rows); unknown → curated error listing valid keys")
+    p.add_argument("--override-kw-kg", type=float, help="Override the row's specific power, kW/kg")
+    p.add_argument("--gross-power-w", type=float, help="Gross power, W (→ implied core_mass_kg = P/α)")
+    p.set_defaults(func=cmd_reactor_power)
 
     # ── Phase T1c — census-filter presets ────────────────────────────────────
 

@@ -83,6 +83,12 @@ _FIELD_FUEL = {
 _TSIOLKOVSKY_K_BASELINE = 3.0          # GR geometric baseline ⟨cos²θ⟩=1/3 → c/3
 _BEAM_CROSSOVER_K = 0.5                # onboard beats beam only if k < this
 
+_SELF_CONSISTENT_NOTE = (
+    "First-order bill valid for fuel ≪ ship; self-consistent mode taxes carried fuel/ash and η_dir "
+    "waste (effective exponent k/η_dir). Ash-vent mode treats vented mass as a zero-velocity dump "
+    "only — ash used as reaction mass (hybrid field+material thrust) is NOT modeled here."
+)
+
 _MODEL_NOTE = (
     "Metric-drive field-rocket law (Le 2026 arXiv:2606.22531, PRELIMINARY). "
     "SUBLUMINAL / STL-MODE LAW ONLY: the theorem's hypotheses (DEC-satisfying, spatially "
@@ -124,15 +130,29 @@ def compute_metric_drive_power(
         thrust_n=None, accel_g=None, accel_ms2=None,
         delta_v_kms=None, delta_v_c=None, rapidity=None, duration_days=None,
         k=3.0, fuel=None, f_conv=None, eta_dir=None,
-        turn=False, integrated_rapidity=None, beam_compare=False):
+        turn=False, integrated_rapidity=None, beam_compare=False,
+        self_consistent=False, ash="keep"):
     """Field-rocket radiated power + fuel-mass bill for the metric drive (OQ-MD-5).
 
     See the module docstring for the full physics. Returns the JSON result dict, or a curated
     ``{"error": str}`` on missing/contradictory maneuver inputs, f_conv ≤ 0, or k ≤ 0.
+
+    R6 (Phase AL) — ``self_consistent`` adds the Packet-25 fuel-wall accounting (Le 2026 exact law
+    ``m_f/m_0 = e^(−k∫|a|du)`` with the conversion split): the first-order bill treats ship mass as
+    fixed, but carried fuel + retained ash + η_dir waste are all part of the Bondi mass the law taxes.
+    ``ash='keep'`` (default) yields the feasibility wall ``X = (1−e^(−k·Δη/η_dir))/f < 1`` and reports
+    ``k_wall`` + ``lifetime_delta_v_budget_kms``; ``ash='vent'`` (zero-relative-velocity dump) has no
+    wall. The existing first-order fields are unchanged (sc → first-order as Δη → 0).
     """
     # ── k ──
     if k is None or k <= 0:
         return {"error": "--k (Tsiolkovsky constant) must be > 0 — reactionless (k=0) is forbidden."}
+
+    # ── self-consistent mode (R6) — ash retention validation ──
+    if ash not in ("keep", "vent"):
+        return {"error": "--ash must be 'keep' or 'vent'."}
+    if ash == "vent" and not self_consistent:
+        return {"error": "--ash vent is only used with --self-consistent."}
 
     # ── mass ──
     m0 = _resolve_mass_kg(mass_kg, mass_tonnes)
@@ -234,6 +254,60 @@ def compute_metric_drive_power(
         if m0 is not None:
             fuel_mass_kg = fuel_mass_fraction * m0
 
+    # ── self-consistent fuel-bill (R6) — taxes carried fuel/ash + η_dir waste ──
+    sc_block = None
+    if self_consistent:
+        if eta_used <= 0:
+            return {"error": "--self-consistent needs a maneuver with Δη > 0 (supply "
+                             "--delta-v-*/--rapidity or a leg via --accel-* + --duration-days)."}
+        if ash == "keep":
+            # keep mode needs f (mass→energy) and η_dir SEPARATELY, not just their product f_conv.
+            if fuel_key is not None:
+                f_fuel = _FIELD_FUEL[fuel_key]["f"]
+                eta_dir_val = resolved_eta_dir
+            else:
+                return {"error": "--self-consistent 'keep' mode needs a --fuel preset (to separate "
+                                 "the mass→energy fraction f from η_dir); --f-conv alone cannot be "
+                                 "split. Use --ash vent for the f_conv-only dump model."}
+            X = (1.0 - math.exp(-k * eta_used / eta_dir_val)) / f_fuel
+            feasible = X < 1.0
+            fuel_mass_fraction_sc = X / (1.0 - X) if feasible else None
+            if f_fuel >= 1.0:
+                # full annihilation → ln(1−f) diverges: no finite wall (always feasible), and
+                # the Δv budget saturates at c (tanh → 1).
+                k_wall = None
+                budget_kms = _C_MS / 1000.0
+            else:
+                k_wall = -eta_dir_val * math.log(1.0 - f_fuel) / eta_used
+                budget_kms = _C_MS * math.tanh(-eta_dir_val * math.log(1.0 - f_fuel) / k) / 1000.0
+            sc_block = {
+                "self_consistent": True,
+                "ash": "keep",
+                "feasible": feasible,
+                "fuel_mass_fraction_sc": fuel_mass_fraction_sc,
+                "wall_ratio_x": X,
+                "k_wall": k_wall,
+                "lifetime_delta_v_budget_kms": budget_kms,
+            }
+        else:  # vent — zero-relative-velocity dump, no wall
+            if resolved_f_conv is None:
+                return {"error": "--self-consistent 'vent' mode needs a fuel (--fuel or --f-conv) "
+                                 "for the effective f_conv."}
+            fuel_mass_fraction_sc = math.exp(k * eta_used / resolved_f_conv) - 1.0
+            sc_block = {
+                "self_consistent": True,
+                "ash": "vent",
+                "feasible": True,
+                "fuel_mass_fraction_sc": fuel_mass_fraction_sc,
+                "wall_ratio_x": None,
+                "k_wall": None,
+                "lifetime_delta_v_budget_kms": None,
+            }
+
+    model_note = _MODEL_NOTE
+    if self_consistent:
+        model_note = _MODEL_NOTE + " " + _SELF_CONSISTENT_NOTE
+
     result = {
         "propulsion_power_w": propulsion_power_w,
         "power_gw_per_n": power_gw_per_n,
@@ -249,8 +323,11 @@ def compute_metric_drive_power(
         "k": k,
         "ship_mass_kg": m0,
         "turn": turn,
-        "model_note": _MODEL_NOTE,
+        "model_note": model_note,
     }
+
+    if sc_block is not None:
+        result.update(sc_block)
 
     # ── beam-vs-onboard crossover ──
     if beam_compare:
