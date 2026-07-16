@@ -374,7 +374,18 @@ def _add_find_box(panel):
     panel._find_matches = []
     panel._find_idx = 0
     existing = getattr(panel, "_find_widget", None)
-    if existing is not None and existing.parent() is cont:
+    # `_find_widget` is a panel-level attribute that survives reset() as a
+    # dangling reference: reset() deletes the old container via deleteLater(),
+    # and the real event loop's DeferredDelete pass frees the old find widget's
+    # C++ object. Touching a freed widget (even `.parent()`) raises RuntimeError,
+    # which would abort _render() before _finish_render() — leaving the table
+    # visible but the "Show Diagrams" button hidden. Treat a freed/mismatched
+    # widget as stale and rebuild a fresh box.
+    try:
+        reuse = existing is not None and existing.parent() is cont
+    except RuntimeError:
+        reuse = False
+    if reuse:
         existing.show()
         if getattr(panel, "_find_input", None) is not None:
             panel._find_input.clear()

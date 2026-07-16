@@ -1683,15 +1683,16 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
     # Per-star labels "Name (Z=±X.XXX)". Anchored to each star with a fixed
     # PIXEL offset (textcoords="offset points") so the label stays glued to its
     # dot at any zoom level — a data-space offset drifts apart on zoom-in.
-    # Collision-nudging pushes initially-overlapping labels downward in screen
-    # space (points). Visibility is governed by the xlim/ylim callback below
-    # (shown when zoomed in past LABEL_MAX_LY, hidden on zoom-out / Home).
-    LABEL_DX_PT, LABEL_DY_PT, NUDGE_PT = 6.0, 5.0, 11.0
-    nudge_x_tol = limit_ly * 0.10   # data-space proximity ⇒ on-screen overlap
-    nudge_y_tol = limit_ly * 0.04
+    # Overlapping labels are separated by _declutter_labels() below, which works
+    # in SCREEN space and is recomputed on every view change — so the nudge
+    # reflects the CURRENT zoom rather than a build-time, data-space guess that
+    # pushed labels far from their dots in dense fields. Visibility is governed
+    # by the xlim/ylim callback below (shown when zoomed in past LABEL_MAX_LY,
+    # hidden on zoom-out / Home).
+    LABEL_DX_PT, LABEL_DY_PT = 6.0, 5.0
 
-    star_labels = []  # collected for the zoom-callback to toggle
-    placed = []       # (x, y) data anchors already placed
+    star_labels = []      # every toggleable label (for the zoom visibility cb)
+    declutter_labels = []  # per-star + Sol labels the screen-space declutter moves
     for s, x, y in zip(body_stars, body_xs, body_ys):
         nm = s["name"]
         for prefix in ("NAME ", "* ", "V* "):
@@ -1700,13 +1701,8 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
                 break
         z = s.get("z", 0.0)
         lbl = f"{nm} (Z={z:+.3f})"
-        dy_pt = LABEL_DY_PT
-        for px, py in placed:
-            if abs(x - px) < nudge_x_tol and abs(y - py) < nudge_y_tol:
-                dy_pt -= NUDGE_PT
-        placed.append((x, y))
         txt = ax.annotate(
-            lbl, xy=(x, y), xytext=(LABEL_DX_PT, dy_pt),
+            lbl, xy=(x, y), xytext=(LABEL_DX_PT, LABEL_DY_PT),
             textcoords="offset points",
             color=_SC_STAR_LBL, fontsize=7, ha="left", va="bottom",
             zorder=8, annotation_clip=True, clip_on=True,
@@ -1717,6 +1713,9 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
         txt._o16_cls = cls
         label_groups.setdefault(cls, []).append(txt)
         star_labels.append(txt)
+        declutter_labels.append(txt)
+    if sol_label is not None:
+        declutter_labels.append(sol_label)
 
     # Route overlay (Phase I) — dashed ordered legs (I1/I2) or solid MST edges
     # (I3), drawn under the dots. Lines stay visible at all zooms; the small
@@ -1879,6 +1878,53 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
 
     ax.callbacks.connect("xlim_changed", _refresh_label_visibility)
     ax.callbacks.connect("ylim_changed", _refresh_label_visibility)
+
+    # Screen-space label declutter — recomputed after each draw so overlapping
+    # labels are separated for the CURRENT zoom while every label stays anchored
+    # (fixed pixel offset) to its dot. Each label is reset to the base offset and
+    # pushed straight down only as far as needed to clear already-placed labels,
+    # capped so it never strays far from its marker. Runs only while labels are
+    # shown; a view-key guard skips redundant passes so its own draw_idle() can't
+    # loop, and only labels whose dot is in view are considered.
+    NUDGE_STEP_PT, MAX_NUDGE_STEPS = 10.0, 5
+    _declutter_key = {"v": None}
+
+    def _declutter_labels(_evt=None):
+        if not _label_state["shown"]:
+            return
+        try:
+            renderer = canvas.get_renderer()
+        except Exception:
+            return
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        key = (round(x0, 3), round(x1, 3), round(y0, 3), round(y1, 3),
+               frozenset(hidden))
+        if key == _declutter_key["v"]:
+            return
+        _declutter_key["v"] = key
+        xmin, xmax, ymin, ymax = min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1)
+        placed = []
+        for txt in declutter_labels:
+            if not txt.get_visible():
+                continue
+            ax_x, ax_y = txt.xy
+            if not (xmin <= ax_x <= xmax and ymin <= ax_y <= ymax):
+                continue
+            dx = txt.xyann[0]
+            dy = LABEL_DY_PT
+            txt.xyann = (dx, dy)
+            bb = txt.get_window_extent(renderer)
+            steps = 0
+            while steps < MAX_NUDGE_STEPS and any(bb.overlaps(pb) for pb in placed):
+                dy -= NUDGE_STEP_PT
+                txt.xyann = (dx, dy)
+                bb = txt.get_window_extent(renderer)
+                steps += 1
+            placed.append(bb)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("draw_event", _declutter_labels)
 
     coord_map = {s["name"]: (s["x"], s["y"]) for s in plotted}
     name_cls = {s["name"]: ((s.get("sp_type") or "")[:1].upper() or "?")
