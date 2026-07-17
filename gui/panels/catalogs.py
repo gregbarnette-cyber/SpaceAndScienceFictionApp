@@ -3,10 +3,12 @@
 #   HwcPanel  — option 6 (Habitable Worlds Catalog)
 
 import math
+import re
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QTabWidget, QSizePolicy,
+    QTreeWidget, QTreeWidgetItem, QComboBox,
 )
 from PySide6.QtCore import Qt
 
@@ -514,3 +516,339 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 log_viz_error("Kinematics")
 
         self._finish_render()
+
+
+# ── Option 7: Open Exoplanet Catalogue ───────────────────────────────────────
+
+from core.databases import (oec_fv as _oec_fv, oec_format_field as _oec_fmt,
+                            oec_statuses as _oec_statuses, oec_binary_label as _oec_binary_label)
+
+# Per-node headline field keys + display units (GUI). Any field may repeat — the
+# shared _oec_fv/_oec_fmt handle that (PHASE_OEC_PLAN.md §F.1).
+_OEC_TREE_KEYS = {
+    "binary":    [("separation", "sep", ""), ("semimajoraxis", "a", "AU"),
+                  ("eccentricity", "e", ""), ("period", "P", "d"),
+                  ("inclination", "i", "°")],
+    "star":      [("mass", "M", "M_sun"), ("radius", "R", "R_sun"),
+                  ("temperature", "T", "K"), ("metallicity", "[Fe/H]", ""),
+                  ("age", "age", "Gyr")],
+    "planet":    [("mass", "M", "M_jup"), ("radius", "R", "R_jup"),
+                  ("period", "P", "d"), ("semimajoraxis", "a", "AU"),
+                  ("eccentricity", "e", ""), ("inclination", "i", "°")],
+    "satellite": [("mass", "M", "M_earth"), ("radius", "R", "R_earth"),
+                  ("semimajoraxis", "a", "AU"), ("period", "P", "d")],
+}
+_OEC_TREE_PREFIX = {"system": "◆", "binary": "⋔", "star": "★",
+                    "planet": "●", "satellite": "☾"}
+
+
+def _oec_tree_bits(node):
+    """`label=value unit` fragments for a node's headline fields."""
+    f, tag = node["fields"], node["tag"]
+    bits = []
+    for key, label, unit in _OEC_TREE_KEYS.get(tag, []):
+        if not f.get(key):
+            continue
+        if key == "mass" and tag == "planet":
+            fv = _oec_fv(f["mass"])
+            if fv and fv.get("type") == "msini":
+                label = "M·sin i"
+        bits.append(f"{label}={_oec_fmt(f[key], unit)}")
+    return bits
+
+
+def _oec_tree_item(node):
+    """Build a QTreeWidgetItem (col 0 = name, col 1 = properties) for an OEC node."""
+    tag = node["tag"]
+    prefix = _OEC_TREE_PREFIX.get(tag, "")
+    if tag == "system":
+        name = node["names"][0] if node.get("names") else "System"
+        extra = []
+        if node["fields"].get("constellation"):
+            extra.append(_oec_fv(node["fields"]["constellation"])["value"])
+        if node["fields"].get("distance"):
+            extra.append("d=" + _oec_fmt(node["fields"]["distance"], "pc"))
+        detail = " · ".join(extra)
+    elif tag == "binary":
+        name = _oec_binary_label(node)
+        detail = "   ".join(_oec_tree_bits(node))
+    elif tag == "star":
+        base = node["names"][0] if node.get("names") else "Star"
+        sp = _oec_fv(node["fields"]["spectraltype"])["value"] if node["fields"].get("spectraltype") else ""
+        name = f"{base}  {sp}".strip()
+        detail = "   ".join(_oec_tree_bits(node))
+        if not node.get("children"):
+            detail = (detail + "   ") if detail else ""
+            detail += "(no planets catalogued)"
+    elif tag == "satellite":
+        name = node["names"][0] if node.get("names") else "Moon"
+        detail = "   ".join(_oec_tree_bits(node))
+    else:  # planet
+        base = node["names"][0] if node.get("names") else "Planet"
+        statuses = _oec_statuses(node["fields"])
+        name = f"{base}  [{' / '.join(statuses)}]" if statuses else base
+        detail = "   ".join(_oec_tree_bits(node))
+
+    item = QTreeWidgetItem([f"{prefix} {name}".strip(), detail])
+    for child in node.get("children", []):
+        item.addChild(_oec_tree_item(child))
+    return item
+
+
+# ── Phase 2: Star-Databases parity (Hypatia + per-host diagrams) ──────────────
+# Reuse the shared diagram-tab builders + the Hypatia path verbatim; the only new code
+# is the OEC-node → NASA-key adapter and the OEC-star → Hypatia compat dict.
+from gui.panels.diagram_tabs import (
+    _make_hz_tab, _make_orbits_tab, _make_mass_radius_tab,
+    _make_transit_tab, _make_size_tab,
+)
+
+_MJUP_MEARTH = 317.828   # M_jup → M_earth
+_RJUP_REARTH = 11.209    # R_jup → R_earth
+
+
+def _oec_num(field):
+    """Numeric value of a (possibly repeated) OEC field, or None."""
+    fv = _oec_fv(field)
+    if fv is None:
+        return None
+    try:
+        return float(fv.get("value"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _oec_collect_hosts(system):
+    """Planet-bearing nodes → host descriptors. A host is a star (normal), a binary
+    (circumbinary/P-type — §F.7 pseudo-host), or the system itself (rogue)."""
+    hosts = []
+
+    def walk(n):
+        planets = [c for c in n.get("children", []) if c["tag"] == "planet"]
+        if planets and n["tag"] in ("star", "binary", "system"):
+            name = (n["names"][0] if n.get("names")
+                    else (_oec_binary_label(n) if n["tag"] == "binary" else "System"))
+            hosts.append({"node": n, "kind": n["tag"], "name": name, "planets": planets})
+        for c in n.get("children", []):
+            walk(c)
+
+    walk(system)
+    return hosts
+
+
+def _oec_host_star(host):
+    """The star providing teff/radius/spectral/Hypatia for a host: the star itself, a
+    binary's first component star (recursing), or None for a rogue (system) host."""
+    node = host["node"]
+    if node["tag"] == "star":
+        return node
+    if node["tag"] == "binary":
+        for c in node.get("children", []):
+            if c["tag"] == "star":
+                return c
+            if c["tag"] == "binary":
+                s = _oec_host_star({"node": c})
+                if s:
+                    return s
+    return None
+
+
+def _oec_host_to_nasa(host):
+    """Convert a host's planets → NASA-key planet dicts (with Jupiter→Earth unit
+    conversion) so the reused diagram builders work unchanged. Returns (planets, sp_type)."""
+    star = _oec_host_star(host)
+    teff = _oec_num(star["fields"].get("temperature")) if star else None
+    st_rad = _oec_num(star["fields"].get("radius")) if star else None
+    sp = (_oec_fv(star["fields"].get("spectraltype")) or {}).get("value") if star else None
+    planets = []
+    for p in host["planets"]:
+        f = p["fields"]
+        mj, rj = _oec_num(f.get("mass")), _oec_num(f.get("radius"))
+        planets.append({
+            "pl_name": p["names"][0] if p.get("names") else "?",
+            "pl_orbsmax": _oec_num(f.get("semimajoraxis")),
+            "pl_orbeccen": _oec_num(f.get("eccentricity")),
+            "pl_orbincl": _oec_num(f.get("inclination")),
+            "pl_bmasse": mj * _MJUP_MEARTH if mj is not None else None,
+            "pl_rade": rj * _RJUP_REARTH if rj is not None else None,
+            "st_teff": teff, "st_rad": st_rad, "st_spectype": sp, "hostname": host["name"],
+        })
+    return planets, sp
+
+
+def _oec_hypatia_for(host):
+    """Hypatia Catalog data for a host's star, resolved from its OEC designations.
+    None for a rogue (no star); {"error"} on lookup failure (rendered gracefully)."""
+    star = _oec_host_star(host)
+    if star is None:
+        return None
+    desig = {}
+    for nm in star.get("names", []):
+        for key, pat in (("HIP", r"^HIP\s*(\d+)"), ("HD", r"^HD\s*(\d+)"),
+                         ("GJ", r"^(?:GJ|Gliese)\s*([\d.]+)"), ("HR", r"^HR\s*(\d+)")):
+            m = re.match(pat, nm)
+            if m and key not in desig:
+                desig[key] = nm
+    if not desig:
+        return {"error": "No catalogue designation (HD/HIP/GJ/HR) for a Hypatia lookup."}
+    return core.databases.compute_hypatia_data(
+        {"designations": desig, "main_id": star["names"][0] if star.get("names") else ""})
+
+
+def _oec_with_hypatia(name):
+    """Background: resolve the system, then pre-fetch Hypatia for every host (usually
+    1–3 stars) so switching the host selector is instant."""
+    result = core.databases.compute_oec(name)
+    if "error" in result:
+        return result
+    hosts = _oec_collect_hosts(result["system"])
+    result["_hypatia"] = {h["name"]: _oec_hypatia_for(h) for h in hosts}
+    return result
+
+
+class OecPanel(DiagramToggleMixin, _StarSearchPanel):
+    """Option 7 — Open Exoplanet Catalogue. Renders a star system's full hierarchy
+    (system → binary → star → planet → satellite) as a tree, plus per-host Hypatia +
+    diagram tabs (Phase 2). Resolution is direct-alias-first with a SIMBAD fallback."""
+
+    _placeholder = "e.g. Alpha Centauri, HD 186408, Kepler-16 b"
+
+    def build_inputs(self):
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        self._name = QLineEdit()
+        self._name.setPlaceholderText(self._placeholder)
+        self._name.returnPressed.connect(self._search)
+        form.addRow("Star / Planet Name:", self._name)
+
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        self.run_btn = QPushButton("Search")
+        self.run_btn.clicked.connect(self._search)
+        self._show_diagrams_btn = QPushButton("Show Diagrams")
+        self._show_diagrams_btn.clicked.connect(self._enter_diagram_mode)
+        self._show_diagrams_btn.setVisible(False)
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
+
+        self._form_widget = form_widget
+        self._layout.addWidget(form_widget)
+        self._input_count = self._layout.count()
+
+    def build_results_area(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        self._scroll_widget = QWidget()
+        self._result_area = QVBoxLayout(self._scroll_widget)
+        self._result_area.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scroll.setWidget(self._scroll_widget)
+        self._tables_widget = scroll
+        self._layout.addWidget(scroll, 1)
+        self._setup_diagram_view()
+
+    def _search(self):
+        name = self._name.text().strip()
+        if not name:
+            return
+        self._clear_results()
+        self.set_status("Searching the Open Exoplanet Catalogue…")
+        self.run_in_background(_oec_with_hypatia, name, on_result=self._on_oec_result)
+
+    def _on_oec_result(self, result):
+        self._prepare_render()
+        self._clear_results()
+        if "error" in result:
+            self._show_error(result["error"])
+            return
+
+        self._oec_hosts = _oec_collect_hosts(result["system"])
+        self._oec_hypatia = result.get("_hypatia", {})
+
+        if result.get("matched_name"):
+            hdr = QLabel(f"Matched on: <b>{result['matched_name']}</b>")
+            hdr.setTextFormat(Qt.TextFormat.RichText)
+            self._result_area.addWidget(hdr)
+
+        if len(self._oec_hosts) > 1:
+            sel_w = QWidget()
+            sel_l = QHBoxLayout(sel_w)
+            sel_l.setContentsMargins(0, 0, 0, 0)
+            sel_l.addWidget(QLabel("Host (diagrams &amp; Hypatia):"))
+            self._host_combo = QComboBox()
+            self._host_combo.addItems([h["name"] for h in self._oec_hosts])
+            self._host_combo.currentIndexChanged.connect(self._on_host_changed)
+            sel_l.addWidget(self._host_combo)
+            sel_l.addStretch()
+            self._result_area.addWidget(sel_w)
+        else:
+            self._host_combo = None
+
+        self._data_tabs = QTabWidget()
+        self._data_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        tree = QTreeWidget()
+        tree.setHeaderLabels(["System / Component / Planet", "Properties"])
+        tree.setColumnWidth(0, 340)
+        tree.setAlternatingRowColors(True)
+        tree.addTopLevelItem(_oec_tree_item(result["system"]))
+        tree.expandAll()
+        tree.setMinimumHeight(360)
+        self._data_tabs.addTab(tree, "Data")
+        self._result_area.addWidget(self._data_tabs, 1)
+
+        if self._oec_hosts:
+            self._render_host(0)
+        self._finish_render()
+
+    def _on_host_changed(self, idx):
+        # Drop the previous host's Hypatia data-tab (keep Data at index 0) + viz tabs.
+        while self._data_tabs.count() > 1:
+            w = self._data_tabs.widget(1)
+            self._data_tabs.removeTab(1)
+            if w:
+                w.deleteLater()
+        self._clear_viz_tabs()
+        self._render_host(idx)
+        self._finish_render()
+
+    def _render_host(self, idx):
+        host = self._oec_hosts[idx]
+        hyp = self._oec_hypatia.get(host["name"])
+
+        if hyp is not None:
+            self._data_tabs.addTab(build_hypatia_tab(hyp), "Hypatia")
+
+        planets, sp = _oec_host_to_nasa(host)
+        builders = [
+            (lambda: _make_orbits_tab(self, planets, host["name"], sp), "Orbital Diagram"),
+            (lambda: _make_hz_tab(self, planets), "HZ Diagram"),
+            (lambda: _make_mass_radius_tab(self, planets), "Mass–Radius"),
+            (lambda: _make_transit_tab(self, planets), "Transit Geometry"),
+            (lambda: _make_size_tab(self, planets), "Size Comparison"),
+        ]
+        for build, title in builders:
+            try:
+                w = build()
+                if w:
+                    self._viz_tabs_widget.addTab(w, title)
+            except Exception:
+                log_viz_error(title)
+
+        if hyp and "error" not in hyp:
+            try:
+                ab = core.viz.prepare_abundance_profile(hyp)
+                if "error" not in ab:
+                    canvas, toolbar = make_abundance_canvas(None, ab, hyp.get("star_name", ""))
+                    if canvas is not None:
+                        self._viz_tabs_widget.addTab(
+                            wrap_scrollable(None, canvas, toolbar), "Abundance Profile")
+            except Exception:
+                log_viz_error("Abundance Profile")
+            try:
+                kin_w = make_kinematics_tab(hyp)
+                if kin_w is not None:
+                    self._viz_tabs_widget.addTab(kin_w, "Kinematics")
+            except Exception:
+                log_viz_error("Kinematics")

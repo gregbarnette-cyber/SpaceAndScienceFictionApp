@@ -24,6 +24,7 @@ _OEC_DATA      = None
 _MISSION_EXOCAT = None
 _HWC_LOCK      = threading.Lock()
 _MISSION_EXOCAT_LOCK = threading.Lock()
+_OEC_LOCK      = threading.Lock()
 
 
 # ── Shared numeric helpers ────────────────────────────────────────────────────
@@ -556,27 +557,337 @@ def compute_hwc(simbad_result: dict) -> dict:
     return {"simbad": simbad_result, "star_row": rows[0], "planet_rows": rows}
 
 
-# ── Open Exoplanet Catalogue — retained loader scaffolding (rebuild pending) ──
-# The OEC feature (matching + display + compute_oec) was removed as broken; only
-# this data-fetch loader is kept as a working seed for the ground-up rebuild.
+# ── Open Exoplanet Catalogue (Phase OEC rebuild) ─────────────────────────────
+# OEC is a recursive system → binary → star → planet → satellite tree (NOT a flat
+# table like the other Star Databases options). See PHASE_OEC_PLAN.md. This layer:
+#   _norm_oec_name  — normalized alias key
+#   _load_oec       — disk-cached fetch + normalized name→system index
+#   _oec_num/_oec_node — generic complete field capture (D7); every reader must use a
+#                     first-or-list accessor since ANY field may repeat (e.g. <list> on
+#                     a planet in a binary carries 2+ statuses — mockup lesson §F.1)
+#   compute_oec / compute_oec_planet — resolution entry points
 
-def _load_oec():
-    """Download and parse OEC XML; build case-insensitive name→system index. Cached."""
+_OEC_URL = "https://github.com/OpenExoplanetCatalogue/oec_gzip/raw/master/systems.xml.gz"
+_OEC_CACHE_DIR = os.path.join(_BASE_DIR, "..", "data", "oec")
+_OEC_CACHE_FILE = os.path.join(_OEC_CACHE_DIR, "systems.xml.gz")
+_OEC_CACHE_MAX_AGE_DAYS = 7          # tunable (D6)
+_OEC_MIN_SYSTEMS = 1000              # gate: real catalogue ~4081; reject a short download
+_OEC_CONTAINERS = frozenset(("system", "binary", "star", "planet", "satellite"))
+_OEC_PLANET_LETTER_RE = re.compile(r"\s+[a-z]$")
+
+
+def _norm_oec_name(name):
+    """Normalized alias key: lowercase, strip V*/* prefixes and all whitespace/-/_/*."""
+    if not name:
+        return ""
+    s = name.strip()
+    for pre in ("V* ", "* ", "NAME "):
+        if s.upper().startswith(pre.upper()):
+            s = s[len(pre):]
+            break
+    return re.sub(r"[\s\-_*]", "", s.lower())
+
+
+def _oec_name_variants(name):
+    """A name plus a trailing-planet-letter-stripped variant (so 'HD 209458 b'
+    also resolves to its system)."""
+    name = (name or "").strip()
+    out = [name]
+    m = _OEC_PLANET_LETTER_RE.search(name)
+    if m:
+        out.append(name[:m.start()])
+    return out
+
+
+def _oec_parse_root(raw_bytes):
+    import gzip, io
+    import xml.etree.ElementTree as ET
+    return ET.parse(gzip.GzipFile(fileobj=io.BytesIO(raw_bytes))).getroot()
+
+
+def _oec_fetch_bytes():
+    """Download systems.xml.gz (requests + shared retry/timeout)."""
+    import requests
+    def _get():
+        with _timeout_ctx(60):
+            r = requests.get(_OEC_URL, timeout=60)
+            r.raise_for_status()
+            return r.content
+    return _with_retries(_get)
+
+
+def _oec_get_root(force_refresh=False):
+    """Return the parsed OEC root Element, using data/oec/systems.xml.gz with 7-day
+    staleness. Validate-before-cache; fall back to a stale cache on network failure."""
+    import time
+    # 1. fresh cache
+    if (not force_refresh and os.path.exists(_OEC_CACHE_FILE)
+            and (time.time() - os.path.getmtime(_OEC_CACHE_FILE)) / 86400.0 < _OEC_CACHE_MAX_AGE_DAYS):
+        try:
+            with open(_OEC_CACHE_FILE, "rb") as f:
+                return _oec_parse_root(f.read())
+        except Exception:
+            pass  # corrupt cache → fall through to re-download
+    # 2. (re)download, validate, cache atomically
+    try:
+        raw = _oec_fetch_bytes()
+        root = _oec_parse_root(raw)
+        if len(root) < _OEC_MIN_SYSTEMS:
+            raise ValueError(f"OEC download had only {len(root)} systems (< {_OEC_MIN_SYSTEMS}); not caching.")
+        os.makedirs(_OEC_CACHE_DIR, exist_ok=True)
+        tmp = _OEC_CACHE_FILE + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        os.replace(tmp, _OEC_CACHE_FILE)
+        return root
+    except Exception:
+        # 3. stale-cache fallback
+        if os.path.exists(_OEC_CACHE_FILE):
+            with open(_OEC_CACHE_FILE, "rb") as f:
+                return _oec_parse_root(f.read())
+        raise
+
+
+def _load_oec(force_refresh=False):
+    """Return (root, index) where index maps a normalized alias → system Element.
+    Disk-cached + memoized (double-checked locking, P6.4)."""
     global _OEC_DATA
-    if _OEC_DATA is not None:
+    if _OEC_DATA is not None and not force_refresh:
         return _OEC_DATA
-    from astroquery import open_exoplanet_catalogue as _oec_mod
-    tree = _oec_mod.get_catalogue()
-    root = tree.getroot() if hasattr(tree, "getroot") else tree
-    index = {}
-    for system in root:
-        for elem in system.iter("name"):
-            if elem.text:
-                k = elem.text.strip().lower()
-                if k not in index:
-                    index[k] = system
-    _OEC_DATA = (root, index)
-    return _OEC_DATA
+    with _OEC_LOCK:
+        if _OEC_DATA is not None and not force_refresh:
+            return _OEC_DATA
+        root = _oec_get_root(force_refresh)
+        index = {}
+        for system in root:
+            for elem in system.iter("name"):
+                if elem.text:
+                    k = _norm_oec_name(elem.text)
+                    if k and k not in index:       # first-wins
+                        index[k] = system
+        _OEC_DATA = (root, index)
+        return _OEC_DATA
+
+
+def _oec_num(elem):
+    """A numeric/text OEC field → {value, errorminus, errorplus, upperlimit,
+    lowerlimit, unit, type} (only present keys), or None if empty."""
+    if elem is None:
+        return None
+    text = (elem.text or "").strip()
+    if not text and not elem.attrib:
+        return None
+    d = {"value": text}
+    for a in ("errorminus", "errorplus", "upperlimit", "lowerlimit", "unit", "type"):
+        if a in elem.attrib:
+            d[a] = elem.attrib[a]
+    return d
+
+
+def _oec_fields(elem):
+    """Generic complete field capture (D7): every non-container child → a field;
+    a repeated tag collapses to a list (separation AU+arcsec; <list> multi-status)."""
+    fields = {}
+    for ch in elem:
+        if ch.tag in _OEC_CONTAINERS or ch.tag == "name":
+            continue
+        v = _oec_num(ch)
+        if v is None:
+            continue
+        if ch.tag in fields:
+            if not isinstance(fields[ch.tag], list):
+                fields[ch.tag] = [fields[ch.tag]]
+            fields[ch.tag].append(v)
+        else:
+            fields[ch.tag] = v
+    return fields
+
+
+def _oec_names(elem):
+    return [e.text.strip() for e in elem.findall("name") if e.text and e.text.strip()]
+
+
+def _oec_node(elem, shallow=False):
+    """Recursively convert an OEC element into {tag, names[], fields{}, children[]}.
+    shallow=True omits children (used for the oec-planet host chain)."""
+    node = {"tag": elem.tag, "names": _oec_names(elem), "fields": _oec_fields(elem)}
+    if not shallow:
+        children = [_oec_node(c) for c in elem if c.tag in _OEC_CONTAINERS]
+        if children:
+            node["children"] = children
+    return node
+
+
+def _oec_candidates_from_simbad(simbad):
+    """Ordered OEC lookup candidates from a SIMBAD-lookup result's designations."""
+    desig = simbad.get("designations", {}) or {}
+    out = []
+    for key in ("HIP", "HD", "GJ", "HR", "NAME", "MAIN_ID"):
+        v = desig.get(key)
+        if v:
+            out.append(str(v))
+    mid = simbad.get("main_id")
+    if mid:
+        out.append(str(mid))
+    return out
+
+
+def _oec_resolve(index, names):
+    """Return (system_elem, matched_name) for the first name (or letter-stripped
+    variant) that hits the normalized index, else (None, None)."""
+    for name in names:
+        for variant in _oec_name_variants(name):
+            k = _norm_oec_name(variant)
+            if k and k in index:
+                return index[k], name
+    return None, None
+
+
+def _oec_not_found(query):
+    return {"error": f"'{query}' is not in the Open Exoplanet Catalogue "
+                     f"(which lists only systems with planets or planet candidates)."}
+
+
+def compute_oec(target, progress_callback=None, allow_simbad=True):
+    """Resolve a name (str) or a compute_simbad_lookup result (dict) to its OEC system
+    tree. Direct-alias-first, SIMBAD-fallback (D1).
+
+    ``allow_simbad=False`` disables the on-miss SIMBAD lookup (the offline query.py path).
+
+    Returns {"query", "matched_name", "system": <node>, ["simbad": ...]} or {"error": str}.
+    """
+    simbad = None
+    if isinstance(target, dict):
+        simbad = target
+        if "error" in simbad:
+            return simbad
+        names = _oec_candidates_from_simbad(simbad)
+        query = str(simbad.get("main_id") or (names[0] if names else "")).strip()
+    else:
+        query = str(target or "").strip()
+        names = [query] if query else []
+    if not names:
+        return {"error": "No name provided for Open Exoplanet Catalogue lookup."}
+
+    if progress_callback:
+        progress_callback("Loading Open Exoplanet Catalogue (first use downloads ~1 MB)…")
+    try:
+        _, index = _load_oec()
+    except Exception as e:
+        return {"error": _network_error_msg(e, "Open Exoplanet Catalogue")}
+
+    system_elem, matched = _oec_resolve(index, names)
+
+    # SIMBAD fallback: only when the caller passed a raw string and it missed directly.
+    if system_elem is None and simbad is None and allow_simbad:
+        if progress_callback:
+            progress_callback("Not found directly — trying SIMBAD to resolve designations…")
+        sl = compute_simbad_lookup(query)
+        if "error" not in sl:
+            simbad = sl
+            system_elem, matched = _oec_resolve(index, _oec_candidates_from_simbad(sl))
+
+    if system_elem is None:
+        return _oec_not_found(query)
+
+    result = {"query": query, "matched_name": matched, "system": _oec_node(system_elem)}
+    if simbad is not None:
+        result["simbad"] = simbad
+    return result
+
+
+def compute_oec_planet(name):
+    """Resolve a planet name to its planet node + host chain (system→…→immediate parent)
+    and where it attaches. Returns {"query", "planet", "attached_to", "host_chain",
+    "system_name"} or {"error": str}."""
+    q = str(name or "").strip()
+    if not q:
+        return {"error": "No planet name provided."}
+    try:
+        _, index = _load_oec()
+    except Exception as e:
+        return {"error": _network_error_msg(e, "Open Exoplanet Catalogue")}
+    system_elem, _ = _oec_resolve(index, [q])
+    if system_elem is None:
+        return _oec_not_found(q)
+
+    want = {_norm_oec_name(v) for v in _oec_name_variants(q)}
+    parent = {c: p for p in system_elem.iter() for c in p}
+    planet_elem = None
+    for pl in system_elem.iter("planet"):
+        if want & {_norm_oec_name(e.text) for e in pl.findall("name") if e.text}:
+            planet_elem = pl
+            break
+    if planet_elem is None:
+        return {"error": f"'{q}' resolves to a system but not a specific planet — use oec-system."}
+
+    par = parent.get(planet_elem)
+    attached_to = par.tag if par is not None else "system"
+    chain = []
+    cur = par
+    while cur is not None:
+        chain.append(_oec_node(cur, shallow=True))
+        cur = parent.get(cur)
+    chain.reverse()   # system → … → immediate parent
+    return {"query": q, "planet": _oec_node(planet_elem), "attached_to": attached_to,
+            "host_chain": chain, "system_name": (system_elem.findtext("name") or "")}
+
+
+# ── OEC display helpers (shared by the CLI and the GUI; pure, no I/O) ──────────
+# Any field may be a list (repeated tag), so ALWAYS go through oec_fv — never read
+# field["value"] directly (PHASE_OEC_PLAN.md §F.1).
+
+def oec_fv(field):
+    """First-or-list accessor → the primary value dict, or None."""
+    if field is None:
+        return None
+    return field[0] if isinstance(field, list) else field
+
+
+def oec_format_field(field, unit=""):
+    """Format an OEC numeric/text field: 'value ±err unit', with bound markers.
+    `upperlimit`/`lowerlimit` carry the numeric bound in the attribute (the text is
+    usually empty), so a bound-only field renders as '<= N' / '>= N'."""
+    fv = oec_fv(field)
+    if fv is None:
+        return ""
+    s = fv.get("value", "")
+    em, ep = fv.get("errorminus"), fv.get("errorplus")
+    if em is not None or ep is not None:
+        s += f" ±{ep}" if em == ep else f" +{ep or 0}/-{em or 0}"
+    ul, ll = fv.get("upperlimit"), fv.get("lowerlimit")
+    if not s:                                   # bound-only: number is in the attribute
+        if ul is not None:
+            s = f"<= {ul}"
+        elif ll is not None:
+            s = f">= {ll}"
+    else:                                       # measured value + an extra bound
+        if ul is not None:
+            s += f" (<= {ul})"
+        elif ll is not None:
+            s += f" (>= {ll})"
+    u = fv.get("unit") or unit
+    return f"{s} {u}" if u else s
+
+
+def oec_statuses(fields):
+    """All <list> status strings for a planet node (a planet in a binary carries 2+)."""
+    lst = fields.get("list")
+    if not lst:
+        return []
+    return [x.get("value") for x in lst] if isinstance(lst, list) else [lst.get("value")]
+
+
+def oec_binary_label(node):
+    """A display name for a (possibly unnamed) binary — synthesized from components."""
+    if node.get("names"):
+        return node["names"][0]
+    comp = []
+    for c in node.get("children", []):
+        nm = (c["names"][0] if c.get("names")
+              else (oec_binary_label(c) if c.get("tag") == "binary" else "?"))
+        comp.append(nm.split(" ")[-1] if nm else "?")
+    return f"Binary ({' + '.join(comp)})" if comp else "Binary"
 
 
 # ── Option 50: Star Systems CSV Query ────────────────────────────────────────

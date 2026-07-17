@@ -2124,6 +2124,106 @@ def query_habitable_worlds_catalog():
     input("\nPress Enter to Return to the Main Menu")
 
 
+# ─── Open Exoplanet Catalogue (option 7) ──────────────────────────────────────
+
+# The pure formatters live in core.databases (shared with the GUI); main.py adds the
+# CLI text labels + units. Any field may repeat — always go through oec_fv (§F.1).
+from core.databases import (oec_fv as _oec_fv, oec_format_field as _oec_fmt,
+                            oec_statuses as _oec_statuses, oec_binary_label as _oec_binary_label)
+
+_OEC_LABELS = {"mass": "M", "radius": "R", "temperature": "T", "period": "P",
+               "semimajoraxis": "a", "eccentricity": "e", "inclination": "i",
+               "metallicity": "[Fe/H]", "age": "age", "separation": "sep",
+               "positionangle": "PA", "periastron": "ω"}
+_OEC_UNITS = {
+    "star":      {"mass": "M_sun", "radius": "R_sun", "temperature": "K", "age": "Gyr"},
+    "planet":    {"mass": "M_jup", "radius": "R_jup", "temperature": "K", "period": "d",
+                  "semimajoraxis": "AU"},
+    "satellite": {"mass": "M_earth", "radius": "R_earth", "period": "d", "semimajoraxis": "AU"},
+    "binary":    {"period": "d", "semimajoraxis": "AU"},
+    "system":    {"distance": "pc"},
+}
+
+
+def _oec_field_bits(node, keys):
+    """`label=value unit` fragments for the given field keys present on the node."""
+    f, units = node["fields"], _OEC_UNITS.get(node["tag"], {})
+    bits = []
+    for k in keys:
+        if not f.get(k):
+            continue
+        if k == "mass" and node["tag"] == "planet":
+            fv = _oec_fv(f["mass"])
+            label = "M·sin i" if (fv and fv.get("type") == "msini") else "M"
+        else:
+            label = _OEC_LABELS.get(k, k)
+        bits.append(f"{label}={_oec_fmt(f[k], units.get(k, ''))}")
+    return bits
+
+
+def _oec_print_node(node, depth):
+    pad = "  " * depth
+    tag = node["tag"]
+    name = node["names"][0] if node.get("names") else ""
+    if tag == "system":
+        f = node["fields"]
+        extra = []
+        if f.get("constellation"):
+            extra.append(_oec_fv(f["constellation"])["value"])
+        if f.get("distance"):
+            extra.append("d=" + _oec_fmt(f["distance"], "pc"))
+        tail = f"  ({', '.join(extra)})" if extra else ""
+        print(f"{pad}[SYSTEM] {name}{tail}")
+    elif tag == "binary":
+        bits = _oec_field_bits(node, ("separation", "semimajoraxis", "eccentricity", "period"))
+        print(f"{pad}[BINARY] {_oec_binary_label(node)}" + (f"   {', '.join(bits)}" if bits else ""))
+    elif tag == "star":
+        sp = _oec_fv(node["fields"]["spectraltype"])["value"] if node["fields"].get("spectraltype") else ""
+        bits = _oec_field_bits(node, ("mass", "radius", "temperature", "metallicity", "age"))
+        print(f"{pad}[STAR]   {name} {sp}".rstrip() + (f"   {', '.join(bits)}" if bits else ""))
+        if not node.get("children"):
+            print(f"{pad}         (no planets catalogued for this component)")
+    elif tag == "satellite":
+        bits = _oec_field_bits(node, ("mass", "radius", "semimajoraxis", "period"))
+        print(f"{pad}[MOON]   {name}" + (f"   {', '.join(bits)}" if bits else ""))
+    else:  # planet
+        bits = _oec_field_bits(node, ("mass", "radius", "period", "semimajoraxis", "eccentricity"))
+        statuses = _oec_statuses(node["fields"])
+        if statuses:
+            bits.append("[" + " / ".join(statuses) + "]")
+        print(f"{pad}[PLANET] {name}" + (f"   {', '.join(bits)}" if bits else ""))
+    for child in node.get("children", []):
+        _oec_print_node(child, depth + 1)
+
+
+def query_open_exoplanet_catalogue():
+    """Query the Open Exoplanet Catalogue and render a star system's full hierarchy."""
+    os.system("cls" if os.name == "nt" else "clear")
+    designation = input(
+        "\nEnter star or planet name (e.g., 'Alpha Centauri', 'HD 186408', 'Kepler-16 b'): "
+    ).strip()
+    if not designation:
+        print("No name entered.")
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print(f"\nQuerying the Open Exoplanet Catalogue for '{designation}'...\n")
+    result = core.databases.compute_oec(designation)
+    os.system("cls" if os.name == "nt" else "clear")
+
+    if "error" in result:
+        print(result["error"])
+        input("\nPress Enter to Return to the Main Menu")
+        return
+
+    print("Open Exoplanet Catalogue")
+    print("-" * 24)
+    if result.get("matched_name"):
+        print(f"Matched on: {result['matched_name']}\n")
+    _oec_print_node(result["system"], 0)
+    input("\nPress Enter to Return to the Main Menu")
+
+
 # ─── Star Systems CSV Query ───────────────────────────────────────────────────
 
 _CSV_PREFIX_MAP = [
@@ -5370,7 +5470,7 @@ MENU_OPTIONS = {
     "4":  ("NASA Exoplanet Archive: HWO ExEP Precursor Science Stars", query_hwo_exep),
     "5":  ("NASA Exoplanet Archive: Mission Exocat Stars",            query_mission_exocat_stars),
     "6":  ("Habitable Worlds Catalog",                                query_habitable_worlds_catalog),
-    # slot "7" (Open Exoplanet Catalogue) intentionally left free for the OEC rebuild
+    "7":  ("Open Exoplanet Catalogue",                                query_open_exoplanet_catalogue),
     # --- Star System Regions (left column) ---
     "8":  ("Star System Regions (SIMBAD)",                            query_star_system_regions),
     "9":  ("Star System Regions (Semi-SIMBAD)",                       query_star_system_regions_semi_manual),
@@ -5424,7 +5524,7 @@ MENU_OPTIONS = {
     "59": ("Fetch Dust Map Data",                                     dust_fetch_data),
 }
 
-_STAR_DB_KEYS          = {"1", "2", "3", "4", "5", "6"}  # "7" reserved for the OEC rebuild
+_STAR_DB_KEYS          = {"1", "2", "3", "4", "5", "6", "7"}  # 7 = Open Exoplanet Catalogue
 _STAR_REGIONS_KEYS     = {"8", "9", "10"}
 _SCIENCE_KEYS          = {"11", "12", "13"}
 _SCIFI_KEYS            = {"14", "15", "16"}

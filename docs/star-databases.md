@@ -120,16 +120,57 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 - If no match is found, prints a message and returns to menu.
 - **GUI (`HwcPanel`)**: background call uses `_hwc_with_hypatia()`, which calls `compute_hwc` then `compute_hypatia_data`. All HWC tables are placed inside a **Data** tab alongside a **Hypatia** tab (inner `QTabWidget`). Show Diagrams view adds **Orbital Diagram** (with the Phase O O4 "Show Solar System reference" overlay checkbox + an O10b "Show Honorverse Hyper Limit (fiction)" checkbox when `S_TYPE` resolves), **HZ Diagram**, **Mass–Radius** (Phase O O3, from `P_MASS`/`P_RADIUS`), **Size Comparison** (Phase O O14, from `P_RADIUS`), **Temperature Ranges** + **ESI vs Orbit** (Phase O O12 — per-planet equilibrium/surface temperature bars with the 273–373 K liquid-water band; SMA-vs-ESI scatter with the host's optimistic/conservative HZ shaded and points coloured by `P_HABITABLE`; each shown only when ≥1 planet qualifies), **Abundance Profile** (when Hypatia data is available), and a **Kinematics** tab (Phase O O11 — Toomre diagram + Explain button, when Hypatia returns all three U/V/W velocities). (No Transit Geometry tab — HWC carries no orbital inclination.)
 
-## Open Exoplanet Catalogue Feature (removed — rebuild pending)
+## Open Exoplanet Catalogue Feature (opt 7 — rebuilt, Phase OEC)
 
-The OEC feature (menu option 7 `query_open_exoplanet_catalogue`, `core.databases.compute_oec`,
-the GUI `OecPanel`, and all name-matching/display helpers) was **removed** because the
-SIMBAD→OEC name matching never worked reliably. Menu slot **7 is intentionally left free** for a
-ground-up rebuild. The only piece retained is the data-fetch loader
-`core.databases._load_oec()` (+ the `_OEC_DATA` cache) — it calls
-`astroquery.open_exoplanet_catalogue.get_catalogue()`, then builds a case-insensitive
-`{name_lower: system_element}` index over the returned `ElementTree` — kept as working
-scaffolding for the rebuild. This section will be rewritten when OEC is reimplemented.
+Menu option 7: `query_open_exoplanet_catalogue()` (CLI) / `OecPanel` (GUI, `gui/panels/catalogs.py`).
+Ground-up rebuild (see `PHASE_OEC_PLAN.md`). **OEC is a recursive `system → binary → star → planet →
+satellite` hierarchy — not a flat table like options 1–6** — so a resolved system is rendered as a
+**tree**, not property tables. Core: `core.databases.compute_oec(target)` →
+`{"query", "matched_name", "system": <node>, ["simbad"]}` or `{"error"}`.
+
+- **Data source + cache.** `systems.xml.gz` from the `oec_gzip` GitHub repo (~1 MB), parsed with stdlib
+  `gzip` + `xml.etree.ElementTree` (the broken astroquery OEC module is not used). Cached at
+  `data/oec/systems.xml.gz` (gitignored) with a 7-day staleness window (`_OEC_CACHE_MAX_AGE_DAYS`);
+  offline after first pull, with a stale-cache fallback on network failure. Validate-before-cache
+  (rejects a short download below `_OEC_MIN_SYSTEMS`). Memoized in `_OEC_DATA` (double-checked locking).
+- **Node model — generic complete capture (D7).** `_oec_node()` walks every element into
+  `{tag, names[], fields{}, children[]}`. `_oec_num()` keeps `value` + `errorminus/errorplus`,
+  `upperlimit/lowerlimit`, `unit`, and `type` (e.g. `mass type="msini"`). **Any field may repeat → a list**
+  (e.g. `separation` in AU+arcsec; `<list>` — a planet in a binary carries "Confirmed planets" *and*
+  "Planets in binary systems, S-type"). `<satellite>` moons are captured as nested nodes.
+- **Matching (D1).** `_norm_oec_name()` builds a normalized alias index over all `<name>` tags;
+  resolution is **direct-alias-first, SIMBAD-fallback** — the typed name matches offline first, and only
+  on a miss does `compute_oec` (when given a raw string) call `compute_simbad_lookup` to translate a
+  common name → HD/HIP and retry. A planet name resolves to its system (trailing planet-letter stripped).
+- **Expectation.** OEC lists only systems with planets/candidates, so a planetless star (Delta Pav,
+  36 UMa) returns `"'…' is not in the Open Exoplanet Catalogue (which lists only systems with planets…)"`
+  — a correct result, not a lookup error. A matched system may have **zero planets** (61 Cygni) and still
+  renders its stellar hierarchy.
+- **Display (shared formatters in `core.databases`).** `oec_fv` (first-or-list accessor — never read
+  `field["value"]` directly), `oec_format_field` (`value ±err unit`; bound-only fields render `<= N`/`>= N`
+  from the attribute), `oec_statuses` (all `<list>` statuses), `oec_binary_label` (synthesized "Binary
+  (A + B)" for unnamed binaries). CLI prints an indented tree; **GUI (`OecPanel`)** renders a
+  `QTreeWidget` (◆ system · ⋔ binary · ★ star · ● planet · ☾ moon) with a per-node property column,
+  `M·sin i` labels, and multiple status badges. Spectral types (incl. white/brown dwarfs `DA…`/`T…`) are
+  shown verbatim — not routed through the OBAFGKM parser.
+- **`query.py`:** `oec-system --name` (full tree) and `oec-planet --name` (planet node + host chain +
+  `attached_to` ∈ `star|binary|system`) — offline direct-alias resolution (`allow_simbad=False`), the same
+  node dict serialized as JSON. See `docs/integration.md`.
+- **GUI parity (Phase 2, built).** `OecPanel` is a `DiagramToggleMixin` matching `NasaPlanetarySystemsPanel`.
+  Beyond the **Data** tree tab it adds — **per selected host star** (a **Host** `QComboBox` when a system has
+  more than one planet-bearing star; single-host systems auto-select) — a **Hypatia** tab and **Show
+  Diagrams** viz tabs: **Orbital Diagram** (+ O4 Solar overlay + O10b Honorverse hyper-limit ring),
+  **HZ Diagram**, **Mass–Radius**, **Transit Geometry**, **Size Comparison**, **Abundance Profile**, and
+  **Kinematics** (Toomre). All reuse the existing `core.viz` preps + the NASA panel's `_make_*_tab`
+  builders via an OEC-node→NASA-key adapter (`_oec_host_to_nasa`, which converts planet mass/radius from
+  Jupiter to Earth units) and the shared Hypatia path (`compute_hypatia_data` fed a `{designations,
+  main_id}` compat built from the host star's OEC names — empty/graceful for M/BD/WD hosts). Hosts may be a
+  **star** (normal), a **binary** (circumbinary/P-type pseudo-host), or the **system** (rogue → Data tab
+  only, no diagrams). *Known limitation:* a circumbinary host's HZ uses the primary component's light, not
+  the combined light (a `compute_circumbinary_hz` refinement — see `PHASE_OEC_PLAN.md`).
+- **Phase status:** Phases 1 (core + tree + Tier-1 query.py) and 2 (Hypatia + per-host diagrams) are built.
+  Later phases add the System Architecture map (Phase 3) and `oec-search`/`oec-census` (Phase 4) — see
+  `PHASE_OEC_PLAN.md`.
 
 ## Star Systems DB Query Feature (opt 50) / Export to CSV (opt 51) / Import Utilities (opts 52–56)
 

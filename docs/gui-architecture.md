@@ -98,6 +98,9 @@ gui/                 # Qt presentation layer
     distance_stars.py    # DistanceBetweenStarsPanel (17), StarsWithinDistanceSolPanel (18),
                          #   StarsWithinDistanceStarPanel (19)
     # Phase D panels (multi-source / JPL Horizons):
+    catalogs.py          # HwcPanel (6), OecPanel (7 — OEC tree + per-host Hypatia/diagrams)
+    diagram_tabs.py      # shared stateless diagram-tab builders (_make_{hz,orbits,mass_radius,transit,size}_tab)
+                         #   — take (panel, planets[NASA-key dicts]) → QWidget; used by nasa_exoplanet + catalogs (OEC)
     nasa_exoplanet.py    # NasaPlanetarySystemsPanel (3), NasaHwoExepPanel (4),
                          #   NasaMissionExocatPanel (5)
     catalogs.py          # HwcPanel (6)
@@ -303,6 +306,7 @@ def __getattr__(name: str):
 | `NasaHwoExepPanel` | 4 | `panels/nasa_exoplanet.py` |
 | `NasaMissionExocatPanel` | 5 | `panels/nasa_exoplanet.py` |
 | `HwcPanel` | 6 | `panels/catalogs.py` |
+| `OecPanel` | 7 | `panels/catalogs.py` |
 | `TravelTimeStarsLyHrPanel` | 20 | `panels/travel_time_stars.py` |
 | `TravelTimeStarsTimesCPanel` | 21 | `panels/travel_time_stars.py` |
 | `BrachistochroneAccelPanel` | 24 | `panels/brachistochrone.py` |
@@ -346,7 +350,7 @@ def __getattr__(name: str):
 | `ProjectPanel` | — (GUI + `query.py project-list`/`project-get`, Phase S) | `panels/projects.py` |
 | `SystemGeneratorPanel` | — (GUI + `query.py generate-system`, Phase R1) | `panels/generator.py` |
 
-> **Note**: `NasaAllTablesPanel` (opt 2) is implemented in `nasa_exoplanet.py` but is **not exported** from `panels/__init__.py` and does not appear in the GUI nav; it remains fully functional in the CLI. (The former `OecPanel` for opt 7 was removed along with the rest of the OEC feature — rebuild pending; menu slot 7 is reserved for it.)
+> **Note**: `NasaAllTablesPanel` (opt 2) is implemented in `nasa_exoplanet.py` but is **not exported** from `panels/__init__.py` and does not appear in the GUI nav; it remains fully functional in the CLI. (`OecPanel` for opt 7 was **rebuilt** — see `PHASE_OEC_PLAN.md`; it renders the Open Exoplanet Catalogue as a `QTreeWidget` hierarchy plus per-host Hypatia + diagram tabs.)
 
 > **Note**: `StarMapPanel`, `SystemOrbitsPanel`, and `HabZoneDiagramPanel` live in `gui/visualizations/` and are exported via the lazy `__getattr__` in `panels/__init__.py`. They are **not in the nav tree** — visualizations appear as embedded tabs inside the relevant option panels rather than as standalone nav entries.
 
@@ -535,6 +539,7 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |
 | `NasaMissionExocatPanel` (5) | "HZ Diagram" (EEID from `st_eeidau`; lum = `st_lbol` direct Lsun), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |
 | `HwcPanel` (6) | "Orbital Diagram" (+ Phase O O4 solar-overlay & O10b hyper-limit checkboxes), "HZ Diagram" (lum = `S_LUMINOSITY` direct Lsun), "Mass–Radius" (Phase O O3), "Size Comparison" (Phase O O14), "Temperature Ranges" + "ESI vs Orbit" (Phase O O12, per qualifying planets), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |
+| `OecPanel` (7) | **Data** tree + per-host tabs (a **Host** combo when >1 planet-host): "Hypatia", "Orbital Diagram" (+ O4 solar-overlay & O10b hyper-limit), "HZ Diagram", "Mass–Radius" (O3), "Transit Geometry" (O13), "Size Comparison" (O14), "Abundance Profile" + "Kinematics" (O11) (when the host resolves Hypatia). Circumbinary = binary pseudo-host; rogue = Data tab only. Reuses the NASA `_make_*_tab` builders via an OEC→NASA-key adapter (PHASE_OEC_PLAN.md Phase 2). | `DiagramToggleMixin` |
 | `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram" (+ Phase O O10b "Show Honorverse Hyper Limit" checkbox), "Alternate HZ Diagram", "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |
 | `StarRegionsSemiManualPanel` (9) | "HZ Diagram", "System Regions Diagram" (+ Phase O O10b "Show Honorverse Hyper Limit" checkbox), "Alternate HZ Diagram" | `DiagramToggleMixin` |
 | `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram", "Alternate HZ Diagram" | `DiagramToggleMixin` |

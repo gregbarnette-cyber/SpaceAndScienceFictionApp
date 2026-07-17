@@ -150,6 +150,15 @@ def cmd_gcns_within_sol(args):
     ))
 
 
+def cmd_oec_system(args):
+    # query.py path resolves offline against the OEC alias index (no SIMBAD).
+    _out(databases.compute_oec(args.name, allow_simbad=False))
+
+
+def cmd_oec_planet(args):
+    _out(databases.compute_oec_planet(args.name))
+
+
 def cmd_gcns_source(args):
     _out(databases.compute_gcns_by_source_id(args.id))
 
@@ -1544,6 +1553,18 @@ def main(argv=None):
     p.add_argument("--star1", required=True)
     p.add_argument("--star2", required=True)
     p.set_defaults(func=cmd_distance)
+
+    # oec-system
+    p = sub.add_parser("oec-system",
+                       help="Open Exoplanet Catalogue: full system hierarchy tree by name")
+    p.add_argument("--name", required=True, help="Star or planet name / designation")
+    p.set_defaults(func=cmd_oec_system)
+
+    # oec-planet
+    p = sub.add_parser("oec-planet",
+                       help="Open Exoplanet Catalogue: a planet node + its host chain")
+    p.add_argument("--name", required=True, help="Planet name / designation")
+    p.set_defaults(func=cmd_oec_planet)
 
     # stars-within-sol
     p = sub.add_parser("stars-within-sol", help="Stars within N light years of Sol")

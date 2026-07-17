@@ -13,6 +13,7 @@ NAVIGATION = [
         ("NASA Exoplanet: HWO ExEP",          "NasaHwoExepPanel"),
         ("NASA Exoplanet: Mission Exocat",    "NasaMissionExocatPanel"),
         ("Habitable Worlds Catalog",          "HwcPanel"),
+        ("Open Exoplanet Catalogue",          "OecPanel"),
     ]),
     ("Search & Filter", [
         ("Star Systems Search",        "StarSystemsSearchPanel"),

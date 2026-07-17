@@ -51,6 +51,8 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | Subcommand | Required args | Network | Output top-level keys (success) |
 |---|---|---|---|
 | `simbad-lookup` | `--star` | SIMBAD | `main_id, ra, dec, sp_type, plx_value, teff, vmag, ly, parsecs, designations, desig_str, gcns` (`gcns` optional — Phase M5, `null` when absent) |
+| `oec-system` | `--name` | none (local cache)‡ | `query, matched_name, system` (recursive node tree) |
+| `oec-planet` | `--name` | none (local cache)‡ | `query, planet, attached_to, host_chain, system_name` |
 | `star-regions` | `--star` | SIMBAD + Hypatia | region values (see below) + `simbad` + `hypatia` |
 | `star-regions-manual` | `--vmag --bc --teff --parallax` [`--sunlight-intensity --bond-albedo`] | none | flat dict of region values (`hzil, hzol, snowLine, stellarMass, distAU, …`) + echoed inputs |
 | `distance` | `--star1 --star2` | SIMBAD† | `star1_info, star2_info, distance_ly, distance_au` |
@@ -186,6 +188,42 @@ Core function: `databases.compute_simbad_lookup(star)`
 Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, ly, parsecs, desig_str, designations, gcns}`. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); a catalog with no id is `null`. Numeric fields may be `null`.
 - **Gaia id**: the `"Gaia EDR3"` key holds the Gaia source id as SIMBAD now formats it — `"Gaia DR3 <id>"` (SIMBAD renamed EDR3→DR3 in its id output; the source_ids are identical). To get the bare numeric id, strip the `"Gaia DR3 "` / `"Gaia EDR3 "` prefix. This is the same id used as `--id` for `gcns-source`.
 - **`gcns`** (Phase M5): an **optional top-level GCNS cross-reference** — the matching `gcns_stars` row (same shape as `gcns-source`'s `star`: Bayesian `dist_pc` + `dist_lo_pc`/`dist_hi_pc`, `distance_method`, Gaia G/BP/RP, `astrom_reliable_prob`, `wd_prob`, `system_id`/`n_components`, …), giving a Bayesian distance **with 16th/84th-percentile uncertainty** beside the naive `1/ϖ` `ly`/`parsecs`. The key is **always present** but is `null` when the star has no Gaia id, is not in GCNS, or the `gcns_stars` table is empty/missing — **non-fatal and silent** (a single indexed local-DB read; no extra network). Built inside `compute_simbad_lookup`, so every `simbad`-embedding subcommand below carries it too.
+
+#### `oec-system` / `oec-planet` (Open Exoplanet Catalogue)
+The Open Exoplanet Catalogue exposed as a recursive **`system → binary → star → planet → satellite`
+hierarchy** (NOT a flat table). ‡ **Network:** the first call downloads `systems.xml.gz` (~1 MB) from the
+`oec_gzip` GitHub repo to `data/oec/systems.xml.gz`; subsequent calls are **offline** (7-day staleness,
+stale-cache fallback). Resolution is **offline direct-alias** against the OEC name index — the `query.py`
+path does **not** call SIMBAD (`allow_simbad=False`). Self-validating: not-found / no name → `{"error"}`
+exit 1; argparse exit 2. **Expectation:** OEC lists only systems with planets/candidates, so a planetless
+star (Delta Pav, 36 UMa) returns `"'…' is not in the Open Exoplanet Catalogue (which lists only systems
+with planets or planet candidates)."` — a correct result, not a bug.
+```bash
+query.py oec-system --name "Alpha Centauri"     # A, B and Proxima in one tree
+query.py oec-system --name "HD 186408"          # alias → 16 Cygni (depth-2 nesting)
+query.py oec-planet --name "Kepler-16 b"        # circumbinary → attached_to: "binary"
+```
+Core: `databases.compute_oec(name, allow_simbad=False)` / `databases.compute_oec_planet(name)`.
+
+**Node shape (every node):** `{"tag": "system|binary|star|planet|satellite", "names": [str, …],
+"fields": {…}, "children": [node, …]}` (`children` absent on leaves). **`fields`** is generic complete
+capture: each key maps to a **value dict** `{"value": str, ["errorminus","errorplus","upperlimit",
+"lowerlimit","unit","type"]}` — only present attributes appear. **A field may be a *list* of value dicts**
+when the source tag repeats (e.g. `separation` in AU + arcsec; `list` — a planet in a binary carries
+"Confirmed planets" *and* "Planets in binary systems, S-type"), so a consumer must treat every field as
+possibly a list. `mass` may carry `"type": "msini"` (minimum mass). `upperlimit`/`lowerlimit` carry the
+bound in the attribute (the `value` is then usually `""`).
+
+- **`oec-system`** → `{query, matched_name, system: <node>}`. `system` is the full tree; a rogue planet is
+  a `planet` child of the `system`; a zero-planet system still returns its stellar tree.
+- **`oec-planet`** → `{query, planet: <node>, attached_to: "star"|"binary"|"system", host_chain: [<node
+  shallow>, …], system_name}`. `attached_to` distinguishes normal (star), circumbinary/P-type (binary),
+  and rogue (system); `host_chain` is the ancestor nodes (system → … → immediate parent), each **without**
+  `children` (so siblings aren't dumped).
+
+Field units are **not** encoded in the JSON where OEC leaves them implicit: planet `mass`/`radius` are in
+**Jupiter** units, star mass/radius in **Solar** units, satellite in **Earth** units (a consumer feeding
+Earth-unit tools must convert). Larger structural readers (`oec-search`, `oec-census`) are later phases.
 
 #### `star-regions`
 Star system regions: HZ boundaries, snow line, stellar mass/luminosity/radius, alternate biochemistry zones, plus Hypatia Catalog stellar properties and elemental abundances.

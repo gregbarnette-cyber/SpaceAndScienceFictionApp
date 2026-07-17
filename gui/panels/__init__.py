@@ -29,7 +29,7 @@ from gui.panels.distance_stars import (DistanceBetweenStarsPanel,
 from gui.panels.nasa_exoplanet   import (NasaPlanetarySystemsPanel,
                                          NasaPlanetarySystemsMapPanel,
                                          NasaHwoExepPanel, NasaMissionExocatPanel)
-from gui.panels.catalogs         import HwcPanel
+from gui.panels.catalogs         import HwcPanel, OecPanel
 from gui.panels.travel_time_stars import (TravelTimeStarsLyHrPanel,
                                           TravelTimeStarsTimesCPanel)
 from gui.panels.brachistochrone  import (BrachistochroneAccelPanel,
