@@ -230,16 +230,44 @@ map** in Phase 3. Single-star systems auto-select their one host.
 ### Phase 3 — System Architecture map (static → interactive)
 
 The OEC-unique visualization; separated from Phase 2 because it is novel and higher-risk (new canvas +
-barycenter math + interaction), not reuse.
+barycenter math + interaction), not reuse. **Gated by an HTML approval mockup — signed off 2026-07-17**
+(`mockups/oec-phase3.html`; the barycenter roll-up + log-radial layout run live in-browser on real nodes).
 
-- **Static first:** log-radial, **mass-weighted barycenter** at the origin (recursive Jacobi roll-up;
-  geometric-midpoint fallback when a component mass is missing — D5). Whole hierarchy: each star at its
-  reconstructed position, each planet a small ring on its host. Caveat labels: projected-separation
-  (arcsec→AU via system distance) and static-placement (positionangle = on-sky orientation, no orbital
-  phase) — an architecture sketch, not an ephemeris.
-- **Then interactive:** click-to-recenter — select a **star** (or a **binary** node → its subsystem
-  barycenter) → re-anchor the log-radial view on it **and** repopulate the Phase-2 per-host detail tabs
-  (the map *replaces the combo* as the host selector); a "⟲ Reset to barycenter" control.
+- **Static — BUILT 2026-07-17 (Phase 3a).** log-radial, **mass-weighted barycenter** at the origin
+  (recursive Jacobi roll-up; geometric-midpoint fallback when a component mass is missing — D5). Whole
+  hierarchy: each star at its reconstructed position, each planet a small ring on its host. Caveat labels:
+  projected-separation (arcsec→AU via system distance) and static-placement (positionangle = on-sky
+  orientation, no orbital phase) — an architecture sketch, not an ephemeris.
+  - New code: `core.viz.prepare_oec_architecture(system_node, focus_node=None)` (pure layout → display-space
+    dict; `focus_node` seam already in place for 3b) + `plot_helpers.make_oec_architecture_canvas(parent,
+    data, on_select=None)` (dark-navy Star-Chart palette). Wired into `OecPanel._add_architecture_tab` as
+    viz tab 0, shown for **every** matched system (incl. planetless 61 Cyg / rogue).
+  - **Separation ladder settled (D5 extension, approved 2026-07-17):** `semimajoraxis` → `separation[AU]` →
+    `separation[arcsec]×distance_pc` (projected) → **Kepler `a=∛((M₁+M₂)·P²)` from the binary period** (new
+    rung — 61 Cyg has only a period; gives ~85 AU, matching the real orbit) → schematic offset when even that
+    is impossible. AU-direct is preferred over arcsec-projected when both are catalogued.
+  - Tests: `ArchitectureMathTests` + `ArchitectureTopologyTests` in `tests/test_oec.py`.
+  - *Known limitation:* circumbinary (P-type) planets attach to the `<binary>`, not a star, so they aren't
+    yet drawn as rings on the map (a Phase-3b/follow-up refinement).
+- **Then interactive — Phase 3b (planned).** Three items, all landing together (they reopen the same
+  `prepare_oec_architecture` / `make_oec_architecture_canvas` / `OecPanel` surface):
+  1. **Click-to-recenter** — select a **star** (or a **binary** node → its subsystem barycenter) → re-anchor
+     the log-radial view on it **and** repopulate the Phase-2 per-host detail tabs (the map *replaces the
+     combo* as the host selector); a "⟲ Reset to barycenter" control. The `on_select` callback + `focus_node`
+     param + clickable ◆ binary-barycenter handles are already built and unit-tested in 3a; this is the panel
+     wiring (drive `_render_host` from the map + breadcrumb/reset UI).
+  2. **Circumbinary (P-type) planet rings** *(Greg's decision, 2026-07-17 — folded in here, not left as the
+     3a limitation).* The 39 planets that attach to a `<binary>` (Kepler-16 b, Kepler-47…) orbit the binary
+     barycenter, not a star, so 3a doesn't draw them. Add: `prepare_oec_architecture` emits a
+     `centers: [{x, y, label, planets}]` for binaries carrying child `<planet>`s (keyed to the binary
+     barycenter already tracked for the ◆ handles, reusing `_oecv_planet_fracs`); the canvas draws those rings
+     around the barycenter point.
+  3. **Star-chart interaction parity** *(Greg's decision, 2026-07-17).* Bring the `make_star_chart_canvas`
+     (opts 18/19) interactions to the Architecture map — **scroll-wheel zoom around the cursor**,
+     **cursor-anchored hover tooltip** (`_anchor_hover_to_cursor`, name + key info), and a **click info box** —
+     with the click semantics reconciled: **hover = show info, click = recenter/select** (recenter is the
+     primary click action here, unlike the star chart where click = info). Consider the zoom-driven label
+     decluttering too. (The 3D preset buttons are N/A — the Architecture map is 2-D.)
 
 ### Phase 4 — query.py Tier-2/3 (structural search + census)
 

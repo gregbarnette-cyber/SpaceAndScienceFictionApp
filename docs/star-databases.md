@@ -168,9 +168,24 @@ satellite` hierarchy — not a flat table like options 1–6** — so a resolved
   **star** (normal), a **binary** (circumbinary/P-type pseudo-host), or the **system** (rogue → Data tab
   only, no diagrams). *Known limitation:* a circumbinary host's HZ uses the primary component's light, not
   the combined light (a `compute_circumbinary_hz` refinement — see `PHASE_OEC_PLAN.md`).
-- **Phase status:** Phases 1 (core + tree + Tier-1 query.py) and 2 (Hypatia + per-host diagrams) are built.
-  Later phases add the System Architecture map (Phase 3) and `oec-search`/`oec-census` (Phase 4) — see
-  `PHASE_OEC_PLAN.md`.
+- **System Architecture map (Phase 3, static — built 2026-07-17).** A **GUI-only** system-level viz tab
+  (`OecPanel`, viz tab 0) shown for **every** matched system — including planetless (61 Cygni) and rogue ones
+  that have no per-host diagrams. `core.viz.prepare_oec_architecture(system_node)` places every star by a
+  recursive **mass-weighted-barycenter (Jacobi) roll-up** (each `<binary>` splits its two components about
+  their barycenter, offset `sep × m_other/(m₁+m₂)`), then maps them **log-radially** from the system
+  barycenter so ~6 orders of scale coexist (Proxima 15 000 AU ↔ α Cen A/B 23 AU ↔ planets < 1 AU); planets
+  ride as small log-scaled rings on their host. Separation ladder: `semimajoraxis` → `separation[AU]` →
+  `separation[arcsec]×distance_pc` (projected) → **Kepler** `a=∛((M₁+M₂)·P²)` from the binary period (61 Cyg)
+  → schematic offset; a missing component mass → equal split (both flagged). Rendered by
+  `plot_helpers.make_oec_architecture_canvas` (dark-navy Star-Chart palette) with a persistent caveat footnote
+  (architecture sketch, not an ephemeris — projected separation, static placement / no orbital phase). The
+  **interactive click-to-recenter** (star → focus + host tabs; binary → subsystem barycenter; "⟲ Reset") is
+  the planned Phase 3b. *Known limitation:* circumbinary (P-type) planets attach to the `<binary>`, not a
+  star, so they aren't yet drawn as rings on the map (the Data tree + binary-pseudo-host Orbital diagram show
+  them). See `docs/gui-architecture.md` (OEC System Architecture map) and `PHASE_OEC_PLAN.md`.
+- **Phase status:** Phases 1 (core + tree + Tier-1 query.py), 2 (Hypatia + per-host diagrams), and 3a (static
+  Architecture map) are built. Later work adds the Phase-3b click-to-recenter and `oec-search`/`oec-census`
+  (Phase 4) — see `PHASE_OEC_PLAN.md`.
 
 ## Star Systems DB Query Feature (opt 50) / Export to CSV (opt 51) / Import Utilities (opts 52–56)
 

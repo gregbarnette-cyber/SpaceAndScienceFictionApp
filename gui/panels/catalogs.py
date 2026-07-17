@@ -21,7 +21,7 @@ from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas, wrap_scrollable,
     make_kinematics_tab, make_hwc_temp_canvas, make_hwc_esi_canvas,
     make_mass_radius_canvas, make_size_comparison_canvas, wrap_orbits_with_solar_toggle,
-    log_viz_error,
+    make_oec_architecture_canvas, log_viz_error,
 )
 
 
@@ -764,6 +764,7 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
             self._show_error(result["error"])
             return
 
+        self._oec_system = result["system"]
         self._oec_hosts = _oec_collect_hosts(result["system"])
         self._oec_hypatia = result.get("_hypatia", {})
 
@@ -798,9 +799,32 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         self._data_tabs.addTab(tree, "Data")
         self._result_area.addWidget(self._data_tabs, 1)
 
+        # System Architecture map (Phase 3) — a system-level viz tab, always tab 0,
+        # shown even for planetless / rogue systems (which skip _render_host).
+        self._add_architecture_tab()
         if self._oec_hosts:
             self._render_host(0)
         self._finish_render()
+
+    def _add_architecture_tab(self):
+        """Insert the whole-system Architecture map as viz tab 0 (static, Phase 3)."""
+        if not mpl_available() or not getattr(self, "_oec_system", None):
+            return
+        try:
+            data = core.viz.prepare_oec_architecture(self._oec_system)
+            if "error" in data:
+                return
+            canvas, toolbar = make_oec_architecture_canvas(None, data)
+            if canvas is None:
+                return
+            w = QWidget()
+            lay = QVBoxLayout(w)
+            lay.setContentsMargins(2, 2, 2, 2)
+            lay.addWidget(toolbar)
+            lay.addWidget(canvas, 1)
+            self._viz_tabs_widget.insertTab(0, w, "Architecture")
+        except Exception:
+            log_viz_error("Architecture")
 
     def _on_host_changed(self, idx):
         # Drop the previous host's Hypatia data-tab (keep Data at index 0) + viz tabs.
@@ -810,6 +834,7 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
             if w:
                 w.deleteLater()
         self._clear_viz_tabs()
+        self._add_architecture_tab()
         self._render_host(idx)
         self._finish_render()
 

@@ -894,6 +894,372 @@ def prepare_exoplanet_system_diagram(planets: list, date_iso: str = None) -> dic
     }
 
 
+# ── Phase OEC 3 — System Architecture map (barycenter roll-up + log-radial) ───
+# Pure layout for the OEC-unique whole-system schematic: every star placed by a
+# recursive mass-weighted-barycenter (Jacobi) roll-up, then mapped log-radially
+# from the system barycenter so ~6 orders of scale coexist (Proxima at 15 000 AU
+# ↔ α Cen A/B at 23 AU ↔ planets at < 1 AU). Planets ride as small log-scaled
+# rings on their host. See PHASE_OEC_PLAN.md §C Phase 3 / D5.
+#
+# The node dicts consumed here are the {tag, names, fields, children} objects from
+# core.databases.compute_oec — any field may be a repeated list, so every read
+# goes through _oecv_fv (never field["value"] directly; PHASE_OEC_PLAN.md §F.1).
+# This module stays free of the heavy core.databases import (astroquery); the node
+# is plain data, so the tiny accessors are inlined.
+
+_OECV_R_IN = 0.10   # inner display radius (unit disk); a single star sits at 0
+_OECV_R_OUT = 1.0   # outer display radius
+
+
+def _oecv_fv(field):
+    """First-or-list accessor for an OEC field → the primary value dict, or None."""
+    if field is None:
+        return None
+    return field[0] if isinstance(field, list) else field
+
+
+def _oecv_field_list(node, key):
+    """All entries of a (possibly repeated) OEC field as a list."""
+    v = node.get("fields", {}).get(key)
+    if v is None:
+        return []
+    return v if isinstance(v, list) else [v]
+
+
+def _oecv_val(node, key):
+    fv = _oecv_fv(node.get("fields", {}).get(key))
+    return fv.get("value") if fv else None
+
+
+def _oecv_num(node, key):
+    try:
+        return float(_oecv_val(node, key))
+    except (TypeError, ValueError):
+        return None
+
+
+def _oecv_name(node):
+    ns = node.get("names")
+    return ns[0] if ns else None
+
+
+def _oecv_binary_label(node):
+    """Display label for a (possibly unnamed) binary — synthesized from components."""
+    if node.get("names"):
+        return node["names"][0]
+    parts = []
+    for c in node.get("children", []):
+        if c["tag"] not in ("star", "binary"):
+            continue
+        nm = (_oecv_name(c) if c.get("names")
+              else (_oecv_binary_label(c) if c["tag"] == "binary" else "?"))
+        parts.append(nm.split(" ")[-1] if nm else "?")
+    return f"Binary ({' + '.join(parts)})" if parts else "Binary"
+
+
+def _oecv_sep_au(node, dist_pc):
+    """Resolve a binary's component separation to AU, following the D5 ladder:
+    semimajoraxis (AU) → separation[unit=AU] → separation[arcsec]×distance_pc
+    (projected). Returns {"au", "proj", "kind"} with au=None when unresolved here
+    (the Kepler-from-period rung is applied in _oecv_layout, where masses are known)."""
+    sma = _oecv_num(node, "semimajoraxis")
+    if sma is not None:
+        return {"au": sma, "proj": False, "kind": "sma"}
+    # Prefer an AU-unit separation (physical) over an arcsec one (projected) even when
+    # both are catalogued on the node (40 Eri / ε Ind / 16 Cyg carry both) — two passes.
+    seps = _oecv_field_list(node, "separation")
+    for s in seps:
+        if (s.get("unit") or "").lower() == "au":
+            try:
+                return {"au": float(s.get("value")), "proj": False, "kind": "sep-au"}
+            except (TypeError, ValueError):
+                pass
+    if dist_pc:
+        for s in seps:
+            if (s.get("unit") or "").lower() in ("arcsec", ""):
+                try:
+                    return {"au": float(s.get("value")) * dist_pc, "proj": True,
+                            "kind": "sep-arcsec"}
+                except (TypeError, ValueError):
+                    pass
+    return {"au": None, "proj": False, "kind": None}
+
+
+def _oecv_pa_dir(node, depth, idx):
+    """Unit direction along which a binary splits its components: the on-sky
+    positionangle (deg, from North through East) when present, else a
+    deterministic schematic angle so nested pairs don't overlap on one axis."""
+    pa = _oecv_num(node, "positionangle")
+    if pa is not None:
+        a = math.radians(pa)
+        return math.sin(a), math.cos(a)
+    a = math.radians((137.5 * (depth + 1) + 40 * idx) % 360)
+    return math.cos(a), math.sin(a)
+
+
+def _oecv_planets(star):
+    return [c for c in star.get("children", []) if c["tag"] == "planet"]
+
+
+def _oecv_layout(node, dist_pc, depth=0, idx=0):
+    """Recursive Jacobi barycenter roll-up.
+
+    Returns {"mass", "stars": [{"node","x","y"}], "edges": [...], "fallback": bool}
+    in barycentric AU (this subsystem's barycenter at the origin). Each binary
+    splits its two components about their mass-weighted barycenter, offset =
+    sep × m_other / (m₁+m₂); a missing component mass falls back to an equal split
+    (flagged). Separation follows the D5 ladder, extended with a Kepler rung
+    a = ∛((M₁+M₂)·P²) from the binary period (P in days) when only a period is
+    catalogued (61 Cygni), and a small schematic offset when even that is impossible."""
+    tag = node["tag"]
+    if tag == "star":
+        return {"mass": _oecv_num(node, "mass"),
+                "stars": [{"node": node, "x": 0.0, "y": 0.0}], "edges": [], "bary": []}
+    comps = [c for c in node.get("children", []) if c["tag"] in ("star", "binary")]
+    if not comps:
+        return {"mass": None, "stars": [], "edges": [], "bary": []}
+    if tag == "system" or len(comps) != 2:
+        # system wrapper / non-pair grouping: stack child subsystems at the barycenter
+        mass, stars, edges, bary = 0.0, [], [], []
+        for i, c in enumerate(comps):
+            s = _oecv_layout(c, dist_pc, depth + 1, i)
+            mass += s["mass"] or 0.0
+            stars += s["stars"]
+            edges += s["edges"]
+            bary += s["bary"]
+        return {"mass": mass or None, "stars": stars, "edges": edges, "bary": bary}
+
+    a = _oecv_layout(comps[0], dist_pc, depth + 1, 0)
+    b = _oecv_layout(comps[1], dist_pc, depth + 1, 1)
+    sep = _oecv_sep_au(node, dist_pc)
+    au, proj, derived, schematic = sep["au"], sep["proj"], False, False
+    m1, m2 = a["mass"], b["mass"]
+    # Kepler-from-period rung (needs both masses).
+    if au is None and m1 and m2:
+        period_days = _oecv_num(node, "period")
+        if period_days is not None and period_days > 0:
+            p_yr = period_days / 365.25
+            au = ((m1 + m2) * p_yr * p_yr) ** (1.0 / 3.0)
+            derived = True
+    if au is None:                       # last resort — a placeholder so the pair is visible
+        au, schematic = 1.0, True
+    dx, dy = _oecv_pa_dir(node, depth, idx)
+
+    fallback = False
+    if m1 and m2:
+        tot = m1 + m2
+        off1, off2 = au * m2 / tot, au * m1 / tot
+    else:                                # geometric-midpoint fallback (missing mass)
+        fallback = True
+        tot = (m1 or 0.0) + (m2 or 0.0) or None
+        off1 = off2 = au / 2.0
+
+    def _shift(sub, ox, oy):
+        return {
+            "stars": [{"node": s["node"], "x": s["x"] + ox, "y": s["y"] + oy}
+                      for s in sub["stars"]],
+            "edges": [{**e, "x1": e["x1"] + ox, "y1": e["y1"] + oy,
+                       "x2": e["x2"] + ox, "y2": e["y2"] + oy} for e in sub["edges"]],
+            "bary": [{"node": h["node"], "x": h["x"] + ox, "y": h["y"] + oy}
+                     for h in sub["bary"]],
+        }
+
+    s1 = _shift(a, -off1 * dx, -off1 * dy)
+    s2 = _shift(b, off2 * dx, off2 * dy)
+    if au >= 1:
+        lbl = f"{au:.2f} AU" if au < 100 else f"{au:.0f} AU"
+    else:
+        lbl = f"{au:.3f} AU"
+    if schematic:
+        lbl = "sep n/a (schematic)"
+    elif derived:
+        lbl += " (from period)"
+    elif proj:
+        lbl += " (proj)"
+    edges = s1["edges"] + s2["edges"]
+    edges.append({
+        "x1": -off1 * dx, "y1": -off1 * dy, "x2": off2 * dx, "y2": off2 * dy,
+        "label": lbl, "proj": proj, "derived": derived,
+        "fallback": fallback, "schematic": schematic, "node": node,
+    })
+    # This binary's own barycenter is at the local origin (0,0) before the parent
+    # shifts the whole subsystem into place; the parent's _shift carries it along.
+    bary = s1["bary"] + s2["bary"] + [{"node": node, "x": 0.0, "y": 0.0}]
+    return {"mass": tot, "stars": s1["stars"] + s2["stars"],
+            "edges": edges, "bary": bary, "fallback": fallback}
+
+
+def _oecv_disp_mapper(stars):
+    """Build the log-radial display transform for a set of placed stars.
+
+    Returns (map_fn, r_lo, r_hi) where map_fn(x_au, y_au) → (x_disp, y_disp) in a
+    unit disk: angle preserved, radius = log-scaled barycentric distance in
+    [_OECV_R_IN, _OECV_R_OUT]. A star at the barycenter maps to the origin."""
+    nz = [math.hypot(s["x"], s["y"]) for s in stars]
+    nz = [r for r in nz if r > 1e-9]
+    r_lo = min(nz) if nz else 1.0
+    r_hi = max(nz) if nz else 1.0
+    span = _OECV_R_OUT - _OECV_R_IN
+
+    def frac(r):
+        if r_hi <= r_lo * (1.0 + 1e-9):
+            return 0.55
+        return (math.log10(r) - math.log10(r_lo)) / (math.log10(r_hi) - math.log10(r_lo))
+
+    def map_fn(x, y):
+        r = math.hypot(x, y)
+        if r < 1e-9:
+            return 0.0, 0.0
+        R = _OECV_R_IN + span * max(0.0, min(1.0, frac(r)))
+        ph = math.atan2(y, x)
+        return R * math.cos(ph), R * math.sin(ph)
+
+    return map_fn, r_lo, r_hi, frac
+
+
+def _oecv_planet_fracs(smas):
+    """Log-map a host's planet semi-major axes to ring fractions in [0, 1]
+    (0 = innermost, 1 = outermost). Planets with no SMA are spaced evenly."""
+    known = [a for a in smas if a is not None and a > 0]
+    a_lo = min(known) if known else None
+    a_hi = max(known) if known else None
+    fracs = []
+    n = len(smas)
+    for i, a in enumerate(smas):
+        if a is None or a <= 0:
+            fracs.append((i + 1) / (n + 1))
+        elif a_hi is None or a_hi <= a_lo * (1.0 + 1e-9):
+            fracs.append(0.6)
+        else:
+            fracs.append((math.log10(a) - math.log10(a_lo))
+                         / (math.log10(a_hi) - math.log10(a_lo)))
+    return fracs
+
+
+def prepare_oec_architecture(system_node: dict, focus_node: dict = None) -> dict:
+    """Layout data for the OEC System Architecture map.
+
+    system_node: the ``system`` node from core.databases.compute_oec.
+    focus_node:  optional sub-node (star or binary) to re-anchor the view on — its
+                 own subsystem barycenter becomes the origin (Phase-3 interaction).
+                 When None, the whole system is laid out about the system barycenter.
+
+    Returns a dict of display-space geometry (unit-disk coords; no matplotlib):
+      {"star_name", "focus_label", "stars": [...], "edges": [...], "handles": [...],
+       "rings": [{"r","label"}], "flags": {any_proj,any_derived,any_fallback,
+       any_schematic}, "r_lo_au", "r_hi_au"}  or  {"error": str}.
+
+    Each star: {name, sp_type, mass, r_au, x, y, is_focus, planets:[{name, sma,
+    ecc, mass, masstype, has_radius, ring_frac, status}]}.
+    Each edge (binary pair): {x1,y1,x2,y2, label, proj, derived, fallback,
+    schematic}. Each handle (binary barycenter, for click-to-recenter):
+    {x, y, label, node}."""
+    if not system_node or system_node.get("tag") != "system":
+        return {"error": "Not an OEC system node."}
+
+    subtree = focus_node or system_node
+    dist_pc = _oecv_num(system_node, "distance")
+    lay = _oecv_layout(subtree, dist_pc, 0, 0)
+    placed = lay["stars"]
+    if not placed:
+        return {"error": "No stellar components to place."}
+
+    map_fn, r_lo, r_hi, frac = _oecv_disp_mapper(placed)
+
+    stars = []
+    for s in placed:
+        node = s["node"]
+        xd, yd = map_fn(s["x"], s["y"])
+        pls = _oecv_planets(node)
+        smas = [_oecv_num(p, "semimajoraxis") for p in pls]
+        pfracs = _oecv_planet_fracs(smas)
+        planets = []
+        for p, a, pf in zip(pls, smas, pfracs):
+            mfv = _oecv_fv(p.get("fields", {}).get("mass")) or {}
+            planets.append({
+                "name": _oecv_name(p) or "planet",
+                "sma": a,
+                "ecc": _oecv_num(p, "eccentricity"),
+                "mass": _oecv_num(p, "mass"),
+                "masstype": mfv.get("type"),
+                "has_radius": _oecv_num(p, "radius") is not None,
+                "ring_frac": pf,
+                "status": [x.get("value") for x in _oecv_field_list(p, "list")],
+            })
+        sp_type = _oecv_val(node, "spectraltype") or ""
+        stars.append({
+            "name": _oecv_name(node) or "star",
+            "node": node,
+            "sp_type": sp_type,
+            "color": _sp_color(sp_type),
+            "mass": _oecv_num(node, "mass"),
+            "r_au": math.hypot(s["x"], s["y"]),
+            "x": xd, "y": yd,
+            "is_focus": focus_node is not None and node is focus_node,
+            "planets": planets,
+        })
+
+    edges = []
+    for e in lay["edges"]:
+        x1, y1 = map_fn(e["x1"], e["y1"])
+        x2, y2 = map_fn(e["x2"], e["y2"])
+        edges.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2, "label": e["label"],
+                      "proj": e["proj"], "derived": e["derived"],
+                      "fallback": e["fallback"], "schematic": e.get("schematic", False)})
+
+    # Decade scale rings (in display space via the same log mapping). When the
+    # placed stars span less than a decade (e.g. 40 Eri at 203–211 AU), no decade
+    # falls inside the range — emit one reference ring at the outer radius so the
+    # AU scale is never unlabeled. Skipped entirely when every star sits at the
+    # barycenter (a single-star system) — there the barycentric scale is meaningless
+    # and only the per-host planet rings carry scale.
+    placed_spread = any(math.hypot(s["x"], s["y"]) > 1e-9 for s in placed)
+    rings = []
+    if placed_spread and r_hi > r_lo * (1.0 + 1e-9):
+        lo_e = math.floor(math.log10(r_lo))
+        hi_e = math.ceil(math.log10(r_hi))
+        for exp in range(lo_e, hi_e + 1):
+            r_au = 10.0 ** exp
+            if r_au < r_lo * 0.5 or r_au > r_hi * 2.0:
+                continue
+            R = _OECV_R_IN + (_OECV_R_OUT - _OECV_R_IN) * max(0.0, min(1.0, frac(r_au)))
+            label = f"{int(r_au):,} AU" if r_au >= 1 else f"{r_au:g} AU"
+            rings.append({"r": R, "label": label})
+    if placed_spread and not rings and r_hi > 1e-9:
+        label = f"{int(round(r_hi)):,} AU" if r_hi >= 1 else f"{r_hi:g} AU"
+        rings.append({"r": _OECV_R_OUT, "label": label})
+
+    # Clickable binary-barycenter handles (each binary's barycenter position in the
+    # subtree frame, in display space) — for Phase-3 click-to-recenter.
+    handles = [{"x": map_fn(h["x"], h["y"])[0], "y": map_fn(h["x"], h["y"])[1],
+                "label": _oecv_binary_label(h["node"]), "node": h["node"]}
+               for h in lay["bary"]]
+
+    if focus_node is not None:
+        focus_label = (_oecv_binary_label(focus_node) if focus_node["tag"] == "binary"
+                       else _oecv_name(focus_node) or "component")
+        focus_label += " — subsystem barycenter"
+    else:
+        focus_label = "System barycenter"
+
+    return {
+        "star_name": _oecv_name(system_node) or "",
+        "focus_label": focus_label,
+        "stars": stars,
+        "edges": edges,
+        "handles": handles,
+        "rings": rings,
+        "flags": {
+            "any_proj": any(e["proj"] for e in edges),
+            "any_derived": any(e["derived"] for e in edges),
+            "any_fallback": any(e["fallback"] for e in edges),
+            "any_schematic": any(e["schematic"] for e in edges),
+        },
+        "r_lo_au": r_lo,
+        "r_hi_au": r_hi,
+    }
+
+
 # ── Phase I — Route map overlay ──────────────────────────────────────────────
 
 def _route_edge(a, b, label, style):

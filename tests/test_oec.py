@@ -264,5 +264,149 @@ class FormatterTests(unittest.TestCase):
         self.assertEqual(databases.oec_binary_label(node), "Binary (A + B)")
 
 
+# ── Phase 3: System Architecture map layout (core.viz.prepare_oec_architecture) ──
+# prepare_oec_architecture is pure over a node dict (no DB/Qt), so the precise
+# barycenter/Kepler math is unit-tested with hand-built nodes; topology integration
+# runs off the shared fixture via OecTestBase.
+
+import core.viz as viz
+
+
+def _n(tag, names=None, fields=None, children=None):
+    return {"tag": tag, "names": names or [],
+            "fields": fields or {}, "children": children or []}
+
+
+def _f(value, **attrs):
+    return {"value": ("" if value is None else str(value)), **attrs}
+
+
+def _sys(children, **fields):
+    return _n("system", ["Sys"], fields, children)
+
+
+class ArchitectureMathTests(unittest.TestCase):
+    def _one(self, stars, name):
+        return next(s for s in stars if s["name"] == name)
+
+    def test_mass_weighted_barycenter_offsets(self):
+        # binary sma=3 AU, m1=2, m2=1 → heavier star 1 AU out, lighter 2 AU out,
+        # and the mass-weighted centroid sits at the origin (m1·r1 == m2·r2).
+        binary = _n("binary", ["Pair"], {"semimajoraxis": _f(3)}, [
+            _n("star", ["Heavy"], {"mass": _f(2.0)}),
+            _n("star", ["Light"], {"mass": _f(1.0)}),
+        ])
+        r = viz.prepare_oec_architecture(_sys([binary]))
+        self.assertNotIn("error", r)
+        heavy, light = self._one(r["stars"], "Heavy"), self._one(r["stars"], "Light")
+        self.assertAlmostEqual(heavy["r_au"], 1.0, places=6)
+        self.assertAlmostEqual(light["r_au"], 2.0, places=6)
+        self.assertAlmostEqual(2.0 * heavy["r_au"], 1.0 * light["r_au"], places=6)
+
+    def test_kepler_from_period_rung(self):
+        # period-only binary (P=365.25 d = 1 yr, m1=m2=0.5 → tot=1) → a = ∛(1·1²) = 1 AU.
+        binary = _n("binary", ["KPair"], {"period": _f(365.25)}, [
+            _n("star", ["KA"], {"mass": _f(0.5)}),
+            _n("star", ["KB"], {"mass": _f(0.5)}),
+        ])
+        r = viz.prepare_oec_architecture(_sys([binary]))
+        self.assertEqual(len(r["edges"]), 1)
+        self.assertTrue(r["edges"][0]["derived"])
+        self.assertIn("from period", r["edges"][0]["label"])
+        self.assertTrue(r["flags"]["any_derived"])
+        # both components 0.5 AU from the barycenter
+        for s in r["stars"]:
+            self.assertAlmostEqual(s["r_au"], 0.5, places=6)
+
+    def test_missing_mass_equal_split_flagged(self):
+        binary = _n("binary", ["NoMass"], {"semimajoraxis": _f(4)}, [
+            _n("star", ["NA"]), _n("star", ["NB"]),
+        ])
+        r = viz.prepare_oec_architecture(_sys([binary]))
+        self.assertTrue(r["edges"][0]["fallback"])
+        self.assertTrue(r["flags"]["any_fallback"])
+        for s in r["stars"]:                       # equal split → both 2 AU out
+            self.assertAlmostEqual(s["r_au"], 2.0, places=6)
+
+    def test_no_separation_schematic_fallback(self):
+        # no sma/sep/period and no masses → schematic placeholder, not stacked.
+        binary = _n("binary", ["Sch"], {"eccentricity": _f(0.4)}, [
+            _n("star", ["SA"]), _n("star", ["SB"]),
+        ])
+        r = viz.prepare_oec_architecture(_sys([binary]))
+        self.assertTrue(r["flags"]["any_schematic"])
+        self.assertIn("schematic", r["edges"][0]["label"])
+        # placed apart (not both on the barycenter)
+        self.assertGreater(max(s["r_au"] for s in r["stars"]), 0.0)
+
+    def test_separation_prefers_au_over_arcsec(self):
+        # both units present → AU-direct wins (not the arcsec projection).
+        binary = _n("binary", ["Two"],
+                    {"separation": [_f(80, unit="arcsec"), _f(400, unit="AU")]}, [
+            _n("star", ["TA"], {"mass": _f(1.0)}),
+            _n("star", ["TB"], {"mass": _f(1.0)}),
+        ])
+        r = viz.prepare_oec_architecture(_sys([binary], distance=_f(5.0)))
+        self.assertFalse(r["edges"][0]["proj"])
+        self.assertIn("400", r["edges"][0]["label"])
+
+    def test_arcsec_projected_via_distance(self):
+        binary = _n("binary", ["Two"], {"separation": [_f(80, unit="arcsec")]}, [
+            _n("star", ["TA"], {"mass": _f(1.0)}),
+            _n("star", ["TB"], {"mass": _f(1.0)}),
+        ])
+        r = viz.prepare_oec_architecture(_sys([binary], distance=_f(5.0)))
+        self.assertTrue(r["edges"][0]["proj"])
+        self.assertTrue(r["flags"]["any_proj"])
+        # 80 arcsec × 5 pc = 400 AU total → 200 AU each (equal masses)
+        for s in r["stars"]:
+            self.assertAlmostEqual(s["r_au"], 200.0, places=4)
+
+
+class ArchitectureTopologyTests(OecTestBase):
+    def _arch(self, name):
+        return viz.prepare_oec_architecture(self._system(name))
+
+    def test_single_star_at_barycenter_no_rings(self):
+        r = self._arch("Single Star")
+        self.assertEqual(len(r["stars"]), 1)
+        self.assertAlmostEqual(r["stars"][0]["r_au"], 0.0)
+        self.assertEqual(len(r["stars"][0]["planets"]), 1)
+        self.assertEqual(r["rings"], [])          # single star → no barycentric scale
+
+    def test_hierarchy_places_all_three_stars(self):
+        r = self._arch("Hierarchy")
+        names = {s["name"] for s in r["stars"]}
+        self.assertEqual(names, {"Inner A", "Inner C", "Outer B"})
+        self.assertEqual(len(r["edges"]), 2)       # inner + outer binary connectors
+        self.assertTrue(r["handles"])              # binary barycenters → recenter handles
+
+    def test_rogue_system_has_no_placeable_stars(self):
+        r = self._arch("Rogue One")
+        self.assertIn("error", r)
+
+    def test_focus_recenter_on_subsystem(self):
+        system = self._system("Hierarchy")
+        inner = self._find(system, "binary", "Inner AC")[0]
+        r = viz.prepare_oec_architecture(system, focus_node=inner)
+        self.assertIn("subsystem barycenter", r["focus_label"])
+        self.assertEqual({s["name"] for s in r["stars"]}, {"Inner A", "Inner C"})
+        # focus_node is the binary, so none of its component stars are flagged is_focus
+        self.assertFalse(any(s["is_focus"] for s in r["stars"]))
+
+    def test_focus_on_star_flags_is_focus(self):
+        system = self._system("Hierarchy")
+        outer_b = self._find(system, "star", "Outer B")[0]
+        r = viz.prepare_oec_architecture(system, focus_node=outer_b)
+        focused = [s for s in r["stars"] if s["is_focus"]]
+        self.assertEqual([s["name"] for s in focused], ["Outer B"])
+
+    def test_white_dwarf_spectral_color_not_obafgkm(self):
+        r = self._arch("Binary S")
+        wd = next(s for s in r["stars"] if s["name"] == "BS B")   # DA2 white dwarf
+        self.assertEqual(wd["sp_type"], "DA2")
+        self.assertEqual(wd["color"], viz._SPECTRAL_COLORS["D"])
+
+
 if __name__ == "__main__":
     unittest.main()

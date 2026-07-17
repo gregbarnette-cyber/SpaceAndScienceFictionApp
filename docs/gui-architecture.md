@@ -350,7 +350,29 @@ def __getattr__(name: str):
 | `ProjectPanel` | — (GUI + `query.py project-list`/`project-get`, Phase S) | `panels/projects.py` |
 | `SystemGeneratorPanel` | — (GUI + `query.py generate-system`, Phase R1) | `panels/generator.py` |
 
-> **Note**: `NasaAllTablesPanel` (opt 2) is implemented in `nasa_exoplanet.py` but is **not exported** from `panels/__init__.py` and does not appear in the GUI nav; it remains fully functional in the CLI. (`OecPanel` for opt 7 was **rebuilt** — see `PHASE_OEC_PLAN.md`; it renders the Open Exoplanet Catalogue as a `QTreeWidget` hierarchy plus per-host Hypatia + diagram tabs.)
+> **Note**: `NasaAllTablesPanel` (opt 2) is implemented in `nasa_exoplanet.py` but is **not exported** from `panels/__init__.py` and does not appear in the GUI nav; it remains fully functional in the CLI. (`OecPanel` for opt 7 was **rebuilt** — see `PHASE_OEC_PLAN.md`; it renders the Open Exoplanet Catalogue as a `QTreeWidget` hierarchy plus a system-level Architecture map and per-host Hypatia + diagram tabs.)
+
+> **OEC System Architecture map (Phase 3).** The OEC-unique whole-system schematic:
+> `core.viz.prepare_oec_architecture(system_node)` (pure layout, no Qt) places every
+> star by a recursive **mass-weighted-barycenter (Jacobi) roll-up** — each `<binary>`
+> splits its two components about their barycenter, offset = `sep × m_other/(m₁+m₂)` —
+> then maps them **log-radially** from the system barycenter (unit disk; angle = on-sky
+> `positionangle`, radius = log barycentric distance) so ~6 orders of scale coexist
+> (Proxima at 15 000 AU ↔ α Cen A/B at 23 AU ↔ planets < 1 AU). Separation ladder:
+> `semimajoraxis` (AU) → `separation[AU]` → `separation[arcsec]×distance_pc` (projected)
+> → **Kepler** `a=∛((M₁+M₂)·P²)` from the binary period → schematic offset; a missing
+> component mass falls back to an equal split (both flagged). Planets ride as small
+> log-scaled rings on their host (RV-only planets still shown; `M·sin i` carried).
+> `gui.visualizations.plot_helpers.make_oec_architecture_canvas(parent, data,
+> on_select=None)` renders it in the dark-navy Star-Chart palette with a persistent
+> caveat footnote (architecture sketch, not an ephemeris — projected separation, static
+> placement / no orbital phase). `OecPanel._add_architecture_tab` inserts it as viz tab 0
+> for **every** matched system (incl. planetless/rogue, which skip the per-host tabs).
+> **Static now (Phase 3a, built 2026-07-17); the `on_select` click-to-recenter — a star →
+> focus + drive `_render_host`, a binary → its subsystem barycenter, with a "⟲ Reset"
+> control — is Phase 3b (planned).** *Known limitation:* circumbinary (P-type) planets
+> attach to the `<binary>`, not a star, so they don't yet render as rings on the map (the
+> Data tree + the binary-pseudo-host Orbital diagram show them).
 
 > **Note**: `StarMapPanel`, `SystemOrbitsPanel`, and `HabZoneDiagramPanel` live in `gui/visualizations/` and are exported via the lazy `__getattr__` in `panels/__init__.py`. They are **not in the nav tree** — visualizations appear as embedded tabs inside the relevant option panels rather than as standalone nav entries.
 
@@ -539,7 +561,7 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |
 | `NasaMissionExocatPanel` (5) | "HZ Diagram" (EEID from `st_eeidau`; lum = `st_lbol` direct Lsun), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |
 | `HwcPanel` (6) | "Orbital Diagram" (+ Phase O O4 solar-overlay & O10b hyper-limit checkboxes), "HZ Diagram" (lum = `S_LUMINOSITY` direct Lsun), "Mass–Radius" (Phase O O3), "Size Comparison" (Phase O O14), "Temperature Ranges" + "ESI vs Orbit" (Phase O O12, per qualifying planets), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |
-| `OecPanel` (7) | **Data** tree + per-host tabs (a **Host** combo when >1 planet-host): "Hypatia", "Orbital Diagram" (+ O4 solar-overlay & O10b hyper-limit), "HZ Diagram", "Mass–Radius" (O3), "Transit Geometry" (O13), "Size Comparison" (O14), "Abundance Profile" + "Kinematics" (O11) (when the host resolves Hypatia). Circumbinary = binary pseudo-host; rogue = Data tab only. Reuses the NASA `_make_*_tab` builders via an OEC→NASA-key adapter (PHASE_OEC_PLAN.md Phase 2). | `DiagramToggleMixin` |
+| `OecPanel` (7) | **Data** tree + a system-level **"Architecture"** map (Phase 3, viz tab 0 — shown for **every** matched system incl. planetless/rogue) + per-host tabs (a **Host** combo when >1 planet-host): "Hypatia", "Orbital Diagram" (+ O4 solar-overlay & O10b hyper-limit), "HZ Diagram", "Mass–Radius" (O3), "Transit Geometry" (O13), "Size Comparison" (O14), "Abundance Profile" + "Kinematics" (O11) (when the host resolves Hypatia). Circumbinary = binary pseudo-host; rogue = Data + Architecture only. Reuses the NASA `_make_*_tab` builders via an OEC→NASA-key adapter (PHASE_OEC_PLAN.md Phase 2). | `DiagramToggleMixin` |
 | `StarRegionsAutoPanel` (8) | "HZ Diagram", "System Regions Diagram" (+ Phase O O10b "Show Honorverse Hyper Limit" checkbox), "Alternate HZ Diagram", "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |
 | `StarRegionsSemiManualPanel` (9) | "HZ Diagram", "System Regions Diagram" (+ Phase O O10b "Show Honorverse Hyper Limit" checkbox), "Alternate HZ Diagram" | `DiagramToggleMixin` |
 | `StarRegionsManualPanel` (10) | "HZ Diagram", "System Regions Diagram", "Alternate HZ Diagram" | `DiagramToggleMixin` |

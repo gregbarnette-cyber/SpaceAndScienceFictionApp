@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OEC Rebuild — Phase 3 (Architecture Map Mockup)</title>
+<style>
+  :root{
+    --bg:#f0f0f0; --panel:#ffffff; --border:#b8b8b8; --border-soft:#d8d8d8;
+    --text:#222; --muted:#6a6a6a; --faint:#8a8a8a; --accent:#4a90d9; --accent-d:#3a73ad;
+    --head:#e9eef5; --good:#2e8b57; --warn:#b8860b; --bad:#b03030; --chip:#eef2f7;
+    --sys:#6a4bb0; --bin:#b07a1f; --star:#c99a12; --planet:#2f7fb8;
+    --space:#070b18; --space2:#0b1020;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+       font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .mono{font-family:"Cascadia Code","SF Mono",Consolas,Menlo,monospace}
+  .topbar{background:#2b2b2b;color:#eee;padding:8px 14px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}
+  .topbar .tag{background:var(--accent);color:#fff;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600}
+  .topbar .sub{color:#9aa3ad;font-weight:400}
+  .notice{background:#fff6da;border-bottom:1px solid #e7d28a;color:#6b5a14;padding:7px 14px;font-size:12px;line-height:1.5}
+  .notice b{color:#4d4109} .notice code{background:#f4ead0;padding:0 4px;border-radius:3px}
+  .content{flex:1;overflow:auto;padding:16px 22px}
+  h2.title{margin:0 0 2px;font-size:18px} .new-badge{background:var(--accent);color:#fff;border-radius:3px;font-size:9px;padding:0 5px;margin-left:6px;font-weight:700;vertical-align:middle}
+  .subt{color:var(--muted);margin:2px 0 12px;font-size:12.5px;max-width:1000px;line-height:1.5}
+  details.spec{margin:0 0 14px;font-size:12px;color:#455;background:#f5f7fa;border:1px solid var(--border-soft);border-radius:5px;padding:8px 12px;max-width:1000px}
+  details.spec summary{cursor:pointer;font-weight:600;color:#3a73ad}
+  details.spec code{background:#e9edf2;padding:0 4px;border-radius:3px}
+  details.spec ul{margin:8px 0 4px;padding-left:18px;line-height:1.65} details.spec li{margin:3px 0}
+  .picks{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 12px;max-width:1050px}
+  .picks .lab{color:#888;font-size:11.5px;margin-right:2px}
+  .pick{font-size:12px;background:var(--chip);border:1px solid var(--border-soft);border-radius:20px;padding:3px 12px;cursor:pointer;color:#33465e}
+  .pick:hover{background:#e2eefb;border-color:var(--accent)}
+  .pick.active{background:var(--accent);color:#fff;border-color:var(--accent-d);font-weight:600}
+  .pick .why{color:#8a97a8;margin-left:5px;font-size:11px} .pick.active .why{color:#dce9f7}
+
+  .layout{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+  .mapcard{background:var(--space);border:1px solid #26324a;border-radius:8px;padding:0;flex:1 1 640px;min-width:560px;overflow:hidden}
+  .mapbar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#0c1326;border-bottom:1px solid #1c2740;color:#c3ccdb;font-size:12px;flex-wrap:wrap}
+  .crumb{display:flex;align-items:center;gap:5px;font-size:12px}
+  .crumb .seg{color:#7f8db0;cursor:pointer;padding:1px 6px;border-radius:3px}
+  .crumb .seg:hover{background:#182238;color:#cfe0ff}
+  .crumb .seg.here{color:#ffd98a;font-weight:600;cursor:default;background:transparent}
+  .crumb .sepc{color:#4a597a}
+  .mapbar .rbtn{margin-left:auto;background:#182645;color:#cfe0ff;border:1px solid #2a3d66;border-radius:4px;padding:3px 10px;font-size:11.5px;cursor:pointer}
+  .mapbar .rbtn:hover{background:#22345c} .mapbar .rbtn:disabled{opacity:.4;cursor:default}
+  svg.map{display:block;width:100%;height:560px;background:radial-gradient(ellipse at center,#0d1426 0%,#070b18 80%)}
+  .side{flex:0 1 330px;min-width:280px;display:flex;flex-direction:column;gap:10px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:7px;padding:11px 13px}
+  .card h3{margin:0 0 7px;font-size:13px;color:#2b3a52;display:flex;align-items:center;gap:7px}
+  .ic{font-size:10px;font-weight:700;border-radius:3px;padding:1px 6px;color:#fff;letter-spacing:.3px}
+  .ic.system{background:var(--sys)} .ic.binary{background:var(--bin)} .ic.star{background:var(--star)} .ic.planet{background:var(--planet)}
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:2px 0;border-bottom:1px dashed #eef1f5}
+  .kv b{color:#33465e;font-weight:600} .kv span{color:#4a5568;text-align:right}
+  .muted{color:#8a97a8;font-style:italic;font-size:12px}
+  .htabs{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px}
+  .ht{font-size:11px;border:1px solid var(--border-soft);border-radius:4px 4px 0 0;padding:3px 9px;background:#eef2f7;color:#5a6675}
+  .ht.on{background:#e5f0fb;color:#1f3a57;border-color:#bcd6ef;font-weight:600}
+  .ht.off{opacity:.4}
+  .foot{margin:14px 0 6px;font-size:11.5px;color:#6b5a14;background:#fdf6e3;border:1px solid #ecdca6;border-radius:5px;padding:8px 12px;max-width:1050px;line-height:1.6}
+  .foot b{color:#4d4109}
+  .leg{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#9fb0cc;padding:6px 12px;background:#0c1326;border-top:1px solid #1c2740}
+  .leg span{display:inline-flex;align-items:center;gap:5px}
+  .dotl{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .approve{margin:16px 0;max-width:1050px;background:#eef7f0;border:1px solid #b8ddc4;border-radius:6px;padding:10px 14px;font-size:12.5px;color:#245b39}
+  .approve b{color:#173e26}
+</style>
+</head>
+<body>
+<div class="topbar"><span class="tag">OEC · Phase 3</span> System Architecture Map
+  <span class="sub">— functional mockup · real catalogue data · click-to-recenter live</span></div>
+<div class="notice"><b>Approval gate.</b> This mockup enumerates the <b>Phase 3 System Architecture map</b>
+  (<code>PHASE_OEC_PLAN.md</code> §C Phase 3 / D5). The layout below runs the <b>actual</b> mass-weighted
+  barycenter Jacobi roll-up + log-radial mapping in your browser on the real parsed OEC nodes — clicking a
+  star or binary re-anchors the view for real. Approve the behavior &amp; caveats, then I build
+  <code>core.viz.prepare_oec_architecture</code> + <code>make_oec_architecture_canvas</code> to match.</div>
+
+<div class="content">
+  <h2 class="title">System Architecture Map <span class="new-badge">PHASE 3 · NEW</span></h2>
+  <div class="subt">A whole-system schematic: every star placed by a recursive <b>Jacobi barycenter roll-up</b>
+    (each binary splits its two components about their mass-weighted barycenter, offset =
+    <span class="mono">sep&nbsp;×&nbsp;m<sub>other</sub>/(m₁+m₂)</span>), then mapped <b>log-radially</b> from the
+    system barycenter so ~6 orders of scale (Proxima at 15 000 AU ↔ α Cen A/B at 23 AU ↔ planets at &lt;1 AU)
+    coexist. Planets ride as small log-scaled rings on their host. Click a component to recenter.</div>
+
+  <details class="spec"><summary>Phase 3 build checklist (what this mockup is asking you to approve)</summary>
+  <ul>
+    <li><b>Static layout (D5).</b> Mass-weighted barycenter at the origin via recursive Jacobi roll-up; each
+      <code>&lt;binary&gt;</code> splits its two children by <span class="mono">sep×m_other/(m₁+m₂)</span>.
+      Separation resolved as: <code>semimajoraxis</code> (AU) → <code>separation[unit=AU]</code> →
+      <code>separation[arcsec]×distance_pc</code> (projected AU) → <b>Kepler fallback</b>
+      <span class="mono">a=∛((M₁+M₂)·P²)</span> from the binary <code>period</code> when only a period is
+      catalogued (61 Cygni — labelled "from period"). <b>Geometric-midpoint fallback</b> (equal split + a ⚠ flag)
+      when a component mass is missing; components stay stacked at the barycenter only if <i>no</i> separation,
+      sma, or period exists.
+      <b style="color:#8a5a2a">← new rung vs. D5's ladder — flag if you'd rather 61 Cyg just stack/schematic-offset.</b></li>
+    <li><b>Log-radial mapping.</b> Angle = on-sky <code>positionangle</code> (deterministic schematic angle when
+      absent); radius = log-scaled barycentric distance. Faint decade rings label the AU scale. A single star
+      sits at the barycenter (origin).</li>
+    <li><b>Planets = small rings on their host</b>, log-scaled by semi-major axis; RV-only planets (no radius)
+      still shown; <code>M·sin i</code> and status carried through.</li>
+    <li><b>Interactive click-to-recenter.</b> Click a <b>star</b> → focus it (planets expand to fill) and
+      <b>repopulate the Phase-2 per-host tabs</b> — the map replaces the host combo. Click a <b>binary</b> node →
+      re-anchor on that subsystem's barycenter (spreads a collapsed tight pair like α Cen A/B apart). A
+      breadcrumb + <b>⟲ Reset to barycenter</b> return to the whole-system view.</li>
+    <li><b>Caveat labeling (honesty).</b> Projected separation (arcsec→AU is a sky projection, not true 3-D);
+      static placement (positionangle = on-sky orientation, <i>no orbital phase</i>) — an architecture sketch,
+      not an ephemeris. Rendered as a persistent footnote.</li>
+    <li><b>New code only:</b> <code>core.viz.prepare_oec_architecture(system_node)</code> (pure layout →
+      dict of placed nodes/edges/scale) + <code>make_oec_architecture_canvas</code> (matplotlib, dark-navy
+      Star-Chart palette) wired into <code>OecPanel</code>; the click handler reuses the existing Phase-2
+      <code>_render_host</code>. No change to the core node model, CLI tree, or <code>query.py</code>.</li>
+  </ul></details>
+
+  <div class="picks"><span class="lab">Validation systems:</span>
+    <span class="pick" data-sys="Alpha Centauri">Alpha Centauri<span class="why">6-order scale · nested binary</span></span>
+    <span class="pick" data-sys="16 Cygni">16 Cygni<span class="why">depth-2 nesting</span></span>
+    <span class="pick" data-sys="40 Eridani">40 Eridani<span class="why">triple + WD</span></span>
+    <span class="pick" data-sys="Epsilon Indi">Epsilon Indi<span class="why">BD pair</span></span>
+    <span class="pick" data-sys="Solar System">Solar System<span class="why">moons</span></span>
+    <span class="pick" data-sys="55 Cancri">55 Cancri<span class="why">S-type + transiting</span></span>
+    <span class="pick" data-sys="TRAPPIST-1">TRAPPIST-1<span class="why">7 planets</span></span>
+    <span class="pick" data-sys="61 Cygni">61 Cygni<span class="why">zero planets</span></span>
+  </div>
+
+  <div class="layout">
+    <div class="mapcard">
+      <div class="mapbar">
+        <div class="crumb" id="crumb"></div>
+        <button class="rbtn" id="reset">⟲ Reset to barycenter</button>
+      </div>
+      <svg class="map" id="svg" viewBox="0 0 700 560" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="leg">
+        <span><span class="dotl" style="background:#ffd98a"></span>host star (size ∝ √mass)</span>
+        <span><span class="dotl" style="background:#2f7fb8"></span>planet (ring ∝ log SMA)</span>
+        <span><span style="color:#5a6f9c">⊕</span> barycenter</span>
+        <span><span style="color:#5a6f9c">┈┈</span> binary pair (sep label)</span>
+        <span>⚠ mass-missing → equal split</span>
+      </div>
+    </div>
+    <div class="side">
+      <div class="card" id="selcard">
+        <h3>Selection</h3>
+        <div class="muted">Click a star or binary on the map.</div>
+      </div>
+      <div class="card">
+        <h3>Phase-2 host tabs <span class="muted" style="font-weight:400">(repopulate on focus)</span></h3>
+        <div class="htabs" id="htabs"></div>
+        <div class="muted" id="hoststate" style="margin-top:7px">No host focused — showing whole system.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot" id="caveat"></div>
+  <div class="approve"><b>Approve?</b> If the barycenter placement, the log-radial scale, the recenter
+    behavior, and the caveat labeling look right, I'll port this exact algorithm to
+    <code>core.viz.prepare_oec_architecture</code> + a matplotlib canvas and wire click-to-recenter into
+    <code>OecPanel</code> (static map first, then the interaction). Tell me any changes first.</div>
+</div>
+
+<script>
+const SYSTEMS = {"Alpha Centauri": {"tag": "system", "name": "Alpha Centauri", "distance": "1.295", "children": [{"tag": "binary", "name": null, "semimajoraxis": "15000", "children": [{"tag": "star", "name": "Proxima Centauri", "mass": "0.120", "radius": "0.141", "temperature": "2900", "spectraltype": "M5.5V", "children": [{"tag": "planet", "name": "Proxima Centauri b", "mass": "0.003691", "temperature": "234", "semimajoraxis": "0.04857", "period": "11.18427", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"]}, {"tag": "planet", "name": "Proxima Centauri c", "mass": "0.022024", "period": "1929", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"]}, {"tag": "planet", "name": "Proxima Centauri d", "mass": "0.000818", "semimajoraxis": "0.02885", "eccentricity": "0.04", "period": "5.122", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"]}]}, {"tag": "binary", "name": "Alpha Centauri", "semimajoraxis": "23.518", "eccentricity": "0.5179", "period": "29187.1", "children": [{"tag": "star", "name": "Alpha Centauri A", "mass": "1.100", "radius": "1.227", "temperature": "5790", "spectraltype": "G2 V"}, {"tag": "star", "name": "Alpha Centauri B", "mass": "0.907", "radius": "0.865", "temperature": "5260", "spectraltype": "K1 V", "children": [{"tag": "planet", "name": "Alpha Centauri B b", "mass": "0.00356", "semimajoraxis": "0.04", "eccentricity": "0.0", "period": "3.2357", "discoverymethod": "RV", "status": ["Retracted planet candidate", "Planets in binary systems, S-type"], "masstype": "msini"}, {"tag": "planet", "name": "Alpha Centauri B c", "radius": "0.083840", "discoverymethod": "transit", "status": ["Controversial", "Planets in binary systems, S-type"]}]}]}]}]}, "16 Cygni": {"tag": "system", "name": "16 Cygni", "distance": "21.146", "children": [{"tag": "binary", "name": "16 Cygni", "positionangle": "133.30", "separation": [{"value": "39.56", "unit": "arcsec"}, {"value": "836.5", "unit": "AU"}], "children": [{"tag": "binary", "name": "16 Cygni AC", "positionangle": "209", "separation": [{"value": "3.4", "unit": "arcsec"}, {"value": "72", "unit": "AU"}], "children": [{"tag": "star", "name": "16 Cygni A", "mass": "1.11", "radius": "1.243", "temperature": "5825", "spectraltype": "G2V"}, {"tag": "star", "name": "16 Cygni C", "mass": "0.17", "spectraltype": "M"}]}, {"tag": "star", "name": "16 Cygni B", "mass": "1.07", "radius": "1.127", "temperature": "5750", "spectraltype": "G2V", "children": [{"tag": "planet", "name": "16 Cygni B b", "mass": "1.77", "semimajoraxis": "1.72", "eccentricity": "0.689", "period": "799.5", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"], "masstype": "msini"}]}]}]}, "40 Eridani": {"tag": "system", "name": "HD 26965", "distance": "4.98", "children": [{"tag": "binary", "name": "40 Eri", "positionangle": "102", "separation": [{"value": "83.70", "unit": "arcsec"}, {"value": "417", "unit": "AU"}], "children": [{"tag": "star", "name": "HD 26965", "mass": "0.78", "radius": "0.812", "temperature": "5072", "spectraltype": "K0V", "children": [{"tag": "planet", "name": "HD 26965 b", "mass": "0.02665", "eccentricity": "0.04", "period": "42.378", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"], "masstype": "msini"}]}, {"tag": "binary", "name": "40 Eri BC", "semimajoraxis": "34.54", "eccentricity": "0.4300", "period": "84040", "children": [{"tag": "star", "name": "40 Eri B", "mass": "0.575", "radius": "0.01308", "temperature": "17200", "spectraltype": "DA2.9"}, {"tag": "star", "name": "40 Eri C", "mass": "0.2041", "spectraltype": "M4.5V"}]}]}]}, "Epsilon Indi": {"tag": "system", "name": "Epsilon Indi", "distance": "3.6389", "children": [{"tag": "binary", "name": "Epsilon Indi", "positionangle": "88", "separation": [{"value": "403.10", "unit": "arcsec"}, {"value": "1460", "unit": "AU"}], "children": [{"tag": "star", "name": "Epsilon Indi A", "mass": "0.762", "radius": "0.732", "temperature": "4568", "spectraltype": "K5V", "children": [{"tag": "planet", "name": "Epsilon Indi A b", "mass": "2.71", "semimajoraxis": "12.82", "eccentricity": "0.01", "period": "19205.51", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"], "masstype": "msini"}]}, {"tag": "binary", "name": "Epsilon Indi B", "semimajoraxis": "2.61", "eccentricity": "0.47", "period": "4165.09", "children": [{"tag": "star", "name": "Epsilon Indi Ba", "mass": "0.0716", "spectraltype": "T1V"}, {"tag": "star", "name": "Epsilon Indi Bb", "mass": "0.0669", "spectraltype": "T6V"}]}]}]}, "Solar System": {"tag": "system", "name": "Sun", "children": [{"tag": "star", "name": "Sun", "mass": "1", "radius": "1", "temperature": "5778", "spectraltype": "G2V", "children": [{"tag": "planet", "name": "Mercury", "mass": "0.00017387419", "radius": "0.034901518", "semimajoraxis": "0.38709843", "eccentricity": "0.20563661", "period": "87.97", "status": ["Solar System"]}, {"tag": "planet", "name": "Venus", "mass": "0.0025637401", "radius": "0.08656491", "temperature": "900", "semimajoraxis": "0.72332102", "eccentricity": "0.00676399", "period": "224.7", "status": ["Solar System"]}, {"tag": "planet", "name": "Earth", "mass": "0.0031457007", "radius": "0.091130294", "temperature": "288", "semimajoraxis": "1.00000018", "eccentricity": "0.01673163", "period": "365.2422", "status": ["Solar System"], "children": [{"tag": "satellite", "name": "Moon", "mass": "0.000039", "radius": "0.024847", "semimajoraxis": "0.002570", "eccentricity": "0.0554", "period": "27.322"}]}, {"tag": "planet", "name": "Mars", "mass": "0.00033799525", "radius": "0.048489079", "temperature": "227", "semimajoraxis": "1.52371243", "eccentricity": "0.09336511", "period": "686.98", "status": ["Solar System"]}, {"tag": "planet", "name": "Jupiter", "mass": "1", "radius": "1", "semimajoraxis": "5.20248019", "eccentricity": "0.04853590", "period": "4332.82", "status": ["Solar System"], "children": [{"tag": "satellite", "name": "Callisto", "mass": "0.000057", "radius": "0.034477", "semimajoraxis": "0.012585", "eccentricity": "0.0074", "period": "16.69"}, {"tag": "satellite", "name": "Europa", "mass": "0.000025", "radius": "0.022328", "semimajoraxis": "0.004486", "eccentricity": "0.0094", "period": "3.551"}, {"tag": "satellite", "name": "Ganymede", "mass": "0.000078", "radius": "0.037636", "semimajoraxis": "0.007155", "eccentricity": "0.0013", "period": "7.155"}, {"tag": "satellite", "name": "Io", "mass": "0.000047", "radius": "0.026055", "semimajoraxis": "0.002820", "eccentricity": "0.0041", "period": "1.769"}]}, {"tag": "planet", "name": "Saturn", "mass": "0.299", "radius": "0.832944", "semimajoraxis": "9.54149883", "eccentricity": "0.05550825", "period": "10755.67", "status": ["Solar System"], "children": [{"tag": "satellite", "name": "Dione", "mass": "5.7566322e-07", "radius": "0.008033", "semimajoraxis": "0.002523", "eccentricity": "0.0022", "period": "2.737"}, {"tag": "satellite", "name": "Enceladus", "mass": "5.6937182e-08", "radius": "0.003606", "semimajoraxis": "0.001591", "eccentricity": "0.0", "period": "1.370"}, {"tag": "satellite", "name": "Iapetus", "mass": "1.0380812e-06", "radius": "0.010522", "semimajoraxis": "0.023803", "eccentricity": "0.0293", "period": "79.33"}, {"tag": "satellite", "name": "Rhea", "mass": "1.2268233e-06", "radius": "0.010930", "semimajoraxis": "0.003523", "eccentricity": "0.0002", "period": "4.518"}, {"tag": "satellite", "name": "Tethys", "mass": "3.2400717e-07", "radius": "0.007624", "semimajoraxis": "0.001970", "eccentricity": "0.0001", "period": "1.888"}, {"tag": "satellite", "name": "Titan", "mass": "0.000071", "radius": "0.036847", "semimajoraxis": "0.008168", "eccentricity": "0.0288", "period": "15.95"}]}, {"tag": "planet", "name": "Uranus", "mass": "0.0457", "radius": "0.362775", "semimajoraxis": "19.18797948", "eccentricity": "0.04685740", "period": "30687.153", "status": ["Solar System"], "children": [{"tag": "satellite", "name": "Ariel", "mass": "6.9205414e-07", "radius": "0.008281", "semimajoraxis": "0.001276", "eccentricity": "0.0012", "period": "2.520"}, {"tag": "satellite", "name": "Miranda", "mass": "3.4602707e-08", "radius": "0.003373", "semimajoraxis": "0.000868", "eccentricity": "0.0013", "period": "1.413"}, {"tag": "satellite", "name": "Oberon", "mass": "1.5728503e-06", "radius": "0.010891", "semimajoraxis": "0.003900", "eccentricity": "0.0014", "period": "13.46"}, {"tag": "satellite", "name": "Titania", "mass": "1.8559634e-06", "radius": "0.011284", "semimajoraxis": "0.002916", "eccentricity": "0.0011", "period": "8.706"}, {"tag": "satellite", "name": "Umbriel", "mass": "6.2914013e-07", "radius": "0.008363", "semimajoraxis": "0.001778", "eccentricity": "0.0039", "period": "4.144"}]}, {"tag": "planet", "name": "Neptune", "mass": "0.053953", "radius": "0.35221925", "semimajoraxis": "30.06952752", "eccentricity": "0.00895439", "period": "60190.03", "status": ["Solar System"], "children": [{"tag": "satellite", "name": "Triton", "mass": "0.000011", "radius": "0.019359", "semimajoraxis": "0.002371", "eccentricity": "0.0", "period": "5.877"}]}, {"tag": "planet", "name": "Pluto", "mass": "0.0000077581378", "radius": "0.0164379", "semimajoraxis": "39.48686035", "eccentricity": "0.24885238", "period": "90553.02", "status": ["Solar System"], "children": [{"tag": "satellite", "name": "Charon", "mass": "7.8642516e-07", "radius": "0.008632", "semimajoraxis": "0.000117", "eccentricity": "0.0022", "period": "6.387"}]}]}]}, "61 Cygni": {"tag": "system", "name": "61 Cygni", "distance": "3.4955011", "children": [{"tag": "binary", "name": null, "eccentricity": "0.49", "period": "247634.21", "children": [{"tag": "star", "name": "61 Cygni A", "mass": "0.70", "spectraltype": "K5.0V"}, {"tag": "star", "name": "61 Cygni B", "mass": "0.63", "spectraltype": "K7.0V"}]}]}, "55 Cancri": {"tag": "system", "name": "55 Cancri", "distance": "12.5901", "children": [{"tag": "binary", "name": "55 Cancri", "positionangle": "130", "separation": [{"value": "84", "unit": "arcsec"}, {"value": "1033", "unit": "AU"}], "children": [{"tag": "star", "name": "55 Cancri A", "mass": "0.905", "radius": "0.943", "temperature": "5172", "spectraltype": "K0IV-V", "children": [{"tag": "planet", "name": "55 Cancri b", "mass": "0.8036", "semimajoraxis": "0.1134", "eccentricity": "0.00", "period": "14.6516", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"], "masstype": "msini"}, {"tag": "planet", "name": "55 Cancri c", "mass": "0.1611", "semimajoraxis": "0.2373", "eccentricity": "0.03", "period": "44.3989", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"], "masstype": "msini"}, {"tag": "planet", "name": "55 Cancri d", "mass": "3.12", "semimajoraxis": "5.957", "eccentricity": "0.13", "period": "5574.2", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"], "masstype": "msini"}, {"tag": "planet", "name": "55 Cancri e", "mass": "0.0251", "radius": "0.16728", "semimajoraxis": "0.01544", "eccentricity": "0.05", "period": "0.7365474", "discoverymethod": "transit", "status": ["Confirmed planets", "Planets in binary systems, S-type"]}, {"tag": "planet", "name": "55 Cancri f", "mass": "0.1503", "semimajoraxis": "0.7708", "eccentricity": "0.08", "period": "259.88", "discoverymethod": "RV", "status": ["Confirmed planets", "Planets in binary systems, S-type"], "masstype": "msini"}]}, {"tag": "star", "name": "55 Cancri B", "mass": "0.2", "spectraltype": "M4"}]}]}, "TRAPPIST-1": {"tag": "system", "name": "TRAPPIST-1", "distance": "12.430", "children": [{"tag": "star", "name": "TRAPPIST-1", "mass": "0.089", "radius": "0.121", "temperature": "2516", "spectraltype": "M8 V", "children": [{"tag": "planet", "name": "TRAPPIST-1 b", "mass": "0.003200", "radius": "0.10001", "temperature": "400.1", "semimajoraxis": "0.01154775", "eccentricity": "0.00622", "period": "1.5108739", "discoverymethod": "transit", "status": ["Confirmed planets"]}, {"tag": "planet", "name": "TRAPPIST-1 c", "mass": "0.003637", "radius": "0.09769", "temperature": "341.9", "semimajoraxis": "0.01581512", "eccentricity": "0.00654", "period": "2.421818", "discoverymethod": "transit", "status": ["Confirmed planets"]}, {"tag": "planet", "name": "TRAPPIST-1 d", "mass": "0.000934", "radius": "0.06994", "temperature": "288.0", "semimajoraxis": "0.02228038", "eccentricity": "0.00837", "period": "4.04982", "discoverymethod": "transit", "status": ["Confirmed planets"]}, {"tag": "planet", "name": "TRAPPIST-1 e", "mass": "0.002429", "radius": "0.08118", "temperature": "251.3", "semimajoraxis": "0.02928285", "eccentricity": "0.00510", "period": "6.099570", "discoverymethod": "transit", "status": ["Confirmed planets"]}, {"tag": "planet", "name": "TRAPPIST-1 f", "mass": "0.002939", "radius": "0.09332", "temperature": "219.0", "semimajoraxis": "0.03853361", "eccentricity": "0.01007", "period": "9.20648", "discoverymethod": "transit", "status": ["Confirmed planets"]}, {"tag": "planet", "name": "TRAPPIST-1 g", "mass": "0.003612", "radius": "0.10242", "temperature": "198.6", "semimajoraxis": "0.04687692", "eccentricity": "0.00208", "period": "12.35281", "discoverymethod": "transit", "status": ["Confirmed planets"]}, {"tag": "planet", "name": "TRAPPIST-1 h", "mass": "0.001041", "radius": "0.06896", "temperature": "167", "semimajoraxis": "0.06193488", "eccentricity": "0.00567", "period": "18.76626", "discoverymethod": "transit", "status": ["Confirmed planets"]}]}]}};
+const SP_COLORS = {O:"#9BB0FF",B:"#AABFFF",A:"#CAD7FF",F:"#F8F7FF",G:"#FFF4EA",
+  K:"#FFD2A1",M:"#FF8D3F",L:"#FF4500",T:"#CD853F",W:"#E040FB",D:"#B0C4DE"};
+const HOST_TABS=["Hypatia","Orbital Diagram","HZ Diagram","Mass–Radius","Transit Geometry","Size Comparison","Abundance Profile","Kinematics"];
+const num=(n,k)=>{const v=n&&n[k];const f=parseFloat(v);return isNaN(f)?null:f;};
+const spColor=sp=>SP_COLORS[(sp||"").trim()[0]]||"#AAAAAA";
+
+// ---- separation resolution (AU) ----
+function sepAU(node,distPc){
+  const sma=num(node,"semimajoraxis"); if(sma!=null) return {au:sma,kind:"sma"};
+  const seps=node.separation||[];
+  for(const s of seps){const v=parseFloat(s.value); if(isNaN(v))continue;
+    const u=(s.unit||"").toLowerCase();
+    if(u==="au") return {au:v,kind:"sep-au"};
+    if((u==="arcsec"||u==="")&&distPc) return {au:v*distPc,kind:"sep-arcsec",proj:true};}
+  return {au:null,kind:null};
+}
+// ---- Jacobi barycenter roll-up ----
+function paDir(node,depth,idx){
+  const pa=num(node,"positionangle");
+  if(pa!=null){const a=pa*Math.PI/180; return {dx:Math.sin(a),dy:Math.cos(a),pa:true};}
+  const a=((137.5*(depth+1)+40*idx)%360)*Math.PI/180;
+  return {dx:Math.cos(a),dy:Math.sin(a),pa:false};
+}
+function layout(node,distPc,depth,idx){
+  // returns {mass, stars:[{node,x,y}], edges:[{x1,y1,x2,y2,label,proj,fallback}], flag}
+  if(node.tag==="star") return {mass:num(node,"mass"),stars:[{node,x:0,y:0}],edges:[]};
+  const comps=(node.children||[]).filter(c=>c.tag==="star"||c.tag==="binary");
+  if(!comps.length) return {mass:null,stars:[],edges:[]};
+  if(node.tag==="system"||comps.length!==2){
+    let mass=0,stars=[],edges=[];
+    comps.forEach((c,i)=>{const s=layout(c,distPc,depth+1,i);mass+=s.mass||0;stars=stars.concat(s.stars);edges=edges.concat(s.edges);});
+    return {mass:mass||null,stars,edges};
+  }
+  const A=layout(comps[0],distPc,depth+1,0), B=layout(comps[1],distPc,depth+1,1);
+  const sr=sepAU(node,distPc), dir=paDir(node,depth,idx);
+  let au=sr.au, proj=!!sr.proj, derived=false;
+  // Kepler fallback: no sep/sma but period + both masses → a = ∛((M1+M2)·P_yr²)  (P in days)
+  if(au==null && A.mass && B.mass){
+    const P=num(node,"period");
+    if(P!=null){const Pyr=P/365.25; au=Math.cbrt((A.mass+B.mass)*Pyr*Pyr); derived=true;}
+  }
+  let off1,off2,fallback=false,tot;
+  if(A.mass&&B.mass){tot=A.mass+B.mass; off1=au?au*B.mass/tot:0; off2=au?au*A.mass/tot:0;}
+  else{fallback=true; tot=(A.mass||0)+(B.mass||0)||null; off1=off2=au?au/2:0;}
+  const shift=(s,ox,oy)=>({stars:s.stars.map(p=>({node:p.node,x:p.x+ox,y:p.y+oy})),
+    edges:s.edges.map(e=>({...e,x1:e.x1+ox,y1:e.y1+oy,x2:e.x2+ox,y2:e.y2+oy}))});
+  const s1=shift(A,-off1*dir.dx,-off1*dir.dy), s2=shift(B,off2*dir.dx,off2*dir.dy);
+  // edge between the two subsystem barycenters
+  const c1x=-off1*dir.dx,c1y=-off1*dir.dy,c2x=off2*dir.dx,c2y=off2*dir.dy;
+  let lbl=au?(au>=1?au.toFixed(au<100?2:0)+" AU":au.toFixed(3)+" AU"):"sep n/a";
+  if(derived) lbl+=" (from period)"; else if(proj) lbl+=" (proj)";
+  const edges=s1.edges.concat(s2.edges);
+  edges.push({x1:c1x,y1:c1y,x2:c2x,y2:c2y,label:lbl,proj,derived,fallback});
+  return {mass:tot,stars:s1.stars.concat(s2.stars),edges,flag:fallback};
+}
+
+// ---- find a node's subsystem (for recenter) ----
+function findNode(root,target){ if(root===target)return root;
+  for(const c of root.children||[]){const r=findNode(c,target);if(r)return r;} return null;}
+function planetsOf(star){return (star.children||[]).filter(c=>c.tag==="planet");}
+
+let CUR=null, ROOTSYS=null, FOCUS=null; // FOCUS: {node, kind}
+
+function render(){
+  const svg=document.getElementById("svg");
+  const W=700,H=560,cx=W/2,cy=H/2+6;
+  svg.innerHTML="";
+  const distPc=num(CUR,"distance");
+  const NS="http://www.w3.org/2000/svg";
+  const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+  // decide subtree to lay out
+  let subtree=CUR, title="System barycenter";
+  if(FOCUS){ subtree = FOCUS.node; title = (FOCUS.node.name||"Binary")+" — subsystem barycenter"; }
+
+  const lay=layout(subtree,distPc,0,0);
+  let stars=lay.stars, edges=lay.edges;
+
+  // radial extents
+  const rs=stars.map(s=>Math.hypot(s.x,s.y));
+  const nz=rs.filter(r=>r>1e-9);
+  const rLo=nz.length?Math.min(...nz):1, rHi=nz.length?Math.max(...nz):1;
+  const Rin=52, Rout=Math.min(W,H)/2-70;
+  function toDisp(x,y){
+    const r=Math.hypot(x,y);
+    if(r<1e-9) return {X:cx,Y:cy};
+    let f;
+    if(rHi<=rLo*1.0000001) f=0.55;
+    else f=(Math.log10(r)-Math.log10(rLo))/(Math.log10(rHi)-Math.log10(rLo));
+    const R=Rin+(Rout-Rin)*f, ph=Math.atan2(y,x);
+    return {X:cx+R*Math.cos(ph),Y:cy+R*Math.sin(ph)};
+  }
+  // decade scale rings
+  if(nz.length){
+    const lo=Math.floor(Math.log10(rLo)), hi=Math.ceil(Math.log10(rHi));
+    for(let e=lo;e<=hi;e++){
+      const rAU=Math.pow(10,e); if(rAU<rLo*0.5||rAU>rHi*2)continue;
+      let f=(rHi<=rLo*1.0000001)?0.55:(Math.log10(rAU)-Math.log10(rLo))/(Math.log10(rHi)-Math.log10(rLo));
+      const R=Rin+(Rout-Rin)*Math.max(0,Math.min(1,f));
+      svg.appendChild(mk("circle",{cx,cy,r:R,fill:"none",stroke:"#1c2740",
+        "stroke-dasharray":"2 5","stroke-width":1}));
+      const lab=mk("text",{x:cx+4,y:cy-R-3,fill:"#3a4c72","font-size":9});
+      lab.textContent=(rAU>=1?rAU.toLocaleString():rAU)+" AU"; svg.appendChild(lab);
+    }
+  }
+  // barycenter marker
+  const bc=mk("text",{x:cx,y:cy+4,fill:"#6a80b6","font-size":16,"text-anchor":"middle"});
+  bc.textContent="⊕"; svg.appendChild(bc);
+  svg.appendChild(mk("text",{x:cx,y:cy+20,fill:"#4a597a","font-size":9,"text-anchor":"middle"})).textContent=title;
+
+  // edges (binary pairs)
+  for(const e of edges){
+    const a=toDisp(e.x1,e.y1), b=toDisp(e.x2,e.y2);
+    svg.appendChild(mk("line",{x1:a.X,y1:a.Y,x2:b.X,y2:b.Y,
+      stroke:e.fallback?"#8a5a2a":"#33456a","stroke-width":1,"stroke-dasharray":"3 4"}));
+    const mx=(a.X+b.X)/2,my=(a.Y+b.Y)/2;
+    const tl=mk("text",{x:mx,y:my-3,fill:e.fallback?"#c79a5a":"#6f83ab","font-size":8.5,"text-anchor":"middle"});
+    tl.textContent=(e.fallback?"⚠ ":"")+e.label; svg.appendChild(tl);
+  }
+
+  // star nearest-neighbor spacing → planet halo cap
+  function nnDisp(i,P){let best=1e9;for(let j=0;j<P.length;j++){if(j===i)continue;
+    best=Math.min(best,Math.hypot(P[i].X-P[j].X,P[i].Y-P[j].Y));}return best===1e9?Rout:best;}
+  const disp=stars.map(s=>toDisp(s.x,s.y));
+
+  stars.forEach((s,i)=>{
+    const p=disp[i], m=num(s.node,"mass")||0.2, sp=s.node.spectraltype||"";
+    const R=Math.max(4,Math.min(13,4+6*Math.sqrt(m)));
+    // planet halo
+    const pls=planetsOf(s.node);
+    if(pls.length){
+      const cap=Math.max(20,Math.min(nnDisp(i,disp)*0.42, stars.length===1?Rout-10:60));
+      const smas=pls.map(pl=>num(pl,"semimajoraxis")).filter(v=>v!=null&&v>0);
+      const aLo=smas.length?Math.min(...smas):0.05, aHi=smas.length?Math.max(...smas):1;
+      pls.forEach((pl,k)=>{
+        let a=num(pl,"semimajoraxis");
+        let f= (a==null)? (k+1)/(pls.length+1)
+              : (aHi<=aLo*1.0000001?0.6:(Math.log10(a)-Math.log10(aLo))/(Math.log10(aHi)-Math.log10(aLo)));
+        const rr=R+8+(cap-(R+8))*Math.max(0,Math.min(1,f));
+        svg.appendChild(mk("circle",{cx:p.X,cy:p.Y,r:rr,fill:"none",stroke:"#22406b","stroke-width":0.8}));
+        const ang=(-60+k*47)*Math.PI/180;
+        const px=p.X+rr*Math.cos(ang),py=p.Y+rr*Math.sin(ang);
+        const hasR=num(pl,"radius")!=null;
+        const dot=mk("circle",{cx:px,cy:py,r:hasR?3.2:2.4,fill:hasR?"#4FC3F7":"none",
+          stroke:"#4FC3F7","stroke-width":hasR?0:1.3});
+        dot.style.cursor="pointer"; dot.addEventListener("click",ev=>{ev.stopPropagation();selectNode(pl,"planet",s.node);});
+        svg.appendChild(dot);
+      });
+    }
+    // star marker
+    const g=mk("g",{}); g.style.cursor="pointer";
+    const halo=mk("circle",{cx:p.X,cy:p.Y,r:R+3,fill:spColor(sp),opacity:0.16});
+    const dot=mk("circle",{cx:p.X,cy:p.Y,r:R,fill:spColor(sp),stroke:"#0a0f1e","stroke-width":1});
+    if(FOCUS&&FOCUS.node===s.node) dot.setAttribute("stroke","#ffe08a"),dot.setAttribute("stroke-width",2.5);
+    g.appendChild(halo);g.appendChild(dot);
+    const lab=mk("text",{x:p.X,y:p.Y-R-5,fill:"#c9d6ee","font-size":10.5,"text-anchor":"middle"});
+    lab.textContent=(s.node.name||"star")+(sp?" · "+sp:""); g.appendChild(lab);
+    g.addEventListener("click",ev=>{ev.stopPropagation();selectNode(s.node,"star",null);});
+    svg.appendChild(g);
+  });
+
+  // clickable binary nodes: put a small ◆ handle at each binary subsystem barycenter
+  (function walkBin(node,depth,idx){
+    if(node.tag==="binary"){
+      const bl=layout(node,distPc,depth,idx);
+      // barycenter of this binary within current subtree coords:
+      // approximate as mass-weighted centroid of its stars
+      let mx=0,my=0,mt=0; bl.stars.forEach(s=>{const m=num(s.node,"mass")||0.1;mx+=s.x*m;my+=s.y*m;mt+=m;});
+    }
+  })(subtree,0,0);
+  // simpler: expose binaries via the breadcrumb + a "focus binary" affordance on edge labels
+  buildCrumb();
+  buildBinaryHandles(svg,subtree,distPc,toDisp,mk);
+  document.getElementById("reset").disabled=!FOCUS;
+}
+
+function buildBinaryHandles(svg,subtree,distPc,toDisp,mk){
+  // place a clickable ◆ at each binary's barycenter (its two-subsystem midpoint, mass-weighted)
+  function walk(node,depth,idx){
+    if(node.tag==="binary"){
+      const comps=(node.children||[]).filter(c=>c.tag==="star"||c.tag==="binary");
+      if(comps.length===2){
+        const full=layout(node,distPc,depth,idx);
+        let mx=0,my=0,mt=0; full.stars.forEach(s=>{const m=num(s.node,"mass")||0.1;mx+=s.x*m;my+=s.y*m;mt+=m;});
+        if(mt){mx/=mt;my/=mt;}
+        const p=toDisp(mx,my);
+        const h=mk("text",{x:p.X,y:p.Y+4,fill:"#e0a94a","font-size":13,"text-anchor":"middle"});
+        h.textContent="◆"; h.style.cursor="pointer";
+        h.addEventListener("click",ev=>{ev.stopPropagation();selectNode(node,"binary",null);});
+        const tt=mk("title",{}); tt.textContent="Recenter on "+(binLabel(node))+" (spreads this pair)"; h.appendChild(tt);
+        svg.appendChild(h);
+      }
+    }
+    (node.children||[]).forEach((c,i)=>walk(c,depth+1,i));
+  }
+  // only show handles that are the CURRENT subtree or nested inside it
+  walk(subtree,0,0);
+}
+
+function binLabel(node){
+  if(node.name) return node.name;
+  const parts=(node.children||[]).map(c=>c.tag==="binary"?binLabel(c):(c.name||"?"));
+  return "Binary ("+parts.map(p=>p.split(" ").pop()).join(" + ")+")";
+}
+
+function buildCrumb(){
+  const c=document.getElementById("crumb"); c.innerHTML="";
+  const NS="crumb"; const add=(txt,cls,fn)=>{const s=document.createElement("span");
+    s.className="seg"+(cls||"");s.textContent=txt;if(fn)s.onclick=fn;c.appendChild(s);};
+  add(CUR.name||"System", FOCUS?"":" here", FOCUS?()=>{FOCUS=null;render();syncSide();}:null);
+  if(FOCUS){const sepc=document.createElement("span");sepc.className="sepc";sepc.textContent=" ▸ ";c.appendChild(sepc);
+    add((FOCUS.kind==="binary"?binLabel(FOCUS.node):FOCUS.node.name)||"node"," here",null);}
+}
+
+function selectNode(node,kind,hostStar){
+  // recenter for star/binary; planets just update the side panel
+  if(kind==="star"||kind==="binary"){FOCUS={node,kind};render();}
+  syncSide(node,kind,hostStar);
+}
+
+function syncSide(node,kind,hostStar){
+  const sc=document.getElementById("selcard");
+  if(!node){sc.innerHTML='<h3>Selection</h3><div class="muted">Click a star or binary on the map.</div>';
+    setHost(null);return;}
+  const icls=kind;
+  let rows="";
+  const add=(k,v)=>{if(v!=null&&v!=="")rows+=`<div class="kv"><b>${k}</b><span>${v}</span></div>`;};
+  if(kind==="star"){
+    add("Spectral type",node.spectraltype);
+    add("Mass (M☉)",node.mass); add("Radius (R☉)",node.radius); add("Temp (K)",node.temperature);
+    add("Planets",planetsOf(node).length||0);
+  }else if(kind==="binary"){
+    add("Components",(node.children||[]).map(c=>c.name||binLabel(c)).join(" + "));
+    const sa=num(node,"semimajoraxis"); if(sa!=null)add("Semi-major axis",sa+" AU");
+    (node.separation||[]).forEach(s=>add("Separation",s.value+" "+(s.unit||"")));
+    add("Position angle",node.positionangle?node.positionangle+"°":null);
+  }else if(kind==="planet"){
+    add("Semi-major axis",node.semimajoraxis?node.semimajoraxis+" AU":null);
+    add("Eccentricity",node.eccentricity);
+    add((node.masstype==="msini"?"M·sin i":"Mass")+" (M♃)",node.mass);
+    add("Radius (R♃)",node.radius); add("Discovery",node.discoverymethod);
+    add("Status",(node.status||[]).join("; "));
+    if(hostStar)add("Host",hostStar.name);
+  }
+  const nm = kind==="binary"?binLabel(node):(node.name||kind);
+  sc.innerHTML=`<h3><span class="ic ${icls}">${kind.toUpperCase()}</span> ${nm}</h3>`+
+    (rows||'<div class="muted">No catalogued fields.</div>')+
+    (kind!=="planet"?`<div class="muted" style="margin-top:8px">${kind==="binary"
+      ?"↳ View recentered on this subsystem's barycenter.":"↳ Focused — Phase-2 tabs below reflect this host."}</div>`:"");
+  if(kind==="star") setHost(node);
+  else if(kind==="binary") setHost(null,"binary");
+}
+
+function setHost(star,mode){
+  const ht=document.getElementById("htabs"), st=document.getElementById("hoststate");
+  ht.innerHTML="";
+  const active = star!=null;
+  HOST_TABS.forEach(t=>{
+    const on = active && !((t==="Mass–Radius"||t==="Transit Geometry"||t==="Size Comparison") &&
+      planetsOf(star).every(p=>num(p,"radius")==null))
+      && !((t==="Hypatia"||t==="Abundance Profile"||t==="Kinematics") && /^[MLTY]/.test(star.spectraltype||""));
+    const d=document.createElement("span"); d.className="ht "+(on?"on":"off"); d.textContent=t; ht.appendChild(d);
+  });
+  if(active) st.textContent="Host focused: "+star.name+" — tabs rebuilt via the existing _render_host (RV-only ⇒ Mass–Radius/Size dim; M/BD host ⇒ Hypatia sparse).";
+  else if(mode==="binary") st.textContent="Binary focused — circumbinary pseudo-host; per-component Hypatia on the star you click.";
+  else st.textContent="No host focused — showing whole system.";
+}
+
+function loadSystem(name){
+  CUR=SYSTEMS[name]; ROOTSYS=CUR; FOCUS=null;
+  document.querySelectorAll(".pick").forEach(p=>p.classList.toggle("active",p.dataset.sys===name));
+  // caveat text
+  document.getElementById("caveat").innerHTML=
+    "<b>Caveats (persistent).</b> This is an <b>architecture sketch, not an ephemeris.</b> "+
+    "Separations shown <span class='mono'>(proj)</span> are <b>projected</b> (arcsec→AU via the system distance — a sky projection, not the true 3-D separation). "+
+    "Placement is <b>static</b>: the angle is the catalogued on-sky <code>positionangle</code> (or a schematic angle when absent) — there is <b>no orbital phase</b>. "+
+    "Tight inner pairs far from the system barycenter (e.g. α Cen A/B, ε Ind Ba/Bb) visually collapse — <b>click the ◆ to recenter</b> and spread them.";
+  render(); syncSide();
+}
+
+document.querySelectorAll(".pick").forEach(p=>p.addEventListener("click",()=>loadSystem(p.dataset.sys)));
+document.getElementById("reset").addEventListener("click",()=>{FOCUS=null;render();syncSide();});
+document.getElementById("svg").addEventListener("click",()=>{/* background: keep selection */});
+loadSystem("Alpha Centauri");
+</script>
+</body>
+</html>

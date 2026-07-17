@@ -3664,6 +3664,174 @@ def make_exoplanet_system_canvas(parent, data: dict, on_planet_click=None):
     return canvas, toolbar
 
 
+# ── OEC System Architecture map (Phase OEC 3) ────────────────────────────────
+
+def _oec_arch_nudge_labels(pts, min_sep=0.055):
+    """Return a per-point vertical label offset (data units) so labels on stars that
+    nearly coincide in the log-radial view (α Cen A/B, ε Ind Ba/Bb) don't overprint.
+    Points within `min_sep` of an earlier one are stacked downward in steps."""
+    offs = []
+    for i, (x, y) in enumerate(pts):
+        step = 0
+        for j in range(i):
+            if math.hypot(x - pts[j][0], y - pts[j][1]) < min_sep:
+                step += 1
+        offs.append(step)
+    return offs
+
+
+def make_oec_architecture_canvas(parent, data: dict, on_select=None):
+    """OEC System Architecture map — the whole hierarchy on one log-radial schematic.
+
+    data: result of core.viz.prepare_oec_architecture(). Display coords are a unit
+    disk: stars placed by the mass-weighted-barycenter roll-up, radius = log-scaled
+    barycentric distance, angle = on-sky position angle. Planets ride as small
+    log-scaled rings on their host; binary pairs are dashed connectors labelled with
+    the (possibly projected / period-derived) separation.
+
+    on_select(node): optional callback for Phase-3 click-to-recenter. When given,
+    clickable ◆ handles are drawn at each binary's barycenter and star markers become
+    pickable; when None (static map) neither is drawn. Returns (canvas, toolbar) or
+    (None, None) on failure.
+    """
+    stars = data.get("stars")
+    if not stars:
+        return None, None
+
+    LIM = 1.18
+    fig = Figure(figsize=(7, 7), facecolor=_SC_FIG_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, aspect="equal", facecolor=_SC_PLOT_BG)
+    ax.set_xlim(-LIM, LIM)
+    ax.set_ylim(-LIM, LIM)
+    ax.axis("off")
+
+    # Scale rings (log-radial decades or a single reference ring).
+    for ring in data.get("rings", []):
+        r = ring["r"]
+        ax.add_patch(Circle((0, 0), r, fill=False, edgecolor=_SC_GRID_MAJOR,
+                            linestyle=(0, (2, 5)), linewidth=0.9, zorder=1))
+        ax.text(0.02, r + 0.018, ring["label"], color=_SC_RING_LBL,
+                fontsize=7, ha="left", va="bottom", zorder=2,
+                clip_on=True)
+
+    # Binary-pair connectors (dashed) + separation labels.
+    for e in data.get("edges", []):
+        col = "#c08a3a" if (e["fallback"] or e["schematic"]) else _SC_RING
+        ax.plot([e["x1"], e["x2"]], [e["y1"], e["y2"]], color=col,
+                linestyle=(0, (3, 4)), linewidth=1.0, zorder=2)
+        mx, my = (e["x1"] + e["x2"]) / 2.0, (e["y1"] + e["y2"]) / 2.0
+        flag = "⚠ " if (e["fallback"] or e["schematic"]) else ""
+        ax.text(mx, my + 0.022, flag + e["label"],
+                color="#d6a95e" if flag else _SC_RING_LBL, fontsize=6.5,
+                ha="center", va="bottom", zorder=3, clip_on=True)
+
+    # Planet rings + planet markers on each host, then the star marker + label.
+    star_pts = [(s["x"], s["y"]) for s in stars]
+    single = len(stars) == 1
+    lbl_off = _oec_arch_nudge_labels(star_pts)
+    pickable = []
+
+    def _nn(i):
+        best = 1e9
+        for j in range(len(star_pts)):
+            if j == i:
+                continue
+            best = min(best, math.hypot(star_pts[i][0] - star_pts[j][0],
+                                        star_pts[i][1] - star_pts[j][1]))
+        return LIM if best == 1e9 else best
+
+    for i, s in enumerate(stars):
+        x, y = s["x"], s["y"]
+        m = s.get("mass") or 0.2
+        r_mark = max(4.0, min(13.0, 4.0 + 6.0 * math.sqrt(m)))
+        gap = 0.045
+        cap = (0.92 if single else max(0.09, min(_nn(i) * 0.42, 0.14)))
+        planets = s.get("planets", [])
+        if planets and cap > gap:
+            for k, p in enumerate(planets):
+                rr = gap + (cap - gap) * max(0.0, min(1.0, p["ring_frac"]))
+                ax.add_patch(Circle((x, y), rr, fill=False, edgecolor="#22406b",
+                                    linewidth=0.7, zorder=3))
+                ang = math.radians(-60 + k * 47)
+                px, py = x + rr * math.cos(ang), y + rr * math.sin(ang)
+                if p["has_radius"]:
+                    ax.scatter([px], [py], s=26, color="#4FC3F7",
+                               edgecolor="#0a0f1e", linewidth=0.4, zorder=4)
+                else:
+                    ax.scatter([px], [py], s=24, facecolor="none",
+                               edgecolor="#4FC3F7", linewidth=1.0, zorder=4)
+                # AU labels on the planet dots when there's room (single-host systems
+                # where the planet fan fills the view — Sun, TRAPPIST-1).
+                if single and p.get("sma"):
+                    a = p["sma"]
+                    au_lbl = f"{a:.2f}" if a >= 0.1 else f"{a:.3f}"
+                    ax.text(px, py + 0.028, au_lbl + " AU", color="#6f9bd0",
+                            fontsize=5.5, ha="center", va="bottom", zorder=5,
+                            clip_on=True)
+
+        halo = 2.6 if s.get("is_focus") else 1.8
+        ax.scatter([x], [y], s=(r_mark ** 2) * halo,
+                   color=s["color"], alpha=0.16, zorder=4)
+        marker = ax.scatter(
+            [x], [y], s=(r_mark ** 2), color=s["color"],
+            edgecolor=("#ffe08a" if s.get("is_focus") else "#0a0f1e"),
+            linewidth=(2.2 if s.get("is_focus") else 0.9), zorder=6,
+            picker=(6 if on_select else None))
+        if on_select:
+            marker._oec_node = s.get("node")
+            pickable.append(marker)
+        label = s["name"] + (f" · {s['sp_type']}" if s["sp_type"] else "")
+        ax.text(x, y + 0.05 + 0.032 * lbl_off[i] + r_mark * 0.004, label,
+                color=_SC_STAR_LBL, fontsize=8.5, ha="center", va="bottom",
+                zorder=7, clip_on=True)
+
+    # Barycenter marker at the origin; the focus label goes to the top-left corner
+    # so it never collides with a tight star cluster sitting on the barycenter.
+    ax.scatter([0], [0], marker="+", s=90, color="#7f93c2", linewidth=1.3, zorder=5)
+    ax.text(0.015, 0.985, "⊕ " + data.get("focus_label", "System barycenter"),
+            transform=ax.transAxes, color="#8298c4", fontsize=8,
+            ha="left", va="top", zorder=9, clip_on=False)
+
+    # Clickable recenter handles (only in interactive mode).
+    if on_select:
+        for h in data.get("handles", []):
+            if math.hypot(h["x"], h["y"]) < 1e-6:
+                continue  # the outer/system barycenter coincides with ⊕ — skip
+            hd = ax.scatter([h["x"]], [h["y"]], marker="D", s=40,
+                            color="#e0a94a", edgecolor="#0a0f1e", linewidth=0.5,
+                            zorder=8, picker=6)
+            hd._oec_node = h["node"]
+            pickable.append(hd)
+
+    title = "System Architecture — " + (data.get("star_name") or "OEC system")
+    ax.set_title(title, color=_SC_AXIS_TITLE, fontsize=12, pad=10)
+
+    # Persistent caveat footnote (honesty — architecture sketch, not an ephemeris).
+    flags = data.get("flags", {})
+    notes = ["Schematic architecture, not an ephemeris — static placement "
+             "(position angle = on-sky orientation, no orbital phase)."]
+    if flags.get("any_proj"):
+        notes.append("(proj) = projected separation (arcsec→AU via system distance).")
+    if flags.get("any_derived"):
+        notes.append("“from period” = separation derived from the orbital period (Kepler).")
+    if flags.get("any_fallback") or flags.get("any_schematic"):
+        notes.append("⚠ = component mass or separation missing (equal/schematic split).")
+    fig.text(0.5, 0.015, "  ".join(notes), ha="center", va="bottom",
+             color=_SC_RING_LBL, fontsize=6.5, wrap=True)
+
+    if on_select and pickable:
+        def _on_pick(event):
+            node = getattr(event.artist, "_oec_node", None)
+            if node is not None:
+                on_select(node)
+        canvas.mpl_connect("pick_event", _on_pick)
+
+    fig.subplots_adjust(left=0.03, right=0.97, top=0.93, bottom=0.07)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
 def make_esi_bar_canvas(parent, data: dict):
     """Horizontal top-N planets-by-ESI bar chart (Phase L2).
 
