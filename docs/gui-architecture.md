@@ -346,7 +346,7 @@ def __getattr__(name: str):
 | `ProjectPanel` | — (GUI + `query.py project-list`/`project-get`, Phase S) | `panels/projects.py` |
 | `SystemGeneratorPanel` | — (GUI + `query.py generate-system`, Phase R1) | `panels/generator.py` |
 
-> **Note**: `NasaAllTablesPanel` (opt 2) and `OecPanel` (opt 7) are implemented in `nasa_exoplanet.py` and `catalogs.py` respectively, but are **not exported** from `panels/__init__.py` and do not appear in the GUI nav. Both options remain fully functional in the CLI.
+> **Note**: `NasaAllTablesPanel` (opt 2) is implemented in `nasa_exoplanet.py` but is **not exported** from `panels/__init__.py` and does not appear in the GUI nav; it remains fully functional in the CLI. (The former `OecPanel` for opt 7 was removed along with the rest of the OEC feature — rebuild pending; menu slot 7 is reserved for it.)
 
 > **Note**: `StarMapPanel`, `SystemOrbitsPanel`, and `HabZoneDiagramPanel` live in `gui/visualizations/` and are exported via the lazy `__getattr__` in `panels/__init__.py`. They are **not in the nav tree** — visualizations appear as embedded tabs inside the relevant option panels rather than as standalone nav entries.
 

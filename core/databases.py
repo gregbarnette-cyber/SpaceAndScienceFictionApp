@@ -1,4 +1,4 @@
-# core/databases.py — Star database query functions (SIMBAD, NASA, HWC, OEC, Mission Exocat)
+# core/databases.py — Star database query functions (SIMBAD, NASA, HWC, Mission Exocat)
 # Phase C: compute_simbad_lookup() added.
 # Phase D: remaining query functions added.
 
@@ -17,8 +17,8 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
 
 # Module-level caches (+ per-cache locks for the GUI worker threads that build them
-# lazily; double-checked locking in the _load_* helpers — P6.4). _OEC_DATA is out of
-# scope (OEC pending rebuild).
+# lazily; double-checked locking in the _load_* helpers — P6.4). _OEC_DATA backs the
+# retained _load_oec scaffolding kept for the OEC rebuild (see below).
 _HWC_DATA      = None
 _OEC_DATA      = None
 _MISSION_EXOCAT = None
@@ -556,7 +556,9 @@ def compute_hwc(simbad_result: dict) -> dict:
     return {"simbad": simbad_result, "star_row": rows[0], "planet_rows": rows}
 
 
-# ── Option 7: Open Exoplanet Catalogue ───────────────────────────────────────
+# ── Open Exoplanet Catalogue — retained loader scaffolding (rebuild pending) ──
+# The OEC feature (matching + display + compute_oec) was removed as broken; only
+# this data-fetch loader is kept as a working seed for the ground-up rebuild.
 
 def _load_oec():
     """Download and parse OEC XML; build case-insensitive name→system index. Cached."""
@@ -575,131 +577,6 @@ def _load_oec():
                     index[k] = system
     _OEC_DATA = (root, index)
     return _OEC_DATA
-
-
-def _get_oec_candidates(designations):
-    """Return ordered candidate name strings for OEC lookup."""
-    candidates = []
-    for key in ("HIP", "HD", "GJ", "HR", "WASP", "HAT_P", "Kepler", "TOI",
-                "K2", "CoRoT", "COCONUTS", "KOI", "TIC", "2MASS"):
-        val = designations.get(key)
-        if val:
-            s = str(val).strip()
-            s = re.sub(r"(?i)^(k2)\s+(\d)", r"K2-\2", s)
-            s = re.sub(r"(?i)^(kepler)\s+(\d)", r"Kepler-\2", s)
-            s = re.sub(r"(?i)^(hat-p)\s+(\d)", r"HAT-P-\2", s)
-            s = re.sub(r"(?i)^(WASP-\d+)([AB])$", r"\1 \2", s)
-            s = re.sub(r"(?i)^(2MASS\s+)J(\d)", r"\g<1>\2", s)
-            candidates.append(s)
-    name_val = str(designations.get("NAME") or "").strip()
-    if name_val.upper().startswith("NAME "):
-        candidates.append(name_val[5:].strip())
-    elif name_val:
-        candidates.append(name_val)
-    main_id = str(designations.get("MAIN_ID") or "").strip()
-    for prefix in ("NAME ", "V* ", "* "):
-        if main_id.upper().startswith(prefix.upper()):
-            main_id = main_id[len(prefix):].strip()
-            break
-    if main_id:
-        candidates.append(main_id)
-    return candidates
-
-
-def _oec_val(elem, tag):
-    """Return stripped text of first matching child tag, or None."""
-    if elem is None:
-        return None
-    text = elem.findtext(tag)
-    return text.strip() if text and text.strip() else None
-
-
-def _oec_star_dict(system_elem, star_elem):
-    """Extract star data from OEC XML as a dict."""
-    def fmtf(v, dp):
-        try:
-            return f"{float(v):.{dp}f}"
-        except (TypeError, ValueError):
-            return "N/A"
-    spec   = _oec_val(star_elem, "spectraltype") or "N/A"
-    magv   = _oec_val(star_elem, "magV")
-    temp   = _oec_val(star_elem, "temperature")
-    mass   = _oec_val(star_elem, "mass")
-    radius = _oec_val(star_elem, "radius")
-    met    = _oec_val(star_elem, "metallicity")
-    age    = _oec_val(star_elem, "age")
-    dist   = _oec_val(system_elem, "distance")
-    names  = [e.text.strip() for e in star_elem.findall("name") if e.text and e.text.strip()]
-    # Planets
-    planets = []
-    for planet in star_elem.findall("planet"):
-        pnames = [e.text.strip() for e in planet.findall("name") if e.text and e.text.strip()]
-        mass_j  = _oec_val(planet, "mass")
-        rad_j   = _oec_val(planet, "radius")
-        period  = _oec_val(planet, "period")
-        sma     = _oec_val(planet, "semimajoraxis")
-        ecc     = _oec_val(planet, "eccentricity")
-        temp_p  = _oec_val(planet, "temperature")
-        method  = _oec_val(planet, "discoverymethod")
-        year    = _oec_val(planet, "discoveryyear")
-        status  = _oec_val(planet, "list") or ""
-        planets.append({
-            "name": pnames[0] if pnames else "N/A",
-            "mass_j": mass_j, "rad_j": rad_j,
-            "period": period, "sma": sma, "ecc": ecc,
-            "temp": temp_p, "method": method, "year": year, "status": status,
-        })
-    # Sort planets by sma (N/A last)
-    def sma_sort(p):
-        try:
-            return float(p["sma"])
-        except (TypeError, ValueError):
-            return float("inf")
-    planets.sort(key=sma_sort)
-    return {
-        "names": names,
-        "spec": spec, "magv": magv, "temp": temp, "mass": mass,
-        "radius": radius, "met": met, "age": age, "dist": dist,
-        "planets": planets,
-    }
-
-
-def compute_oec(simbad_result: dict, progress_callback=None) -> dict:
-    """Search Open Exoplanet Catalogue for the star.
-
-    Returns {simbad, stars: [list of star dicts]} or {"error": str}.
-    """
-    if "error" in simbad_result:
-        return simbad_result
-
-    if progress_callback:
-        progress_callback("Loading Open Exoplanet Catalogue (first use downloads ~3 MB)…")
-
-    designations = simbad_result["designations"]
-    try:
-        _, index = _load_oec()
-    except Exception as e:
-        return {"error": f"Failed to load Open Exoplanet Catalogue: {e}"}
-    candidates = _get_oec_candidates(designations)
-
-    system_elem = None
-    for name in candidates:
-        key = name.lower()
-        if key in index:
-            system_elem = index[key]
-            break
-
-    if system_elem is None:
-        return {"error": "Star not found in Open Exoplanet Catalogue."}
-
-    stars_with_planets = [s for s in system_elem.iter("star") if s.find("planet") is not None]
-    star_elems = stars_with_planets if stars_with_planets else list(system_elem.iter("star"))
-
-    if not star_elems:
-        return {"error": "No star elements found in OEC system."}
-
-    stars = [_oec_star_dict(system_elem, se) for se in star_elems]
-    return {"simbad": simbad_result, "stars": stars}
 
 
 # ── Option 50: Star Systems CSV Query ────────────────────────────────────────

@@ -120,30 +120,16 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 - If no match is found, prints a message and returns to menu.
 - **GUI (`HwcPanel`)**: background call uses `_hwc_with_hypatia()`, which calls `compute_hwc` then `compute_hypatia_data`. All HWC tables are placed inside a **Data** tab alongside a **Hypatia** tab (inner `QTabWidget`). Show Diagrams view adds **Orbital Diagram** (with the Phase O O4 "Show Solar System reference" overlay checkbox + an O10b "Show Honorverse Hyper Limit (fiction)" checkbox when `S_TYPE` resolves), **HZ Diagram**, **Mass–Radius** (Phase O O3, from `P_MASS`/`P_RADIUS`), **Size Comparison** (Phase O O14, from `P_RADIUS`), **Temperature Ranges** + **ESI vs Orbit** (Phase O O12 — per-planet equilibrium/surface temperature bars with the 273–373 K liquid-water band; SMA-vs-ESI scatter with the host's optimistic/conservative HZ shaded and points coloured by `P_HABITABLE`; each shown only when ≥1 planet qualifies), **Abundance Profile** (when Hypatia data is available), and a **Kinematics** tab (Phase O O11 — Toomre diagram + Explain button, when Hypatia returns all three U/V/W velocities). (No Transit Geometry tab — HWC carries no orbital inclination.)
 
-## Open Exoplanet Catalogue Feature
+## Open Exoplanet Catalogue Feature (removed — rebuild pending)
 
-- Menu option 7: `query_open_exoplanet_catalogue()` — runs the same SIMBAD lookup, then queries the Open Exoplanet Catalogue (OEC) only.
-- Data source: downloaded once per session via `astroquery.open_exoplanet_catalogue.get_catalogue()` which fetches a gzip'd XML file from GitHub. Cached in module-level `_OEC_DATA = (root_element, name_index)`.
-- `_load_oec()` calls `get_catalogue()`, calls `.getroot()` on the returned `ElementTree`, then builds a case-insensitive `{name_lower: system_element}` index by iterating all `<name>` elements across the entire tree.
-- `_get_oec_candidates(designations)` builds an ordered candidate list from the designations dict (HIP → HD → GJ → HR → WASP → HAT_P → Kepler → TOI → K2 → CoRoT → COCONUTS → KOI → TIC → 2MASS → NAME → MAIN_ID) with normalizations:
-  - `K2 N` → `K2-N`, `Kepler N` → `Kepler-N`, `HAT-P N` → `HAT-P-N` (SIMBAD uses spaces, OEC uses dashes)
-  - `WASP-94A` → `WASP-94 A` (SIMBAD omits space before component letter, OEC includes it)
-  - `2MASS J...` → `2MASS ...` (SIMBAD includes leading `J`, OEC omits it)
-  - NAME: strips `"NAME "` prefix; MAIN_ID: strips `"* "`, `"V* "`, `"NAME "` prefixes
-  - Gaia EDR3 excluded (OEC uses Gaia DR2 IDs — incompatible)
-- `_query_oec(designations)` returns `(system_elem, star_elems_list)` or `(None, [])`.
-- `_find_stars_in_system(system_elem, matched_name_lower)` returns a **list** of `<star>` elements:
-  - Always returns **all stars with planets** in the system, regardless of which star the query matched. This ensures binary systems like WASP-94 (A and B each with a planet) and Alpha Centauri (Proxima + Alpha Cen B) always show all planet-bearing stars.
-  - If no stars have planets, falls back to all stars in the system.
-- OEC XML structure: `<system>` may contain `<binary>` elements (nested arbitrarily), which contain `<star>` elements. `system.iter('star')` descends into all nesting automatically.
-- Renders: SIMBAD star designations + info table, then `_display_oec_results()` which **iterates over each star** in `star_elems` and for each prints:
-  - Star Name line (primary OEC name + up to 3 alternates from star `<name>` elements)
-  - **Star Properties table** columns: Spectral Type (`spectraltype`), MagV (3dp), Temp (int K), Mass (3dp Msun), Radius (3dp Rsun), Fe/H (3dp), Age (2dp Gyr), Parsecs (4dp, from `system/distance`), LYs (parsecs × 3.26156, 4dp).
-  - **Planet Properties table** — one row per planet sorted ascending by `semimajoraxis` (N/A last): `#`, Planet Name, Mass(J) (4dp), Mass(E) (2dp, ×317.8), Rad(J) (4dp), Rad(E) (2dp, ×11.2), Period (3dp days), Distance as `peri - SMA - apo AU` (if eccentricity missing: `N/A - SMA - N/A AU`), Eccentricity (3dp), Temp (int K), Method, Year, Status.
-    - Status abbreviation map: "Confirmed planets"→"Confirmed", "Controversial"→"Controversial", "Retracted planet candidate"→"Retracted", "Solar System"→"Solar Sys", "Kepler Objects of Interest"→"KOI", "Planets in binary systems, S-type"→"Binary S".
-  - **Calculated Habitable Zone** via `_display_habitable_zone()` using a synthetic row with `st_teff` and `st_rad` from OEC star fields.
-- If `star_elems` is empty (system-level planets, no host star), prints a note and skips star/planet tables.
-- If no match found, prints a message and returns to menu.
+The OEC feature (menu option 7 `query_open_exoplanet_catalogue`, `core.databases.compute_oec`,
+the GUI `OecPanel`, and all name-matching/display helpers) was **removed** because the
+SIMBAD→OEC name matching never worked reliably. Menu slot **7 is intentionally left free** for a
+ground-up rebuild. The only piece retained is the data-fetch loader
+`core.databases._load_oec()` (+ the `_OEC_DATA` cache) — it calls
+`astroquery.open_exoplanet_catalogue.get_catalogue()`, then builds a case-insensitive
+`{name_lower: system_element}` index over the returned `ElementTree` — kept as working
+scaffolding for the rebuild. This section will be rewritten when OEC is reimplemented.
 
 ## Star Systems DB Query Feature (opt 50) / Export to CSV (opt 51) / Import Utilities (opts 52–56)
 

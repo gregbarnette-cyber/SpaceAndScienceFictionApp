@@ -17,8 +17,11 @@ python gui_main.py
 # Query core functions as JSON (integration tool)
 python query.py <subcommand> [arguments]
 
-# Run the test suite (pytest or the stdlib runner both work)
-pytest                      # or: python -m unittest discover -s tests
+# Run the test suite (invoke via the VENV — pytest or the stdlib runner both work)
+venv/bin/python -m pytest                      # or: venv/bin/python -m unittest discover -s tests
+# NOTE: use the venv python, not a bare `pytest` — a system-wide pytest runs on
+# system Python, which lacks this project's deps (numpy, astroquery, …) and fails
+# at collection. pytest is a test-only dep in requirements.txt (the app doesn't need it).
 ```
 
 ### Development environment
@@ -60,6 +63,8 @@ files, not a SQLite table, so this is file-presence status rather than a row cou
 ### Tests
 
 Tests live in `tests/`. The bulk are **offline** and need no network or Qt. Tests that touch the SQLite store never mutate `data/space_app.db`: in-process tests monkeypatch `core.db._DB_PATH` to a tmp file with auto-seeding disabled (pattern in `tests/test_gcns.py`, `tests/test_regions.py`, `tests/test_db_backups.py`), and the `query.py` subprocess tests pass a throwaway DB via the `SPACE_APP_DB` environment variable (via the shared `tests/_queryharness.py` harness). The `*_live.py` files (`test_gcns_live.py`, `test_hypatia_live.py`) hit the **live network**, gated by `tests/_netcheck.py` via `@unittest.skipUnless(...)` (skipped when GAVO/Hypatia is unreachable).
+
+The suite is written as `unittest.TestCase` classes, so **both runners are equivalent** — `pytest` collects and runs them unchanged (`pytest.ini` sets `testpaths = tests`). Verified parity: 1762 test items, 1 skipped, 0 failures under each. Always invoke through the venv (`venv/bin/python -m pytest` / `-m unittest discover -s tests`); a bare `pytest` may resolve to a system install on system Python without this project's deps.
 
 **Per-test-file descriptions live in `docs/testing.md`** (read-on-demand — read it before adding or modifying tests).
 
@@ -112,7 +117,7 @@ The main menu loop calls whichever function the user picks, then returns to the 
 4. NASA Exoplanet Archive: HWO ExEP Stars           20. Travel Time Between 2 Stars (LYs/HR)
 5. NASA Exoplanet Archive: Mission Exocat Stars     21. Travel Time Between 2 Stars (X Times the Speed of Light)
 6. Habitable Worlds Catalog                         22. Travel Time Between 2 System Objs (Planet/Moon/Asteroid)
-7. Open Exoplanet Catalogue                         23. Travel Time Between 2 System Objs (Custom Thrust Duration)
+7. (reserved — OEC removed, rebuild pending)        23. Travel Time Between 2 System Objs (Custom Thrust Duration)
                                                     24. Distance Traveled at an Acceleration Within a Certain Time
   Star System Regions                               25. Distance Traveled at a certain ly/hr within a certain time
   ------------------                                26. Distance Traveled at a certain X times the speed of light within a certain time

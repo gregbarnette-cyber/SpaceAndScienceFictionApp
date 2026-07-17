@@ -5,7 +5,8 @@
 # (compute_exoplanet_archive / _planetary_systems_composite / _hwo_exep — _query_tap
 # mocked) and the CSV/DB-backed readers (compute_mission_exocat via a temp CSV import,
 # compute_hwc via the real hwc.csv against a temp DB). Pure offline, no network, no Qt.
-# OEC is out of scope (pending rebuild). Mocking style mirrors tests/test_comparison.py
+# OEC was removed (rebuild pending); only the _load_oec fetch loader remains, untested here.
+# Mocking style mirrors tests/test_comparison.py
 # and the temp-DB pattern in tests/test_search.py.
 
 import os

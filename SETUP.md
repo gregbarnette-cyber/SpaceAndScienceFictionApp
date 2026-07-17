@@ -15,7 +15,7 @@ sudo apt install libxcb-cursor0
 
 | Library | Version | Purpose |
 |---|---|---|
-| `astroquery` | 0.4.11 | SIMBAD star lookups, NASA Exoplanet Archive queries, JPL Horizons ephemeris, Open Exoplanet Catalogue |
+| `astroquery` | 0.4.11 | SIMBAD star lookups, NASA Exoplanet Archive queries, JPL Horizons ephemeris |
 | `astropy` | 7.2.0 | Required by astroquery; astronomical data types and units |
 | `requests` | 2.33.1 | HTTP calls to Hypatia Catalog API and NASA TAP endpoints |
 | `PySide6` | 6.11.0 | Qt-based GUI (`gui_main.py`) |
@@ -131,8 +131,7 @@ The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** trav
 
 ## Notes
 
-- An internet connection is required for SIMBAD, NASA Exoplanet Archive, JPL Horizons, Open Exoplanet Catalogue, and Hypatia Catalog queries.
-- The Open Exoplanet Catalogue data is downloaded once per session and cached in memory.
+- An internet connection is required for SIMBAD, NASA Exoplanet Archive, JPL Horizons, and Hypatia Catalog queries.
 - The local SQLite database is created automatically on first run at `data/space_app.db` under the repo root (the `data/` directory is gitignored). Set the `SPACE_APP_DB` environment variable to override this path (see `docs/integration.md`).
 - The `backups/` directory holds manual CSV snapshots (e.g. `starSystemsBackup-*.csv`, `templateStarSystems.csv`) that are **not** read by the app — they are retained for reference only.
 - The **dust / ISM path is optional and WSL/Linux-only** (`requirements-dust.txt`; see above). Without it installed, every other feature works normally and the dust subcommands/panel are simply gated off. The dust map cache lives at `data/dust/` (gitignored) and is fetch-once/offline-after.
