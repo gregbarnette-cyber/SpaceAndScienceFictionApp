@@ -78,7 +78,62 @@ notes line naming the active v2 sampling blocks + the host [Fe/H]/source when me
 card + a 🧬 v2-physics provenance line. `TestV2ProvenanceNotes` + suite green. Verified `query.py
 generate-system --research-policy strict` serializes `feh`/`feh_source` + the v2 note.
 
-**Stage B core complete (B1–B5). Remaining: B6 — iterate the documented engine knobs with the sister
+**Stage B-B6 iteration (round 1) — Packet 3.5 accepted Stage B; refinements actioned (2026-07-20).**
+Reply: sister `research/query-api-methods/research-priors-v2-b6-reply.md`; our as-built/decision:
+`docs/research-priors-v2-b6-actions.md`. **L1 DONE** — giant ceiling raised 600 M⊕ → `_GIANT_MASS_CEILING_EARTH`
+= ~13 M_J (4131 M⊕), restoring super-Jupiters (measured ~42% of giants 2–13 M_J; 0 inside snow). Chose the flat
+13 M_J over the F4 gap-opening cap because the gap mass at giant orbits is only ~0.3–1.4 M_J (a Type-II
+transition, not the ceiling — measured). **Ordering** kept at principled `Φ⁻¹(0.65)=0.3853` (nudge to 0.35
+didn't move the ~0.69 empirical; excess is chain-reclassify, not the z). `test_giant_ceiling_admits_super_jupiters…`
+added; suite green. **L2 DEFERRED (bundled with the mass-scale calibration)** — measured solar giant occ ~1%
+(target ~10%), +0.5 ~5% (target ~25–30%, saturates), small-planet median 0.10 M⊕ (target ~few M⊕). Key
+subtlety flagged to sister: our giant gate is pebble-isolation-based (metallicity-independent), so the
+`Σ_solid ∝ 10^[Fe/H]` route also needs the gate routed through the Σ-sensitive M_iso + retiring the
+solar-relative multiplier + `_MASS_MODEL_SCATTER` recalibration — one future pass against the 3 targets.
+v1 `spacing_ratio`-as-SMA confirmed + deliberately not fixed (byte-identity contract); `feh_dist`
+two-component params recorded for a future contract minor.
+
+**Stage B-B6 iteration (round 2 — L2 + mass-scale build) — BUILT + calibrated (2026-07-20).** Real-time
+channel exchange with Packet 3.5 (`/home/greg/claude/coordination-channel.md`) settled the design; dataset
+bumped to `pkt3.5-v2.1.0` with a `disk_mass_dist` lever. Built: **schema** `_check_disk_mass_dist` (log10-space,
+mirrors `_check_feh_dist`; nested under `mass_model.disk`, additive sibling of the scalar); **disk-mass lever**
+(per-system log-normal MMSN multiplier `_draw_disk_mass_mult` scales Σ_solid) + `Σ_solid ∝ 10^[Fe/H]`; **mass
+scale** `_MASS_MODEL_SCATTER` → (2.0, 40.0) (solar small-planet median 0.10 → **1.47 M⊕**, sub-Earth tail
+intact); **`max(M_iso, M_iso,peb)` eligibility** + ~20–30 AU outer cutoff; **saturating growth-race occurrence**
+`_occ_eff = C·x/(K+x)` (C=0.30/K=2, hits the 10/25/1.4% curve anchors) via a **per-system roll**
+`_roll_system_forms_giants` (replaces the per-orbit `min(1,gf/gf₀)`); **peaked giant mass function** (F4-gap
+anchored, median ~0.87 M_J, 24% super-J); solid bodies capped < gas threshold (a heavy solid is an ice giant,
+never a gas giant inside the snow line). `TestL2DiskMassAndOccurrence` + `disk_mass_dist` schema tests; suite
+green (1873). Giant-formation B1 tests drop occ to isolate the physics gate from the growth-race roll.
+
+**OPEN — occurrence is placement-capped (KEY FINDING).** Realized giant occurrence is solar ~0.5% / +0.5 ~1.5%
+(vs the 10/25% curve) because only **~2% of systems place a planet beyond the snow line** — the generator's
+inner grid comes from `n_planet_dist`, which (per Packet 3.5's provenance) is the **detection-biased
+short-period small-planet count** (Dressing & Charbonneau P<200 d) and *excludes* the cold population. Growing
+cold giants from that grid is the wrong model. **Proposed fix (channel-posted, awaiting Packet 3.5): place cold
+giants as a DECOUPLED population** drawn from `occurrence_by_metallicity` (the debiased long-baseline-RV number)
+at 1–5 AU, independent of the inner grid → occurrence = the curve. Pending: (1) confirm `n_planet_dist` =
+inner-only; (2) a cold-giant SMA/multiplicity prior (or a literature default). See
+`docs/research-priors-v2-b6-actions.md` + the coordination channel.
+
+**Stage B-B6 iteration (round 3 — decoupled cold-giant placement) — BUILT + calibrated (2026-07-20).**
+Packet 3.5 confirmed `n_planet_dist` = the detection-biased inner short-period count (cold giants excluded)
+and delivered `pkt3.5-v2.2.0` with a `cold_giant_population` block (SMA broken-power-law Fernandes 2019/Fulton
+2021 + multiplicity Bryan 2016/Rosenthal 2021). Built: **schema** `_check_cold_giant_population` (new top-level
+v2 block); **provider** attr; **sampler** — `_place_cold_giants` places the cold-giant population *decoupled*
+from the inner grid: per-system occurrence roll (the saturating curve) → conditional multiplicity count → each
+giant's SMA from `_draw_cold_giant_sma` (power-law over [snow_line, outer_au]) + mass from the shared
+`_draw_giant_mass` (F4-gap peaked). **Guard:** only cold giants (a ≥ snow_line); the grid makes no giants when
+the block is present (no double-count); hot Jupiters stay out of scope (a migrated channel). `TestDecoupledColdGiants`
++ `cold_giant_population` schema tests. **Occurrence now tracks the FV05 curve: solar 8.7% / +0.5 21% / −0.5 1.7%**
+(was placement-capped ~0.5%; targets 10/25/1%), mean ~1.3–1.5 giants/giant-system (target 1.47), 0 inside the
+snow line, SMA peaked near the snow line with a tail to ~26 AU, mass ~Saturn. This closes the placement-cap
+finding via the detection-bias correction (Greg's insight). Live cache → v2.2.0.
+
+**Stage B COMPLETE (B1–B6, all three iteration rounds).** All calibration targets met: small-planet mass
+~1.5 M⊕, giant mass function ~Saturn-modal + super-Jupiters to 13 M_J, cold-giant occurrence on the FV05
+curve. Remaining is only optional second-order polish (metallicity-dependent SMA/multiplicity; hot-Jupiter
+migrated channel) — none blocking. Iterate the knobs
 (`_MASS_MODEL_SCATTER`, `_METALLICITY_COUNT_TILT`, solar-relative giant normalization, `_ORDERING_BIAS_Z`,
 the size-chain form, the B4 metallicity thresholds) against their real dataset; ship the as-built field
 shapes back to `docs/integration.md` + the request file.**

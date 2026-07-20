@@ -94,6 +94,7 @@ _V2_BLOCK_NAMES = (
     "occurrence_by_metallicity",  # F2 — [Fe/H]-conditioned planet count / giant fraction
     "intra_system_correlation",   # F3 — peas-in-a-pod joint draws
     "feh_dist",                   # app-side: synthetic-mode host [Fe/H] source (Decision 2)
+    "cold_giant_population",       # v2.2 — decoupled cold-giant SMA + multiplicity (B6/L2)
 )
 
 _MASS_MODEL_TYPES = {"isolation-scaling"}   # recognised mass_model.type (additive)
@@ -153,6 +154,37 @@ def _check_mass_model(mm):
     gs = mm.get("giant_switch")
     if not isinstance(gs, str) or not gs.strip():
         return "mass_model.giant_switch must be a non-empty string."
+    # R3-V2 v2.1: optional per-system disk-mass distribution (additive sibling of the
+    # disk_mass_mmsn scalar, which stays the fallback). Validated only when present.
+    dmd = disk.get("disk_mass_dist")
+    if dmd is not None:
+        return _check_disk_mass_dist(dmd)
+    return None
+
+
+_DISK_MASS_DISTS = {"lognormal"}   # recognised disk_mass_dist.dist (extensible enum)
+
+
+def _check_disk_mass_dist(dmd):
+    """v2.1 per-system disk-mass multiplier (MMSN units), log10-space — mirrors
+    _check_feh_dist. mult = clamp(10^𝒩(log10_mean, log10_sigma), min, max)."""
+    if not isinstance(dmd, dict):
+        return "mass_model.disk.disk_mass_dist must be an object."
+    dist = dmd.get("dist")
+    if dist not in _DISK_MASS_DISTS:
+        return (f"disk_mass_dist.dist must be one of {sorted(_DISK_MASS_DISTS)} "
+                f"(got {dist!r}).")
+    if not _is_num(dmd.get("log10_mean")):
+        return "disk_mass_dist.log10_mean must be a number."
+    if not _is_num(dmd.get("log10_sigma")) or dmd["log10_sigma"] <= 0:
+        return "disk_mass_dist.log10_sigma must be a positive number."
+    lo, hi = dmd.get("min"), dmd.get("max")
+    if lo is not None and (not _is_num(lo) or lo <= 0):
+        return "disk_mass_dist.min must be a positive number."
+    if hi is not None and (not _is_num(hi) or hi <= 0):
+        return "disk_mass_dist.max must be a positive number."
+    if lo is not None and hi is not None and lo > hi:
+        return "disk_mass_dist requires min <= max."
     return None
 
 
@@ -229,12 +261,49 @@ def _check_feh_dist(fd):
     return None
 
 
+def _check_cold_giant_population(cgp):
+    """v2.2 — the decoupled cold-giant population (SMA power law + conditional
+    multiplicity), placed independent of the inner n_planet_dist grid (B6/L2)."""
+    if not isinstance(cgp, dict):
+        return "cold_giant_population must be an object."
+    sma = cgp.get("sma_dist")
+    if not isinstance(sma, dict):
+        return "cold_giant_population.sma_dist must be an object."
+    if sma.get("dist") != "powerlaw":
+        return "cold_giant_population.sma_dist.dist must be 'powerlaw'."
+    inner = sma.get("inner")
+    if inner != "snow_line" and not (_is_num(inner) and inner > 0):
+        return ("cold_giant_population.sma_dist.inner must be 'snow_line' or a "
+                "positive number.")
+    if not _is_num(sma.get("outer_au")) or sma["outer_au"] <= 0:
+        return "cold_giant_population.sma_dist.outer_au must be a positive number."
+    if not _is_num(sma.get("slope_dn_dlna")):
+        return "cold_giant_population.sma_dist.slope_dn_dlna must be a number."
+    mult = cgp.get("multiplicity")
+    if not isinstance(mult, dict) or not mult:
+        return "cold_giant_population.multiplicity must be a non-empty object."
+    saw_positive = False
+    for k, v in mult.items():
+        try:
+            int(k)
+        except (TypeError, ValueError):
+            return f"cold_giant_population.multiplicity key {k!r} must be an integer count."
+        if not _is_num(v) or v < 0:
+            return f"cold_giant_population.multiplicity[{k!r}] must be a non-negative number."
+        if v > 0:
+            saw_positive = True
+    if not saw_positive:
+        return "cold_giant_population.multiplicity must have at least one positive weight."
+    return None
+
+
 # name → checker; iteration order is _V2_BLOCK_NAMES (stable).
 _V2_BLOCK_CHECKERS = {
     "mass_model": _check_mass_model,
     "occurrence_by_metallicity": _check_occurrence_by_metallicity,
     "intra_system_correlation": _check_intra_system_correlation,
     "feh_dist": _check_feh_dist,
+    "cold_giant_population": _check_cold_giant_population,
 }
 
 

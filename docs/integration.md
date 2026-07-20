@@ -50,7 +50,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 
 | Subcommand | Required args | Network | Output top-level keys (success) |
 |---|---|---|---|
-| `simbad-lookup` | `--star` | SIMBAD | `main_id, ra, dec, sp_type, plx_value, teff, vmag, ly, parsecs, designations, desig_str, gcns` (`gcns` optional — Phase M5, `null` when absent) |
+| `simbad-lookup` | `--star` | SIMBAD | `main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, designations, desig_str, gcns` (`fe_h` = [Fe/H] from `mesfe_h`, `null` when absent; `gcns` optional — Phase M5, `null` when absent) |
 | `oec-system` | `--name` | none (local cache)‡ | `query, matched_name, system` (recursive node tree) |
 | `oec-planet` | `--name` | none (local cache)‡ | `query, planet, attached_to, host_chain, system_name` |
 | `oec-search` | all optional (`--min-stars/--max-stars`, `--status`, `--circumbinary`, `--discovery-method`, `--discovery-year-min/max`, `--mass-min/max`, `--radius-min/max`, `--period-min/max`, `--sma-min/max`, `--spectral-type`, `--limit`) | none (local cache)‡ | `count, capped, cap, filters, systems[]` |
@@ -188,7 +188,7 @@ SIMBAD star lookup — returns full star info and all known designations.
 query.py simbad-lookup --star "Tau Ceti"
 ```
 Core function: `databases.compute_simbad_lookup(star)`
-Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, ly, parsecs, desig_str, designations, gcns}`. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); a catalog with no id is `null`. Numeric fields may be `null`.
+Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, desig_str, designations, gcns}`. `fe_h` is the host `[Fe/H]` from SIMBAD's `mesfe_h` table (`null` when SIMBAD has no value); it is the real-anchor metallicity source for the `generate-system` v2 path. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); a catalog with no id is `null`. Numeric fields may be `null`.
 - **Gaia id**: the `"Gaia EDR3"` key holds the Gaia source id as SIMBAD now formats it — `"Gaia DR3 <id>"` (SIMBAD renamed EDR3→DR3 in its id output; the source_ids are identical). To get the bare numeric id, strip the `"Gaia DR3 "` / `"Gaia EDR3 "` prefix. This is the same id used as `--id` for `gcns-source`.
 - **`gcns`** (Phase M5): an **optional top-level GCNS cross-reference** — the matching `gcns_stars` row (same shape as `gcns-source`'s `star`: Bayesian `dist_pc` + `dist_lo_pc`/`dist_hi_pc`, `distance_method`, Gaia G/BP/RP, `astrom_reliable_prob`, `wd_prob`, `system_id`/`n_components`, …), giving a Bayesian distance **with 16th/84th-percentile uncertainty** beside the naive `1/ϖ` `ly`/`parsecs`. The key is **always present** but is `null` when the star has no Gaia id, is not in GCNS, or the `gcns_stars` table is empty/missing — **non-fatal and silent** (a single indexed local-DB read; no extra network). Built inside `compute_simbad_lookup`, so every `simbad`-embedding subcommand below carries it too.
 
@@ -2172,8 +2172,11 @@ Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=
 - **Output:** `{seed, mode ("synthetic"|"real_anchor"), anchor_star, star, planets[],
   warnings[], notes[]}`. `star` carries `name, spectral_class, teff, mass_solar,
   radius_solar, luminosity, hz_inner_au/hz_outer_au` (conservative) + `hz_opt_inner_au/
-  hz_opt_outer_au` (optimistic) + `snow_line_au, source, grounding, multiplicity`. Each
-  planet carries `name, a_au, mass_earth, radius_earth, ecc, type
+  hz_opt_outer_au` (optimistic) + `snow_line_au, feh, feh_source, source, grounding,
+  multiplicity`. `feh` is the host `[Fe/H]` (nullable) and `feh_source` its provenance
+  (`"feh_dist"` synthetic-draw · `"hypatia"`/`"simbad"` real-anchor · `null`) — populated
+  only under the `strict` v2 metallicity path (below), else both `null`. Each planet carries
+  `name, a_au, mass_earth, radius_earth, ecc, type
   (rocky|super_earth|ice|gas|super_jovian|brown_dwarf), t_eq_k, in_hz, hz_class
   (conservative|optimistic|null), source, atmosphere, moons[]`. Every synthetic field is
   grounded `default-extrapolation` (the `DefaultPriors` provider) under the default
@@ -2181,6 +2184,18 @@ Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=
   ingested dataset (Phase R3 — above). Multi-star anchors are **detected, warned, and safe-capped** (no
   synthetic body beyond a conservative cap; observed bodies are never capped); a quantitative
   S/P-type verdict needs a `--companion` hint (Phase R2 — below).
+
+> **v2 research-priors sampling (Phase R3-V2, under `--research-policy strict` with a v2
+> dataset).** When the ingested dataset is a `schema_version` "2.0"+ contract carrying the
+> optional v2 blocks, `strict` sampling changes physically (all block-gated — a v1.0 dataset
+> or `permissive` is byte-identical): planet **mass** is drawn from oligarchic isolation-mass
+> physics (`mass_model`); **giant occurrence / planet count / a super-Earth floor** are
+> conditioned on the host `[Fe/H]` (`occurrence_by_metallicity` + the `feh_dist`/Hypatia/SIMBAD
+> [Fe/H] source); neighbours are drawn **peas-in-a-pod correlated** (`intra_system_correlation`);
+> and — v2.2 — a **decoupled cold-giant population** (`cold_giant_population`) places cold giants
+> (planets named `"… (cold giant N)"`, `a ≥ snow_line`) from the debiased RV occurrence curve
+> independent of the inner grid. The `notes` gain a `"v2 physics in effect: …"` line naming the
+> active blocks + the host `[Fe/H]`. The full block schema is in `docs/research-priors-contract.md`.
 
 > **Validation (self-validating — Phase H contract, *not* the Phase-N raw-exception path):**
 > bad input → a curated `{"error": str}` on stdout, **exit 1** — a bad `--spectral-class`, an

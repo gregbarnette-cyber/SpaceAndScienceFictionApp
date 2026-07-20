@@ -60,7 +60,7 @@ A single JSON object:
 
 | Field | Rule |
 |---|---|
-| `schema_version` | required string; **major** (before the first `.`) must be in the known set (`{"1"}` today). An unknown major → error (the importer refuses to store data it can't interpret). |
+| `schema_version` | required string; **major** (before the first `.`) must be in the known set (`{"1", "2"}` today — v2 is the additive superset below). An unknown major → error (the importer refuses to store data it can't interpret). |
 | `dataset_version` | required non-empty string; opaque. Echoed into every output's `notes`; part of the determinism tuple (two datasets differing only in numbers produce distinguishable, reproducible output). |
 | `provenance` | optional; free-form (not validated). Real datasets list sources/citations here. |
 | `spectral_class_weights` | non-empty object `{class: weight>0}`. |
@@ -93,6 +93,13 @@ omitted key keeps the heuristic, still tagged `default-extrapolation` for that r
 `plausibility` keeps R2's `{low, medium, high}` enum (a numeric-probability axis would be a future
 contract minor-version).
 
+**Metallicity-qualified variants (v2, B4).** A v2 dataset may add a `<base_key>:metal_rich` or
+`<base_key>:metal_poor` entry for any context key above; the feasibility engine prefers it over the base
+key when the host's `[Fe/H]` falls in that tail (thresholds `≥ +0.15` / `≤ −0.35`), else the base key.
+These are additive and validated like any `origin_priors` key. The delivered dataset defines only base
+keys (→ unchanged narrative); the sister can supply the qualified entries when metallicity-conditioned
+narratives are wanted.
+
 ## Storage / lifecycle
 
 - The live cache is `data/research_priors/` (`priors.json` + a `meta.json` stamp), **gitignored**
@@ -122,34 +129,54 @@ contract minor-version).
 
 The sister project's **v2 contract request**
 (`scifiWorldBuilding-Claude/research/query-api-methods/research-priors-v2-contract-request.md`)
-extends the contract with three optional blocks that express formation physics v1's flat marginals
-cannot, plus one app-side axis. **v2 is a strict, additive superset:** `_KNOWN_SCHEMA_MAJORS` now
-holds `{"1", "2"}`; every v1.0 dataset still validates/ingests unchanged, and a dataset that omits a
-block falls back to the corresponding v1 field. Each block is validated **only when present** (curated
-`{"error"}` otherwise) and exposed on `ResearchPriors` as a same-named attribute (`None` when absent;
-`DefaultPriors` carries them as `None` too, so `getattr` is uniform).
+extends the contract with **four optional sister-project blocks** (`mass_model`,
+`occurrence_by_metallicity`, `intra_system_correlation`, `cold_giant_population`) that express formation
+physics v1's flat marginals cannot, plus one app-side axis (`feh_dist`). The blocks arrived across three
+point releases: **v2.0** (the first three sampling blocks + `feh_dist`), **v2.1** (the nested
+`mass_model.disk.disk_mass_dist`, a per-system log-normal disk-mass lever), and **v2.2** (the top-level
+`cold_giant_population` block). **v2 is a strict, additive superset:** `_KNOWN_SCHEMA_MAJORS` now holds
+`{"1", "2"}`; every v1.0 dataset still validates/ingests unchanged, and a dataset that omits a block falls
+back to the corresponding v1 field. Each block is validated **only when present** (curated `{"error"}`
+otherwise) and exposed on `ResearchPriors` as a same-named attribute (`None` when absent; `DefaultPriors`
+carries them as `None` too, so `getattr` is uniform).
 
 | Block | Falls back to | Shape (validated) |
 |---|---|---|
-| `mass_model` (F1) | `mass_by_zone` | `{type ∈ {isolation-scaling}, disk:{sigma0_gcm2>0, sigma_slope, temp0_k>0, temp_slope, disk_mass_mmsn>0}, feeding_zone_hill>0, giant_switch:str[, notes]}` |
+| `mass_model` (F1) | `mass_by_zone` | `{type ∈ {isolation-scaling}, disk:{sigma0_gcm2>0, sigma_slope, temp0_k>0, temp_slope, disk_mass_mmsn>0 [, disk_mass_dist]}, feeding_zone_hill>0, giant_switch:str[, notes]}` |
+| ↳ `disk.disk_mass_dist` (v2.1) | scalar `disk_mass_mmsn` | `{dist ∈ {lognormal}, log10_mean:#, log10_sigma>0, min?>0, max?>0}` (`min ≤ max`) — per-system MMSN multiplier `clamp(10^𝒩(log10_mean, log10_sigma), min, max)` scaling Σ_solid |
 | `occurrence_by_metallicity` (F2) | flat `n_planet_dist` | `{feh_grid:[≥2 ascending #], giant_fraction:[same len, each ∈ 0..1], superearth_floor_feh?:#, n_planet_dist_shift?:str}` |
 | `intra_system_correlation` (F3) | independent per-planet draws | `{size_ratio_dist:{mean>0, sigma≥0}, period_ratio_dist:{0<min≤mode≤tail}, ordering?:str, note?:str}` |
+| `cold_giant_population` (v2.2) | grid giant switch (giants grown from the inner grid) | `{sma_dist:{dist="powerlaw", inner ∈ {"snow_line" \| #>0}, outer_au>0, slope_dn_dlna:#}, multiplicity:{count(int): weight≥0, ≥1 positive}}` |
 | `feh_dist` (app-side) | synthetic host `[Fe/H]` = `None` (F2 inert) | `{mean:#, sigma>0, min?:#, max?:#}` — synthetic-mode metallicity source |
 
 The importer's `meta.json` and `get_research_priors_status()` gain a **`v2_blocks`** list (`[]` for a v1
 dataset / a pre-V2 cache); the opt-57 DbStatus row and the Import Research Priors panel surface it.
 
-> **Stage status.** **Stage A (schema/plumbing) is built** — the validator superset, the v2 provider
-> attributes, the importer/status `v2_blocks`, a committed `tests/fixtures/research_priors_v2_sample.json`,
-> and the GUI status rows. **Stage B (engine consumption) is in progress against the delivered
-> `research_priors_v2.json`:** **B1 (`mass_model`)** and **B2 (`occurrence_by_metallicity` + `feh_dist`)**
-> are built — the generator now draws mass from the isolation-mass physics (giants placed beyond the snow
-> line) and conditions giant occurrence / planet count / the super-Earth floor on the host `[Fe/H]`
-> (synthetic from `feh_dist`; real-anchor **Hypatia-preferred, SIMBAD `mesfe_h.fe_h` fallback** — the
-> homogenized Lodders-2009 value where available, tagged in `star["feh_source"]`; the Hypatia call is
-> gated to strict+`occurrence_by_metallicity`). All consumption is block-gated → a v1.0 dataset and `permissive` stay
-> byte-identical (`star["feh"]=None`). **B3 (`intra_system_correlation` / peas-in-a-pod)** is built —
-> neighbours are drawn conditional on each other (triangular period-ratio spacing + a size-correlation mass
-> chain, ~65% outer-larger, giants exempt). **All three sampling features (F1/F2/F3) are in.** Remaining:
-> B4 (feasibility origin-priors vocabulary), B5 (query/GUI surfacing), B6 (iterate the engine knobs with the
-> sister). Full plan + checkpoints: `PHASE_R3_V2_PLAN.md`.
+**Engine consumption (`core/generate.py`, all block-gated).** With `mass_model`, planet mass is drawn from
+the isolation-mass physics (`_mass_model_draw`) instead of `mass_by_zone`; three coupled levers layer on:
+(1) the **disk-mass lever** — a per-system MMSN multiplier from `disk_mass_dist` (`_draw_disk_mass_mult`)
+scaling Σ_solid, paired with `Σ_solid ∝ 10^[Fe/H]`, lifting the small-planet mass scale; (2) the
+**growth-race giant gate** — giant formation is a *per-system* roll (`_roll_system_forms_giants`) against a
+**saturating occurrence curve** `occ([Fe/H]) = C·x/(K+x)`, `x = 10^(2·[Fe/H])` (`_occ_eff`; C=0.30, K=2.0 —
+the FV05 curve), replacing the old per-orbit `min(1, gf/gf₀)`; (3) **giant mass** is log-normal anchored on
+the F4 gap-opening mass, clamped to `[M_crit, ~13 M_J]` (`_draw_giant_mass`). With `cold_giant_population`
+present, **cold giants are placed by a decoupled population** (`_place_cold_giants`: count from
+`multiplicity`, SMA from `sma_dist` beyond the snow line within `outer_au`, mass from the peaked function)
+**independent of the detection-biased inner `n_planet_dist` grid**, and the grid's own giant switch is
+suppressed to avoid double-counting. `occurrence_by_metallicity` also conditions the planet count and a
+super-Earth floor on `[Fe/H]`; `intra_system_correlation` draws neighbours peas-in-a-pod correlated. The
+real-anchor host `[Fe/H]` is **Hypatia-preferred, SIMBAD `mesfe_h.fe_h` fallback**, tagged in
+`star["feh_source"]`; the `notes` gain a `"v2 physics in effect: …"` line naming the active blocks.
+
+> **Stage status — COMPLETE.** Stage A (schema/plumbing) + Stage B (engine consumption) are **built and
+> calibrated against the delivered `research_priors_v2.json` (v2.2.0)**: **B1** (`mass_model` isolation-mass
+> draw + physics giant switch), **B2** (`occurrence_by_metallicity` + `feh_dist`, Hypatia-preferred [Fe/H]),
+> **B3** (`intra_system_correlation` peas-in-a-pod), **B4** (metallicity-qualified origin keys), **B5**
+> (`v2 physics` provenance notes in CLI/`query.py`/GUI), and **B6/L2** (the v2.1 disk-mass lever, the
+> saturating growth-race occurrence curve, and the v2.2 decoupled cold-giant placement). Realized
+> calibration meets the sister's targets: small-planet mass ~1.5 M⊕, giant mass function ~Saturn-modal +
+> super-Jupiters to 13 M_J, cold-giant occurrence on the FV05 curve (solar ~9% / +0.5 ~21% / −0.5 ~1.7%).
+> All consumption is block-gated → a v1.0 dataset and `permissive` stay byte-identical (`star["feh"]=None`).
+> Only optional second-order items remain (metallicity-dependent SMA/multiplicity, hot-Jupiter channel,
+> `feh_dist` thin/thick mixture). Full plan + checkpoints: `PHASE_R3_V2_PLAN.md`; the B6 collaboration
+> record: `docs/research-priors-v2-b6-actions.md`.

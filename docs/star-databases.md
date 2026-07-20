@@ -15,9 +15,10 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 
 ## SIMBAD Query Feature
 
-- Uses `astroquery.simbad.Simbad` with votable fields: `sp_type`, `plx_value`, `V`, `mesfe_h` (temperature in `mesfe_h.teff` column). Updated for astroquery ≥ 0.4.8 — prior names (`sptype`, `plx`, `flux(V)`, `fe_h`) are deprecated.
+- Uses `astroquery.simbad.Simbad` with votable fields: `sp_type`, `plx_value`, `V`, `mesfe_h` (temperature in the `mesfe_h.teff` column, metallicity [Fe/H] in the `mesfe_h.fe_h` column). Updated for astroquery ≥ 0.4.8 — the pre-0.4.8 top-level names (`sptype`, `plx`, `flux(V)`, `fe_h`) are deprecated (note: the live metallicity comes from the `mesfe_h.fe_h` **subcolumn**, not the deprecated top-level `fe_h` field).
 - `query_star()` → `_parse_designations()` → `_display_results()`.
-- Result column names are lowercase: `main_id`, `ra`, `dec`, `sp_type`, `plx_value`, `V`, `mesfe_h.teff`.
+- Result column names are lowercase: `main_id`, `ra`, `dec`, `sp_type`, `plx_value`, `V`, `mesfe_h.teff`, `mesfe_h.fe_h`.
+- `compute_simbad_lookup` returns an additive top-level `fe_h` key (float, or `None` when SIMBAD has no value) from the `mesfe_h.fe_h` subcolumn. It is consumed as the **real-anchor metallicity fallback** by the research-priors v2 generation path (`core.generate._resolve_anchor_feh` prefers a Hypatia [Fe/H], falling back to this SIMBAD value); `query.py simbad-lookup` carries it for free.
 - Designations are pulled from `Simbad.query_objectids()`; the result column is `id` (lowercase).
 - Parallax (mas) from `plx_value`; distance in parsecs = 1000 / plx; light years = parsecs × 3.26156; all rounded to 4 decimal places.
 - Missing/masked SIMBAD fields are handled by `_safe_get()` and shown as `N/A`.

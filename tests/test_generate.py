@@ -624,10 +624,17 @@ class TestMassModelDraw(unittest.TestCase):
         with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
             return generate_system(research_policy="strict", **kw)
 
-    def _load_v2(self):
+    def _load_v2(self, drop_occ=False):
         import json
         with open(_V2_FIX, encoding="utf-8") as fh:
-            return json.load(fh)
+            o = json.load(fh)
+        if drop_occ:
+            # Grid-giant mode: drop occurrence_by_metallicity (roll always-True) AND
+            # cold_giant_population (else giants come from the decoupled path, not the
+            # grid) → giants form on the pure B1 in-grid physics gate.
+            o.pop("occurrence_by_metallicity", None)
+            o.pop("cold_giant_population", None)
+        return o
 
     def test_deterministic(self):
         v2 = self._load_v2()
@@ -648,7 +655,7 @@ class TestMassModelDraw(unittest.TestCase):
 
     def test_no_giant_interior_to_snow_line(self):
         # Giants form only beyond the snow line (physics gate).
-        v2 = self._load_v2()
+        v2 = self._load_v2(drop_occ=True)
         r = self._strict(v2, seed=42, spectral_class="G2V", n_planets=10)
         snow = r["star"]["snow_line_au"]
         giants_inside = [p for p in r["planets"]
@@ -658,14 +665,31 @@ class TestMassModelDraw(unittest.TestCase):
 
     def test_giant_forms_beyond_snow_line(self):
         # A wide system (many planets around a warmer star) must land >=1 giant
-        # beyond the snow line, where pebble-isolation >= the critical core mass.
-        v2 = self._load_v2()
+        # beyond the snow line. Drop occ so the per-system roll is always-True (pure
+        # physics), else the growth-race roll makes a single-seed giant probabilistic.
+        v2 = self._load_v2(drop_occ=True)
         r = self._strict(v2, seed=7, spectral_class="F5V", n_planets=14)
         snow = r["star"]["snow_line_au"]
         giants = [p for p in r["planets"]
                   if p["type"] in ("gas", "super_jovian", "brown_dwarf")]
         self.assertTrue(giants, "expected at least one giant in a wide system")
         self.assertTrue(all(p["a_au"] >= snow for p in giants))
+
+    def test_giant_ceiling_admits_super_jupiters_below_13mjup(self):
+        # R3-V2 B6/L1: the giant ceiling is ~13 M_J (4131 M⊕), not the old 600 M⊕,
+        # so super-Jupiters (2-13 M_J = 636-4131 M⊕) can form; none exceed the boundary.
+        _M_JUP = 317.8
+        masses = []
+        for s in range(40):
+            for p in self._strict(self._load_v2(drop_occ=True), seed=s,
+                                  spectral_class="F5V", n_planets=14)["planets"]:
+                if p["type"] in ("gas", "super_jovian", "brown_dwarf"):
+                    masses.append(p["mass_earth"])
+        self.assertTrue(masses)
+        self.assertTrue(any(m >= 2 * _M_JUP for m in masses),
+                        "no super-Jupiter formed — the giant ceiling is too low")
+        self.assertTrue(all(m <= 13 * _M_JUP + 1 for m in masses),
+                        "a giant exceeded the ~13 M_J planet/BD boundary")
 
 
 class TestMetallicityConditioning(unittest.TestCase):
@@ -863,6 +887,128 @@ class TestIntraSystemCorrelation(unittest.TestCase):
         for seed in range(20):
             v = _spacing_ratio_draw(random.Random(seed), d)
             self.assertTrue(lo <= v <= hi)
+
+
+class TestL2DiskMassAndOccurrence(unittest.TestCase):
+    """R3-V2 L2 (v2.1): disk-mass lever + saturating growth-race giant occurrence."""
+
+    _DMD = {"dist": "lognormal", "log10_mean": 0.4, "log10_sigma": 0.25,
+            "min": 1.0, "max": 5.0}
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _gen(self, feh=None, disk=False, seed=0, sc="G2V", n=None):
+        import json, copy
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            o = copy.deepcopy(json.load(fh))
+        if feh is not None:
+            o["feh_dist"] = {"mean": feh, "sigma": 0.001, "min": -2.0, "max": 1.0}
+        if disk:
+            o["mass_model"]["disk"]["disk_mass_dist"] = dict(self._DMD)
+        p = os.path.join(self.cache, "s.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(o, fh)
+        self.assertNotIn("error", compute_research_priors_ingest(path=p, cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return generate_system(seed, spectral_class=sc, n_planets=n,
+                                   research_policy="strict")
+
+    def _small_median(self, disk):
+        import statistics
+        m = [p["mass_earth"] for s in range(80)
+             for p in self._gen(feh=0.0, disk=disk, seed=s)["planets"]
+             if p["type"] in ("rocky", "super_earth")]
+        return statistics.median(m)
+
+    def test_disk_mass_lever_raises_small_planet_mass(self):
+        # The per-system disk-mass multiplier (median ~2.5x MMSN) lifts Sigma_solid
+        # -> M_iso -> heavier small planets than the scalar-fallback (1.0 MMSN).
+        self.assertGreater(self._small_median(disk=True), self._small_median(disk=False))
+
+    def test_disk_mass_lever_deterministic(self):
+        r1 = self._gen(feh=0.1, disk=True, seed=5, n=6)
+        r2 = self._gen(feh=0.1, disk=True, seed=5, n=6)
+        self.assertEqual(r1, r2)
+
+    def test_saturating_occurrence_monotonic(self):
+        # Giant occurrence rises with [Fe/H] under the growth-race roll (wide systems).
+        def occ(feh):
+            return sum(any(p["type"] in ("gas", "super_jovian", "brown_dwarf")
+                           for p in self._gen(feh=feh, disk=True, seed=s,
+                                              sc="F5V", n=14)["planets"])
+                       for s in range(60))
+        self.assertGreater(occ(0.5), occ(-0.5))
+
+    def test_occ_eff_curve_hits_anchors(self):
+        # The saturating curve occ = C*x/(K+x) matches Packet 3.5's 10/25/1.4% anchors.
+        from core.generate import _occ_eff
+        self.assertAlmostEqual(_occ_eff(0.0), 0.10, places=2)
+        self.assertAlmostEqual(_occ_eff(0.5), 0.25, places=2)
+        self.assertAlmostEqual(_occ_eff(-0.5), 0.014, places=3)
+
+
+class TestDecoupledColdGiants(unittest.TestCase):
+    """R3-V2 v2.2 (L2): the decoupled cold-giant population — placed from the debiased
+    occurrence curve, independent of the detection-biased inner n_planet_dist grid."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _gen(self, feh, seed, drop_cgp=False, sc="G2V", n=None):
+        import json, copy
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            o = copy.deepcopy(json.load(fh))
+        o["feh_dist"] = {"mean": feh, "sigma": 0.001, "min": -2.0, "max": 1.0}
+        if drop_cgp:
+            o.pop("cold_giant_population", None)
+        p = os.path.join(self.cache, "s.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(o, fh)
+        self.assertNotIn("error", compute_research_priors_ingest(path=p, cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return generate_system(seed, spectral_class=sc, n_planets=n,
+                                   research_policy="strict")
+
+    def _giants(self, r):
+        return [p for p in r["planets"]
+                if p["type"] in ("gas", "super_jovian", "brown_dwarf")]
+
+    def test_occurrence_tracks_curve_at_solar(self):
+        # Realized per-star cold-giant occurrence ~ occ_eff(0) = 10% (placement no
+        # longer caps it, since giants are decoupled from the inner grid).
+        N = 300
+        occ = sum(bool(self._giants(self._gen(0.0, s))) for s in range(N)) / N
+        self.assertGreater(occ, 0.05)     # far above the ~0.5% placement-capped grid value
+        self.assertLess(occ, 0.16)        # near the 10% curve target
+
+    def test_occurrence_rises_with_metallicity(self):
+        def occ(feh):
+            return sum(bool(self._giants(self._gen(feh, s))) for s in range(120))
+        self.assertGreater(occ(0.5), occ(-0.5))
+
+    def test_cold_giants_only_beyond_snow_line(self):
+        for s in range(60):
+            r = self._gen(0.3, s)
+            snow = r["star"]["snow_line_au"]
+            self.assertTrue(all(p["a_au"] >= snow for p in self._giants(r)))
+
+    def test_decoupled_lifts_occurrence_vs_grid(self):
+        # With the block, occurrence is much higher than the grid-only (placement-capped)
+        # path — the whole point of the bias correction.
+        def occ(drop):
+            return sum(bool(self._giants(self._gen(0.0, s, drop_cgp=drop)))
+                       for s in range(200))
+        self.assertGreater(occ(False), occ(True))
+
+    def test_multiplicity_conditional_count(self):
+        # Giant-forming systems carry ~1-2 giants on average (Bryan/Rosenthal ~1.47).
+        counts = [len(self._giants(self._gen(0.3, s))) for s in range(200)]
+        counts = [c for c in counts if c]     # conditional on >=1
+        self.assertTrue(counts)
+        self.assertLess(sum(counts) / len(counts), 2.2)
 
 
 class TestV2ProvenanceNotes(unittest.TestCase):

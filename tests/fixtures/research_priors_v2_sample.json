@@ -43,6 +43,11 @@
     "max": 0.5
   },
 
+  "cold_giant_population": {
+    "sma_dist": { "dist": "powerlaw", "inner": "snow_line", "outer_au": 30.0, "slope_dn_dlna": -1.2 },
+    "multiplicity": { "1": 0.65, "2": 0.25, "3": 0.08, "4": 0.02 }
+  },
+
   "origin_priors": {
     "planet_at_location:in_situ_beyond_snow": [ { "pathway": "in-situ accretion beyond the snow line", "plausibility": "high" } ],
     "planet_at_location:in_situ_inner":       [ { "pathway": "in-situ accretion", "plausibility": "medium" } ],

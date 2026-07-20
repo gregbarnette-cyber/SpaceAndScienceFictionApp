@@ -32,6 +32,7 @@ from core.formation import (
     compute_isolation_mass,
     compute_pebble_isolation_mass,
     compute_critical_core_mass,
+    compute_gap_opening_mass,
 )
 from core.priors import DefaultPriors, get_priors, PriorsUnavailable
 from core.databases import (
@@ -251,6 +252,8 @@ def _synth_star(rng, priors, seed, spectral_class, rows):
 
     feh = _draw_feh(rng, priors)     # R3-V2 F2: host [Fe/H] (None unless feh_dist present)
     feh_source = "feh_dist" if feh is not None else None
+    disk_mass_mult = _draw_disk_mass_mult(rng, priors)          # L2: per-system disk mass
+    system_forms_giants = _roll_system_forms_giants(rng, priors, feh)   # L2: growth race
 
     teff, radius_solar, mass_solar = _interp_star_props(_spectral_index(letter, subtype), rows)
     luminosity = compute_star_luminosity(radius_solar, teff)["luminosity"]
@@ -284,6 +287,8 @@ def _synth_star(rng, priors, seed, spectral_class, rows):
         "hz_cons_inner": hzmap["rg"], "hz_cons_outer": hzmap["mg"],
         "hz_opt_inner": hzmap["rv"], "hz_opt_outer": hzmap["em"],
         "snow_line": snow_line, "feh": feh,
+        "disk_mass_mult": disk_mass_mult,               # L2
+        "system_forms_giants": system_forms_giants,     # L2
     }
     return {"star": star, "derived": derived}
 
@@ -339,9 +344,21 @@ def _atmosphere_note(mass_earth, radius_earth, t_eq):
 #      gas runaway. This places giants by physics (fixing the v1 flat-tail giant
 #      that could land anywhere), else the body is a solid-dominated oligarch.
 #   4. Solid bodies draw a merger-growth scatter about M_iso; giants draw
-#      log-uniform from the critical core to the cold-zone ceiling.
+#      log-uniform from the critical core to the ~13 M_J planet/BD boundary.
 # The scatter band + giant ceiling are engine knobs (documented, not pinned).
-_MASS_MODEL_SCATTER = (0.5, 8.0)   # multiplicative spread about M_iso (oligarch mergers)
+_MASS_MODEL_SCATTER = (2.0, 40.0)  # merger-growth spread about M_iso — B6/L2-calibrated so
+                                   # solar small planets land ~1–2 M⊕ (was (0.5,8.0) → 0.10 M⊕
+                                   # sub-Mars); paired with the disk_mass_dist lever (≈2.5× MMSN)
+
+# R3-V2 B6/L1: the gas-runaway giant draw ceiling. The Type-II gap-opening mass (F4)
+# at giant-forming orbits is only ~0.3–1.4 M_J — a growth-throttling *transition*, not
+# the upper limit (accretion continues past a gap), so it is too low to be the ceiling.
+# The physical hard limit is the planet/brown-dwarf (deuterium-burning) boundary
+# ~13 M_J. Capping here (vs the old 600 M⊕ = 1.9 M_J v1-band reuse) restores the
+# super-Jupiter population (2–13 M_J) mass_model was built to include (canon cold
+# giants 0.3–13 M_J). A draw at the boundary classifies as super_jovian (< 13 M_J
+# almost surely under the log-uniform); brown dwarfs are not a target here.
+_GIANT_MASS_CEILING_EARTH = _BROWN_DWARF_MIN_EARTH   # ~13 M_J (4131.4 M⊕)
 
 # ── Phase R3-V2 · F2 metallicity conditioning (occurrence_by_metallicity + feh_dist) ──
 #
@@ -426,18 +443,161 @@ def _metallicity_count_items(priors, derived):
     return [(k, w * math.exp(_METALLICITY_COUNT_TILT * feh * k)) for k, w in items]
 
 
+# ── Phase R3-V2 · L2 (v2.1) · disk-mass lever + saturating giant occurrence ──────
+#
+# Three coupled refinements from the B6 channel exchange with Packet 3.5, all gated:
+#   • disk-mass lever (their disk_mass_dist) — a per-SYSTEM log-normal MMSN multiplier
+#     scales Σ_solid → M_iso, lifting the (previously sub-Mars) small-planet mass. Paired
+#     with an upward _MASS_MODEL_SCATTER (merger growth) — the two levers together.
+#   • growth-race giant occurrence — giant formation is a per-SYSTEM roll against a
+#     SATURATING curve occ([Fe/H]) = C·x/(K+x), x=10^(2·[Fe/H]) (power-law below solar,
+#     ceiling above — the FV05 curve, ~1.4%/10%/25% at −0.5/0/+0.5), NOT the old
+#     per-orbit min(1, gf/gf₀) (which mis-saturated at solar). Eligibility stays the
+#     pebble-isolation gate (now max(M_iso, M_iso,peb) ≥ M_crit so the disk lever gets
+#     its second payoff), beyond the snow line and inside a ~20–30 AU outer cutoff
+#     (wider giants are the disk-instability/scattered population, out of scope).
+#   • peaked giant mass function — giant mass is log-normal anchored on the F4
+#     gap-opening mass (modal ~Saturn, declining tail to the ~13 M_J boundary), instead
+#     of log-uniform (which was top-heavy).
+# Calibration order (per Packet 3.5, avoids double-tuning): mass scale first (disk +
+# scatter), THEN normalize the occurrence curve. C/K/scatter/cutoff/sigma are knobs.
+_OCC_C = 0.30           # saturating-occurrence ceiling (Packet 3.5 curve: occ(0/±0.5) = 10/25/1.4%)
+_OCC_K = 2.0            # saturating-occurrence half-saturation. NOTE: the *realized* per-star giant
+                       # occurrence is currently placement-capped (~1.6% at solar) because the
+                       # generator's compact inner grid rarely populates the 1–5 AU giant zone —
+                       # only ~2% of solar systems place a planet beyond the snow line. The curve
+                       # is correct; lifting the realized level to 10% needs the giant-zone
+                       # placement rework (channel-flagged to Packet 3.5, pending).
+_GIANT_OUTER_CUTOFF_MULT = 10.0    # giant outer cutoff = mult × snow line (~27 AU for Sol)
+_GIANT_MASS_LOGSIGMA = 0.85        # ln-spread of the peaked giant mass function
+_GAP_ALPHA = 1e-3                  # viscosity for the F4 gap-opening-mass anchor
+
+
+def _draw_disk_mass_mult(rng, priors):
+    """Per-system disk-mass multiplier (MMSN units) from disk_mass_dist, or 1.0 when
+    absent (→ the disk_mass_mmsn scalar fallback, unchanged). Log-normal + clamp."""
+    mm = getattr(priors, "mass_model", None) or {}
+    dmd = (mm.get("disk") or {}).get("disk_mass_dist")
+    if not dmd:
+        return 1.0
+    mult = 10.0 ** rng.normalvariate(dmd["log10_mean"], dmd["log10_sigma"])
+    lo, hi = dmd.get("min"), dmd.get("max")
+    if lo is not None:
+        mult = max(mult, lo)
+    if hi is not None:
+        mult = min(mult, hi)
+    return mult
+
+
+def _occ_eff(feh):
+    """Saturating per-star giant-occurrence fraction occ([Fe/H]) = C·x/(K+x),
+    x = 10^(2·[Fe/H]) — the FV05 curve (power-law below solar, ceiling above)."""
+    x = 10.0 ** (2.0 * feh)
+    return _OCC_C * x / (_OCC_K + x)
+
+
+def _roll_system_forms_giants(rng, priors, feh):
+    """Per-system growth-race roll: True if this system forms giants. When
+    occurrence_by_metallicity + a host [Fe/H] are present, roll against _occ_eff;
+    otherwise True (pure-physics gate — every eligible orbit is a giant, the
+    mass_model-only behaviour). Consumes one rng draw only when the roll is live."""
+    occ = getattr(priors, "occurrence_by_metallicity", None)
+    if not occ or feh is None:
+        return True
+    return rng.random() < _occ_eff(feh)
+
+
+def _draw_giant_mass(rng, mstar, a, temp_k, m_crit):
+    """Peaked giant mass (Earth masses): log-normal anchored on the F4 gap-opening mass
+    (modal ~Saturn, declining tail), clamped to [M_crit, ~13 M_J]. One rng draw. Shared
+    by the grid giant switch (v2.1) and the decoupled cold-giant placement (v2.2)."""
+    gap = compute_gap_opening_mass(temp_k=temp_k, mstar_msun=mstar, a_au=a, alpha=_GAP_ALPHA)
+    mode = (gap.get("gap_opening_mass_mearth") if "error" not in gap else None) or 190.0
+    mode = min(max(mode, m_crit * 1.5), _GIANT_MASS_CEILING_EARTH)
+    mass = math.exp(rng.normalvariate(math.log(mode), _GIANT_MASS_LOGSIGMA))
+    return min(max(mass, m_crit), _GIANT_MASS_CEILING_EARTH)
+
+
+def _draw_cold_giant_sma(rng, sma_dist, snow):
+    """Cold-giant semi-major axis (AU) from the broken-power-law sma_dist, over
+    [inner, outer_au] with density in ln(a) ∝ a^slope_dn_dlna (pdf(a) ∝ a^(slope−1)).
+    inner='snow_line' → the star's snow line (giants form beyond it)."""
+    inner = sma_dist.get("inner")
+    lo = snow if inner == "snow_line" else float(inner)
+    hi = float(sma_dist["outer_au"])
+    if hi <= lo:
+        return lo
+    s = float(sma_dist["slope_dn_dlna"])
+    u = rng.random()
+    if abs(s) < 1e-9:                                    # s=0 → log-uniform
+        return math.exp(math.log(lo) + u * (math.log(hi) - math.log(lo)))
+    return (lo ** s + u * (hi ** s - lo ** s)) ** (1.0 / s)   # inverse-CDF of a^(s−1)
+
+
+def _place_cold_giants(rng, priors, star_name, derived, start_idx):
+    """v2.2 (L2): the DECOUPLED cold-giant population — placed independent of the inner
+    n_planet_dist grid (which is the detection-biased short-period small-planet count).
+    Fires only when the per-system growth-race roll passed (derived['system_forms_giants'],
+    = the saturating occurrence curve); draws the count from the conditional multiplicity,
+    each giant's SMA from sma_dist (beyond the snow line, within outer_au), and mass from
+    the peaked gap-anchored function. Only COLD giants (a ≥ snow_line) — hot Jupiters stay
+    in the inner grid's transit-based count. Gated: returns [] without the block."""
+    cgp = getattr(priors, "cold_giant_population", None)
+    if not cgp or not derived.get("system_forms_giants"):
+        return []
+    snow = derived.get("snow_line")
+    if not snow:
+        return []
+    mult_items = sorted((int(k), float(v)) for k, v in cgp["multiplicity"].items())
+    n = _weighted_choice(rng, mult_items)              # conditional count given ≥1
+    disk = (getattr(priors, "mass_model", None) or {}).get("disk", {})
+    mstar = derived.get("mass_solar") or 1.0
+    m_crit = compute_critical_core_mass()["critical_core_mass_mearth"]
+    lum = derived["luminosity"]
+    giants = []
+    for j in range(n):
+        a = _draw_cold_giant_sma(rng, cgp["sma_dist"], snow)
+        dm = compute_disk_model(
+            r_au=a, mstar_msun=mstar,
+            sigma0=disk.get("sigma0_gcm2", 1700.0), sigma_slope=disk.get("sigma_slope", -1.5),
+            temp0=disk.get("temp0_k", 280.0), temp_slope=disk.get("temp_slope", -0.5))
+        temp_k = dm["temp_k"] if "error" not in dm else 280.0 * a ** -0.5
+        mass = _draw_giant_mass(rng, mstar, a, temp_k, m_crit)
+        ecc = rng.uniform(0.0, 0.1)
+        ptype, radius = _classify_planet(mass, a, snow)
+        t_eq = _equilibrium_temp(a, lum)
+        in_hz, hz_class = _hz_membership(a, derived)
+        giants.append({
+            "name": f"{star_name} (cold giant {start_idx + j + 1})",
+            "a_au": _round(a, 5), "mass_earth": _round(mass, 4),
+            "radius_earth": _round(radius, 4), "ecc": _round(ecc, 4), "type": ptype,
+            "t_eq_k": _round(t_eq, 2), "in_hz": in_hz, "hz_class": hz_class,
+            "source": "synthetic", "atmosphere": None, "moons": [],
+            "_a_raw": a, "_mass_raw": mass, "_ecc_raw": ecc, "_radius_raw": radius,
+        })
+    return giants
+
+
 def _mass_model_draw(rng, priors, a, derived):
-    """v2 F1 mass draw at SMA ``a`` (Earth masses). Consumes exactly one rng.uniform
-    (like the v1 band draw) so the downstream draw order is unchanged."""
+    """v2 F1 mass draw at SMA ``a`` (Earth masses). Consumes exactly one rng draw per
+    orbit (giant or solid), so the downstream draw order is fixed for a given dataset.
+
+    v2.1 (L2): Σ_solid is scaled by the per-system disk-mass multiplier + 10^[Fe/H];
+    giant eligibility is max(M_iso, M_iso,peb) ≥ M_crit beyond the snow line within a
+    ~20–30 AU cutoff; whether an eligible orbit is a giant is the per-system growth-race
+    roll (derived['system_forms_giants']); giant mass is peaked on the F4 gap mass."""
     mm = priors.mass_model
     disk = mm["disk"]
     mstar = derived.get("mass_solar") or 1.0
+    feh = derived.get("feh")
+    disk_mult = derived.get("disk_mass_mult", 1.0)
 
     dm = compute_disk_model(
         r_au=a, mstar_msun=mstar,
         sigma0=disk["sigma0_gcm2"], sigma_slope=disk["sigma_slope"],
         temp0=disk["temp0_k"], temp_slope=disk["temp_slope"],
-        disk_mass_mmsn=disk["disk_mass_mmsn"])
+        disk_mass_mmsn=disk["disk_mass_mmsn"] * disk_mult,   # L2 disk-mass lever
+        feh=feh)                                             # L2 Σ_solid ∝ 10^[Fe/H]
     iso = (compute_isolation_mass(
         sigma_p_gcm2=dm["sigma_solid_gcm2"], a_au=a, mstar_msun=mstar,
         feeding_zone_b=mm["feeding_zone_hill"]) if "error" not in dm else {"error": 1})
@@ -447,39 +607,41 @@ def _mass_model_draw(rng, priors, a, derived):
         return math.exp(rng.uniform(math.log(lo), math.log(hi)))
     m_iso = iso["isolation_mass_mearth"]
 
-    # Giant switch — pebble-isolation (F3) must reach the critical core mass (F6),
-    # and giants form beyond the snow line (volatile/gas availability).
+    # Eligibility (WHERE a giant can form): the pebble/planetesimal core must reach the
+    # critical core mass — max(M_iso, M_iso,peb) ≥ M_crit — beyond the snow line and
+    # inside the ~20–30 AU core-accretion outer cutoff. max() lets the disk-mass lever
+    # give its second payoff (Σ-boosted M_iso can overtake M_iso,peb at high disk×[Fe/H]).
     peb = compute_pebble_isolation_mass(temp_k=dm["temp_k"], mstar_msun=mstar, a_au=a)
-    m_peb = peb.get("pebble_isolation_mass_mearth") if "error" not in peb else None
+    m_peb = peb.get("pebble_isolation_mass_mearth") if "error" not in peb else 0.0
     m_crit = compute_critical_core_mass()["critical_core_mass_mearth"]
     snow = derived.get("snow_line")
-    is_giant = (m_peb is not None and m_peb >= m_crit
-                and snow is not None and a >= snow)
+    outer = _GIANT_OUTER_CUTOFF_MULT * snow if snow else None
+    eligible = (snow is not None and a >= snow and outer is not None and a <= outer
+                and max(m_iso, m_peb) >= m_crit)
 
-    # F2 metallicity conditioning (gated on occurrence_by_metallicity + a host [Fe/H]).
-    # One rng.random() is drawn whenever conditioning is active — regardless of
-    # eligibility — so the per-planet draw count stays fixed for a given dataset.
-    occ = getattr(priors, "occurrence_by_metallicity", None)
-    feh = derived.get("feh")
-    occ_active = occ is not None and feh is not None
-    if occ_active:
-        roll = rng.random()
-        if is_giant:
-            gf0 = _giant_fraction_at(occ, 0.0)     # solar reference — use the SHAPE
-            p_giant = (min(1.0, _giant_fraction_at(occ, feh) / gf0)
-                       if gf0 > 0 else 1.0)         # relative to solar, not absolute (gotcha #3)
-            if roll > p_giant:
-                is_giant = False                    # core failed to reach runaway → solid body
+    # Formation (WHETHER, per-system growth race): an eligible orbit is a giant iff the
+    # system rolled giant-forming. When a cold_giant_population block is present (v2.2),
+    # cold giants are placed by the DECOUPLED population instead (from the debiased RV
+    # occurrence, not grown from the detection-biased inner grid) — so the grid makes no
+    # giants here, avoiding double-counting.
+    is_giant = (eligible and derived.get("system_forms_giants", True)
+                and not getattr(priors, "cold_giant_population", None))
 
     if is_giant:
-        hi = priors.mass_by_zone["cold"][1]        # cold-zone ceiling (still shipped)
-        lo = m_crit
-        return math.exp(rng.uniform(math.log(lo), math.log(max(hi, lo * 2.0))))
+        return _draw_giant_mass(rng, mstar, a, dm["temp_k"], m_crit)
+
     slo, shi = _MASS_MODEL_SCATTER
     mass = m_iso * math.exp(rng.uniform(math.log(slo), math.log(shi)))
+    # A non-giant (no gas runaway) body can't be a gas giant by mass alone — cap it
+    # just below the gas threshold so a heavy solid is an ice giant, never a gas giant
+    # inside the snow line. (The higher merger-growth scatter can otherwise push a
+    # solid past 50 M⊕ → _classify_planet would type it 'gas'.)
+    mass = min(mass, _GAS_MIN_EARTH * 0.99)
     # Super-Earth floor: below it, metal-poor hosts sharply lose super-Earths →
     # cap solid bodies just under the super-Earth threshold (gotcha #4).
-    floor = occ.get("superearth_floor_feh") if occ_active else None
+    occ = getattr(priors, "occurrence_by_metallicity", None)
+    floor = (occ.get("superearth_floor_feh")
+             if (occ is not None and feh is not None) else None)
     if floor is not None and feh < floor and mass >= _SUPER_EARTH_MIN_EARTH:
         mass = _SUPER_EARTH_MIN_EARTH * 0.95
     return mass
@@ -539,7 +701,10 @@ def _make_synth_planet(rng, priors, name, a, derived):
 # the chain form are documented engine decisions. Applies to synthetic-mode
 # architecture only (real-anchor infill keeps independent draws — correlating
 # speculative infill to real observed planets is not well-defined).
-_ORDERING_BIAS_Z = 0.3853     # Φ⁻¹(0.65): 65% of adjacent pairs → outer larger (Weiss 2018)
+_ORDERING_BIAS_Z = 0.3853     # Φ⁻¹(0.65): 65% of adjacent pairs → outer larger (Weiss 2018).
+                              # B6: lands ~0.69 empirically (the ~0.04 excess is chain/reclassify,
+                              # not the z-bias), which Weiss's ~60–65% spread accepts — so the
+                              # principled value is kept rather than de-tuned to chase 0.65.
 
 
 def _spacing_ratio_draw(rng, priors):
@@ -612,6 +777,8 @@ def _synth_planets(rng, priors, star_name, derived):
         if corr:
             prev_small_mass = _apply_size_correlation(rng, corr, p, prev_small_mass, derived)
         planets.append(p)
+    # v2.2 (L2): decoupled cold-giant population, added after the inner grid.
+    planets += _place_cold_giants(rng, priors, star_name, derived, 0)
     return planets
 
 
@@ -677,7 +844,8 @@ def _priors_note_fragment(priors):
 
 # R3-V2 B5: the sampling blocks whose presence changes generation (mass/count/spacing).
 # feh_dist is a support axis (no standalone effect) so it isn't listed as "in effect".
-_V2_SAMPLING_BLOCKS = ("mass_model", "occurrence_by_metallicity", "intra_system_correlation")
+_V2_SAMPLING_BLOCKS = ("mass_model", "occurrence_by_metallicity", "intra_system_correlation",
+                       "cold_giant_population")
 
 
 def _v2_blocks_note(priors, star):
@@ -956,6 +1124,8 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
         "hz_opt_inner": hzmap["rv"], "hz_opt_outer": hzmap["em"],
         "snow_line": snow_line,
         "feh": anchor_feh,                 # R3-V2 F2: real-anchor [Fe/H] from SIMBAD
+        "disk_mass_mult": _draw_disk_mass_mult(rng, priors),          # L2
+        "system_forms_giants": _roll_system_forms_giants(rng, priors, anchor_feh),  # L2
     }
 
     observed, observed_smas = _collect_observed(simbad, derived, star_name)
@@ -993,6 +1163,9 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
             return {"error": "Could not place a habitable world in the conservative HZ "
                              f"after {_HABITABLE_TRIES} attempts — try a different seed, "
                              "more planets, or another anchor star."}
+
+    # v2.2 (L2): decoupled cold-giant population around the real star (synthetic).
+    synth += _place_cold_giants(rng, priors, star_name, derived, len(synth))
 
     _attach_moons(rng, priors, star, synth)
 

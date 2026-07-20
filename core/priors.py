@@ -65,6 +65,7 @@ class DefaultPriors:
     occurrence_by_metallicity = None
     intra_system_correlation = None
     feh_dist = None
+    cold_giant_population = None    # v2.2 — decoupled cold-giant population (B6/L2)
 
     def __init__(self):
         # Host-star spectral-class weights (M ≫ K > G > F > A > B).
@@ -166,6 +167,7 @@ class ResearchPriors:
         self.intra_system_correlation = copy.deepcopy(
             contract.get("intra_system_correlation"))
         self.feh_dist = copy.deepcopy(contract.get("feh_dist"))
+        self.cold_giant_population = copy.deepcopy(contract.get("cold_giant_population"))
 
     @classmethod
     def from_contract(cls, obj):

@@ -471,6 +471,58 @@ class TestV2Superset(unittest.TestCase):
         self._bad_block(lambda o: o["feh_dist"].update({"min": 1.0, "max": -1.0}),
                         "feh_dist requires min <= max")
 
+    # ── v2.1: disk_mass_dist (nested under mass_model.disk) ──
+    _DMD = {"dist": "lognormal", "log10_mean": 0.4, "log10_sigma": 0.25,
+            "min": 1.0, "max": 5.0}
+
+    def _with_dmd(self, dmd):
+        o = _load(_V2SAMPLE)
+        o["mass_model"]["disk"]["disk_mass_dist"] = dmd
+        return o
+
+    def test_disk_mass_dist_validates(self):
+        self.assertIsNone(validate_priors_contract(self._with_dmd(dict(self._DMD))))
+
+    def test_disk_mass_dist_absent_ok(self):
+        # v2 fixture has no disk_mass_dist → the scalar fallback, still valid.
+        self.assertIsNone(validate_priors_contract(_load(_V2SAMPLE)))
+
+    def test_disk_mass_dist_bad_dist(self):
+        d = dict(self._DMD); d["dist"] = "gaussian"
+        res = validate_priors_contract(self._with_dmd(d))
+        self.assertIn("disk_mass_dist.dist", res["error"])
+
+    def test_disk_mass_dist_bad_sigma(self):
+        d = dict(self._DMD); d["log10_sigma"] = 0
+        res = validate_priors_contract(self._with_dmd(d))
+        self.assertIn("log10_sigma", res["error"])
+
+    def test_disk_mass_dist_min_gt_max(self):
+        d = dict(self._DMD); d["min"] = 5.0; d["max"] = 1.0
+        res = validate_priors_contract(self._with_dmd(d))
+        self.assertIn("min <= max", res["error"])
+
+    # ── v2.2: cold_giant_population (top-level block) ──
+    def test_cold_giant_population_validates(self):
+        self.assertIsNone(validate_priors_contract(_load(_V2SAMPLE)))
+        self.assertIn("cold_giant_population", present_v2_blocks(_load(_V2SAMPLE)))
+
+    def test_cold_giant_bad_sma_dist(self):
+        self._bad_block(lambda o: o["cold_giant_population"]["sma_dist"].__setitem__("dist", "gaussian"),
+                        "sma_dist.dist")
+
+    def test_cold_giant_bad_inner(self):
+        self._bad_block(lambda o: o["cold_giant_population"]["sma_dist"].__setitem__("inner", -1),
+                        "sma_dist.inner")
+
+    def test_cold_giant_bad_multiplicity(self):
+        self._bad_block(lambda o: o["cold_giant_population"].__setitem__("multiplicity", {}),
+                        "multiplicity")
+
+    def test_cold_giant_multiplicity_all_zero(self):
+        self._bad_block(lambda o: o["cold_giant_population"].__setitem__(
+            "multiplicity", {"1": 0, "2": 0}), "positive weight")
+
     # ── provider surface ──
     def test_provider_exposes_v2_blocks(self):
         r = ResearchPriors.from_file(_V2SAMPLE)
