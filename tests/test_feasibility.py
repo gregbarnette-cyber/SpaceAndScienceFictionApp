@@ -753,5 +753,38 @@ class TestEvaluateFeasibilityResearchPolicy(unittest.TestCase):
         self.assertIn("strict", r["error"])
 
 
+class TestLayer3MetallicityVariant(unittest.TestCase):
+    """R3-V2 B4: metallicity-qualified origin keys ('<key>:metal_rich'/':metal_poor')
+    are preferred when the host [Fe/H] falls in that tail; else the base key."""
+
+    _RICH_PATHWAY = "metal-rich rapid core+gas accretion"
+
+    def _prov(self):
+        with open(_SAMPLE_FIX, encoding="utf-8") as fh:
+            c = _json.load(fh)
+        c["origin_priors"]["planet_at_location:in_situ_beyond_snow:metal_rich"] = [
+            {"pathway": self._RICH_PATHWAY, "plausibility": "high"}]
+        return ResearchPriors.from_contract(c)
+
+    def _hyps(self, feh):
+        o = _origin_hypotheses({"type": "planet_at_location"}, _base([]),
+                               {"snow_line": 2.7, "feh": feh}, _RES_BEYOND, self._prov())
+        return [h["pathway"] for h in o["hypotheses"]]
+
+    def test_metal_rich_prefers_qualified_key(self):
+        self.assertTrue(any(self._RICH_PATHWAY in p for p in self._hyps(0.3)))
+
+    def test_neutral_uses_base_key(self):
+        self.assertFalse(any(self._RICH_PATHWAY in p for p in self._hyps(0.0)))
+
+    def test_absent_feh_uses_base_key(self):
+        self.assertFalse(any(self._RICH_PATHWAY in p for p in self._hyps(None)))
+
+    def test_undefined_variant_falls_back_to_base(self):
+        # metal_poor host but the dataset defines no ':metal_poor' variant → base key.
+        self.assertFalse(any(self._RICH_PATHWAY in p for p in self._hyps(-0.9)))
+        self.assertTrue(self._hyps(-0.9))   # base key still yields hypotheses
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -56,6 +56,16 @@ class DefaultPriors:
     name = "DEFAULTS"
     grounding = "default-extrapolation"
 
+    # ── Phase R3-V2 additive superset blocks ──
+    # DefaultPriors never carries them (it is the v1 marginals fallback), so they
+    # are None here — the engine reads them via getattr and falls back to the v1
+    # field whenever they are None (mass_by_zone, flat n_planet_dist, independent
+    # draws). Set on ResearchPriors only when a v2 dataset supplies them.
+    mass_model = None
+    occurrence_by_metallicity = None
+    intra_system_correlation = None
+    feh_dist = None
+
     def __init__(self):
         # Host-star spectral-class weights (M ≫ K > G > F > A > B).
         # Approximate solar-neighbourhood fractions (Kroupa-ish field census).
@@ -112,6 +122,12 @@ class ResearchPriors:
     provenance) and ``schema_version``. ``grounding`` is ``"research-calibrated"``
     so re-tagging is automatic wherever the engine reads ``priors.grounding``.
 
+    Phase R3-V2 adds four optional superset attributes — ``mass_model``,
+    ``occurrence_by_metallicity``, ``intra_system_correlation`` and ``feh_dist`` —
+    each ``None`` unless a v2 dataset supplies it (``DefaultPriors`` sets them None
+    too, so ``getattr`` is uniform). Stage A stores/exposes them; the sampling
+    engine consumes them in Stage B (see PHASE_R3_V2_PLAN.md).
+
     Build via ``from_file`` / ``from_contract`` (direct, used in tests) or
     ``load(cache_dir)`` (reads the importer's cache; raises ``PriorsUnavailable``
     when no dataset has been ingested).
@@ -140,6 +156,16 @@ class ResearchPriors:
 
         # ── the one new axis (calibrated Layer-3 origin narrative) ──
         self.origin_priors = copy.deepcopy(contract.get("origin_priors", {}))
+
+        # ── Phase R3-V2 additive superset blocks (None when the dataset omits
+        # them → the engine falls back to the v1 field, byte-identical). Stored
+        # verbatim; the sampling engine interprets them in Stage B. ──
+        self.mass_model = copy.deepcopy(contract.get("mass_model"))
+        self.occurrence_by_metallicity = copy.deepcopy(
+            contract.get("occurrence_by_metallicity"))
+        self.intra_system_correlation = copy.deepcopy(
+            contract.get("intra_system_correlation"))
+        self.feh_dist = copy.deepcopy(contract.get("feh_dist"))
 
     @classmethod
     def from_contract(cls, obj):

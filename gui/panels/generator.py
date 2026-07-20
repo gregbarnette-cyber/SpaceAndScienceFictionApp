@@ -627,6 +627,10 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
 
         # Star card.
         hz = f"{_fmt(star.get('hz_inner_au'))} – {_fmt(star.get('hz_outer_au'))} AU"
+        feh_bit = ""
+        if star.get("feh") is not None:      # R3-V2: metallicity + provenance source
+            feh_bit = (f"&nbsp;&nbsp; <b>[Fe/H]:</b> {_fmt(star.get('feh'), 2)} "
+                       f"({star.get('feh_source') or 'unknown'})")
         card = (f"<b>Spectral type:</b> {star.get('spectral_class') or '—'} "
                 f"({star.get('source')})&nbsp;&nbsp; "
                 f"<b>T<sub>eff</sub>:</b> {_fmt(star.get('teff'), 0)} K&nbsp;&nbsp; "
@@ -634,7 +638,7 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
                 f"{_fmt(star.get('radius_solar'))} ☉&nbsp;&nbsp; "
                 f"<b>Luminosity:</b> {_fmt(star.get('luminosity'), 4)} ☉&nbsp;&nbsp; "
                 f"<b>HZ:</b> {hz}&nbsp;&nbsp; "
-                f"<b>Snow line:</b> {_fmt(star.get('snow_line_au'))} AU")
+                f"<b>Snow line:</b> {_fmt(star.get('snow_line_au'))} AU{feh_bit}")
         clbl = QLabel(card)
         clbl.setWordWrap(True)
         clbl.setStyleSheet("background: #f7f9fc; border: 1px solid #e2e2e2;"
@@ -666,6 +670,15 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
             wl.setWordWrap(True)
             wl.setStyleSheet("color: #9a6700; font-size: 11.5px;")
             self._tables_layout.addWidget(wl)
+
+        # R3-V2 B5: v2-physics provenance note (which sampling blocks drove this system).
+        v2note = next((n for n in (result.get("notes") or [])
+                       if n.startswith("v2 physics in effect")), None)
+        if v2note:
+            v2lbl = QLabel("🧬 " + v2note)
+            v2lbl.setWordWrap(True)
+            v2lbl.setStyleSheet("color: #1a4e84; font-size: 11.5px;")
+            self._tables_layout.addWidget(v2lbl)
 
         # Viz tabs.
         if mpl_available():

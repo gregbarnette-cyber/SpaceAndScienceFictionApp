@@ -1,0 +1,58 @@
+{
+  "schema_version": "2.0",
+  "dataset_version": "v2-sample-2026-07-20",
+  "provenance": {
+    "source": "V2 SAMPLE fixture — Phase R3-V2 Stage A schema plumbing. Synthetic, well-formed v2 superset: the v1 axes plus all three sister-proposed blocks (mass_model / occurrence_by_metallicity / intra_system_correlation) and the app-side feh_dist axis. NOT research-calibrated values — a shape fixture. Real v2 numbers come from Packet 3.5 when v2 is scheduled.",
+    "description": "Used to prove the validator/provider/importer accept and expose the v2 blocks. No engine reads them in Stage A, so this fixture does not change generation output.",
+    "citations": []
+  },
+
+  "spectral_class_weights": { "M": 0.773, "K": 0.134, "G": 0.069, "F": 0.025, "A": 0.008, "B": 0.001 },
+  "n_planet_dist": { "0": 0.21, "1": 0.23, "2": 0.19, "3": 0.13, "4": 0.09, "5": 0.055, "6": 0.04, "7": 0.025, "8": 0.015, "9": 0.008, "10": 0.007 },
+  "spacing_ratio": [1.2, 2.2],
+  "mass_by_zone": { "hot": [0.05, 12.0], "hz": [0.10, 10.0], "cold": [0.5, 600.0], "far": [0.3, 80.0] },
+  "moon_count": [0, 6],
+  "moon_mass_frac": [1e-5, 5e-4],
+
+  "mass_model": {
+    "type": "isolation-scaling",
+    "disk": { "sigma0_gcm2": 1700, "sigma_slope": -1.5, "temp0_k": 280, "temp_slope": -0.5, "disk_mass_mmsn": 1.0 },
+    "feeding_zone_hill": 10,
+    "giant_switch": "pebble_isolation",
+    "notes": "M_iso(sigma, a, Mstar) via the Group P calculators (F2/F3/F6); the engine samples from this in Stage B."
+  },
+
+  "occurrence_by_metallicity": {
+    "feh_grid": [-0.5, -0.25, 0.0, 0.25, 0.5],
+    "giant_fraction": [0.01, 0.03, 0.07, 0.14, 0.25],
+    "superearth_floor_feh": -0.5,
+    "n_planet_dist_shift": "scale n_planet_dist toward higher counts with [Fe/H]"
+  },
+
+  "intra_system_correlation": {
+    "size_ratio_dist": { "mean": 1.0, "sigma": 0.3 },
+    "period_ratio_dist": { "min": 1.2, "mode": 1.7, "tail": 3.0 },
+    "ordering": "outer planets modestly larger in ~65% of pairs",
+    "note": "once a seed planet is drawn, neighbours are drawn CONDITIONAL on it, not independently."
+  },
+
+  "feh_dist": {
+    "mean": -0.1,
+    "sigma": 0.2,
+    "min": -1.0,
+    "max": 0.5
+  },
+
+  "origin_priors": {
+    "planet_at_location:in_situ_beyond_snow": [ { "pathway": "in-situ accretion beyond the snow line", "plausibility": "high" } ],
+    "planet_at_location:in_situ_inner":       [ { "pathway": "in-situ accretion", "plausibility": "medium" } ],
+    "planet_at_location:resonant_migration":  [ { "pathway": "convergent migration into resonance", "plausibility": "medium" } ],
+    "planet_at_location:infeasible":          [ { "pathway": "captured / scattered survivor", "plausibility": "low" } ],
+    "trojan:feasible":                        [ { "pathway": "in-situ co-accretion / capture into the Lagrange point", "plausibility": "medium" } ],
+    "trojan:infeasible":                      [ { "pathway": "no stable co-orbital pathway (host too massive)", "plausibility": "low" } ],
+    "moon:feasible":                          [ { "pathway": "capture / circumplanetary-disk formation", "plausibility": "medium" } ],
+    "moon:infeasible":                        [ { "pathway": "no stable satellite pathway", "plausibility": "low" } ],
+    "resonance:feasible":                     [ { "pathway": "convergent migration into resonance", "plausibility": "high" } ],
+    "resonance:infeasible":                   [ { "pathway": "would require migration / capture into resonance", "plausibility": "low" } ]
+  }
+}

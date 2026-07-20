@@ -16,9 +16,11 @@ from core.research_priors import (
     validate_priors_contract,
     compute_research_priors_ingest,
     get_research_priors_status,
+    present_v2_blocks,
     _REQUIRED_AXES,
     _REQUIRED_ZONES,
     _ORIGIN_CONTEXT_KEYS,
+    _V2_BLOCK_NAMES,
     _CACHE_PRIORS_NAME,
     _CACHE_META_NAME,
 )
@@ -39,6 +41,7 @@ _SAMPLING_ATTRS = (
 _FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 _SAMPLE = os.path.join(_FIX, "research_priors_sample.json")
 _IDENTITY = os.path.join(_FIX, "research_priors_identity.json")
+_V2SAMPLE = os.path.join(_FIX, "research_priors_v2_sample.json")   # Phase R3-V2
 
 
 def _load(path):
@@ -104,7 +107,8 @@ class TestValidatorRejects(unittest.TestCase):
         self._bad(o, "schema_version")
 
     def test_unknown_schema_major(self):
-        o = copy.deepcopy(self.base); o["schema_version"] = "2.0"
+        # "2.x" is now a known major (Phase R3-V2); use an unknown one.
+        o = copy.deepcopy(self.base); o["schema_version"] = "9.0"
         self._bad(o, "schema_version")
 
     def test_missing_dataset_version(self):
@@ -388,6 +392,128 @@ class TestImporterAndStatus(unittest.TestCase):
             fh.write("{ not json")
         st = get_research_priors_status(cache_dir=self.cache)
         self.assertEqual(st["loaded"], False)
+
+
+class TestV2Superset(unittest.TestCase):
+    """Phase R3-V2 Stage A: the additive optional superset (schema_version 2.0).
+
+    v2 datasets validate, expose their blocks on ResearchPriors, and are recorded
+    by the importer/status — while v1 datasets stay valid and (blocks absent) the
+    provider surface is byte-identical (all v2 attrs None).
+    """
+
+    # ── validator ──
+    def test_v2_sample_validates(self):
+        self.assertIsNone(validate_priors_contract(_load(_V2SAMPLE)))
+
+    def test_two_major_is_known(self):
+        o = _load(_IDENTITY); o["schema_version"] = "2.0"
+        self.assertIsNone(validate_priors_contract(o))
+
+    def test_v1_datasets_still_validate(self):
+        # The whole point: v1 fixtures keep validating under the v2-aware validator.
+        for path in (_SAMPLE, _IDENTITY):
+            self.assertIsNone(validate_priors_contract(_load(path)), path)
+
+    def test_v2_blocks_are_optional(self):
+        # Strip every v2 block from the v2 fixture → still valid (falls back to v1).
+        o = _load(_V2SAMPLE)
+        for name in _V2_BLOCK_NAMES:
+            o.pop(name, None)
+        self.assertIsNone(validate_priors_contract(o))
+        self.assertEqual(present_v2_blocks(o), [])
+
+    def test_present_v2_blocks_lists_all(self):
+        self.assertEqual(present_v2_blocks(_load(_V2SAMPLE)), list(_V2_BLOCK_NAMES))
+
+    def _bad_block(self, mutate, needle):
+        o = _load(_V2SAMPLE)
+        mutate(o)
+        res = validate_priors_contract(o)
+        self.assertIsInstance(res, dict)
+        self.assertIn(needle, res["error"])
+
+    def test_mass_model_unknown_type(self):
+        self._bad_block(lambda o: o["mass_model"].__setitem__("type", "made-up"),
+                        "mass_model.type")
+
+    def test_mass_model_bad_disk_field(self):
+        self._bad_block(lambda o: o["mass_model"]["disk"].__setitem__("sigma0_gcm2", 0),
+                        "sigma0_gcm2")
+
+    def test_mass_model_missing_disk(self):
+        self._bad_block(lambda o: o["mass_model"].pop("disk"), "mass_model.disk")
+
+    def test_occurrence_grid_not_ascending(self):
+        self._bad_block(lambda o: o["occurrence_by_metallicity"].__setitem__(
+            "feh_grid", [0.0, -0.5, 0.5]), "ascending")
+
+    def test_occurrence_length_mismatch(self):
+        self._bad_block(lambda o: o["occurrence_by_metallicity"].__setitem__(
+            "giant_fraction", [0.1, 0.2]), "giant_fraction")
+
+    def test_occurrence_fraction_out_of_range(self):
+        self._bad_block(lambda o: o["occurrence_by_metallicity"]["giant_fraction"].__setitem__(0, 1.5),
+                        "giant_fraction")
+
+    def test_correlation_bad_period_ratio(self):
+        self._bad_block(lambda o: o["intra_system_correlation"]["period_ratio_dist"].__setitem__("min", 2.0),
+                        "min <= mode <= tail")
+
+    def test_correlation_bad_size_mean(self):
+        self._bad_block(lambda o: o["intra_system_correlation"]["size_ratio_dist"].__setitem__("mean", 0),
+                        "size_ratio_dist.mean")
+
+    def test_feh_dist_bad_sigma(self):
+        self._bad_block(lambda o: o["feh_dist"].__setitem__("sigma", 0), "feh_dist.sigma")
+
+    def test_feh_dist_min_gt_max(self):
+        self._bad_block(lambda o: o["feh_dist"].update({"min": 1.0, "max": -1.0}),
+                        "feh_dist requires min <= max")
+
+    # ── provider surface ──
+    def test_provider_exposes_v2_blocks(self):
+        r = ResearchPriors.from_file(_V2SAMPLE)
+        self.assertEqual(r.mass_model["type"], "isolation-scaling")
+        self.assertEqual(r.occurrence_by_metallicity["feh_grid"][0], -0.5)
+        self.assertEqual(r.intra_system_correlation["size_ratio_dist"]["mean"], 1.0)
+        self.assertEqual(r.feh_dist["sigma"], 0.2)
+        self.assertEqual(r.schema_version, "2.0")
+        self.assertEqual(r.version, "v2-sample-2026-07-20")
+
+    def test_v1_provider_v2_attrs_are_none(self):
+        r = ResearchPriors.from_file(_IDENTITY)
+        for attr in _V2_BLOCK_NAMES:
+            self.assertIsNone(getattr(r, attr), attr)
+
+    def test_defaults_v2_attrs_are_none(self):
+        d = DefaultPriors()
+        for attr in _V2_BLOCK_NAMES:
+            self.assertIsNone(getattr(d, attr), attr)
+
+    def test_v2_blocks_deepcopied(self):
+        r = ResearchPriors.from_file(_V2SAMPLE)
+        r.mass_model["disk"]["sigma0_gcm2"] = 9999
+        r2 = ResearchPriors.from_file(_V2SAMPLE)
+        self.assertEqual(r2.mass_model["disk"]["sigma0_gcm2"], 1700)
+
+    # ── importer / status record the blocks ──
+    def test_importer_records_v2_blocks(self):
+        cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, cache, ignore_errors=True)
+        res = compute_research_priors_ingest(path=_V2SAMPLE, cache_dir=cache)
+        self.assertNotIn("error", res)
+        self.assertEqual(res["schema_version"], "2.0")
+        self.assertEqual(res["v2_blocks"], list(_V2_BLOCK_NAMES))
+        st = get_research_priors_status(cache_dir=cache)
+        self.assertEqual(st["schema_version"], "2.0")
+        self.assertEqual(st["v2_blocks"], list(_V2_BLOCK_NAMES))
+
+    def test_status_v1_has_empty_v2_blocks(self):
+        cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, cache, ignore_errors=True)
+        compute_research_priors_ingest(path=_IDENTITY, cache_dir=cache)
+        self.assertEqual(get_research_priors_status(cache_dir=cache)["v2_blocks"], [])
 
 
 if __name__ == "__main__":

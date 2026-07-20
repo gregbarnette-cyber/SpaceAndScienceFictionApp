@@ -38,7 +38,11 @@ _CACHE_META_NAME = "meta.json"
 _SAMPLE_CONTRACT_PATH = _REPO_ROOT / "tests" / "fixtures" / "research_priors_sample.json"
 
 # Contract vocabulary -------------------------------------------------------------
-_KNOWN_SCHEMA_MAJORS = {"1"}            # schema_version "1.x" is interpretable
+# "1.x" = the v1.0 marginals contract (R3). "2.x" = the additive v2 superset
+# (Phase R3-V2): the same required axes plus the optional blocks in _V2_BLOCKS. A
+# v2 dataset that omits every v2 block is behaviourally identical to a v1 dataset,
+# so bumping the major alone never changes generation output.
+_KNOWN_SCHEMA_MAJORS = {"1", "2"}
 _REQUIRED_ZONES = ("hot", "hz", "cold", "far")
 _PLAUSIBILITY = {"low", "medium", "high"}   # R2 Layer-3 enum (kept; D4)
 
@@ -57,6 +61,12 @@ _REQUIRED_AXES = (
 # inline core/feasibility.py heuristics onto these keys; a key a dataset omits falls
 # back per-key to the DefaultPriors heuristic (never an error). Documented here as
 # the single source of truth for the vocabulary.
+#
+# R3-V2 B4 — metallicity-qualified variants: a v2 origin_priors block may add a
+# "<base_key>:metal_rich" or "<base_key>:metal_poor" entry; the feasibility engine
+# prefers it over the base key when the host's [Fe/H] falls in that tail (else the
+# base key). These are additive and validated like any origin_priors key; the base
+# keys below remain the required vocabulary.
 _ORIGIN_CONTEXT_KEYS = (
     "planet_at_location:in_situ_beyond_snow",
     "planet_at_location:in_situ_inner",
@@ -69,6 +79,24 @@ _ORIGIN_CONTEXT_KEYS = (
     "resonance:feasible",
     "resonance:infeasible",
 )
+
+
+# ── Phase R3-V2 · optional additive superset blocks ──────────────────────────
+#
+# v2 (schema_version "2.0") adds three optional blocks the sister project hands off
+# (research-priors-v2-contract-request.md) plus one app-side axis (feh_dist). Each
+# is validated *only when present*; a dataset omitting a block falls back to the v1
+# field, so v1.0 datasets stay valid and permissive output stays byte-identical.
+# Stage A (this checkpoint) validates + stores + exposes the blocks; NO engine reads
+# them yet (Stage B — see PHASE_R3_V2_PLAN.md). The block names, in stored order:
+_V2_BLOCK_NAMES = (
+    "mass_model",                 # F1 — isolation-mass scaling (replaces mass_by_zone)
+    "occurrence_by_metallicity",  # F2 — [Fe/H]-conditioned planet count / giant fraction
+    "intra_system_correlation",   # F3 — peas-in-a-pod joint draws
+    "feh_dist",                   # app-side: synthetic-mode host [Fe/H] source (Decision 2)
+)
+
+_MASS_MODEL_TYPES = {"isolation-scaling"}   # recognised mass_model.type (additive)
 
 
 def _err(msg):
@@ -94,6 +122,125 @@ def _check_range_pair(value, key, *, require_positive_lo):
     if lo > hi:
         return f"{key} requires lo <= hi (got {lo} > {hi})."
     return None
+
+
+# ── v2 block validators (each returns an error string or None) ────────────────
+
+def _check_mass_model(mm):
+    """F1 — parametric isolation-mass model. Disk profile + feeding zone + switch."""
+    if not isinstance(mm, dict):
+        return "mass_model must be an object."
+    t = mm.get("type")
+    if not isinstance(t, str) or not t.strip():
+        return "mass_model.type must be a non-empty string."
+    if t not in _MASS_MODEL_TYPES:
+        return (f"mass_model.type {t!r} is not recognised "
+                f"(supported: {sorted(_MASS_MODEL_TYPES)}).")
+    disk = mm.get("disk")
+    if not isinstance(disk, dict):
+        return "mass_model.disk must be an object."
+    for field, positive in (("sigma0_gcm2", True), ("sigma_slope", False),
+                            ("temp0_k", True), ("temp_slope", False),
+                            ("disk_mass_mmsn", True)):
+        v = disk.get(field)
+        if not _is_num(v):
+            return f"mass_model.disk.{field} must be a number."
+        if positive and v <= 0:
+            return f"mass_model.disk.{field} must be > 0."
+    fz = mm.get("feeding_zone_hill")
+    if not _is_num(fz) or fz <= 0:
+        return "mass_model.feeding_zone_hill must be a positive number."
+    gs = mm.get("giant_switch")
+    if not isinstance(gs, str) or not gs.strip():
+        return "mass_model.giant_switch must be a non-empty string."
+    return None
+
+
+def _check_occurrence_by_metallicity(om):
+    """F2 — giant fraction on an ascending [Fe/H] grid (+ super-Earth floor)."""
+    if not isinstance(om, dict):
+        return "occurrence_by_metallicity must be an object."
+    grid = om.get("feh_grid")
+    if not isinstance(grid, list) or len(grid) < 2:
+        return "occurrence_by_metallicity.feh_grid must be a list of >= 2 numbers."
+    if not all(_is_num(x) for x in grid):
+        return "occurrence_by_metallicity.feh_grid entries must be numbers."
+    if any(grid[i] >= grid[i + 1] for i in range(len(grid) - 1)):
+        return "occurrence_by_metallicity.feh_grid must be strictly ascending."
+    gf = om.get("giant_fraction")
+    if not isinstance(gf, list) or len(gf) != len(grid):
+        return ("occurrence_by_metallicity.giant_fraction must be a list the same "
+                "length as feh_grid.")
+    for x in gf:
+        if not _is_num(x) or not (0.0 <= x <= 1.0):
+            return "occurrence_by_metallicity.giant_fraction entries must be in [0, 1]."
+    floor = om.get("superearth_floor_feh")
+    if floor is not None and not _is_num(floor):
+        return "occurrence_by_metallicity.superearth_floor_feh must be a number."
+    shift = om.get("n_planet_dist_shift")
+    if shift is not None and not isinstance(shift, str):
+        return "occurrence_by_metallicity.n_planet_dist_shift must be a string."
+    return None
+
+
+def _check_intra_system_correlation(ic):
+    """F3 — peas-in-a-pod size + period-ratio correlation kernel."""
+    if not isinstance(ic, dict):
+        return "intra_system_correlation must be an object."
+    srd = ic.get("size_ratio_dist")
+    if not isinstance(srd, dict):
+        return "intra_system_correlation.size_ratio_dist must be an object."
+    if not _is_num(srd.get("mean")) or srd["mean"] <= 0:
+        return "intra_system_correlation.size_ratio_dist.mean must be a positive number."
+    if not _is_num(srd.get("sigma")) or srd["sigma"] < 0:
+        return ("intra_system_correlation.size_ratio_dist.sigma must be a "
+                "non-negative number.")
+    prd = ic.get("period_ratio_dist")
+    if not isinstance(prd, dict):
+        return "intra_system_correlation.period_ratio_dist must be an object."
+    pmin, pmode, ptail = prd.get("min"), prd.get("mode"), prd.get("tail")
+    if not all(_is_num(x) for x in (pmin, pmode, ptail)):
+        return "intra_system_correlation.period_ratio_dist needs numeric min/mode/tail."
+    if not (0 < pmin <= pmode <= ptail):
+        return ("intra_system_correlation.period_ratio_dist requires "
+                "0 < min <= mode <= tail.")
+    for field in ("ordering", "note"):
+        v = ic.get(field)
+        if v is not None and not isinstance(v, str):
+            return f"intra_system_correlation.{field} must be a string."
+    return None
+
+
+def _check_feh_dist(fd):
+    """App-side axis — synthetic-mode host [Fe/H] draw (Gaussian mean/sigma, opt. clamp)."""
+    if not isinstance(fd, dict):
+        return "feh_dist must be an object."
+    if not _is_num(fd.get("mean")):
+        return "feh_dist.mean must be a number."
+    if not _is_num(fd.get("sigma")) or fd["sigma"] <= 0:
+        return "feh_dist.sigma must be a positive number."
+    lo, hi = fd.get("min"), fd.get("max")
+    if lo is not None and not _is_num(lo):
+        return "feh_dist.min must be a number."
+    if hi is not None and not _is_num(hi):
+        return "feh_dist.max must be a number."
+    if lo is not None and hi is not None and lo > hi:
+        return "feh_dist requires min <= max."
+    return None
+
+
+# name → checker; iteration order is _V2_BLOCK_NAMES (stable).
+_V2_BLOCK_CHECKERS = {
+    "mass_model": _check_mass_model,
+    "occurrence_by_metallicity": _check_occurrence_by_metallicity,
+    "intra_system_correlation": _check_intra_system_correlation,
+    "feh_dist": _check_feh_dist,
+}
+
+
+def present_v2_blocks(obj):
+    """The v2 block names present (non-None) in a contract dict, in stored order."""
+    return [name for name in _V2_BLOCK_NAMES if obj.get(name) is not None]
 
 
 def validate_priors_contract(obj):
@@ -199,6 +346,14 @@ def validate_priors_contract(obj):
                     return _err(f"origin_priors[{ctx!r}]: plausibility must be one of "
                                 f"{sorted(_PLAUSIBILITY)}.")
 
+    # ── v2 optional blocks (validated only when present; additive superset) ──
+    for name, checker in _V2_BLOCK_CHECKERS.items():
+        block = obj.get(name)
+        if block is not None:
+            e = checker(block)
+            if e:
+                return _err(e)
+
     return None
 
 
@@ -255,6 +410,7 @@ def compute_research_priors_ingest(path=None, cache_dir=None, progress_callback=
         "source": str(src),
         "axes_loaded": len(_REQUIRED_AXES),
         "origin_contexts": origin_contexts,
+        "v2_blocks": present_v2_blocks(obj),   # [] for a v1 dataset (Phase R3-V2)
         "stored_at": stored_at,
     }
     try:
@@ -273,26 +429,29 @@ def compute_research_priors_ingest(path=None, cache_dir=None, progress_callback=
 def get_research_priors_status(cache_dir=None):
     """Pure-pathlib/JSON status of the ingested priors cache (no provider build).
 
-    Returns ``{loaded, dataset_version, schema_version, origin_contexts,
+    Returns ``{loaded, dataset_version, schema_version, origin_contexts, v2_blocks,
     stored_at}`` — ``loaded`` False (rest None) when no dataset has been ingested.
-    Used by the opt-57 DbStatus surface, like ``core.dust.get_dust_map_status``.
+    ``v2_blocks`` lists any Phase R3-V2 superset blocks present ([] for a v1
+    dataset or a pre-V2 cache). Used by the opt-57 DbStatus surface, like
+    ``core.dust.get_dust_map_status``.
     """
     cache = Path(cache_dir if cache_dir is not None else _DEFAULT_CACHE_DIR)
     meta_file = cache / _CACHE_META_NAME
     priors_file = cache / _CACHE_PRIORS_NAME
+    _not_loaded = {"loaded": False, "dataset_version": None, "schema_version": None,
+                   "origin_contexts": None, "v2_blocks": None, "stored_at": None}
     if not (meta_file.is_file() and priors_file.is_file()):
-        return {"loaded": False, "dataset_version": None, "schema_version": None,
-                "origin_contexts": None, "stored_at": None}
+        return dict(_not_loaded)
     try:
         with open(meta_file, encoding="utf-8") as fh:
             meta = json.load(fh)
     except (OSError, ValueError):
-        return {"loaded": False, "dataset_version": None, "schema_version": None,
-                "origin_contexts": None, "stored_at": None}
+        return dict(_not_loaded)
     return {
         "loaded": True,
         "dataset_version": meta.get("dataset_version"),
         "schema_version": meta.get("schema_version"),
         "origin_contexts": meta.get("origin_contexts"),
+        "v2_blocks": meta.get("v2_blocks") or [],   # pre-V2 caches lack the key
         "stored_at": meta.get("stored_at"),
     }

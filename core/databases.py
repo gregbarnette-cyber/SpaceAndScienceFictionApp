@@ -205,6 +205,17 @@ def compute_simbad_lookup(star_name: str) -> dict:
         except (ValueError, TypeError):
             pass
 
+    # Metallicity [Fe/H] from the mesfe_h table (already fetched for teff). Additive
+    # key — None when SIMBAD has no value. Consumed by the R3-V2 real-anchor
+    # metallicity-conditioned generation path (occurrence_by_metallicity).
+    feh_raw = _safe("mesfe_h.fe_h")
+    fe_h = None
+    if feh_raw is not None:
+        try:
+            fe_h = float(feh_raw)
+        except (ValueError, TypeError):
+            pass
+
     # ── Designation parsing ───────────────────────────────────────────────────
     keys_order = [
         "MAIN_ID", "NAME", "GJ", "HD", "HIP", "HR", "Wolf", "LHS", "BD",
@@ -266,6 +277,7 @@ def compute_simbad_lookup(star_name: str) -> dict:
         "plx_value":    plx,
         "teff":         teff,
         "vmag":         vmag,
+        "fe_h":         fe_h,
         "ly":           ly,
         "parsecs":      parsecs,
         "designations": designations,

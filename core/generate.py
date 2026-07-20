@@ -27,11 +27,18 @@ from core.equations import (
     compute_atmosphere_retention,
 )
 from core.science import compute_main_sequence_table
+from core.formation import (
+    compute_disk_model,
+    compute_isolation_mass,
+    compute_pebble_isolation_mass,
+    compute_critical_core_mass,
+)
 from core.priors import DefaultPriors, get_priors, PriorsUnavailable
 from core.databases import (
     compute_simbad_lookup,
     compute_planetary_systems_composite,
     compute_hwc,
+    compute_hypatia_data,
 )
 from core.regions import compute_star_system_regions_from_simbad
 
@@ -131,6 +138,7 @@ def _equilibrium_temp(a_au, luminosity, albedo=0.3):
 _LETTER_ORDER = "OBAFGKM"                     # hot → cool; index basis for interp
 _SAMPLE_LETTER_ORDER = ["M", "K", "G", "F", "A", "B"]  # fixed iteration (determinism)
 _MOON_HOST_TYPES = {"ice", "gas", "super_jovian", "brown_dwarf"}
+_GIANT_TYPES = {"gas", "super_jovian", "brown_dwarf"}   # true giants (R3-V2 F3 chain-exempt)
 _COLD_FAR_MULT = 4.0                          # cold zone runs out to 4× snow line
 _MAX_N_PLANETS = 15
 _HABITABLE_TRIES = 200
@@ -241,6 +249,9 @@ def _synth_star(rng, priors, seed, spectral_class, rows):
             rng, [(L, priors.spectral_class_weights[L]) for L in _SAMPLE_LETTER_ORDER])
         subtype = float(rng.randint(0, 9))
 
+    feh = _draw_feh(rng, priors)     # R3-V2 F2: host [Fe/H] (None unless feh_dist present)
+    feh_source = "feh_dist" if feh is not None else None
+
     teff, radius_solar, mass_solar = _interp_star_props(_spectral_index(letter, subtype), rows)
     luminosity = compute_star_luminosity(radius_solar, teff)["luminosity"]
 
@@ -262,6 +273,8 @@ def _synth_star(rng, priors, seed, spectral_class, rows):
         "hz_opt_inner_au": _round(hzmap["rv"], 5),   # optimistic inner (Recent Venus)
         "hz_opt_outer_au": _round(hzmap["em"], 5),   # optimistic outer (Early Mars)
         "snow_line_au": _round(snow_line, 5),
+        "feh": _round(feh, 3),
+        "feh_source": feh_source,
         "source": "synthetic",
         "grounding": priors.grounding,
         "multiplicity": None,
@@ -270,7 +283,7 @@ def _synth_star(rng, priors, seed, spectral_class, rows):
         "teff": teff, "mass_solar": mass_solar, "luminosity": luminosity,
         "hz_cons_inner": hzmap["rg"], "hz_cons_outer": hzmap["mg"],
         "hz_opt_inner": hzmap["rv"], "hz_opt_outer": hzmap["em"],
-        "snow_line": snow_line,
+        "snow_line": snow_line, "feh": feh,
     }
     return {"star": star, "derived": derived}
 
@@ -306,6 +319,172 @@ def _atmosphere_note(mass_earth, radius_earth, t_eq):
     return "Retains " + ", ".join(retained) if retained else "Negligible (gases escape)"
 
 
+# ── Phase R3-V2 · F1 mass_model draw (isolation-mass scaling) ────────────────
+#
+# When a strict ResearchPriors dataset carries a `mass_model` block, planet mass
+# is a *function* of the local disk surface density, orbit, and stellar mass —
+# M_iso(Σ, a, M★) via the Group P calculators — with a physics-gated giant switch,
+# instead of the flat log-uniform mass_by_zone band. Absent block → the v1 draw
+# (the else-branch in _make_synth_planet), byte-identical.
+#
+# HOW the engine samples from the handed-off physics is our choice (the sister
+# contract hands off the physics, not the sampling procedure). Our procedure:
+#   1. Σ_solid(a) from the disk profile (F1, compute_disk_model).
+#   2. M_iso from the oligarchic isolation mass with the MUTUAL-Hill full-width
+#      convention (feeding_zone_b = mass_model.feeding_zone_hill — gotcha #1: the
+#      contract's "10 Hill radii" is mutual full-width, NOT the single-Hill
+#      half-width C=2√3 default).
+#   3. Giant switch (F3+F6): a giant forms only where the pebble-isolation mass
+#      reaches the critical core mass AND the orbit is beyond the snow line →
+#      gas runaway. This places giants by physics (fixing the v1 flat-tail giant
+#      that could land anywhere), else the body is a solid-dominated oligarch.
+#   4. Solid bodies draw a merger-growth scatter about M_iso; giants draw
+#      log-uniform from the critical core to the cold-zone ceiling.
+# The scatter band + giant ceiling are engine knobs (documented, not pinned).
+_MASS_MODEL_SCATTER = (0.5, 8.0)   # multiplicative spread about M_iso (oligarch mergers)
+
+# ── Phase R3-V2 · F2 metallicity conditioning (occurrence_by_metallicity + feh_dist) ──
+#
+# When a strict dataset carries `occurrence_by_metallicity` and the host has a drawn
+# [Fe/H] (synthetic: from `feh_dist`; real-anchor: Hypatia-preferred, SIMBAD
+# mesfe_h.fe_h fallback — see _resolve_anchor_feh), three effects fire — all gated, so
+# permissive/v1 stay byte-identical:
+#   • giant gating — a physics-eligible giant (F1 switch) forms with probability
+#     giant_fraction([Fe/H]) / giant_fraction(0) (the SHAPE relative to solar, not the
+#     absolute level — gotcha #3), interpolated CLAMPED to feh_grid (gotcha #2).
+#   • count shift — the planet-count draw is tilted toward higher counts with rising
+#     [Fe/H] (gotcha #4 small-planet scaling; the tilt strength is an engine knob).
+#   • super-Earth floor — below superearth_floor_feh, solid bodies are capped below
+#     the super-Earth threshold (gotcha #4 metal-poor super-Earth cliff).
+_METALLICITY_COUNT_TILT = 0.4       # exp(tilt·[Fe/H]·k) count reweight (engine knob)
+
+
+def _giant_fraction_at(occ, feh):
+    """Interpolate giant_fraction on feh_grid, CLAMPED to the grid domain — hold the
+    endpoints outside it (gotcha #2: the FV05 fit is valid only within feh_grid)."""
+    grid, frac = occ["feh_grid"], occ["giant_fraction"]
+    if feh <= grid[0]:
+        return frac[0]
+    if feh >= grid[-1]:
+        return frac[-1]
+    for i in range(1, len(grid)):
+        if feh <= grid[i]:
+            lo, hi = grid[i - 1], grid[i]
+            t = (feh - lo) / (hi - lo) if hi > lo else 0.0
+            return frac[i - 1] + t * (frac[i] - frac[i - 1])
+    return frac[-1]
+
+
+def _resolve_anchor_feh(simbad):
+    """Real-anchor host [Fe/H] → (value, source). **Hypatia-preferred, SIMBAD fallback.**
+
+    Hypatia is the homogenized abundance catalog (all [Fe/H] on the Lodders-2009 scale),
+    so its value is preferred where the star is in its domain; SIMBAD's heterogeneous
+    ``mesfe_h.fe_h`` is used only as a fallback for stars Hypatia doesn't cover. Returns
+    ``(None, None)`` when neither has a value. The SIMBAD lookup still runs first
+    structurally (it resolves the designations Hypatia queries on) — only the *value*
+    precedence prefers Hypatia. One extra network call, consistent with opt-8 / compare.
+    """
+    hyp = compute_hypatia_data(simbad)
+    if isinstance(hyp, dict) and "error" not in hyp:
+        for ab in hyp.get("abundances", []):
+            # neutral Fe only ([Fe/H]); exclude ionized species like "Fe_II".
+            if str(ab.get("element")).lower() == "fe" and ab.get("mean") is not None:
+                val = _f(ab["mean"])
+                if val is not None:
+                    return val, "hypatia"
+    sfeh = _f(simbad.get("fe_h"))
+    if sfeh is not None:
+        return sfeh, "simbad"
+    return None, None
+
+
+def _draw_feh(rng, priors):
+    """Synthetic host [Fe/H] from the feh_dist axis (Gaussian mean/sigma + optional
+    clamp), or None when the dataset omits feh_dist (→ F2 conditioning inert)."""
+    fd = getattr(priors, "feh_dist", None)
+    if not fd:
+        return None
+    val = rng.normalvariate(fd["mean"], fd["sigma"])
+    lo, hi = fd.get("min"), fd.get("max")
+    if lo is not None:
+        val = max(val, lo)
+    if hi is not None:
+        val = min(val, hi)
+    return val
+
+
+def _metallicity_count_items(priors, derived):
+    """(count, weight) items for the planet-count draw — metallicity-tilted toward
+    higher counts with rising [Fe/H] when occurrence_by_metallicity + a host [Fe/H]
+    are present, else the plain v1 sorted items (byte-identical)."""
+    items = sorted(priors.n_planet_dist.items())
+    occ = getattr(priors, "occurrence_by_metallicity", None)
+    feh = derived.get("feh")
+    if not occ or feh is None:
+        return items
+    return [(k, w * math.exp(_METALLICITY_COUNT_TILT * feh * k)) for k, w in items]
+
+
+def _mass_model_draw(rng, priors, a, derived):
+    """v2 F1 mass draw at SMA ``a`` (Earth masses). Consumes exactly one rng.uniform
+    (like the v1 band draw) so the downstream draw order is unchanged."""
+    mm = priors.mass_model
+    disk = mm["disk"]
+    mstar = derived.get("mass_solar") or 1.0
+
+    dm = compute_disk_model(
+        r_au=a, mstar_msun=mstar,
+        sigma0=disk["sigma0_gcm2"], sigma_slope=disk["sigma_slope"],
+        temp0=disk["temp0_k"], temp_slope=disk["temp_slope"],
+        disk_mass_mmsn=disk["disk_mass_mmsn"])
+    iso = (compute_isolation_mass(
+        sigma_p_gcm2=dm["sigma_solid_gcm2"], a_au=a, mstar_msun=mstar,
+        feeding_zone_b=mm["feeding_zone_hill"]) if "error" not in dm else {"error": 1})
+    if "error" in dm or "error" in iso:
+        # Defensive fallback to the v1 band for this orbit (still one rng draw).
+        lo, hi = priors.mass_by_zone[_zone_for(a, derived)]
+        return math.exp(rng.uniform(math.log(lo), math.log(hi)))
+    m_iso = iso["isolation_mass_mearth"]
+
+    # Giant switch — pebble-isolation (F3) must reach the critical core mass (F6),
+    # and giants form beyond the snow line (volatile/gas availability).
+    peb = compute_pebble_isolation_mass(temp_k=dm["temp_k"], mstar_msun=mstar, a_au=a)
+    m_peb = peb.get("pebble_isolation_mass_mearth") if "error" not in peb else None
+    m_crit = compute_critical_core_mass()["critical_core_mass_mearth"]
+    snow = derived.get("snow_line")
+    is_giant = (m_peb is not None and m_peb >= m_crit
+                and snow is not None and a >= snow)
+
+    # F2 metallicity conditioning (gated on occurrence_by_metallicity + a host [Fe/H]).
+    # One rng.random() is drawn whenever conditioning is active — regardless of
+    # eligibility — so the per-planet draw count stays fixed for a given dataset.
+    occ = getattr(priors, "occurrence_by_metallicity", None)
+    feh = derived.get("feh")
+    occ_active = occ is not None and feh is not None
+    if occ_active:
+        roll = rng.random()
+        if is_giant:
+            gf0 = _giant_fraction_at(occ, 0.0)     # solar reference — use the SHAPE
+            p_giant = (min(1.0, _giant_fraction_at(occ, feh) / gf0)
+                       if gf0 > 0 else 1.0)         # relative to solar, not absolute (gotcha #3)
+            if roll > p_giant:
+                is_giant = False                    # core failed to reach runaway → solid body
+
+    if is_giant:
+        hi = priors.mass_by_zone["cold"][1]        # cold-zone ceiling (still shipped)
+        lo = m_crit
+        return math.exp(rng.uniform(math.log(lo), math.log(max(hi, lo * 2.0))))
+    slo, shi = _MASS_MODEL_SCATTER
+    mass = m_iso * math.exp(rng.uniform(math.log(slo), math.log(shi)))
+    # Super-Earth floor: below it, metal-poor hosts sharply lose super-Earths →
+    # cap solid bodies just under the super-Earth threshold (gotcha #4).
+    floor = occ.get("superearth_floor_feh") if occ_active else None
+    if floor is not None and feh < floor and mass >= _SUPER_EARTH_MIN_EARTH:
+        mass = _SUPER_EARTH_MIN_EARTH * 0.95
+    return mass
+
+
 def _make_synth_planet(rng, priors, name, a, derived):
     """Build one synthetic planet at SMA ``a``: draw mass (by zone) then ecc, in
     that fixed order, then classify / T_eq / HZ / atmosphere. Carries internal
@@ -313,8 +492,11 @@ def _make_synth_planet(rng, priors, name, a, derived):
     synthetic-mode pass and the real-anchor extension pass."""
     lum = derived["luminosity"]
     zone = _zone_for(a, derived)
-    lo, hi = priors.mass_by_zone[zone]
-    mass = math.exp(rng.uniform(math.log(lo), math.log(hi)))
+    if getattr(priors, "mass_model", None):          # Phase R3-V2 F1 (gated)
+        mass = _mass_model_draw(rng, priors, a, derived)
+    else:
+        lo, hi = priors.mass_by_zone[zone]
+        mass = math.exp(rng.uniform(math.log(lo), math.log(hi)))
     ecc = rng.uniform(0.0, 0.08)
     ptype, radius = _classify_planet(mass, a, derived["snow_line"])
     t_eq = _equilibrium_temp(a, lum)
@@ -338,6 +520,75 @@ def _make_synth_planet(rng, priors, name, a, derived):
     }
 
 
+# ── Phase R3-V2 · F3 intra-system correlation (peas-in-a-pod) ────────────────
+#
+# When a strict dataset carries `intra_system_correlation`, adjacent planets are
+# drawn CONDITIONAL on each other (a joint distribution), not independently — the
+# fundamental v1→v2 shift. Two coupled correlations (gated → v1/permissive stay
+# byte-identical): (1) SPACING — adjacent period ratios from the triangular
+# period_ratio_dist {min(hard floor), mode, tail}, converted to an SMA ratio via
+# Kepler III (a_ratio = P_ratio^(2/3)); this generalizes the flat spacing_ratio
+# band. (2) SIZE — a peas-in-a-pod mass chain: the innermost small planet seeds
+# the scale, and each subsequent SMALL body's mass follows prev × size_ratio, with
+# size_ratio log-normal (median 1, sigma from size_ratio_dist) biased so ~65% of
+# adjacent pairs have the outer larger (the `ordering` direction). True giants
+# (physics-placed by F1) are exempt and reset the chain — peas-in-a-pod is a
+# small-planet phenomenon. The chain is capped below the gas-giant threshold so it
+# never fabricates a gas giant interior to the snow line (preserving the F1 gate).
+# HOW the conditional draw is realised is the engine's choice; log-space sigma and
+# the chain form are documented engine decisions. Applies to synthetic-mode
+# architecture only (real-anchor infill keeps independent draws — correlating
+# speculative infill to real observed planets is not well-defined).
+_ORDERING_BIAS_Z = 0.3853     # Φ⁻¹(0.65): 65% of adjacent pairs → outer larger (Weiss 2018)
+
+
+def _spacing_ratio_draw(rng, priors):
+    """Adjacent-SMA ratio for the next planet. With intra_system_correlation, draw a
+    period ratio from the triangular period_ratio_dist (min = hard mutual-Hill floor)
+    and convert via Kepler III; else the flat v1 spacing_ratio band. One rng draw
+    either way, so the draw order is unchanged."""
+    corr = getattr(priors, "intra_system_correlation", None)
+    if corr:
+        prd = corr["period_ratio_dist"]
+        period_ratio = rng.triangular(prd["min"], prd["tail"], prd["mode"])
+        return period_ratio ** (2.0 / 3.0)
+    lo, hi = priors.spacing_ratio
+    return rng.uniform(lo, hi)
+
+
+def _reset_planet_mass(p, mass, derived):
+    """Re-derive type/radius/atmosphere (+ the working fields) after the size chain
+    changes a planet's mass. T_eq / HZ membership don't depend on mass, so stay."""
+    a = p["_a_raw"]
+    ptype, radius = _classify_planet(mass, a, derived["snow_line"])
+    atmosphere = (_atmosphere_note(mass, radius, p["t_eq_k"])
+                  if ptype in ("rocky", "super_earth") else None)
+    p["mass_earth"] = _round(mass, 4)
+    p["radius_earth"] = _round(radius, 4)
+    p["type"] = ptype
+    p["atmosphere"] = atmosphere
+    p["_mass_raw"] = mass
+    p["_radius_raw"] = radius
+
+
+def _apply_size_correlation(rng, corr, p, prev_small_mass, derived):
+    """Peas-in-a-pod: pull a small planet's mass toward its inner small neighbour.
+    Returns the new chain anchor (this body's small mass, or None to reset at a giant).
+    Always consumes one rng draw when active, so the per-planet draw count is fixed."""
+    srd = corr["size_ratio_dist"]
+    # log-normal size ratio, median 1, biased so ~65% of pairs have the outer larger.
+    ratio = math.exp(rng.normalvariate(_ORDERING_BIAS_Z * srd["sigma"], srd["sigma"]))
+    if p["type"] in _GIANT_TYPES:
+        return None                              # giant → physics mass stands, chain resets
+    if prev_small_mass is None:
+        return p["_mass_raw"]                     # seed small body — base mass anchors the chain
+    new_mass = prev_small_mass * ratio
+    if new_mass >= _GAS_MIN_EARTH:               # keep the chain sub-giant (F1 gate intact)
+        new_mass = _GAS_MIN_EARTH * 0.99
+    _reset_planet_mass(p, new_mass, derived)
+    return new_mass
+
+
 def _synth_planets(rng, priors, star_name, derived):
     """One planet-architecture draw: SMAs (log-spaced, jittered) + per-planet props.
 
@@ -349,15 +600,18 @@ def _synth_planets(rng, priors, star_name, derived):
     if n <= 0:
         return []
     root_l = math.sqrt(derived["luminosity"])
-    spacing_lo, spacing_hi = priors.spacing_ratio
+    corr = getattr(priors, "intra_system_correlation", None)   # R3-V2 F3 (gated)
 
     a = rng.uniform(0.03, 0.12) * root_l    # innermost SMA (scales with sqrt L)
     planets = []
+    prev_small_mass = None
     for i in range(n):
         if i > 0:
-            a *= rng.uniform(spacing_lo, spacing_hi)
-        planets.append(_make_synth_planet(
-            rng, priors, f"{star_name} {chr(ord('b') + i)}", a, derived))
+            a *= _spacing_ratio_draw(rng, priors)
+        p = _make_synth_planet(rng, priors, f"{star_name} {chr(ord('b') + i)}", a, derived)
+        if corr:
+            prev_small_mass = _apply_size_correlation(rng, corr, p, prev_small_mass, derived)
+        planets.append(p)
     return planets
 
 
@@ -421,6 +675,25 @@ def _priors_note_fragment(priors):
     return f"{type(priors).__name__} (grounding={priors.grounding}{suffix})"
 
 
+# R3-V2 B5: the sampling blocks whose presence changes generation (mass/count/spacing).
+# feh_dist is a support axis (no standalone effect) so it isn't listed as "in effect".
+_V2_SAMPLING_BLOCKS = ("mass_model", "occurrence_by_metallicity", "intra_system_correlation")
+
+
+def _v2_blocks_note(priors, star):
+    """Provenance note naming the active v2 sampling blocks (+ host [Fe/H] when the
+    metallicity path drove it), or None when no v2 block is active. Surfaces the v2
+    physics in the CLI / query.py notes and the GUI."""
+    active = [b for b in _V2_SAMPLING_BLOCKS if getattr(priors, b, None)]
+    if not active:
+        return None
+    note = "v2 physics in effect: " + ", ".join(active) + "."
+    if getattr(priors, "occurrence_by_metallicity", None) and star.get("feh") is not None:
+        note += (f" Host [Fe/H] = {star['feh']} "
+                 f"({star.get('feh_source') or 'unknown'}), metallicity-conditioned.")
+    return note
+
+
 def _generate_synthetic(seed, spectral_class, n_planets, require_habitable,
                         research_policy="permissive"):
     """Synthetic-from-seed system (anchor_star is None)."""
@@ -448,7 +721,7 @@ def _generate_synthetic(seed, spectral_class, n_planets, require_habitable,
     while True:
         attempts += 1
         derived["_n"] = n_planets if n_planets is not None else _weighted_choice(
-            rng, sorted(priors.n_planet_dist.items()))
+            rng, _metallicity_count_items(priors, derived))
         planets = _synth_planets(rng, priors, star["name"], derived)
         if not require_habitable:
             break
@@ -462,6 +735,9 @@ def _generate_synthetic(seed, spectral_class, n_planets, require_habitable,
     _attach_moons(rng, priors, star, planets)
 
     notes = [f"All bodies are synthetic; realism priors = {_priors_note_fragment(priors)}."]
+    _v2note = _v2_blocks_note(priors, star)
+    if _v2note:
+        notes.append(_v2note)
     return {
         "seed": seed,
         "mode": "synthetic",
@@ -629,6 +905,14 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
 
     star_name = simbad.get("main_id") or anchor_star
     sp_type = simbad.get("sp_type") or regions.get("spectral_type") or regions.get("bc_key") or ""
+    # R3-V2 F2 host [Fe/H]. The Hypatia-preferred resolution (an extra network call)
+    # runs ONLY when a metallicity-conditioning dataset is active; otherwise the star's
+    # [Fe/H] is the cheap informational SIMBAD read (no added call for permissive/v1).
+    if getattr(priors, "occurrence_by_metallicity", None):
+        anchor_feh, anchor_feh_source = _resolve_anchor_feh(simbad)
+    else:
+        _sfeh = _f(simbad.get("fe_h"))
+        anchor_feh, anchor_feh_source = (_sfeh, "simbad" if _sfeh is not None else None)
 
     warnings, notes = [], []
 
@@ -659,15 +943,19 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
         "hz_opt_inner_au": _round(hzmap["rv"], 5),
         "hz_opt_outer_au": _round(hzmap["em"], 5),
         "snow_line_au": _round(snow_line, 5),
+        "feh": _round(anchor_feh, 3),
+        "feh_source": anchor_feh_source,
         "source": "observed",
         "grounding": "observed",
         "multiplicity": {"is_multiple": is_multiple, "n_components": n_comp, "note": mult_note},
     }
     derived = {
         "luminosity": luminosity,
+        "mass_solar": mass_solar,          # for the v2 F1 mass_model draw (R3-V2)
         "hz_cons_inner": hzmap["rg"], "hz_cons_outer": hzmap["mg"],
         "hz_opt_inner": hzmap["rv"], "hz_opt_outer": hzmap["em"],
         "snow_line": snow_line,
+        "feh": anchor_feh,                 # R3-V2 F2: real-anchor [Fe/H] from SIMBAD
     }
 
     observed, observed_smas = _collect_observed(simbad, derived, star_name)
@@ -693,7 +981,7 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
     while True:
         attempts += 1
         n_syn = n_planets if n_planets is not None else _weighted_choice(
-            rng, sorted(priors.n_planet_dist.items()))
+            rng, _metallicity_count_items(priors, derived))
         ext_smas = _extension_smas(rng, priors, derived, observed_smas, safe_cap_au, n_syn)
         synth = [_make_synth_planet(rng, priors, f"{star_name} (synthetic {k + 1})", a, derived)
                  for k, a in enumerate(ext_smas)]
@@ -713,6 +1001,9 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
 
     notes.append("Observed bodies from NASA pscomppars / HWC; synthetic extensions use "
                  f"{_priors_note_fragment(priors)}. Observed planets carry no fabricated moons.")
+    _v2note = _v2_blocks_note(priors, star)
+    if _v2note:
+        notes.append(_v2note)
     return {
         "seed": seed,
         "mode": "real_anchor",

@@ -117,3 +117,39 @@ contract minor-version).
 | `permissive` (default) | — | `DefaultPriors`; `grounding=default-extrapolation`. Byte-identical to R1/R2. |
 | `strict` | yes | `ResearchPriors`; sampling + Layer-3 from the dataset; `grounding=research-calibrated`; notes name `dataset_version`. |
 | `strict` | no | curated error (run the Import Research Priors utility) — no silent fallback, no fabricated tag. |
+
+## v2 — the additive superset (`schema_version` "2.0", Phase R3-V2)
+
+The sister project's **v2 contract request**
+(`scifiWorldBuilding-Claude/research/query-api-methods/research-priors-v2-contract-request.md`)
+extends the contract with three optional blocks that express formation physics v1's flat marginals
+cannot, plus one app-side axis. **v2 is a strict, additive superset:** `_KNOWN_SCHEMA_MAJORS` now
+holds `{"1", "2"}`; every v1.0 dataset still validates/ingests unchanged, and a dataset that omits a
+block falls back to the corresponding v1 field. Each block is validated **only when present** (curated
+`{"error"}` otherwise) and exposed on `ResearchPriors` as a same-named attribute (`None` when absent;
+`DefaultPriors` carries them as `None` too, so `getattr` is uniform).
+
+| Block | Falls back to | Shape (validated) |
+|---|---|---|
+| `mass_model` (F1) | `mass_by_zone` | `{type ∈ {isolation-scaling}, disk:{sigma0_gcm2>0, sigma_slope, temp0_k>0, temp_slope, disk_mass_mmsn>0}, feeding_zone_hill>0, giant_switch:str[, notes]}` |
+| `occurrence_by_metallicity` (F2) | flat `n_planet_dist` | `{feh_grid:[≥2 ascending #], giant_fraction:[same len, each ∈ 0..1], superearth_floor_feh?:#, n_planet_dist_shift?:str}` |
+| `intra_system_correlation` (F3) | independent per-planet draws | `{size_ratio_dist:{mean>0, sigma≥0}, period_ratio_dist:{0<min≤mode≤tail}, ordering?:str, note?:str}` |
+| `feh_dist` (app-side) | synthetic host `[Fe/H]` = `None` (F2 inert) | `{mean:#, sigma>0, min?:#, max?:#}` — synthetic-mode metallicity source |
+
+The importer's `meta.json` and `get_research_priors_status()` gain a **`v2_blocks`** list (`[]` for a v1
+dataset / a pre-V2 cache); the opt-57 DbStatus row and the Import Research Priors panel surface it.
+
+> **Stage status.** **Stage A (schema/plumbing) is built** — the validator superset, the v2 provider
+> attributes, the importer/status `v2_blocks`, a committed `tests/fixtures/research_priors_v2_sample.json`,
+> and the GUI status rows. **Stage B (engine consumption) is in progress against the delivered
+> `research_priors_v2.json`:** **B1 (`mass_model`)** and **B2 (`occurrence_by_metallicity` + `feh_dist`)**
+> are built — the generator now draws mass from the isolation-mass physics (giants placed beyond the snow
+> line) and conditions giant occurrence / planet count / the super-Earth floor on the host `[Fe/H]`
+> (synthetic from `feh_dist`; real-anchor **Hypatia-preferred, SIMBAD `mesfe_h.fe_h` fallback** — the
+> homogenized Lodders-2009 value where available, tagged in `star["feh_source"]`; the Hypatia call is
+> gated to strict+`occurrence_by_metallicity`). All consumption is block-gated → a v1.0 dataset and `permissive` stay
+> byte-identical (`star["feh"]=None`). **B3 (`intra_system_correlation` / peas-in-a-pod)** is built —
+> neighbours are drawn conditional on each other (triangular period-ratio spacing + a size-correlation mass
+> chain, ~65% outer-larger, giants exempt). **All three sampling features (F1/F2/F3) are in.** Remaining:
+> B4 (feasibility origin-priors vocabulary), B5 (query/GUI surfacing), B6 (iterate the engine knobs with the
+> sister). Full plan + checkpoints: `PHASE_R3_V2_PLAN.md`.

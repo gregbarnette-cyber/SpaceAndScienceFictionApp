@@ -193,7 +193,7 @@ _TOP_KEYS = {"seed", "mode", "anchor_star", "star", "planets", "warnings", "note
 _STAR_KEYS = {
     "name", "spectral_class", "teff", "mass_solar", "radius_solar", "luminosity",
     "hz_inner_au", "hz_outer_au", "hz_opt_inner_au", "hz_opt_outer_au",
-    "snow_line_au", "source", "grounding", "multiplicity",
+    "snow_line_au", "feh", "feh_source", "source", "grounding", "multiplicity",  # R3-V2 F2
 }
 _PLANET_KEYS = {
     "name", "a_au", "mass_earth", "radius_earth", "ecc", "type", "t_eq_k",
@@ -379,8 +379,10 @@ def _hwc(rows):
     return {"planet_rows": rows}
 
 
-def _readers(simbad, regions, nasa, hwc):
-    """Context manager patching all four readers in core.generate's namespace."""
+def _readers(simbad, regions, nasa, hwc, hypatia=None):
+    """Context manager patching the readers in core.generate's namespace. ``hypatia``
+    defaults to an error result → the real-anchor [Fe/H] uses the SIMBAD fallback
+    (keeps existing tests offline and behaviour-stable)."""
     stack = ExitStack()
     stack.enter_context(mock.patch("core.generate.compute_simbad_lookup", return_value=simbad))
     stack.enter_context(mock.patch("core.generate.compute_star_system_regions_from_simbad",
@@ -388,6 +390,8 @@ def _readers(simbad, regions, nasa, hwc):
     stack.enter_context(mock.patch("core.generate.compute_planetary_systems_composite",
                                    return_value=nasa))
     stack.enter_context(mock.patch("core.generate.compute_hwc", return_value=hwc))
+    stack.enter_context(mock.patch("core.generate.compute_hypatia_data",
+                                   return_value=hypatia or {"error": "no hypatia"}))
     return stack
 
 
@@ -593,6 +597,302 @@ class TestResearchPolicyWiring(unittest.TestCase):
         self.assertNotIn("error", r)
         self.assertEqual(r["star"]["grounding"], "observed")
         self.assertIn("ResearchPriors (grounding=research-calibrated", " ".join(r["notes"]))
+
+
+_V2_FIX = os.path.join(_FIX_DIR, "research_priors_v2_sample.json")
+
+
+class TestMassModelDraw(unittest.TestCase):
+    """Phase R3-V2 B1: the gated mass_model isolation-mass draw.
+
+    The block-gated v2 path replaces the flat mass_by_zone draw with a physics
+    draw (M_iso + a giant switch); with no block, the v1 path is byte-identical
+    (proven by TestResearchPolicyWiring's identity test, which stays green).
+    """
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _strict(self, obj, **kw):
+        import json
+        p = os.path.join(self.cache, "src.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(obj, fh)
+        res = compute_research_priors_ingest(path=p, cache_dir=self.cache)
+        self.assertNotIn("error", res)
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return generate_system(research_policy="strict", **kw)
+
+    def _load_v2(self):
+        import json
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_deterministic(self):
+        v2 = self._load_v2()
+        r1 = self._strict(v2, seed=42, spectral_class="G2V", n_planets=8)
+        r2 = self._strict(v2, seed=42, spectral_class="G2V", n_planets=8)
+        self.assertNotIn("error", r1)
+        self.assertEqual(r1, r2)
+
+    def test_mass_model_changes_masses_vs_stripped(self):
+        # Same dataset with vs without mass_model → the v2 path is actually taken.
+        import copy
+        v2 = self._load_v2()
+        stripped = copy.deepcopy(v2); stripped.pop("mass_model")
+        r_full = self._strict(v2, seed=42, spectral_class="G2V", n_planets=8)
+        r_strip = self._strict(stripped, seed=42, spectral_class="G2V", n_planets=8)
+        self.assertNotEqual([p["mass_earth"] for p in r_full["planets"]],
+                            [p["mass_earth"] for p in r_strip["planets"]])
+
+    def test_no_giant_interior_to_snow_line(self):
+        # Giants form only beyond the snow line (physics gate).
+        v2 = self._load_v2()
+        r = self._strict(v2, seed=42, spectral_class="G2V", n_planets=10)
+        snow = r["star"]["snow_line_au"]
+        giants_inside = [p for p in r["planets"]
+                         if p["type"] in ("gas", "super_jovian", "brown_dwarf")
+                         and p["a_au"] < snow]
+        self.assertEqual(giants_inside, [])
+
+    def test_giant_forms_beyond_snow_line(self):
+        # A wide system (many planets around a warmer star) must land >=1 giant
+        # beyond the snow line, where pebble-isolation >= the critical core mass.
+        v2 = self._load_v2()
+        r = self._strict(v2, seed=7, spectral_class="F5V", n_planets=14)
+        snow = r["star"]["snow_line_au"]
+        giants = [p for p in r["planets"]
+                  if p["type"] in ("gas", "super_jovian", "brown_dwarf")]
+        self.assertTrue(giants, "expected at least one giant in a wide system")
+        self.assertTrue(all(p["a_au"] >= snow for p in giants))
+
+
+class TestMetallicityConditioning(unittest.TestCase):
+    """Phase R3-V2 B2: occurrence_by_metallicity + feh_dist conditioning (gated)."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _gen(self, feh=None, drop_feh_dist=False, drop_corr=False, **kw):
+        """Strict-generate with the v2 fixture, optionally forcing a (near-)fixed
+        host [Fe/H] via a tight feh_dist, dropping feh_dist, or dropping the
+        intra_system_correlation block (to isolate F2 from F3's mass chain)."""
+        import json, copy
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            o = copy.deepcopy(json.load(fh))
+        if drop_corr:
+            o.pop("intra_system_correlation", None)
+        if drop_feh_dist:
+            o.pop("feh_dist", None)
+        elif feh is not None:
+            o["feh_dist"] = {"mean": feh, "sigma": 0.001, "min": -2.0, "max": 1.0}
+        p = os.path.join(self.cache, "s.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(o, fh)
+        res = compute_research_priors_ingest(path=p, cache_dir=self.cache)
+        self.assertNotIn("error", res)
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return generate_system(research_policy="strict", **kw)
+
+    def _giants(self, feh, seeds=25):
+        n = 0
+        for s in range(seeds):
+            r = self._gen(feh=feh, seed=s, spectral_class="F5V", n_planets=14)
+            n += sum(1 for p in r["planets"]
+                     if p["type"] in ("gas", "super_jovian", "brown_dwarf"))
+        return n
+
+    def test_giant_occurrence_rises_with_metallicity(self):
+        self.assertGreater(self._giants(0.4), self._giants(-0.8))
+
+    def test_superearth_floor_suppresses_below_floor(self):
+        # Isolate the F2 floor from F3's mass chain (which suppresses super-Earths
+        # generally) by dropping intra_system_correlation.
+        def se(feh):
+            return sum(sum(1 for p in self._gen(feh=feh, drop_corr=True, seed=s,
+                                                spectral_class="K2V", n_planets=10)["planets"]
+                           if p["type"] == "super_earth") for s in range(25))
+        self.assertLess(se(-0.8), se(0.3))   # below the -0.5 floor → suppressed
+
+    def test_count_rises_with_metallicity(self):
+        def mean_count(feh):
+            return sum(len(self._gen(feh=feh, seed=s, spectral_class="M2V")["planets"])
+                       for s in range(30)) / 30
+        self.assertGreater(mean_count(0.4), mean_count(-0.8))
+
+    def test_feh_recorded_and_deterministic(self):
+        r1 = self._gen(feh=0.25, seed=5, spectral_class="G2V", n_planets=6)
+        r2 = self._gen(feh=0.25, seed=5, spectral_class="G2V", n_planets=6)
+        self.assertEqual(r1, r2)
+        self.assertAlmostEqual(r1["star"]["feh"], 0.25, places=2)
+
+    def test_feh_none_without_feh_dist(self):
+        # occurrence_by_metallicity present but no feh_dist → synthetic feh None,
+        # conditioning inert.
+        r = self._gen(drop_feh_dist=True, seed=5, spectral_class="G2V", n_planets=4)
+        self.assertIsNone(r["star"]["feh"])
+
+    def test_real_anchor_prefers_hypatia(self):
+        # Hypatia-preferred: even when SIMBAD has [Fe/H], Hypatia's value wins + is tagged.
+        sim = dict(_simbad()); sim["fe_h"] = -0.33
+        hyp = {"abundances": [{"element": "Fe", "mean": 0.12},
+                              {"element": "Fe_II", "mean": 9.9}]}   # ionized excluded
+        with _readers(sim, _regions(), _nasa([_EARTH_ROW]), {"error": "x"}, hypatia=hyp):
+            r = self._gen(seed=5, anchor_star="Test Star", n_planets=2)
+        self.assertAlmostEqual(r["star"]["feh"], 0.12, places=2)
+        self.assertEqual(r["star"]["feh_source"], "hypatia")
+
+    def test_real_anchor_falls_back_to_simbad(self):
+        # No Hypatia value → SIMBAD mesfe_h.fe_h fallback, tagged "simbad".
+        sim = dict(_simbad()); sim["fe_h"] = -0.33
+        with _readers(sim, _regions(), _nasa([_EARTH_ROW]), {"error": "x"}):  # hypatia error
+            r = self._gen(seed=5, anchor_star="Test Star", n_planets=2)
+        self.assertAlmostEqual(r["star"]["feh"], -0.33, places=2)
+        self.assertEqual(r["star"]["feh_source"], "simbad")
+
+    def test_real_anchor_no_feh_source_none(self):
+        # Neither source has [Fe/H] → feh None, feh_source None (F2 inert).
+        with _readers(_simbad(), _regions(), _nasa([_EARTH_ROW]), {"error": "x"}):
+            r = self._gen(seed=5, anchor_star="Test Star", n_planets=2)
+        self.assertIsNone(r["star"]["feh"])
+        self.assertIsNone(r["star"]["feh_source"])
+
+    def test_synthetic_feh_source_tag(self):
+        r = self._gen(feh=0.2, seed=5, spectral_class="G2V", n_planets=3)
+        self.assertEqual(r["star"]["feh_source"], "feh_dist")
+        r2 = self._gen(drop_feh_dist=True, seed=5, spectral_class="G2V", n_planets=3)
+        self.assertIsNone(r2["star"]["feh_source"])
+
+    def test_giant_fraction_at_clamps_to_grid(self):
+        from core.generate import _giant_fraction_at
+        occ = {"feh_grid": [-0.5, 0.0, 0.5], "giant_fraction": [0.003, 0.03, 0.30]}
+        self.assertEqual(_giant_fraction_at(occ, -1.0), 0.003)   # below → hold endpoint
+        self.assertEqual(_giant_fraction_at(occ, 1.0), 0.30)     # above → hold endpoint
+        self.assertAlmostEqual(_giant_fraction_at(occ, 0.25), (0.03 + 0.30) / 2)
+
+
+class TestIntraSystemCorrelation(unittest.TestCase):
+    """Phase R3-V2 B3: intra_system_correlation (peas-in-a-pod joint draws)."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _gen(self, drop_corr=False, **kw):
+        import json, copy
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            o = copy.deepcopy(json.load(fh))
+        if drop_corr:
+            o.pop("intra_system_correlation", None)
+        p = os.path.join(self.cache, "s.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(o, fh)
+        self.assertNotIn("error", compute_research_priors_ingest(path=p, cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return generate_system(research_policy="strict", **kw)
+
+    def test_deterministic_and_changes_output(self):
+        r1 = self._gen(seed=11, spectral_class="G2V", n_planets=8)
+        r2 = self._gen(seed=11, spectral_class="G2V", n_planets=8)
+        self.assertEqual(r1, r2)
+        stripped = self._gen(drop_corr=True, seed=11, spectral_class="G2V", n_planets=8)
+        self.assertNotEqual(r1["planets"], stripped["planets"])
+
+    def test_period_ratio_floor_respected(self):
+        prd_min = 1.2
+        for s in range(20):
+            ps = self._gen(seed=s, spectral_class="K2V", n_planets=8)["planets"]
+            for i in range(1, len(ps)):
+                period_ratio = (ps[i]["a_au"] / ps[i - 1]["a_au"]) ** 1.5
+                self.assertGreaterEqual(period_ratio, prd_min - 1e-6)
+
+    def test_adjacent_masses_more_similar_than_independent(self):
+        import math, statistics
+
+        def dispersion(drop):
+            d = []
+            for s in range(40):
+                ps = self._gen(drop_corr=drop, seed=s, spectral_class="K2V",
+                               n_planets=8)["planets"]
+                for i in range(1, len(ps)):
+                    m1, m2 = ps[i - 1]["mass_earth"], ps[i]["mass_earth"]
+                    if m1 and m2 and m1 > 0 and m2 > 0:
+                        d.append(abs(math.log(m2 / m1)))
+            return statistics.median(d)
+
+        self.assertLess(dispersion(False), dispersion(True))   # correlated < independent
+
+    def test_ordering_biased_outer_larger(self):
+        outer_larger = pairs = 0
+        for s in range(40):
+            ps = self._gen(seed=s, spectral_class="K2V", n_planets=8)["planets"]
+            for i in range(1, len(ps)):
+                a, b = ps[i - 1], ps[i]
+                if (a["type"] not in _PLANET_TYPES - {"rocky", "super_earth", "ice"}
+                        and b["type"] in ("rocky", "super_earth", "ice")
+                        and a["type"] in ("rocky", "super_earth", "ice")):
+                    pairs += 1
+                    outer_larger += b["mass_earth"] > a["mass_earth"]
+        self.assertGreater(outer_larger / pairs, 0.55)   # biased above 50/50
+
+    def test_no_gas_giant_inside_snow_line_preserved(self):
+        for s in range(20):
+            r = self._gen(seed=s, spectral_class="F5V", n_planets=14)
+            snow = r["star"]["snow_line_au"]
+            inside = [p for p in r["planets"]
+                      if p["type"] in ("gas", "super_jovian", "brown_dwarf")
+                      and p["a_au"] < snow]
+            self.assertEqual(inside, [])
+
+    def test_spacing_ratio_draw_uses_period_ratio(self):
+        import random
+        from core.generate import _spacing_ratio_draw
+        from core.priors import ResearchPriors, DefaultPriors
+        import json
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            pr = ResearchPriors.from_contract(json.load(fh))
+        # with correlation → SMA ratio = period_ratio^(2/3), floor at 1.2^(2/3).
+        for seed in range(50):
+            self.assertGreaterEqual(_spacing_ratio_draw(random.Random(seed), pr),
+                                    1.2 ** (2 / 3) - 1e-9)
+        # DefaultPriors (no block) → the flat spacing band.
+        d = DefaultPriors()
+        lo, hi = d.spacing_ratio
+        for seed in range(20):
+            v = _spacing_ratio_draw(random.Random(seed), d)
+            self.assertTrue(lo <= v <= hi)
+
+
+class TestV2ProvenanceNotes(unittest.TestCase):
+    """Phase R3-V2 B5: notes name the active v2 sampling blocks + host [Fe/H]."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _strict(self, fixture, **kw):
+        self.assertNotIn("error", compute_research_priors_ingest(path=fixture, cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return generate_system(research_policy="strict", **kw)
+
+    def test_v2_note_names_blocks_and_feh(self):
+        r = self._strict(_V2_FIX, seed=42, spectral_class="G2V", n_planets=6)
+        note = next((n for n in r["notes"] if n.startswith("v2 physics in effect")), None)
+        self.assertIsNotNone(note)
+        for b in ("mass_model", "occurrence_by_metallicity", "intra_system_correlation"):
+            self.assertIn(b, note)
+        self.assertIn("[Fe/H]", note)
+
+    def test_permissive_has_no_v2_note(self):
+        r = generate_system(42, spectral_class="G2V", n_planets=6)
+        self.assertFalse(any("v2 physics" in n for n in r["notes"]))
+
+    def test_v1_dataset_has_no_v2_note(self):
+        # identity fixture carries no v2 blocks → no v2 note under strict.
+        r = self._strict(_IDENTITY_FIX, seed=42, spectral_class="G2V", n_planets=6)
+        self.assertFalse(any("v2 physics" in n for n in r["notes"]))
 
 
 if __name__ == "__main__":

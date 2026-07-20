@@ -636,6 +636,7 @@ def _derived_from_star(star):
         "hz_opt_outer": star.get("hz_opt_outer_au"),
         "snow_line": star.get("snow_line_au"),
         "teff": star.get("teff"),
+        "feh": star.get("feh"),          # R3-V2 B4: metallicity-aware origin narrative
     }
 
 
@@ -750,6 +751,27 @@ def evaluate_feasibility(seed, anchor_star=None, spectral_class=None, n_planets=
 # context falls back to this table, tagged grounding="default-extrapolation" even under
 # strict (honest mixed tagging). The identity fixture mirrors this table exactly, so a
 # strict run against it reproduces the heuristic narrative (badge aside).
+# R3-V2 B4: metallicity-qualified origin vocabulary. Any base context key may carry a
+# "<key>:metal_rich" / "<key>:metal_poor" variant in a v2 origin_priors block; when the
+# host's [Fe/H] falls in the corresponding tail AND the dataset defines the variant, it
+# is preferred over the base key (else the base key / heuristic is used — fully backward-
+# compatible with datasets that define only the base v1 keys). Thresholds are documented
+# engine knobs (the spectral×zone×metallicity conditioning the v2 request sketched).
+_FEH_METAL_RICH = 0.15
+_FEH_METAL_POOR = -0.35
+
+
+def _metallicity_tag(feh):
+    """'metal_rich' / 'metal_poor' / None for a host [Fe/H] (None when absent)."""
+    if feh is None:
+        return None
+    if feh >= _FEH_METAL_RICH:
+        return "metal_rich"
+    if feh <= _FEH_METAL_POOR:
+        return "metal_poor"
+    return None
+
+
 _DEFAULT_ORIGIN = {
     "planet_at_location:in_situ_beyond_snow": [("in-situ accretion beyond the snow line", "high")],
     "planet_at_location:in_situ_inner":       [("in-situ accretion", "medium")],
@@ -804,10 +826,15 @@ def _origin_hypotheses(c, base, derived, res, priors=None):
     if priors is None:
         priors = DefaultPriors()
     origin_priors = getattr(priors, "origin_priors", None) or {}
+    tag = _metallicity_tag(derived.get("feh"))          # R3-V2 B4
     hyps = []
     for key in _origin_context_keys(c, derived, res):
-        if key in origin_priors:
-            for h in origin_priors[key]:
+        # Prefer a metallicity-qualified variant "<key>:<tag>" when the dataset defines
+        # one for this metal-rich/metal-poor host; else the base key; else the heuristic.
+        qualified = f"{key}:{tag}" if tag else None
+        source_key = qualified if (qualified and qualified in origin_priors) else key
+        if source_key in origin_priors:
+            for h in origin_priors[source_key]:
                 hyps.append({"pathway": h["pathway"], "plausibility": h["plausibility"],
                              "grounding": priors.grounding})
         else:

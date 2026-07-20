@@ -435,8 +435,11 @@ class DbStatusPanel(ResultPanel):
         # Research-priors cache (a versioned JSON document, not a DB table) — Phase R3.
         rp = core.research_priors.get_research_priors_status()
         if rp["loaded"]:
+            schema_cell = f"schema {rp['schema_version']}"
+            if rp.get("v2_blocks"):   # Phase R3-V2 superset blocks present
+                schema_cell += f" (+v2: {', '.join(rp['v2_blocks'])})"
             table_rows.append([f"research priors ({rp['dataset_version']})",
-                               f"schema {rp['schema_version']}", "Loaded"])
+                               schema_cell, "Loaded"])
         else:
             table_rows.append(["research priors", "—", "Missing"])
 
@@ -1016,11 +1019,14 @@ class ImportResearchPriorsPanel(ResultPanel):
         self.clear_results()
         st = core.research_priors.get_research_priors_status()
         if st["loaded"]:
+            v2 = st.get("v2_blocks")
+            v2_line = f"v2 superset blocks: {', '.join(v2)}<br>" if v2 else ""
             lbl = QLabel(
                 f"<b>Research priors loaded.</b><br>"
                 f"Dataset: {st['dataset_version']}<br>"
                 f"Schema: {st['schema_version']}<br>"
                 f"Origin contexts calibrated: {st['origin_contexts']}<br>"
+                f"{v2_line}"
                 f"Stored at: {st['stored_at']}")
         else:
             lbl = QLabel("No research priors ingested — research_policy='strict' will "
@@ -1068,12 +1074,15 @@ class ImportResearchPriorsPanel(ResultPanel):
         self._progress_bar.setValue(1)
         self._progress_bar.setFormat("Done")
         self.set_status("Research-priors import complete.")
+        v2 = result.get("v2_blocks")
+        v2_line = f"v2 superset blocks: {', '.join(v2)}<br>" if v2 else ""
         lbl = QLabel(
             f"<b>Import complete.</b><br>"
             f"Dataset: {result['dataset_version']}<br>"
             f"Schema: {result['schema_version']}<br>"
             f"Sampling axes loaded: {result['axes_loaded']}<br>"
             f"Origin contexts calibrated: {result['origin_contexts']}<br>"
+            f"{v2_line}"
             f"Source: {result['source']}<br>"
             f"Cached at: {result['cache_dir']}")
         lbl.setWordWrap(True)
