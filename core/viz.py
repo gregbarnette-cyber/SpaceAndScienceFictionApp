@@ -714,6 +714,49 @@ def prepare_hz_diagram(teff: float, luminosity: float) -> dict:
     return {"zones": zones, "max_au": zones[-1]["outer"] * 1.35}
 
 
+def prepare_hz_strip(teff: float, luminosity: float, planets: list = None) -> dict:
+    """Habitable-zone data for the horizontal √AU **strip** view (Phase 5) — the opt-in
+    alternate to the concentric-ring ``prepare_hz_diagram``.
+
+    Reuses the exact same Kopparapu zone boundaries, then exposes the optimistic band
+    (Recent Venus → Early Mars) and the conservative band (Runaway Greenhouse → Maximum
+    Greenhouse) as explicit edges, plus a normalized planet list placed by semi-major
+    axis with an ``in_hz`` flag (inside the optimistic band). Single-star callers pass no
+    planets → the strip shows the bands alone.
+
+    planets: optional list of {"name", "au"} (au = semi-major axis, AU).
+    Returns {"zones", "bands": {opt_inner, opt_outer, con_inner, con_outer},
+    "planets": [{name, au, in_hz}], "max_au", "teff", "lum"} or {"error": str}.
+    """
+    base = prepare_hz_diagram(teff, luminosity)
+    if "error" in base:
+        return base
+    zones = base["zones"]
+    by_key = {z["key"]: z["outer"] for z in zones}
+    opt_inner, opt_outer = by_key.get("rv"), by_key.get("em")
+    con_inner, con_outer = by_key.get("rg"), by_key.get("mg")
+
+    out_planets = []
+    for p in (planets or []):
+        au = _ffloat(p.get("au"))
+        if au is None or au <= 0:
+            continue
+        in_hz = (opt_inner is not None and opt_outer is not None
+                 and opt_inner <= au <= opt_outer)
+        out_planets.append({"name": p.get("name") or "planet", "au": au, "in_hz": in_hz})
+
+    max_planet = max((p["au"] for p in out_planets), default=0.0)
+    max_au = max((opt_outer or 0.0) * 1.12, max_planet * 1.06)
+    return {
+        "zones": zones,
+        "bands": {"opt_inner": opt_inner, "opt_outer": opt_outer,
+                  "con_inner": con_inner, "con_outer": con_outer},
+        "planets": out_planets,
+        "max_au": max_au,
+        "teff": teff, "lum": luminosity,
+    }
+
+
 # ── Exoplanet system map (per-planet positions on a given date) ──────────────
 
 def _date_iso_to_jd(date_iso: str):
@@ -1136,6 +1179,34 @@ def _oecv_planet_fracs(smas):
     return fracs
 
 
+def _oecv_planet_ring_data(node):
+    """Ring-planet dicts for a host node's direct ``<planet>`` children (a star, or a
+    ``<binary>`` for circumbinary/P-type hosts). Reused by both the per-star rings and
+    the Phase-3b circumbinary ``centers``. Returns [] when the node has no planets."""
+    pls = _oecv_planets(node)
+    if not pls:
+        return []
+    smas = [_oecv_num(p, "semimajoraxis") for p in pls]
+    pfracs = _oecv_planet_fracs(smas)
+    out = []
+    for p, a, pf in zip(pls, smas, pfracs):
+        mfv = _oecv_fv(p.get("fields", {}).get("mass")) or {}
+        out.append({
+            "name": _oecv_name(p) or "planet",
+            "sma": a,
+            "ecc": _oecv_num(p, "eccentricity"),
+            "mass": _oecv_num(p, "mass"),
+            "masstype": mfv.get("type"),
+            "has_radius": _oecv_num(p, "radius") is not None,
+            "ring_frac": pf,
+            "status": [x.get("value") for x in _oecv_field_list(p, "list")],
+            # The full planet node, so a click can populate an info dialog from every
+            # OEC field (Phase-3b click-a-planet parity; mirrors the star "node" ref).
+            "node": p,
+        })
+    return out
+
+
 def prepare_oec_architecture(system_node: dict, focus_node: dict = None) -> dict:
     """Layout data for the OEC System Architecture map.
 
@@ -1146,14 +1217,17 @@ def prepare_oec_architecture(system_node: dict, focus_node: dict = None) -> dict
 
     Returns a dict of display-space geometry (unit-disk coords; no matplotlib):
       {"star_name", "focus_label", "stars": [...], "edges": [...], "handles": [...],
-       "rings": [{"r","label"}], "flags": {any_proj,any_derived,any_fallback,
-       any_schematic}, "r_lo_au", "r_hi_au"}  or  {"error": str}.
+       "centers": [...], "rings": [{"r","label"}], "flags": {any_proj,any_derived,
+       any_fallback,any_schematic}, "r_lo_au", "r_hi_au"}  or  {"error": str}.
 
     Each star: {name, sp_type, mass, r_au, x, y, is_focus, planets:[{name, sma,
-    ecc, mass, masstype, has_radius, ring_frac, status}]}.
+    ecc, mass, masstype, has_radius, ring_frac, status, node}]} (node = the full OEC
+    planet node, for a click-to-info dialog).
     Each edge (binary pair): {x1,y1,x2,y2, label, proj, derived, fallback,
     schematic}. Each handle (binary barycenter, for click-to-recenter):
-    {x, y, label, node}."""
+    {x, y, label, node}. Each center (circumbinary/P-type planet host — a binary
+    with direct <planet> children, Phase-3b): {x, y, label, node, planets:[…]} keyed
+    to the binary barycenter; its planets ride as rings around that point."""
     if not system_node or system_node.get("tag") != "system":
         return {"error": "Not an OEC system node."}
 
@@ -1170,22 +1244,7 @@ def prepare_oec_architecture(system_node: dict, focus_node: dict = None) -> dict
     for s in placed:
         node = s["node"]
         xd, yd = map_fn(s["x"], s["y"])
-        pls = _oecv_planets(node)
-        smas = [_oecv_num(p, "semimajoraxis") for p in pls]
-        pfracs = _oecv_planet_fracs(smas)
-        planets = []
-        for p, a, pf in zip(pls, smas, pfracs):
-            mfv = _oecv_fv(p.get("fields", {}).get("mass")) or {}
-            planets.append({
-                "name": _oecv_name(p) or "planet",
-                "sma": a,
-                "ecc": _oecv_num(p, "eccentricity"),
-                "mass": _oecv_num(p, "mass"),
-                "masstype": mfv.get("type"),
-                "has_radius": _oecv_num(p, "radius") is not None,
-                "ring_frac": pf,
-                "status": [x.get("value") for x in _oecv_field_list(p, "list")],
-            })
+        planets = _oecv_planet_ring_data(node)
         sp_type = _oecv_val(node, "spectraltype") or ""
         stars.append({
             "name": _oecv_name(node) or "star",
@@ -1235,6 +1294,24 @@ def prepare_oec_architecture(system_node: dict, focus_node: dict = None) -> dict
                 "label": _oecv_binary_label(h["node"]), "node": h["node"]}
                for h in lay["bary"]]
 
+    # Circumbinary (P-type) planet rings — the 39 planets that attach to a <binary>
+    # orbit the pair's barycenter, not a star (Kepler-16 b, Kepler-47…). Emit one
+    # center per binary carrying direct <planet> children, keyed to the binary
+    # barycenter already tracked for the ◆ handles (Phase-3b). The canvas draws these
+    # as rings around the barycenter point.
+    centers = []
+    for h in lay["bary"]:
+        bplanets = _oecv_planet_ring_data(h["node"])
+        if not bplanets:
+            continue
+        cx, cy = map_fn(h["x"], h["y"])
+        centers.append({
+            "x": cx, "y": cy,
+            "label": _oecv_binary_label(h["node"]),
+            "node": h["node"],
+            "planets": bplanets,
+        })
+
     if focus_node is not None:
         focus_label = (_oecv_binary_label(focus_node) if focus_node["tag"] == "binary"
                        else _oecv_name(focus_node) or "component")
@@ -1248,6 +1325,7 @@ def prepare_oec_architecture(system_node: dict, focus_node: dict = None) -> dict
         "stars": stars,
         "edges": edges,
         "handles": handles,
+        "centers": centers,
         "rings": rings,
         "flags": {
             "any_proj": any(e["proj"] for e in edges),

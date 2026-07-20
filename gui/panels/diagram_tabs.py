@@ -10,14 +10,123 @@
 
 import math
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QButtonGroup,
+    QStackedWidget,
+)
+from PySide6.QtCore import Qt
 
 import core.viz
 import core.science
 from gui.visualizations.plot_helpers import (
-    mpl_available, make_hz_canvas, make_orbits_canvas, make_mass_radius_canvas,
-    make_transit_canvas, make_size_comparison_canvas, wrap_orbits_with_solar_toggle,
+    mpl_available, make_hz_canvas, make_hz_strip_canvas, make_orbits_canvas,
+    make_mass_radius_canvas, make_transit_canvas, make_size_comparison_canvas,
+    wrap_orbits_with_solar_toggle,
 )
+
+
+# ── Phase 5: the shared HZ Rings/Strip toggle ────────────────────────────────────
+# One control, wired into every panel's HZ Diagram tab. Rings is the default and its
+# canvas (make_hz_canvas) is unchanged; Strip is the opt-in √AU view with planet-SMA
+# markers. Both share the light HZ palette so they read as one tab.
+
+_HZ_TOGGLE_QSS = """
+QWidget#hzToggleBar QPushButton {
+    padding: 3px 14px; border: 1px solid #b9c2d0; background: #f4f6fa;
+    color: #465063; font-size: 12px;
+}
+QWidget#hzToggleBar QPushButton:first-child { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+QWidget#hzToggleBar QPushButton:last-child  { border-top-right-radius: 6px; border-bottom-right-radius: 6px; border-left: none; }
+QWidget#hzToggleBar QPushButton:checked { background: #2f9e5a; color: #ffffff; border-color: #268a4d; }
+"""
+
+
+def _wrap_canvas_tab(canvas, toolbar):
+    """A QWidget holding a matplotlib toolbar + canvas (the standard diagram-tab body)."""
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
+    lay.addWidget(toolbar)
+    lay.addWidget(canvas)
+    return w
+
+
+def wrap_hz_with_toggle(build_rings, build_strip):
+    """Return a QWidget: a **Rings | Strip** segmented control over a QStackedWidget,
+    Rings selected by default. `build_rings()` / `build_strip()` are zero-arg factories
+    each returning a QWidget (or None). If Rings can't build → None; if Strip can't build
+    → the bare Rings widget (no toggle) so nothing regresses."""
+    rings_w = build_rings()
+    if rings_w is None:
+        return None
+    strip_w = build_strip()
+    if strip_w is None:
+        return rings_w   # no strip (e.g. bands not computable) → plain rings, no toggle
+
+    container = QWidget()
+    v = QVBoxLayout(container)
+    v.setContentsMargins(0, 0, 0, 0)
+    v.setSpacing(3)
+
+    bar = QWidget()
+    bar.setObjectName("hzToggleBar")
+    bar.setStyleSheet(_HZ_TOGGLE_QSS)
+    row = QHBoxLayout(bar)
+    row.setContentsMargins(6, 4, 6, 0)
+    row.setSpacing(0)
+    lbl = QLabel("HZ view:")
+    lbl.setContentsMargins(0, 0, 8, 0)
+    row.addWidget(lbl)
+    grp = QButtonGroup(container)
+    grp.setExclusive(True)
+    rings_btn = QPushButton("Rings")
+    strip_btn = QPushButton("Strip")
+    for b in (rings_btn, strip_btn):
+        b.setCheckable(True)
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        grp.addButton(b)
+        row.addWidget(b)
+    rings_btn.setChecked(True)
+    row.addStretch()
+    v.addWidget(bar)
+
+    stack = QStackedWidget()
+    stack.addWidget(rings_w)   # index 0 (default)
+    stack.addWidget(strip_w)   # index 1
+    v.addWidget(stack, 1)
+
+    rings_btn.clicked.connect(lambda: stack.setCurrentIndex(0))
+    strip_btn.clicked.connect(lambda: stack.setCurrentIndex(1))
+    return container
+
+
+def _hz_toggle_tab(panel, teff, lum, title, eeid_au=None, planets=None, markers=None):
+    """Build the HZ Diagram tab as a Rings/Strip toggle (Rings default). `planets` is a
+    list of {"name","au"} for the strip markers ([] / None for single-star panels →
+    bands only). Returns a QWidget, or None when the HZ isn't computable."""
+    if not mpl_available():
+        return None
+    hz_data = core.viz.prepare_hz_diagram(teff, lum)
+    if "error" in hz_data:
+        return None
+
+    def build_rings():
+        canvas, toolbar = make_hz_canvas(
+            panel, hz_data["zones"], hz_data["max_au"],
+            title=title, eeid_au=eeid_au, markers=markers)
+        return _wrap_canvas_tab(canvas, toolbar)
+
+    def build_strip():
+        strip = core.viz.prepare_hz_strip(teff, lum, planets)
+        if "error" in strip:
+            return None
+        canvas, toolbar = make_hz_strip_canvas(
+            panel, strip, title=title, eeid_au=eeid_au, markers=markers)
+        if canvas is None:
+            return None
+        return _wrap_canvas_tab(canvas, toolbar)
+
+    return wrap_hz_with_toggle(build_rings, build_strip)
 
 
 def _fval(v):
@@ -31,14 +140,13 @@ def _fval(v):
 
 
 def _make_hz_tab(panel, rows_or_row):
-    """Return a QWidget with an embedded HZ diagram, or None if data is missing."""
+    """Return the HZ Diagram tab (Rings/Strip toggle), or None if data is missing.
+    NASA planet rows carry `pl_orbsmax`, so the Strip view gets planet-SMA markers."""
     if not mpl_available():
         return None
-    if isinstance(rows_or_row, list):
-        row = rows_or_row[0] if rows_or_row else {}
-    else:
-        row = rows_or_row or {}
-    teff   = _fval(row.get("st_teff") or row.get("st_teff"))
+    rows = rows_or_row if isinstance(rows_or_row, list) else [rows_or_row or {}]
+    row = rows[0] if rows else {}
+    teff   = _fval(row.get("st_teff"))
     st_rad = _fval(row.get("st_rad"))
     st_lum = _fval(row.get("st_lum"))
     if teff is None:
@@ -49,25 +157,20 @@ def _make_hz_tab(panel, rows_or_row):
         lum = 10 ** st_lum
     else:
         return None
-    hz_data = core.viz.prepare_hz_diagram(teff, lum)
-    if "error" in hz_data:
-        return None
-    eeid_au = _fval(row.get("st_eei_orbsep"))
-    w = QWidget()
-    lay = QVBoxLayout(w)
-    lay.setContentsMargins(4, 4, 4, 4)
-    canvas, toolbar = make_hz_canvas(
-        panel, hz_data["zones"], hz_data["max_au"],
+    planets = []
+    for r in rows:
+        au = _fval(r.get("pl_orbsmax"))
+        if au:
+            planets.append({"name": r.get("pl_name") or "planet", "au": au})
+    return _hz_toggle_tab(
+        panel, teff, lum,
         title=f"Habitable Zone  (T={teff:.0f} K, L={lum:.4f} L☉)",
-        eeid_au=eeid_au,
-    )
-    lay.addWidget(toolbar)
-    lay.addWidget(canvas)
-    return w
+        eeid_au=_fval(row.get("st_eei_orbsep")), planets=planets)
 
 
 def _make_hz_tab_exocat(panel, row):
-    """HZ tab for Mission Exocat rows (uses st_teff / st_rad; eeid from st_eeidau)."""
+    """HZ tab for Mission Exocat rows (uses st_teff / st_rad; eeid from st_eeidau).
+    Star-level row → the Strip shows bands only (no per-planet SMA)."""
     if not mpl_available() or not row:
         return None
     teff   = _fval(row.get("st_teff"))
@@ -81,21 +184,10 @@ def _make_hz_tab_exocat(panel, row):
         lum = st_lbol
     else:
         return None
-    hz_data = core.viz.prepare_hz_diagram(teff, lum)
-    if "error" in hz_data:
-        return None
-    eeid_au = _fval(row.get("st_eeidau"))
-    w = QWidget()
-    lay = QVBoxLayout(w)
-    lay.setContentsMargins(4, 4, 4, 4)
-    canvas, toolbar = make_hz_canvas(
-        panel, hz_data["zones"], hz_data["max_au"],
+    return _hz_toggle_tab(
+        panel, teff, lum,
         title=f"Habitable Zone  (T={teff:.0f} K, L={lum:.4f} L☉)",
-        eeid_au=eeid_au,
-    )
-    lay.addWidget(toolbar)
-    lay.addWidget(canvas)
-    return w
+        eeid_au=_fval(row.get("st_eeidau")), planets=[])
 
 
 def _hyper_au_for(sp_type):

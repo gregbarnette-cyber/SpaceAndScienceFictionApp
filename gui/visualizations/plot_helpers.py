@@ -399,8 +399,157 @@ def make_hz_canvas(parent, zones: list, max_au: float, title: str = "",
     _attach_ring_click(canvas, ax, _make_info_box(ax), _hz_click,
                        r_to_au=lambda r: r, eeid_au=eeid_au,
                        markers=valid_markers if valid_markers else None)
-
     fig.tight_layout(pad=1.0)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
+def make_hz_strip_canvas(parent, data: dict, title: str = "",
+                         eeid_au: float = None, markers: list = None):
+    """Horizontal √AU habitable-zone **strip** (Phase 5) — the opt-in alternate to
+    make_hz_canvas's concentric rings, sharing its light palette so the two read as one
+    tab under the Rings/Strip toggle.
+
+    data:    core.viz.prepare_hz_strip result (bands + planets + max_au).
+    eeid_au: optional Earth-Equivalent Insolation Distance → a solid vertical marker.
+    markers: optional [{label, au, color}] → dash-dot vertical lines (Snow Line, etc.).
+
+    Draws the optimistic (light) + conservative (dark) HZ bands on a √AU axis, with each
+    planet placed by semi-major axis — green inside the optimistic HZ, blue outside — plus
+    hover + click-to-info parity. Returns (canvas, toolbar), or (None, None) if the bands
+    aren't computable.
+    """
+    bands = data.get("bands") or {}
+    oi, oo = bands.get("opt_inner"), bands.get("opt_outer")
+    if not oi or not oo or oo <= 0:
+        return None, None
+    ci, co = bands.get("con_inner"), bands.get("con_outer")
+    planets = data.get("planets") or []
+    max_au = data.get("max_au") or oo * 1.12
+
+    def sx(a):
+        return math.sqrt(a) if a and a > 0 else 0.0
+
+    fig = Figure(figsize=(7.2, 2.5), facecolor=_SPACE_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, facecolor=_SPACE_BG)
+    ax.set_xlim(0, sx(max_au))
+    ax.set_ylim(0, 1)
+
+    # HZ bands (a horizontal ribbon centred on the baseline).
+    ax.axvspan(sx(oi), sx(oo), ymin=0.30, ymax=0.70, color="#8fd6a8", alpha=0.5, zorder=2)
+    if ci and co:
+        ax.axvspan(sx(ci), sx(co), ymin=0.30, ymax=0.70, color="#33AA55", alpha=0.55, zorder=3)
+    ax.axhline(0.5, color="#999999", linewidth=1.0, zorder=1)
+
+    if eeid_au and eeid_au > 0 and eeid_au <= max_au:
+        ax.axvline(sx(eeid_au), color="#006644", linewidth=1.4, alpha=0.85, zorder=4)
+    for m in (markers or []):
+        au = m.get("au")
+        if au and au > 0 and au <= max_au:
+            ax.axvline(sx(au), color=m.get("color", "#666666"), linewidth=1.1,
+                       linestyle="-.", alpha=0.8, zorder=4)
+
+    # AU ticks (√-placed, labelled in real AU).
+    cand = [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100]
+    ticks = [t for t in cand if max_au * 0.003 <= t <= max_au] or [round(max_au, 4)]
+    ax.set_xticks([sx(t) for t in ticks])
+    ax.set_xticklabels([f"{t:g}" for t in ticks], fontsize=8)
+    ax.set_yticks([])
+    ax.tick_params(colors=_LABEL_CLR)
+    for sp in ("left", "right", "top"):
+        ax.spines[sp].set_visible(False)
+    ax.spines["bottom"].set_edgecolor(_GRID_CLR)
+    ax.set_xlabel("Semi-major axis  (AU, √ scale)", color=_LABEL_CLR, fontsize=9)
+    if title:
+        ax.set_title(title, color=_LABEL_CLR, fontsize=10, pad=8)
+
+    pxs = [sx(p["au"]) for p in planets]
+    if planets:
+        sc = ax.scatter(pxs, [0.5] * len(planets), s=64,
+                        c=["#1f8f52" if p["in_hz"] else "#2f7fb8" for p in planets],
+                        edgecolors="#20303f", linewidths=0.6, zorder=6,
+                        picker=True, pickradius=6)
+        for i, p in enumerate(planets):
+            up = (i % 2 == 0)
+            ax.annotate(p["name"], (pxs[i], 0.5),
+                        xytext=(0, 11 if up else -12), textcoords="offset points",
+                        fontsize=7.5, color=_LABEL_CLR, ha="center",
+                        va="bottom" if up else "top", zorder=7, clip_on=True)
+    else:
+        sc = None
+        ax.text(sx(max_au) * 0.5, 0.74, "single star — HZ bands only (no planets)",
+                fontsize=8.5, color="#777777", ha="center", va="center")
+
+    handles = [mpatches.Patch(facecolor="#8fd6a8", alpha=0.6, label="Optimistic HZ"),
+               mpatches.Patch(facecolor="#33AA55", alpha=0.65, label="Conservative HZ")]
+    if planets:
+        handles.append(Line2D([], [], marker="o", linestyle="none", markersize=7,
+                              markerfacecolor="#1f8f52", markeredgecolor="#20303f",
+                              label="Planet in HZ"))
+        handles.append(Line2D([], [], marker="o", linestyle="none", markersize=7,
+                              markerfacecolor="#2f7fb8", markeredgecolor="#20303f",
+                              label="Planet outside HZ"))
+    if eeid_au and eeid_au > 0:
+        handles.append(Line2D([], [], color="#006644", label="Earth Equiv. Insolation Dist"))
+    for m in (markers or []):
+        if m.get("au"):
+            handles.append(Line2D([], [], color=m.get("color", "#666666"), linestyle="-.",
+                                  label=f"{m.get('label', 'marker')}  ({m['au']:.3f} AU)"))
+    ax.legend(handles=handles, loc="upper right", fontsize=6.5, framealpha=0.85,
+              labelcolor=_LABEL_CLR, facecolor="#ffffff", edgecolor="#aaaaaa")
+
+    fig.subplots_adjust(left=0.05, right=0.97, top=0.80, bottom=0.26)
+
+    # Hover tooltip + click info box (parity with the rings diagram).
+    if sc is not None:
+        annot = ax.annotate(
+            "", xy=(0, 0), xytext=(10, 14), textcoords="offset points",
+            bbox=dict(boxstyle="round,pad=0.3", fc="#f8f8f0", ec="#2266cc", lw=0.8, alpha=0.92),
+            color="#222222", fontsize=7.5, zorder=20)
+        annot.set_visible(False)
+        info = _make_info_box(ax)
+
+        def _on_motion(event):
+            if event.inaxes is not ax:
+                if annot.get_visible():
+                    annot.set_visible(False)
+                    canvas.draw_idle()
+                return
+            cont, ind = sc.contains(event)
+            if cont:
+                i = ind["ind"][0]
+                p = planets[i]
+                annot.xy = (pxs[i], 0.5)
+                annot.set_text(f"{p['name']}\n{p['au']:.4g} AU · "
+                               f"{'in HZ' if p['in_hz'] else 'outside HZ'}")
+                annot.set_visible(True)
+                canvas.draw_idle()
+            elif annot.get_visible():
+                annot.set_visible(False)
+                canvas.draw_idle()
+
+        def _on_click(event):
+            if event.inaxes is not ax or event.xdata is None:
+                if info.get_visible():
+                    info.set_visible(False)
+                    canvas.draw_idle()
+                return
+            cont, ind = sc.contains(event)
+            if cont:
+                p = planets[ind["ind"][0]]
+                info.set_text(
+                    f"{p['name']}\n  Semi-major axis: {p['au']:.4g} AU\n  "
+                    f"{'Inside' if p['in_hz'] else 'Outside'} the optimistic HZ "
+                    f"({oi:.3g}–{oo:.3g} AU)")
+                info.set_visible(True)
+            elif info.get_visible():
+                info.set_visible(False)
+            canvas.draw_idle()
+
+        canvas.mpl_connect("motion_notify_event", _on_motion)
+        canvas.mpl_connect("button_press_event", _on_click)
+
     toolbar = NavToolbar(canvas, parent)
     return canvas, toolbar
 
@@ -3680,7 +3829,7 @@ def _oec_arch_nudge_labels(pts, min_sep=0.055):
     return offs
 
 
-def make_oec_architecture_canvas(parent, data: dict, on_select=None):
+def make_oec_architecture_canvas(parent, data: dict, on_select=None, on_planet_click=None):
     """OEC System Architecture map — the whole hierarchy on one log-radial schematic.
 
     data: result of core.viz.prepare_oec_architecture(). Display coords are a unit
@@ -3691,7 +3840,10 @@ def make_oec_architecture_canvas(parent, data: dict, on_select=None):
 
     on_select(node): optional callback for Phase-3 click-to-recenter. When given,
     clickable ◆ handles are drawn at each binary's barycenter and star markers become
-    pickable; when None (static map) neither is drawn. Returns (canvas, toolbar) or
+    pickable; when None (static map) neither is drawn.
+    on_planet_click(planet): optional callback invoked when a planet dot is clicked
+    (planet = the prep's planet dict + a "host" label) — the panel opens an info
+    dialog, mirroring the other star-database diagrams. Returns (canvas, toolbar) or
     (None, None) on failure.
     """
     stars = data.get("stars")
@@ -3731,6 +3883,36 @@ def make_oec_architecture_canvas(parent, data: dict, on_select=None):
     single = len(stars) == 1
     lbl_off = _oec_arch_nudge_labels(star_pts)
     pickable = []
+    hover_items = []   # (artist, text) for the cursor-following hover tooltip
+
+    def _arch_star_hover(s):
+        head = s["name"] + (f" · {s['sp_type']}" if s["sp_type"] else "")
+        sub = []
+        if s.get("mass") is not None:
+            sub.append(f"{s['mass']:.2g} M☉")
+        npl = len(s.get("planets", []))
+        if npl:
+            sub.append(f"{npl} planet" + ("s" if npl != 1 else ""))
+        return head + ("\n" + " · ".join(sub) if sub else "")
+
+    def _arch_planet_hover(p):
+        head = p.get("name") or "planet"
+        sub = []
+        if p.get("sma") is not None:
+            sub.append(f"{p['sma']:.3g} AU")
+        if p.get("mass") is not None:
+            lbl = "M·sin i" if p.get("masstype") == "msini" else "M"
+            sub.append(f"{lbl} {p['mass']:.3g} M♃")
+        if on_planet_click is not None:
+            sub.append("click for details")
+        return head + ("\n" + " · ".join(sub) if sub else "")
+
+    def _register_planet(art, p, host_label):
+        """Make a planet dot pickable + hoverable, tagging it with its info dict."""
+        if on_planet_click is not None:
+            art._oec_planet = dict(p, host=host_label)
+            pickable.append(art)
+        hover_items.append((art, _arch_planet_hover(p)))
 
     def _nn(i):
         best = 1e9
@@ -3755,12 +3937,16 @@ def make_oec_architecture_canvas(parent, data: dict, on_select=None):
                                     linewidth=0.7, zorder=3))
                 ang = math.radians(-60 + k * 47)
                 px, py = x + rr * math.cos(ang), y + rr * math.sin(ang)
+                pk = 5 if on_planet_click is not None else None
                 if p["has_radius"]:
-                    ax.scatter([px], [py], s=26, color="#4FC3F7",
-                               edgecolor="#0a0f1e", linewidth=0.4, zorder=4)
+                    part = ax.scatter([px], [py], s=26, color="#4FC3F7",
+                                      edgecolor="#0a0f1e", linewidth=0.4, zorder=4,
+                                      picker=pk)
                 else:
-                    ax.scatter([px], [py], s=24, facecolor="none",
-                               edgecolor="#4FC3F7", linewidth=1.0, zorder=4)
+                    part = ax.scatter([px], [py], s=24, facecolor="none",
+                                      edgecolor="#4FC3F7", linewidth=1.0, zorder=4,
+                                      picker=pk)
+                _register_planet(part, p, s["name"])
                 # AU labels on the planet dots when there's room (single-host systems
                 # where the planet fan fills the view — Sun, TRAPPIST-1).
                 if single and p.get("sma"):
@@ -3781,10 +3967,54 @@ def make_oec_architecture_canvas(parent, data: dict, on_select=None):
         if on_select:
             marker._oec_node = s.get("node")
             pickable.append(marker)
+        hover_items.append((marker, _arch_star_hover(s)))
         label = s["name"] + (f" · {s['sp_type']}" if s["sp_type"] else "")
         ax.text(x, y + 0.05 + 0.032 * lbl_off[i] + r_mark * 0.004, label,
                 color=_SC_STAR_LBL, fontsize=8.5, ha="center", va="bottom",
                 zorder=7, clip_on=True)
+
+    # Circumbinary (P-type) planet rings — planets that orbit a <binary> barycenter,
+    # not a star (Kepler-16 b, Kepler-47…). Drawn as DASHED rings (distinct from the
+    # solid per-star rings) around the binary's barycenter point (Phase-3b).
+    for c in data.get("centers", []):
+        cx, cy = c["x"], c["y"]
+        cpl = c.get("planets", [])
+        if not cpl:
+            continue
+        nn = LIM
+        for (sx, sy) in star_pts:
+            d = math.hypot(cx - sx, cy - sy)
+            if d > 1e-9:
+                nn = min(nn, d)
+        gap = 0.03
+        cap = max(0.06, min(nn * 0.42, 0.13))
+        if cap <= gap:
+            cap = gap + 0.03
+        for k, p in enumerate(cpl):
+            rr = gap + (cap - gap) * max(0.0, min(1.0, p["ring_frac"]))
+            ax.add_patch(Circle((cx, cy), rr, fill=False, edgecolor="#3a6ea5",
+                                linestyle=(0, (1, 2)), linewidth=0.8, zorder=3))
+            ang = math.radians(20 + k * 63)
+            px, py = cx + rr * math.cos(ang), cy + rr * math.sin(ang)
+            pk = 5 if on_planet_click is not None else None
+            if p["has_radius"]:
+                cpart = ax.scatter([px], [py], s=26, color="#7ad0ff",
+                                   edgecolor="#0a0f1e", linewidth=0.4, zorder=5,
+                                   picker=pk)
+            else:
+                cpart = ax.scatter([px], [py], s=24, facecolor="none",
+                                   edgecolor="#7ad0ff", linewidth=1.0, zorder=5,
+                                   picker=pk)
+            _register_planet(cpart, p, c.get("label"))
+            if single and p.get("sma"):
+                a = p["sma"]
+                au_lbl = f"{a:.2f}" if a >= 0.1 else f"{a:.3f}"
+                ax.text(px, py + 0.028, au_lbl + " AU", color="#6f9bd0",
+                        fontsize=5.5, ha="center", va="bottom", zorder=6, clip_on=True)
+        # A small circumbinary-barycenter tick (skip when it coincides with ⊕).
+        if math.hypot(cx, cy) > 1e-6:
+            ax.scatter([cx], [cy], marker="+", s=42, color="#7ad0ff",
+                       linewidth=1.0, zorder=5)
 
     # Barycenter marker at the origin; the focus label goes to the top-left corner
     # so it never collides with a tight star cluster sitting on the barycenter.
@@ -3803,6 +4033,7 @@ def make_oec_architecture_canvas(parent, data: dict, on_select=None):
                             zorder=8, picker=6)
             hd._oec_node = h["node"]
             pickable.append(hd)
+            hover_items.append((hd, f"◆ {h['label']}\nclick to recenter"))
 
     title = "System Architecture — " + (data.get("star_name") or "OEC system")
     ax.set_title(title, color=_SC_AXIS_TITLE, fontsize=12, pad=10)
@@ -3820,12 +4051,82 @@ def make_oec_architecture_canvas(parent, data: dict, on_select=None):
     fig.text(0.5, 0.015, "  ".join(notes), ha="center", va="bottom",
              color=_SC_RING_LBL, fontsize=6.5, wrap=True)
 
-    if on_select and pickable:
+    # Click dispatch (Phase-3b) — a planet dot → info dialog (on_planet_click); a star
+    # marker / ◆ handle → recenter (on_select). Planets are checked first (they draw on
+    # top of a host star's marker when a ring is tight).
+    if (on_select or on_planet_click) and pickable:
         def _on_pick(event):
-            node = getattr(event.artist, "_oec_node", None)
-            if node is not None:
+            art = event.artist
+            pl = getattr(art, "_oec_planet", None)
+            if pl is not None:
+                if on_planet_click is not None:
+                    on_planet_click(pl)
+                return
+            node = getattr(art, "_oec_node", None)
+            if node is not None and on_select is not None:
                 on_select(node)
         canvas.mpl_connect("pick_event", _on_pick)
+
+    # Star-chart interaction parity (Phase-3b): cursor-following hover tooltip
+    # (hover = show info) + scroll-wheel zoom around the cursor. Click stays reserved
+    # for recenter (above), so the info surface here is the hover tooltip, not a
+    # pinned click box.
+    hover = ax.text(
+        0.98, 0.97, "", transform=ax.transAxes, color="#20304e", fontsize=7.5,
+        ha="right", va="top",
+        bbox=dict(boxstyle="round,pad=0.4", fc="#f6f8fc", ec="#3a5f8f",
+                  lw=0.8, alpha=0.94),
+        zorder=25, visible=False, clip_on=False,
+    )
+
+    def _on_motion(event):
+        if event.inaxes is not ax:
+            if hover.get_visible():
+                hover.set_visible(False)
+                canvas.draw_idle()
+            return
+        found = None
+        for art, text in hover_items:
+            try:
+                cont, _ = art.contains(event)
+            except Exception:
+                cont = False
+            if cont:
+                found = text
+                break
+        if found is not None:
+            hover.set_text(found)
+            _anchor_hover_to_cursor(hover, ax, event)
+            hover.set_visible(True)
+            canvas.draw_idle()
+        elif hover.get_visible():
+            hover.set_visible(False)
+            canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+
+    def _on_scroll(event):
+        if event.inaxes is not ax or event.xdata is None:
+            return
+        scale = 0.9 if event.button == "up" else 1.0 / 0.9
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        cx, cy = event.xdata, event.ydata
+        ax.set_xlim(cx + (x0 - cx) * scale, cx + (x1 - cx) * scale)
+        ax.set_ylim(cy + (y0 - cy) * scale, cy + (y1 - cy) * scale)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("scroll_event", _on_scroll)
+
+    # Restore the initial zoom/pan (default ±LIM extent) — the panel's "Reset
+    # diagram" button calls this to undo scroll-wheel zoom / toolbar pans without a
+    # full canvas rebuild.
+    def _reset_view():
+        ax.set_xlim(-LIM, LIM)
+        ax.set_ylim(-LIM, LIM)
+        canvas.draw_idle()
+
+    canvas.reset_view = _reset_view
 
     fig.subplots_adjust(left=0.03, right=0.97, top=0.93, bottom=0.07)
     toolbar = NavToolbar(canvas, parent)

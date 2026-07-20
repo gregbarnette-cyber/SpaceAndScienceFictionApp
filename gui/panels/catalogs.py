@@ -9,8 +9,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QTabWidget, QSizePolicy,
     QTreeWidget, QTreeWidgetItem, QComboBox,
+    QDialog, QGridLayout, QDialogButtonBox,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 from gui.panels.hypatia_tab import build_hypatia_tab
@@ -429,19 +430,17 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
                 self._viz_tabs_widget.addTab(orb_w, "Orbital Diagram")
 
         if "zones" in hz_data_viz:
-            hz_w = QWidget()
-            hz_l = QVBoxLayout(hz_w)
-            hz_l.setContentsMargins(4, 4, 4, 4)
-            canvas, toolbar = make_hz_canvas(
-                self,
-                hz_data_viz["zones"],
-                hz_data_viz["max_au"],
+            # HZ Diagram — Rings/Strip toggle (Phase 5). HWC planets carry
+            # P_SEMI_MAJOR_AXIS, so the Strip view gets planet-SMA markers.
+            hz_planets = [{"name": p.get("P_NAME") or "planet",
+                           "au": _fval(p.get("P_SEMI_MAJOR_AXIS"))}
+                          for p in planet_rows if _fval(p.get("P_SEMI_MAJOR_AXIS"))]
+            hz_w = _hz_toggle_tab(
+                self, teff_v, lum_v,
                 title=f"Habitable Zone  (T={teff_v:.0f} K, L={lum_v:.4f} L☉)",
-                markers=markers_arg,
-            )
-            hz_l.addWidget(toolbar)
-            hz_l.addWidget(canvas)
-            self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
+                planets=hz_planets, markers=markers_arg)
+            if hz_w is not None:
+                self._viz_tabs_widget.addTab(hz_w, "HZ Diagram")
 
         # Mass–Radius diagram (Phase O · O3) — only when ≥1 planet has M and R.
         if mpl_available():
@@ -599,7 +598,7 @@ def _oec_tree_item(node):
 # Reuse the shared diagram-tab builders + the Hypatia path verbatim; the only new code
 # is the OEC-node → NASA-key adapter and the OEC-star → Hypatia compat dict.
 from gui.panels.diagram_tabs import (
-    _make_hz_tab, _make_orbits_tab, _make_mass_radius_tab,
+    _make_hz_tab, _hz_toggle_tab, _make_orbits_tab, _make_mass_radius_tab,
     _make_transit_tab, _make_size_tab,
 )
 
@@ -706,6 +705,109 @@ def _oec_with_hypatia(name):
     return result
 
 
+# Display labels + units for the planet info dialog, keyed off the shared tree-keys.
+_OEC_PLANET_DIALOG_LABELS = {
+    "mass": ("Mass", "M♃"), "radius": ("Radius", "R♃"), "period": ("Period", "days"),
+    "semimajoraxis": ("Semi-Major Axis", "AU"), "eccentricity": ("Eccentricity", ""),
+    "inclination": ("Inclination", "°"),
+}
+# Extra descriptive fields shown below the headline ones (not in the tree set).
+_OEC_PLANET_DIALOG_EXTRA = [
+    ("temperature", "Equilibrium Temp", "K"), ("periastron", "Periastron", "AU"),
+    ("discoverymethod", "Discovery Method", ""), ("discoveryyear", "Discovery Year", ""),
+    ("spectraltype", "Spectral Type", ""), ("lastupdate", "Last Update", ""),
+]
+
+
+def _show_oec_planet_dialog(parent_widget, planet):
+    """Non-modal dialog of a clicked OEC planet's fields (mirrors the NASA System Map's
+    click-planet dialog). All data comes from the planet node already in hand — no
+    network. Kept alive by Qt parent-ownership + WA_DeleteOnClose."""
+    node = planet.get("node") or {}
+    fields = node.get("fields", {}) or {}
+    name = planet.get("name") or "Planet"
+    statuses = _oec_statuses(fields)
+
+    dlg = QDialog(parent_widget)
+    dlg.setWindowTitle(f"Planet Info — {name}")
+    dlg.setMinimumWidth(440)
+    dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+    dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.Window)
+
+    outer = QVBoxLayout(dlg)
+    outer.setContentsMargins(12, 12, 12, 8)
+    outer.setSpacing(8)
+
+    hdr_bits = [f"<b>{name}</b>"]
+    if planet.get("host"):
+        hdr_bits.append(f"Host: {planet['host']}")
+    if statuses:
+        hdr_bits.append("Status: " + " · ".join(statuses))
+    hdr = QLabel("<br/>".join(hdr_bits))
+    hdr.setWordWrap(True)
+    hdr.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    outer.addWidget(hdr)
+
+    sep = QLabel()
+    sep.setFrameShape(QLabel.Shape.HLine)
+    sep.setFrameShadow(QLabel.Shadow.Sunken)
+    outer.addWidget(sep)
+
+    content = QWidget()
+    grid = QGridLayout(content)
+    grid.setContentsMargins(4, 4, 4, 4)
+    grid.setHorizontalSpacing(16)
+    grid.setVerticalSpacing(4)
+    grid.setColumnStretch(1, 1)
+    outer.addWidget(content)
+
+    row = 0
+
+    def _add(label, value):
+        nonlocal row
+        lbl = QLabel(f"<b>{label}:</b>")
+        val = QLabel(str(value))
+        val.setWordWrap(True)
+        val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        grid.addWidget(lbl, row, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(val, row, 1, Qt.AlignmentFlag.AlignTop)
+        row += 1
+
+    # Headline fields (mass gets the M·sin i label when it's an RV minimum mass).
+    for key, (label, unit) in _OEC_PLANET_DIALOG_LABELS.items():
+        if not fields.get(key):
+            continue
+        if key == "mass":
+            fv = _oec_fv(fields["mass"])
+            if fv and fv.get("type") == "msini":
+                label = "Mass (M·sin i)"
+        _add(label, _oec_fmt(fields[key], unit))
+
+    for key, label, unit in _OEC_PLANET_DIALOG_EXTRA:
+        if fields.get(key):
+            _add(label, _oec_fmt(fields[key], unit))
+
+    moons = [c for c in node.get("children", []) if c.get("tag") == "satellite"]
+    if moons:
+        moon_names = ", ".join((m["names"][0] if m.get("names") else "moon") for m in moons)
+        _add("Satellites", f"{len(moons)} ({moon_names})")
+
+    desc = _oec_fv(fields.get("description"))
+    if desc and desc.get("value"):
+        _add("Description", desc["value"])
+
+    if row == 0:
+        _add("Details", "No catalogued orbital/physical parameters.")
+
+    close_btn = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+    close_btn.rejected.connect(dlg.close)
+    outer.addWidget(close_btn)
+
+    dlg.adjustSize()
+    dlg.show()
+    return dlg
+
+
 class OecPanel(DiagramToggleMixin, _StarSearchPanel):
     """Option 7 — Open Exoplanet Catalogue. Renders a star system's full hierarchy
     (system → binary → star → planet → satellite) as a tree, plus per-host Hypatia +
@@ -767,6 +869,10 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         self._oec_system = result["system"]
         self._oec_hosts = _oec_collect_hosts(result["system"])
         self._oec_hypatia = result.get("_hypatia", {})
+        # Phase-3b interactive-map state: which node the Architecture map is anchored
+        # on (None = whole-system barycenter) and which host drives the detail tabs.
+        self._oec_focus = None
+        self._oec_host_idx = 0 if self._oec_hosts else None
 
         if result.get("matched_name"):
             hdr = QLabel(f"Matched on: <b>{result['matched_name']}</b>")
@@ -807,27 +913,92 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         self._finish_render()
 
     def _add_architecture_tab(self):
-        """Insert the whole-system Architecture map as viz tab 0 (static, Phase 3)."""
+        """Insert the system Architecture map as viz tab 0. Interactive (Phase-3b):
+        the map is anchored on ``self._oec_focus`` (None = whole system), star / ◆
+        clicks recenter + drive the host tabs, and a breadcrumb + Reset bar sits
+        above the canvas. Shown for every matched system (incl. planetless / rogue)."""
         if not mpl_available() or not getattr(self, "_oec_system", None):
             return
         try:
-            data = core.viz.prepare_oec_architecture(self._oec_system)
+            focus = getattr(self, "_oec_focus", None)
+            data = core.viz.prepare_oec_architecture(self._oec_system, focus_node=focus)
             if "error" in data:
                 return
-            canvas, toolbar = make_oec_architecture_canvas(None, data)
+            canvas, toolbar = make_oec_architecture_canvas(
+                None, data, on_select=self._on_arch_select,
+                on_planet_click=lambda p: _show_oec_planet_dialog(self, p))
             if canvas is None:
                 return
+            self._arch_canvas = canvas
             w = QWidget()
             lay = QVBoxLayout(w)
             lay.setContentsMargins(2, 2, 2, 2)
+
+            bar = QWidget()
+            brow = QHBoxLayout(bar)
+            brow.setContentsMargins(2, 2, 2, 2)
+            crumb = QLabel(self._arch_breadcrumb(data))
+            crumb.setTextFormat(Qt.TextFormat.RichText)
+            brow.addWidget(crumb)
+            brow.addStretch()
+            reset = QPushButton("⟲ Reset diagram")
+            reset.setToolTip("Return the map to the whole-system view and default zoom")
+            reset.clicked.connect(self._on_arch_reset)
+            brow.addWidget(reset)
+            lay.addWidget(bar)
+
             lay.addWidget(toolbar)
             lay.addWidget(canvas, 1)
             self._viz_tabs_widget.insertTab(0, w, "Architecture")
         except Exception:
             log_viz_error("Architecture")
 
+    def _arch_breadcrumb(self, data):
+        """Breadcrumb text reflecting the current map focus."""
+        sysname = data.get("star_name") or "System"
+        if getattr(self, "_oec_focus", None) is None:
+            return f"⌂ <b>{sysname}</b> &middot; whole-system barycenter"
+        return f"⌂ {sysname} &nbsp;▸&nbsp; <b>{data.get('focus_label', '')}</b>"
+
+    def _on_arch_select(self, node):
+        """Map click (Phase-3b): recenter on a star / binary and, when the clicked
+        node is a planet host, switch the detail tabs to it (the map replaces the
+        Host combo as the selector). Deferred via a 0-timer so the canvas whose
+        pick-event is firing isn't torn down mid-callback."""
+        self._oec_focus = node
+        host_idx = next(
+            (i for i, h in enumerate(self._oec_hosts) if h["node"] is node), None)
+        if host_idx is not None and getattr(self, "_host_combo", None) is not None:
+            self._host_combo.blockSignals(True)
+            self._host_combo.setCurrentIndex(host_idx)
+            self._host_combo.blockSignals(False)
+        idx = host_idx if host_idx is not None else self._oec_host_idx
+        QTimer.singleShot(0, lambda: self._rebuild_after_focus(idx))
+
+    def _on_arch_reset(self):
+        """⟲ Reset diagram — restore the map to its default state: drop any click-to-
+        recenter focus (back to the whole-system barycenter) AND reset the zoom/pan.
+        When already at the whole-system view, this is a pure zoom/pan reset (no
+        teardown of the detail tabs); when focused, the focus rebuild restores the
+        default view for free."""
+        if getattr(self, "_oec_focus", None) is not None:
+            self._oec_focus = None
+            QTimer.singleShot(0, lambda: self._rebuild_after_focus(self._oec_host_idx))
+        else:
+            cv = getattr(self, "_arch_canvas", None)
+            if cv is not None and hasattr(cv, "reset_view"):
+                cv.reset_view()
+
     def _on_host_changed(self, idx):
-        # Drop the previous host's Hypatia data-tab (keep Data at index 0) + viz tabs.
+        """Host combo change — also recenter the map on that host so map + detail
+        stay in sync."""
+        self._oec_focus = self._oec_hosts[idx]["node"] if self._oec_hosts else None
+        self._rebuild_after_focus(idx)
+
+    def _rebuild_after_focus(self, host_idx):
+        """Rebuild the detail (Hypatia + diagram) tabs + the Architecture map in place,
+        without leaving diagram mode (so a recenter keeps the user on the map). Mirrors
+        the host-switch teardown; keeps the Data tree tab at index 0."""
         while self._data_tabs.count() > 1:
             w = self._data_tabs.widget(1)
             self._data_tabs.removeTab(1)
@@ -835,8 +1006,13 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
                 w.deleteLater()
         self._clear_viz_tabs()
         self._add_architecture_tab()
-        self._render_host(idx)
+        if self._oec_hosts and host_idx is not None:
+            self._oec_host_idx = host_idx
+            self._render_host(host_idx)
         self._finish_render()
+        # Stay on the Architecture map (viz tab 0) after a recenter / host switch.
+        if self._viz_tabs_widget.count():
+            self._viz_tabs_widget.setCurrentIndex(0)
 
     def _render_host(self, idx):
         host = self._oec_hosts[idx]

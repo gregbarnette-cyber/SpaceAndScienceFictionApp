@@ -368,11 +368,46 @@ def __getattr__(name: str):
 > caveat footnote (architecture sketch, not an ephemeris — projected separation, static
 > placement / no orbital phase). `OecPanel._add_architecture_tab` inserts it as viz tab 0
 > for **every** matched system (incl. planetless/rogue, which skip the per-host tabs).
-> **Static now (Phase 3a, built 2026-07-17); the `on_select` click-to-recenter — a star →
-> focus + drive `_render_host`, a binary → its subsystem barycenter, with a "⟲ Reset"
-> control — is Phase 3b (planned).** *Known limitation:* circumbinary (P-type) planets
-> attach to the `<binary>`, not a star, so they don't yet render as rings on the map (the
-> Data tree + the binary-pseudo-host Orbital diagram show them).
+>
+> **Phase 3b — interactive (built 2026-07-19).** `_add_architecture_tab` now passes
+> `on_select=self._on_arch_select`, so the canvas draws pickable star markers + gold ◆
+> binary-barycenter handles. `_on_arch_select(node)` sets `self._oec_focus = node`,
+> matches the node against `self._oec_hosts` (identity), syncs the Host combo when it's a
+> host, and defers `_rebuild_after_focus(host_idx)` via `QTimer.singleShot(0, …)` — so the
+> canvas whose pick-event is firing isn't destroyed mid-callback. `_rebuild_after_focus`
+> mirrors the host-switch teardown (drop detail tabs > Data, clear viz tabs, re-add the
+> Architecture tab with the new focus, `_render_host`), then re-selects viz tab 0 **without**
+> leaving diagram mode (no `_prepare_render`), so a recenter keeps the user on the map. A
+> **breadcrumb + "⟲ Reset diagram"** bar (`_arch_breadcrumb`, `_on_arch_reset`) sits above
+> the toolbar; Reset diagram is always enabled and does a full reset — focus → None (rebuild)
+> plus a zoom/pan reset via the `canvas.reset_view()` seam (a focus-less reset is a pure zoom
+> reset, no tab teardown). The Host combo change (`_on_host_changed`) also recenters the map
+> so map + detail stay in sync. The canvas adds star-chart parity: **scroll-wheel zoom** around
+> the cursor and a **cursor-anchored hover tooltip** (`_anchor_hover_to_cursor`), with click
+> on a star/◆ reserved for recenter (hover = info, click = recenter). **Circumbinary (P-type)
+> planet rings** now render: `prepare_oec_architecture` emits `centers:[{x,y,label,node,planets}]`
+> for each `<binary>` with direct `<planet>` children (keyed to the binary barycenter,
+> `_oecv_planet_ring_data`), drawn as dashed rings around that point. **Click a planet →
+> info dialog:** planet dots are pickable (`make_oec_architecture_canvas(..., on_planet_click=…)`),
+> and each planet dict carries its full OEC `node`; the pick handler dispatches planet
+> (→ `on_planet_click`) vs star/◆ (→ `on_select`). `OecPanel` wires
+> `on_planet_click=lambda p: _show_oec_planet_dialog(self, p)` — a non-modal `QDialog`
+> (parented to the panel, `WA_DeleteOnClose`) rendering the planet's fields (M·sin i label,
+> radius, period, SMA, ecc, incl, temp, discovery method/year, status, satellites) from the
+> node in hand — no network, mirroring the NASA System Map's `_show_exoplanet_dialog`.
+
+> **HZ Rings/Strip toggle (Phase 5, app-wide).** Every panel's **HZ Diagram** tab is built by the shared
+> `gui.panels.diagram_tabs.wrap_hz_with_toggle(build_rings, build_strip)` (via `_hz_toggle_tab(panel, teff,
+> lum, title, eeid_au, planets, markers)`) — a **Rings | Strip** segmented control (a `QButtonGroup` of
+> checkable buttons) over a `QStackedWidget`, **Rings selected by default**. `build_rings()` wraps the
+> unchanged `make_hz_canvas` (concentric zones); `build_strip()` wraps `make_hz_strip_canvas` — the horizontal
+> √AU strip (`core.viz.prepare_hz_strip(teff, lum, planets)`) with optimistic/conservative HZ bands + planet
+> markers (green in-HZ / blue out) in the same light palette. If the strip can't build, the wrapper returns the
+> bare rings widget (no toggle) so nothing regresses. Callers: `diagram_tabs._make_hz_tab` /
+> `_make_hz_tab_exocat` (NASA opts 3/4/5 + OEC opt 7), `catalogs.HwcPanel` (opt 6, planets from
+> `P_SEMI_MAJOR_AXIS`), `star_regions.add_region_diagram_tabs` (opts 8/9/10/13, bands-only), and
+> `generator._add_hz_tab` (generated planets). `reports.py` renders a static PNG (no toggle possible) → keeps
+> Rings. See `docs/star-databases.md` (HZ Diagram — Rings / Strip toggle).
 
 > **Note**: `StarMapPanel`, `SystemOrbitsPanel`, and `HabZoneDiagramPanel` live in `gui/visualizations/` and are exported via the lazy `__getattr__` in `panels/__init__.py`. They are **not in the nav tree** — visualizations appear as embedded tabs inside the relevant option panels rather than as standalone nav entries.
 
@@ -480,7 +515,7 @@ All three share `_build_region_tabs(d, viz_widget=None)` which produces a `QTabW
 Always present in data tabs (7): Star System Properties, Stellar Properties, Star Distance, Earth Equiv. Orbit, System Regions, Alternate HZ Regions, Calculated HZ.
 
 Added to `viz_widget` when `mpl_available()` — three always, plus Abundance Profile and Kinematics (opt 8 only, each gated on its Hypatia data), so **up to 5 tabs for opt 8** and **3 for opts 9/10**:
-- **HZ Diagram** — concentric ring diagram using `d["calculatedLuminosity"]` and `d["temp"]`; marks `d["distAU"]` as the EEID.
+- **HZ Diagram** — built via the shared `diagram_tabs._hz_toggle_tab` (Phase 5 **Rings/Strip toggle**, Rings default) from `d["calculatedLuminosity"]` and `d["temp"]`; marks `d["distAU"]` as the EEID. Single star → the Strip shows the HZ bands with no planet markers.
 - **System Regions Diagram** — concentric ring diagram (√AU scale) showing all seven system boundary zones. Built from `core.viz.prepare_system_regions_diagram(d)` → `make_system_regions_canvas()`.
 - **Alternate HZ Diagram** — concentric ring diagram (⁴√AU scale) for the six alternate-biochemistry HZ zones. Built from `core.viz.prepare_alt_hz_diagram(d)` → `make_alt_hz_canvas()`.
 - **Abundance Profile** — horizontal [X/H] bar chart via `make_abundance_canvas()`; added only on opt 8 when `d.get("hypatia")` carries a non-empty abundances list. Opts 9/10 never call the Hypatia API, so they never get this tab.
@@ -580,7 +615,7 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 | `EsiRankingPanel` (L2) | "ESI Chart" (top-N planets-by-ESI bar chart) | `DiagramToggleMixin` |
 | `StellarEvolutionPanel` (L3) | "Evolution Diagram" | `DiagramToggleMixin` |
 | `HypatiaSearchPanel` (L4) | "📈 Plot" (selectable X/Y scatter of the result set) | `SearchPanelBase` closable detail tab (X/Y dropdowns + "Show Plot") |
-| `SystemGeneratorPanel` (R1/R2/R3) | "Orbit Diagram" (`make_orbits_canvas`, observed-green vs synthetic-blue orbits + HZ annulus + snow-line ring), "HZ Ring" (`make_hz_canvas`); **Phase R2** adds an in-place constraint builder (`_ConstraintRow`) + a four-layer feasibility banner/cards (verdict chip, Layer-1 reason, Layer-2 mechanism, Layer-3 tagged origin, Layer-4 clickable-apply alternative buttons) when ≥1 constraint is present; **Phase R3** adds a **Research policy** combo (`permissive`/`strict`) + a status pill (`DEFAULTS` / `RESEARCH · <version>` / `RESEARCH · none ingested`) — `strict` draws research-calibrated priors (the result grounding badges flip automatically), or surfaces a curated error when no dataset is ingested | `DiagramToggleMixin` |
+| `SystemGeneratorPanel` (R1/R2/R3) | "Orbit Diagram" (`make_orbits_canvas`, observed-green vs synthetic-blue orbits + HZ annulus + snow-line ring), "HZ Ring" (the Phase-5 Rings/Strip toggle via `_hz_toggle_tab`; the Strip places the generated planets by SMA); **Phase R2** adds an in-place constraint builder (`_ConstraintRow`) + a four-layer feasibility banner/cards (verdict chip, Layer-1 reason, Layer-2 mechanism, Layer-3 tagged origin, Layer-4 clickable-apply alternative buttons) when ≥1 constraint is present; **Phase R3** adds a **Research policy** combo (`permissive`/`strict`) + a status pill (`DEFAULTS` / `RESEARCH · <version>` / `RESEARCH · none ingested`) — `strict` draws research-calibrated priors (the result grounding badges flip automatically), or surfaces a curated error when no dataset is ingested | `DiagramToggleMixin` |
 
 ### `core/viz.py` public API
 

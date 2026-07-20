@@ -53,6 +53,9 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `simbad-lookup` | `--star` | SIMBAD | `main_id, ra, dec, sp_type, plx_value, teff, vmag, ly, parsecs, designations, desig_str, gcns` (`gcns` optional — Phase M5, `null` when absent) |
 | `oec-system` | `--name` | none (local cache)‡ | `query, matched_name, system` (recursive node tree) |
 | `oec-planet` | `--name` | none (local cache)‡ | `query, planet, attached_to, host_chain, system_name` |
+| `oec-search` | all optional (`--min-stars/--max-stars`, `--status`, `--circumbinary`, `--discovery-method`, `--discovery-year-min/max`, `--mass-min/max`, `--radius-min/max`, `--period-min/max`, `--sma-min/max`, `--spectral-type`, `--limit`) | none (local cache)‡ | `count, capped, cap, filters, systems[]` |
+| `oec-census` | none | none (local cache)‡ | topology stats (`n_systems/stars/planets/binaries/satellites`, distributions, `planet_attachment`, `circumbinary/rogue/planetless`, histograms) |
+| `oec-status` | none | none (local cache)‡ | cache snapshot (`cached, cache_size_bytes, cache_mtime_utc, cache_age_days, stale`) + element counts |
 | `star-regions` | `--star` | SIMBAD + Hypatia | region values (see below) + `simbad` + `hypatia` |
 | `star-regions-manual` | `--vmag --bc --teff --parallax` [`--sunlight-intensity --bond-albedo`] | none | flat dict of region values (`hzil, hzol, snowLine, stellarMass, distAU, …`) + echoed inputs |
 | `distance` | `--star1 --star2` | SIMBAD† | `star1_info, star2_info, distance_ly, distance_au` |
@@ -223,7 +226,46 @@ bound in the attribute (the `value` is then usually `""`).
 
 Field units are **not** encoded in the JSON where OEC leaves them implicit: planet `mass`/`radius` are in
 **Jupiter** units, star mass/radius in **Solar** units, satellite in **Earth** units (a consumer feeding
-Earth-unit tools must convert). Larger structural readers (`oec-search`, `oec-census`) are later phases.
+Earth-unit tools must convert).
+
+#### `oec-search` / `oec-census` / `oec-status` (structural search + census — Phase 4)
+Catalogue-wide readers over the **whole** parsed catalogue (same offline local cache ‡; no SIMBAD). All
+three walk the ElementTree directly — cheap over ~4k systems. Self-validating (bad input → `{"error"}`
+exit 1; argparse exit 2).
+```bash
+query.py oec-search --circumbinary                       # the 33 circumbinary (P-type) systems
+query.py oec-search --min-stars 3 --spectral-type M      # ≥3-star systems with an M-dwarf host
+query.py oec-search --status Confirmed --sma-max 0.1 --discovery-method transit
+query.py oec-census                                      # topology statistics (the §A evaluation, live)
+query.py oec-status                                      # cache freshness + element counts
+```
+Core: `databases.compute_oec_search(**filters)` / `databases.compute_oec_census()` /
+`databases.compute_oec_status()`.
+
+- **`oec-search`** → `{count, capped, cap, filters, systems: [row, …]}`. `count` is the **total** matches;
+  `systems` is truncated to `cap` (`--limit`, default 300; `capped=true` when `count > cap`). `filters`
+  echoes the set filters. A system matches when it passes the **system-level** filters (`--min-stars` ≤
+  `n_stars` ≤ `--max-stars`; `--circumbinary` requires a P-type planet; `--spectral-type` is a
+  case-insensitive **prefix** on a host star's spectral type — `G`→G0V…G9V, `DA`→white dwarfs) **and**,
+  when any **planet-level** filter is set (`--status` substring on a planet's `<list>` status;
+  `--discovery-method` substring; `--discovery-year-min/max`; `--mass/radius/period/sma-min/max`), carries
+  ≥1 planet passing **all** of them (conjunction). Each **row**: `{name, n_stars, n_planets, n_binaries,
+  n_satellites, max_binary_depth, circumbinary, rogue, spectral_types[], distance_pc, planets: [planet, …]}`
+  — `planets` is the matching planets when a planet filter is set, else all of the system's planets. Each
+  **planet**: `{name, mass, mass_type, radius, period, sma, eccentricity, discovery_method, discovery_year,
+  status[]}` (mass/radius **Jupiter** units, period days, sma AU — OEC-native; `mass_type="msini"` marks a
+  minimum mass). Validation: an inverted min/max range or `--limit < 1` → `{"error"}` exit 1.
+- **`oec-census`** → catalogue topology statistics: `{n_systems, n_stars, n_planets, n_binaries,
+  n_satellites, n_name_tags, n_alias_keys, stars_per_system{}, planets_per_system{}, binary_depth{},
+  planet_attachment: {star, binary, system}, circumbinary_systems, rogue_systems, planetless_systems,
+  discovery_methods{}, status_counts{}}`. The distributions are `{count_as_str: n_systems}`; the histograms
+  are count-descending. (Live catalogue reproduces the plan's §A: attachment star 5370 / binary 39 /
+  system 5; stars-per-system 1×3895/2×146/3×29/4×5/6×1.)
+- **`oec-status`** → cache snapshot without the census walk: `{source, cache_path, cached,
+  cache_size_bytes, cache_mtime_utc, cache_age_days, staleness_window_days, stale, n_systems, n_stars,
+  n_planets, n_binaries, n_name_tags, n_alias_keys}` — `cache_mtime_utc` is the local `systems.xml.gz`
+  download time (the catalogue snapshot proxy; OEC embeds no version), `stale` flags an age past the 7-day
+  window.
 
 #### `star-regions`
 Star system regions: HZ boundaries, snow line, stellar mass/luminosity/radius, alternate biochemistry zones, plus Hypatia Catalog stellar properties and elemental abundances.

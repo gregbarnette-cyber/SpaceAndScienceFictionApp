@@ -247,37 +247,64 @@ barycenter math + interaction), not reuse. **Gated by an HTML approval mockup �
     rung — 61 Cyg has only a period; gives ~85 AU, matching the real orbit) → schematic offset when even that
     is impossible. AU-direct is preferred over arcsec-projected when both are catalogued.
   - Tests: `ArchitectureMathTests` + `ArchitectureTopologyTests` in `tests/test_oec.py`.
-  - *Known limitation:* circumbinary (P-type) planets attach to the `<binary>`, not a star, so they aren't
-    yet drawn as rings on the map (a Phase-3b/follow-up refinement).
-- **Then interactive — Phase 3b (planned).** Three items, all landing together (they reopen the same
-  `prepare_oec_architecture` / `make_oec_architecture_canvas` / `OecPanel` surface):
-  1. **Click-to-recenter** — select a **star** (or a **binary** node → its subsystem barycenter) → re-anchor
-     the log-radial view on it **and** repopulate the Phase-2 per-host detail tabs (the map *replaces the
-     combo* as the host selector); a "⟲ Reset to barycenter" control. The `on_select` callback + `focus_node`
-     param + clickable ◆ binary-barycenter handles are already built and unit-tested in 3a; this is the panel
-     wiring (drive `_render_host` from the map + breadcrumb/reset UI).
-  2. **Circumbinary (P-type) planet rings** *(Greg's decision, 2026-07-17 — folded in here, not left as the
-     3a limitation).* The 39 planets that attach to a `<binary>` (Kepler-16 b, Kepler-47…) orbit the binary
-     barycenter, not a star, so 3a doesn't draw them. Add: `prepare_oec_architecture` emits a
-     `centers: [{x, y, label, planets}]` for binaries carrying child `<planet>`s (keyed to the binary
-     barycenter already tracked for the ◆ handles, reusing `_oecv_planet_fracs`); the canvas draws those rings
-     around the barycenter point.
-  3. **Star-chart interaction parity** *(Greg's decision, 2026-07-17).* Bring the `make_star_chart_canvas`
-     (opts 18/19) interactions to the Architecture map — **scroll-wheel zoom around the cursor**,
-     **cursor-anchored hover tooltip** (`_anchor_hover_to_cursor`, name + key info), and a **click info box** —
-     with the click semantics reconciled: **hover = show info, click = recenter/select** (recenter is the
-     primary click action here, unlike the star chart where click = info). Consider the zoom-driven label
-     decluttering too. (The 3D preset buttons are N/A — the Architecture map is 2-D.)
+  - *(3a limitation, resolved in 3b:)* circumbinary (P-type) planets attach to the `<binary>`, not a star, so
+    the static map didn't draw them — Phase 3b's `centers` payload now does (see below).
+- **Then interactive — Phase 3b · BUILT 2026-07-19** (full suite 1812 passed / 1 skipped; no new approval
+  mockup — `mockups/oec-phase3.html` sign-off reconfirmed with Greg before canvas code). Three items, all
+  landed together (they reopened the same `prepare_oec_architecture` / `make_oec_architecture_canvas` /
+  `OecPanel` surface):
+  1. **Click-to-recenter — built.** `OecPanel._add_architecture_tab` now passes `on_select=self._on_arch_select`.
+     Clicking a **star** sets `self._oec_focus = node`, and — when the node is a planet host (identity match in
+     `self._oec_hosts`) — syncs the Host combo + drives `_render_host` (the map *replaces the combo* as the
+     selector); clicking a **binary ◆ handle** recenters on that subsystem barycenter. The rebuild
+     (`_rebuild_after_focus`) is deferred via `QTimer.singleShot(0, …)` so the canvas isn't torn down inside its
+     own pick-event, re-selects viz tab 0, and does **not** call `_prepare_render` (so it stays in diagram mode).
+     A **breadcrumb (`_arch_breadcrumb`) + "⟲ Reset diagram" (`_on_arch_reset`)** bar sits above the toolbar;
+     Reset diagram is always enabled and does a full reset — focus → None (rebuild) plus a zoom/pan reset via
+     the `canvas.reset_view()` seam (a focus-less reset is a pure zoom reset, no tab teardown). `_on_host_changed`
+     also recenters the map so map + detail stay in sync.
+  2. **Circumbinary (P-type) planet rings — built.** `prepare_oec_architecture` emits
+     `centers: [{x, y, label, node, planets}]` for every `<binary>` carrying direct `<planet>` children (keyed
+     to the binary barycenter tracked for the ◆ handles, via the factored `_oecv_planet_ring_data` — which also
+     now backs the per-star rings); `make_oec_architecture_canvas` draws them as **dashed** rings around that
+     point (distinct from the solid per-star rings).
+  3. **Star-chart interaction parity — built.** The canvas gained **scroll-wheel zoom around the cursor** and a
+     **cursor-anchored hover tooltip** (`_anchor_hover_to_cursor`; star = name/sp-type/mass/planet-count, ◆ =
+     "click to recenter"). Click semantics reconciled as **hover = info, click = recenter** (no pinned click
+     box — click is reserved for recenter). Zoom-driven label decluttering was left out (few labels per
+     schematic; recenter, not zoom, is the primary spread mechanism). 3D preset buttons N/A (2-D map).
+  4. **Click a planet → info dialog — built (2026-07-19, Greg's ask, folded into 3b).** Planet dots are
+     pickable (`make_oec_architecture_canvas(..., on_planet_click=…)`); each planet dict from
+     `prepare_oec_architecture` carries its full OEC `node`. The pick handler dispatches **planet →
+     `on_planet_click`** (dialog) vs **star/◆ → `on_select`** (recenter). `OecPanel` opens a **non-modal
+     `_show_oec_planet_dialog`** (parented to the panel, `WA_DeleteOnClose`) rendering the planet's fields
+     (M·sin i label, radius, period, SMA, ecc, incl, temp, discovery method/year, status, satellites) from the
+     node in hand — no network — mirroring the NASA System Map's `_show_exoplanet_dialog` ("just like the other
+     star-database diagrams"). Planets also gained the hover tooltip.
+  - Tests (`tests/test_oec.py`): `ArchitectureCentersTests` (pure `centers` payload) + the `centers` regressions
+    in `ArchitectureTopologyTests`; Qt/mpl-gated `ArchitectureCanvasTests` (headless canvas build + simulated
+    pick fires `on_select`) and `OecPanelRecenterTests` (the real `OecPanel` recenter/reset wiring via a
+    `_FakeWindow`).
 
-### Phase 4 — query.py Tier-2/3 (structural search + census)
+### Phase 4 — query.py Tier-2/3 (structural search + census) &nbsp;·&nbsp; **BUILT 2026-07-19**
 
-Independent of the GUI work (pure data/search over the parsed catalogue); last because it serves the
-sibling repo rather than the app's own UI.
+Independent of the GUI work (pure data/search over the parsed catalogue); serves the sibling repo rather
+than the app's own UI. Three `query.py`-only readers in `core/databases.py`, walking the ElementTree
+directly (cheap over ~4k systems), self-validating (`{"error"}` exit 1). Live catalogue reproduced the §A
+evaluation exactly (attachment star 5370 / binary 39 / system 5; stars-per-system 1×3895/2×146/3×29/4×5/6×1).
 
-- **Tier 2** `oec-search` (structural filters: `--min-stars`/`--max-stars`, `--status`, `--circumbinary`,
-  `--discovery-method`, `--discovery-year-min/max`, `--mass/radius/period/sma` ranges, spectral type →
-  matched systems + topology summary).
-- **Tier 3** `oec-census` / `oec-status` (topology stats + catalogue snapshot/version).
+- **Tier 2** `oec-search` — `compute_oec_search(**filters)`. System-level filters (`--min-stars`/`--max-stars`,
+  `--circumbinary`, `--spectral-type` **prefix** on a host star) AND, when any planet-level filter is set
+  (`--status`, `--discovery-method`, `--discovery-year-min/max`, `--mass/radius/period/sma-min/max`), ≥1 planet
+  passing **all** of them (conjunction). → `{count, capped, cap, filters, systems:[{topology + planets}]}`
+  (`--limit`, default 300). Units OEC-native (planet mass/radius Jupiter; `mass_type="msini"` surfaced).
+- **Tier 3** `oec-census` — `compute_oec_census()` → the §A topology stats (counts, stars/planets/binary-depth
+  distributions, `planet_attachment` star/binary/system, circumbinary/rogue/planetless, discovery-method +
+  status histograms). `oec-status` — `compute_oec_status()` → cache freshness (`cached`, size, mtime, age vs
+  the 7-day window, `stale`) + element counts (a light snapshot without the census walk).
+- Tests: `OecSearchTests` + `OecCensusTests` (offline, fixture-backed) in `tests/test_oec.py`; live-catalogue
+  assertions in `tests/test_oec_live.py` (census attachment > 0 for all three kinds; `oec-search --circumbinary`
+  finds Kepler-16; status counts ≥ `_OEC_MIN_SYSTEMS`).
 
 ---
 
@@ -400,7 +427,24 @@ markers placed by semi-major axis, green when inside the optimistic HZ. This dif
 - **Build sketch:** new `prepare_hz_strip` / `make_hz_strip_canvas` in `core.viz` / `plot_helpers.py`; a
   small toggle control (default Rings) wired into each panel's HZ tab.
 
-### Phase 5 — Cross-cutting HZ Rings/Strip toggle (post-OEC, app-wide)
+### Phase 5 — Cross-cutting HZ Rings/Strip toggle (post-OEC, app-wide) &nbsp;·&nbsp; **BUILT 2026-07-19**
 
-Not OEC-scoped — retrofits the HZ tab of **all** Star Databases panels (incl. OEC's). Runs only after
-Phase 4. Own approval mockup. See [[oec-hz-strip-enhancement]].
+Not OEC-scoped — retrofits the HZ tab of **all** Star Databases panels (incl. OEC's). Approval mockup
+`mockups/oec-phase5-hz-strip.html` signed off 2026-07-19 (Approve; **Strip-only** planet markers — Rings
+stays planet-free/unchanged; **include** Report + Generator).
+
+- **`core.viz.prepare_hz_strip(teff, lum, planets=None)`** — reuses the exact `prepare_hz_diagram` Kopparapu
+  zones; exposes the optimistic (Recent Venus → Early Mars) + conservative (Runaway GH → Max GH) band edges
+  and a normalized `planets:[{name, au, in_hz}]` list (`in_hz` = inside the optimistic band). No planets →
+  bands only. Anchors: Sol → opt 0.75–1.77, con 0.95–1.68; Earth/Mars `in_hz`, Venus/Mercury not.
+- **`plot_helpers.make_hz_strip_canvas(...)`** — horizontal √AU strip in the **same light HZ palette** as the
+  rings (so they read as one tab — the mockup's navy was corrected to match `make_hz_canvas`): two HZ bands,
+  √-placed AU ticks, planet dots (green in-HZ / blue out), optional EEID + named markers, hover + click-to-info.
+- **`diagram_tabs.wrap_hz_with_toggle(build_rings, build_strip)`** + **`_hz_toggle_tab(...)`** — the shared
+  **Rings | Strip** segmented control over a `QStackedWidget` (Rings default). `make_hz_canvas` is untouched;
+  Strip-fails → bare rings (no regression). Wired into every HZ tab: NASA opts 3/4/5 (`_make_hz_tab` /
+  `_make_hz_tab_exocat`), OEC opt 7 (via `_make_hz_tab`), HWC opt 6, Star Regions 8/9/10 + Sol 13
+  (`star_regions._hz_toggle_tab`, bands-only), and the procedural Generator. The System-Dossier **Report** is a
+  static PNG export (no interactive toggle) → keeps Rings, the default.
+- Tests: `tests/test_hz_strip.py` (pure `prepare_hz_strip` anchors + Qt/mpl-gated canvas & toggle-wrapper).
+  Full suite 1850 passed / 1 skipped. **OEC rebuild + Phase 5 complete.**

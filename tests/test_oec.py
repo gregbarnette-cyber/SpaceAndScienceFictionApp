@@ -9,6 +9,11 @@
 # satellite (moon), an unnamed binary, and alias resolution. No network, no Qt —
 # _oec_get_root is monkeypatched to parse the fixture (the index is still built).
 
+import os
+# Qt must run headless for the Phase-3b canvas smoke tests. Set before any PySide6
+# import (harmless for the offline majority of this module).
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -264,6 +269,97 @@ class FormatterTests(unittest.TestCase):
         self.assertEqual(databases.oec_binary_label(node), "Binary (A + B)")
 
 
+# ── Phase 4: structural search + census (compute_oec_search / _census / _status) ──
+class OecSearchTests(OecTestBase):
+    def _names(self, **kw):
+        r = databases.compute_oec_search(**kw)
+        self.assertNotIn("error", r, r.get("error"))
+        return sorted(s["name"] for s in r["systems"])
+
+    def test_no_filters_returns_all_systems(self):
+        r = databases.compute_oec_search()
+        self.assertEqual(r["count"], 6)
+        self.assertFalse(r["capped"])
+        self.assertEqual(r["filters"], {})
+
+    def test_min_and_max_stars(self):
+        self.assertEqual(self._names(min_stars=2),
+                         ["Binary S", "Circumbinary", "Hierarchy", "Zero Planet"])
+        self.assertEqual(self._names(max_stars=1), ["Rogue One", "Single Star"])
+
+    def test_circumbinary_flag(self):
+        self.assertEqual(self._names(circumbinary=True), ["Circumbinary"])
+
+    def test_status_substring(self):
+        self.assertEqual(self._names(status="P-type"), ["Circumbinary"])
+        self.assertEqual(self._names(status="Orphan"), ["Rogue One"])
+
+    def test_mass_range_jupiter_units(self):
+        # BS A b 1.2, Outer B b 1.7, Rogue One 6.0 pass; HD 1 b (msini 0.5) + CB AB b 0.3 don't.
+        self.assertEqual(self._names(mass_min=1.0),
+                         ["Binary S", "Hierarchy", "Rogue One"])
+
+    def test_spectral_type_prefix(self):
+        self.assertEqual(self._names(spectral_type="K"), ["Binary S", "Zero Planet"])
+        self.assertEqual(self._names(spectral_type="G"), ["Hierarchy", "Single Star"])
+        self.assertEqual(self._names(spectral_type="DA"), ["Binary S"])  # DA2 white dwarf
+
+    def test_matched_planets_narrow_when_planet_filter_set(self):
+        r = databases.compute_oec_search(mass_min=1.0)
+        hier = next(s for s in r["systems"] if s["name"] == "Hierarchy")
+        self.assertEqual([p["name"] for p in hier["planets"]], ["Outer B b"])
+
+    def test_all_planets_returned_without_planet_filter(self):
+        r = databases.compute_oec_search(min_stars=1)
+        single = next(s for s in r["systems"] if s["name"] == "Single Star")
+        self.assertEqual([p["name"] for p in single["planets"]], ["HD 1 b"])
+        self.assertEqual(single["planets"][0]["mass_type"], "msini")   # msini surfaced
+
+    def test_planet_filters_are_conjunctive(self):
+        # P-type AND mass ≥ 1.0 → CB AB b (0.3) fails the mass cut → no system matches.
+        self.assertEqual(databases.compute_oec_search(status="P-type", mass_min=1.0)["count"], 0)
+
+    def test_inverted_ranges_error(self):
+        self.assertIn("error", databases.compute_oec_search(min_stars=3, max_stars=1))
+        self.assertIn("error", databases.compute_oec_search(mass_min=5, mass_max=1))
+        self.assertIn("error", databases.compute_oec_search(sma_min=9, sma_max=1))
+
+    def test_limit_caps_and_flags(self):
+        r = databases.compute_oec_search(limit=2)
+        self.assertEqual(len(r["systems"]), 2)
+        self.assertEqual(r["cap"], 2)
+        self.assertTrue(r["capped"])
+        self.assertEqual(r["count"], 6)
+        self.assertIn("error", databases.compute_oec_search(limit=0))
+
+
+class OecCensusTests(OecTestBase):
+    def test_counts_and_distributions(self):
+        c = databases.compute_oec_census()
+        self.assertEqual(c["n_systems"], 6)
+        self.assertEqual(c["n_stars"], 10)
+        self.assertEqual(c["n_planets"], 5)
+        self.assertEqual(c["n_binaries"], 5)
+        self.assertEqual(c["n_satellites"], 1)
+        self.assertEqual(c["stars_per_system"], {"0": 1, "1": 1, "2": 3, "3": 1})
+        self.assertEqual(c["planets_per_system"], {"0": 1, "1": 5})
+        self.assertEqual(c["binary_depth"], {"0": 2, "1": 3, "2": 1})
+        self.assertEqual(c["planet_attachment"], {"star": 3, "binary": 1, "system": 1})
+        self.assertEqual(c["circumbinary_systems"], 1)
+        self.assertEqual(c["rogue_systems"], 1)
+        self.assertEqual(c["planetless_systems"], 1)
+        self.assertEqual(c["status_counts"]["Confirmed planets"], 3)
+        self.assertEqual(c["status_counts"]["Planets in binary systems, P-type"], 1)
+
+    def test_status_snapshot(self):
+        s = databases.compute_oec_status()
+        self.assertEqual(s["n_systems"], 6)
+        self.assertEqual(s["n_stars"], 10)
+        self.assertEqual(s["n_planets"], 5)
+        self.assertEqual(s["source"], databases._OEC_URL)
+        self.assertEqual(s["staleness_window_days"], databases._OEC_CACHE_MAX_AGE_DAYS)
+
+
 # ── Phase 3: System Architecture map layout (core.viz.prepare_oec_architecture) ──
 # prepare_oec_architecture is pure over a node dict (no DB/Qt), so the precise
 # barycenter/Kepler math is unit-tested with hand-built nodes; topology integration
@@ -406,6 +502,345 @@ class ArchitectureTopologyTests(OecTestBase):
         wd = next(s for s in r["stars"] if s["name"] == "BS B")   # DA2 white dwarf
         self.assertEqual(wd["sp_type"], "DA2")
         self.assertEqual(wd["color"], viz._SPECTRAL_COLORS["D"])
+
+    def test_star_hosts_emit_no_circumbinary_centers(self):
+        # Fixtures whose planets hang off <star> nodes must yield no P-type centers.
+        for name in ("Single Star", "Hierarchy", "Binary S"):
+            self.assertEqual(self._arch(name)["centers"], [], name)
+
+    def test_fixture_circumbinary_center(self):
+        r = self._arch("Circumbinary")
+        self.assertEqual(len(r["centers"]), 1)
+        c = r["centers"][0]
+        self.assertEqual(c["label"], "CB AB")
+        self.assertEqual([p["name"] for p in c["planets"]], ["CB AB b"])
+        # the P-type planet rides the binary, never a component star
+        self.assertTrue(all(len(s["planets"]) == 0 for s in r["stars"]))
+
+    def test_planet_dicts_carry_node_for_click_dialog(self):
+        # Every planet dict (star-ring + circumbinary) carries its full node so a click
+        # can populate an info dialog (mirrors the star "node" ref).
+        p = self._arch("Single Star")["stars"][0]["planets"][0]
+        self.assertIn("node", p)
+        self.assertEqual(p["node"]["tag"], "planet")
+        cb = self._arch("Circumbinary")["centers"][0]["planets"][0]
+        self.assertEqual(cb["node"]["tag"], "planet")
+
+
+# ── Phase 3b: circumbinary (P-type) planet rings — the `centers` payload ──────────
+class ArchitectureCentersTests(unittest.TestCase):
+    """`prepare_oec_architecture` emits a `centers` entry (keyed to the binary
+    barycenter) for every <binary> carrying direct <planet> children."""
+
+    def _cb_system(self):
+        return _sys([
+            _n("binary", ["CB AB"], {"semimajoraxis": _f(0.2)}, [
+                _n("planet", ["CB AB b"],
+                   {"mass": _f(0.33), "semimajoraxis": _f(0.7),
+                    "list": _f("Planets in binary systems, P-type")}),
+                _n("star", ["CB A"], {"mass": _f(1.0)}),
+                _n("star", ["CB B"], {"mass": _f(0.9)}),
+            ]),
+        ])
+
+    def test_center_emitted_at_top_level_barycenter(self):
+        r = viz.prepare_oec_architecture(self._cb_system())
+        self.assertEqual(len(r["centers"]), 1)
+        c = r["centers"][0]
+        self.assertEqual(c["label"], "CB AB")
+        self.assertEqual([p["name"] for p in c["planets"]], ["CB AB b"])
+        self.assertIn("Planets in binary systems, P-type", c["planets"][0]["status"])
+        # a top-level circumbinary's barycenter sits at the display origin
+        self.assertAlmostEqual(c["x"], 0.0, places=6)
+        self.assertAlmostEqual(c["y"], 0.0, places=6)
+
+    def test_planet_absent_from_component_stars(self):
+        r = viz.prepare_oec_architecture(self._cb_system())
+        self.assertTrue(all(len(s["planets"]) == 0 for s in r["stars"]))
+        self.assertEqual({s["name"] for s in r["stars"]}, {"CB A", "CB B"})
+
+    def test_center_survives_focus_on_binary(self):
+        system = self._cb_system()
+        binary = system["children"][0]
+        r = viz.prepare_oec_architecture(system, focus_node=binary)
+        self.assertEqual(len(r["centers"]), 1)
+        self.assertEqual(len(r["centers"][0]["planets"]), 1)
+
+    def test_nested_circumbinary_keyed_to_its_own_barycenter(self):
+        # A circumbinary pair that is itself the secondary of a wider binary: the
+        # center must ride the inner pair's (offset) barycenter, not the origin.
+        inner = _n("binary", ["Inner"], {"semimajoraxis": _f(0.3)}, [
+            _n("planet", ["Inner b"], {"mass": _f(0.2)}),
+            _n("star", ["IA"], {"mass": _f(1.0)}),
+            _n("star", ["IB"], {"mass": _f(1.0)}),
+        ])
+        outer = _n("binary", ["Outer"], {"separation": _f(500, unit="AU")}, [
+            inner,
+            _n("star", ["Wide"], {"mass": _f(2.0)}),
+        ])
+        r = viz.prepare_oec_architecture(_sys([outer]))
+        labels = {c["label"] for c in r["centers"]}
+        self.assertEqual(labels, {"Inner"})
+        inner_center = next(c for c in r["centers"] if c["label"] == "Inner")
+        self.assertGreater(inner_center["x"] ** 2 + inner_center["y"] ** 2, 1e-6)
+
+
+# ── Phase 3b: interactive Architecture canvas (headless smoke + pick wiring) ──────
+def _oec_mpl_ok():
+    try:
+        from gui.visualizations.plot_helpers import mpl_available
+        return mpl_available()
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(_oec_mpl_ok(), "matplotlib/PySide6 not available")
+class ArchitectureCanvasTests(OecTestBase):
+    """The interactive canvas (Phase-3b) builds for every topology in both modes, and
+    a simulated pick on a star / ◆ handle fires the recenter callback with that node."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _build(self, name, on_select):
+        from gui.visualizations.plot_helpers import make_oec_architecture_canvas
+        data = viz.prepare_oec_architecture(self._system(name))
+        return make_oec_architecture_canvas(None, data, on_select=on_select)
+
+    def test_builds_for_all_topologies_interactive_and_static(self):
+        for name in ("Single Star", "Binary S", "Circumbinary",
+                     "Hierarchy", "Zero Planet"):
+            canvas, toolbar = self._build(name, on_select=lambda n: None)
+            self.assertIsNotNone(canvas, name)
+            self.assertIsNotNone(toolbar, name)
+            static, _ = self._build(name, on_select=None)
+            self.assertIsNotNone(static, name)
+
+    def _pick(self, canvas, artist):
+        from matplotlib.backend_bases import PickEvent, MouseEvent
+        me = MouseEvent("button_press_event", canvas, 10, 10, button=1)
+        canvas.callbacks.process("pick_event",
+                                 PickEvent("pick_event", canvas, me, artist))
+
+    def test_pick_on_star_fires_on_select_with_node(self):
+        clicked = []
+        canvas, _ = self._build("Binary S", on_select=clicked.append)
+        ax = canvas.figure.axes[0]
+        star_art = next(a for a in ax.collections
+                        if getattr(a, "_oec_node", None) is not None
+                        and a._oec_node["tag"] == "star")
+        self._pick(canvas, star_art)
+        self.assertEqual(len(clicked), 1)
+        self.assertEqual(clicked[0]["tag"], "star")
+
+    def test_pick_on_binary_handle_recenters(self):
+        clicked = []
+        canvas, _ = self._build("Hierarchy", on_select=clicked.append)
+        ax = canvas.figure.axes[0]
+        handle = next(a for a in ax.collections
+                      if getattr(a, "_oec_node", None) is not None
+                      and a._oec_node["tag"] == "binary")
+        self._pick(canvas, handle)
+        self.assertEqual(len(clicked), 1)
+        self.assertEqual(clicked[0]["tag"], "binary")
+
+    def test_circumbinary_canvas_draws_planet_ring(self):
+        # The P-type planet ring is an added Circle patch on the circumbinary canvas.
+        cb, _ = self._build("Circumbinary", on_select=None)
+        single, _ = self._build("Single Star", on_select=None)
+        # Both have one reference scale ring; the circumbinary adds its planet ring.
+        self.assertGreater(len(cb.figure.axes[0].patches),
+                           len(single.figure.axes[0].patches))
+
+    def test_reset_view_restores_default_extent(self):
+        canvas, _ = self._build("Hierarchy", on_select=lambda n: None)
+        self.assertTrue(hasattr(canvas, "reset_view"))
+        ax = canvas.figure.axes[0]
+        (x0, x1) = ax.get_xlim()
+        ax.set_xlim(0.1, 0.2)          # simulate a scroll-wheel zoom
+        ax.set_ylim(0.1, 0.2)
+        canvas.reset_view()
+        self.assertAlmostEqual(ax.get_xlim()[0], x0, places=6)
+        self.assertAlmostEqual(ax.get_xlim()[1], x1, places=6)
+
+    def _canvas_pc(self, name, **kw):
+        from gui.visualizations.plot_helpers import make_oec_architecture_canvas
+        data = viz.prepare_oec_architecture(self._system(name))
+        return make_oec_architecture_canvas(None, data, **kw)[0]
+
+    def test_planet_click_fires_on_planet_click_not_recenter(self):
+        clicked, recentered = [], []
+        canvas = self._canvas_pc("Single Star", on_select=recentered.append,
+                                 on_planet_click=clicked.append)
+        ax = canvas.figure.axes[0]
+        parts = [a for a in ax.collections if getattr(a, "_oec_planet", None) is not None]
+        self.assertEqual(len(parts), 1)               # HD 1 b
+        self._pick(canvas, parts[0])
+        self.assertEqual(len(clicked), 1)
+        self.assertEqual(clicked[0]["name"], "HD 1 b")
+        self.assertEqual(clicked[0]["host"], "HD 1")
+        self.assertIn("node", clicked[0])
+        self.assertEqual(recentered, [])              # a planet click is NOT a recenter
+
+    def test_circumbinary_planet_click_host_is_binary_label(self):
+        clicked = []
+        canvas = self._canvas_pc("Circumbinary", on_planet_click=clicked.append)
+        ax = canvas.figure.axes[0]
+        parts = [a for a in ax.collections if getattr(a, "_oec_planet", None) is not None]
+        self.assertEqual(len(parts), 1)
+        self._pick(canvas, parts[0])
+        self.assertEqual(clicked[0]["name"], "CB AB b")
+        self.assertEqual(clicked[0]["host"], "CB AB")   # the binary label
+
+    def test_planets_not_pickable_without_on_planet_click(self):
+        canvas = self._canvas_pc("Single Star", on_select=lambda n: None)
+        ax = canvas.figure.axes[0]
+        self.assertFalse(any(getattr(a, "_oec_planet", None) is not None
+                             for a in ax.collections))
+
+    def test_planet_info_dialog_renders_fields(self):
+        from PySide6.QtWidgets import QLabel, QDialog
+        from gui.panels.catalogs import _show_oec_planet_dialog
+        data = viz.prepare_oec_architecture(self._system("Single Star"))
+        planet = dict(data["stars"][0]["planets"][0], host="HD 1")
+        dlg = _show_oec_planet_dialog(None, planet)
+        self.assertIsInstance(dlg, QDialog)
+        self.assertIn("HD 1 b", dlg.windowTitle())
+        texts = [l.text() for l in dlg.findChildren(QLabel)]
+        self.assertTrue(any("M·sin i" in t for t in texts))          # msini surfaced
+        self.assertTrue(any("Confirmed planets" in t for t in texts))  # status
+        dlg.close()
+
+
+class _FakeNav:
+    def show(self): pass
+    def hide(self): pass
+
+
+class _FakeWindow:
+    def __init__(self):
+        self.nav_tree = _FakeNav()
+
+    def statusBar(self):
+        class _SB:
+            def showMessage(self, *a): pass
+        return _SB()
+
+
+@unittest.skipUnless(_oec_mpl_ok(), "matplotlib/PySide6 not available")
+class OecPanelRecenterTests(OecTestBase):
+    """The Phase-3b panel wiring: `_on_arch_select` / `_on_arch_reset` update the map
+    focus + host, keep the Architecture map (viz tab 0) selected, and don't leave
+    diagram mode. Drives the real `OecPanel` headless via the `_FakeWindow` harness."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self, name):
+        from gui.panels.catalogs import OecPanel, _oec_collect_hosts
+        panel = OecPanel(_FakeWindow())
+        system = self._system(name)
+        # Feed the render path directly (bypass the network/thread) with empty Hypatia
+        # so _render_host stays offline.
+        panel._on_oec_result({"system": system, "_hypatia": {}})
+        panel._collect_hosts = _oec_collect_hosts
+        return panel, system
+
+    def _flush(self):
+        # Run the QTimer.singleShot(0, …) deferred rebuild.
+        self.app.processEvents()
+
+    def _arch_tab_index(self, panel):
+        w = panel._viz_tabs_widget
+        return next((i for i in range(w.count())
+                    if w.tabText(i) == "Architecture"), None)
+
+    def test_initial_state_focus_none_arch_tab_present(self):
+        panel, _ = self._panel("Hierarchy")
+        self.assertIsNone(panel._oec_focus)
+        self.assertEqual(self._arch_tab_index(panel), 0)
+
+    def test_select_host_star_sets_focus_and_host(self):
+        panel, system = self._panel("Hierarchy")
+        outer_b = self._find(system, "star", "Outer B")[0]   # the planet host
+        panel._on_arch_select(outer_b)
+        self._flush()
+        self.assertIs(panel._oec_focus, outer_b)
+        self.assertEqual(panel._oec_host_idx, 0)
+        # architecture map still at viz tab 0 and now selected
+        self.assertEqual(self._arch_tab_index(panel), 0)
+        self.assertEqual(panel._viz_tabs_widget.currentIndex(), 0)
+
+    def test_select_non_host_component_recenters_only(self):
+        panel, system = self._panel("Hierarchy")
+        inner_a = self._find(system, "star", "Inner A")[0]   # no planets
+        prev_host = panel._oec_host_idx
+        panel._on_arch_select(inner_a)
+        self._flush()
+        self.assertIs(panel._oec_focus, inner_a)
+        self.assertEqual(panel._oec_host_idx, prev_host)     # host tabs untouched
+
+    def test_select_binary_handle_recenters(self):
+        panel, system = self._panel("Hierarchy")
+        inner = self._find(system, "binary", "Inner AC")[0]
+        panel._on_arch_select(inner)
+        self._flush()
+        self.assertIs(panel._oec_focus, inner)
+
+    def test_reset_returns_to_barycenter(self):
+        panel, system = self._panel("Hierarchy")
+        outer_b = self._find(system, "star", "Outer B")[0]
+        panel._on_arch_select(outer_b)
+        self._flush()
+        self.assertIsNotNone(panel._oec_focus)
+        panel._on_arch_reset()
+        self._flush()
+        self.assertIsNone(panel._oec_focus)
+        self.assertEqual(self._arch_tab_index(panel), 0)
+
+    def test_reset_without_focus_is_pure_zoom_reset(self):
+        # No focus set → Reset diagram must reset the canvas view without tearing down
+        # the detail tabs (host index unchanged, no rebuild needed).
+        panel, _ = self._panel("Hierarchy")
+        self.assertIsNone(panel._oec_focus)
+        prev_host = panel._oec_host_idx
+        ax = panel._arch_canvas.figure.axes[0]
+        default = ax.get_xlim()
+        ax.set_xlim(0.1, 0.2)                 # simulate a zoom on the whole-system view
+        panel._on_arch_reset()
+        self.assertIsNone(panel._oec_focus)
+        self.assertEqual(panel._oec_host_idx, prev_host)
+        self.assertAlmostEqual(ax.get_xlim()[0], default[0], places=6)
+
+    def test_breadcrumb_reflects_focus(self):
+        import core.viz as _viz
+        panel, system = self._panel("Hierarchy")
+        whole = _viz.prepare_oec_architecture(system)
+        self.assertIn("whole-system", panel._arch_breadcrumb(whole))
+        outer_b = self._find(system, "star", "Outer B")[0]
+        panel._oec_focus = outer_b
+        focused = _viz.prepare_oec_architecture(system, focus_node=outer_b)
+        self.assertIn("Outer B", panel._arch_breadcrumb(focused))
+
+    def test_clicking_planet_opens_dialog_parented_to_panel(self):
+        from PySide6.QtWidgets import QDialog
+        from matplotlib.backend_bases import PickEvent, MouseEvent
+        panel, _ = self._panel("Single Star")
+        canvas = panel._arch_canvas
+        ax = canvas.figure.axes[0]
+        parts = [a for a in ax.collections if getattr(a, "_oec_planet", None) is not None]
+        self.assertTrue(parts)
+        me = MouseEvent("button_press_event", canvas, 10, 10, button=1)
+        canvas.callbacks.process("pick_event",
+                                 PickEvent("pick_event", canvas, me, parts[0]))
+        dialogs = panel.findChildren(QDialog)
+        self.assertTrue(dialogs)
+        self.assertIn("HD 1 b", dialogs[0].windowTitle())
+        dialogs[0].close()
 
 
 if __name__ == "__main__":

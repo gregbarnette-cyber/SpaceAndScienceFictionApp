@@ -833,6 +833,319 @@ def compute_oec_planet(name):
             "host_chain": chain, "system_name": (system_elem.findtext("name") or "")}
 
 
+# ── Phase 4: structural search + census over the whole catalogue (query.py) ──────
+# Tier-2 `oec-search` / Tier-3 `oec-census` / `oec-status`. These read the parsed
+# ElementTree directly (not the node dicts) so a catalogue-wide scan over ~4k systems
+# stays cheap. Self-validating (Phase-H/P contract: bad input → {"error"} exit 1).
+
+_OEC_SEARCH_CAP = 300
+
+_OEC_PLANET_FILTER_KEYS = (
+    "status", "discovery_method", "discovery_year_min", "discovery_year_max",
+    "mass_min", "mass_max", "radius_min", "radius_max",
+    "period_min", "period_max", "sma_min", "sma_max",
+)
+
+
+def _oec_elem_num(elem, tag):
+    """First direct child <tag>'s text as float, or None."""
+    e = elem.find(tag)
+    if e is None:
+        return None
+    try:
+        return float((e.text or "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _oec_elem_int(elem, tag):
+    v = _oec_elem_num(elem, tag)
+    return int(v) if v is not None else None
+
+
+def _oec_elem_text(elem, tag):
+    e = elem.find(tag)
+    t = (e.text or "").strip() if e is not None else ""
+    return t or None
+
+
+def _oec_max_binary_depth(system_elem):
+    """Deepest <binary> nesting level (1 = a top-level binary, 2 = binary-in-binary),
+    0 for a system with no binary — matches the PHASE_OEC_PLAN §A.2 depth census."""
+    best = 0
+
+    def walk(elem, depth):
+        nonlocal best
+        d = depth + 1 if elem.tag == "binary" else depth
+        if elem.tag == "binary" and d > best:
+            best = d
+        for c in elem:
+            walk(c, d)
+
+    walk(system_elem, 0)
+    return best
+
+
+def _oec_planet_row(pl):
+    """Compact per-planet summary for oec-search results (mass/radius in Jupiter units,
+    period in days, sma in AU — OEC's native units; a consumer feeding Earth-unit tools
+    must convert). `status` carries every <list> tag (a binary planet has 2+)."""
+    mass_e = pl.find("mass")
+    return {
+        "name": (pl.findtext("name") or "").strip() or None,
+        "mass": _oec_elem_num(pl, "mass"),
+        "mass_type": mass_e.get("type") if mass_e is not None else None,
+        "radius": _oec_elem_num(pl, "radius"),
+        "period": _oec_elem_num(pl, "period"),
+        "sma": _oec_elem_num(pl, "semimajoraxis"),
+        "eccentricity": _oec_elem_num(pl, "eccentricity"),
+        "discovery_method": _oec_elem_text(pl, "discoverymethod"),
+        "discovery_year": _oec_elem_int(pl, "discoveryyear"),
+        "status": [(e.text or "").strip() for e in pl.findall("list")
+                   if e.text and e.text.strip()],
+    }
+
+
+def _oec_system_row(system_elem):
+    """Topology summary of one system (counts, spectral types, distance) + its planet
+    rows (under the internal `_planets` key, filtered/renamed by the caller)."""
+    stars = system_elem.findall(".//star")
+    planets = system_elem.findall(".//planet")
+    attach = {"star": 0, "binary": 0, "system": 0}
+    for parent_elem in system_elem.iter():
+        for child in parent_elem:
+            if child.tag == "planet" and parent_elem.tag in attach:
+                attach[parent_elem.tag] += 1
+    spectral = sorted({(s.findtext("spectraltype") or "").strip()
+                       for s in stars if (s.findtext("spectraltype") or "").strip()})
+    return {
+        "name": (system_elem.findtext("name") or "").strip() or None,
+        "n_stars": len(stars),
+        "n_planets": len(planets),
+        "n_binaries": len(system_elem.findall(".//binary")),
+        "n_satellites": len(system_elem.findall(".//satellite")),
+        "max_binary_depth": _oec_max_binary_depth(system_elem),
+        "circumbinary": attach["binary"] > 0,
+        "rogue": attach["system"] > 0,
+        "spectral_types": spectral,
+        "distance_pc": _oec_elem_num(system_elem, "distance"),
+        "_planets": [_oec_planet_row(pl) for pl in planets],
+    }
+
+
+def _oec_planet_passes(p, pf):
+    """A single planet row against the set planet-level filters (conjunction)."""
+    if pf["status"] and not any(pf["status"].lower() in (st or "").lower()
+                                for st in p["status"]):
+        return False
+    if pf["discovery_method"] and (pf["discovery_method"].lower()
+                                   not in (p["discovery_method"] or "").lower()):
+        return False
+    dy = p["discovery_year"]
+    if pf["discovery_year_min"] is not None and (dy is None or dy < pf["discovery_year_min"]):
+        return False
+    if pf["discovery_year_max"] is not None and (dy is None or dy > pf["discovery_year_max"]):
+        return False
+    for key, mn, mx in (("mass", "mass_min", "mass_max"),
+                        ("radius", "radius_min", "radius_max"),
+                        ("period", "period_min", "period_max"),
+                        ("sma", "sma_min", "sma_max")):
+        v = p[key]
+        if pf[mn] is not None and (v is None or v < pf[mn]):
+            return False
+        if pf[mx] is not None and (v is None or v > pf[mx]):
+            return False
+    return True
+
+
+def compute_oec_search(min_stars=None, max_stars=None, status=None, circumbinary=False,
+                       discovery_method=None, discovery_year_min=None, discovery_year_max=None,
+                       mass_min=None, mass_max=None, radius_min=None, radius_max=None,
+                       period_min=None, period_max=None, sma_min=None, sma_max=None,
+                       spectral_type=None, limit=None):
+    """Structural search over the whole catalogue (Tier 2). A system matches when it
+    passes the system-level filters (star count, circumbinary, host spectral type) AND —
+    when any planet-level filter is set — carries ≥1 planet passing all of them.
+
+    All filters optional. Ranges are inclusive; unit conventions match `oec-search`'s
+    per-planet rows (mass/radius in Jupiter units, period days, sma AU). `spectral_type`
+    is a case-insensitive **prefix** on a host star's spectral type ("G" → G0V…G9V, "DA"
+    → white dwarfs). Returns {"count", "capped", "cap", "filters", "systems": [row, …]}
+    or {"error": str}. Self-validating: an inverted min/max range or limit < 1 → error."""
+    for lo, hi, label in ((min_stars, max_stars, "stars"),
+                          (discovery_year_min, discovery_year_max, "discovery-year"),
+                          (mass_min, mass_max, "mass"), (radius_min, radius_max, "radius"),
+                          (period_min, period_max, "period"), (sma_min, sma_max, "sma")):
+        if lo is not None and hi is not None and lo > hi:
+            return {"error": f"{label} min ({lo}) exceeds max ({hi})."}
+    cap = _OEC_SEARCH_CAP
+    if limit is not None:
+        if limit < 1:
+            return {"error": "--limit must be >= 1."}
+        cap = limit
+
+    try:
+        root, _ = _load_oec()
+    except Exception as e:
+        return {"error": _network_error_msg(e, "Open Exoplanet Catalogue")}
+
+    pf = {"status": status, "discovery_method": discovery_method,
+          "discovery_year_min": discovery_year_min, "discovery_year_max": discovery_year_max,
+          "mass_min": mass_min, "mass_max": mass_max,
+          "radius_min": radius_min, "radius_max": radius_max,
+          "period_min": period_min, "period_max": period_max,
+          "sma_min": sma_min, "sma_max": sma_max}
+    has_pf = any(pf[k] is not None for k in _OEC_PLANET_FILTER_KEYS)
+    sp_q = spectral_type.strip().upper() if spectral_type else None
+
+    matches = []
+    for system_elem in root:
+        row = _oec_system_row(system_elem)
+        if min_stars is not None and row["n_stars"] < min_stars:
+            continue
+        if max_stars is not None and row["n_stars"] > max_stars:
+            continue
+        if circumbinary and not row["circumbinary"]:
+            continue
+        if sp_q and not any(sp.upper().startswith(sp_q) for sp in row["spectral_types"]):
+            continue
+        planets = row.pop("_planets")
+        if has_pf:
+            planets = [p for p in planets if _oec_planet_passes(p, pf)]
+            if not planets:
+                continue
+        row["planets"] = planets
+        matches.append(row)
+
+    return {
+        "count": len(matches),
+        "capped": len(matches) > cap,
+        "cap": cap,
+        "filters": {k: v for k, v in (
+            ("min_stars", min_stars), ("max_stars", max_stars), ("status", status),
+            ("circumbinary", circumbinary or None), ("discovery_method", discovery_method),
+            ("discovery_year_min", discovery_year_min), ("discovery_year_max", discovery_year_max),
+            ("mass_min", mass_min), ("mass_max", mass_max),
+            ("radius_min", radius_min), ("radius_max", radius_max),
+            ("period_min", period_min), ("period_max", period_max),
+            ("sma_min", sma_min), ("sma_max", sma_max),
+            ("spectral_type", spectral_type)) if v is not None},
+        "systems": matches[:cap],
+    }
+
+
+def compute_oec_census():
+    """Catalogue-wide topology statistics (Tier 3) — the PHASE_OEC_PLAN §A structural
+    evaluation computed live: per-system distributions of star / planet counts and
+    binary nesting depth, planet-attachment breakdown (star / binary / system),
+    circumbinary / rogue / planetless counts, and discovery-method + status histograms.
+    Returns the stats dict or {"error": str}."""
+    try:
+        root, index = _load_oec()
+    except Exception as e:
+        return {"error": _network_error_msg(e, "Open Exoplanet Catalogue")}
+
+    stars_dist, planets_dist, depth_dist = {}, {}, {}
+    attach = {"star": 0, "binary": 0, "system": 0}
+    methods, statuses = {}, {}
+    tot = {"stars": 0, "planets": 0, "binaries": 0, "satellites": 0, "names": 0}
+    circumbinary_systems = rogue_systems = planetless = 0
+
+    for system_elem in root:
+        planets = system_elem.findall(".//planet")
+        n_stars = len(system_elem.findall(".//star"))
+        n_planets = len(planets)
+        tot["stars"] += n_stars
+        tot["planets"] += n_planets
+        tot["binaries"] += len(system_elem.findall(".//binary"))
+        tot["satellites"] += len(system_elem.findall(".//satellite"))
+        tot["names"] += len(system_elem.findall(".//name"))
+        stars_dist[n_stars] = stars_dist.get(n_stars, 0) + 1
+        planets_dist[n_planets] = planets_dist.get(n_planets, 0) + 1
+        depth = _oec_max_binary_depth(system_elem)
+        depth_dist[depth] = depth_dist.get(depth, 0) + 1
+        sys_circ = sys_rogue = False
+        for parent_elem in system_elem.iter():
+            for child in parent_elem:
+                if child.tag == "planet" and parent_elem.tag in attach:
+                    attach[parent_elem.tag] += 1
+                    sys_circ = sys_circ or parent_elem.tag == "binary"
+                    sys_rogue = sys_rogue or parent_elem.tag == "system"
+        circumbinary_systems += sys_circ
+        rogue_systems += sys_rogue
+        planetless += (n_planets == 0)
+        for pl in planets:
+            dm = _oec_elem_text(pl, "discoverymethod")
+            if dm:
+                methods[dm] = methods.get(dm, 0) + 1
+            for e in pl.findall("list"):
+                st = (e.text or "").strip()
+                if st:
+                    statuses[st] = statuses.get(st, 0) + 1
+
+    def _by_key(d):
+        return {str(k): d[k] for k in sorted(d)}
+
+    def _by_count(d):
+        return dict(sorted(d.items(), key=lambda kv: (-kv[1], kv[0])))
+
+    return {
+        "n_systems": len(root),
+        "n_stars": tot["stars"],
+        "n_planets": tot["planets"],
+        "n_binaries": tot["binaries"],
+        "n_satellites": tot["satellites"],
+        "n_name_tags": tot["names"],
+        "n_alias_keys": len(index),
+        "stars_per_system": _by_key(stars_dist),
+        "planets_per_system": _by_key(planets_dist),
+        "binary_depth": _by_key(depth_dist),
+        "planet_attachment": attach,
+        "circumbinary_systems": circumbinary_systems,
+        "rogue_systems": rogue_systems,
+        "planetless_systems": planetless,
+        "discovery_methods": _by_count(methods),
+        "status_counts": _by_count(statuses),
+    }
+
+
+def compute_oec_status():
+    """Catalogue snapshot / cache state (Tier 3) — a lightweight freshness + counts
+    check without the full census walk. Reports the local `systems.xml.gz` cache
+    presence / size / age against the 7-day staleness window and the top-level element
+    counts. Returns the status dict or {"error": str}."""
+    import time
+    import datetime as _dt
+    cached = os.path.exists(_OEC_CACHE_FILE)
+    size = os.path.getsize(_OEC_CACHE_FILE) if cached else None
+    mtime = os.path.getmtime(_OEC_CACHE_FILE) if cached else None
+    age_days = (time.time() - mtime) / 86400.0 if mtime is not None else None
+    iso = (_dt.datetime.fromtimestamp(mtime, _dt.timezone.utc).isoformat()
+           if mtime is not None else None)
+
+    try:
+        root, index = _load_oec()
+    except Exception as e:
+        return {"error": _network_error_msg(e, "Open Exoplanet Catalogue")}
+
+    return {
+        "source": _OEC_URL,
+        "cache_path": os.path.abspath(_OEC_CACHE_FILE),
+        "cached": cached,
+        "cache_size_bytes": size,
+        "cache_mtime_utc": iso,
+        "cache_age_days": round(age_days, 3) if age_days is not None else None,
+        "staleness_window_days": _OEC_CACHE_MAX_AGE_DAYS,
+        "stale": (age_days is not None and age_days >= _OEC_CACHE_MAX_AGE_DAYS),
+        "n_systems": len(root),
+        "n_stars": sum(1 for _ in root.iter("star")),
+        "n_planets": sum(1 for _ in root.iter("planet")),
+        "n_binaries": sum(1 for _ in root.iter("binary")),
+        "n_name_tags": sum(1 for _ in root.iter("name")),
+        "n_alias_keys": len(index),
+    }
+
+
 # ── OEC display helpers (shared by the CLI and the GUI; pure, no I/O) ──────────
 # Any field may be a list (repeated tag), so ALWAYS go through oec_fv — never read
 # field["value"] directly (PHASE_OEC_PLAN.md §F.1).

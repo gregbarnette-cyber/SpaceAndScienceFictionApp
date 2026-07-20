@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 5 — HZ Rings / Strip toggle</title>
+<style>
+  :root{
+    --bg:#eef1f7; --surface:#ffffff; --surface-2:#f6f8fc;
+    --ink:#19212e; --muted:#5b6779; --faint:#8b96a7;
+    --line:#dbe2ee; --line-strong:#c4cede;
+    --accent:#1f8f52; --accent-soft:#e3f4ea;
+    --warn:#b06a12; --warn-soft:#faf0dd;
+    --code-bg:#f0f3f9; --code-ink:#2a3a52;
+    /* app diagram palette (fixed dark-navy in both themes, as the app renders it) */
+    --fig:#070b18; --plot:#0b1020; --grid:#2a3868; --grid-min:#1a2448;
+    --axis:#4a6a99; --ring-lbl:#6f88b5; --star-lbl:#c9d6ef;
+    --z-rv:#CC3300; --z-rg5:#FF8833; --z-rg:#FFCC00; --z-rg01:#CCDD22;
+    --z-mg:#33AA55; --z-em:#4499FF;
+    --band-opt:#8fd6a8; --band-con:#4faf78; --pl-in:#3ad07a; --pl-out:#4aa6e0;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0b0f17; --surface:#131a26; --surface-2:#0f1520;
+      --ink:#e7ecf5; --muted:#93a1b5; --faint:#66748a;
+      --line:#232e3e; --line-strong:#31405480;
+      --accent:#4fc07a; --accent-soft:#12331f;
+      --warn:#d79b45; --warn-soft:#2c2410;
+      --code-bg:#0e1622; --code-ink:#b7c6dc;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#eef1f7; --surface:#ffffff; --surface-2:#f6f8fc;
+    --ink:#19212e; --muted:#5b6779; --faint:#8b96a7;
+    --line:#dbe2ee; --line-strong:#c4cede;
+    --accent:#1f8f52; --accent-soft:#e3f4ea; --warn:#b06a12; --warn-soft:#faf0dd;
+    --code-bg:#f0f3f9; --code-ink:#2a3a52;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b0f17; --surface:#131a26; --surface-2:#0f1520;
+    --ink:#e7ecf5; --muted:#93a1b5; --faint:#66748a;
+    --line:#232e3e; --line-strong:#31405480;
+    --accent:#4fc07a; --accent-soft:#12331f; --warn:#d79b45; --warn-soft:#2c2410;
+    --code-bg:#0e1622; --code-ink:#b7c6dc;
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px; line-height:1.6; letter-spacing:.005em;
+    -webkit-font-smoothing:antialiased;
+  }
+  code,.mono{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace}
+  .wrap{max-width:960px; margin:0 auto; padding:0 24px}
+
+  /* header */
+  header{
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--surface),var(--surface-2));
+  }
+  .top{display:flex; align-items:center; justify-content:space-between; padding:22px 0 20px; gap:16px}
+  .eyebrow{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700}
+  h1{font-size:29px; line-height:1.15; margin:6px 0 8px; font-weight:750; letter-spacing:-.015em; text-wrap:balance}
+  .sub{color:var(--muted); max-width:64ch; margin:0}
+  .pill{
+    display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px;
+    background:var(--accent-soft); color:var(--accent); font-size:12.5px; font-weight:650;
+    border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); white-space:nowrap;
+  }
+  .pill::before{content:""; width:7px; height:7px; border-radius:50%; background:var(--accent)}
+  .themebtn{
+    appearance:none; border:1px solid var(--line-strong); background:var(--surface); color:var(--muted);
+    width:38px; height:38px; border-radius:10px; cursor:pointer; font-size:16px; flex:none;
+  }
+  .themebtn:hover{color:var(--ink); border-color:var(--accent)}
+  .themebtn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  main{padding:8px 0 64px}
+  section{padding:34px 0; border-bottom:1px solid var(--line)}
+  section:last-child{border-bottom:0}
+  h2{font-size:12px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint); font-weight:700; margin:0 0 14px}
+  h3{font-size:18px; font-weight:680; margin:0 0 8px; letter-spacing:-.01em}
+  p{margin:0 0 12px} p:last-child{margin-bottom:0}
+  .lead{font-size:16.5px; max-width:70ch}
+  strong{font-weight:680}
+  a{color:var(--accent)}
+  .kbd{
+    font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+    background:var(--code-bg); color:var(--code-ink); padding:1.5px 6px; border-radius:5px;
+    border:1px solid var(--line);
+  }
+
+  /* interactive HZ tab replica */
+  .demo{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px; overflow:hidden;
+    box-shadow:0 1px 2px rgba(15,25,45,.04),0 8px 24px -18px rgba(15,25,45,.25);
+  }
+  .demo-bar{
+    display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    padding:12px 16px; border-bottom:1px solid var(--line); background:var(--surface-2);
+  }
+  .chips{display:flex; gap:6px; flex-wrap:wrap}
+  .chip{
+    appearance:none; border:1px solid var(--line-strong); background:var(--surface); color:var(--muted);
+    padding:6px 12px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; line-height:1.2;
+  }
+  .chip small{display:block; font-weight:500; font-size:11px; color:var(--faint)}
+  .chip:hover{border-color:var(--accent); color:var(--ink)}
+  .chip[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:#fff}
+  .chip[aria-pressed="true"] small{color:rgba(255,255,255,.82)}
+
+  .seg{display:inline-flex; padding:3px; background:var(--code-bg); border:1px solid var(--line); border-radius:10px; gap:2px}
+  .seg button{
+    appearance:none; border:0; background:transparent; color:var(--muted); font-weight:650; font-size:13px;
+    padding:6px 16px; border-radius:7px; cursor:pointer; display:flex; align-items:center; gap:7px;
+  }
+  .seg button:hover{color:var(--ink)}
+  .seg button[aria-pressed="true"]{background:var(--surface); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  .seg .dot{width:8px; height:8px; border-radius:50%}
+  .seg-label{font-size:12px; color:var(--faint); margin-right:8px; font-weight:600}
+
+  .stage{background:var(--fig); padding:18px; display:flex; justify-content:center}
+  .stage svg{max-width:100%; height:auto; display:block}
+  .caption{
+    padding:11px 16px; font-size:12.5px; color:var(--muted); background:var(--surface-2);
+    border-top:1px solid var(--line); display:flex; gap:8px; align-items:baseline;
+  }
+  .caption .tag{color:var(--accent); font-weight:700; font-size:11px; letter-spacing:.06em; text-transform:uppercase; flex:none}
+
+  /* callout */
+  .call{
+    display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:start;
+    background:var(--warn-soft); border:1px solid color-mix(in srgb,var(--warn) 34%,transparent);
+    border-radius:12px; padding:16px 18px; margin:18px 0 0;
+  }
+  .call .mark{color:var(--warn); font-size:20px; line-height:1.2}
+  .call p{margin:0; font-size:14px}
+  .call b{color:var(--warn)}
+
+  /* two-up compare */
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:18px}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+  .mini{background:var(--surface); border:1px solid var(--line); border-radius:12px; overflow:hidden}
+  .mini h4{margin:0; padding:10px 14px; font-size:13px; font-weight:680; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:8px}
+  .mini .stage{padding:14px}
+  .mini p{padding:11px 14px 13px; margin:0; font-size:12.5px; color:var(--muted)}
+
+  /* table */
+  .tablewrap{overflow-x:auto; border:1px solid var(--line); border-radius:12px; margin-top:6px}
+  table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:560px}
+  th,td{text-align:left; padding:10px 14px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{background:var(--surface-2); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--faint); font-weight:700}
+  tr:last-child td{border-bottom:0}
+  td .yes{color:var(--accent); font-weight:650}
+  td .no{color:var(--faint)}
+  tbody tr:hover td{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+
+  /* build steps */
+  .steps{display:grid; gap:10px; margin-top:6px}
+  .step{display:grid; grid-template-columns:auto 1fr; gap:14px; background:var(--surface); border:1px solid var(--line);
+    border-radius:11px; padding:14px 16px}
+  .step .n{font-family:ui-monospace,monospace; font-weight:700; color:var(--accent); font-size:13px; padding-top:1px}
+  .step b{display:block; margin-bottom:2px}
+  .step span{color:var(--muted); font-size:13.5px}
+  .step code{background:var(--code-bg); color:var(--code-ink); padding:1px 5px; border-radius:4px; font-size:12.5px}
+
+  /* decisions checklist */
+  .decisions{display:grid; gap:12px; margin-top:6px}
+  .dec{display:grid; grid-template-columns:auto 1fr; gap:14px; background:var(--surface); border:1px solid var(--line);
+    border-left:3px solid var(--accent); border-radius:11px; padding:15px 17px}
+  .dec .q{font-size:15px}
+  .dec .rec{margin-top:6px; font-size:13px; color:var(--muted)}
+  .dec .rec b{color:var(--accent)}
+  .dec .mk{width:22px; height:22px; border-radius:6px; border:2px solid var(--line-strong); flex:none; margin-top:2px}
+
+  footer{padding:26px 0 40px; color:var(--faint); font-size:13px}
+  .legend-row{display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; font-size:12.5px; color:var(--muted)}
+  .lg{display:inline-flex; align-items:center; gap:7px}
+  .sw{width:14px; height:14px; border-radius:3px; flex:none; border:1px solid rgba(0,0,0,.25)}
+  .swc{width:12px; height:12px; border-radius:50%; flex:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="eyebrow">Star Databases · Phase 5 · approval mockup</div>
+        <h1>Habitable Zone — Rings / Strip toggle</h1>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center">
+        <span class="pill">Not built — awaiting sign-off</span>
+        <button class="themebtn" id="theme" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
+      </div>
+    </div>
+    <p class="sub" style="padding-bottom:20px">
+      Add a <strong>Rings (default) / Strip</strong> segmented control to the top of the Habitable-Zone
+      diagram tab, dropped uniformly into every Star-Databases panel that has one. Rings stays the default and
+      unchanged; Strip is the opt-in horizontal √AU view. This is a shared-<code>core.viz</code> change, so it
+      is gated here before any code.
+    </p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- LIVE DEMO -->
+  <section>
+    <h2>The toggle, live</h2>
+    <p class="lead">Pick a host, then flip the control. Everything is rendered from the same
+      <code>prepare_hz_diagram(teff, L)</code> zone boundaries the app already computes.</p>
+
+    <div class="demo" style="margin-top:18px">
+      <div class="demo-bar">
+        <div class="chips" id="chips" role="group" aria-label="Example system">
+          <button class="chip" data-sys="sol" aria-pressed="true">Sol<small>4 planets · G2V</small></button>
+          <button class="chip" data-sys="trappist" aria-pressed="false">TRAPPIST-1<small>7 planets · M8V</small></button>
+          <button class="chip" data-sys="sco" aria-pressed="false">18 Scorpii<small>0 planets · Star Regions</small></button>
+        </div>
+        <div style="display:flex; align-items:center">
+          <span class="seg-label">HZ view</span>
+          <div class="seg" role="group" aria-label="HZ view">
+            <button id="btn-rings" aria-pressed="true"><span class="dot" style="background:var(--z-mg)"></span>Rings</button>
+            <button id="btn-strip" aria-pressed="false"><span class="dot" style="background:var(--band-con)"></span>Strip</button>
+          </div>
+        </div>
+      </div>
+      <div class="stage" id="stage"><!-- svg injected --></div>
+      <div class="caption"><span class="tag" id="cap-tag">Rings</span><span id="cap-text"></span></div>
+    </div>
+
+    <div class="legend-row" id="legend"></div>
+
+    <div class="call">
+      <div class="mark">◆</div>
+      <p><b>The one real change to weigh.</b> The current concentric <b>Rings</b> diagram draws only the
+        <em>zone structure</em> — it has never plotted the system's planets. The <b>Strip</b> adds
+        <b>planet markers placed by semi-major axis</b> (green inside the optimistic HZ, blue outside). So Strip is
+        not merely "the same picture, sideways" — it surfaces where each planet actually falls relative to the
+        zones. Rings is proposed to stay planet-free and byte-identical (protecting any golden output); Strip is
+        the place the planets show up. <b>Confirm that split below.</b></p>
+    </div>
+  </section>
+
+  <!-- SIDE BY SIDE -->
+  <section>
+    <h2>Rings vs Strip — the same star, both ways</h2>
+    <p>Sol shown in both. Rings answers <em>"how big are the zones?"</em>; Strip answers
+      <em>"which planets land in them, and by how much?"</em> on a compressed √AU axis where the inner planets
+      don't collapse onto the star.</p>
+    <div class="grid2">
+      <div class="mini">
+        <h4><span class="swc" style="background:var(--z-mg)"></span>Rings — today's diagram (unchanged)</h4>
+        <div class="stage" id="mini-rings"></div>
+        <p>Concentric Kopparapu zones, hot (inner, red) → cold (outer, blue). Click-to-explain + EEID/snow-line
+          markers stay exactly as they are.</p>
+      </div>
+      <div class="mini">
+        <h4><span class="swc" style="background:var(--band-con)"></span>Strip — new opt-in view</h4>
+        <div class="stage" id="mini-strip"></div>
+        <p>Optimistic (light) + conservative (dark) HZ bands on a √AU rule, with each planet dropped in at its
+          orbit. Green = inside the optimistic HZ.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHERE IT LANDS -->
+  <section>
+    <h2>Where the toggle lands</h2>
+    <p>One control, wired into every panel that already shows an HZ Diagram tab. Panels that carry planet data
+      get markers on the Strip; single-star panels show the bands alone (still a useful "how wide is the HZ"
+      read).</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Panel</th><th>Option(s)</th><th>Planet markers on Strip?</th><th>Source of planets</th></tr></thead>
+        <tbody>
+          <tr><td>NASA Planetary Systems (+ Map)</td><td>3</td><td><span class="yes">Yes</span></td><td><code>pl_orbsmax</code> per planet</td></tr>
+          <tr><td>NASA HWO ExEP</td><td>4</td><td><span class="no">Bands only</span></td><td>star-level row (EEID marker kept)</td></tr>
+          <tr><td>NASA Mission Exocat</td><td>5</td><td><span class="no">Bands only</span></td><td>star-level row (EEID marker kept)</td></tr>
+          <tr><td>Habitable Worlds Catalog</td><td>6</td><td><span class="yes">Yes</span></td><td><code>P_SEMI_MAJOR_AXIS</code></td></tr>
+          <tr><td>Open Exoplanet Catalogue</td><td>7</td><td><span class="yes">Yes</span></td><td>OEC host planets (AU)</td></tr>
+          <tr><td>Star System Regions</td><td>8 / 9 / 10</td><td><span class="no">Bands only</span></td><td>single star — no planets</td></tr>
+          <tr><td>Sol System Regions</td><td>13</td><td><span class="no">Bands only</span></td><td>single star — no planets</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:14px; color:var(--muted); font-size:13.5px">The System-Dossier report and the procedural
+      Generator also embed an HZ image — proposed to follow the same default (Rings) with the toggle available.
+      Flag if you'd rather leave those two alone for now.</p>
+  </section>
+
+  <!-- BUILD PLAN -->
+  <section>
+    <h2>How it's built</h2>
+    <p>Additive only. The existing <code>make_hz_canvas</code> (Rings) is not touched, so every current caller and
+      any golden output is unchanged.</p>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><div><b>core.viz — <code>prepare_hz_strip(teff, lum, planets=None)</code></b>
+        <span>Reuses the same Kopparapu zone boundaries as <code>prepare_hz_diagram</code>; returns the optimistic
+        &amp; conservative band edges plus a normalized planet list <code>[{name, au, in_hz}]</code>.</span></div></div>
+      <div class="step"><span class="n">2</span><div><b>plot_helpers — <code>make_hz_strip_canvas(...)</code></b>
+        <span>Draws the √AU strip in the app's dark-navy Star-Chart palette: two HZ bands, AU ticks, planet dots
+        (green in-HZ / blue out), hover + click-to-info parity with the other diagrams.</span></div></div>
+      <div class="step"><span class="n">3</span><div><b>A shared toggle wrapper — <code>wrap_hz_with_toggle(...)</code></b>
+        <span>Returns one QWidget: the <span class="kbd">Rings | Strip</span> segmented control over a
+        <code>QStackedWidget</code>. Each HZ-tab builder (<code>_make_hz_tab</code>, the Star-Regions and HWC
+        builders) calls it instead of adding the bare rings canvas — so the control appears identically everywhere.</span></div></div>
+      <div class="step"><span class="n">4</span><div><b>Tests</b>
+        <span>Unit-test <code>prepare_hz_strip</code> (band edges + <code>in_hz</code> flags vs known anchors) and a
+        headless canvas/​toggle smoke test, matching the OEC test pattern.</span></div></div>
+    </div>
+  </section>
+
+  <!-- DECISIONS -->
+  <section>
+    <h2>Decisions to confirm</h2>
+    <p>Check these off (or edit) and I'll build to them. My recommendation is on each.</p>
+    <div class="decisions">
+      <div class="dec"><span class="mk"></span><div>
+        <div class="q"><b>1. Default view.</b> Rings stays the default on every HZ tab; Strip is opt-in per tab.</div>
+        <div class="rec"><b>Recommend: yes</b> — keeps existing behavior &amp; any golden output byte-identical.</div></div></div>
+      <div class="dec"><span class="mk"></span><div>
+        <div class="q"><b>2. Planets on Strip only.</b> Strip shows planet-SMA markers; Rings stays planet-free.</div>
+        <div class="rec"><b>Recommend: yes.</b> Alternative: also add planet dots to Rings (richer, but changes the rings image everywhere).</div></div></div>
+      <div class="dec"><span class="mk"></span><div>
+        <div class="q"><b>3. No-planet panels.</b> Star Regions (8/9/10) &amp; Sol (13) still get the toggle; Strip shows bands only.</div>
+        <div class="rec"><b>Recommend: yes.</b> Alternative: hide the Strip option when there are no planets.</div></div></div>
+      <div class="dec"><span class="mk"></span><div>
+        <div class="q"><b>4. Toggle memory.</b> The control is per-HZ-tab and resets to Rings on each new search.</div>
+        <div class="rec"><b>Recommend: yes</b> (simplest). Alternative: remember the last choice for the session.</div></div></div>
+      <div class="dec"><span class="mk"></span><div>
+        <div class="q"><b>5. Scope.</b> Include the Report &amp; Generator HZ images, or leave those two for later?</div>
+        <div class="rec"><b>Recommend: include</b> — same wrapper, no extra risk.</div></div></div>
+    </div>
+  </section>
+
+  <footer>
+    Phase 5 · app-wide HZ Rings/Strip toggle · reproduces <code>prepare_hz_diagram</code> zones + the
+    <code>oec-phase1.html</code> strip prototype. Values shown are illustrative Kopparapu boundaries for the
+    three example hosts.
+  </footer>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  // ---- theme ----
+  const root=document.documentElement, tbtn=document.getElementById("theme");
+  tbtn.addEventListener("click",()=>{
+    const cur=root.getAttribute("data-theme")
+      || (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
+    root.setAttribute("data-theme", cur==="dark"?"light":"dark");
+  });
+
+  // ---- example systems (illustrative Kopparapu boundaries, AU) ----
+  const SYS={
+    sol:{name:"Sol", teff:5778, lum:1.0,
+      z:{rv:0.75,rg5:0.90,rg:0.95,rg01:0.97,mg:1.68,em:1.77},
+      p:[{n:"Mercury",a:0.387},{n:"Venus",a:0.723},{n:"Earth",a:1.0},{n:"Mars",a:1.524}]},
+    trappist:{name:"TRAPPIST-1", teff:2566, lum:0.000553,
+      z:{rv:0.024,rg5:0.026,rg:0.028,rg01:0.030,mg:0.058,em:0.061},
+      p:[{n:"b",a:0.0115},{n:"c",a:0.0158},{n:"d",a:0.0223},{n:"e",a:0.0293},
+         {n:"f",a:0.0385},{n:"g",a:0.0469},{n:"h",a:0.0619}]},
+    sco:{name:"18 Scorpii", teff:5810, lum:1.05,
+      z:{rv:0.77,rg5:0.92,rg:0.97,rg01:0.99,mg:1.72,em:1.81}, p:[]}
+  };
+  const ZONES=[["em","#4499FF"],["mg","#33AA55"],["rg01","#CCDD22"],
+               ["rg","#FFCC00"],["rg5","#FF8833"],["rv","#CC3300"]]; // outer→inner (paint order)
+
+  let curSys="sol", curView="rings";
+
+  function fmtAU(a){ return a>=0.1? a.toFixed(a<1?3:2) : a.toFixed(4); }
+
+  // ---- Rings (reproduces make_hz_canvas) ----
+  function svgRings(sys,size){
+    const S=size||320, C=S/2, maxA=sys.z.em*1.30, R=(S/2-14)/maxA;
+    let s=`<svg viewBox="0 0 ${S} ${S}" width="${S}" role="img" aria-label="HZ rings for ${sys.name}">`;
+    s+=`<rect x="0" y="0" width="${S}" height="${S}" fill="#0b1020"/>`;
+    for(const [k,c] of ZONES){ const r=sys.z[k]*R;
+      s+=`<circle cx="${C}" cy="${C}" r="${r.toFixed(1)}" fill="${c}" fill-opacity="0.55"/>`; }
+    for(const [k,c] of ZONES){ const r=sys.z[k]*R;
+      s+=`<circle cx="${C}" cy="${C}" r="${r.toFixed(1)}" fill="none" stroke="#5b6a86" stroke-width="0.8" stroke-dasharray="3 4" stroke-opacity="0.5"/>`; }
+    // a couple of AU labels
+    ["em","mg","rv"].forEach(k=>{ const r=sys.z[k]*R, off=r*0.707;
+      s+=`<text x="${(C+off).toFixed(1)}" y="${(C-off).toFixed(1)}" font-size="9" fill="#95a7c8" text-anchor="start">${fmtAU(sys.z[k])} AU</text>`; });
+    s+=`<circle cx="${C}" cy="${C}" r="5" fill="#FFEE55"/>`;
+    s+=`<text x="${C}" y="${S-8}" font-size="10" fill="#6f88b5" text-anchor="middle">Habitable Zone — ${sys.name} (T=${sys.teff} K, L=${sys.lum} L☉)</text>`;
+    s+=`</svg>`; return s;
+  }
+
+  // ---- Strip (reproduces oec-phase1 svgHZ) ----
+  function svgStrip(sys,w){
+    const W=w||560, H=118, x0=46, x1=W-24, yb=64;
+    const planetsA=sys.p.map(p=>p.a);
+    const maxA=Math.max(sys.z.em*1.12, ...(planetsA.length?planetsA:[0]));
+    const X=a=>x0+(Math.sqrt(a)/Math.sqrt(maxA))*(x1-x0);
+    let s=`<svg viewBox="0 0 ${W} ${H}" width="${W}" role="img" aria-label="HZ strip for ${sys.name}">`;
+    s+=`<rect x="0" y="0" width="${W}" height="${H}" fill="#0b1020"/>`;
+    // optimistic + conservative bands
+    s+=`<rect x="${X(sys.z.rv).toFixed(1)}" y="34" width="${(X(sys.z.em)-X(sys.z.rv)).toFixed(1)}" height="34" fill="#8fd6a8" opacity="0.32"/>`;
+    s+=`<rect x="${X(sys.z.rg).toFixed(1)}" y="34" width="${(X(sys.z.mg)-X(sys.z.rg)).toFixed(1)}" height="34" fill="#4faf78" opacity="0.5"/>`;
+    // axis
+    s+=`<line x1="${x0}" y1="${yb}" x2="${x1}" y2="${yb}" stroke="#33436a" stroke-width="1"/>`;
+    // ticks
+    const ticks=[0.01,0.03,0.1,0.3,1,3,10].filter(a=>a>=maxA*0.004 && a<=maxA);
+    ticks.forEach(a=>{ const x=X(a);
+      s+=`<line x1="${x.toFixed(1)}" y1="${yb-3}" x2="${x.toFixed(1)}" y2="${yb+3}" stroke="#6f88b5"/>`;
+      s+=`<text x="${x.toFixed(1)}" y="${yb+16}" font-size="9" fill="#8296b8" text-anchor="middle">${a}</text>`; });
+    // planets
+    sys.p.forEach(p=>{ const inHz=p.a>=sys.z.rv && p.a<=sys.z.em; const x=X(p.a);
+      s+=`<circle cx="${x.toFixed(1)}" cy="${yb-13}" r="4.5" fill="${inHz?'#3ad07a':'#4aa6e0'}" stroke="#0b1020" stroke-width="0.6"/>`;
+      s+=`<text x="${x.toFixed(1)}" y="${yb-20}" font-size="9" fill="#c9d6ef" text-anchor="middle">${p.n}</text>`; });
+    // band labels
+    s+=`<text x="${x0}" y="20" font-size="9.5" fill="#8fd6a8" text-anchor="start">optimistic HZ</text>`;
+    s+=`<text x="${x0+94}" y="20" font-size="9.5" fill="#5cc487" text-anchor="start">· conservative HZ</text>`;
+    s+=`<text x="${x1}" y="${H-6}" font-size="9" fill="#6f88b5" text-anchor="end">AU (√ scale)</text>`;
+    if(!sys.p.length) s+=`<text x="${(x0+x1)/2}" y="${yb-16}" font-size="10" fill="#6f88b5" text-anchor="middle">no catalogued planets — HZ bands only</text>`;
+    s+=`</svg>`; return s;
+  }
+
+  // ---- captions / legend ----
+  function inHzList(sys){ return sys.p.filter(p=>p.a>=sys.z.rv&&p.a<=sys.z.em).map(p=>p.n); }
+  function caption(){
+    const sys=SYS[curSys];
+    document.getElementById("cap-tag").textContent = curView==="rings"?"Rings":"Strip";
+    let t;
+    if(curView==="rings"){
+      t=`Concentric Kopparapu zones for ${sys.name} — zone structure only (planets are not drawn on Rings today).`;
+    } else {
+      const inh=inHzList(sys);
+      t = sys.p.length
+        ? `${sys.name}: ${sys.p.length} planet${sys.p.length>1?"s":""} on a √AU axis — ${inh.length? "in the optimistic HZ: "+inh.join(", ") : "none inside the optimistic HZ"}.`
+        : `${sys.name}: single star — the Strip shows the HZ bands with no planet markers.`;
+    }
+    document.getElementById("cap-text").textContent=t;
+  }
+  const LEG=[
+    ["sw","#CC3300","Too hot"],["sw","#FFCC00","Inner HZ"],["sw","#33AA55","Conservative HZ"],
+    ["sw","#4499FF","Optimistic outer"],["gap"],
+    ["swc","#3ad07a","Planet in HZ"],["swc","#4aa6e0","Planet outside HZ"]
+  ];
+  function legend(){
+    const el=document.getElementById("legend");
+    el.innerHTML=LEG.map(item=>{
+      if(item[0]==="gap") return `<span style="flex:1 0 8px"></span>`;
+      const cls=item[0]==="swc"?"swc":"sw";
+      return `<span class="lg"><span class="${cls}" style="background:${item[1]}"></span>${item[2]}</span>`;
+    }).join("");
+  }
+
+  // ---- render ----
+  function render(){
+    document.getElementById("stage").innerHTML =
+      curView==="rings"? svgRings(SYS[curSys],340) : svgStrip(SYS[curSys],600);
+    caption();
+  }
+  function renderMinis(){
+    document.getElementById("mini-rings").innerHTML=svgRings(SYS.sol,260);
+    document.getElementById("mini-strip").innerHTML=svgStrip(SYS.sol,420);
+  }
+
+  // ---- wiring ----
+  document.getElementById("chips").addEventListener("click",e=>{
+    const b=e.target.closest(".chip"); if(!b) return;
+    curSys=b.dataset.sys;
+    document.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed", c===b?"true":"false"));
+    render();
+  });
+  function setView(v){
+    curView=v;
+    document.getElementById("btn-rings").setAttribute("aria-pressed", v==="rings"?"true":"false");
+    document.getElementById("btn-strip").setAttribute("aria-pressed", v==="strip"?"true":"false");
+    render();
+  }
+  document.getElementById("btn-rings").addEventListener("click",()=>setView("rings"));
+  document.getElementById("btn-strip").addEventListener("click",()=>setView("strip"));
+
+  legend(); renderMinis(); render();
+})();
+</script>
+</body>
+</html>

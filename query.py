@@ -159,6 +159,26 @@ def cmd_oec_planet(args):
     _out(databases.compute_oec_planet(args.name))
 
 
+def cmd_oec_search(args):
+    _out(databases.compute_oec_search(
+        min_stars=args.min_stars, max_stars=args.max_stars, status=args.status,
+        circumbinary=args.circumbinary, discovery_method=args.discovery_method,
+        discovery_year_min=args.discovery_year_min, discovery_year_max=args.discovery_year_max,
+        mass_min=args.mass_min, mass_max=args.mass_max,
+        radius_min=args.radius_min, radius_max=args.radius_max,
+        period_min=args.period_min, period_max=args.period_max,
+        sma_min=args.sma_min, sma_max=args.sma_max,
+        spectral_type=args.spectral_type, limit=args.limit))
+
+
+def cmd_oec_census(args):
+    _out(databases.compute_oec_census())
+
+
+def cmd_oec_status(args):
+    _out(databases.compute_oec_status())
+
+
 def cmd_gcns_source(args):
     _out(databases.compute_gcns_by_source_id(args.id))
 
@@ -1565,6 +1585,46 @@ def main(argv=None):
                        help="Open Exoplanet Catalogue: a planet node + its host chain")
     p.add_argument("--name", required=True, help="Planet name / designation")
     p.set_defaults(func=cmd_oec_planet)
+
+    # oec-search
+    p = sub.add_parser(
+        "oec-search",
+        help="Open Exoplanet Catalogue: structural search over all systems")
+    p.add_argument("--min-stars", type=int, help="minimum number of stars in the system")
+    p.add_argument("--max-stars", type=int, help="maximum number of stars in the system")
+    p.add_argument("--status",
+                   help="planet status substring, e.g. 'Confirmed', 'Controversial', 'P-type'")
+    p.add_argument("--circumbinary", action="store_true",
+                   help="only systems with a circumbinary (P-type) planet")
+    p.add_argument("--discovery-method",
+                   help="planet discovery-method substring, e.g. 'transit', 'RV', 'imaging'")
+    p.add_argument("--discovery-year-min", type=int)
+    p.add_argument("--discovery-year-max", type=int)
+    p.add_argument("--mass-min", type=float, help="planet mass ≥ (Jupiter masses)")
+    p.add_argument("--mass-max", type=float, help="planet mass ≤ (Jupiter masses)")
+    p.add_argument("--radius-min", type=float, help="planet radius ≥ (Jupiter radii)")
+    p.add_argument("--radius-max", type=float, help="planet radius ≤ (Jupiter radii)")
+    p.add_argument("--period-min", type=float, help="planet orbital period ≥ (days)")
+    p.add_argument("--period-max", type=float, help="planet orbital period ≤ (days)")
+    p.add_argument("--sma-min", type=float, help="planet semi-major axis ≥ (AU)")
+    p.add_argument("--sma-max", type=float, help="planet semi-major axis ≤ (AU)")
+    p.add_argument("--spectral-type",
+                   help="host star spectral-type prefix, e.g. 'G', 'M', 'DA' (white dwarf)")
+    p.add_argument("--limit", type=int,
+                   help="max systems to return (default 300)")
+    p.set_defaults(func=cmd_oec_search)
+
+    # oec-census
+    p = sub.add_parser(
+        "oec-census",
+        help="Open Exoplanet Catalogue: catalogue-wide topology statistics")
+    p.set_defaults(func=cmd_oec_census)
+
+    # oec-status
+    p = sub.add_parser(
+        "oec-status",
+        help="Open Exoplanet Catalogue: cache snapshot (freshness) + element counts")
+    p.set_defaults(func=cmd_oec_status)
 
     # stars-within-sol
     p = sub.add_parser("stars-within-sol", help="Stars within N light years of Sol")

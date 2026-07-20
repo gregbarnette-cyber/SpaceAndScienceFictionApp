@@ -155,7 +155,13 @@ satellite` hierarchy — not a flat table like options 1–6** — so a resolved
   shown verbatim — not routed through the OBAFGKM parser.
 - **`query.py`:** `oec-system --name` (full tree) and `oec-planet --name` (planet node + host chain +
   `attached_to` ∈ `star|binary|system`) — offline direct-alias resolution (`allow_simbad=False`), the same
-  node dict serialized as JSON. See `docs/integration.md`.
+  node dict serialized as JSON. **Phase 4** adds three catalogue-wide readers (no name, offline over the whole
+  cache): `oec-search` (structural filters — star count, `--circumbinary`, planet status / discovery-method /
+  discovery-year / mass / radius / period / sma ranges, host `--spectral-type` prefix → matched systems +
+  topology + matching planets), `oec-census` (topology statistics — the §A evaluation live: counts,
+  stars/planets/binary-depth distributions, `planet_attachment` star/binary/system, circumbinary/rogue/
+  planetless, discovery-method + status histograms), and `oec-status` (cache freshness + element counts). See
+  `docs/integration.md`.
 - **GUI parity (Phase 2, built).** `OecPanel` is a `DiagramToggleMixin` matching `NasaPlanetarySystemsPanel`.
   Beyond the **Data** tree tab it adds — **per selected host star** (a **Host** `QComboBox` when a system has
   more than one planet-bearing star; single-host systems auto-select) — a **Hypatia** tab and **Show
@@ -168,24 +174,57 @@ satellite` hierarchy — not a flat table like options 1–6** — so a resolved
   **star** (normal), a **binary** (circumbinary/P-type pseudo-host), or the **system** (rogue → Data tab
   only, no diagrams). *Known limitation:* a circumbinary host's HZ uses the primary component's light, not
   the combined light (a `compute_circumbinary_hz` refinement — see `PHASE_OEC_PLAN.md`).
-- **System Architecture map (Phase 3, static — built 2026-07-17).** A **GUI-only** system-level viz tab
-  (`OecPanel`, viz tab 0) shown for **every** matched system — including planetless (61 Cygni) and rogue ones
-  that have no per-host diagrams. `core.viz.prepare_oec_architecture(system_node)` places every star by a
-  recursive **mass-weighted-barycenter (Jacobi) roll-up** (each `<binary>` splits its two components about
-  their barycenter, offset `sep × m_other/(m₁+m₂)`), then maps them **log-radially** from the system
-  barycenter so ~6 orders of scale coexist (Proxima 15 000 AU ↔ α Cen A/B 23 AU ↔ planets < 1 AU); planets
-  ride as small log-scaled rings on their host. Separation ladder: `semimajoraxis` → `separation[AU]` →
-  `separation[arcsec]×distance_pc` (projected) → **Kepler** `a=∛((M₁+M₂)·P²)` from the binary period (61 Cyg)
-  → schematic offset; a missing component mass → equal split (both flagged). Rendered by
-  `plot_helpers.make_oec_architecture_canvas` (dark-navy Star-Chart palette) with a persistent caveat footnote
-  (architecture sketch, not an ephemeris — projected separation, static placement / no orbital phase). The
-  **interactive click-to-recenter** (star → focus + host tabs; binary → subsystem barycenter; "⟲ Reset") is
-  the planned Phase 3b. *Known limitation:* circumbinary (P-type) planets attach to the `<binary>`, not a
-  star, so they aren't yet drawn as rings on the map (the Data tree + binary-pseudo-host Orbital diagram show
-  them). See `docs/gui-architecture.md` (OEC System Architecture map) and `PHASE_OEC_PLAN.md`.
-- **Phase status:** Phases 1 (core + tree + Tier-1 query.py), 2 (Hypatia + per-host diagrams), and 3a (static
-  Architecture map) are built. Later work adds the Phase-3b click-to-recenter and `oec-search`/`oec-census`
-  (Phase 4) — see `PHASE_OEC_PLAN.md`.
+- **System Architecture map (Phase 3 — static 3a + interactive 3b, built 2026-07-19).** A **GUI-only**
+  system-level viz tab (`OecPanel`, viz tab 0) shown for **every** matched system — including planetless
+  (61 Cygni) and rogue ones that have no per-host diagrams. `core.viz.prepare_oec_architecture(system_node,
+  focus_node=None)` places every star by a recursive **mass-weighted-barycenter (Jacobi) roll-up** (each
+  `<binary>` splits its two components about their barycenter, offset `sep × m_other/(m₁+m₂)`), then maps them
+  **log-radially** from the system barycenter so ~6 orders of scale coexist (Proxima 15 000 AU ↔ α Cen A/B
+  23 AU ↔ planets < 1 AU); planets ride as small log-scaled rings on their host. Separation ladder:
+  `semimajoraxis` → `separation[AU]` → `separation[arcsec]×distance_pc` (projected) → **Kepler**
+  `a=∛((M₁+M₂)·P²)` from the binary period (61 Cyg) → schematic offset; a missing component mass → equal split
+  (both flagged). Rendered by `plot_helpers.make_oec_architecture_canvas` (dark-navy Star-Chart palette) with
+  a persistent caveat footnote (architecture sketch, not an ephemeris — projected separation, static placement
+  / no orbital phase).
+  - **Phase 3b interactivity (built 2026-07-19).** (1) **Click-to-recenter** — clicking a **star** re-anchors
+    the log-radial view on it (`prepare_oec_architecture(system, focus_node=<node>)`) *and*, when that star is
+    a planet host, drives the per-host detail tabs to it (the map replaces the Host combo as the selector);
+    clicking a **binary ◆ handle** recenters on that subsystem's barycenter (e.g. α Cen AB → spreads the tight
+    pair). A **breadcrumb + "⟲ Reset diagram"** bar sits above the canvas; the rebuild is deferred via a
+    `QTimer.singleShot(0, …)` so the canvas isn't torn down inside its own pick-event, and the map (viz tab 0)
+    stays selected across recenters without leaving diagram mode. **Reset diagram** is always available and does
+    a full reset — it drops any recenter focus (back to the whole-system barycenter) **and** restores the
+    default zoom/pan (via a `canvas.reset_view()` seam); with no focus set it is a pure zoom reset that doesn't
+    tear down the detail tabs. (2) **Circumbinary (P-type) planet rings** —
+    `prepare_oec_architecture` now emits a `centers:[{x,y,label,node,planets}]` for every `<binary>` carrying
+    direct `<planet>` children (Kepler-16 b, Kepler-47…), keyed to the binary barycenter (reusing
+    `_oecv_planet_ring_data`); the canvas draws these as **dashed** rings around that point (distinct from the
+    solid per-star rings). (3) **Star-chart interaction parity** — scroll-wheel zoom around the cursor + a
+    cursor-anchored hover tooltip (`_anchor_hover_to_cursor`, name/sp-type/mass/planet-count for stars,
+    "click to recenter" for handles). Click semantics are reconciled: **hover = info, click = recenter**
+    (for stars / ◆ handles). (4) **Click a planet → info dialog** — planet dots are pickable; clicking one
+    opens a **non-modal planet dialog** (`_show_oec_planet_dialog`, parented to the panel) populated from the
+    planet's OEC node (mass with the M·sin i label, radius, period, SMA, eccentricity, inclination, temp,
+    discovery method/year, status badges, satellites) — no network, mirroring the NASA System Map's
+    click-planet dialog. Each planet dict from `prepare_oec_architecture` carries its full `node` for this;
+    the pick handler dispatches planet (→ `on_planet_click`, dialog) vs star/◆ (→ `on_select`, recenter).
+  See `docs/gui-architecture.md` (OEC System Architecture map) and `PHASE_OEC_PLAN.md` §C Phase 3.
+- **Phase status:** All phases built — 1 (core + tree + Tier-1 query.py), 2 (Hypatia + per-host diagrams), 3a
+  (static Architecture map), 3b (interactive map — click-to-recenter + circumbinary rings + zoom/hover +
+  click-a-planet dialog), 4 (`oec-search`/`oec-census`/`oec-status` structural readers), and 5 (the app-wide HZ
+  Rings/Strip toggle, which OEC's HZ tab inherits via the shared `_make_hz_tab`). See `PHASE_OEC_PLAN.md`.
+
+## HZ Diagram — Rings / Strip toggle (Phase 5, app-wide)
+
+Every Star Databases panel's **HZ Diagram** tab carries a **Rings | Strip** segmented control (Rings default).
+**Rings** is the unchanged concentric-zone `make_hz_canvas`; **Strip** is `make_hz_strip_canvas` — a horizontal
+√AU view (same light palette) with the optimistic (Recent Venus → Early Mars) + conservative (Runaway GH → Max
+GH) HZ bands and **planet markers placed by semi-major axis** (green inside the optimistic HZ, blue outside),
+plus hover + click-to-info. Backed by `core.viz.prepare_hz_strip(teff, lum, planets)` (reuses the
+`prepare_hz_diagram` Kopparapu zones) and the shared `gui.panels.diagram_tabs.wrap_hz_with_toggle` /
+`_hz_toggle_tab`. Panels with planet data (NASA opt 3, HWC opt 6, OEC opt 7) show planet markers on the Strip;
+single-star panels (Star Regions 8/9/10, Sol 13, NASA HWO/Exocat 4/5) show the bands alone. The System-Dossier
+Report is a static PNG export, so it keeps Rings. See `docs/gui-architecture.md` (HZ Rings/Strip toggle).
 
 ## Star Systems DB Query Feature (opt 50) / Export to CSV (opt 51) / Import Utilities (opts 52–56)
 

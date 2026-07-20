@@ -43,6 +43,31 @@ class OecLiveTests(unittest.TestCase):
         self.assertNotIn("error", r)
         self.assertEqual(r["attached_to"], "binary")
 
+    def test_census_over_real_catalogue(self):
+        # Phase 4: the §A structural evaluation computed live — planets attach to all
+        # three parent kinds, and circumbinary/rogue systems exist (the rebuild lesson).
+        c = databases.compute_oec_census()
+        self.assertNotIn("error", c)
+        self.assertGreaterEqual(c["n_systems"], databases._OEC_MIN_SYSTEMS)
+        self.assertGreater(c["planet_attachment"]["star"], 0)
+        self.assertGreater(c["planet_attachment"]["binary"], 0)   # circumbinary planets
+        self.assertGreater(c["planet_attachment"]["system"], 0)   # rogue planets
+        self.assertGreater(c["circumbinary_systems"], 0)
+        self.assertGreater(c["rogue_systems"], 0)
+
+    def test_search_circumbinary_finds_kepler16(self):
+        r = databases.compute_oec_search(circumbinary=True, limit=500)
+        self.assertNotIn("error", r)
+        self.assertGreater(r["count"], 0)
+        self.assertTrue(any((s.get("name") or "").startswith("Kepler-16")
+                            for s in r["systems"]))
+
+    def test_status_snapshot_over_real_catalogue(self):
+        s = databases.compute_oec_status()
+        self.assertNotIn("error", s)
+        self.assertGreaterEqual(s["n_systems"], databases._OEC_MIN_SYSTEMS)
+        self.assertTrue(s["cached"])   # _load_oec pulled/parsed the cache
+
 
 if __name__ == "__main__":
     unittest.main()

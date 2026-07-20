@@ -24,6 +24,7 @@ from gui.visualizations.plot_helpers import (
     make_abundance_canvas, log_viz_error, wrap_scrollable,
     wrap_system_regions_with_hyper_toggle, make_kinematics_tab,
 )
+from gui.panels.diagram_tabs import _hz_toggle_tab
 
 
 # ── Single-step background functions (SIMBAD + regions in one thread) ─────────
@@ -183,20 +184,13 @@ def add_region_diagram_tabs(target, d: dict, hypatia=None):
     if not mpl_available():
         return
     try:
-        hz_data = core.viz.prepare_hz_diagram(d["temp"], d["calculatedLuminosity"])
-        if "zones" in hz_data:
-            hz_w = QWidget()
-            hz_l = QVBoxLayout(hz_w)
-            hz_l.setContentsMargins(4, 4, 4, 4)
-            canvas, toolbar = make_hz_canvas(
-                None,
-                hz_data["zones"],
-                hz_data["max_au"],
-                title=f"Habitable Zone  (T={d['temp']:.0f} K,  L={d['calculatedLuminosity']:.4f} L☉)",
-                eeid_au=d.get("distAU"),
-            )
-            hz_l.addWidget(toolbar)
-            hz_l.addWidget(canvas)
+        # HZ Diagram — Rings/Strip toggle (Phase 5). A single star, so the Strip shows
+        # the HZ bands with no planet markers.
+        hz_w = _hz_toggle_tab(
+            None, d["temp"], d["calculatedLuminosity"],
+            title=f"Habitable Zone  (T={d['temp']:.0f} K,  L={d['calculatedLuminosity']:.4f} L☉)",
+            eeid_au=d.get("distAU"), planets=[])
+        if hz_w is not None:
             target.addTab(hz_w, "HZ Diagram")
 
         # System Regions Diagram — wrapped so opts 8/9 (with a resolvable

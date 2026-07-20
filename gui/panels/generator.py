@@ -50,6 +50,7 @@ import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_orbits_canvas, make_hz_canvas,
 )
+from gui.panels.diagram_tabs import _hz_toggle_tab
 
 # Observed vs synthetic styling (matches the approved mockup legend).
 _OBSERVED_COLOR = "#1f7a3d"     # green — observed (NASA / HWC)
@@ -669,7 +670,7 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
         # Viz tabs.
         if mpl_available():
             self._add_orbit_tab(result)
-            self._add_hz_tab(star)
+            self._add_hz_tab(star, result.get("planets"))
 
         self._copy_btn.setEnabled(True)
         self._add_proj_btn.setEnabled(True)
@@ -840,22 +841,20 @@ class SystemGeneratorPanel(DiagramToggleMixin, ResultPanel):
         wl.addWidget(canvas)
         self._viz_tabs_widget.addTab(w, "Orbit Diagram")
 
-    def _add_hz_tab(self, star):
-        """HZ Ring — the Kopparapu habitable-zone ring for the generated star."""
-        hz = core.viz.prepare_hz_diagram(star.get("teff") or 0, star.get("luminosity") or 0)
-        if not isinstance(hz, dict) or "error" in hz:
-            return
+    def _add_hz_tab(self, star, planets=None):
+        """HZ Diagram — Rings/Strip toggle (Phase 5) for the generated star; the Strip
+        places the generated planets by semi-major axis."""
+        teff = star.get("teff") or 0
+        lum = star.get("luminosity") or 0
+        hz_planets = [{"name": p.get("name", "?"), "au": p.get("a_au")}
+                      for p in (planets or []) if p.get("a_au")]
         try:
-            canvas, toolbar = make_hz_canvas(self, hz["zones"], hz["max_au"],
-                                             title="Habitable Zone")
+            w = _hz_toggle_tab(self, teff, lum, title="Habitable Zone",
+                               planets=hz_planets)
         except Exception:
             return
-        w = QWidget()
-        wl = QVBoxLayout(w)
-        wl.setContentsMargins(4, 4, 4, 4)
-        wl.addWidget(toolbar)
-        wl.addWidget(canvas)
-        self._viz_tabs_widget.addTab(w, "HZ Ring")
+        if w is not None:
+            self._viz_tabs_widget.addTab(w, "HZ Ring")
 
     # ── copy json ─────────────────────────────────────────────────────────────────
 
