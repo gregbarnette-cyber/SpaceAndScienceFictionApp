@@ -630,10 +630,14 @@ class TestMassModelDraw(unittest.TestCase):
             o = json.load(fh)
         if drop_occ:
             # Grid-giant mode: drop occurrence_by_metallicity (roll always-True) AND
-            # cold_giant_population (else giants come from the decoupled path, not the
+            # both decoupled populations (else giants come from those paths, not the
             # grid) → giants form on the pure B1 in-grid physics gate.
+            # inner_giant_population must go with occurrence_by_metallicity regardless:
+            # its occurrence_ref points into that block, so the contract rejects one
+            # without the other.
             o.pop("occurrence_by_metallicity", None)
             o.pop("cold_giant_population", None)
+            o.pop("inner_giant_population", None)
         return o
 
     def test_deterministic(self):
@@ -862,12 +866,16 @@ class TestIntraSystemCorrelation(unittest.TestCase):
         self.assertGreater(outer_larger / pairs, 0.55)   # biased above 50/50
 
     def test_no_gas_giant_inside_snow_line_preserved(self):
+        # Scoped to GRID-GROWN giants. The v2.3 inner_giant_population places giants
+        # interior to the snow line by design (a decoupled, tagged sub-population that
+        # bypasses the B1 gate); those carry giant_zone and are excluded here. The gate
+        # itself is unchanged — that is what this test still guards.
         for s in range(20):
             r = self._gen(seed=s, spectral_class="F5V", n_planets=14)
             snow = r["star"]["snow_line_au"]
             inside = [p for p in r["planets"]
                       if p["type"] in ("gas", "super_jovian", "brown_dwarf")
-                      and p["a_au"] < snow]
+                      and p["a_au"] < snow and not p.get("giant_zone")]
             self.assertEqual(inside, [])
 
     def test_spacing_ratio_draw_uses_period_ratio(self):
@@ -973,8 +981,12 @@ class TestDecoupledColdGiants(unittest.TestCase):
                                    research_policy="strict")
 
     def _giants(self, r):
+        # COLD giants only. The v2.3 inner population is a separate roll against a
+        # different (FV05 close-in, ~3%-solar) occurrence number, so counting it here
+        # would inflate this class's ~10%-solar cold-giant occurrence targets.
         return [p for p in r["planets"]
-                if p["type"] in ("gas", "super_jovian", "brown_dwarf")]
+                if p["type"] in ("gas", "super_jovian", "brown_dwarf")
+                and not p.get("giant_zone")]
 
     def test_occurrence_tracks_curve_at_solar(self):
         # Realized per-star cold-giant occurrence ~ occ_eff(0) = 10% (placement no
@@ -1009,6 +1021,117 @@ class TestDecoupledColdGiants(unittest.TestCase):
         counts = [c for c in counts if c]     # conditional on >=1
         self.assertTrue(counts)
         self.assertLess(sum(counts) / len(counts), 2.2)
+
+
+class TestDecoupledInnerGiants(unittest.TestCase):
+    """R3-V2 v2.3: the decoupled close-in giant population (warm + hot Jupiters interior
+    to the snow line), with in-situ vs migrated formation_channel tags. Mirrors the cold
+    block, but rolls against the LITERAL FV05 giant_fraction in its native close-in
+    domain — a separate roll over a disjoint SMA zone (no double-count)."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _gen(self, feh, seed, drop_igp=False, sc="G2V", n=None):
+        import json, copy
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            o = copy.deepcopy(json.load(fh))
+        o["feh_dist"] = {"mean": feh, "sigma": 0.001, "min": -2.0, "max": 1.0}
+        if drop_igp:
+            o.pop("inner_giant_population", None)
+        p = os.path.join(self.cache, "s.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(o, fh)
+        self.assertNotIn("error", compute_research_priors_ingest(path=p, cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return generate_system(seed, spectral_class=sc, n_planets=n,
+                                   research_policy="strict")
+
+    def _inner(self, r):
+        return [p for p in r["planets"] if p.get("giant_zone")]
+
+    def _sweep(self, feh=0.3, n=250):
+        out = []
+        for s in range(n):
+            out.extend(self._inner(self._gen(feh, s)))
+        return out
+
+    def test_gated_off_without_the_block(self):
+        for s in range(40):
+            self.assertEqual(self._inner(self._gen(0.3, s, drop_igp=True)), [])
+
+    def test_inner_giants_are_interior_to_snow_line(self):
+        for s in range(120):
+            r = self._gen(0.3, s)
+            snow = r["star"]["snow_line_au"]
+            for p in self._inner(r):
+                self.assertLessEqual(p["a_au"], snow + 1e-9)
+                self.assertGreaterEqual(p["a_au"], 0.02 - 1e-9)
+
+    def test_mass_within_block_range(self):
+        _M_JUP = 317.8
+        giants = self._sweep()
+        self.assertTrue(giants)
+        for p in giants:
+            self.assertGreaterEqual(p["mass_earth"], 0.3 * _M_JUP - 1e-6)
+            self.assertLessEqual(p["mass_earth"], 13.0 * _M_JUP + 1e-6)
+
+    def test_every_inner_giant_carries_a_channel_tag(self):
+        giants = self._sweep()
+        self.assertTrue(giants)
+        self.assertTrue(all(p.get("formation_channel") for p in giants))
+
+    def test_eccentricity_and_channel_agree_in_warm_zone(self):
+        """Gotcha 3: a scattering-tagged giant at e~0, or a circular-tagged one at
+        e~0.6, is wrong. In the warm zone the tag and e must be on the same side."""
+        excited = ("scattering", "high_e")
+        for p in self._sweep():
+            if p["giant_zone"] != "warm":
+                continue
+            is_excited = any(m in p["formation_channel"].lower() for m in excited)
+            if is_excited:
+                self.assertGreaterEqual(p["ecc"], 0.1)
+            else:
+                self.assertLess(p["ecc"], 0.1)
+
+    def test_hot_zone_is_tidally_circularized(self):
+        hots = [p for p in self._sweep() if p["giant_zone"] == "hot"]
+        self.assertTrue(hots)
+        self.assertTrue(all(p["ecc"] < 0.2 for p in hots))
+
+    def test_hot_zone_uses_full_channel_mix(self):
+        """The hot mix is 80% migrated / 20% in-situ. Eccentricity carries no channel
+        information there (tides erase it), so the draw must NOT be e-gated — that bug
+        handed every hot Jupiter to the 20% in-situ channel."""
+        hots = [p for p in self._sweep(n=400) if p["giant_zone"] == "hot"]
+        self.assertTrue(hots)
+        migrated = sum("migrated" in p["formation_channel"] for p in hots)
+        self.assertGreater(migrated, 0.5 * len(hots))
+
+    def test_occurrence_rises_with_metallicity_and_holds_endpoints(self):
+        from core.generate import _interp_giant_fraction
+        occ = {"feh_grid": [-0.5, -0.25, 0.0, 0.25, 0.5],
+               "giant_fraction": [0.003, 0.0095, 0.03, 0.0949, 0.30]}
+        self.assertAlmostEqual(_interp_giant_fraction(occ, 0.0), 0.03, places=4)
+        # Endpoints HELD — no extrapolation past the fitted +-0.5 domain.
+        self.assertAlmostEqual(_interp_giant_fraction(occ, -3.0), 0.003, places=4)
+        self.assertAlmostEqual(_interp_giant_fraction(occ, 3.0), 0.30, places=4)
+        self.assertGreater(len(self._sweep(feh=0.5, n=120)),
+                           len(self._sweep(feh=-0.5, n=120)))
+
+    def test_grid_giant_switch_is_not_relaxed(self):
+        """Gotcha 1: the B1 'giants form beyond the snow line' gate stays true for the
+        GROWN population. Any giant interior to the snow line must be a tagged member of
+        the decoupled sub-population, never a grid-grown one."""
+        for s in range(120):
+            r = self._gen(0.3, s, sc="F5V", n=12)
+            snow = r["star"]["snow_line_au"]
+            for p in r["planets"]:
+                if (p["type"] in ("gas", "super_jovian", "brown_dwarf")
+                        and p["a_au"] < snow):
+                    self.assertTrue(p.get("giant_zone"),
+                                    f"untagged giant inside the snow line: {p['name']}")
 
 
 class TestV2ProvenanceNotes(unittest.TestCase):

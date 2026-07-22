@@ -147,7 +147,10 @@ carries them as `None` too, so `getattr` is uniform).
 | `occurrence_by_metallicity` (F2) | flat `n_planet_dist` | `{feh_grid:[≥2 ascending #], giant_fraction:[same len, each ∈ 0..1], superearth_floor_feh?:#, n_planet_dist_shift?:str}` |
 | `intra_system_correlation` (F3) | independent per-planet draws | `{size_ratio_dist:{mean>0, sigma≥0}, period_ratio_dist:{0<min≤mode≤tail}, ordering?:str, note?:str}` |
 | `cold_giant_population` (v2.2) | grid giant switch (giants grown from the inner grid) | `{sma_dist:{dist="powerlaw", inner ∈ {"snow_line" \| #>0}, outer_au>0, slope_dn_dlna:#}, multiplicity:{count(int): weight≥0, ≥1 positive}}` |
+| `inner_giant_population` (v2.3) | nothing — v2.2 placed ~zero close-in giants | `{sma_dist:{dist="mixture", 0<inner_edge_au<1, outer="snow_line", components:[{name, dist ∈ {lognormal_au, powerlaw}, weight>0, …}] summing to 1}, occurrence_ref="occurrence_by_metallicity.giant_fraction" (**hard dependency**), mass_range_mjup:[0<lo<hi≤13], eccentricity_dist:{warm:beta(α,β>0), hot:rayleigh(0<σ<1)}, formation_channel_mix:{<zone>:{channel: frac∈[0,1]} summing to 1}}` |
 | `feh_dist` (app-side) | synthetic host `[Fe/H]` = `None` (F2 inert) | `{mean:#, sigma>0, min?:#, max?:#}` — synthetic-mode metallicity source |
+| `stellar_multiplicity` (v2.4) | `star["multiplicity"]` stays `None` in synthetic mode (GCNS-derived under `--anchor-star`) | `{multiplicity_fraction:{mass_msun_grid ascending, fraction (same len, 0..1), sigma?}, companion_frequency?, higher_order_fraction?:{value 0..1}, mass_ratio_dist:{dist="powerlaw_q", slope, 0<q_min<q_max≤1, twin_excess_*?}, separation_dist:{dist="mixture", components:[…] weights summing to 1}, ecc_dist?, consumer_contract?}` |
+| `stellar_activity` (v2.4) | nothing — no XUV environment was set for any generated star | `{rotation_activity:{saturation_log_lx_lbol<0, saturation_rossby>0, unsaturated_slope<0, ro_valid_range?, log_lx_lbol_valid_range? (may be descending), relation_rms_dex?}, convective_turnover:{relation:str, valid_mass_msun, mass_msun_grid/tau_days (parallel, may descend in mass)}, rotation_age_singles?, rotation_age_fgk?, tidal_locking?, circumbinary_xuv:{component_count_scaling==1.0, xray_to_euv?}, expected_locked_vs_single_delta?:{is_prior_field==false}}` |
 
 The importer's `meta.json` and `get_research_priors_status()` gain a **`v2_blocks`** list (`[]` for a v1
 dataset / a pre-V2 cache); the opt-57 DbStatus row and the Import Research Priors panel surface it.
@@ -163,7 +166,42 @@ the F4 gap-opening mass, clamped to `[M_crit, ~13 M_J]` (`_draw_giant_mass`). Wi
 present, **cold giants are placed by a decoupled population** (`_place_cold_giants`: count from
 `multiplicity`, SMA from `sma_dist` beyond the snow line within `outer_au`, mass from the peaked function)
 **independent of the detection-biased inner `n_planet_dist` grid**, and the grid's own giant switch is
-suppressed to avoid double-counting. `occurrence_by_metallicity` also conditions the planet count and a
+suppressed to avoid double-counting. With `inner_giant_population` present (v2.3), a **decoupled close-in giant population** is placed interior to
+the snow line (`_place_inner_giants`, run after the cold block and sharing the host `[Fe/H]`): its own
+per-system occurrence roll against the **literal FV05 `giant_fraction`** interpolated on `feh_grid` with the
+**endpoints held** (`_interp_giant_fraction`; ~3% at solar — deliberately a *different* number from `_occ_eff`'s
+rescaled ~10%-solar cold curve, over a disjoint SMA zone, so the two rolls cannot double-count); SMA from the
+`sma_dist` mixture (hot-Jupiter log-normal pileup + the rising `a^+0.53` warm branch); a `formation_channel`
+tag drawn from `formation_channel_mix` **consistent with the drawn eccentricity** (warm zone: e selects the
+excited/quiescent group, then the block's own weights pick within it; hot zone: tides erase the e signature, so
+the full mix is used). Each such planet carries `formation_channel` + `giant_zone` (`"hot"`/`"warm"`). This
+**bypasses the B1 `giant_switch` for a controlled sub-population — the gate itself is unchanged**, and a giant
+interior to the snow line is always a tagged member of this population, never grid-grown.
+**The two stellar blocks (v2.4+) are validated and exposed, but NOT yet sampled.** `stellar_multiplicity` and
+`stellar_activity` are the first *stellar* axes in the contract (every other block is planetary — note the
+`multiplicity` key inside `cold_giant_population` is a *giant* count). They validate, appear in `v2_blocks`,
+and are exposed on `ResearchPriors`, but **no engine reads them**: `generate.py` does not draw a companion or
+set an XUV environment. The sampler is deliberately held — the block's 12 d circularization boundary is
+measured on *solar-type* primaries while the generated census is ~77% M dwarfs, and no M-dwarf circularization
+period exists in the source corpus. See `docs/research-priors-v2-close-binary-actions.md` §4.
+
+Their validators additionally **hard-enforce three structural guards**, so a future dataset edit cannot
+silently subvert them (each has a negative test): `ecc_dist.consumer_must_not_default_to_zero` must be **true**
+(a silent `e = 0` makes every drawn binary maximally planet-friendly and inflates stable-HZ rates);
+`circumbinary_xuv.component_count_scaling` must be **1.0** (the geometric result that doubled emitters cancel
+against doubled HZ distance, so circumbinary XUV depends on `L_X/L_bol` only — a ratio identity, band
+independent); and `expected_locked_vs_single_delta.is_prior_field` must be **false** (it is what the Rossby
+chain *produces*, so treating it as an input double-counts it). Two shapes that look wrong but are correct and
+must not be "tidied": `log_lx_lbol_valid_range` is stated **descending** (`−4 > log R_X > −6.3`), and the
+Wright 2018 τ table runs **hot-to-cool** so its mass grid descends.
+
+**One app-side modelling choice to know:** the block supplies a mass *range* (`mass_range_mjup`) but no shape,
+and the cold block's gap-anchored `_draw_giant_mass` collapses this close in (the F4 Type-II knee scales with
+`a` and disk temperature, so every draw fell below the 0.3 M_J floor and clamped there — a delta function at
+the floor). Inner-giant mass is therefore drawn **log-uniform** across the range, the v1 `mass_by_zone`
+convention, deliberately flat rather than inventing a centre the dataset does not pin. Flagged to the sister
+project as a candidate for a real inner-giant mass function.
+`occurrence_by_metallicity` also conditions the planet count and a
 super-Earth floor on `[Fe/H]`; `intra_system_correlation` draws neighbours peas-in-a-pod correlated. The
 real-anchor host `[Fe/H]` is **Hypatia-preferred, SIMBAD `mesfe_h.fe_h` fallback**, tagged in
 `star["feh_source"]`; the `notes` gain a `"v2 physics in effect: …"` line naming the active blocks.

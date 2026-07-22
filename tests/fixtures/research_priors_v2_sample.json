@@ -2,62 +2,494 @@
   "schema_version": "2.0",
   "dataset_version": "v2-sample-2026-07-20",
   "provenance": {
-    "source": "V2 SAMPLE fixture — Phase R3-V2 Stage A schema plumbing. Synthetic, well-formed v2 superset: the v1 axes plus all three sister-proposed blocks (mass_model / occurrence_by_metallicity / intra_system_correlation) and the app-side feh_dist axis. NOT research-calibrated values — a shape fixture. Real v2 numbers come from Packet 3.5 when v2 is scheduled.",
+    "source": "V2 SAMPLE fixture \u2014 Phase R3-V2 Stage A schema plumbing. Synthetic, well-formed v2 superset: the v1 axes plus all three sister-proposed blocks (mass_model / occurrence_by_metallicity / intra_system_correlation) and the app-side feh_dist axis. NOT research-calibrated values \u2014 a shape fixture. Real v2 numbers come from Packet 3.5 when v2 is scheduled.",
     "description": "Used to prove the validator/provider/importer accept and expose the v2 blocks. No engine reads them in Stage A, so this fixture does not change generation output.",
     "citations": []
   },
-
-  "spectral_class_weights": { "M": 0.773, "K": 0.134, "G": 0.069, "F": 0.025, "A": 0.008, "B": 0.001 },
-  "n_planet_dist": { "0": 0.21, "1": 0.23, "2": 0.19, "3": 0.13, "4": 0.09, "5": 0.055, "6": 0.04, "7": 0.025, "8": 0.015, "9": 0.008, "10": 0.007 },
-  "spacing_ratio": [1.2, 2.2],
-  "mass_by_zone": { "hot": [0.05, 12.0], "hz": [0.10, 10.0], "cold": [0.5, 600.0], "far": [0.3, 80.0] },
-  "moon_count": [0, 6],
-  "moon_mass_frac": [1e-5, 5e-4],
-
+  "spectral_class_weights": {
+    "M": 0.773,
+    "K": 0.134,
+    "G": 0.069,
+    "F": 0.025,
+    "A": 0.008,
+    "B": 0.001
+  },
+  "n_planet_dist": {
+    "0": 0.21,
+    "1": 0.23,
+    "2": 0.19,
+    "3": 0.13,
+    "4": 0.09,
+    "5": 0.055,
+    "6": 0.04,
+    "7": 0.025,
+    "8": 0.015,
+    "9": 0.008,
+    "10": 0.007
+  },
+  "spacing_ratio": [
+    1.2,
+    2.2
+  ],
+  "mass_by_zone": {
+    "hot": [
+      0.05,
+      12.0
+    ],
+    "hz": [
+      0.1,
+      10.0
+    ],
+    "cold": [
+      0.5,
+      600.0
+    ],
+    "far": [
+      0.3,
+      80.0
+    ]
+  },
+  "moon_count": [
+    0,
+    6
+  ],
+  "moon_mass_frac": [
+    1e-05,
+    0.0005
+  ],
   "mass_model": {
     "type": "isolation-scaling",
-    "disk": { "sigma0_gcm2": 1700, "sigma_slope": -1.5, "temp0_k": 280, "temp_slope": -0.5, "disk_mass_mmsn": 1.0 },
+    "disk": {
+      "sigma0_gcm2": 1700,
+      "sigma_slope": -1.5,
+      "temp0_k": 280,
+      "temp_slope": -0.5,
+      "disk_mass_mmsn": 1.0
+    },
     "feeding_zone_hill": 10,
     "giant_switch": "pebble_isolation",
     "notes": "M_iso(sigma, a, Mstar) via the Group P calculators (F2/F3/F6); the engine samples from this in Stage B."
   },
-
   "occurrence_by_metallicity": {
-    "feh_grid": [-0.5, -0.25, 0.0, 0.25, 0.5],
-    "giant_fraction": [0.01, 0.03, 0.07, 0.14, 0.25],
+    "feh_grid": [
+      -0.5,
+      -0.25,
+      0.0,
+      0.25,
+      0.5
+    ],
+    "giant_fraction": [
+      0.01,
+      0.03,
+      0.07,
+      0.14,
+      0.25
+    ],
     "superearth_floor_feh": -0.5,
     "n_planet_dist_shift": "scale n_planet_dist toward higher counts with [Fe/H]"
   },
-
   "intra_system_correlation": {
-    "size_ratio_dist": { "mean": 1.0, "sigma": 0.3 },
-    "period_ratio_dist": { "min": 1.2, "mode": 1.7, "tail": 3.0 },
+    "size_ratio_dist": {
+      "mean": 1.0,
+      "sigma": 0.3
+    },
+    "period_ratio_dist": {
+      "min": 1.2,
+      "mode": 1.7,
+      "tail": 3.0
+    },
     "ordering": "outer planets modestly larger in ~65% of pairs",
     "note": "once a seed planet is drawn, neighbours are drawn CONDITIONAL on it, not independently."
   },
-
   "feh_dist": {
     "mean": -0.1,
     "sigma": 0.2,
     "min": -1.0,
     "max": 0.5
   },
-
   "cold_giant_population": {
-    "sma_dist": { "dist": "powerlaw", "inner": "snow_line", "outer_au": 30.0, "slope_dn_dlna": -1.2 },
-    "multiplicity": { "1": 0.65, "2": 0.25, "3": 0.08, "4": 0.02 }
+    "sma_dist": {
+      "dist": "powerlaw",
+      "inner": "snow_line",
+      "outer_au": 30.0,
+      "slope_dn_dlna": -1.2
+    },
+    "multiplicity": {
+      "1": 0.65,
+      "2": 0.25,
+      "3": 0.08,
+      "4": 0.02
+    }
   },
-
+  "inner_giant_population": {
+    "sma_dist": {
+      "dist": "mixture",
+      "inner_edge_au": 0.025,
+      "outer": "snow_line",
+      "components": [
+        {
+          "name": "hot_jupiter_pileup",
+          "dist": "lognormal_au",
+          "center_au": 0.052,
+          "log10_sigma": 0.24,
+          "weight": 0.32
+        },
+        {
+          "name": "warm_rise",
+          "dist": "powerlaw",
+          "inner_au": 0.11,
+          "outer": "snow_line",
+          "slope_dn_dlna": 0.51,
+          "weight": 0.68
+        }
+      ]
+    },
+    "occurrence_ref": "occurrence_by_metallicity.giant_fraction",
+    "mass_range_mjup": [
+      0.3,
+      13.0
+    ],
+    "eccentricity_dist": {
+      "warm": {
+        "dist": "beta",
+        "alpha": 1.0,
+        "beta": 2.75
+      },
+      "hot": {
+        "dist": "rayleigh",
+        "sigma": 0.032
+      }
+    },
+    "formation_channel_mix": {
+      "warm_zone_0p1au_to_snowline": {
+        "in_situ_circular": 0.3,
+        "in_situ_scattering": 0.45,
+        "disk_migration": 0.15,
+        "high_e_tidal_migration": 0.1
+      },
+      "hot_zone_below_0p1au": {
+        "migrated_disk_or_high_e": 0.8,
+        "in_situ": 0.2
+      }
+    }
+  },
+  "stellar_multiplicity": {
+    "multiplicity_fraction": {
+      "mass_msun_grid": [
+        0.075,
+        0.3,
+        1.0,
+        16.0
+      ],
+      "fraction": [
+        0.2,
+        0.26,
+        0.44,
+        0.92
+      ],
+      "sigma": [
+        null,
+        0.03,
+        0.02,
+        null
+      ],
+      "interpolation": "linear_in_log10_mass_hold_endpoints"
+    },
+    "companion_frequency": {
+      "mass_msun_grid": [
+        0.3,
+        1.0
+      ],
+      "frequency": [
+        0.33,
+        0.62
+      ]
+    },
+    "higher_order_fraction": {
+      "value": 0.25
+    },
+    "mass_ratio_dist": {
+      "dist": "powerlaw_q",
+      "slope": 0.28,
+      "q_min": 0.1,
+      "q_max": 1.0,
+      "twin_excess_above_q": 0.95,
+      "twin_excess_factor": 1.2
+    },
+    "separation_dist": {
+      "dist": "mixture",
+      "components": [
+        {
+          "name": "close_pair",
+          "dist": "loguniform_period_days",
+          "p_min_days": 1.8,
+          "p_max_days": 62.6,
+          "weight": 0.087,
+          "sets_p_orb_days": true
+        },
+        {
+          "name": "wide_lognormal",
+          "dist": "lognormal_au",
+          "weight": 0.913,
+          "center_au_mass_grid": [
+            0.3,
+            1.0
+          ],
+          "center_au": [
+            5.3,
+            42.0
+          ],
+          "log10_sigma_au": 1.16,
+          "truncate_period_days_min": 62.6,
+          "renormalize_after_truncation": true,
+          "sigma_provenance": "winters2019_m_dwarf_fit_body_verified",
+          "center_au_status": "CONTESTED \u2014 pending a canon D1 pass; see center_au_candidates"
+        }
+      ]
+    },
+    "consumer_contract": {
+      "emit": [
+        "mass_solar",
+        "sma_au",
+        "ecc",
+        "p_orb_days",
+        "close_pair"
+      ]
+    },
+    "ecc_dist": {
+      "dist": "flat_above_circularization_concentrated_below",
+      "status": "RESEARCH-GRADE",
+      "consumer_must_not_default_to_zero": true,
+      "circularization_period_days": 12.0,
+      "implement_as": "statistical_boundary_NOT_a_threshold",
+      "f_e_above_boundary": "roughly_flat_0_to_~0.9",
+      "below_boundary": "concentrated near zero \u2014 NEVER e == 0 identically",
+      "domain": "solar-type primaries (Raghavan 2010, 454 stars) \u2014 NOT an M-dwarf result"
+    }
+  },
+  "stellar_activity": {
+    "rotation_activity": {
+      "saturation_log_lx_lbol": -3.13,
+      "saturation_rossby": 0.16,
+      "unsaturated_slope": -2.7,
+      "unsaturated_slope_sigma": 0.13,
+      "fully_convective_same_relation": true,
+      "constants_are_a_cross_fitted_set": true,
+      "ro_valid_range": [
+        0.3,
+        3.0
+      ],
+      "log_lx_lbol_valid_range": [
+        -4.0,
+        -6.3
+      ],
+      "relation_rms_dex": 0.3,
+      "form": "anchored_reconstruction_not_wrights_fitted_line",
+      "band": "X-ray (ROSAT/PSPC) \u2014 NOT XUV; see circumbinary_xuv"
+    },
+    "convective_turnover": {
+      "relation": "log10_tau_days = 2.33 - 1.50*(M/Msun) + 0.31*(M/Msun)**2",
+      "valid_mass_msun": [
+        0.08,
+        1.36
+      ],
+      "rms_dex": 0.055,
+      "mass_msun_grid": [
+        1.17,
+        1.09,
+        0.95,
+        0.83,
+        0.7,
+        0.61,
+        0.5,
+        0.3,
+        0.22,
+        0.18,
+        0.14
+      ],
+      "tau_days": [
+        8.5,
+        13.2,
+        14.8,
+        22.9,
+        26.3,
+        33.1,
+        52.5,
+        66.1,
+        91.2,
+        117.5,
+        155.0
+      ],
+      "alt_relation_v_ks": "log10_tau_days = 0.64 + 0.25*(V-Ks), valid 1.1 < V-Ks < 7.0, rms 0.045 dex",
+      "fitted_for": "convective turnover time entering Ro = P_rot/tau in the Wright rotation-activity relation"
+    },
+    "rotation_age_singles": {
+      "dist": "bimodal",
+      "fast": {
+        "p_rot_days": [
+          0.5,
+          10.0
+        ],
+        "age_gyr_max": 2.0
+      },
+      "slow": {
+        "p_rot_days": [
+          70.0,
+          140.0
+        ],
+        "age_gyr_typical": 5.0
+      },
+      "interpolate_across_gap": false,
+      "applicable_mass_msun": [
+        0.08,
+        0.6
+      ]
+    },
+    "tidal_locking": {
+      "driver": "p_orb_days",
+      "locked_when_close_pair": true,
+      "p_rot_equals_p_orb": true
+    },
+    "circumbinary_xuv": {
+      "component_count_scaling": 1.0,
+      "input_band": "X-ray (ROSAT/PSPC)",
+      "output_label": "XUV",
+      "xray_to_euv_conversion_applied": true,
+      "assumption_grade": "CONTESTED \u2014 the literature disagrees; the spread between relations IS the uncertainty",
+      "xray_to_euv": {
+        "default": "sanz_forcada_2011",
+        "relations": {
+          "sanz_forcada_2011": {
+            "relation": "log10 L_EUV = (4.80 +/- 1.99) + (0.860 +/- 0.073) * log10 L_X",
+            "band_x_angstrom": [
+              5,
+              100
+            ],
+            "band_euv_angstrom": [
+              100,
+              920
+            ],
+            "source": "Sanz-Forcada et al. 2011, A&A 532, A6 (arXiv:1105.0550), S'Extension to the EUV'",
+            "verification": "orchestrator-opened full section; observational fit on XMM/Chandra exoplanet hosts via per-star coronal EMD models",
+            "locked_vs_single_xuv_contrast": 93
+          },
+          "johnstone_2021": {
+            "relation": "log10 L_EUV = 9.93 + 0.67 * log10 L_X",
+            "band_euv_angstrom": [
+              100,
+              912
+            ],
+            "source": "Johnstone, Bartel & Gudel 2021, A&A 656, A111",
+            "verification": "SIMULATION-DERIVED, not an observational fit",
+            "locked_vs_single_xuv_contrast": 38
+          }
+        }
+      }
+    },
+    "expected_locked_vs_single_delta": {
+      "orders_of_magnitude": [
+        2,
+        3
+      ],
+      "is_prior_field": false,
+      "central_factor": 180,
+      "is_instantaneous_matched_age": true,
+      "do_not_use_for_cumulative_fluence": true,
+      "band_of_the_orders_of_magnitude": "X-RAY contrast (L_X), NOT XUV",
+      "xuv_contrast_sanz_forcada_2011": 93,
+      "xuv_contrast_johnstone_2021": 38,
+      "xray_contrast_current_chain": 182
+    },
+    "rotation_age_fgk": {
+      "applicable_mass_msun": [
+        0.6,
+        1.36
+      ],
+      "relation": "skumanich",
+      "formula": "p_rot_days = p_sun_days * (age_gyr / age_sun_gyr) ** exponent",
+      "p_sun_days": 25.4,
+      "age_sun_gyr": 4.57,
+      "exponent": 0.5,
+      "grade": "RESEARCH-GRADE -- Skumanich t^1/2 scaling anchored on the Sun; NOT a pinned gyrochronology calibration",
+      "queued_source": "Mamajek & Hillenbrand 2008, ApJ 687, 1264 -- gyrochronology calibration (NOT fetched this pass)",
+      "unit_test_sun": {
+        "mass_msun": 1.0,
+        "age_gyr": 4.57,
+        "p_rot_days": 25.4,
+        "tau_days_from_relation": 13.8,
+        "rossby": 1.84,
+        "log_lx_lbol_predicted": -5.99,
+        "solar_cycle_band_log_lx_lbol": [
+          -7.15,
+          -5.91
+        ],
+        "solar_cycle_band_span_dex": 1.24,
+        "solar_cycle_band_log_midpoint": -6.53,
+        "passes": true,
+        "do_not_assert_a_point_match": true
+      }
+    }
+  },
   "origin_priors": {
-    "planet_at_location:in_situ_beyond_snow": [ { "pathway": "in-situ accretion beyond the snow line", "plausibility": "high" } ],
-    "planet_at_location:in_situ_inner":       [ { "pathway": "in-situ accretion", "plausibility": "medium" } ],
-    "planet_at_location:resonant_migration":  [ { "pathway": "convergent migration into resonance", "plausibility": "medium" } ],
-    "planet_at_location:infeasible":          [ { "pathway": "captured / scattered survivor", "plausibility": "low" } ],
-    "trojan:feasible":                        [ { "pathway": "in-situ co-accretion / capture into the Lagrange point", "plausibility": "medium" } ],
-    "trojan:infeasible":                      [ { "pathway": "no stable co-orbital pathway (host too massive)", "plausibility": "low" } ],
-    "moon:feasible":                          [ { "pathway": "capture / circumplanetary-disk formation", "plausibility": "medium" } ],
-    "moon:infeasible":                        [ { "pathway": "no stable satellite pathway", "plausibility": "low" } ],
-    "resonance:feasible":                     [ { "pathway": "convergent migration into resonance", "plausibility": "high" } ],
-    "resonance:infeasible":                   [ { "pathway": "would require migration / capture into resonance", "plausibility": "low" } ]
+    "planet_at_location:in_situ_beyond_snow": [
+      {
+        "pathway": "in-situ accretion beyond the snow line",
+        "plausibility": "high"
+      }
+    ],
+    "planet_at_location:in_situ_inner": [
+      {
+        "pathway": "in-situ accretion",
+        "plausibility": "medium"
+      }
+    ],
+    "planet_at_location:resonant_migration": [
+      {
+        "pathway": "convergent migration into resonance",
+        "plausibility": "medium"
+      }
+    ],
+    "planet_at_location:infeasible": [
+      {
+        "pathway": "captured / scattered survivor",
+        "plausibility": "low"
+      }
+    ],
+    "trojan:feasible": [
+      {
+        "pathway": "in-situ co-accretion / capture into the Lagrange point",
+        "plausibility": "medium"
+      }
+    ],
+    "trojan:infeasible": [
+      {
+        "pathway": "no stable co-orbital pathway (host too massive)",
+        "plausibility": "low"
+      }
+    ],
+    "moon:feasible": [
+      {
+        "pathway": "capture / circumplanetary-disk formation",
+        "plausibility": "medium"
+      }
+    ],
+    "moon:infeasible": [
+      {
+        "pathway": "no stable satellite pathway",
+        "plausibility": "low"
+      }
+    ],
+    "resonance:feasible": [
+      {
+        "pathway": "convergent migration into resonance",
+        "plausibility": "high"
+      }
+    ],
+    "resonance:infeasible": [
+      {
+        "pathway": "would require migration / capture into resonance",
+        "plausibility": "low"
+      }
+    ]
   }
 }

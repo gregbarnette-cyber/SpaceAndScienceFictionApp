@@ -66,6 +66,9 @@ class DefaultPriors:
     intra_system_correlation = None
     feh_dist = None
     cold_giant_population = None    # v2.2 — decoupled cold-giant population (B6/L2)
+    inner_giant_population = None   # v2.3 — decoupled close-in giant population
+    stellar_multiplicity = None     # v2.4 — stellar multiplicity / close pairs
+    stellar_activity = None         # v2.4 — rotation-activity chain + circumbinary XUV
 
     def __init__(self):
         # Host-star spectral-class weights (M ≫ K > G > F > A > B).
@@ -168,6 +171,10 @@ class ResearchPriors:
             contract.get("intra_system_correlation"))
         self.feh_dist = copy.deepcopy(contract.get("feh_dist"))
         self.cold_giant_population = copy.deepcopy(contract.get("cold_giant_population"))
+        self.inner_giant_population = copy.deepcopy(
+            contract.get("inner_giant_population"))
+        self.stellar_multiplicity = copy.deepcopy(contract.get("stellar_multiplicity"))
+        self.stellar_activity = copy.deepcopy(contract.get("stellar_activity"))
 
     @classmethod
     def from_contract(cls, obj):

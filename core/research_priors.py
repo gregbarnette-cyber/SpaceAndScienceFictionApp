@@ -95,6 +95,9 @@ _V2_BLOCK_NAMES = (
     "intra_system_correlation",   # F3 — peas-in-a-pod joint draws
     "feh_dist",                   # app-side: synthetic-mode host [Fe/H] source (Decision 2)
     "cold_giant_population",       # v2.2 — decoupled cold-giant SMA + multiplicity (B6/L2)
+    "inner_giant_population",     # v2.3 — decoupled close-in giant population + channel tags
+    "stellar_multiplicity",       # v2.4 — the first STELLAR axis: binaries + close pairs
+    "stellar_activity",           # v2.4 — rotation/activity chain + circumbinary XUV geometry
 )
 
 _MASS_MODEL_TYPES = {"isolation-scaling"}   # recognised mass_model.type (additive)
@@ -297,6 +300,458 @@ def _check_cold_giant_population(cgp):
     return None
 
 
+_INNER_GIANT_OCCURRENCE_REF = "occurrence_by_metallicity.giant_fraction"
+_INNER_GIANT_COMPONENT_DISTS = {"lognormal_au", "powerlaw"}
+
+
+def _check_inner_giant_population(igp):
+    """v2.3 — the decoupled close-in giant population (warm + hot Jupiters interior
+    to the snow line), the mirror of ``cold_giant_population``.
+
+    Shape only. The cross-block dependency (``occurrence_by_metallicity`` must be
+    present, since ``occurrence_ref`` points into it) is a document-level invariant
+    and is checked in ``validate_priors_contract``.
+    """
+    if not isinstance(igp, dict):
+        return "inner_giant_population must be an object."
+
+    # ── sma_dist: a weighted mixture over [inner_edge_au, snow_line] ──
+    sma = igp.get("sma_dist")
+    if not isinstance(sma, dict):
+        return "inner_giant_population.sma_dist must be an object."
+    if sma.get("dist") != "mixture":
+        return "inner_giant_population.sma_dist.dist must be 'mixture'."
+    edge = sma.get("inner_edge_au")
+    if not _is_num(edge) or not (0 < edge < 1):
+        return ("inner_giant_population.sma_dist.inner_edge_au must be a number "
+                "in (0, 1) AU.")
+    if sma.get("outer") != "snow_line":
+        return "inner_giant_population.sma_dist.outer must be 'snow_line'."
+
+    comps = sma.get("components")
+    if not isinstance(comps, list) or not comps:
+        return "inner_giant_population.sma_dist.components must be a non-empty list."
+    weight_sum = 0.0
+    for i, c in enumerate(comps):
+        where = f"inner_giant_population.sma_dist.components[{i}]"
+        if not isinstance(c, dict):
+            return f"{where} must be an object."
+        if not isinstance(c.get("name"), str) or not c["name"].strip():
+            return f"{where}.name must be a non-empty string."
+        cd = c.get("dist")
+        if cd not in _INNER_GIANT_COMPONENT_DISTS:
+            return (f"{where}.dist must be one of "
+                    f"{sorted(_INNER_GIANT_COMPONENT_DISTS)} (got {cd!r}).")
+        w = c.get("weight")
+        if not _is_num(w) or w <= 0:
+            return f"{where}.weight must be a positive number."
+        weight_sum += w
+        if cd == "lognormal_au":
+            if not _is_num(c.get("center_au")) or c["center_au"] <= 0:
+                return f"{where}.center_au must be a positive number."
+            if not _is_num(c.get("log10_sigma")) or c["log10_sigma"] <= 0:
+                return f"{where}.log10_sigma must be a positive number."
+        else:  # powerlaw
+            if not _is_num(c.get("inner_au")) or c["inner_au"] <= 0:
+                return f"{where}.inner_au must be a positive number."
+            outer = c.get("outer")
+            if outer != "snow_line" and not (_is_num(outer) and outer > 0):
+                return f"{where}.outer must be 'snow_line' or a positive number."
+            if not _is_num(c.get("slope_dn_dlna")):
+                return f"{where}.slope_dn_dlna must be a number."
+    if abs(weight_sum - 1.0) > 1e-6:
+        return ("inner_giant_population.sma_dist.components weights must sum to 1.0 "
+                f"(got {weight_sum!r}).")
+
+    # ── occurrence_ref: the hard pointer into occurrence_by_metallicity ──
+    if igp.get("occurrence_ref") != _INNER_GIANT_OCCURRENCE_REF:
+        return (f"inner_giant_population.occurrence_ref must be "
+                f"{_INNER_GIANT_OCCURRENCE_REF!r}.")
+
+    # ── mass_range_mjup: 0 < lo < hi <= 13 ──
+    mr = igp.get("mass_range_mjup")
+    if not isinstance(mr, (list, tuple)) or len(mr) != 2:
+        return "inner_giant_population.mass_range_mjup must be a [lo, hi] pair."
+    lo, hi = mr
+    if not (_is_num(lo) and _is_num(hi)):
+        return "inner_giant_population.mass_range_mjup bounds must be numbers."
+    if not (0 < lo < hi <= 13):
+        return ("inner_giant_population.mass_range_mjup requires "
+                "0 < lo < hi <= 13 (M_Jup).")
+
+    # ── eccentricity_dist: warm = beta, hot = rayleigh ──
+    ed = igp.get("eccentricity_dist")
+    if not isinstance(ed, dict):
+        return "inner_giant_population.eccentricity_dist must be an object."
+    warm = ed.get("warm")
+    if not isinstance(warm, dict):
+        return "inner_giant_population.eccentricity_dist.warm must be an object."
+    if warm.get("dist") != "beta":
+        return "inner_giant_population.eccentricity_dist.warm.dist must be 'beta'."
+    for p in ("alpha", "beta"):
+        if not _is_num(warm.get(p)) or warm[p] <= 0:
+            return (f"inner_giant_population.eccentricity_dist.warm.{p} must be a "
+                    "positive number.")
+    hot = ed.get("hot")
+    if not isinstance(hot, dict):
+        return "inner_giant_population.eccentricity_dist.hot must be an object."
+    if hot.get("dist") != "rayleigh":
+        return "inner_giant_population.eccentricity_dist.hot.dist must be 'rayleigh'."
+    sig = hot.get("sigma")
+    if not _is_num(sig) or not (0 < sig < 1):
+        return ("inner_giant_population.eccentricity_dist.hot.sigma must be a number "
+                "in (0, 1).")
+
+    # ── formation_channel_mix: each zone's fractions in [0,1], summing to 1 ──
+    fcm = igp.get("formation_channel_mix")
+    if not isinstance(fcm, dict) or not fcm:
+        return "inner_giant_population.formation_channel_mix must be a non-empty object."
+    saw_zone = False
+    for zone, mix in fcm.items():
+        # Zones are objects; any non-object sibling is metadata and is skipped —
+        # the shipped dataset carries free-text note/notes here, and v2.5.0 added a
+        # boolean is_prior_field flag beside them.
+        if not isinstance(mix, dict):
+            continue
+        where = f"inner_giant_population.formation_channel_mix[{zone!r}]"
+        if not mix:
+            return f"{where} must be a non-empty object."
+        saw_zone = True
+        total = 0.0
+        for channel, frac in mix.items():
+            if not _is_num(frac) or not (0 <= frac <= 1):
+                return f"{where}[{channel!r}] must be a number in [0, 1]."
+            total += frac
+        if abs(total - 1.0) > 1e-6:
+            return f"{where} fractions must sum to 1.0 (got {total!r})."
+    if not saw_zone:
+        return ("inner_giant_population.formation_channel_mix must have at least one "
+                "zone object.")
+    return None
+
+
+def _check_num_grid(obj, base, key_x, key_y, *, y_lo=None, y_hi=None, min_len=2):
+    """Validate a pair of parallel numeric arrays (x ascending, y in range)."""
+    xs, ys = obj.get(key_x), obj.get(key_y)
+    for k, v in ((key_x, xs), (key_y, ys)):
+        if not isinstance(v, list) or len(v) < min_len:
+            return f"{base}.{k} must be a list of at least {min_len} numbers."
+        if not all(_is_num(n) for n in v):
+            return f"{base}.{k} entries must be numbers."
+    if len(xs) != len(ys):
+        return f"{base}.{key_x} and .{key_y} must be the same length."
+    if any(b <= a for a, b in zip(xs, xs[1:])):
+        return f"{base}.{key_x} must be strictly ascending."
+    for n in ys:
+        if y_lo is not None and n < y_lo:
+            return f"{base}.{key_y} entries must be >= {y_lo}."
+        if y_hi is not None and n > y_hi:
+            return f"{base}.{key_y} entries must be <= {y_hi}."
+    return None
+
+
+def _check_bounds_pair(obj, base, key, *, positive=True, ordered=True):
+    """Validate a [lo, hi] numeric pair. ``ordered=False`` allows either order
+    (log_lx_lbol_valid_range is stated descending, -4 > log R_X > -6.3)."""
+    v = obj.get(key)
+    if not isinstance(v, (list, tuple)) or len(v) != 2 or not all(_is_num(n) for n in v):
+        return f"{base}.{key} must be a [lo, hi] pair of numbers."
+    lo, hi = v
+    if positive and (lo <= 0 or hi <= 0):
+        return f"{base}.{key} bounds must be positive."
+    if ordered and lo >= hi:
+        return f"{base}.{key} requires lo < hi (got {lo} >= {hi})."
+    if not ordered and lo == hi:
+        return f"{base}.{key} bounds must differ."
+    return None
+
+
+_SEPARATION_COMPONENT_DISTS = {"loguniform_period_days", "lognormal_au"}
+
+
+def _check_stellar_multiplicity(sm):
+    """v2.4+ — stellar multiplicity: the first STELLAR axis (all other blocks are
+    planetary). Mass-ordered multiplicity fraction, mass ratios, and a two-component
+    separation mixture whose close-pair branch sets ``p_orb_days`` for stellar_activity.
+    """
+    if not isinstance(sm, dict):
+        return "stellar_multiplicity must be an object."
+
+    mf = sm.get("multiplicity_fraction")
+    if not isinstance(mf, dict):
+        return "stellar_multiplicity.multiplicity_fraction must be an object."
+    e = _check_num_grid(mf, "stellar_multiplicity.multiplicity_fraction",
+                        "mass_msun_grid", "fraction", y_lo=0.0, y_hi=1.0)
+    if e:
+        return e
+    if any(m <= 0 for m in mf["mass_msun_grid"]):
+        return "stellar_multiplicity.multiplicity_fraction.mass_msun_grid entries must be > 0."
+    sig = mf.get("sigma")
+    if sig is not None:
+        if not isinstance(sig, list) or len(sig) != len(mf["fraction"]):
+            return ("stellar_multiplicity.multiplicity_fraction.sigma must be a list "
+                    "the same length as fraction.")
+        for s in sig:
+            if s is not None and (not _is_num(s) or s < 0):
+                return ("stellar_multiplicity.multiplicity_fraction.sigma entries must be "
+                        "null or a non-negative number.")
+
+    cf = sm.get("companion_frequency")
+    if cf is not None:
+        if not isinstance(cf, dict):
+            return "stellar_multiplicity.companion_frequency must be an object."
+        e = _check_num_grid(cf, "stellar_multiplicity.companion_frequency",
+                            "mass_msun_grid", "frequency", y_lo=0.0)
+        if e:
+            return e
+
+    hof = sm.get("higher_order_fraction")
+    if hof is not None:
+        if not isinstance(hof, dict):
+            return "stellar_multiplicity.higher_order_fraction must be an object."
+        v = hof.get("value")
+        if not _is_num(v) or not (0 <= v <= 1):
+            return "stellar_multiplicity.higher_order_fraction.value must be in [0, 1]."
+
+    mr = sm.get("mass_ratio_dist")
+    if not isinstance(mr, dict):
+        return "stellar_multiplicity.mass_ratio_dist must be an object."
+    if mr.get("dist") != "powerlaw_q":
+        return "stellar_multiplicity.mass_ratio_dist.dist must be 'powerlaw_q'."
+    if not _is_num(mr.get("slope")):
+        return "stellar_multiplicity.mass_ratio_dist.slope must be a number."
+    q_lo, q_hi = mr.get("q_min"), mr.get("q_max")
+    if not (_is_num(q_lo) and _is_num(q_hi)) or not (0 < q_lo < q_hi <= 1):
+        return "stellar_multiplicity.mass_ratio_dist requires 0 < q_min < q_max <= 1."
+    twin_q = mr.get("twin_excess_above_q")
+    if twin_q is not None and (not _is_num(twin_q) or not (0 < twin_q <= 1)):
+        return "stellar_multiplicity.mass_ratio_dist.twin_excess_above_q must be in (0, 1]."
+    twin_f = mr.get("twin_excess_factor")
+    if twin_f is not None and (not _is_num(twin_f) or twin_f <= 0):
+        return "stellar_multiplicity.mass_ratio_dist.twin_excess_factor must be > 0."
+
+    sd = sm.get("separation_dist")
+    if not isinstance(sd, dict):
+        return "stellar_multiplicity.separation_dist must be an object."
+    if sd.get("dist") != "mixture":
+        return "stellar_multiplicity.separation_dist.dist must be 'mixture'."
+    comps = sd.get("components")
+    if not isinstance(comps, list) or not comps:
+        return "stellar_multiplicity.separation_dist.components must be a non-empty list."
+    wsum = 0.0
+    for i, c in enumerate(comps):
+        where = f"stellar_multiplicity.separation_dist.components[{i}]"
+        if not isinstance(c, dict):
+            return f"{where} must be an object."
+        if not isinstance(c.get("name"), str) or not c["name"].strip():
+            return f"{where}.name must be a non-empty string."
+        cd = c.get("dist")
+        if cd not in _SEPARATION_COMPONENT_DISTS:
+            return (f"{where}.dist must be one of "
+                    f"{sorted(_SEPARATION_COMPONENT_DISTS)} (got {cd!r}).")
+        w = c.get("weight")
+        if not _is_num(w) or w <= 0:
+            return f"{where}.weight must be a positive number."
+        wsum += w
+        if cd == "loguniform_period_days":
+            e = _check_bounds_pair({"p": [c.get("p_min_days"), c.get("p_max_days")]},
+                                   where, "p")
+            if e:
+                return f"{where} requires 0 < p_min_days < p_max_days."
+        else:
+            e = _check_num_grid(c, where, "center_au_mass_grid", "center_au", y_lo=0.0)
+            if e:
+                return e
+            if not _is_num(c.get("log10_sigma_au")) or c["log10_sigma_au"] <= 0:
+                return f"{where}.log10_sigma_au must be a positive number."
+            tr = c.get("truncate_period_days_min")
+            if tr is not None and (not _is_num(tr) or tr <= 0):
+                return f"{where}.truncate_period_days_min must be a positive number."
+    if abs(wsum - 1.0) > 1e-6:
+        return ("stellar_multiplicity.separation_dist.components weights must sum to 1.0 "
+                f"(got {wsum!r}).")
+
+    ecc = sm.get("ecc_dist")
+    if ecc is not None:
+        if not isinstance(ecc, dict):
+            return "stellar_multiplicity.ecc_dist must be an object."
+        # Structural guard (F-1): the whole point of this block is that a consumer
+        # cannot quietly fall back to e = 0, which would make every drawn binary
+        # maximally planet-friendly and inflate stable-HZ rates.
+        if ecc.get("consumer_must_not_default_to_zero") is not True:
+            return ("stellar_multiplicity.ecc_dist.consumer_must_not_default_to_zero "
+                    "must be present and true (the F-1 guard).")
+        cp = ecc.get("circularization_period_days")
+        if cp is not None and (not _is_num(cp) or cp <= 0):
+            return ("stellar_multiplicity.ecc_dist.circularization_period_days must be "
+                    "a positive number.")
+        if ecc.get("status") == "RESEARCH-GRADE" and cp is None:
+            return ("stellar_multiplicity.ecc_dist: a RESEARCH-GRADE status requires "
+                    "circularization_period_days.")
+        pts = ecc.get("observed_points")
+        if pts is not None:
+            if not isinstance(pts, list):
+                return "stellar_multiplicity.ecc_dist.observed_points must be a list."
+            for i, pt in enumerate(pts):
+                w2 = f"stellar_multiplicity.ecc_dist.observed_points[{i}]"
+                if not isinstance(pt, dict):
+                    return f"{w2} must be an object."
+                if not _is_num(pt.get("p_orb_days")) or pt["p_orb_days"] <= 0:
+                    return f"{w2}.p_orb_days must be a positive number."
+                ev = pt.get("ecc")
+                if not _is_num(ev) or not (0 <= ev < 1):
+                    return f"{w2}.ecc must be in [0, 1)."
+
+    cc = sm.get("consumer_contract")
+    if cc is not None:
+        if not isinstance(cc, dict):
+            return "stellar_multiplicity.consumer_contract must be an object."
+        emit = cc.get("emit")
+        if not isinstance(emit, list) or not all(isinstance(x, str) for x in emit):
+            return "stellar_multiplicity.consumer_contract.emit must be a list of strings."
+    return None
+
+
+def _check_stellar_activity(sa):
+    """v2.4+ — the rotation/activity chain: P_rot → Ro = P_rot/τ → L_X/L_bol, plus the
+    circumbinary XUV geometry. The three constants are a cross-fitted set (F-0) and the
+    τ(mass) table was fitted assuming them, so they travel together."""
+    if not isinstance(sa, dict):
+        return "stellar_activity must be an object."
+
+    ra = sa.get("rotation_activity")
+    if not isinstance(ra, dict):
+        return "stellar_activity.rotation_activity must be an object."
+    sat = ra.get("saturation_log_lx_lbol")
+    if not _is_num(sat) or sat >= 0:
+        return ("stellar_activity.rotation_activity.saturation_log_lx_lbol must be a "
+                "negative number (a log10 ratio).")
+    ro_sat = ra.get("saturation_rossby")
+    if not _is_num(ro_sat) or ro_sat <= 0:
+        return ("stellar_activity.rotation_activity.saturation_rossby must be a "
+                "positive number.")
+    slope = ra.get("unsaturated_slope")
+    if not _is_num(slope) or slope >= 0:
+        return ("stellar_activity.rotation_activity.unsaturated_slope must be a "
+                "negative number (activity falls with Rossby number).")
+    ss = ra.get("unsaturated_slope_sigma")
+    if ss is not None and (not _is_num(ss) or ss < 0):
+        return ("stellar_activity.rotation_activity.unsaturated_slope_sigma must be "
+                "non-negative.")
+    if ra.get("ro_valid_range") is not None:
+        e = _check_bounds_pair(ra, "stellar_activity.rotation_activity", "ro_valid_range")
+        if e:
+            return e
+    if ra.get("log_lx_lbol_valid_range") is not None:
+        e = _check_bounds_pair(ra, "stellar_activity.rotation_activity",
+                               "log_lx_lbol_valid_range", positive=False, ordered=False)
+        if e:
+            return e
+    rms = ra.get("relation_rms_dex")
+    if rms is not None and (not _is_num(rms) or rms <= 0):
+        return "stellar_activity.rotation_activity.relation_rms_dex must be > 0."
+
+    ct = sa.get("convective_turnover")
+    if not isinstance(ct, dict):
+        return "stellar_activity.convective_turnover must be an object."
+    if not isinstance(ct.get("relation"), str) or not ct["relation"].strip():
+        return "stellar_activity.convective_turnover.relation must be a non-empty string."
+    e = _check_bounds_pair(ct, "stellar_activity.convective_turnover", "valid_mass_msun")
+    if e:
+        return e
+    if ct.get("mass_msun_grid") is not None or ct.get("tau_days") is not None:
+        # The empirical grid is descending in mass, so check the τ side only.
+        xs, ys = ct.get("mass_msun_grid"), ct.get("tau_days")
+        for k, v in (("mass_msun_grid", xs), ("tau_days", ys)):
+            if not isinstance(v, list) or len(v) < 2 or not all(_is_num(n) for n in v):
+                return (f"stellar_activity.convective_turnover.{k} must be a list of "
+                        "at least 2 numbers.")
+            if any(n <= 0 for n in v):
+                return f"stellar_activity.convective_turnover.{k} entries must be > 0."
+        if len(xs) != len(ys):
+            return ("stellar_activity.convective_turnover.mass_msun_grid and .tau_days "
+                    "must be the same length.")
+    rms = ct.get("rms_dex")
+    if rms is not None and (not _is_num(rms) or rms <= 0):
+        return "stellar_activity.convective_turnover.rms_dex must be > 0."
+
+    for key in ("rotation_age_singles", "rotation_age_fgk"):
+        blk = sa.get(key)
+        if blk is None:
+            continue
+        if not isinstance(blk, dict):
+            return f"stellar_activity.{key} must be an object."
+        if blk.get("applicable_mass_msun") is not None:
+            e = _check_bounds_pair(blk, f"stellar_activity.{key}", "applicable_mass_msun")
+            if e:
+                return e
+    ras = sa.get("rotation_age_singles")
+    if isinstance(ras, dict):
+        if ras.get("dist") != "bimodal":
+            return "stellar_activity.rotation_age_singles.dist must be 'bimodal'."
+        for branch in ("fast", "slow"):
+            b = ras.get(branch)
+            if not isinstance(b, dict):
+                return f"stellar_activity.rotation_age_singles.{branch} must be an object."
+            e = _check_bounds_pair(b, f"stellar_activity.rotation_age_singles.{branch}",
+                                   "p_rot_days")
+            if e:
+                return e
+    rfg = sa.get("rotation_age_fgk")
+    if isinstance(rfg, dict):
+        for k in ("p_sun_days", "age_sun_gyr"):
+            if not _is_num(rfg.get(k)) or rfg[k] <= 0:
+                return f"stellar_activity.rotation_age_fgk.{k} must be a positive number."
+        if not _is_num(rfg.get("exponent")):
+            return "stellar_activity.rotation_age_fgk.exponent must be a number."
+
+    cx = sa.get("circumbinary_xuv")
+    if not isinstance(cx, dict):
+        return "stellar_activity.circumbinary_xuv must be an object."
+    # Structural guard (§9.4): the doubled emitters cancel against the doubled HZ
+    # distance, so XUV at a circumbinary HZ must NOT scale with component count.
+    if cx.get("component_count_scaling") != 1.0:
+        return ("stellar_activity.circumbinary_xuv.component_count_scaling must be 1.0 "
+                "(the §9.4 geometric result — XUV at a circumbinary HZ does not scale "
+                "with the number of stars).")
+    x2e = cx.get("xray_to_euv")
+    if x2e is not None:
+        if not isinstance(x2e, dict):
+            return "stellar_activity.circumbinary_xuv.xray_to_euv must be an object."
+        rels = x2e.get("relations")
+        if not isinstance(rels, dict) or not rels:
+            return ("stellar_activity.circumbinary_xuv.xray_to_euv.relations must be a "
+                    "non-empty object.")
+        default = x2e.get("default")
+        if default not in rels:
+            return (f"stellar_activity.circumbinary_xuv.xray_to_euv.default {default!r} "
+                    f"must name one of {sorted(rels)}.")
+        for name, rel in rels.items():
+            if not isinstance(rel, dict):
+                return (f"stellar_activity.circumbinary_xuv.xray_to_euv.relations"
+                        f"[{name!r}] must be an object.")
+            if not isinstance(rel.get("relation"), str) or not rel["relation"].strip():
+                return (f"stellar_activity.circumbinary_xuv.xray_to_euv.relations"
+                        f"[{name!r}].relation must be a non-empty string.")
+
+    eld = sa.get("expected_locked_vs_single_delta")
+    if eld is not None:
+        if not isinstance(eld, dict):
+            return "stellar_activity.expected_locked_vs_single_delta must be an object."
+        # Structural guard (C-4): this is what the chain PRODUCES. Marking it an input
+        # would double-count the delta against the Rossby computation.
+        if eld.get("is_prior_field") is not False:
+            return ("stellar_activity.expected_locked_vs_single_delta.is_prior_field "
+                    "must be present and false (it is an acceptance target, not an input).")
+        oom = eld.get("orders_of_magnitude")
+        if oom is not None:
+            e = _check_bounds_pair(eld, "stellar_activity.expected_locked_vs_single_delta",
+                                   "orders_of_magnitude")
+            if e:
+                return e
+    return None
+
+
 # name → checker; iteration order is _V2_BLOCK_NAMES (stable).
 _V2_BLOCK_CHECKERS = {
     "mass_model": _check_mass_model,
@@ -304,6 +759,9 @@ _V2_BLOCK_CHECKERS = {
     "intra_system_correlation": _check_intra_system_correlation,
     "feh_dist": _check_feh_dist,
     "cold_giant_population": _check_cold_giant_population,
+    "inner_giant_population": _check_inner_giant_population,
+    "stellar_multiplicity": _check_stellar_multiplicity,
+    "stellar_activity": _check_stellar_activity,
 }
 
 
@@ -422,6 +880,14 @@ def validate_priors_contract(obj):
             e = checker(block)
             if e:
                 return _err(e)
+
+    # Cross-block invariant (v2.3): inner_giant_population.occurrence_ref points into
+    # occurrence_by_metallicity, so that block is a hard dependency. Checked here
+    # rather than in the block checker, which only sees its own sub-document.
+    if (obj.get("inner_giant_population") is not None
+            and obj.get("occurrence_by_metallicity") is None):
+        return _err("inner_giant_population requires occurrence_by_metallicity "
+                    f"(its occurrence_ref is {_INNER_GIANT_OCCURRENCE_REF!r}).")
 
     return None
 

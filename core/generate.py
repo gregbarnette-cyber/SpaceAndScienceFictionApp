@@ -578,6 +578,175 @@ def _place_cold_giants(rng, priors, star_name, derived, start_idx):
     return giants
 
 
+# v2.3 inner-giant zone split. 0.1 AU is the boundary the block's own zone keys encode
+# ("hot_zone_below_0p1au" / "warm_zone_0p1au_to_snowline"); the sub-objects are selected
+# by name below so a renamed zone key still resolves.
+_INNER_GIANT_HOT_ZONE_AU = 0.1
+# Channel names implying an EXCITED (high-e) history. Only the CLASSIFICATION is fixed
+# here — the mix fractions stay data (gotcha 4: they are tunable knobs, not constants).
+_INNER_GIANT_EXCITED_MARKERS = ("scattering", "high_e")
+_INNER_GIANT_E_SPLIT = 0.1        # e below this = circular/disk mode, above = excited
+
+
+def _interp_giant_fraction(occ, feh):
+    """occurrence_by_metallicity.giant_fraction at ``feh``, linearly interpolated on
+    feh_grid with the ENDPOINTS HELD (no extrapolation past the fitted ±0.5 domain).
+
+    This is the LITERAL FV05 close-in array (~3% at solar) used in its native domain.
+    It is deliberately a DIFFERENT number from ``_occ_eff`` (the rescaled ~10%-solar
+    saturating curve the cold block rolls against) — two disjoint SMA zones, two
+    independent rolls, no double-count."""
+    grid = occ.get("feh_grid") or []
+    frac = occ.get("giant_fraction") or []
+    if not grid or len(grid) != len(frac):
+        return None
+    if feh <= grid[0]:
+        return float(frac[0])
+    if feh >= grid[-1]:
+        return float(frac[-1])
+    for i in range(1, len(grid)):
+        if feh <= grid[i]:
+            lo_x, hi_x = float(grid[i - 1]), float(grid[i])
+            lo_y, hi_y = float(frac[i - 1]), float(frac[i])
+            if hi_x == lo_x:
+                return lo_y
+            t = (feh - lo_x) / (hi_x - lo_x)
+            return lo_y + t * (hi_y - lo_y)
+    return float(frac[-1])
+
+
+def _draw_inner_giant_sma(rng, sma_dist, snow):
+    """Inner-giant SMA (AU) from the v2.3 mixture: pick a component by weight, then draw
+    (lognormal about center_au, or a power law with density in ln(a) ∝ a^slope). Clamped
+    to [inner_edge_au, snow_line]. Two rng draws (component pick + value)."""
+    edge = float(sma_dist["inner_edge_au"])
+    comps = sma_dist["components"]
+    pick = _weighted_choice(rng, [(i, float(c["weight"])) for i, c in enumerate(comps)])
+    c = comps[pick]
+    if c["dist"] == "lognormal_au":
+        a = 10.0 ** rng.normalvariate(math.log10(float(c["center_au"])),
+                                      float(c["log10_sigma"]))
+    else:
+        lo = float(c["inner_au"])
+        outer = c.get("outer")
+        hi = snow if outer == "snow_line" else float(outer)
+        if hi <= lo:
+            return max(min(lo, snow), edge)
+        s = float(c["slope_dn_dlna"])
+        u = rng.random()
+        if abs(s) < 1e-9:
+            a = math.exp(math.log(lo) + u * (math.log(hi) - math.log(lo)))
+        else:
+            a = (lo ** s + u * (hi ** s - lo ** s)) ** (1.0 / s)
+    return max(min(a, snow), edge)
+
+
+def _inner_giant_zone_mix(fcm, hot):
+    """Select the hot/warm sub-object of formation_channel_mix by name (skipping the
+    free-text note keys), returning {channel: fraction} or None."""
+    want = "hot" if hot else "warm"
+    for key, mix in fcm.items():
+        if isinstance(mix, dict) and want in key.lower():
+            return mix
+    return None
+
+
+def _draw_inner_giant_channel(rng, mix, ecc, hot):
+    """Pick a formation_channel CONSISTENT with the drawn eccentricity (gotcha 3).
+
+    WARM zone: eccentricity is the load-bearing observable, so it selects the group —
+    channels are partitioned into excited (scattering / high-e tidal) and quiescent
+    (in-situ circular / disk migration), the group is chosen by e, then one channel is
+    drawn inside it by the block's own relative weights. e and the tag cannot disagree,
+    and the fractions stay data-driven.
+
+    HOT zone: no such split. Tidal circularization erases the eccentricity signature —
+    *both* hot channels end up at e ≈ 0 — so e carries no channel information and the
+    draw is over the full mix by weight. (Splitting here would be an artifact: the hot
+    mix's 'migrated_disk_or_high_e' merely has 'high_e' in its NAME, and gating on that
+    would hand every hot Jupiter to the 20% in-situ channel.)"""
+    if hot:
+        return _weighted_choice(rng, sorted(mix.items()))
+    excited = {k: v for k, v in mix.items()
+               if any(m in k.lower() for m in _INNER_GIANT_EXCITED_MARKERS)}
+    quiescent = {k: v for k, v in mix.items() if k not in excited}
+    group = excited if ecc >= _INNER_GIANT_E_SPLIT else quiescent
+    if not group or sum(group.values()) <= 0:
+        group = mix
+    return _weighted_choice(rng, sorted(group.items()))
+
+
+def _place_inner_giants(rng, priors, star_name, derived, start_idx):
+    """v2.3: the DECOUPLED close-in giant population interior to the snow line — the
+    mirror of ``_place_cold_giants``. Runs AFTER the cold block, sharing the host [Fe/H].
+
+    Per-system occurrence is its OWN roll against the literal FV05 giant_fraction in its
+    native close-in domain (NOT derived['system_forms_giants'], which is the cold block's
+    rescaled curve). This deliberately BYPASSES the B1 giant_switch for a controlled,
+    tagged sub-population — the gate itself is unchanged (gotcha 1). Each giant carries a
+    ``formation_channel`` tag whose eccentricity agrees with it (gotcha 3). Gated: returns
+    [] without the block, without occurrence_by_metallicity, or without a host [Fe/H]."""
+    igp = getattr(priors, "inner_giant_population", None)
+    occ = getattr(priors, "occurrence_by_metallicity", None)
+    if not igp or not occ:
+        return []
+    feh = derived.get("feh")
+    snow = derived.get("snow_line")
+    if feh is None or not snow:
+        return []
+    p_occ = _interp_giant_fraction(occ, feh)
+    if p_occ is None or rng.random() >= p_occ:
+        return []
+
+    lo_mj, hi_mj = igp["mass_range_mjup"]
+    m_lo, m_hi = lo_mj * _M_JUPITER_EARTH, hi_mj * _M_JUPITER_EARTH
+    ed = igp["eccentricity_dist"]
+    fcm = igp["formation_channel_mix"]
+    disk = (getattr(priors, "mass_model", None) or {}).get("disk", {})
+    mstar = derived.get("mass_solar") or 1.0
+    m_crit = compute_critical_core_mass()["critical_core_mass_mearth"]
+    lum = derived["luminosity"]
+
+    a = _draw_inner_giant_sma(rng, igp["sma_dist"], snow)
+    hot = a < _INNER_GIANT_HOT_ZONE_AU
+
+    # Eccentricity first, then a channel that agrees with it (gotcha 3).
+    if hot:
+        sigma = float(ed["hot"]["sigma"])
+        ecc = min(sigma * math.sqrt(-2.0 * math.log(1.0 - rng.random())), 0.99)
+    else:
+        ecc = min(rng.betavariate(float(ed["warm"]["alpha"]),
+                                  float(ed["warm"]["beta"])), 0.99)
+    mix = _inner_giant_zone_mix(fcm, hot)
+    channel = _draw_inner_giant_channel(rng, mix, ecc, hot) if mix else None
+
+    # Mass: log-uniform across the block's [0.3, 13] M_J range.
+    #
+    # NOT the cold block's gap-anchored _draw_giant_mass — that anchors on the F4
+    # gap-opening mass, which is genuinely tiny this close in (the Type-II knee scales
+    # with a and disk temperature), so every draw fell below the 0.3 M_J floor and
+    # clamped there, collapsing the mass function to a delta at the floor. The block
+    # supplies a RANGE and no shape, so the shape is an app-side choice: log-uniform is
+    # the v1 mass_by_zone convention and is deliberately flat rather than inventing a
+    # centre the dataset does not pin. Flagged to WB as a candidate for a real
+    # inner-giant mass function.
+    mass = math.exp(rng.uniform(math.log(m_lo), math.log(m_hi)))
+
+    ptype, radius = _classify_planet(mass, a, snow)
+    t_eq = _equilibrium_temp(a, lum)
+    in_hz, hz_class = _hz_membership(a, derived)
+    label = "hot giant" if hot else "warm giant"
+    return [{
+        "name": f"{star_name} ({label} {start_idx + 1})",
+        "a_au": _round(a, 5), "mass_earth": _round(mass, 4),
+        "radius_earth": _round(radius, 4), "ecc": _round(ecc, 4), "type": ptype,
+        "t_eq_k": _round(t_eq, 2), "in_hz": in_hz, "hz_class": hz_class,
+        "source": "synthetic", "atmosphere": None, "moons": [],
+        "formation_channel": channel, "giant_zone": "hot" if hot else "warm",
+        "_a_raw": a, "_mass_raw": mass, "_ecc_raw": ecc, "_radius_raw": radius,
+    }]
+
+
 def _mass_model_draw(rng, priors, a, derived):
     """v2 F1 mass draw at SMA ``a`` (Earth masses). Consumes exactly one rng draw per
     orbit (giant or solid), so the downstream draw order is fixed for a given dataset.
@@ -779,6 +948,8 @@ def _synth_planets(rng, priors, star_name, derived):
         planets.append(p)
     # v2.2 (L2): decoupled cold-giant population, added after the inner grid.
     planets += _place_cold_giants(rng, priors, star_name, derived, 0)
+    # v2.3: decoupled inner-giant population, after the cold block (shares host [Fe/H]).
+    planets += _place_inner_giants(rng, priors, star_name, derived, 0)
     return planets
 
 
@@ -845,7 +1016,7 @@ def _priors_note_fragment(priors):
 # R3-V2 B5: the sampling blocks whose presence changes generation (mass/count/spacing).
 # feh_dist is a support axis (no standalone effect) so it isn't listed as "in effect".
 _V2_SAMPLING_BLOCKS = ("mass_model", "occurrence_by_metallicity", "intra_system_correlation",
-                       "cold_giant_population")
+                       "cold_giant_population", "inner_giant_population")
 
 
 def _v2_blocks_note(priors, star):
@@ -1166,6 +1337,7 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
 
     # v2.2 (L2): decoupled cold-giant population around the real star (synthetic).
     synth += _place_cold_giants(rng, priors, star_name, derived, len(synth))
+    synth += _place_inner_giants(rng, priors, star_name, derived, len(synth))
 
     _attach_moons(rng, priors, star, synth)
 

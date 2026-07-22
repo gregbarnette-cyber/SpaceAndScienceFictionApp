@@ -523,6 +523,197 @@ class TestV2Superset(unittest.TestCase):
         self._bad_block(lambda o: o["cold_giant_population"].__setitem__(
             "multiplicity", {"1": 0, "2": 0}), "positive weight")
 
+    # ── v2.3: inner_giant_population (top-level block) ──
+    def test_inner_giant_population_validates(self):
+        self.assertIsNone(validate_priors_contract(_load(_V2SAMPLE)))
+        self.assertIn("inner_giant_population", present_v2_blocks(_load(_V2SAMPLE)))
+
+    def test_inner_giant_bad_mixture_dist(self):
+        self._bad_block(
+            lambda o: o["inner_giant_population"]["sma_dist"].__setitem__("dist", "powerlaw"),
+            "sma_dist.dist")
+
+    def test_inner_giant_bad_inner_edge(self):
+        self._bad_block(
+            lambda o: o["inner_giant_population"]["sma_dist"].__setitem__("inner_edge_au", 1.5),
+            "inner_edge_au")
+
+    def test_inner_giant_component_weights_must_sum_to_one(self):
+        self._bad_block(
+            lambda o: o["inner_giant_population"]["sma_dist"]["components"][0].__setitem__(
+                "weight", 0.5), "weights must sum to 1.0")
+
+    def test_inner_giant_bad_component_dist(self):
+        self._bad_block(
+            lambda o: o["inner_giant_population"]["sma_dist"]["components"][1].__setitem__(
+                "dist", "uniform"), "components[1].dist")
+
+    def test_inner_giant_bad_occurrence_ref(self):
+        self._bad_block(
+            lambda o: o["inner_giant_population"].__setitem__("occurrence_ref", "nope"),
+            "occurrence_ref")
+
+    def test_inner_giant_requires_occurrence_block(self):
+        """The hard cross-block dependency: occurrence_ref points into
+        occurrence_by_metallicity, so that block cannot be absent."""
+        self._bad_block(lambda o: o.pop("occurrence_by_metallicity"),
+                        "requires occurrence_by_metallicity")
+
+    def test_inner_giant_mass_range_ceiling(self):
+        self._bad_block(
+            lambda o: o["inner_giant_population"].__setitem__("mass_range_mjup", [0.3, 20.0]),
+            "mass_range_mjup")
+
+    def test_inner_giant_bad_eccentricity_dists(self):
+        self._bad_block(
+            lambda o: o["inner_giant_population"]["eccentricity_dist"]["warm"].__setitem__(
+                "dist", "rayleigh"), "warm.dist")
+        self._bad_block(
+            lambda o: o["inner_giant_population"]["eccentricity_dist"]["hot"].__setitem__(
+                "sigma", 1.5), "hot.sigma")
+
+    def test_inner_giant_channel_mix_must_sum_to_one(self):
+        self._bad_block(
+            lambda o: o["inner_giant_population"]["formation_channel_mix"][
+                "hot_zone_below_0p1au"].__setitem__("in_situ", 0.5),
+            "must sum to 1.0")
+
+    def test_inner_giant_channel_mix_skips_metadata_keys(self):
+        """The shipped dataset carries free-text note/notes beside the zone objects,
+        and v2.5.0 added a boolean is_prior_field flag there too. Any non-object
+        sibling is metadata and must not be validated as a channel mix."""
+        o = _load(_V2SAMPLE)
+        fcm = o["inner_giant_population"]["formation_channel_mix"]
+        fcm["note"] = "prose, not a mix"
+        fcm["is_prior_field"] = False
+        fcm["some_count"] = 3
+        self.assertIsNone(validate_priors_contract(o))
+
+    def test_inner_giant_channel_mix_needs_at_least_one_zone(self):
+        o = _load(_V2SAMPLE)
+        o["inner_giant_population"]["formation_channel_mix"] = {"note": "only metadata"}
+        res = validate_priors_contract(o)
+        self.assertIsInstance(res, dict)
+        self.assertIn("at least one", res["error"])
+
+    def test_inner_giant_absent_is_valid(self):
+        o = _load(_V2SAMPLE)
+        o.pop("inner_giant_population")
+        self.assertIsNone(validate_priors_contract(o))
+
+    # ── v2.4+: stellar_multiplicity (the first STELLAR axis) ──
+    def test_stellar_multiplicity_validates(self):
+        self.assertIsNone(validate_priors_contract(_load(_V2SAMPLE)))
+        self.assertIn("stellar_multiplicity", present_v2_blocks(_load(_V2SAMPLE)))
+
+    def test_stellar_multiplicity_fraction_grid_must_be_ascending(self):
+        self._bad_block(
+            lambda o: o["stellar_multiplicity"]["multiplicity_fraction"].__setitem__(
+                "mass_msun_grid", [1.0, 0.3, 0.075, 16.0]), "strictly ascending")
+
+    def test_stellar_multiplicity_fraction_must_be_a_probability(self):
+        self._bad_block(
+            lambda o: o["stellar_multiplicity"]["multiplicity_fraction"].__setitem__(
+                "fraction", [0.2, 0.26, 1.7, 0.92]), "must be <= 1")
+
+    def test_stellar_multiplicity_parallel_arrays_must_match(self):
+        self._bad_block(
+            lambda o: o["stellar_multiplicity"]["multiplicity_fraction"].__setitem__(
+                "fraction", [0.2, 0.26]), "same length")
+
+    def test_stellar_multiplicity_mass_ratio_bounds(self):
+        self._bad_block(
+            lambda o: o["stellar_multiplicity"]["mass_ratio_dist"].__setitem__("q_max", 1.5),
+            "0 < q_min < q_max <= 1")
+
+    def test_stellar_multiplicity_separation_weights_must_sum_to_one(self):
+        self._bad_block(
+            lambda o: o["stellar_multiplicity"]["separation_dist"]["components"][0]
+            .__setitem__("weight", 0.5), "weights must sum to 1.0")
+
+    def test_stellar_multiplicity_close_pair_period_order(self):
+        self._bad_block(
+            lambda o: o["stellar_multiplicity"]["separation_dist"]["components"][0]
+            .__setitem__("p_min_days", 99.0), "p_min_days < p_max_days")
+
+    def test_ecc_dist_zero_default_guard_is_enforced(self):
+        """F-1's structural guard: a consumer must not be able to fall back to e = 0,
+        which would make every drawn binary maximally planet-friendly."""
+        self._bad_block(
+            lambda o: o["stellar_multiplicity"]["ecc_dist"].__setitem__(
+                "consumer_must_not_default_to_zero", False),
+            "consumer_must_not_default_to_zero")
+        self._bad_block(
+            lambda o: o["stellar_multiplicity"]["ecc_dist"].pop(
+                "consumer_must_not_default_to_zero"),
+            "consumer_must_not_default_to_zero")
+
+    def test_ecc_dist_research_grade_requires_a_circularization_period(self):
+        self._bad_block(
+            lambda o: o["stellar_multiplicity"]["ecc_dist"].pop(
+                "circularization_period_days"), "requires circularization_period_days")
+
+    # ── v2.4+: stellar_activity (the rotation-activity chain) ──
+    def test_stellar_activity_validates(self):
+        self.assertIsNone(validate_priors_contract(_load(_V2SAMPLE)))
+        self.assertIn("stellar_activity", present_v2_blocks(_load(_V2SAMPLE)))
+
+    def test_stellar_activity_saturation_must_be_a_negative_log(self):
+        self._bad_block(
+            lambda o: o["stellar_activity"]["rotation_activity"].__setitem__(
+                "saturation_log_lx_lbol", 3.13), "must be a negative number")
+
+    def test_stellar_activity_slope_must_be_negative(self):
+        """Activity falls with Rossby number; a positive slope is a sign error."""
+        self._bad_block(
+            lambda o: o["stellar_activity"]["rotation_activity"].__setitem__(
+                "unsaturated_slope", 2.70), "activity falls with Rossby")
+
+    def test_stellar_activity_log_range_may_be_stated_descending(self):
+        """log_lx_lbol_valid_range is quoted as -4 > log R_X > -6.3, i.e. descending.
+        That ordering must be accepted, not rejected as an inverted pair."""
+        o = _load(_V2SAMPLE)
+        o["stellar_activity"]["rotation_activity"]["log_lx_lbol_valid_range"] = [-4.0, -6.3]
+        self.assertIsNone(validate_priors_contract(o))
+
+    def test_convective_turnover_grid_may_descend_in_mass(self):
+        """The Wright 2018 empirical table runs hot-to-cool, so the mass grid is
+        descending; only positivity and equal length are required."""
+        o = _load(_V2SAMPLE)
+        ct = o["stellar_activity"]["convective_turnover"]
+        self.assertGreater(ct["mass_msun_grid"][0], ct["mass_msun_grid"][-1])
+        self.assertIsNone(validate_priors_contract(o))
+
+    def test_convective_turnover_arrays_must_match(self):
+        self._bad_block(
+            lambda o: o["stellar_activity"]["convective_turnover"].__setitem__(
+                "tau_days", [8.5, 13.2]), "same length")
+
+    def test_circumbinary_xuv_component_scaling_guard(self):
+        """The §9.4 geometric result: doubled emitters cancel against the doubled HZ
+        distance, so XUV must not scale with component count."""
+        self._bad_block(
+            lambda o: o["stellar_activity"]["circumbinary_xuv"].__setitem__(
+                "component_count_scaling", 2.0), "does not scale with the number of stars")
+
+    def test_xray_to_euv_default_must_name_a_real_relation(self):
+        self._bad_block(
+            lambda o: o["stellar_activity"]["circumbinary_xuv"]["xray_to_euv"]
+            .__setitem__("default", "not_a_relation"), "must name one of")
+
+    def test_expected_delta_must_stay_an_acceptance_target(self):
+        """C-4's structural guard: the locked-vs-single delta is what the chain
+        PRODUCES. Marking it an input would double-count it against the Ro chain."""
+        self._bad_block(
+            lambda o: o["stellar_activity"]["expected_locked_vs_single_delta"]
+            .__setitem__("is_prior_field", True), "acceptance target, not an input")
+
+    def test_stellar_blocks_absent_is_valid(self):
+        o = _load(_V2SAMPLE)
+        o.pop("stellar_multiplicity")
+        o.pop("stellar_activity")
+        self.assertIsNone(validate_priors_contract(o))
+
     # ── provider surface ──
     def test_provider_exposes_v2_blocks(self):
         r = ResearchPriors.from_file(_V2SAMPLE)
