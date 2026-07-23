@@ -1019,6 +1019,63 @@ def cmd_dust_between(args):
     ))
 
 
+# ── Phase AM catalog-access tier (LIVE network — CDS VizieR / ESA Gaia / HEASARC) ──
+
+def cmd_vizier_query(args):
+    import core.catalog as catalog
+    _out(catalog.vizier_query(
+        catalog=args.catalog, columns=args.columns, filters=args.filters,
+        cone=args.cone, row_limit=args.row_limit,
+    ))
+
+
+def cmd_gaia_tap(args):
+    import core.catalog as catalog
+    _out(catalog.gaia_tap(
+        adql=args.adql, table=args.table, columns=args.columns, where=args.where,
+        cone=args.cone, row_limit=args.row_limit, use_async=args.use_async,
+    ))
+
+
+def cmd_heasarc_query(args):
+    import core.catalog as catalog
+    _out(catalog.heasarc_query(
+        catalog=args.catalog, cone=args.cone, radius=args.radius,
+        adql=args.adql, row_limit=args.row_limit,
+    ))
+
+
+def cmd_binary_orbit(args):
+    import core.binary as binary
+    _out(binary.binary_orbit(
+        star=args.star, ra=args.ra, dec=args.dec, source_id=args.source_id,
+    ))
+
+
+def cmd_close_binary_census(args):
+    import core.binary as binary
+    _out(binary.close_binary_census(
+        dist_max_ly=args.dist_max_ly, period_max_d=args.period_max_d,
+        sep_max_au=args.sep_max_au, include=tuple(args.include.split(",")),
+        parallax_source=args.parallax_source, drop_planets=not args.keep_planets,
+        separate_wide=args.separate_wide, exclude_known=args.exclude_known,
+    ))
+
+
+def cmd_gaia_astrophysical(args):
+    import core.catalog as catalog
+    _out(catalog.gaia_astrophysical(star=args.star, source_id=args.source_id))
+
+
+def cmd_besancon_query(args):
+    import core.besancon as besancon
+    _out(besancon.besancon_query(
+        glon=args.glon, glat=args.glat, local=args.local, area_deg2=args.area,
+        dist_max_pc=args.dist_max_pc, mag_max=args.mag_max, sample_max=args.sample_max,
+        contact_email=args.contact_email,
+    ))
+
+
 def _add_dust_weight_flags(p):
     """Phase T2 Part B: dust-weighted routing flags on a Core route planner.
     --weight distance (default) → the unchanged core.calculators path; --weight
@@ -2929,6 +2986,113 @@ def main(argv=None):
     p.add_argument("--map", choices=["near-field", "edenhofer", "auto"], default="auto",
                    help="Dust map (default auto)")
     p.set_defaults(func=cmd_dust_between)
+
+    # ── Phase AM catalog-access tier (LIVE network: CDS VizieR / ESA Gaia / HEASARC) ──
+
+    # vizier-query
+    p = sub.add_parser("vizier-query",
+                       help="Any VizieR catalog by id → JSON rows (LIVE network)")
+    p.add_argument("--catalog", required=True,
+                   help="VizieR catalog/table id, e.g. B/sb9/main, B/cb/cbdata, B/wds, I/311/hip2")
+    p.add_argument("--columns", nargs="+", default=None,
+                   help="Column names to return (default all)")
+    p.add_argument("--filters", action="append", default=None,
+                   help="Repeatable 'col op val' constraint, e.g. --filters 'Per < 365'")
+    p.add_argument("--cone", default=None,
+                   help="Cone search 'ra dec radius' in decimal degrees")
+    p.add_argument("--row-limit", dest="row_limit", type=int, default=2000,
+                   help="Max rows (default 2000; -1 = unlimited)")
+    p.set_defaults(func=cmd_vizier_query)
+
+    # gaia-tap
+    p = sub.add_parser("gaia-tap",
+                       help="Any Gaia DR3 table by ADQL or structured filter (LIVE network)")
+    p.add_argument("--adql", default=None, help="Raw ADQL query (takes precedence)")
+    p.add_argument("--table", default=None,
+                   help="Table name for structured mode, e.g. gaiadr3.nss_two_body_orbit")
+    p.add_argument("--columns", nargs="+", default=None, help="Columns (structured mode)")
+    p.add_argument("--where", default=None, help="ADQL WHERE body (structured mode)")
+    p.add_argument("--cone", default=None, help="Cone 'ra dec radius' (deg, structured mode)")
+    p.add_argument("--row-limit", dest="row_limit", type=int, default=2000,
+                   help="Max rows (sync caps at 2000; use --async for more)")
+    p.add_argument("--async", dest="use_async", action="store_true",
+                   help="Use async job (no 2000-row cap) for population pulls")
+    p.set_defaults(func=cmd_gaia_tap)
+
+    # heasarc-query
+    p = sub.add_parser("heasarc-query",
+                       help="A HEASARC X-ray catalog by cone or ADQL (LIVE network)")
+    p.add_argument("--catalog", default=None,
+                   help="HEASARC catalog/table, e.g. rass2rxs, chanmaster, xmmssc")
+    p.add_argument("--cone", default=None, help="Cone 'ra dec radius' (deg)")
+    p.add_argument("--radius", type=float, default=0.1,
+                   help="Cone radius (deg) when --cone gives only 'ra dec' (default 0.1)")
+    p.add_argument("--adql", default=None, help="Raw TAP ADQL (takes precedence over --cone)")
+    p.add_argument("--row-limit", dest="row_limit", type=int, default=2000,
+                   help="Max rows (default 2000)")
+    p.set_defaults(func=cmd_heasarc_query)
+
+    # binary-orbit (Tier 2 — the encoded tool-split + companion-mass planet filter)
+    p = sub.add_parser("binary-orbit",
+                       help="Every orbital solution for one star (Gaia NSS + SB9 + WDS/orb6) "
+                            "with companion-mass star/BD/planet classification (LIVE network)")
+    p.add_argument("--star", default=None, help="Star name (resolved via SIMBAD)")
+    p.add_argument("--ra", type=float, default=None, help="ICRS RA (deg) — with --dec")
+    p.add_argument("--dec", type=float, default=None, help="ICRS Dec (deg) — with --ra")
+    p.add_argument("--source-id", dest="source_id", default=None,
+                   help="Gaia DR3 source_id (bare integer)")
+    p.set_defaults(func=cmd_binary_orbit)
+
+    # close-binary-census (Tier 2 — the systematic population sweep)
+    p = sub.add_parser("close-binary-census",
+                       help="Systematic close-binary population sweep (Gaia NSS + SB9, X-Match "
+                            "dedup, companion classification, planet filter) (LIVE network)")
+    p.add_argument("--dist-max-ly", dest="dist_max_ly", required=True, type=float,
+                   help="Distance limit from Sol (light years)")
+    p.add_argument("--period-max-d", dest="period_max_d", required=True, type=float,
+                   help="Maximum orbital period (days)")
+    p.add_argument("--sep-max-au", dest="sep_max_au", type=float, default=None,
+                   help="Wide-cut separation (AU) for --separate-wide")
+    p.add_argument("--include", default="nss,sb9",
+                   help="Comma list of routes: nss,sb9,wds,cv (default nss,sb9)")
+    p.add_argument("--parallax-source", dest="parallax_source",
+                   choices=("gaia", "hipparcos", "both"), default="both",
+                   help="Parallax source for the SB9 distance cut (default both)")
+    p.add_argument("--keep-planets", dest="keep_planets", action="store_true",
+                   help="Do NOT drop planetary companions (default: drop them)")
+    p.add_argument("--separate-wide", dest="separate_wide", action="store_true",
+                   help="Move P>max ∧ a>sep-max systems to a separate wide list")
+    p.add_argument("--exclude-known", dest="exclude_known", default=None,
+                   help="Path to a file of names/source_ids to drop (one per line)")
+    p.set_defaults(func=cmd_close_binary_census)
+
+    # gaia-astrophysical (Tier 3 — per-source GSP-Phot + FLAME mass/radius/lum/age)
+    p = sub.add_parser("gaia-astrophysical",
+                       help="Gaia GSP-Phot + FLAME stellar parameters (incl. age) for one source "
+                            "(LIVE network)")
+    p.add_argument("--star", default=None, help="Star name (resolved via SIMBAD → source_id)")
+    p.add_argument("--source-id", dest="source_id", default=None,
+                   help="Gaia DR3 source_id (bare integer)")
+    p.set_defaults(func=cmd_gaia_astrophysical)
+
+    # besancon-query (Tier 3 — Besançon m1612 field population → T8 age_dist; needs a BGM account)
+    p = sub.add_parser("besancon-query",
+                       help="Besançon Galaxy Model (m1612) synthetic field population + derived "
+                            "age distribution (LIVE; needs BESANCON_USER/BESANCON_PASS)")
+    p.add_argument("--glon", type=float, default=None, help="Field-centre Galactic longitude (deg)")
+    p.add_argument("--glat", type=float, default=None, help="Field-centre Galactic latitude (deg)")
+    p.add_argument("--local", action="store_true",
+                   help="Use a representative mid-latitude sightline (l=90, b=45) if --glon/--glat omitted")
+    p.add_argument("--area", type=float, default=1.0, help="Solid angle SOLI (deg², max 10)")
+    p.add_argument("--dist-max-pc", dest="dist_max_pc", type=float, default=100.0,
+                   help="Distance cut isolating the local slice (pc, default 100)")
+    p.add_argument("--mag-max", dest="mag_max", type=float, default=None,
+                   help="Reference-band (V) faint magnitude limit (optional)")
+    p.add_argument("--sample-max", dest="sample_max", type=int, default=1000,
+                   help="Max raw catalogue rows echoed (age_dist is computed over ALL stars)")
+    p.add_argument("--contact-email", dest="contact_email", default=None,
+                   help="Contact string for the User-Agent (defaults to the BGM login)")
+    p.set_defaults(func=cmd_besancon_query)
 
     # ── Solvent zones (Phase P) ──────────────────────────────────────────────
 

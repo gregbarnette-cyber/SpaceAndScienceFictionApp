@@ -168,11 +168,20 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `gravity-distance` | `--rpm --accel-ms2` | none | `rpm, accel_ms2, radius_m` |
 | `gravity-rpm` | `--accel-ms2 --radius-m` | none | `accel_ms2, radius_m, rpm` |
 | `travel-time-custom-thrust` | `--origin --destination --accel-g --burn-value` [`--burn-unit --v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, distance_au, …, travel_time_str, …` |
+| `vizier-query` | `--catalog` [`--columns --filters --cone --row-limit`] | **CDS VizieR (live)**¶ | `service, catalog, count, row_limit, truncated, column_units, rows[]` |
+| `gaia-tap` | (`--adql` \| `--table`) [`--columns --where --cone --row-limit --async`] | **ESA Gaia TAP (live)**¶ | `service, query, count, async, truncated, column_units, rows[]` |
+| `heasarc-query` | (`--catalog --cone` \| `--adql`) [`--radius --row-limit`] | **HEASARC (live)**¶ | `service, catalog, count, column_units, rows[]` |
+| `binary-orbit` | (`--star` \| `--source-id` \| `--ra --dec`) | **CDS + ESA Gaia (live)**¶ | `query, identity, solutions[], route_tried[], units` (`note`/`route_errors` when relevant) |
+| `close-binary-census` | `--dist-max-ly --period-max-d` [`--sep-max-au --include --parallax-source --keep-planets --separate-wide --exclude-known`] | **ESA Gaia + CDS (live)**¶ | `query, count, counts_by_class, census[], excluded_planets[], wide[], coverage, units` |
+| `gaia-astrophysical` | (`--star` \| `--source-id`) | **ESA Gaia (live)**¶ | `query, source_id, identity, parameters, caveats, units` |
+| `besancon-query` | (`--glon --glat` \| `--local`) [`--area --dist-max-pc --mag-max --sample-max --contact-email`] | **Besançon BGM (live; needs account)**¶ | `query, model_version, n_stars, columns, catalogue_sample[], catalogue_truncated, age_dist, coverage, units` |
 
 † `distance` and `travel-time` skip the SIMBAD call for an endpoint named `"Sol"`/`"Sun"` (treated as the origin at 0,0,0). The seven Route Planning subcommands (`optimal-tour`, `jump-route`, `jump-network`, `multi-stop`, `nearest-neighbor`, `farthest-first`, `trade-route`) likewise resolve each star **DB-first** (`star_systems.star_name`, offline) then **SIMBAD** for names not in the table; `"Sol"`/`"Sun"` → the origin with no lookup. They read the local `star_systems` table for intermediate/candidate stars (run option 50 to populate it).
 ‡ The `gcns-*` calculators (and `dust-between`) use SIMBAD **only** for `--star`/`--star1`/`--star2` endpoints (to resolve a name to a position/Gaia id); `--id`/`--id1`/`--id2` endpoints are fully offline. For the `gcns-*` calculators there is **no** `"Sol"`/`"Sun"` special case (Sol is not a GCNS row); `dust-between` **does** treat `Sol`/`Sun` as the origin.
 
 § A **local read of the fetched dust map cache** (`data/dust/`, populated by CLI **option 59** / the GUI Fetch Dust Map Data panel). Needs the optional `dustmaps` extra (WSL/Linux only) — see the **Dust / ISM** section below. No network for the map query itself.
+
+¶ The **Phase AM catalog-access tier** (`vizier-query`, `gaia-tap`, `heasarc-query`, `binary-orbit`, `close-binary-census`, `gaia-astrophysical`, `besancon-query`) makes live queries to CDS / ESA Gaia / HEASARC / Besançon. Failures return `{"error": …}` (often with `route_tried[]`); an **empty but valid** result is `count: 0` / an empty list, **not** an error. Successful non-empty results are **cached** (`data/catalog_cache/`, gitignored; `SPACE_APP_CATALOG_CACHE=0` disables). `besancon-query` additionally requires a BGM account via `BESANCON_USER`/`BESANCON_PASS`. See the **Catalog-access tier (Phase AM)** section below for the full per-subcommand contract.
 
 Shared shapes:
 - The `simbad` sub-dict embedded in `star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, and `hwc` has the **same shape as `simbad-lookup`'s output** (top-level keys above).
@@ -3014,6 +3023,148 @@ display. `--v-cap-pct` defaults to `3.0`; `--date` is ISO `YYYY-MM-DD` (default 
 is never passed. Output: the full phase/burn-profile dict (`travel_time_str, t_total_hours, distance_au, distance_lm,
 eff_burn_s, v_coast_ms, fallback, iterations_done, …`). Ambiguous Horizons names return the disambiguation error from
 the core function.
+
+## Catalog-access tier (Phase AM — LIVE VizieR / Gaia TAP / HEASARC)
+
+Seven subcommands that make **live network** queries to CDS VizieR, the ESA Gaia TAP archive, HEASARC,
+and the Besançon Galaxy Model (via `astroquery` / direct REST, already in the venv). They are in the
+same class as the `dust-*` / GCNS network paths, **not** the pure-math calculators. Cross-cutting behavior:
+
+- **Error shape:** any failure (network, HTTP 4xx/5xx, bad id) returns `{"error": "…"}` — often with
+  an additive `"route_tried": [...]` list — and exit 1. An **empty but valid** result is **not** an
+  error: it returns the normal shape with `count: 0` / an empty list (a blocked route enumerates the
+  alternatives instead of implying "no such object"). Always check `"error"` first.
+- **Caching:** successful, non-empty results are cached by (service + query-hash) under the gitignored
+  `data/catalog_cache/` with a 7-day TTL (`core/catalog_cache.py`); errors/empties are never cached.
+  Set `SPACE_APP_CATALOG_CACHE=0` to disable (used to force live paths in tests).
+- **Row limits / async:** VizieR/Gaia default to a finite row limit (`--row-limit -1` lifts VizieR's);
+  Gaia's **sync** endpoint caps at 2000 rows, so `close-binary-census` and any population pull use an
+  **async** job (no cap) internally. A sync Gaia result at exactly 2000 rows is flagged `truncated`.
+- **Units + provenance:** period (days), separation (arcsec / AU), mass (M☉ + M_Jup), parallax (mas),
+  distance (ly + pc). Generic gateway results carry a `column_units` map; orbit rows carry a
+  paste-ready `verification` tag (`[V-PRIMARY-Gaia-DR3-NSS source_id=…]` / `[V-SECONDARY SB9 gr<N>
+  <bibcode>]` / `[V-SECONDARY WDS/orb6 <ref>]`).
+- **Companion masses are estimates, always labelled** with their `method` (`astrom` Thiele-Innes /
+  `spec-min` SB1 sin i=1 lower bound / `SB2` double-lined) and a `caveat`. Class thresholds:
+  M₂ > 0.075 M☉ → `stellar`; 0.013–0.075 → `brown-dwarf`; < 0.013 → `planet`; astrometric a₀ ≲ 1 mas →
+  `low_significance: true`.
+
+#### `vizier-query`
+Any VizieR catalog by id → JSON rows. `--filters` is repeatable (`'col op val'`, e.g. `'Per < 365'`);
+`--cone` is `'ra dec radius'` (deg); `--columns` trims the (often wide) column set; `--row-limit -1`
+is unlimited.
+```bash
+query.py vizier-query --catalog B/cb/cbdata --filters "Name = GK Per"
+query.py vizier-query --catalog B/sb9/orbits --filters "Per < 365" --row-limit 500
+```
+Core: `catalog.vizier_query(catalog, columns=None, filters=None, cone=None, row_limit=2000)`. Output:
+`{service:"vizier", catalog, count, row_limit, truncated, column_units:{…}, rows:[{col: val, …}]}`.
+Reuse targets: `B/sb9/*` (SB9), `B/wds/wds`, `B/orb6/orbits`, `B/cb/cbdata` (Ritter & Kolb CVs),
+`B/gcvs`, `I/311/hip2` (Hipparcos).
+
+#### `gaia-tap`
+Any Gaia DR3 table by raw ADQL (`--adql`, takes precedence) or structured
+(`--table`/`--columns`/`--where`/`--cone`). `--async` uses an async job (no 2000-row cap) for
+population pulls.
+```bash
+query.py gaia-tap --adql "SELECT source_id, parallax FROM gaiadr3.gaia_source WHERE source_id=425040000962559616"
+query.py gaia-tap --table gaiadr3.nss_two_body_orbit --where "parallax > 50 AND period < 365" --async
+```
+Core: `catalog.gaia_tap(adql=None, table=None, columns=None, where=None, cone=None, row_limit=2000,
+use_async=False)`. Output: `{service:"gaia", query, count, async, truncated, column_units, rows:[…]}`.
+
+#### `heasarc-query`
+A HEASARC X-ray catalog by cone (`--catalog` + `--cone 'ra dec radius'`) or raw TAP (`--adql`).
+```bash
+query.py heasarc-query --catalog rassbsc --cone "79.1723 45.998 0.5"
+```
+Core: `catalog.heasarc_query(catalog, cone=None, radius=0.1, adql=None, row_limit=2000)`. Output:
+`{service:"heasarc", catalog, count, column_units, rows:[…]}`. Serves the binary activity/flare +
+CV/compact-object identification story.
+
+#### `binary-orbit`
+Every orbital solution for one star across the tool-split (Gaia NSS → SB9 → WDS/orb6), each with a
+companion-mass estimate + `class` + a `verification` tag. Resolve by `--star` (SIMBAD), `--source-id`
+(Gaia), or `--ra`/`--dec`. **The planet filter is baked in** (GJ 876's 61 d NSS "orbit" classifies as
+`planet`, not a stellar binary). **No solution → an explicit empty `solutions` list + `route_tried` +
+a `note`**, never a silent empty (failed-tool ≠ absent-capability).
+```bash
+query.py binary-orbit --star "delta Trianguli"
+query.py binary-orbit --star "GJ 876"          # 61.36 d solution → class "planet"
+```
+Core: `binary.binary_orbit(star=None, ra=None, dec=None, source_id=None)`. Output:
+`{query, identity:{main_id, ra, dec, sp_type, parallax_mas, distance_ly, gaia_source_id, hip},
+solutions:[{source, solution_type|seq, period_d, eccentricity, grade, primary_ref,
+separation_arcsec, separation_au, component, companion:{method, m1_solar, m2_solar, m2_mjup, a0_mas,
+a1_au, mass_function, class, low_significance, caveat, mass_ratio_q?, binary_masses?}, verification}],
+route_tried:[…], route_errors?, note?, units:{…}}`. The **`companion.binary_masses`** sub-block (§3.3)
+is the **independent Gaia `gaiadr3.binary_masses` cross-check**, present only when Gaia derived a mass
+for that source: `{m1_solar, m2_solar(+m2_lower/upper), fluxratio, combination_method, m1_ref,
+agreement_pct?}` (`agreement_pct` = |our m2 − Gaia m2| / Gaia m2 × 100, when both are numeric). Our
+Thiele-Innes/SB1 estimate stays the **primary** `m2_solar`; `binary_masses` cross-checks it, or — when
+our tool-split produced no mass but Gaia's `m2` is non-null — **fills** it (`method:"gaia-binary-masses"`).
+
+#### `close-binary-census`
+The systematic population sweep (Gaia NSS faint + SB9 bright with Hipparcos/Gaia parallax → X-Match
+dedup → companion classification → planet filter). `--drop-planets` is **on by default** (opt out with
+`--keep-planets`).
+```bash
+query.py close-binary-census --dist-max-ly 65 --period-max-d 365
+query.py close-binary-census --dist-max-ly 100 --period-max-d 365 --include nss,sb9 --exclude-known census.txt
+```
+Core: `binary.close_binary_census(dist_max_ly, period_max_d, sep_max_au=None, include=("nss","sb9"),
+parallax_source="both", drop_planets=True, separate_wide=False, exclude_known=None)`. Output:
+`{query:{…}, count, counts_by_class:{stellar, brown-dwarf, …}, census:[<per-system rows, same shape as
+binary-orbit solutions + ra/dec/distance_ly/also_in>], excluded_planets:[…], wide:[…],
+coverage:{catalogs_swept, catalogs_not_swept, requested_not_implemented, dist_max_ly, period_max_d,
+parallax_min_mas, parallax_source, notes:[…]}, route_errors?, units:{…}}`. `--include` accepts
+`nss,sb9,wds,cv` (default `nss,sb9`); **only `nss`/`sb9` are wired as
+sweep sources** — a requested but unimplemented `wds`/`cv` is reported honestly under
+`coverage.requested_not_implemented` (never silently dropped; both are reachable directly via
+`vizier-query --catalog B/wds/wds` / `B/cb/cbdata`), and an **unknown** `--include` token → a curated
+`{"error"}`. The `coverage` block is **never** empty and never implies exhaustive. Bulk NSS companion
+masses assume a solar-mass primary (per-system `binary-orbit` gives the spectral-typed refinement + the
+`binary_masses` cross-check).
+
+#### `gaia-astrophysical`
+Gaia GSP-Phot + FLAME stellar parameters (incl. **age**) for one source, by `--star` (SIMBAD →
+source_id) or `--source-id`. Every FLAME age carries a model-dependence caveat.
+```bash
+query.py gaia-astrophysical --star "eta Cas A"
+```
+Core: `catalog.gaia_astrophysical(star=None, source_id=None)`. Output: `{query, source_id, identity,
+parameters:{teff_gspphot, logg_gspphot, mh_gspphot, radius_gspphot, mass_flame, radius_flame,
+lum_flame, age_flame, age_flame_lower, age_flame_upper, evolstage_flame}, caveats:{age_flame:"…"},
+units:{…}}` (`parameters: null` + a `note` when the source has no astrophysical_parameters row).
+
+#### `besancon-query`  (needs a BGM account)
+Queries the **Besançon Galaxy Model (`m1612`)** for a synthetic field population and derives the T8
+`age_dist` summary. **Not `astroquery.besancon`** (which targets the dead 2003 email/FTP path) — this
+drives the modern **UWS 1.0 REST web service** at `model.obs-besancon.fr/ws/` directly. Credentials come
+from `BESANCON_USER` / `BESANCON_PASS` (register at `https://model.obs-besancon.fr/ws/subscribe.php`; put
+them in `~/.zshenv` so subprocesses inherit them). Missing creds → a curated `{"error"}`, not a crash.
+`--local` uses a representative mid-latitude sightline (l=90, b=45); the `--dist-max-pc` cut isolates the
+solar-neighbourhood slice.
+```bash
+query.py besancon-query --local --dist-max-pc 150 --area 1.0
+query.py besancon-query --glon 120 --glat 30 --dist-max-pc 200 --mag-max 18
+```
+Core: `besancon.besancon_query(glon=None, glat=None, local=False, area_deg2=1.0, dist_max_pc=100.0,
+mag_max=None, sample_max=1000, contact_email=None)`. Output: `{query, model_version:"m1612", n_stars,
+columns:[…], catalogue_sample:[<per-star: Age, Mass, [M/H], [a/Fe], Pop, Teff, logg, Dist, UU/VV/WW, …>],
+catalogue_truncated, age_dist:{histogram, mean_age_gyr, median_age_gyr, mass_conditional_age,
+population_mix:{thin,thick,halo,bulge}, population_by_pop_code, age_metallicity_relation, feh_mean,
+feh_std}, coverage:{model, sightline_lb, dist_max_pc, verify_against_observation:true, notes:[…]},
+units:{…}}`.
+
+**Safeguards (this is a small, individually-hosted academic server — treat it gently):** results are
+**cached 30 days** (an identical query never re-runs the model — the main protection against repeated
+requests); polling uses the reference client's **30 s cadence**, **one job at a time**; every job is
+**deleted after retrieval** (no accumulation); `sendmail=0`; `--area` (solid angle, deg²) is **capped at
+10** (smallfield-only model — tile for wider surveys); jobs carry a server-side `EXECUTIONDURATION`; and
+the `User-Agent` identifies the BGM login. **The output is a synthetic model, not observation** — every
+result carries `verify_against_observation: true`; the consumer must cross-check the age distribution
+against observational field ages before pinning the `age_dist` prior.
 
 ## Two-step subcommands
 

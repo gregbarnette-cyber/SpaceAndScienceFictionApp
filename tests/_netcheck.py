@@ -22,3 +22,13 @@ def reachable(host, port=443, timeout=3.0) -> bool:
             return True
     except OSError:
         return False
+
+
+def cds_reachable(timeout=3.0) -> bool:
+    """Is CDS (VizieR + X-Match) reachable? Gate for the Phase AM catalog live tests."""
+    return reachable("vizier.cds.unistra.fr", 443, timeout)
+
+
+def esa_gaia_reachable(timeout=3.0) -> bool:
+    """Is the ESA Gaia TAP archive reachable? Gate for the Phase AM Gaia live tests."""
+    return reachable("gea.esac.esa.int", 443, timeout)

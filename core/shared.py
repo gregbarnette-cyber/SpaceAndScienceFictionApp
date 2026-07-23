@@ -477,3 +477,16 @@ def _network_error_msg(e, service: str) -> str:
     if "connection" in msg or "unreachable" in msg or "network" in msg:
         return f"Could not connect to {service}. Check your network connection."
     return str(e)
+
+
+def _route_error(message: str, route_tried=None) -> dict:
+    """Standard error dict for the Phase AM catalog-access tier (spec §5).
+
+    Extends the app-wide ``{"error": str}`` contract with an optional ``route_tried``
+    list so a blocked lookup is reported *with the alternatives enumerated*
+    (failed-tool ≠ absent-capability). ``route_tried`` is omitted when empty, so callers
+    that don't track routes stay byte-identical to the plain ``{"error": …}`` shape."""
+    err = {"error": message}
+    if route_tried:
+        err["route_tried"] = list(route_tried)
+    return err
