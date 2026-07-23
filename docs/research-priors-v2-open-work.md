@@ -97,6 +97,18 @@ the star dict has no age key, in either mode. The block's chain is
 branch is computable in principle (`P_rot = P_orb`) but depends on **B1**.
 
 **What clears it:** an `age_dist` block from WB — requested 2026-07-22, **accepted and deferred**.
+
+> **Update 2026-07-23 (Phase AM):** the data-production path now exists. `core/besancon.py`'s
+> `besancon-query` subcommand runs the Besançon Galaxy Model (m1612) and emits a mass-conditional
+> `age_dist` summary (`build_age_dist()` — age histogram + per-mass-bin mean/median). This is the
+> **fetch tool**, not the pinned prior: its output is model-derived and carries
+> `verify_against_observation`, so **T8 must still cross-check it against observation before the
+> `age_dist` block is pinned into the dataset.** As of this note the sister dataset is still
+> `pkt3.5-v2.8.0-2026-07-22` and carries **no `age_dist` key**, and neither generator blocker below
+> is touched — so B2 remains blocked. What changed is only that "wait for WB to build a fetch path"
+> is done; the next steps are: run `besancon-query` → T8 observational cross-check → pin the block →
+> then wire the generator age axis (blocker (i)).
+
 Three constraints were sent with the request and should be honoured by whatever lands:
 1. **Conditional on mass, not marginal.** Mass is drawn before age, and an unconditioned draw
    produces stars older than their own main-sequence lifetimes. `compute_stellar_evolution(mass_solar,
