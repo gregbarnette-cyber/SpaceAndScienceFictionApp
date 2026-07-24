@@ -177,13 +177,64 @@ excited/quiescent group, then the block's own weights pick within it; hot zone: 
 the full mix is used). Each such planet carries `formation_channel` + `giant_zone` (`"hot"`/`"warm"`). This
 **bypasses the B1 `giant_switch` for a controlled sub-population — the gate itself is unchanged**, and a giant
 interior to the snow line is always a tagged member of this population, never grid-grown.
-**The two stellar blocks (v2.4+) are validated and exposed, but NOT yet sampled.** `stellar_multiplicity` and
-`stellar_activity` are the first *stellar* axes in the contract (every other block is planetary — note the
-`multiplicity` key inside `cold_giant_population` is a *giant* count). They validate, appear in `v2_blocks`,
-and are exposed on `ResearchPriors`, but **no engine reads them**: `generate.py` does not draw a companion or
-set an XUV environment. The sampler is deliberately held — the block's 12 d circularization boundary is
-measured on *solar-type* primaries while the generated census is ~77% M dwarfs, and no M-dwarf circularization
-period exists in the source corpus. See `docs/research-priors-v2-close-binary-actions.md` §4.
+**`stellar_multiplicity` is SAMPLED (Phase R3-V2 B1); `stellar_activity` is not.** These are the first
+*stellar* axes in the contract (every other block is planetary — note the `multiplicity` key inside
+`cold_giant_population` is a *giant* count). Both validate, appear in `v2_blocks`, and are exposed on
+`ResearchPriors`.
+
+`stellar_multiplicity` is now drawn in **synthetic mode** (`_draw_multiplicity`): multiplicity roll
+(mass-dependent, linear in log₁₀ M) → mass ratio `q` → the close-pair / wide-log-normal separation mixture →
+eccentricity, emitted in the block's own `consumer_contract` shape `{mass_solar, sma_au, ecc, p_orb_days,
+close_pair}`. That is exactly the `--companion` hint shape, so a drawn companion reaches
+`feasibility._binary_gate` (Holman–Wiegert S/P-type) through the existing path — an explicit hint always
+overrides it. **Real-anchor mode is untouched**: its multiplicity is GCNS-derived and is never overwritten.
+The sampler was unblocked by dataset **v2.9.0**, which replaced the borrowed *solar-type* 12 d circularization
+boundary with a source-backed **M-dwarf ~6 d** (Packet-4 C52: Zanazzi 2022 + EBLM XVII + the local 57-system
+e–P transition) — the gap that had held it. Two behaviours are contractual and tested: eccentricity is
+**never identically zero**, and the boundary is **statistical, never a cut** (BY Dra is `e = 0.300` at
+`P = 5.98 d`). The `f(e)` shape itself is an **app-side modelling choice** — the block states it in prose, so
+the sampler names it as ours in the emitted note rather than implying a pinned distribution.
+
+****Wide-companion survival half-life (B3).** The wide component is truncated at
+`a_half ≈ 1.212 × (M_tot / t)` pc (Weinberg 1987 eq. 28) — the scale at which roughly **half** the
+population has been disrupted by age *t*, **not** a boundary: the source reports "no evidence of breaks or
+cutoffs", so the truncation is a labelled modelling convenience. It moves with mass and age and is `null`
+without an age axis. **No Öpik / power-law tail is added**: the measured index is
+−1.6 in `dN/ds` (Öpik would be −1), but the join normalization is declared *unknown* by the source lineage
+("it remains unclear whether and how these two distributions are physically connected"), and inventing a
+join weight is the same class of defect as the F-2 close-pair double-count. The coefficient is **primary-verified** (an earlier ~4% slack, carried while the
+paper was known only via a secondary source, was **retracted** once it was opened). One caveat is emitted
+rather than hidden — a **solar-host shape caveat** (this log-normal
+runs shallower than the measured −0.60 slope out to ~3000 AU, over-producing wide companions there; for M
+hosts it is steeper throughout and errs safe). The `domain_overextension` flag in the dataset is **not** a
+misuse by the sampler: Winters' σ = 1.16 is a whole-range *untruncated* fit out to a 7500 AU horizon, so the
+flag records a source-vs-source model disagreement (D&K's two components vs Winters' one), which the modern
+Gaia data do not settle in D&K's favour.
+
+`stellar_activity` is now sampled too (Phase R3-V2 B2)**, because the v2.10 **`age_dist`** block supplied
+the input it named and nothing produced. `age_dist` is the mirror of `feh_dist` but is **not** a Gaussian: a
+population-weighted SFH **histogram**, drawn then **MS-lifetime-truncated** against the Phase-L3
+`compute_stellar_evolution` (`truncate_and_renormalize` — no star older than its own main sequence). Its
+validator (`_check_age_dist`) enforces two structural guards: histogram bins must be **contiguous** (a gap
+silently drops probability mass), and an interior **zero-fraction bin requires an `sfh_smoothing_note`** — the
+BGM zeroes 7–8 Gyr and piles up 8–9 Gyr as a discrete-age-bin artifact, and a consumer sampling that literally
+reproduces a hole the real SFH does not have. Requiring the note means the artifact cannot arrive undocumented.
+
+The chain is age → P_rot → Ro = P_rot/τ(M) → log(L_X/L_bol) → [X-ray→EUV] → XUV. P_rot has three branches:
+a **tidally locked** B1 close pair (`P_rot = P_orb` — saturated for life, and the only branch needing **no**
+age), **Skumanich** t^½ for 0.6–1.36 M☉, and the **bimodal** M-dwarf fast/slow sequences for 0.08–0.6 M☉
+(never interpolated across the gap — that gap is a real population feature). Out-of-domain values are
+**flagged, never clamped**; the X-ray→EUV conversion is **contested** in the dataset, so the applied relation
+is named and its alternative carried rather than averaged. The dataset's own **`unit_test_sun`** is a
+regression test here (M=1 at 4.57 Gyr → P_rot 25.4 d, τ 13.8 d, Ro 1.84, log R_X −5.99, inside the observed
+solar band), and `expected_locked_vs_single_delta` is asserted as an **emergent** property, never fed in
+(`is_prior_field: false`).
+
+**One app-side simplification, named:** the block recommends drawing population (thin/thick/halo) then age
+from *that population's* distribution, but supplies only the blended SFH — per-population age distributions
+are not in the dataset. The block sanctions the simplification for exactly this consumer ("for the
+stellar_activity chain ALONE a single blended distribution is adequate"), so the blended histogram is used.
+See `docs/research-priors-v2-open-work.md` §B2.
 
 Their validators additionally **hard-enforce three structural guards**, so a future dataset edit cannot
 silently subvert them (each has a negative test): `ecc_dist.consumer_must_not_default_to_zero` must be **true**

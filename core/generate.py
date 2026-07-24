@@ -25,6 +25,7 @@ from core.equations import (
     compute_roche_limit,
     compute_hill_sphere,
     compute_atmosphere_retention,
+    compute_stellar_evolution,
 )
 from core.science import compute_main_sequence_table
 from core.formation import (
@@ -263,6 +264,17 @@ def _synth_star(rng, priors, seed, spectral_class, rows):
     ice = compute_ice_lines(luminosity)
     snow_line = next((ln["au"] for ln in ice.get("lines", []) if ln["kind"] == "snow_line"), None)
 
+    # B2/B1/B3 draw order, and it is load-bearing:
+    #   age  → needed by B3's (M_tot, age) wide-companion survival half-life, and by the
+    #          activity chain's single-star branches;
+    #   multiplicity → truncated by that limit, and supplies p_orb_days;
+    #   activity → reads the companion (locked branch) and the age (single branches).
+    # Each is None — and consumes no rng — without its block, so a v1 dataset is unchanged.
+    age_gyr = _draw_age(rng, priors, mass_solar)
+    multiplicity = _draw_multiplicity(rng, priors, mass_solar, age_gyr)
+    activity = _draw_activity(rng, priors, mass_solar, luminosity, age_gyr,
+                              (multiplicity or {}).get("companion"))
+
     sc_str = _fmt_class(letter, subtype)
     star = {
         "name": f"Gen-{seed}",
@@ -278,9 +290,12 @@ def _synth_star(rng, priors, seed, spectral_class, rows):
         "snow_line_au": _round(snow_line, 5),
         "feh": _round(feh, 3),
         "feh_source": feh_source,
+        "age_gyr": _round(age_gyr, 3) if age_gyr is not None else None,
+        "age_source": "age_dist" if age_gyr is not None else None,
         "source": "synthetic",
         "grounding": priors.grounding,
-        "multiplicity": None,
+        "multiplicity": multiplicity,
+        "activity": activity,
     }
     derived = {
         "teff": teff, "mass_solar": mass_solar, "luminosity": luminosity,
@@ -289,6 +304,9 @@ def _synth_star(rng, priors, seed, spectral_class, rows):
         "snow_line": snow_line, "feh": feh,
         "disk_mass_mult": disk_mass_mult,               # L2
         "system_forms_giants": system_forms_giants,     # L2
+        # B1: the drawn companion in the `--companion` hint shape, so the feasibility
+        # engine's existing binary gate can consume it (None when not multiple).
+        "companion": (multiplicity or {}).get("companion"),
     }
     return {"star": star, "derived": derived}
 
@@ -441,6 +459,574 @@ def _metallicity_count_items(priors, derived):
     if not occ or feh is None:
         return items
     return [(k, w * math.exp(_METALLICITY_COUNT_TILT * feh * k)) for k, w in items]
+
+
+# ── Phase R3-V2 · B1 (v2.4/v2.9) · stellar multiplicity + companion sampler ─────
+#
+# The first STELLAR axis the generator samples — every other block is planetary (the
+# `multiplicity` key inside cold_giant_population is a GIANT count, not a stellar one).
+# Per system: multiplicity roll (mass-dependent) → mass ratio q → separation (the
+# close-pair / wide-log-normal mixture) → eccentricity. The companion is emitted in the
+# block's own `consumer_contract` shape {mass_solar, sma_au, ecc, p_orb_days, close_pair},
+# which is exactly the `--companion` hint `feasibility._binary_gate` already consumes — so
+# a drawn companion reaches the Holman–Wiegert S/P-type gate through the existing path,
+# with NO parallel code path.
+#
+# Two dataset rules, both hard and both covered by tests:
+#   • `ecc_dist.consumer_must_not_default_to_zero` — a silent e = 0 makes every drawn
+#     binary maximally planet-friendly and inflates stable-HZ rates. Never emit e == 0.
+#   • the circularization period is a STATISTICAL boundary, never a hard cut (BY Dra sits
+#     at e = 0.300 with P = 5.98 d, inside it). ~6 d is the M-dwarf value (v2.9.0,
+#     Packet-4 C52: Zanazzi 2022 + EBLM XVII + the local 57-system e–P transition);
+#     Raghavan's 12 d is the separate SOLAR-TYPE reference and is deliberately not used.
+#
+# APP-SIDE MODELLING CHOICES — the block states f(e) in prose, not parametrically, so the
+# following are OURS and are named as such in the emitted note (never presented as pinned):
+#   • above the boundary: Rayleigh(σ = 0.21) clamped to ≤ 0.9 → median ≈ 0.25, matching the
+#     block's "broad_median_~0.25_trending_thermal_tail_to_~0.9";
+#   • below the fully-circular envelope: a half-normal (σ = 0.01) floored at 0.001 — near
+#     zero but never zero (CM Dra is e = 0.005);
+#   • between envelope and boundary: a linear ramp between those two, so the boundary is
+#     soft from both sides rather than a step;
+#   • higher-order systems are COUNTED in `n_components` but only the primary companion is
+#     placed — stated in the note rather than silently dropped.
+
+# ── B3 (2026-07-23) · the wide-companion survival half-life scale ───────────────
+#
+# There is NO fixed outer cutoff on binary separation — D&K: "there is no absolute upper
+# bound on binary separation, but rather a gradual rarity beyond a certain separation."
+# What erodes wide pairs is CUMULATIVE small stellar encounters, giving a survival timescale
+# that shrinks with age and scales with mass (Weinberg, Shapiro & Wasserman 1987 eq. 28, via
+# Dhital 2010): a_half ≃ 1.212 × (M_tot / t) pc, for M☉ and Gyr.
+#
+# *** WHAT THIS QUANTITY IS — AND IS NOT. *** Weinberg's t½ is a HALF-LIFE: the time by which
+# HALF the binaries at a given separation have been disrupted. It is NOT "the widest binary
+# still surviving at age t" — that gloss entered via the secondary source and we inherited it
+# verbatim. The paper's own headline finding is the opposite of a wall:
+#
+#     "We find no evidence of breaks or cutoffs in most of the scenarios."  (abstract)
+#
+# So HARD-TRUNCATING here is a MODELLING CONVENIENCE, not a physical boundary: roughly half
+# the population AT this separation actually survives. It is kept because the affected mass
+# is 0.1–3% of draws and because the honest alternative — smooth attenuation — would require
+# a survival law nobody has pinned, and inventing one is the same error as inventing the join
+# weight below. If a decay law is ever pinned, attenuate instead of cutting.
+#
+# EVIDENCE GRADE — theory (a dynamics calculation) with PARTIAL, INDIRECT observational
+# support. Two earlier drafts of this comment were wrong and the corrections are kept visible,
+# because an overclaim that is quietly fixed is the kind that comes back: (1) it said
+# "observed, not merely modelled" — WITHDRAWN, the ~0.1 pc-break leg is dead (that peak is
+# contamination-dominated), the disk-vs-halo shape leg is ambiguous (Tian 2020 attribute the
+# steepening to initial conditions), and only a frequency-versus-age leg survives; (2) it
+# carried a ~4% prefactor slack — RETRACTED, see the coefficient note below.
+#
+# TWO SOURCE CAVEATS worth knowing before anyone "improves" the formula. Eq. 28 is the
+# paper's NAIVE estimate ("advective diffusion alone"); its own Monte Carlo rejects the a^−1
+# scaling in this range, finding t½ ∝ a₀^−1.34 for 0.1 < a₀ < 0.5 pc. But the simulation fit
+# (eq. 56) has NO M_tot dependence — it is fitted at one fiducial binary mass — so eq. 28 is
+# the only mass-dependent form the paper offers, and using it is deliberate. The practical
+# difference is small and CHANGES SIGN with mass (removed fraction 0.09% → 0.11% at
+# M_tot 0.45/5 Gyr; identical at 0.45/10 Gyr; eq. 28 is MORE aggressive at 0.25/10 Gyr,
+# 0.40% vs 0.21%). Also: eq. 28 is STARS-ONLY, while the paper finds "the lifetimes cannot be
+# understood by considering encounters with stars and clouds individually" — so this
+# under-describes the combined stellar + GMC erosion by construction.
+#
+# WE DO NOT ADD AN ÖPIK / POWER-LAW TAIL. The measured index is −1.6 in dN/ds (NOT Öpik's
+# −1), but a two-component mixture needs a JOIN NORMALIZATION, and the source lineage
+# declares that unknown: "it remains unclear whether and how these two distributions are
+# physically connected." Inventing a join weight is precisely the double-count this dataset
+# has twice warned about. So: ONE log-normal, truncated here.
+#
+# IF THAT DECISION IS EVER REVERSED, two constraints travel with the −1.6 and neither was
+# known when this was written: (a) a SINGLE power law is excluded — Tian 2020 favour TWO
+# breaks (~10^3.8 AU and ~10^4.5 AU), and the single-slope result holds only for a
+# disk-dominated sample over 500–50,000 AU; (b) the index is NOT mass-dependent — El-Badry
+# 2019 fits M dwarfs at −1.62 ± 0.16 against solar-type −1.58 ± 0.09, indistinguishable, so
+# −1.6 applies to M primaries too. The FREQUENCY mass-dependence is a different quantity and
+# still stands (never apply THAT flat).
+#
+# THE COEFFICIENT IS CLEARED. A ~4% slack was carried here while Weinberg 1987 was known only
+# through Dhital, who state the law with a (ln Λ)⁻¹ factor and then substitute Λ = 1 — making
+# ln Λ = 0 and the lifetime divergent, so the stated inputs could not produce the stated
+# output. The primary was opened 2026-07-23: eq. 28 reproduces the paper's own reference point
+# ("t_*(a₀) ≈ 10¹⁰ yr … for a₀ ≈ 0.1 pc"), the incoherence is immaterial, and the slack is
+# RETRACTED. 1.212 is primary-verified; no uncertainty band is emitted for it.
+#
+# ONE THING RECORDED RATHER THAN SMOOTHED OVER (from the sister's adversarial refute-pass):
+#
+#      A SOLAR-HOST SHAPE CAVEAT, and it errs UNSAFE. Local slope of this σ = 1.16
+#      log-normal in dN/dlog s vs the measured −0.60: for M centres (5.3 AU) it is −0.64 at
+#      500 AU and steepens, so the tail is UNDER-produced — safe, and 66.5% of drawn
+#      companions. For solar centres (42 AU) it is −0.35 at 500 AU, shallower than measured
+#      until it crosses −0.60 at ~3000 AU, so wide companions are OVER-produced there.
+#      ~10.4% of companions. It is the one regime where one component is genuinely worse
+#      than a power law — recorded because the alternative (a mixture) needs the join
+#      weight that does not exist, not because it is acceptable.
+
+_DISRUPTION_COEFF = 1.212        # pc per (M☉ / Gyr) — Weinberg 1987 eq. 28 (primary-verified)
+_PC_AU = 206264.806              # AU per parsec
+_MULT_TRUNC_TRIES     = 64      # wide-component truncation resampling bound
+_MULT_ECC_FLOOR       = 0.001   # "NEVER e == 0 identically"
+_MULT_ECC_MAX         = 0.9     # the block's stated tail limit
+_MULT_ECC_BROAD_SIGMA = 0.21    # Rayleigh σ → median ≈ 0.247
+_MULT_ECC_NEAR_SIGMA  = 0.01    # half-normal σ below the fully-circular envelope
+_DAYS_PER_JULIAN_YEAR = 365.25
+
+
+def _interp_log10_mass(grid, values, mass_solar):
+    """Linear-in-log10(mass) interpolation with endpoints held — the block's
+    ``linear_in_log10_mass_hold_endpoints`` (F-4: linear in log₁₀ M, *not* in M)."""
+    if not grid or not values or len(grid) != len(values):
+        return None
+    if mass_solar <= grid[0]:
+        return values[0]
+    if mass_solar >= grid[-1]:
+        return values[-1]
+    for i in range(len(grid) - 1):
+        if grid[i] <= mass_solar <= grid[i + 1]:
+            span = math.log10(grid[i + 1]) - math.log10(grid[i])
+            f = 0.0 if span == 0 else (math.log10(mass_solar) - math.log10(grid[i])) / span
+            return values[i] + f * (values[i + 1] - values[i])
+    return values[-1]
+
+
+def _kepler_sma_au(total_mass_solar, period_days):
+    """Kepler III — a (AU) from orbital period and total system mass."""
+    return (total_mass_solar * (period_days / _DAYS_PER_JULIAN_YEAR) ** 2) ** (1.0 / 3.0)
+
+
+def _kepler_period_days(total_mass_solar, sma_au):
+    """Kepler III inverted — P (days) from separation and total system mass."""
+    return _DAYS_PER_JULIAN_YEAR * math.sqrt(sma_au ** 3 / total_mass_solar)
+
+
+def _draw_mass_ratio(rng, mrd):
+    """q from ``mass_ratio_dist`` — a q^slope power law over [q_min, q_max] with the twin
+    excess applied as a density multiplier above ``twin_excess_above_q``."""
+    slope = float(mrd.get("slope") or 0.0)
+    q_lo = float(mrd.get("q_min") or 0.1)
+    q_hi = float(mrd.get("q_max") or 1.0)
+    p = slope + 1.0
+    if abs(p) < 1e-9:                     # p(q) ∝ 1/q — log-uniform limit
+        return q_lo * (q_hi / q_lo) ** rng.random()
+
+    def _seg_mass(a, b):
+        return (b ** p - a ** p) / p
+
+    def _inv_cdf(a, b, u):
+        return (a ** p + u * (b ** p - a ** p)) ** (1.0 / p)
+
+    q_twin = mrd.get("twin_excess_above_q")
+    factor = float(mrd.get("twin_excess_factor") or 1.0)
+    if q_twin is None or not (q_lo < float(q_twin) < q_hi) or factor == 1.0:
+        return _inv_cdf(q_lo, q_hi, rng.random())
+    q_twin = float(q_twin)
+    w_lo, w_hi = _seg_mass(q_lo, q_twin), factor * _seg_mass(q_twin, q_hi)
+    if rng.random() * (w_lo + w_hi) < w_lo:
+        return _inv_cdf(q_lo, q_twin, rng.random())
+    return _inv_cdf(q_twin, q_hi, rng.random())
+
+
+def _draw_companion_ecc(rng, ecc_dist, period_days):
+    """Eccentricity under the ``ecc_dist`` statistical boundary (never a hard cut, never 0).
+
+    All three variates are drawn unconditionally so rng consumption does not depend on
+    which branch the period lands in — the branch changes the value, not the stream.
+    """
+    u_broad, z_near, u_mix = rng.random(), rng.gauss(0.0, 1.0), rng.random()
+    broad = _MULT_ECC_BROAD_SIGMA * math.sqrt(-2.0 * math.log(1.0 - u_broad))
+    near = abs(z_near) * _MULT_ECC_NEAR_SIGMA
+    p_circ = float(ecc_dist.get("circularization_period_days") or 6.0)
+    p_full = float(ecc_dist.get("fully_circular_envelope_days") or 0.0)
+    if period_days <= p_full:
+        ecc = near
+    elif period_days >= p_circ or p_circ <= p_full:
+        ecc = broad
+    else:
+        ramp = (period_days - p_full) / (p_circ - p_full)
+        ecc = broad if u_mix < ramp else near
+    return min(max(ecc, _MULT_ECC_FLOOR), _MULT_ECC_MAX)
+
+
+def _wide_disruption_half_life_au(m_total_solar, age_gyr):
+    """B3 — the (M_tot, age) wide-companion survival **half-life** scale, in AU.
+
+    ``a_half ≃ 1.212 × (M_tot / t)`` pc (Weinberg 1987 eq. 28). This is the separation at
+    which roughly **half** the population has been disrupted by age *t* — NOT the widest
+    surviving pair, and the source explicitly finds "no evidence of breaks or cutoffs".
+    Truncating here is a labelled modelling convenience; see the section comment.
+
+    Returns None when there is no age to key it to (a v1 dataset with no ``age_dist``): the
+    scale is a function of age, so without one there is nothing to apply — and a *constant*
+    stand-in would be the fixed cutoff the sources say does not exist.
+    """
+    if not age_gyr or age_gyr <= 0 or not m_total_solar or m_total_solar <= 0:
+        return None
+    return _DISRUPTION_COEFF * (m_total_solar / age_gyr) * _PC_AU
+
+
+def _draw_multiplicity(rng, priors, mass_solar, age_gyr=None):
+    """Stellar multiplicity + (when multiple) one companion, from the v2.4/v2.9
+    ``stellar_multiplicity`` block, with B3's (M_tot, age) outer bound applied to the wide
+    component.
+
+    Returns ``None`` — consuming **no** rng — when the dataset omits the block, so a v1
+    dataset / ``DefaultPriors`` run stays byte-identical.
+    """
+    sm = getattr(priors, "stellar_multiplicity", None)
+    if not sm:
+        return None
+    mfd = sm.get("multiplicity_fraction") or {}
+    frac = _interp_log10_mass(mfd.get("mass_msun_grid") or [], mfd.get("fraction") or [],
+                              mass_solar)
+    if frac is None:
+        return None
+
+    if rng.random() >= frac:
+        return {"is_multiple": False, "n_components": 1, "companion": None,
+                "note": (f"Single — drawn against a {frac:.3f} multiplicity fraction at "
+                         f"{mass_solar:.3f} M☉ (stellar_multiplicity prior).")}
+
+    higher = float((sm.get("higher_order_fraction") or {}).get("value") or 0.0)
+    n_comp = 3 if rng.random() < higher else 2
+
+    comps = {c.get("name"): c
+             for c in ((sm.get("separation_dist") or {}).get("components") or [])}
+    close, wide = comps.get("close_pair"), comps.get("wide_lognormal")
+    q = _draw_mass_ratio(rng, sm.get("mass_ratio_dist") or {})
+    m2 = q * mass_solar
+    total = mass_solar + m2
+
+    truncation_fallback = False
+    disrupted = False
+    a_max = _wide_disruption_half_life_au(total, age_gyr)     # B3; None without an age axis
+    use_close = bool(close) and (not wide or rng.random() < float(close.get("weight") or 0.0))
+    if use_close:
+        p_lo = float(close.get("p_min_days") or 1.8)
+        p_hi = float(close.get("p_max_days") or 62.6)
+        period = 10.0 ** rng.uniform(math.log10(p_lo), math.log10(p_hi))
+        sma = _kepler_sma_au(total, period)
+    else:
+        centre = _interp_log10_mass(wide.get("center_au_mass_grid") or [],
+                                    wide.get("center_au") or [], mass_solar)
+        sigma = float(wide.get("log10_sigma_au") or 0.0)
+        p_cut = wide.get("truncate_period_days_min")
+        sma = period = None
+        for _ in range(_MULT_TRUNC_TRIES):
+            sma = 10.0 ** rng.normalvariate(math.log10(centre), sigma)
+            period = _kepler_period_days(total, sma)
+            below_cut = bool(p_cut) and period <= float(p_cut)
+            beyond_bound = a_max is not None and sma > a_max
+            if beyond_bound:
+                # B3: past the (M_tot, age) survival half-life scale. Redraw rather than
+                # clamp — clamping would pile probability onto the cut, manufacturing an
+                # excess exactly where the sources say pairs become gradually rare. (The
+                # cut itself is a modelling convenience: ~half the pairs AT this scale
+                # really survive, and the source finds no cutoff at all.)
+                disrupted = True
+            if not below_cut and not beyond_bound:
+                break
+        else:
+            # F-2 disjointness is load-bearing: the close-pair rate is 0.087 BY
+            # CONSTRUCTION only while this component stays truncated above the window.
+            # Place at the boundary rather than emit an overlapping draw — and say so.
+            period = float(p_cut)
+            sma = _kepler_sma_au(total, period)
+            truncation_fallback = True
+
+    ecc = _draw_companion_ecc(rng, sm.get("ecc_dist") or {}, period)
+    note = (f"Companion drawn from the stellar_multiplicity prior "
+            f"({'close-pair' if use_close else 'wide log-normal'} component; "
+            f"q = {q:.3f} against a {frac:.3f} multiplicity fraction). "
+            "Eccentricity uses the circularization period as a STATISTICAL boundary, not a "
+            "cut, and is never identically zero; the f(e) shape is an app-side modelling "
+            "choice (the block states it in prose).")
+    if n_comp > 2:
+        note += (f" Higher-order system ({n_comp} components) — the additional component is "
+                 "counted but not placed; only the primary companion is modelled.")
+    if truncation_fallback:
+        note += (" Wide-component truncation floor hit — companion placed at the truncation "
+                 "boundary to keep the mixture components disjoint.")
+    if a_max is not None and not use_close:
+        note += (f" Wide separations are truncated at the (M_tot, age) survival HALF-LIFE "
+                 f"scale a_half = {a_max:,.0f} AU (1.212 × M_tot/t pc, Weinberg 1987 eq. 28). "
+                 f"This is where ~half the population has been disrupted, NOT a physical "
+                 f"boundary — the source reports no breaks or cutoffs — so the truncation is "
+                 f"a labelled modelling convenience, and the scale moves with mass and age "
+                 f"rather than being a fixed cutoff. No power-law tail is added beyond it: "
+                 f"the measured index is −1.6 in dN/ds (disk-dominated, 500–50,000 AU), but "
+                 f"the join normalization between the log-normal and the tail is declared "
+                 f"UNKNOWN by the source lineage, so a mixture would need an invented weight.")
+        if mass_solar >= 0.7:
+            note += (" Shape caveat for a solar-type host: this single log-normal runs "
+                     "SHALLOWER than the measured −0.60 tail slope out to ~3000 AU, so wide "
+                     "companions are over-produced in that range.")
+
+    return {
+        "is_multiple": True,
+        "n_components": n_comp,
+        "mass_ratio_q": _round(q, 4),
+        "wide_disruption_half_life_au": _round(a_max, 1) if a_max is not None else None,
+        "wide_redrawn_for_disruption": disrupted,
+        "companion": {
+            "mass_solar": _round(m2, 4),
+            # 6 dp, not the usual 4: a close pair sits at ~0.02 AU, where 4 dp keeps only
+            # three significant figures and breaks Kepler round-tripping against p_orb_days.
+            "sma_au": _round(sma, 6),
+            "ecc": _round(ecc, 4),
+            "p_orb_days": _round(period, 4),
+            "close_pair": use_close,
+        },
+        "note": note,
+    }
+
+
+# ── Phase R3-V2 · B2 (v2.10) · stellar age + the rotation-activity chain ────────
+#
+# Two blocks, one chain. `age_dist` (T8) supplies the host AGE the generator never drew —
+# the input `stellar_activity` names and nothing produced, which is why the activity block
+# sat dormant. The chain is:
+#
+#     age → P_rot → Ro = P_rot/τ(M) → log(L_X/L_bol) → [X-ray→EUV] → XUV
+#
+# P_rot has three branches, and which one applies is a fact about the system, not a choice:
+#   • a TIDALLY LOCKED close pair (B1's companion, `close_pair: true`) → P_rot = P_orb. This
+#     branch needs NO age — a locked pair is saturated for life — so activity is computable
+#     for a close binary even when the age draw is unavailable.
+#   • an FGK single (0.6–1.36 M☉) → Skumanich t^½ spin-down anchored on the Sun.
+#   • an M single (0.08–0.6 M☉) → the bimodal fast/slow population, NOT interpolated across
+#     the gap (`interpolate_across_gap: false` — the gap is real, not missing data).
+#
+# `age_dist` is a population-weighted SFH HISTOGRAM, not a Gaussian like `feh_dist`:
+#   • MS-lifetime truncation is intended (`truncate_and_renormalize`) — reject any draw with
+#     age > ms_end_gyr(mass) via the Phase-L3 `compute_stellar_evolution`. It effectively
+#     never bites for M dwarfs (their MS lifetime is >> a Hubble time) and bites hardest for
+#     F/A, which is exactly what the block's own mass_conditional_age table shows.
+#   • the histogram carries a KNOWN ARTIFACT: the BGM zeroes the 7–8 Gyr bin and piles up
+#     8–9 Gyr. Sampling it literally reproduces a hole the real SFH does not have (Alzate
+#     2021 has a broad minimum there), so a 3-bin kernel is applied when the dataset ships
+#     an `sfh_smoothing_note` — i.e. the dataset itself declares the smoothing intended.
+#
+# APP-SIDE NOTE — the population split is NOT separately sampled. The block recommends
+# drawing population (thin/thick/halo) then age from THAT population's distribution, but
+# supplies only the blended SFH; per-population age distributions are not in the dataset.
+# The block sanctions the simplification for exactly this consumer ("For the stellar_activity
+# chain ALONE a single blended distribution is adequate — thick/halo are old → unsaturated
+# regardless"), so the blended histogram is used and the omission is named in the note.
+
+_AGE_TRUNC_TRIES = 64           # MS-truncation rejection bound
+_SFH_KERNEL = (0.25, 0.5, 0.25)  # 3-bin smoother for the BGM discrete-age-bin artifact
+_L_SUN_ERG_S = 3.828e33         # IAU nominal solar luminosity, erg/s (for L_X in erg/s)
+
+# convective_turnover.relation, hardcoded because the dataset ships it as a FORMULA STRING.
+# A test asserts the dataset's string still matches this implementation, so a sister-side
+# change to the relation fails loudly instead of being silently ignored.
+_TAU_RELATION = "log10_tau_days = 2.33 - 1.50*(M/Msun) + 0.31*(M/Msun)**2"
+_TAU_C0, _TAU_C1, _TAU_C2 = 2.33, -1.50, 0.31
+
+
+def _smoothed_sfh(age_dist):
+    """SFH bins as [(lo, hi, weight)], with the 3-bin kernel applied when the dataset
+    ships an ``sfh_smoothing_note`` (its own declaration that the discrete-age-bin
+    artifact must not be sampled literally). Returns [] when unusable."""
+    bins = [b for b in (age_dist.get("sfh_histogram") or [])
+            if _is_number(b.get("lo")) and _is_number(b.get("hi"))
+            and _is_number(b.get("fraction"))]
+    if not bins:
+        return []
+    fracs = [float(b["fraction"]) for b in bins]
+    if str(age_dist.get("sfh_smoothing_note") or "").strip():
+        k0, k1, k2 = _SFH_KERNEL
+        sm = []
+        for i, f in enumerate(fracs):
+            lo = fracs[i - 1] if i > 0 else f
+            hi = fracs[i + 1] if i < len(fracs) - 1 else f
+            sm.append(k0 * lo + k1 * f + k2 * hi)
+        fracs = sm
+    return [(float(b["lo"]), float(b["hi"]), w)
+            for b, w in zip(bins, fracs) if w > 0]
+
+
+def _is_number(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _ms_end_gyr(mass_solar):
+    """``ms_end_gyr`` for the MS-lifetime truncation, or None when the Phase-L3
+    calculator declines the mass (outside 0.1–20 M☉ — it refuses to extrapolate)."""
+    ev = compute_stellar_evolution(mass_solar)
+    if "error" in ev:
+        return None
+    return ev.get("ms_end_gyr")
+
+
+def _draw_age(rng, priors, mass_solar):
+    """Host age (Gyr) from the v2.10 ``age_dist`` block, MS-lifetime-truncated.
+
+    Returns ``None`` — consuming **no** rng — when the dataset omits the block.
+    """
+    ad = getattr(priors, "age_dist", None)
+    if not ad:
+        return None
+    bins = _smoothed_sfh(ad)
+    if not bins:
+        return None
+    total = sum(w for _, _, w in bins)
+    ms_end = _ms_end_gyr(mass_solar)
+    age = None
+    for _ in range(_AGE_TRUNC_TRIES):
+        u = rng.random() * total
+        acc = 0.0
+        lo, hi = bins[-1][0], bins[-1][1]
+        for b_lo, b_hi, w in bins:
+            acc += w
+            if u <= acc:
+                lo, hi = b_lo, b_hi
+                break
+        age = rng.uniform(lo, hi)
+        if ms_end is None or age <= ms_end:
+            return age
+    # Every draw exceeded the MS lifetime (a hot, short-lived star): clamp rather than
+    # emit a star older than its own main sequence — the block's structural acceptance.
+    return min(age, ms_end) if ms_end else age
+
+
+def _tau_days(mass_solar):
+    """Convective turnover time τ (days) — the Wright 2018 relation the block pins."""
+    return 10.0 ** (_TAU_C0 + _TAU_C1 * mass_solar + _TAU_C2 * mass_solar ** 2)
+
+
+def _in_range(value, pair):
+    """True when ``value`` sits inside a [lo, hi] pair stated in EITHER direction (the
+    block states log_lx_lbol_valid_range DESCENDING, and that is correct, not a typo)."""
+    if not pair or len(pair) != 2 or value is None:
+        return None
+    lo, hi = min(pair), max(pair)
+    return lo <= value <= hi
+
+
+def _draw_p_rot(rng, sa, mass_solar, age_gyr, companion):
+    """P_rot (days) + the branch that produced it. Returns (p_rot, branch) — p_rot is
+    None when no branch applies (e.g. a single star with no age drawn)."""
+    tl = sa.get("tidal_locking") or {}
+    if (companion and companion.get("close_pair") and tl.get("locked_when_close_pair")
+            and tl.get("p_rot_equals_p_orb") and companion.get("p_orb_days")):
+        # A locked pair is saturated for life — this branch needs no age at all.
+        return float(companion["p_orb_days"]), "tidally_locked"
+
+    fgk = sa.get("rotation_age_fgk") or {}
+    lo_hi = fgk.get("applicable_mass_msun") or []
+    if (age_gyr is not None and len(lo_hi) == 2 and lo_hi[0] <= mass_solar <= lo_hi[1]
+            and fgk.get("relation") == "skumanich"):
+        p_sun = float(fgk.get("p_sun_days") or 25.4)
+        age_sun = float(fgk.get("age_sun_gyr") or 4.57)
+        expo = float(fgk.get("exponent") or 0.5)
+        return p_sun * (age_gyr / age_sun) ** expo, "skumanich_fgk"
+
+    singles = sa.get("rotation_age_singles") or {}
+    lo_hi = singles.get("applicable_mass_msun") or []
+    if age_gyr is not None and len(lo_hi) == 2 and lo_hi[0] <= mass_solar <= lo_hi[1]:
+        fast, slow = singles.get("fast") or {}, singles.get("slow") or {}
+        # Bimodal, and deliberately NOT interpolated across the gap: the gap between the
+        # fast and slow sequences is a real feature of the M-dwarf population.
+        band = fast if age_gyr <= float(fast.get("age_gyr_max") or 0.0) else slow
+        rng_pair = band.get("p_rot_days") or []
+        if len(rng_pair) == 2:
+            return rng.uniform(float(rng_pair[0]), float(rng_pair[1])), (
+                "m_dwarf_fast" if band is fast else "m_dwarf_slow")
+    return None, None
+
+
+def _draw_activity(rng, priors, mass_solar, luminosity, age_gyr, companion):
+    """The rotation-activity chain → X-ray + XUV environment, or None when the block is
+    absent / no P_rot branch applies. Consumes rng only on the M-dwarf single branch."""
+    sa = getattr(priors, "stellar_activity", None)
+    if not sa:
+        return None
+    ra = sa.get("rotation_activity") or {}
+    ct = sa.get("convective_turnover") or {}
+    p_rot, branch = _draw_p_rot(rng, sa, mass_solar, age_gyr, companion)
+    if p_rot is None or p_rot <= 0:
+        return None
+
+    tau = _tau_days(mass_solar)
+    rossby = p_rot / tau
+    sat_log = float(ra.get("saturation_log_lx_lbol", -3.13))
+    sat_ro = float(ra.get("saturation_rossby", 0.16))
+    slope = float(ra.get("unsaturated_slope", -2.70))
+    if rossby <= sat_ro:
+        log_rx, regime = sat_log, "saturated"
+    else:
+        log_rx, regime = sat_log + slope * math.log10(rossby / sat_ro), "unsaturated"
+
+    # Domain flags — the relation is fitted over a bounded range and this is an ANCHORED
+    # RECONSTRUCTION, not Wright's own fitted line. Flag, never clamp.
+    mass_ok = _in_range(mass_solar, ct.get("valid_mass_msun"))
+    out_of_domain = [
+        name for name, ok in (
+            ("rossby", _in_range(rossby, ra.get("ro_valid_range"))),
+            ("log_lx_lbol", _in_range(log_rx, ra.get("log_lx_lbol_valid_range"))),
+            ("tau_mass", mass_ok),
+        ) if ok is False
+    ]
+
+    out = {
+        "age_gyr": _round(age_gyr, 3) if age_gyr is not None else None,
+        "p_rot_days": _round(p_rot, 4),
+        "p_rot_branch": branch,
+        "tau_days": _round(tau, 4),
+        "rossby": _round(rossby, 4),
+        "log_lx_lbol": _round(log_rx, 4),
+        "regime": regime,
+        "out_of_fitted_domain": out_of_domain,
+        "band": "X-ray",
+    }
+
+    # X-ray → EUV. CONTESTED in the dataset (the spread between relations IS the
+    # uncertainty and must not be averaged away), so the applied relation is named and the
+    # alternative is carried alongside rather than blended.
+    xuv = _xray_to_euv(sa, log_rx, luminosity)
+    if xuv:
+        out.update(xuv)
+    cb = sa.get("circumbinary_xuv") or {}
+    if companion and cb.get("component_count_scaling") is not None:
+        # A ratio identity: doubled emitters cancel against a doubled HZ distance, so a
+        # circumbinary XUV environment depends on L_X/L_bol ONLY — never on star count.
+        out["circumbinary_component_scaling"] = float(cb["component_count_scaling"])
+    return out
+
+
+def _xray_to_euv(sa, log_rx, luminosity):
+    """Apply the block's default X-ray→EUV relation to get an XUV environment.
+
+    The relations are fitted on **absolute** L_X (erg/s), not the L_X/L_bol ratio, so the
+    bolometric luminosity is required to enter and leave the conversion.
+    """
+    parent = sa.get("circumbinary_xuv") or {}
+    cb = parent.get("xray_to_euv") or {}
+    rels = cb.get("relations") or {}
+    name = cb.get("default")
+    rel = rels.get(name) or {}
+    if not rel or not luminosity or luminosity <= 0:
+        return None
+    text = str(rel.get("relation") or "")
+    m = re.search(r"\(?\s*(-?\d+(?:\.\d+)?)\s*(?:\+/-\s*[\d.]+)?\s*\)?\s*\+\s*"
+                  r"\(?\s*(-?\d+(?:\.\d+)?)\s*(?:\+/-\s*[\d.]+)?\s*\)?\s*\*\s*log10 L_X", text)
+    if not m:
+        return None
+    intercept, gradient = float(m.group(1)), float(m.group(2))
+    log_lx = log_rx + math.log10(luminosity * _L_SUN_ERG_S)
+    log_leuv = intercept + gradient * log_lx
+    l_xuv = 10.0 ** log_lx + 10.0 ** log_leuv
+    return {
+        "log_l_x_erg_s": _round(log_lx, 4),
+        "log_l_euv_erg_s": _round(log_leuv, 4),
+        "log_l_xuv_erg_s": _round(math.log10(l_xuv), 4),
+        "euv_fraction": _round(10.0 ** log_leuv / l_xuv, 4),
+        "xray_to_euv_relation": name,
+        "xray_to_euv_grade": parent.get("assumption_grade"),
+        "xray_to_euv_alternatives": sorted(k for k in rels if k != name),
+    }
 
 
 # ── Phase R3-V2 · L2 (v2.1) · disk-mass lever + saturating giant occurrence ──────
@@ -950,6 +1536,11 @@ def _synth_planets(rng, priors, star_name, derived):
     planets += _place_cold_giants(rng, priors, star_name, derived, 0)
     # v2.3: decoupled inner-giant population, after the cold block (shares host [Fe/H]).
     planets += _place_inner_giants(rng, priors, star_name, derived, 0)
+    # Emit in ORBITAL order, as the real-anchor path already does (_generate_real_anchor).
+    # The two decoupled populations are appended after the grid, and an inner giant lands
+    # interior to it — so without this the list is not monotonic in a_au. Sorting here does
+    # NOT re-letter the grid names (they record draw order, not rank).
+    planets.sort(key=lambda p: (p["a_au"] is None, p["a_au"]))
     return planets
 
 
@@ -1018,12 +1609,21 @@ def _priors_note_fragment(priors):
 _V2_SAMPLING_BLOCKS = ("mass_model", "occurrence_by_metallicity", "intra_system_correlation",
                        "cold_giant_population", "inner_giant_population")
 
+# The STELLAR blocks (B1/B2) are drawn in synthetic mode only — a real anchor takes its
+# multiplicity from GCNS and draws no age or activity.
+_V2_SYNTHETIC_ONLY_BLOCKS = ("stellar_multiplicity", "age_dist", "stellar_activity")
+
 
 def _v2_blocks_note(priors, star):
     """Provenance note naming the active v2 sampling blocks (+ host [Fe/H] when the
     metallicity path drove it), or None when no v2 block is active. Surfaces the v2
     physics in the CLI / query.py notes and the GUI."""
     active = [b for b in _V2_SAMPLING_BLOCKS if getattr(priors, b, None)]
+    # B1/B2 are sampled in SYNTHETIC mode only — under a real anchor the multiplicity is
+    # GCNS-derived and no age/activity is drawn, so claiming these are "in effect" there
+    # would be false.
+    if star.get("source") == "synthetic":
+        active += [b for b in _V2_SYNTHETIC_ONLY_BLOCKS if getattr(priors, b, None)]
     if not active:
         return None
     note = "v2 physics in effect: " + ", ".join(active) + "."
@@ -1284,6 +1884,13 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
         "snow_line_au": _round(snow_line, 5),
         "feh": _round(anchor_feh, 3),
         "feh_source": anchor_feh_source,
+        # B2 keys are present in BOTH modes so the star shape is one shape, but a real
+        # anchor draws no age and no activity: an observed star's age would have to come
+        # from an observed catalogue (HWC S_AGE / Mission Exocat st_age — not yet wired),
+        # never from the synthetic SFH.
+        "age_gyr": None,
+        "age_source": None,
+        "activity": None,
         "source": "observed",
         "grounding": "observed",
         "multiplicity": {"is_multiple": is_multiple, "n_components": n_comp, "note": mult_note},

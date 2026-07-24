@@ -185,5 +185,165 @@ class CensusIncludeHonestyTest(unittest.TestCase):
         self.assertIn("B/wds visual pairs", r["coverage"]["catalogs_not_swept"])
 
 
+class TestCensusDedup(unittest.TestCase):
+    """The census counts SYSTEMS, not catalogue rows. Two ways it used to double-count:
+
+      • INTRA-SOURCE — one Gaia `source_id` carrying several NSS orbit solutions;
+      • CROSS-ROUTE — the same star reached via both NSS and SB9, missed because the old
+        positional box was 3″ while SB9's coarse coordinates put real twins 6–9″ apart.
+
+    All four systems below are real, and each pins a DIFFERENT rule. The two that must be
+    collapsed and the two that must NOT be are equally load-bearing: a rule that fixes the
+    first pair by distrusting low-grade or short-period rows would break the second pair.
+    """
+
+    # FK Aqr / GJ 867 A — one source, two solutions; the low-grade targeted search is
+    # spurious and the SB2C reproduces the primary paper (Tsvetkova 2024) to 10 sig figs.
+    FK_AQR = "2400808142038361088"
+    # BY Dra — same shape: grade-17 targeted search vs a grade-141 SB2 matching the paper.
+    BY_DRA = "2145277550935525760"
+
+    def _nss(self, source_id, period, grade, stype, ra=10.0, dec=20.0):
+        return {"source": "gaia-nss:two_body_orbit", "source_id": source_id,
+                "solution_type": stype, "name": None, "ra": ra, "dec": dec,
+                "parallax_mas": 100.0, "distance_ly": 32.6, "period_d": period,
+                "eccentricity": 0.1, "grade": grade,
+                "companion": {"class": "stellar", "m2_solar": 0.3}, "verification": "x"}
+
+    def _sb9(self, name, period, gaia_id=None, ra=10.0, dec=20.0, seq=1):
+        return {"source": "sb9", "source_id": None, "seq": seq, "name": name,
+                "gaia_source_id": gaia_id, "ra": ra, "dec": dec, "parallax_mas": 100.0,
+                "distance_ly": 32.6, "period_d": period, "eccentricity": 0.1, "grade": 3,
+                "primary_ref": "1965ApJ...141..649H",
+                "companion": {"class": "stellar"}, "verification": "y"}
+
+    # ── intra-source collapse ────────────────────────────────────────────────
+
+    def test_multiple_nss_solutions_collapse_to_the_highest_grade(self):
+        rows = binary._collapse_nss_solutions([
+            self._nss(self.FK_AQR, 7.980586, 42.96, "OrbitalTargetedSearch"),
+            self._nss(self.FK_AQR, 4.083196151, 205.48, "SB2C"),
+        ])
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(rows[0]["period_d"], 4.083196151)   # the primary-paper value
+        self.assertEqual(rows[0]["n_orbit_solutions"], 2)
+        self.assertFalse(rows[0]["sole_solution"])
+
+    def test_the_discarded_solution_is_surfaced_not_dropped(self):
+        rows = binary._collapse_nss_solutions([
+            self._nss(self.BY_DRA, 32.2660, 17.42, "OrbitalTargetedSearch"),
+            self._nss(self.BY_DRA, 5.9773, 140.52, "SB2"),
+        ])
+        other = rows[0]["other_solutions"]
+        self.assertEqual(len(other), 1)
+        self.assertAlmostEqual(other[0]["period_d"], 32.2660)
+        self.assertEqual(other[0]["solution_type"], "OrbitalTargetedSearch")
+        self.assertAlmostEqual(other[0]["grade"], 17.42)
+
+    def test_both_regression_cases_resolve_mechanically(self):
+        # No per-system special-casing: the same grade rule fixes both.
+        for sid, spurious, correct in ((self.FK_AQR, 7.980586, 4.083196151),
+                                       (self.BY_DRA, 32.2660, 5.9773)):
+            rows = binary._collapse_nss_solutions([
+                self._nss(sid, spurious, 20.0, "OrbitalTargetedSearch"),
+                self._nss(sid, correct, 200.0, "SB2"),
+            ])
+            self.assertAlmostEqual(rows[0]["period_d"], correct)
+
+    def test_a_sole_solution_is_flagged_but_not_judged(self):
+        # G 184-19: sole SB2 at grade 126 — trustworthy. Wolf 227: sole targeted search at
+        # grade 38 — weak. SAME sole_solution flag; the caller tells them apart by type +
+        # grade. No "distrust low grades" rule exists, and none should: the NSS grades run
+        # 2.9-270.7 with a median of 44.4, so any cutoff would flag much of the census.
+        strong = binary._collapse_nss_solutions(
+            [self._nss("g18419", 2.535, 125.86, "SB2")])[0]
+        weak = binary._collapse_nss_solutions(
+            [self._nss("wolf227", 10.59, 37.89, "OrbitalTargetedSearch")])[0]
+        for r in (strong, weak):
+            self.assertTrue(r["sole_solution"])
+            self.assertEqual(r["n_orbit_solutions"], 1)
+            self.assertEqual(r["other_solutions"], [])
+        self.assertEqual(strong["solution_type"], "SB2")
+        self.assertEqual(weak["solution_type"], "OrbitalTargetedSearch")
+
+    # ── cross-route dedup ────────────────────────────────────────────────────
+
+    def test_identity_match_single_counts_across_routes(self):
+        nss = [self._nss(self.FK_AQR, 7.980586, 42.96, "OrbitalTargetedSearch")]
+        sb9 = [self._sb9("HIP 111802", 4.0832, gaia_id=self.FK_AQR)]
+        out = binary._dedup_census(nss, sb9)
+        self.assertEqual(len(out), 1)
+        self.assertIn("sb9", out[0]["also_in"])
+
+    def test_period_disagreement_is_surfaced_never_resolved_silently(self):
+        # This disagreement is what identified BOTH spurious Gaia solutions; hiding it
+        # behind a silent winner would have hidden the finding.
+        nss = [self._nss(self.BY_DRA, 32.2660, 17.42, "OrbitalTargetedSearch")]
+        out = binary._dedup_census(nss, [self._sb9("BY Dra", 5.9751, gaia_id=self.BY_DRA)])
+        pd = out[0]["period_disagreement"]
+        self.assertAlmostEqual(pd["nss_period_d"], 32.2660)
+        self.assertAlmostEqual(pd["sb9_period_d"], 5.9751)
+        self.assertEqual(pd["nss_solution_type"], "OrbitalTargetedSearch")
+        self.assertAlmostEqual(pd["nss_grade"], 17.42)
+
+    def test_agreeing_periods_raise_no_disagreement(self):
+        nss = [self._nss("s1", 12.9773, 50.0, "SB1")]
+        out = binary._dedup_census(nss, [self._sb9("HIP 80686", 12.9762, gaia_id="s1")])
+        self.assertNotIn("period_disagreement", out[0])
+
+    def test_positional_proximity_flags_but_never_merges(self):
+        # 7.2″ apart — inside the widened box — but with no resolved identity. Castor proves
+        # proximity alone cannot justify a merge, so this stays in the census, flagged.
+        nss = [self._nss("s9", 7.98, 40.0, "OrbitalTargetedSearch", ra=339.69202, dec=-20.62148)]
+        sb9 = [self._sb9("HIP 111802", 4.0832, gaia_id=None, ra=339.68991, dec=-20.62113)]
+        out = binary._dedup_census(nss, sb9)
+        self.assertEqual(len(out), 2, "a positional match must NOT collapse a row")
+        flagged = [r for r in out if r.get("possible_duplicate_of")]
+        self.assertEqual(len(flagged), 1)
+        self.assertAlmostEqual(flagged[0]["possible_duplicate_of"]["separation_arcsec"], 7.2,
+                               delta=0.3)
+
+    def test_castor_style_two_real_pairs_at_one_position_both_survive(self):
+        # HIP 36850 carries two genuine close pairs (Aa/Ab 9.2128 d, Ba/Bb 2.9283 d).
+        # A widened positional box that merged them would UNDER-count.
+        sb9 = [self._sb9("HIP 36850", 9.2128, seq=461),
+               self._sb9("HIP 36850", 2.9283, seq=462)]
+        out = binary._dedup_census([], sb9)
+        self.assertEqual(len(out), 2)
+
+    def test_two_sb9_orbits_on_one_gaia_source_keep_both(self):
+        # The same trap via the identity path: a second SB9 orbit on one source is usually a
+        # second real pair, so it is kept and flagged rather than absorbed.
+        nss = [self._nss("shared", 9.2128, 60.0, "SB1")]
+        sb9 = [self._sb9("HIP 36850", 9.2128, gaia_id="shared", seq=461),
+               self._sb9("HIP 36850", 2.9283, gaia_id="shared", seq=462)]
+        out = binary._dedup_census(nss, sb9)
+        self.assertEqual(len(out), 2)
+        kept = [r for r in out if r["source"] == "sb9"][0]
+        self.assertIsNotNone(kept.get("possible_duplicate_of"))
+
+    def test_rows_without_coordinates_are_never_matched(self):
+        nss = [self._nss("s1", 10.0, 50.0, "SB1", ra=None, dec=None)]
+        sb9 = [self._sb9("X", 10.0, gaia_id=None, ra=None, dec=None)]
+        self.assertEqual(len(binary._dedup_census(nss, sb9)), 2)
+
+    # ── the accounting block ─────────────────────────────────────────────────
+
+    @mock.patch("core.binary._census_sb9")
+    @mock.patch("core.binary._census_nss")
+    def test_dedup_accounting_is_reported(self, m_nss, m_sb9):
+        m_nss.return_value = ([dict(self._nss(self.BY_DRA, 5.9773, 140.52, "SB2"),
+                                    n_orbit_solutions=2, sole_solution=False,
+                                    other_solutions=[{"period_d": 32.266, "grade": 17.42,
+                                                      "solution_type": "OrbitalTargetedSearch",
+                                                      "eccentricity": 0.1}])], None)
+        m_sb9.return_value = ([self._sb9("BY Dra", 5.9751, gaia_id=self.BY_DRA)], None)
+        r = binary.close_binary_census(65, 365)
+        self.assertEqual(r["count"], 1)                       # one SYSTEM, two catalogue rows
+        self.assertEqual(r["dedup"]["cross_route_single_counted"], 1)
+        self.assertEqual(r["dedup"]["multi_solution_sources"], 1)
+        self.assertEqual(r["dedup"]["possible_duplicates"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

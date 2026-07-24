@@ -172,7 +172,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `gaia-tap` | (`--adql` \| `--table`) [`--columns --where --cone --row-limit --async`] | **ESA Gaia TAP (live)**¶ | `service, query, count, async, truncated, column_units, rows[]` |
 | `heasarc-query` | (`--catalog --cone` \| `--adql`) [`--radius --row-limit`] | **HEASARC (live)**¶ | `service, catalog, count, column_units, rows[]` |
 | `binary-orbit` | (`--star` \| `--source-id` \| `--ra --dec`) | **CDS + ESA Gaia (live)**¶ | `query, identity, solutions[], route_tried[], units` (`note`/`route_errors` when relevant) |
-| `close-binary-census` | `--dist-max-ly --period-max-d` [`--sep-max-au --include --parallax-source --keep-planets --separate-wide --exclude-known`] | **ESA Gaia + CDS (live)**¶ | `query, count, counts_by_class, census[], excluded_planets[], wide[], coverage, units` |
+| `close-binary-census` | `--dist-max-ly --period-max-d` [`--sep-max-au --include --parallax-source --keep-planets --separate-wide --exclude-known`] | **ESA Gaia + CDS (live)**¶ | `query, count, counts_by_class, dedup, census[], excluded_planets[], wide[], coverage, units` |
 | `gaia-astrophysical` | (`--star` \| `--source-id`) | **ESA Gaia (live)**¶ | `query, source_id, identity, parameters, caveats, units` |
 | `besancon-query` | (`--glon --glat` \| `--local`) [`--area --dist-max-pc --mag-max --sample-max --contact-email`] | **Besançon BGM (live; needs account)**¶ | `query, model_version, n_stars, columns, catalogue_sample[], catalogue_truncated, age_dist, coverage, units` |
 
@@ -2193,6 +2193,55 @@ Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=
   ingested dataset (Phase R3 — above). Multi-star anchors are **detected, warned, and safe-capped** (no
   synthetic body beyond a conservative cap; observed bodies are never capped); a quantitative
   S/P-type verdict needs a `--companion` hint (Phase R2 — below).
+  Planets are emitted in **orbital order** (ascending `a_au`) in both modes — the v2.2/v2.3
+  decoupled giant populations are placed after the grid, so the list is sorted before it is
+  returned.
+- **`star.age_gyr` / `star.age_source` / `star.activity`** — all `null` under `permissive` / a v1
+  dataset. Under `strict` with a v2.10 dataset, **synthetic** mode draws the host age from the
+  `age_dist` block (Phase R3-V2 B2) — a population-weighted **SFH histogram**, not a Gaussian —
+  and **MS-lifetime-truncated**: no star is ever older than its own main sequence (rejection
+  against the Phase-L3 `compute_stellar_evolution`). `age_source` is `"age_dist"` or `null`.
+  The histogram's known BGM discrete-age-bin artifact (a zeroed 7–8 Gyr bin) is **smoothed**,
+  because the dataset ships an `sfh_smoothing_note` declaring that intended.
+  `activity` is the `stellar_activity` chain it unblocks: `{age_gyr, p_rot_days, p_rot_branch,
+  tau_days, rossby, log_lx_lbol, regime, out_of_fitted_domain[], band, log_l_x_erg_s,
+  log_l_euv_erg_s, log_l_xuv_erg_s, euv_fraction, xray_to_euv_relation, xray_to_euv_grade,
+  xray_to_euv_alternatives[], circumbinary_component_scaling?}`. `p_rot_branch` is one of
+  `tidally_locked` (a B1 close pair — `P_rot = P_orb`, saturated for life, and the **only branch
+  that needs no age**), `skumanich_fgk` (0.6–1.36 M☉), `m_dwarf_fast` / `m_dwarf_slow` (0.08–0.6 M☉,
+  bimodal and deliberately **not** interpolated across the gap). Out-of-domain values are
+  **flagged, never clamped**. The X-ray→EUV conversion is **contested in the dataset** — the applied
+  relation is named and its alternative listed rather than averaged. **Real-anchor mode draws
+  neither**: an observed star's age would have to come from an observed catalogue, so all three keys
+  stay `null` there.
+- **`star.multiplicity`** — `null` under `permissive` / a v1 dataset (unchanged). Under
+  `strict` with a v2.4+ dataset, **synthetic** mode now draws it from the
+  `stellar_multiplicity` block (Phase R3-V2 B1): `{is_multiple, n_components, mass_ratio_q,
+  companion, note}`, where `companion` is `null` for a single star and otherwise
+  `{mass_solar, sma_au, ecc, p_orb_days, close_pair}` — the block's own `consumer_contract`
+  shape, which is **exactly the `--companion` hint shape**, so a drawn companion feeds the
+  same Holman–Wiegert S/P-type gate. An explicit `--companion` always overrides the drawn
+  one. **Real-anchor** mode is unchanged: its `multiplicity` stays GCNS-derived
+  (`{is_multiple, n_components, note}`, no `companion`) and is never overwritten by a draw.
+  The companion block also carries **`wide_disruption_half_life_au`** and
+  **`wide_redrawn_for_disruption`** (Phase R3-V2 B3): wide separations are truncated at
+  `a_half ≈ 1.212 × (M_tot / t)` pc (Weinberg 1987 eq. 28, primary-verified). **Read the name
+  literally — this is a survival HALF-LIFE scale, not a boundary**: it is where roughly *half*
+  the population has been disrupted by age *t*, and the source's headline finding is "no
+  evidence of breaks or cutoffs". Truncating there is therefore a **labelled modelling
+  convenience**, not a physical wall; the scale **moves** with mass and age, and is `null`
+  without an age axis (a constant stand-in would be exactly the cutoff the sources deny).
+  One caveat is recorded rather than smoothed over: for **solar-type hosts** the single
+  log-normal runs shallower than the measured −0.60 tail slope out to ~3000 AU, so wide
+  companions are **over-produced** there.
+  **No power-law tail is added** beyond the bound: the measured index is −1.6 in `dN/ds`, but
+  the join normalization between log-normal and tail is declared *unknown* by the source
+  lineage, so a mixture would need an invented weight.
+  Two guarantees worth relying on: `ecc` is **never identically zero** (a silent `e = 0`
+  makes every drawn binary maximally planet-friendly), and the circularization period is a
+  **statistical boundary, not a cut** — eccentric short-period pairs are drawable (BY Dra is
+  `e = 0.300` at `P = 5.98 d`). The `f(e)` shape is an app-side modelling choice (the dataset
+  states it in prose) and says so in `note`.
 
 > **v2 research-priors sampling (Phase R3-V2, under `--research-policy strict` with a v2
 > dataset).** When the ingested dataset is a `schema_version` "2.0"+ contract carrying the
@@ -3125,6 +3174,33 @@ sweep sources** — a requested but unimplemented `wds`/`cv` is reported honestl
 `{"error"}`. The `coverage` block is **never** empty and never implies exhaustive. Bulk NSS companion
 masses assume a solar-mass primary (per-system `binary-orbit` gives the spectral-typed refinement + the
 `binary_masses` cross-check).
+
+**Dedup — a census row is one SYSTEM, not one catalogue row.** Two mechanisms, plus an accounting block:
+
+- **Intra-source.** One Gaia `source_id` can carry several NSS orbit solutions of very different quality.
+  They collapse to the **highest-graded** one; the rest are surfaced, not dropped, via
+  `n_orbit_solutions`, `sole_solution` and `other_solutions[{period_d, eccentricity, grade,
+  solution_type}]`. Each row now also carries its Gaia **`solution_type`**.
+- **Cross-route, identity-first.** An SB9 row is matched to an NSS row by **Gaia `source_id`** (resolved
+  from a dedicated wide X-Match — SB9's coordinates are coarse enough that the 5″ parallax X-Match
+  resolves almost none of them). A match single-counts and sets `also_in:["sb9"]`, `sb9_period_d`,
+  `sb9_ref`. Where identity cannot be resolved, positional proximity **flags** (`possible_duplicate_of`)
+  and **never merges** — two real close pairs can share one position (Castor carries two), so merging on
+  proximity alone would *under*-count. A second SB9 orbit resolving to an already-merged Gaia source is
+  likewise kept and flagged rather than absorbed.
+- **Disagreement is surfaced, never silently resolved.** When both routes describe the same star but the
+  periods differ by >5%, the row carries `period_disagreement:{nss_period_d, sb9_period_d,
+  nss_solution_type, nss_grade, sb9_ref}`. This is load-bearing: that disagreement is what identified two
+  spurious Gaia solutions (FK Aqr, BY Dra — in both, a low-grade `OrbitalTargetedSearch` against an SB9/SB2
+  value matching the primary paper). The census does **not** pick a winner.
+- **`dedup:{possible_duplicates, period_disagreements, multi_solution_sources,
+  cross_route_single_counted}`** — the honest caveats on the "one row = one system" claim.
+
+**No quality verdict is manufactured.** There is deliberately no "distrust low-grade rows" or "distrust
+short-period rows" rule: a *sole* solution is flagged with its `solution_type` and `grade` and left to the
+caller, because G 184-19 (sole `SB2`, grade 126, e = 0.685 at 2.535 d) and Wolf 227 (sole
+`OrbitalTargetedSearch`, grade 38) are told apart by **type plus whether a rival row exists**, not by grade
+alone — and the NSS grades run 2.9–270.7 with a median of 44.4, so any cutoff would flag much of the census.
 
 #### `gaia-astrophysical`
 Gaia GSP-Phot + FLAME stellar parameters (incl. **age**) for one source, by `--star` (SIMBAD →

@@ -2,7 +2,7 @@
   "schema_version": "2.0",
   "dataset_version": "v2-sample-2026-07-20",
   "provenance": {
-    "source": "V2 SAMPLE fixture \u2014 Phase R3-V2 Stage A schema plumbing. Synthetic, well-formed v2 superset: the v1 axes plus all three sister-proposed blocks (mass_model / occurrence_by_metallicity / intra_system_correlation) and the app-side feh_dist axis. NOT research-calibrated values \u2014 a shape fixture. Real v2 numbers come from Packet 3.5 when v2 is scheduled.",
+    "source": "V2 SAMPLE fixture — Phase R3-V2 Stage A schema plumbing. Synthetic, well-formed v2 superset: the v1 axes plus all three sister-proposed blocks (mass_model / occurrence_by_metallicity / intra_system_correlation) and the app-side feh_dist axis. NOT research-calibrated values — a shape fixture. Real v2 numbers come from Packet 3.5 when v2 is scheduled.",
     "description": "Used to prove the validator/provider/importer accept and expose the v2 blocks. No engine reads them in Stage A, so this fixture does not change generation output.",
     "citations": []
   },
@@ -106,6 +106,127 @@
     "sigma": 0.2,
     "min": -1.0,
     "max": 0.5
+  },
+  "age_dist": {
+    "status": "RESEARCH-GRADE",
+    "method": "population_weighted_sfh_histogram__mass_conditional__MS_truncated",
+    "units": "Gyr",
+    "mean_age_gyr": 4.97,
+    "median_age_gyr": 4.04,
+    "sfh_histogram": [
+      {
+        "lo": 0.0,
+        "hi": 1.0,
+        "fraction": 0.118
+      },
+      {
+        "lo": 1.0,
+        "hi": 2.0,
+        "fraction": 0.141
+      },
+      {
+        "lo": 2.0,
+        "hi": 3.0,
+        "fraction": 0.123
+      },
+      {
+        "lo": 3.0,
+        "hi": 4.0,
+        "fraction": 0.095
+      },
+      {
+        "lo": 4.0,
+        "hi": 5.0,
+        "fraction": 0.085
+      },
+      {
+        "lo": 5.0,
+        "hi": 6.0,
+        "fraction": 0.059
+      },
+      {
+        "lo": 6.0,
+        "hi": 7.0,
+        "fraction": 0.062
+      },
+      {
+        "lo": 7.0,
+        "hi": 8.0,
+        "fraction": 0.0
+      },
+      {
+        "lo": 8.0,
+        "hi": 9.0,
+        "fraction": 0.143
+      },
+      {
+        "lo": 9.0,
+        "hi": 10.0,
+        "fraction": 0.065
+      },
+      {
+        "lo": 10.0,
+        "hi": 11.0,
+        "fraction": 0.089
+      },
+      {
+        "lo": 11.0,
+        "hi": 12.0,
+        "fraction": 0.01
+      },
+      {
+        "lo": 12.0,
+        "hi": 13.0,
+        "fraction": 0.009
+      },
+      {
+        "lo": 13.0,
+        "hi": 14.0,
+        "fraction": 0.001
+      }
+    ],
+    "sfh_smoothing_note": "The 7-8 Gyr bin is 0 and 8-9 Gyr piles up -- a BGM DISCRETE-AGE-BIN ARTIFACT, not a real gap. The observed SFH (Alzate 2021, Gaia within 100 pc) has a BROAD minimum ~8 Gyr, so smooth across 7-10 Gyr rather than zeroing 7-8. Structure to preserve: a young thin-disk component peaking ~2-5 Gyr + an old component ~8-12 Gyr, declining to the present.",
+    "mass_conditional_age": [
+      {
+        "mass_lo": 0.0,
+        "mass_hi": 0.5,
+        "mean_age_gyr": 5.48,
+        "median_age_gyr": 4.23
+      },
+      {
+        "mass_lo": 0.5,
+        "mass_hi": 0.8,
+        "mean_age_gyr": 4.93,
+        "median_age_gyr": 3.99
+      },
+      {
+        "mass_lo": 0.8,
+        "mass_hi": 1.0,
+        "mean_age_gyr": 5.04,
+        "median_age_gyr": 4.11
+      },
+      {
+        "mass_lo": 1.0,
+        "mass_hi": 1.5,
+        "mean_age_gyr": 3.55,
+        "median_age_gyr": 3.86
+      },
+      {
+        "mass_lo": 1.5,
+        "mass_hi": 3.0,
+        "mean_age_gyr": 1.76,
+        "median_age_gyr": 1.52
+      }
+    ],
+    "mass_conditional": "truncate_and_renormalize -- reject any draw with age > ms_end_gyr(mass), then renormalize (APP has compute_stellar_evolution -> ms_end_gyr locally). The mass_conditional_age table already ENCODES the MS-truncation: 1.0-1.5 Msun mean 3.55 Gyr < 0-0.5 Msun mean 5.48 Gyr, because massive stars die young so the surviving population is younger. Target: P(age | mass, still on MS).",
+    "population_mix_recommended_local": {
+      "thin": 0.88,
+      "thick": 0.1,
+      "halo": 0.01
+    },
+    "amr": "independent_of_feh_for_bulk",
+    "acceptance": "No star older than its own MS lifetime (structural, via the rejection). The Sun (1 Msun, 4.57 Gyr) is an UNREMARKABLE draw -- the 0.8-1.0 Msun bin means 5.04 Gyr / median 4.11 Gyr. MSG-006 met AS A BAND, not a point.",
+    "note": "Trimmed for the fixture (v2.10 T8). Keeps the 7-8 Gyr zero-bin artifact + its smoothing note deliberately — that pair is what the validator guard is about."
   },
   "cold_giant_population": {
     "sma_dist": {
@@ -243,7 +364,7 @@
           "truncate_period_days_min": 62.6,
           "renormalize_after_truncation": true,
           "sigma_provenance": "winters2019_m_dwarf_fit_body_verified",
-          "center_au_status": "CONTESTED \u2014 pending a canon D1 pass; see center_au_candidates"
+          "center_au_status": "CONTESTED — pending a canon D1 pass; see center_au_candidates"
         }
       ]
     },
@@ -260,11 +381,17 @@
       "dist": "flat_above_circularization_concentrated_below",
       "status": "RESEARCH-GRADE",
       "consumer_must_not_default_to_zero": true,
-      "circularization_period_days": 12.0,
+      "circularization_period_days": 6.0,
       "implement_as": "statistical_boundary_NOT_a_threshold",
-      "f_e_above_boundary": "roughly_flat_0_to_~0.9",
-      "below_boundary": "concentrated near zero \u2014 NEVER e == 0 identically",
-      "domain": "solar-type primaries (Raghavan 2010, 454 stars) \u2014 NOT an M-dwarf result"
+      "f_e_above_boundary": "broad_median_~0.25_trending_thermal_tail_to_~0.9",
+      "below_boundary": "concentrated near zero — NEVER e == 0 identically",
+      "domain": "M-dwarf / low-mass pairs — ~6 d (v2.9.0, C52: Zanazzi 2022 field + EBLM XVII + the local 57-system K/M-dwarf e-P transition). Raghavan 2010's 12 d is the separate SOLAR-TYPE reference, demoted for the field/M-dwarf case.",
+      "circularization_period_range_days": [
+        5.0,
+        7.0
+      ],
+      "fully_circular_envelope_days": 3.0,
+      "note": "Trimmed for the fixture. v2.9.0 (Packet-4 C52): the M-dwarf circularization period is ~6 d with a ~3 d fully-circular envelope; the solar-type 12 d is superseded for this population. STATISTICAL boundary, never a hard cut (BY Dra: e = 0.300 at P = 5.98 d); never default e to zero."
     }
   },
   "stellar_activity": {
@@ -285,7 +412,7 @@
       ],
       "relation_rms_dex": 0.3,
       "form": "anchored_reconstruction_not_wrights_fitted_line",
-      "band": "X-ray (ROSAT/PSPC) \u2014 NOT XUV; see circumbinary_xuv"
+      "band": "X-ray (ROSAT/PSPC) — NOT XUV; see circumbinary_xuv"
     },
     "convective_turnover": {
       "relation": "log10_tau_days = 2.33 - 1.50*(M/Msun) + 0.31*(M/Msun)**2",
@@ -355,7 +482,7 @@
       "input_band": "X-ray (ROSAT/PSPC)",
       "output_label": "XUV",
       "xray_to_euv_conversion_applied": true,
-      "assumption_grade": "CONTESTED \u2014 the literature disagrees; the spread between relations IS the uncertainty",
+      "assumption_grade": "CONTESTED — the literature disagrees; the spread between relations IS the uncertainty",
       "xray_to_euv": {
         "default": "sanz_forcada_2011",
         "relations": {

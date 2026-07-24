@@ -674,24 +674,35 @@ def evaluate_feasibility(seed, anchor_star=None, spectral_class=None, n_planets=
         return base
 
     derived = _derived_from_star(base["star"])
-    derived["companion"] = companion          # multi-star gate (R2-C5); None when absent
+    mult = base["star"].get("multiplicity") or {}
+    # R3-V2 B1: a synthetic system may now have DRAWN its own companion (the
+    # stellar_multiplicity prior emits the same {mass_solar, sma_au, ecc} shape the hint
+    # uses), so the gate can run without a hint. An explicit hint always wins — user
+    # input outranks a sampled prior.
+    drawn = mult.get("companion")
+    derived["companion"] = companion or drawn   # multi-star gate (R2-C5); None when absent
     notes = list(base.get("notes", []))
     warnings = list(base.get("warnings", []))
 
     # Multi-star handling (D3): a supplied companion hint drives the quantitative
-    # S/P-type gate; a known real-anchor multiple with no hint falls back to R1's
-    # conservative safe-cap, with a note pointing at the hint.
+    # S/P-type gate; a drawn companion does the same; a known real-anchor multiple with
+    # neither falls back to R1's conservative safe-cap, with a note pointing at the hint.
     if companion:
         notes.append(f"Binary S/P-type stability evaluated against the supplied companion "
                      f"hint (M = {companion['mass_solar']} M☉, a = {companion['sma_au']} AU"
-                     + (f", e = {companion['ecc']}" if companion.get("ecc") else "") + ").")
-    else:
-        mult = base["star"].get("multiplicity") or {}
-        if mult.get("is_multiple"):
-            notes.append("Anchor is a known multiple; supply a 'companion' hint "
-                         "{mass_solar, sma_au[, ecc]} for a quantitative S/P-type verdict. "
-                         "Synthetic bodies use the R1 conservative safe-cap (companion "
-                         "truncation not modelled without the hint).")
+                     + (f", e = {companion['ecc']}" if companion.get("ecc") else "") + ")."
+                     + (" The drawn stellar_multiplicity companion was overridden by this "
+                        "hint." if drawn else ""))
+    elif drawn:
+        notes.append(f"Binary S/P-type stability evaluated against the companion DRAWN from "
+                     f"the stellar_multiplicity prior (M = {drawn['mass_solar']} M☉, "
+                     f"a = {drawn['sma_au']} AU, e = {drawn['ecc']}, "
+                     f"P = {drawn['p_orb_days']} d) — supply --companion to override.")
+    elif mult.get("is_multiple"):
+        notes.append("Anchor is a known multiple; supply a 'companion' hint "
+                     "{mass_solar, sma_au[, ecc]} for a quantitative S/P-type verdict. "
+                     "Synthetic bodies use the R1 conservative safe-cap (companion "
+                     "truncation not modelled without the hint).")
 
     results = []
     for i, c in enumerate(constraints):

@@ -500,13 +500,66 @@ def _census_nss(plx_min, period_max_d):
             plx, _DEFAULT_M1_MSUN)                       # bulk: solar-mass primary assumption
         out.append({
             "source": "gaia-nss:two_body_orbit", "source_id": str(row.get("source_id")),
+            "solution_type": row.get("nss_solution_type"),
             "name": None, "ra": row.get("ra"), "dec": row.get("dec"),
             "parallax_mas": plx, "distance_ly": dist_ly,
             "period_d": row.get("period"), "eccentricity": row.get("eccentricity"),
             "grade": row.get("significance"), "companion": comp,
             "verification": verification_tag("gaia-nss", source_id=row.get("source_id")),
         })
-    return out, None
+    return _collapse_nss_solutions(out), None
+
+
+def _collapse_nss_solutions(rows):
+    """One row per Gaia `source_id`, keeping the highest-graded orbit solution.
+
+    A single source can carry SEVERAL NSS solutions of very different quality, and emitting
+    them all counts one system many times. The SB9 route has always collapsed this way (best
+    row per `Seq`); this is the same rule for NSS. The discarded solutions are **surfaced,
+    not dropped** — `n_orbit_solutions` + `other_solutions[]` — because the disagreement is
+    often the interesting part:
+
+      • FK Aqr / GJ 867 A (source 2400808142038361088) — a grade-43 `OrbitalTargetedSearch`
+        at 7.98 d against a grade-205 `SB2C` at 4.083196151 d, the latter reproducing the
+        primary paper to 10 significant figures.
+      • BY Dra (source 2145277550935525760) — a grade-17 `OrbitalTargetedSearch` at 32.27 d
+        against a grade-141 `SB2` at 5.977 d, which matches the primary paper.
+
+    Grade preference resolves both **mechanically**, with no per-system special-casing.
+
+    NOTE what is deliberately NOT done: no rule of the form "distrust low-grade rows" or
+    "distrust short-period rows". A **sole** solution is flagged (`sole_solution`) and its
+    `solution_type` + `grade` are emitted, but no verdict is manufactured — G 184-19 is a
+    sole `SB2` at grade 126 (trustworthy) while Wolf 227 is a sole `OrbitalTargetedSearch` at
+    grade 38 (weak), and the two are told apart by *type plus whether a rival row exists*,
+    not by grade alone. There is also no natural grade cliff to cut on: across a 65 ly sweep
+    the NSS grades run 2.9–270.7 with a median of 44.4, so any threshold would flag much of
+    the census. The consumer gets the signals and applies its own policy.
+    """
+    best, extras = {}, {}
+    for r in rows:
+        sid = r.get("source_id")
+        if not sid:
+            continue
+        prev = best.get(sid)
+        if prev is None or (r.get("grade") or 0) > (prev.get("grade") or 0):
+            if prev is not None:
+                extras.setdefault(sid, []).append(prev)
+            best[sid] = r
+        else:
+            extras.setdefault(sid, []).append(r)
+    out = []
+    for sid, r in best.items():
+        others = extras.get(sid, [])
+        r["n_orbit_solutions"] = 1 + len(others)
+        r["sole_solution"] = not others
+        r["other_solutions"] = [
+            {"period_d": o.get("period_d"), "eccentricity": o.get("eccentricity"),
+             "grade": o.get("grade"), "solution_type": o.get("solution_type")}
+            for o in sorted(others, key=lambda o: -(o.get("grade") or 0))
+        ]
+        out.append(r)
+    return out
 
 
 def _sb9_coords_by_seq(seqs):
@@ -557,6 +610,7 @@ def _census_sb9(period_max_d, dist_max_ly, parallax_source):
     coord_rows = [{"_seq": seq, "ra": coords[seq][0], "dec": coords[seq][1]}
                   for seq in best if seq in coords]
     plx_by_seq = {}
+    gaia_id_by_seq = {}
     cats = []
     if parallax_source in ("hipparcos", "both"):
         cats.append(("vizier:I/311/hip2", "Plx"))
@@ -571,7 +625,41 @@ def _census_sb9(period_max_d, dist_max_ly, parallax_source):
             plx = mrow.get(plx_col)
             if plx and plx > 0 and seq not in plx_by_seq:   # first source wins (Hipparcos, then Gaia)
                 plx_by_seq[seq] = plx
+            # Capture the Gaia source_id from the SAME X-Match — it is already fetched and
+            # was being discarded. This is what makes cross-route dedup IDENTITY-based
+            # instead of positional, at zero extra network cost. (Only available when the
+            # Gaia leg runs, i.e. --parallax-source gaia|both; with hipparcos-only the
+            # dedup falls back to flagging by position.)
+            if seq not in gaia_id_by_seq:
+                gid = mrow.get("Source") or mrow.get("DR3Name")
+                if gid:
+                    gid = str(gid).replace("Gaia DR3 ", "").strip()
+                    if gid.isdigit():
+                        gaia_id_by_seq[seq] = gid
     out = []
+    # Identity pass. The parallax X-Match above runs at 5″ — deliberately tight, because a
+    # mis-matched parallax would corrupt the distance cut and therefore census membership.
+    # But SB9's coordinates are coarse enough that genuine twins sit 6–9″ away, so that
+    # radius resolves a Gaia id for almost none of the rows that need one. A SECOND, wider
+    # X-Match is run for identity only (one extra call, not per-row): a wrong id here can
+    # only cause a merge decision, which is audited by the recorded separation + the period
+    # comparison, whereas a wrong parallax would silently move a star in or out of the cut.
+    if parallax_source in ("gaia", "both"):
+        missing = [r for r in coord_rows if r["_seq"] not in gaia_id_by_seq]
+        if missing:
+            xm = catalog.xmatch_query(missing, cat2="vizier:I/355/gaiadr3",
+                                      max_arcsec=_IDENTITY_XMATCH_ARCSEC)
+            if "error" not in xm:
+                for mrow in xm.get("rows", []):
+                    seq = missing[int(mrow["_idx"])]["_seq"]
+                    if seq in gaia_id_by_seq:
+                        continue
+                    gid = mrow.get("Source") or mrow.get("DR3Name")
+                    if gid:
+                        gid = str(gid).replace("Gaia DR3 ", "").strip()
+                        if gid.isdigit():
+                            gaia_id_by_seq[seq] = gid
+
     for seq, row in best.items():
         if seq not in coords or seq not in plx_by_seq:
             continue
@@ -586,6 +674,7 @@ def _census_sb9(period_max_d, dist_max_ly, parallax_source):
         grade = row.get("Grade")
         out.append({
             "source": "sb9", "source_id": None, "seq": seq, "name": name,
+            "gaia_source_id": gaia_id_by_seq.get(seq),   # identity key for cross-route dedup
             "ra": ra, "dec": dec, "parallax_mas": plx, "distance_ly": dist_ly,
             "period_d": row.get("Per"), "eccentricity": row.get("e"),
             "grade": (int(grade) if grade is not None else None),
@@ -596,24 +685,83 @@ def _census_sb9(period_max_d, dist_max_ly, parallax_source):
     return out, None
 
 
-def _dedup_census(nss_rows, sb9_rows, tol_arcsec=3.0):
-    """Collapse Gaia↔SB9 twins by sky position (single-count); the surviving NSS row gets an
-    `also_in:['sb9']` marker. Returns the merged list."""
-    tol_deg = tol_arcsec / 3600.0
+_IDENTITY_XMATCH_ARCSEC = 15.0   # identity-only X-Match radius (SB9 coords are coarse)
+_PERIOD_AGREE_FRAC = 0.05    # >5% apart → the two routes disagree on the period, and say so
+
+
+def _sky_sep_arcsec(a, b):
+    """Small-angle separation between two rows carrying ra/dec in degrees, or None."""
+    if a.get("ra") is None or a.get("dec") is None or b.get("ra") is None or b.get("dec") is None:
+        return None
+    cosd = max(0.05, math.cos(math.radians(a["dec"])))
+    return 3600.0 * math.hypot((a["ra"] - b["ra"]) * cosd, a["dec"] - b["dec"])
+
+
+def _dedup_census(nss_rows, sb9_rows, tol_arcsec=15.0):
+    """Single-count Gaia↔SB9 twins, **identity first**.
+
+    Three rules, in order, and the third is the one that matters:
+
+    1. **Identity** — an SB9 row whose Gaia `source_id` (captured from the parallax X-Match)
+       equals an NSS row's is the SAME star: single-counted, `also_in:['sb9']`.
+    2. **Position, only as a fallback** for SB9 rows with no resolved Gaia id, and widened to
+       ~15″ because SB9's coordinates are coarse (the old 3″ box let genuine twins through
+       6–9″ apart — FK Aqr's two rows sit 7.2″ apart).
+    3. **A positional match is FLAGGED, never merged.** Proximity alone does not prove
+       identity: Castor (HIP 36850) genuinely carries two real close pairs at one position,
+       and merging them would *under*-count. Such rows stay in the census carrying
+       `possible_duplicate_of` for the caller to adjudicate.
+
+    And when two routes *are* the same star but disagree on the period, the disagreement is
+    surfaced (`period_disagreement`) rather than silently resolved — that disagreement is
+    exactly what identified two spurious Gaia solutions (FK Aqr, BY Dra), so hiding it would
+    have hidden the finding.
+    """
+    by_gaia = {n["source_id"]: n for n in nss_rows if n.get("source_id")}
+    merged_into = set()          # NSS source_ids that have already absorbed an SB9 row
     kept_sb9 = []
     for s in sb9_rows:
-        matched = False
-        if s.get("ra") is not None and s.get("dec") is not None:
-            for n in nss_rows:
-                if n.get("ra") is None or n.get("dec") is None:
-                    continue
-                cosd = max(0.05, math.cos(math.radians(n["dec"])))
-                if abs((n["ra"] - s["ra"]) * cosd) < tol_deg and abs(n["dec"] - s["dec"]) < tol_deg:
-                    n.setdefault("also_in", []).append("sb9")
-                    matched = True
-                    break
-        if not matched:
+        twin = by_gaia.get(s.get("gaia_source_id")) if s.get("gaia_source_id") else None
+        if twin is not None and s.get("gaia_source_id") in merged_into:
+            # A SECOND SB9 orbit resolving to the same Gaia source is not a duplicate — it is
+            # very likely a second real close pair in a multiple system (Castor carries two).
+            # Merging it would UNDER-count, so keep it and flag instead.
+            s["possible_duplicate_of"] = {
+                "source_id": s.get("gaia_source_id"), "separation_arcsec": None,
+                "note": ("second SB9 orbit on the same Gaia source — kept, not merged: this "
+                         "is usually a second real close pair in a multiple (e.g. Castor), "
+                         "and merging would under-count"),
+            }
             kept_sb9.append(s)
+            continue
+        if twin is not None:
+            merged_into.add(s.get("gaia_source_id"))
+            twin.setdefault("also_in", []).append("sb9")
+            twin["sb9_period_d"] = s.get("period_d")
+            twin["sb9_ref"] = s.get("primary_ref")
+            n_p, s_p = twin.get("period_d"), s.get("period_d")
+            if n_p and s_p and abs(n_p - s_p) / max(n_p, s_p) > _PERIOD_AGREE_FRAC:
+                # Same star, different periods. Do NOT pick a winner here: the caller has
+                # the grades, the solution types and the SB9 reference, and both FK Aqr and
+                # BY Dra turned out to be the Gaia row being wrong.
+                twin["period_disagreement"] = {
+                    "nss_period_d": n_p, "sb9_period_d": s_p,
+                    "nss_solution_type": twin.get("solution_type"),
+                    "nss_grade": twin.get("grade"), "sb9_ref": s.get("primary_ref"),
+                }
+            continue
+        # No identity → positional FLAG only.
+        for n in nss_rows:
+            sep = _sky_sep_arcsec(n, s)
+            if sep is not None and sep <= tol_arcsec:
+                s["possible_duplicate_of"] = {
+                    "source_id": n.get("source_id"), "separation_arcsec": round(sep, 2),
+                    "note": ("positional match only — identity not resolved, so this is "
+                             "flagged rather than merged (two real close pairs can share "
+                             "one position, e.g. Castor)"),
+                }
+                break
+        kept_sb9.append(s)
     return nss_rows + kept_sb9
 
 
@@ -735,6 +883,16 @@ def close_binary_census(dist_max_ly, period_max_d, sep_max_au=None,
                   "sep_max_au": sep_max_au, "include": list(include),
                   "drop_planets": drop_planets, "separate_wide": separate_wide},
         "count": len(census), "counts_by_class": counts,
+        # Dedup accounting — a census row is one SYSTEM, but two of these numbers are the
+        # honest caveats on that claim: rows that carry an unresolved positional twin, and
+        # rows where the two routes disagree about the period of the same star.
+        "dedup": {
+            "possible_duplicates": sum(1 for e in census if e.get("possible_duplicate_of")),
+            "period_disagreements": sum(1 for e in census if e.get("period_disagreement")),
+            "multi_solution_sources": sum(1 for e in census
+                                          if (e.get("n_orbit_solutions") or 1) > 1),
+            "cross_route_single_counted": sum(1 for e in census if e.get("also_in")),
+        },
         "census": census, "excluded_planets": excluded_planets, "wide": wide,
         "coverage": coverage,
         "units": {"period_d": "days", "distance_ly": "ly", "parallax_mas": "mas",

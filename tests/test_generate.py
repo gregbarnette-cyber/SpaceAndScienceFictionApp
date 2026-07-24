@@ -194,6 +194,7 @@ _STAR_KEYS = {
     "name", "spectral_class", "teff", "mass_solar", "radius_solar", "luminosity",
     "hz_inner_au", "hz_outer_au", "hz_opt_inner_au", "hz_opt_outer_au",
     "snow_line_au", "feh", "feh_source", "source", "grounding", "multiplicity",  # R3-V2 F2
+    "age_gyr", "age_source", "activity",                                          # R3-V2 B2
 }
 _PLANET_KEYS = {
     "name", "a_au", "mass_earth", "radius_earth", "ecc", "type", "t_eq_k",
@@ -513,7 +514,9 @@ class TestRealAnchor(unittest.TestCase):
 
 # ── R3-C4 · research_policy wiring through generation ─────────────────────────
 import os
+import random
 import shutil
+import statistics
 import tempfile
 
 from core.research_priors import compute_research_priors_ingest
@@ -829,9 +832,15 @@ class TestIntraSystemCorrelation(unittest.TestCase):
         self.assertNotEqual(r1["planets"], stripped["planets"])
 
     def test_period_ratio_floor_respected(self):
+        # The spacing floor governs the SEQUENTIAL GRID only. The v2.2/v2.3 decoupled
+        # populations (cold giants, inner giants) are placed independently of the grid by
+        # design — an inner giant may legitimately land between two grid planets — so they
+        # are excluded here rather than being held to a floor that was never claimed for
+        # them. Grid bodies are the letter-named ones (giants carry a parenthetical label).
         prd_min = 1.2
         for s in range(20):
-            ps = self._gen(seed=s, spectral_class="K2V", n_planets=8)["planets"]
+            ps = [p for p in self._gen(seed=s, spectral_class="K2V", n_planets=8)["planets"]
+                  if "giant_zone" not in p and "(" not in p["name"]]
             for i in range(1, len(ps)):
                 period_ratio = (ps[i]["a_au"] / ps[i - 1]["a_au"]) ** 1.5
                 self.assertGreaterEqual(period_ratio, prd_min - 1e-6)
@@ -1162,6 +1171,553 @@ class TestV2ProvenanceNotes(unittest.TestCase):
         # identity fixture carries no v2 blocks → no v2 note under strict.
         r = self._strict(_IDENTITY_FIX, seed=42, spectral_class="G2V", n_planets=6)
         self.assertFalse(any("v2 physics" in n for n in r["notes"]))
+
+
+class TestStellarMultiplicity(unittest.TestCase):
+    """R3-V2 B1 (v2.4/v2.9): the stellar_multiplicity sampler — the first STELLAR axis the
+    generator draws. Covers the two hard dataset rules (never e == 0; the circularization
+    period is a statistical boundary, not a cut), the mixture's by-construction close-pair
+    rate, F-2 disjointness, and the gate that keeps a v1 dataset byte-identical."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _priors(self, mutate=None):
+        import json, copy
+        from core.priors import ResearchPriors
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            o = copy.deepcopy(json.load(fh))
+        if mutate:
+            mutate(o)
+        return ResearchPriors.from_contract(o)
+
+    def _draw(self, mass_solar, n=4000, seed=99, mutate=None):
+        from core.generate import _draw_multiplicity
+        pri = self._priors(mutate)
+        rng = random.Random(seed)
+        return [_draw_multiplicity(rng, pri, mass_solar) for _ in range(n)]
+
+    # ── gating: no block → no draw, and no rng consumed ──────────────────────
+
+    def test_absent_block_returns_none_and_consumes_no_rng(self):
+        from core.generate import _draw_multiplicity
+        pri = self._priors(lambda o: o.pop("stellar_multiplicity", None))
+        rng = random.Random(5)
+        before = rng.random()
+        rng2 = random.Random(5)
+        self.assertIsNone(_draw_multiplicity(rng2, pri, 0.5))
+        # the stream must be untouched, so the next value matches a virgin generator
+        self.assertEqual(before, rng2.random())
+
+    def test_default_priors_carry_no_multiplicity(self):
+        self.assertIsNone(DefaultPriors().stellar_multiplicity)
+        r = generate_system(3, spectral_class="M2V", n_planets=4)
+        self.assertIsNone(r["star"]["multiplicity"])
+
+    # ── the block's own targets ──────────────────────────────────────────────
+
+    def test_multiplicity_fraction_tracks_the_block_by_mass(self):
+        from core.generate import _interp_log10_mass
+        mfd = self._priors().stellar_multiplicity["multiplicity_fraction"]
+        for m in (0.3, 1.0):
+            drawn = self._draw(m, n=6000)
+            rate = sum(1 for d in drawn if d["is_multiple"]) / len(drawn)
+            target = _interp_log10_mass(mfd["mass_msun_grid"], mfd["fraction"], m)
+            self.assertAlmostEqual(rate, target, delta=0.025)
+
+    def test_close_pair_share_of_multiples_matches_the_mixture_weight(self):
+        # 0.087 is the F-2 by-construction rate (the wide component is truncated above
+        # the close-pair window so the two are disjoint).
+        multiples = [d for d in self._draw(0.3, n=20000) if d["is_multiple"]]
+        share = sum(1 for d in multiples if d["companion"]["close_pair"]) / len(multiples)
+        self.assertAlmostEqual(share, 0.087, delta=0.012)
+
+    def test_wide_component_is_disjoint_from_the_close_pair_window(self):
+        cut = 62.6
+        for d in self._draw(0.3, n=6000):
+            if d["is_multiple"] and not d["companion"]["close_pair"]:
+                self.assertGreater(d["companion"]["p_orb_days"], cut)
+
+    def test_mass_ratio_stays_inside_the_block_bounds(self):
+        for d in self._draw(0.5, n=4000):
+            if d["is_multiple"]:
+                self.assertGreaterEqual(d["mass_ratio_q"], 0.1 - 1e-9)
+                self.assertLessEqual(d["mass_ratio_q"], 1.0 + 1e-9)
+                self.assertAlmostEqual(d["companion"]["mass_solar"],
+                                       round(d["mass_ratio_q"] * 0.5, 4), delta=1e-3)
+
+    # ── the two hard rules ───────────────────────────────────────────────────
+
+    def test_eccentricity_is_never_identically_zero(self):
+        # ecc_dist.consumer_must_not_default_to_zero: a silent e = 0 makes every drawn
+        # binary maximally planet-friendly and inflates stable-HZ rates.
+        seen = [d["companion"]["ecc"] for d in self._draw(0.3, n=20000) if d["is_multiple"]]
+        self.assertTrue(seen)
+        self.assertTrue(all(e > 0.0 for e in seen))
+
+    def test_circularization_is_a_statistical_boundary_not_a_cut(self):
+        # BY Dra is e = 0.300 at P = 5.98 d — inside the ~6 d boundary and demonstrably
+        # not circularized. A hard cut would make that draw impossible.
+        inside = [d["companion"] for d in self._draw(0.3, n=40000)
+                  if d["is_multiple"] and 3.0 < d["companion"]["p_orb_days"] < 6.0]
+        self.assertTrue(inside, "no draws landed in the transition zone")
+        self.assertTrue(any(c["ecc"] > 0.25 for c in inside),
+                        "no eccentric draw inside the boundary — it is being applied as a cut")
+
+    def test_below_the_envelope_is_near_circular_but_never_zero(self):
+        near = [d["companion"]["ecc"] for d in self._draw(0.3, n=40000)
+                if d["is_multiple"] and d["companion"]["p_orb_days"] < 3.0]
+        self.assertTrue(near)
+        self.assertLess(statistics.median(near), 0.05)
+        self.assertTrue(all(e > 0.0 for e in near))
+
+    def test_broad_f_e_above_the_boundary_matches_the_stated_median(self):
+        broad = [d["companion"]["ecc"] for d in self._draw(0.3, n=20000)
+                 if d["is_multiple"] and d["companion"]["p_orb_days"] >= 6.0]
+        self.assertAlmostEqual(statistics.median(broad), 0.25, delta=0.04)
+        self.assertLessEqual(max(broad), 0.9 + 1e-9)
+
+    # ── emitted shape + wiring ───────────────────────────────────────────────
+
+    def test_companion_matches_the_consumer_contract_shape(self):
+        contract = self._priors().stellar_multiplicity["consumer_contract"]["emit"]
+        d = next(d for d in self._draw(0.3, n=2000) if d["is_multiple"])
+        self.assertEqual(set(d["companion"]), set(contract))
+
+    def test_kepler_consistency_between_sma_and_period(self):
+        for d in self._draw(0.4, n=800):
+            if not d["is_multiple"]:
+                continue
+            c = d["companion"]
+            total = 0.4 + c["mass_solar"]
+            expect = 365.25 * math.sqrt(c["sma_au"] ** 3 / total)
+            self.assertAlmostEqual(c["p_orb_days"] / expect, 1.0, delta=1e-3)
+
+    def test_higher_order_systems_are_counted_and_disclosed(self):
+        multi = [d for d in self._draw(0.3, n=4000) if d["is_multiple"]]
+        self.assertTrue(any(d["n_components"] == 3 for d in multi))
+        for d in multi:
+            self.assertIn(d["n_components"], (2, 3))
+            if d["n_components"] > 2:
+                self.assertIn("counted but not placed", d["note"])
+
+    def test_note_flags_the_f_e_shape_as_an_app_side_choice(self):
+        d = next(d for d in self._draw(0.3, n=2000) if d["is_multiple"])
+        self.assertIn("app-side modelling choice", d["note"])
+
+    def test_synthetic_star_carries_the_drawn_multiplicity(self):
+        self.assertNotIn("error", compute_research_priors_ingest(path=_V2_FIX,
+                                                                 cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            found = None
+            for s in range(40):
+                r = generate_system(s, spectral_class="M2V", n_planets=3,
+                                    research_policy="strict")
+                m = r["star"]["multiplicity"]
+                self.assertIsNotNone(m)
+                self.assertIn("is_multiple", m)
+                if m["is_multiple"]:
+                    found = m
+            self.assertIsNotNone(found, "no multiple drawn across 40 seeds")
+            self.assertIsNotNone(found["companion"]["sma_au"])
+
+    def test_anchor_mode_multiplicity_is_not_overwritten(self):
+        # Real-anchor multiplicity is GCNS-derived; a synthetic draw must never replace
+        # it. The v2 provenance note must not claim the block is "in effect" there.
+        from core.generate import _v2_blocks_note
+        pri = self._priors()
+        observed = {"source": "observed", "feh": None, "feh_source": None}
+        note = _v2_blocks_note(pri, observed) or ""
+        self.assertNotIn("stellar_multiplicity", note)
+        synthetic = {"source": "synthetic", "feh": None, "feh_source": None}
+        self.assertIn("stellar_multiplicity", _v2_blocks_note(pri, synthetic) or "")
+
+    def test_determinism(self):
+        self.assertNotIn("error", compute_research_priors_ingest(path=_V2_FIX,
+                                                                 cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            a = generate_system(7, spectral_class="K2V", n_planets=5,
+                                research_policy="strict")
+            b = generate_system(7, spectral_class="K2V", n_planets=5,
+                                research_policy="strict")
+        self.assertEqual(a, b)
+
+    def test_planets_are_emitted_in_orbital_order(self):
+        # The decoupled populations are appended after the grid, so the list must be
+        # sorted before it is emitted (the real-anchor path already does this).
+        self.assertNotIn("error", compute_research_priors_ingest(path=_V2_FIX,
+                                                                 cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            for s in range(30):
+                ps = generate_system(s, spectral_class="G2V", n_planets=6,
+                                     research_policy="strict")["planets"]
+                smas = [p["a_au"] for p in ps]
+                self.assertEqual(smas, sorted(smas))
+
+
+class TestWideCompanionDisruptionBound(unittest.TestCase):
+    """R3-V2 B3 (2026-07-23): the wide companion's outer bound. There is no fixed cutoff —
+    a_max ≃ 1.212 × (M_tot/t) pc is a MOVING boundary set by cumulative stellar encounters.
+    No power-law tail is added beyond it: the measured index is −1.6, but the join
+    normalization is declared UNKNOWN by the source lineage, so a mixture would need an
+    invented weight."""
+
+    def _priors(self):
+        import json, copy
+        from core.priors import ResearchPriors
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            return ResearchPriors.from_contract(copy.deepcopy(json.load(fh)))
+
+    def test_limit_reproduces_the_sources_worked_examples(self):
+        from core.generate import _wide_disruption_half_life_au
+        _PC = 206264.806
+        for m_tot, age, want_pc in ((1.0, 1.0, 1.212), (1.0, 10.0, 0.121), (0.25, 10.0, 0.030)):
+            got = _wide_disruption_half_life_au(m_tot, age) / _PC
+            self.assertAlmostEqual(got, want_pc, delta=0.001)
+
+    def test_limit_moves_with_mass_and_age(self):
+        # The whole point: it is NOT a constant. Heavier survives wider, older survives less.
+        from core.generate import _wide_disruption_half_life_au
+        self.assertGreater(_wide_disruption_half_life_au(1.0, 5.0),
+                           _wide_disruption_half_life_au(0.5, 5.0))
+        self.assertGreater(_wide_disruption_half_life_au(1.0, 1.0),
+                           _wide_disruption_half_life_au(1.0, 10.0))
+
+    def test_no_age_means_no_bound_rather_than_a_constant_stand_in(self):
+        # A constant stand-in would be exactly the fixed cutoff the sources say does not
+        # exist, so without an age axis the bound is simply not applied.
+        from core.generate import _wide_disruption_half_life_au, _draw_multiplicity
+        self.assertIsNone(_wide_disruption_half_life_au(1.0, None))
+        r = _draw_multiplicity(random.Random(1), self._priors(), 0.3, None)
+        self.assertIsNone(r.get("wide_disruption_half_life_au"))
+
+    def test_no_wide_companion_survives_beyond_its_own_limit(self):
+        from core.generate import _draw_multiplicity
+        pri, rng = self._priors(), random.Random(9)
+        seen = 0
+        for _ in range(6000):
+            r = _draw_multiplicity(rng, pri, 0.3, 5.0)
+            if r["is_multiple"] and not r["companion"]["close_pair"]:
+                seen += 1
+                self.assertLessEqual(r["companion"]["sma_au"], r["wide_disruption_half_life_au"])
+        self.assertGreater(seen, 100)
+
+    def test_the_scale_is_labelled_a_half_life_not_a_boundary(self):
+        # Weinberg's t½ is the time by which HALF the pairs at a separation are disrupted,
+        # and the paper's headline is "no evidence of breaks or cutoffs". The secondary
+        # source glossed it as "the widest surviving binary" and we inherited that wall
+        # reading. Truncating here is a MODELLING CONVENIENCE and the output must say so —
+        # otherwise the misreading travels with the number.
+        from core.generate import _draw_multiplicity, _DISRUPTION_COEFF
+        self.assertAlmostEqual(_DISRUPTION_COEFF, 1.212, delta=1e-9)
+        pri, rng = self._priors(), random.Random(3)
+        r = next(r for r in (_draw_multiplicity(rng, pri, 0.3, 5.0) for _ in range(400))
+                 if r["is_multiple"] and not r["companion"]["close_pair"])
+        self.assertIn("HALF-LIFE", r["note"])
+        self.assertIn("modelling convenience", r["note"])
+        self.assertIn("no breaks or cutoffs", r["note"])
+        # The retracted ~4% slack must not come back as an emitted field.
+        self.assertNotIn("wide_disruption_coeff_slack", r)
+
+    def test_note_records_why_no_tail_is_added(self):
+        from core.generate import _draw_multiplicity
+        pri, rng = self._priors(), random.Random(4)
+        r = next(r for r in (_draw_multiplicity(rng, pri, 0.3, 5.0) for _ in range(400))
+                 if r["is_multiple"] and not r["companion"]["close_pair"])
+        self.assertIn("UNKNOWN", r["note"])
+        self.assertIn("rather than being a fixed cutoff", r["note"])
+
+    def test_solar_host_shape_caveat_is_disclosed(self):
+        # The one regime where one component is worse than a power law, and it errs UNSAFE.
+        from core.generate import _draw_multiplicity
+        pri, rng = self._priors(), random.Random(5)
+        r = next(r for r in (_draw_multiplicity(rng, pri, 1.0, 5.0) for _ in range(400))
+                 if r["is_multiple"] and not r["companion"]["close_pair"])
+        self.assertIn("over-produced", r["note"])
+        m = next(r for r in (_draw_multiplicity(rng, pri, 0.3, 5.0) for _ in range(400))
+                 if r["is_multiple"] and not r["companion"]["close_pair"])
+        self.assertNotIn("over-produced", m["note"])   # M hosts err safe — no such caveat
+
+    def test_close_pairs_are_unaffected_by_the_bound(self):
+        from core.generate import _draw_multiplicity
+        pri, rng = self._priors(), random.Random(6)
+        for _ in range(3000):
+            r = _draw_multiplicity(rng, pri, 0.3, 5.0)
+            if r["is_multiple"] and r["companion"]["close_pair"]:
+                self.assertLess(r["companion"]["sma_au"], 1.0)
+                self.assertFalse(r["wide_redrawn_for_disruption"])
+
+
+class TestDrawnCompanionReachesTheBinaryGate(unittest.TestCase):
+    """R3-V2 B1: a drawn companion flows into feasibility's EXISTING binary gate (no
+    parallel code path), and an explicit --companion hint always outranks it."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+        self.assertNotIn("error", compute_research_priors_ingest(path=_V2_FIX,
+                                                                 cache_dir=self.cache))
+
+    def _feas(self, seed, companion=None):
+        from core.feasibility import evaluate_feasibility
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            return evaluate_feasibility(
+                seed, spectral_class="M2V", n_planets=3,
+                constraints=[{"type": "planet_at_location", "location": "hz"}],
+                companion=companion, research_policy="strict")
+
+    def test_drawn_companion_is_used_when_no_hint_is_supplied(self):
+        for s in range(40):
+            r = self._feas(s)
+            if any("DRAWN from the stellar_multiplicity prior" in n
+                   for n in r.get("notes", [])):
+                return
+        self.fail("no drawn companion reached the feasibility gate across 40 seeds")
+
+    def test_explicit_hint_overrides_the_drawn_companion(self):
+        hint = {"mass_solar": 0.4, "sma_au": 20.0, "ecc": 0.1}
+        for s in range(40):
+            r = self._feas(s, companion=hint)
+            notes = " ".join(r.get("notes", []))
+            self.assertNotIn("DRAWN from the stellar_multiplicity prior", notes)
+            self.assertIn("supplied companion", notes)
+
+
+class TestAgeAndActivity(unittest.TestCase):
+    """R3-V2 B2 (v2.10): the `age_dist` axis + the `stellar_activity` rotation chain it
+    unblocks (age → P_rot → Ro → L_X/L_bol → XUV). The dataset ships its OWN Sun unit test
+    and its own acceptance targets; those are the anchors used here."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache, ignore_errors=True)
+
+    def _priors(self, mutate=None):
+        import json, copy
+        from core.priors import ResearchPriors
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            o = copy.deepcopy(json.load(fh))
+        if mutate:
+            mutate(o)
+        return ResearchPriors.from_contract(o)
+
+    # ── age_dist ────────────────────────────────────────────────────────────
+
+    def test_absent_block_returns_none_and_consumes_no_rng(self):
+        from core.generate import _draw_age
+        pri = self._priors(lambda o: o.pop("age_dist", None))
+        rng, virgin = random.Random(5), random.Random(5)
+        self.assertIsNone(_draw_age(rng, pri, 1.0))
+        self.assertEqual(rng.random(), virgin.random())
+
+    def test_default_priors_carry_no_age_block(self):
+        self.assertIsNone(DefaultPriors().age_dist)
+        r = generate_system(3, spectral_class="G2V", n_planets=3)
+        self.assertIsNone(r["star"]["age_gyr"])
+        self.assertIsNone(r["star"]["activity"])
+
+    def test_no_star_is_older_than_its_own_main_sequence(self):
+        # The block's structural acceptance ("truncate_and_renormalize"), via the Phase-L3
+        # compute_stellar_evolution. This is the whole reason age is mass-conditional.
+        from core.generate import _draw_age, _ms_end_gyr
+        pri = self._priors()
+        rng = random.Random(3)
+        for mass in (0.25, 0.9, 1.2, 2.0):
+            ms_end = _ms_end_gyr(mass)
+            for _ in range(500):
+                self.assertLessEqual(_draw_age(rng, pri, mass), ms_end + 1e-9)
+
+    def test_massive_stars_draw_younger_than_low_mass_ones(self):
+        # Directional, not a point match: the block's own mass_conditional_age table shows
+        # 1.0-1.5 M☉ mean < 0-0.5 M☉ mean because massive stars die young.
+        from core.generate import _draw_age
+        pri = self._priors()
+        rng = random.Random(11)
+        low = statistics.mean(_draw_age(rng, pri, 0.25) for _ in range(4000))
+        high = statistics.mean(_draw_age(rng, pri, 2.0) for _ in range(4000))
+        self.assertLess(high, low)
+
+    def test_low_mass_mean_age_tracks_the_blocks_own_table(self):
+        from core.generate import _draw_age
+        pri = self._priors()
+        row = next(r for r in pri.age_dist["mass_conditional_age"] if r["mass_lo"] == 0.0)
+        rng = random.Random(2)
+        got = statistics.mean(_draw_age(rng, pri, 0.25) for _ in range(8000))
+        self.assertAlmostEqual(got, row["mean_age_gyr"], delta=0.8)
+
+    def test_the_discrete_bin_artifact_is_smoothed_not_reproduced(self):
+        # The BGM zeroes 7-8 Gyr and piles up 8-9; the real SFH has a broad minimum there
+        # (Alzate 2021). Sampling the histogram literally would punch a hole in the output.
+        from core.generate import _draw_age
+        pri = self._priors()
+        hole = next(b for b in pri.age_dist["sfh_histogram"] if b["lo"] == 7.0)
+        self.assertEqual(hole["fraction"], 0.0, "fixture no longer carries the artifact")
+        rng = random.Random(8)
+        ages = [_draw_age(rng, pri, 0.25) for _ in range(20000)]
+        in_hole = sum(1 for a in ages if 7.0 <= a < 8.0)
+        self.assertGreater(in_hole, 0, "the zero bin was sampled literally")
+
+    def test_smoothing_is_skipped_without_the_datasets_own_note(self):
+        # The dataset declares the smoothing intended by shipping sfh_smoothing_note; with
+        # no note we must NOT quietly reshape its histogram. (Built as a bare dict — a
+        # contract with an interior zero and no note is rejected by the validator, which
+        # is the point of the guard; _smoothed_sfh must still behave for any caller.)
+        from core.generate import _smoothed_sfh
+        bins = [{"lo": 0.0, "hi": 1.0, "fraction": 0.5},
+                {"lo": 1.0, "hi": 2.0, "fraction": 0.0},
+                {"lo": 2.0, "hi": 3.0, "fraction": 0.5}]
+        unsmoothed = _smoothed_sfh({"sfh_histogram": bins})
+        self.assertEqual([lo for lo, _, _ in unsmoothed], [0.0, 2.0])   # zero bin dropped
+        smoothed = _smoothed_sfh({"sfh_histogram": bins, "sfh_smoothing_note": "smooth it"})
+        self.assertEqual([lo for lo, _, _ in smoothed], [0.0, 1.0, 2.0])  # hole filled
+
+    # ── the validator's two structural guards ───────────────────────────────
+
+    def test_validator_rejects_a_gap_in_the_histogram(self):
+        from core.research_priors import validate_priors_contract
+        import json, copy
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            o = copy.deepcopy(json.load(fh))
+        o["age_dist"]["sfh_histogram"][3]["lo"] = 99.0    # still lo < hi, but not contiguous
+        o["age_dist"]["sfh_histogram"][3]["hi"] = 100.0
+        err = validate_priors_contract(o)
+        self.assertIsNotNone(err)
+        self.assertIn("contiguous", err["error"])
+
+    def test_validator_requires_a_note_for_an_interior_zero_bin(self):
+        from core.research_priors import validate_priors_contract
+        import json, copy
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            o = copy.deepcopy(json.load(fh))
+        o["age_dist"].pop("sfh_smoothing_note", None)
+        err = validate_priors_contract(o)
+        self.assertIsNotNone(err)
+        self.assertIn("sfh_smoothing_note", err["error"])
+
+    # ── stellar_activity: the dataset's OWN unit test ───────────────────────
+
+    def test_the_datasets_sun_unit_test_reproduces(self):
+        from core.generate import _draw_activity
+        pri = self._priors()
+        ut = pri.stellar_activity["rotation_age_fgk"]["unit_test_sun"]
+        a = _draw_activity(random.Random(0), pri, ut["mass_msun"], 1.0, ut["age_gyr"], None)
+        self.assertAlmostEqual(a["p_rot_days"], ut["p_rot_days"], delta=0.01)
+        self.assertAlmostEqual(a["tau_days"], ut["tau_days_from_relation"], delta=0.05)
+        self.assertAlmostEqual(a["rossby"], ut["rossby"], delta=0.01)
+        self.assertAlmostEqual(a["log_lx_lbol"], ut["log_lx_lbol_predicted"], delta=0.01)
+        # The dataset is explicit that this is a BAND check, not a point match.
+        lo, hi = ut["solar_cycle_band_log_lx_lbol"]
+        self.assertTrue(lo <= a["log_lx_lbol"] <= hi)
+        self.assertEqual(a["out_of_fitted_domain"], [])
+
+    def test_tau_relation_string_still_matches_our_implementation(self):
+        # The relation is shipped as a FORMULA STRING and hardcoded here; if the sister
+        # changes it, this fails loudly instead of being silently ignored.
+        from core.generate import _TAU_RELATION
+        pri = self._priors()
+        self.assertEqual(pri.stellar_activity["convective_turnover"]["relation"],
+                         _TAU_RELATION)
+
+    def test_locked_close_pair_is_saturated_and_needs_no_age(self):
+        from core.generate import _draw_activity
+        pri = self._priors()
+        comp = {"close_pair": True, "p_orb_days": 8.0}
+        a = _draw_activity(random.Random(1), pri, 0.3, 0.012, None, comp)
+        self.assertIsNotNone(a, "the locked branch must run without an age")
+        self.assertEqual(a["p_rot_branch"], "tidally_locked")
+        self.assertEqual(a["p_rot_days"], 8.0)
+        self.assertEqual(a["regime"], "saturated")
+
+    def test_locked_vs_single_contrast_lands_in_the_acceptance_band(self):
+        # expected_locked_vs_single_delta is an ACCEPTANCE TARGET with is_prior_field=false
+        # — it must EMERGE from the chain, never be fed in. Assert the emergent value.
+        from core.generate import _draw_activity
+        pri = self._priors()
+        delta = pri.stellar_activity["expected_locked_vs_single_delta"]
+        lo, hi = delta["orders_of_magnitude"]
+        rng = random.Random(1)
+        locked = _draw_activity(rng, pri, 0.3, 0.012, 5.0,
+                                {"close_pair": True, "p_orb_days": 8.0})
+        singles = [_draw_activity(rng, pri, 0.3, 0.012, 5.0, None) for _ in range(400)]
+        contrast = statistics.median(
+            10 ** (locked["log_lx_lbol"] - s["log_lx_lbol"]) for s in singles)
+        self.assertGreaterEqual(contrast, 10 ** lo)
+        self.assertLessEqual(contrast, 10 ** hi)
+
+    def test_xuv_contrast_is_softer_than_the_xray_contrast(self):
+        # The block's headline physical claim: converting X-ray → EUV properly SOFTENS the
+        # locked-vs-single contrast (quiet stars are EUV-dominated, saturated ones are not).
+        from core.generate import _draw_activity
+        pri = self._priors()
+        rng = random.Random(2)
+        locked = _draw_activity(rng, pri, 0.3, 0.012, 5.0,
+                                {"close_pair": True, "p_orb_days": 8.0})
+        single = _draw_activity(rng, pri, 0.3, 0.012, 5.0, None)
+        xray = 10 ** (locked["log_lx_lbol"] - single["log_lx_lbol"])
+        xuv = 10 ** (locked["log_l_xuv_erg_s"] - single["log_l_xuv_erg_s"])
+        self.assertLess(xuv, xray)
+        self.assertLess(locked["euv_fraction"], single["euv_fraction"])
+
+    def test_contested_conversion_names_its_relation_and_alternative(self):
+        # The spread between relations IS the uncertainty — it must not be averaged away.
+        from core.generate import _draw_activity
+        pri = self._priors()
+        a = _draw_activity(random.Random(0), pri, 1.0, 1.0, 4.57, None)
+        self.assertEqual(a["xray_to_euv_relation"], "sanz_forcada_2011")
+        self.assertIn("johnstone_2021", a["xray_to_euv_alternatives"])
+        self.assertIn("CONTESTED", a["xray_to_euv_grade"])
+
+    def test_circumbinary_xuv_never_scales_with_component_count(self):
+        from core.generate import _draw_activity
+        pri = self._priors()
+        a = _draw_activity(random.Random(0), pri, 0.3, 0.012, 5.0,
+                           {"close_pair": True, "p_orb_days": 8.0})
+        self.assertEqual(a["circumbinary_component_scaling"], 1.0)
+
+    def test_m_dwarf_singles_are_bimodal_and_skip_the_gap(self):
+        # interpolate_across_gap is false — the gap between the fast and slow sequences is
+        # a real feature of the population, not missing data.
+        from core.generate import _draw_activity
+        pri = self._priors()
+        rng = random.Random(6)
+        rots = [_draw_activity(rng, pri, 0.3, 0.012, age, None)["p_rot_days"]
+                for age in (0.5, 1.0, 1.5, 5.0, 8.0) for _ in range(300)]
+        self.assertTrue(any(r <= 10.0 for r in rots))
+        self.assertTrue(any(r >= 70.0 for r in rots))
+        self.assertFalse(any(10.0 < r < 70.0 for r in rots), "drew inside the excluded gap")
+
+    def test_out_of_domain_is_flagged_not_clamped(self):
+        from core.generate import _draw_activity
+        pri = self._priors()
+        # A very slowly rotating solar-mass star pushes Ro past the fitted range.
+        a = _draw_activity(random.Random(0), pri, 1.0, 1.0, 200.0, None)
+        self.assertIn("rossby", a["out_of_fitted_domain"])
+        self.assertIsNotNone(a["log_lx_lbol"], "flagged, but still reported")
+
+    # ── wiring ──────────────────────────────────────────────────────────────
+
+    def test_synthetic_star_carries_age_and_activity(self):
+        self.assertNotIn("error", compute_research_priors_ingest(path=_V2_FIX,
+                                                                 cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache):
+            r = generate_system(23, spectral_class="G4V", n_planets=3,
+                                research_policy="strict")
+        star = r["star"]
+        self.assertIsNotNone(star["age_gyr"])
+        self.assertEqual(star["age_source"], "age_dist")
+        self.assertIsNotNone(star["activity"])
+        self.assertIn(star["activity"]["regime"], ("saturated", "unsaturated"))
+        note = next(n for n in r["notes"] if n.startswith("v2 physics in effect"))
+        self.assertIn("age_dist", note)
+        self.assertIn("stellar_activity", note)
+
+    def test_anchor_mode_claims_neither_block(self):
+        from core.generate import _v2_blocks_note
+        pri = self._priors()
+        note = _v2_blocks_note(pri, {"source": "observed", "feh": None}) or ""
+        self.assertNotIn("age_dist", note)
+        self.assertNotIn("stellar_activity", note)
 
 
 if __name__ == "__main__":

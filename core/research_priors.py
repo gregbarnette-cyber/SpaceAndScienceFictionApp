@@ -98,6 +98,7 @@ _V2_BLOCK_NAMES = (
     "inner_giant_population",     # v2.3 — decoupled close-in giant population + channel tags
     "stellar_multiplicity",       # v2.4 — the first STELLAR axis: binaries + close pairs
     "stellar_activity",           # v2.4 — rotation/activity chain + circumbinary XUV geometry
+    "age_dist",                   # v2.10 — app-side: synthetic-mode host AGE (T8; feh_dist's mirror)
 )
 
 _MASS_MODEL_TYPES = {"isolation-scaling"}   # recognised mass_model.type (additive)
@@ -752,6 +753,83 @@ def _check_stellar_activity(sa):
     return None
 
 
+def _check_age_dist(ad):
+    """v2.10 (T8) — app-side axis: the synthetic-mode host stellar AGE, the mirror of
+    ``feh_dist`` and the input ``stellar_activity``'s chain needs (age → P_rot → Ro →
+    L_X/L_bol). Unlike ``feh_dist`` this is NOT a Gaussian: it is a population-weighted
+    SFH **histogram**, mass-conditional and MS-lifetime-truncated.
+
+    Two structural guards, each encoding something that would otherwise go silently wrong:
+
+    * ``sfh_histogram`` bins must be contiguous, ordered and normalizable — a gap would
+      silently drop probability mass rather than error.
+    * a ``sfh_smoothing_note`` is REQUIRED whenever a zero-fraction bin sits between two
+      non-zero ones. The BGM zeroes 7–8 Gyr and piles up 8–9 Gyr as a discrete-age-bin
+      artifact; a consumer that samples the histogram literally reproduces a hole the real
+      SFH does not have. Requiring the note means the artifact cannot arrive undocumented.
+    """
+    if not isinstance(ad, dict):
+        return "age_dist must be an object."
+    hist = ad.get("sfh_histogram")
+    if not isinstance(hist, list) or not hist:
+        return "age_dist.sfh_histogram must be a non-empty list of bins."
+    prev_hi, total, interior_zero = None, 0.0, False
+    for i, b in enumerate(hist):
+        w = f"age_dist.sfh_histogram[{i}]"
+        if not isinstance(b, dict):
+            return f"{w} must be an object {{lo, hi, fraction}}."
+        lo, hi, frac = b.get("lo"), b.get("hi"), b.get("fraction")
+        if not _is_num(lo) or not _is_num(hi) or lo < 0 or hi <= lo:
+            return f"{w} requires 0 <= lo < hi."
+        if not _is_num(frac) or frac < 0:
+            return f"{w}.fraction must be a non-negative number."
+        if prev_hi is not None and abs(lo - prev_hi) > 1e-9:
+            return (f"{w} is not contiguous with the previous bin "
+                    f"(lo {lo} != previous hi {prev_hi}) — a gap silently drops mass.")
+        prev_hi = hi
+        total += frac
+        if frac == 0 and 0 < i < len(hist) - 1:
+            interior_zero = True
+    if total <= 0:
+        return "age_dist.sfh_histogram fractions must sum to a positive value."
+    if interior_zero and not str(ad.get("sfh_smoothing_note") or "").strip():
+        return ("age_dist.sfh_histogram has an interior zero-fraction bin but no "
+                "sfh_smoothing_note — a discrete-age-bin artifact must not arrive "
+                "undocumented (see the BGM 7-8 Gyr hole).")
+
+    mca = ad.get("mass_conditional_age")
+    if mca is not None:
+        if not isinstance(mca, list) or not mca:
+            return "age_dist.mass_conditional_age must be a non-empty list when present."
+        for i, r in enumerate(mca):
+            w = f"age_dist.mass_conditional_age[{i}]"
+            if not isinstance(r, dict):
+                return f"{w} must be an object."
+            mlo, mhi = r.get("mass_lo"), r.get("mass_hi")
+            if not _is_num(mlo) or not _is_num(mhi) or mlo < 0 or mhi <= mlo:
+                return f"{w} requires 0 <= mass_lo < mass_hi."
+            for k in ("mean_age_gyr", "median_age_gyr"):
+                if r.get(k) is not None and (not _is_num(r[k]) or r[k] <= 0):
+                    return f"{w}.{k} must be a positive number when present."
+
+    for key in ("mean_age_gyr", "median_age_gyr"):
+        if ad.get(key) is not None and (not _is_num(ad[key]) or ad[key] <= 0):
+            return f"age_dist.{key} must be a positive number when present."
+
+    for key in ("population_mix_recommended_local", "population_mix_bgm_nearplane"):
+        mix = ad.get(key)
+        if mix is None:
+            continue
+        if not isinstance(mix, dict) or not mix:
+            return f"age_dist.{key} must be a non-empty object."
+        for pop, frac in mix.items():
+            if not _is_num(frac) or frac < 0:
+                return f"age_dist.{key}.{pop} must be a non-negative number."
+        if sum(mix.values()) <= 0:
+            return f"age_dist.{key} weights must sum to a positive value."
+    return None
+
+
 # name → checker; iteration order is _V2_BLOCK_NAMES (stable).
 _V2_BLOCK_CHECKERS = {
     "mass_model": _check_mass_model,
@@ -762,6 +840,7 @@ _V2_BLOCK_CHECKERS = {
     "inner_giant_population": _check_inner_giant_population,
     "stellar_multiplicity": _check_stellar_multiplicity,
     "stellar_activity": _check_stellar_activity,
+    "age_dist": _check_age_dist,
 }
 
 
