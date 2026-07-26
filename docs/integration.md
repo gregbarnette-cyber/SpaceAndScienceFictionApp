@@ -58,7 +58,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `oec-status` | none | none (local cache)‡ | cache snapshot (`cached, cache_size_bytes, cache_mtime_utc, cache_age_days, stale`) + element counts |
 | `star-regions` | `--star` | SIMBAD + Hypatia | region values (see below) + `simbad` + `hypatia` |
 | `star-regions-manual` | `--vmag --bc --teff --parallax` [`--sunlight-intensity --bond-albedo`] | none | flat dict of region values (`hzil, hzol, snowLine, stellarMass, distAU, …`) + echoed inputs |
-| `distance` | `--star1 --star2` | SIMBAD† | `star1_info, star2_info, distance_ly, distance_au` |
+| `distance` | `--star1 --star2` | SIMBAD† | `star1_info, star2_info, distance_ly, distance_au` (each `*_info` carries `sp_type`) |
 | `stars-within-sol` | `--ly` | none (local DB) | `limit_ly, count, stars[]` |
 | `stars-within-star` | `--star --ly` | SIMBAD | `center, center_x/y/z, limit_ly, count, stars[]` |
 | `travel-time` | `--star1 --star2` + (`--ly-hr` \| `--times-c`) | SIMBAD† | `origin_info, dest_info, distance_ly, ly_hr, times_c, total_hours, travel_time_str` |
@@ -304,7 +304,7 @@ Core function: `regions.compute_star_system_regions(vmag, boloLum, temp, plx, su
 query.py distance --star1 "Sol" --star2 "GJ 876"
 ```
 Core function: `calculators.compute_distance_between_stars(star1, star2)`
-Output: `{star1_info, star2_info, distance_ly, distance_au}`. Each `*_info` is `{name, ra_deg, dec_deg, ly, desig_str, ra_hms, dec_dms}`. `distance_au` is `null` unless the two stars are < 0.5 ly apart.
+Output: `{star1_info, star2_info, distance_ly, distance_au}`. Each `*_info` is `{name, ra_deg, dec_deg, ly, sp_type, desig_str, ra_hms, dec_dms}`. `distance_au` is `null` unless the two stars are < 0.5 ly apart. *(`sp_type` is the SIMBAD spectral type — additive, added for the O8 Sol-centered star charts; `""` when SIMBAD has no type, `"G2V"` for the `Sol`/`Sun` special case. Read it defensively — `.get("sp_type", "")`.)*
 
 #### `stars-within-sol`
 All stars in the `star_systems` DB table within N light years of Sol. No network call.

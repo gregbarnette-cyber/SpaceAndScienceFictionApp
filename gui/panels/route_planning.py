@@ -27,6 +27,7 @@ import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_star_chart_canvas, make_star_chart_3d_canvas,
 )
+from gui.panels.diagram_tabs import _build_iso_chart_tab, _wire_row_map_linking
 
 
 # ── shared scaffolding ───────────────────────────────────────────────────────
@@ -171,60 +172,100 @@ def _add_route_chart_tabs(panel, result):
 # ── Phase O O8 — Two-Star Map (opts 17, 20, 21) ──────────────────────────────
 
 def _two_star_route_map(result: dict, kind: str) -> dict:
-    """Convert a two-star result into route-map geometry for the Star Charts.
+    """Convert a two-star result into **Sol-centered** star-map geometry.
 
     `kind="distance"` (opt 17: `star1_info`/`star2_info`) or `"travel"` (opts
-    20/21: `origin_info`/`dest_info`). star-1/origin is `stars[0]` (→ the gold ★
-    centre after `_centered`); Sol is appended as a grey reference node unless an
-    endpoint already is Sol (at the origin). The single dashed edge is labelled
-    with the distance (+ travel time and ×c for opts 20/21). Returns
-    {"stars", "edges", "edge_style"} or the `{"error"}` passthrough.
+    20/21: `origin_info`/`dest_info`).
+
+    **Sol is `stars[0]` at the origin** — `make_star_chart_canvas` paints the
+    first entry as the gold ★ only when it sits at (0,0,0), so this is what makes
+    these charts read exactly like the opt-18/19 Star Charts. The two searched
+    stars keep their true heliocentric coordinates and are coloured by spectral
+    class from the (additive) `sp_type` that
+    `core.calculators.compute_lookup_star_for_distance` now returns. When one
+    endpoint *is* Sol/Sun it becomes the centre node (keeping the typed name)
+    rather than being duplicated.
+
+    No connecting edge is drawn (the tables carry the distance / travel time), so
+    `edges` is always empty. Returns {"stars", "edges", "edge_style"} or the
+    `{"error"}` passthrough.
     """
     if not isinstance(result, dict) or "error" in result:
         return result
     if kind == "distance":
         s1, s2 = result["star1_info"], result["star2_info"]
-        label = f"{result['distance_ly']:.2f} ly"
     else:
         s1, s2 = result["origin_info"], result["dest_info"]
-        label = (f"{result['distance_ly']:.2f} ly — "
-                 f"{result['travel_time_str']} @ {result['times_c']:g}×c")
 
     def _node(s):
         x, y, z = core.calculators._to_cartesian(s["ra_deg"], s["dec_deg"], s["ly"])
+        sp = (s.get("sp_type") or "").strip()
         return {"name": s["name"], "desig": s.get("desig_str", ""),
-                "sp_type": "", "color": core.calculators._star_map_color(""),
+                "sp_type": sp, "color": core.calculators._star_map_color(sp),
                 "ly": s["ly"], "x": x, "y": y, "z": z}
 
-    n1, n2 = _node(s1), _node(s2)
-    stars = [n1, n2]
-    if not (abs(n1["ly"]) < 1e-9 or abs(n2["ly"]) < 1e-9):
-        stars.append({"name": "Sol", "desig": "", "sp_type": "G2V",
-                      "color": core.calculators._star_map_color("G2V"),
-                      "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0})
-    edges = [core.viz._route_edge(n1, n2, label, "dashed")]
-    return {"stars": stars, "edges": edges, "edge_style": "dashed"}
+    nodes = [_node(s1), _node(s2)]
+    # One of the endpoints may already be Sol (ly == 0) — use it as the centre
+    # node instead of appending a second one at the same spot.
+    at_origin = [n for n in nodes if abs(n["ly"]) < 1e-9]
+    others = [n for n in nodes if abs(n["ly"]) >= 1e-9]
+    if at_origin:
+        centre = at_origin[0]
+        centre = {**centre, "x": 0.0, "y": 0.0, "z": 0.0,
+                  "sp_type": centre["sp_type"] or "G2V",
+                  "color": core.calculators._star_map_color(
+                      centre["sp_type"] or "G2V")}
+        stars = [centre] + others + at_origin[1:]
+    else:
+        stars = [{"name": "Sol", "desig": "", "sp_type": "G2V",
+                  "color": core.calculators._star_map_color("G2V"),
+                  "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0}] + nodes
+    return {"stars": stars, "edges": [], "edge_style": "none"}
 
 
-def add_two_star_chart_tabs(panel, result: dict, kind: str):
-    """Add "Star Chart" + "Star Chart 3D" viz tabs for a two-star result (O8)."""
+def add_two_star_chart_tabs(panel, result: dict, kind: str, link_view=None):
+    """Add "Star Chart" + "Star Chart 3D" viz tabs for a two-star result (O8).
+
+    Built with the same `_build_iso_chart_tab` the opt-18/19 panels use, so the
+    two tabs get full parity: the O16 per-class legend filter, the O17 travel-time
+    isochrone control, the click-info box, and the 3D viewpoint presets. `stars[0]`
+    is Sol at the origin (gold ★) with the searched stars placed relative to it.
+
+    `link_view` (optional) is the result table to wire O15 row↔map linking to; its
+    column 0 must hold star names. Omit it (opts 20/21, whose table is
+    Origin|Destination-shaped) and clicks simply show the info box.
+    """
     if not mpl_available():
         return
     rm = _two_star_route_map(result, kind)
     if not isinstance(rm, dict) or "error" in rm or not rm.get("stars"):
         return
-    stars, edges, limit_ly = _centered(rm)
+    stars = rm["stars"]
+    limit_ly = max(
+        (math.sqrt(s["x"] ** 2 + s["y"] ** 2 + s["z"] ** 2) for s in stars),
+        default=1.0) * 1.1 or 1.0
 
-    chart_w = QWidget()
-    chart_l = QVBoxLayout(chart_w)
-    chart_l.setContentsMargins(4, 4, 4, 4)
-    canvas, toolbar = make_star_chart_canvas(panel, stars, limit_ly=limit_ly,
-                                             routes=edges)
-    chart_l.addWidget(toolbar)
-    chart_l.addWidget(canvas)
-    panel._viz_tabs_widget.addTab(chart_w, "Star Chart")
+    canvases = []
+    click_cb = None
+    if link_view is not None:
+        from gui.panels.diagram_tabs import _star_click_select
+        click_cb = lambda nm: _star_click_select(panel, nm)
+
+    # Three dots at most, so there is no clutter to declutter: raise the shared
+    # 15 ly label cutoff past this chart's range and keep the names visible at
+    # any zoom (opts 18/19 keep the default — they plot hundreds of stars).
+    label_max_ly = max(limit_ly * 10.0, 100.0)
+
     panel._viz_tabs_widget.addTab(
-        _route_chart_3d_tab(panel, stars, limit_ly, edges), "Star Chart 3D")
+        _build_iso_chart_tab(panel, stars, limit_ly, click_cb, canvases,
+                             is_3d=False, label_max_ly=label_max_ly),
+        "Star Chart")
+    panel._viz_tabs_widget.addTab(
+        _build_iso_chart_tab(panel, stars, limit_ly, click_cb, canvases,
+                             is_3d=True, label_max_ly=label_max_ly),
+        "Star Chart 3D")
+    if link_view is not None:
+        _wire_row_map_linking(panel, link_view, canvases)
 
 
 # ── I1: Multi-Stop Journey ───────────────────────────────────────────────────

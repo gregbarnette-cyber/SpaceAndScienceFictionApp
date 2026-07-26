@@ -4,18 +4,20 @@
 import re
 
 from PySide6.QtWidgets import (
-    QComboBox, QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel,
-    QSizePolicy, QTabWidget, QWidget, QVBoxLayout,
+    QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel,
+    QSizePolicy, QWidget, QVBoxLayout,
 )
-from PySide6.QtCore import Qt, QItemSelectionModel
+from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.calculators
 import core.viz
 from gui.visualizations.plot_helpers import (
     mpl_available, make_star_map_canvas, make_star_map_3d_canvas,
-    make_star_chart_canvas, make_star_chart_3d_canvas,
-    make_hr_canvas, make_sky_canvas, _isochrone_rings,
+    make_hr_canvas, make_sky_canvas,
+)
+from gui.panels.diagram_tabs import (
+    _build_iso_chart_tab, _star_click_select, _wire_row_map_linking,
 )
 from gui.panels.route_planning import add_two_star_chart_tabs
 
@@ -110,7 +112,9 @@ class DistanceBetweenStarsPanel(DiagramToggleMixin, ResultPanel):
         table.setSortingEnabled(False)
         self._tables_layout.addWidget(table)
 
-        add_two_star_chart_tabs(self, result, "distance")
+        # The 2-row table holds star names in column 0, so O15 row↔map linking
+        # works here (clicking a dot selects its row and rings it on both charts).
+        add_two_star_chart_tabs(self, result, "distance", link_view=table)
         self._finish_render()
 
 
@@ -135,128 +139,8 @@ def _clear_tables_layout(panel):
             w.deleteLater()
 
 
-def _build_star_chart_3d_tab(panel, map_stars, limit_ly, on_star_click=None,
-                             legend_filter=False, isochrone=None):
-    """Build a "Star Chart 3D" tab widget with preset viewpoint buttons.
-
-    Mirrors the Map 3D tab pattern but uses the dark-themed
-    make_star_chart_3d_canvas helper. Returns (widget, canvas) so the caller can
-    keep the canvas ref for O15 row↔map linking. `legend_filter` is opt-in
-    (opts 18/19 pass True for O16/CP3 per-class filtering; GCNS keeps False).
-    `isochrone` (opts 18/19, O17) switches the reference spheres to travel-time
-    contours; GCNS keeps None (distance spheres).
-    """
-    chart3d_w = QWidget()
-    chart3d_l = QVBoxLayout(chart3d_w)
-    chart3d_l.setContentsMargins(4, 4, 4, 4)
-    chart3d_l.setSpacing(0)
-    canvas3d, toolbar3d, ax3d = make_star_chart_3d_canvas(
-        panel, map_stars, limit_ly=limit_ly, on_star_click=on_star_click,
-        legend_filter=legend_filter, isochrone=isochrone,
-    )
-    preset_bar = QWidget()
-    preset_bar.setFixedHeight(18)
-    preset_row = QHBoxLayout(preset_bar)
-    preset_row.setContentsMargins(0, 0, 0, 0)
-    preset_row.setSpacing(6)
-    _preset_btn_style = (
-        "QPushButton { padding: 0px 8px; margin: 0px; font-size: 10px; }"
-    )
-    for lbl, elev, azim in [
-        ("Top View", 90, 0),
-        ("Side View", 0, 0),
-        ("3D Perspective", 30, -60),
-    ]:
-        btn = QPushButton(lbl)
-        btn.setFixedHeight(18)
-        btn.setStyleSheet(_preset_btn_style)
-        def _make_cb(e=elev, a=azim):
-            def _cb():
-                try:
-                    if toolbar3d.mode:
-                        if "zoom rect" in str(toolbar3d.mode):
-                            toolbar3d.zoom()
-                        else:
-                            toolbar3d.pan()
-                except Exception:
-                    pass
-                ax3d.view_init(elev=e, azim=a)
-                canvas3d.draw_idle()
-            return _cb
-        btn.clicked.connect(_make_cb())
-        preset_row.addWidget(btn)
-    preset_row.addStretch()
-    chart3d_l.addWidget(preset_bar)
-    chart3d_l.addWidget(toolbar3d)
-    chart3d_l.addWidget(canvas3d)
-    return chart3d_w, canvas3d
 
 
-# ── O15 — Table-Row ↔ Map Linking (opts 18/19, all five map tabs) ─────────────
-
-def _selected_star_name(view):
-    """The Star-Name (column 0) of the table's current/last-selected row, or None.
-
-    Multi-row drag-select → the current (last-interacted) row wins; an empty
-    selection → None (clears the highlight). Robust to interactive column sorting
-    because it reads the model cell at the current visual row."""
-    model = view.model() if view is not None else None
-    sel = view.selectionModel() if view is not None else None
-    if model is None or sel is None or not sel.selectedRows():
-        return None
-    idx = sel.currentIndex()
-    row = idx.row() if idx.isValid() else sel.selectedRows()[-1].row()
-    item = model.item(row, 0)
-    return item.text() if item is not None else None
-
-
-def _on_link_selection(panel):
-    """Table selection changed → ring that star on every map canvas (O15)."""
-    name = _selected_star_name(getattr(panel, "_link_view", None))
-    for canvas in getattr(panel, "_link_canvases", ()):
-        try:
-            canvas.highlight_star(name)
-        except Exception:
-            pass
-
-
-def _star_click_select(panel, name):
-    """Map star clicked → select + scroll to the matching table row (O15).
-
-    The selection change then rings the star on every canvas via
-    _on_link_selection. A click on the centre ★ (Sol / queried star, which has no
-    table row) matches nothing and is a graceful no-op. Called with a falsy name
-    (empty-space click) it clears the table selection, which clears the ring on
-    every canvas — the deselect gesture."""
-    view = getattr(panel, "_link_view", None)
-    model = view.model() if view is not None else None
-    if model is None:
-        return
-    if not name:
-        sm = view.selectionModel()
-        if sm is not None:
-            sm.clearSelection()      # → selectionChanged → highlight_star(None) everywhere
-        return
-    for r in range(model.rowCount()):
-        item = model.item(r, 0)
-        if item is not None and item.text() == name:
-            idx = model.index(r, 0)
-            view.selectionModel().setCurrentIndex(
-                idx,
-                QItemSelectionModel.SelectionFlag.ClearAndSelect
-                | QItemSelectionModel.SelectionFlag.Rows,
-            )
-            view.scrollTo(idx)
-            return
-
-
-def _wire_row_map_linking(panel, view, canvases):
-    """Connect a result table to its map canvases, both directions (O15)."""
-    panel._link_view = view
-    panel._link_canvases = canvases
-    sm = view.selectionModel() if view is not None else None
-    if sm is not None:
-        sm.selectionChanged.connect(lambda *a: _on_link_selection(panel))
 
 
 # ── O18 — Find-Star-on-Map box (opts 18/19; depends on O15's highlight) ───────
@@ -417,117 +301,6 @@ def _add_find_box(panel):
     cont.layout().insertWidget(1, w)
 
 
-_ISO_HOURS_PER_JULIAN_YEAR = 8765.8128   # ×c → ly/hr (matches core + plot_helpers)
-
-
-def _build_iso_chart_tab(panel, map_stars, limit, click_cb, canvases, is_3d):
-    """Star Chart (2D or 3D) tab with an O17 travel-time isochrone control.
-
-    A velocity field + unit (× c | LY/HR) + Apply/Clear sits above the chart;
-    Apply rebuilds the canvas with travel-time rings (d = v·t), Clear / blank
-    restores the distance rings. The rebuilt canvas replaces the old one in
-    `canvases` (the O15 link list) and inherits the current highlight, so row↔map
-    linking and the gold selection ring survive the rebuild."""
-    w = QWidget()
-    outer = QVBoxLayout(w)
-    outer.setContentsMargins(4, 4, 4, 4)
-    outer.setSpacing(3)
-
-    ctl = QHBoxLayout()
-    ctl.setContentsMargins(0, 0, 0, 0)
-    ctl.addWidget(QLabel("Isochrone velocity:"))
-    vel = QLineEdit()
-    vel.setMaximumWidth(90)
-    vel.setPlaceholderText("blank = distance")
-    unit = QComboBox()
-    unit.addItems(["× c", "LY/HR"])
-    apply_btn = QPushButton("Apply")
-    clear_btn = QPushButton("Clear")
-    for ww in (vel, unit, apply_btn, clear_btn):
-        ctl.addWidget(ww)
-    ctl.addStretch()
-    outer.addLayout(ctl)
-
-    holder = QWidget()
-    hl = QVBoxLayout(holder)
-    hl.setContentsMargins(0, 0, 0, 0)
-    hl.setSpacing(0)
-    outer.addWidget(holder, 1)
-
-    state = {"canvas": None}
-
-    def _iso_kwarg():
-        raw = vel.text().strip()
-        if not raw:
-            return None
-        try:
-            v = float(raw)
-            if v <= 0:
-                raise ValueError
-        except ValueError:
-            try:
-                panel.set_status("Isochrone velocity must be a positive number.")
-            except Exception:
-                pass
-            return None
-        ly_hr = (v / _ISO_HOURS_PER_JULIAN_YEAR
-                 if unit.currentText().startswith("×") else v)
-        return {"ly_hr": ly_hr, "label_unit": f"{ly_hr:.4f} ly/hr"}
-
-    def _rebuild():
-        iso = _iso_kwarg()
-        if iso is not None and not _isochrone_rings(iso["ly_hr"], limit):
-            # Velocity valid but too fast for this range — even the 1-hour ring
-            # overshoots, so the chart shows distance rings. Tell the user why.
-            try:
-                panel.set_status(
-                    f"{iso['ly_hr']:.4f} ly/hr is too fast for a {limit:g} ly "
-                    f"chart — no travel-time rings fit; showing distance rings.")
-            except Exception:
-                pass
-        old = state["canvas"]
-        prev_hl = None
-        if old is not None:
-            try:
-                prev_hl = old.highlighted_star()
-            except Exception:
-                prev_hl = None
-            if old in canvases:
-                canvases.remove(old)
-        while hl.count():
-            item = hl.takeAt(0)
-            ww = item.widget()
-            if ww:
-                ww.deleteLater()
-        if is_3d:
-            inner_w, new_canvas = _build_star_chart_3d_tab(
-                panel, map_stars, limit, on_star_click=click_cb,
-                legend_filter=True, isochrone=iso)
-            hl.addWidget(inner_w)
-        else:
-            new_canvas, new_toolbar = make_star_chart_canvas(
-                panel, map_stars, limit_ly=limit, on_star_click=click_cb,
-                legend_filter=True, isochrone=iso)
-            hl.addWidget(new_toolbar)
-            hl.addWidget(new_canvas)
-        state["canvas"] = new_canvas
-        canvases.append(new_canvas)
-        if prev_hl:
-            try:
-                new_canvas.highlight_star(prev_hl)
-            except Exception:
-                pass
-
-    def _clear():
-        vel.clear()
-        _rebuild()
-
-    apply_btn.clicked.connect(_rebuild)
-    vel.returnPressed.connect(_rebuild)
-    clear_btn.clicked.connect(_clear)
-
-    _rebuild()   # initial build → distance rings (no velocity yet)
-    return w
 
 
 def _add_map_tabs(panel, map_stars, limit, title, result):

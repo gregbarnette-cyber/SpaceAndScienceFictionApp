@@ -18,6 +18,10 @@ Options 17–32. Distance, velocity, travel time, and brachistochrone features. 
   - Computes `ly = 1000 / plx_mas × 3.26156`.
 - Math: converts each star's RA/DEC (decimal degrees from SIMBAD) + distance (ly) to 3D Cartesian coordinates; distance = `sqrt((x2-x1)² + (y2-y1)² + (z2-z1)²)`.
 - Output table columns: Star | Star Designations | RA (HMS) | DEC (±DMS) | Light Years.
+- **GUI diagram tabs**: "Star Chart" + "Star Chart 3D" (Phase O8) — **Sol-centered** (gold ★ at the origin) with the two
+  searched stars at their true heliocentric positions, coloured by spectral class. Identical in look and interactivity
+  to the opt-18/19 Star Charts (per-class legend filter, travel-time isochrone control, click-info box, 3D viewpoint
+  presets); clicking a dot selects its row in the two-row result table. See the Phase O8 note in Route Planning below.
 - After the table, prints `Distance Between <star1> and <star2>: X.XXXX Light Years`. If distance < 0.5 ly, also prints the distance in AU (`ly × 63241.077`).
 
 ## Stars within a Certain Distance of Sol Feature
@@ -349,14 +353,24 @@ The maps are the **dark-navy GCNS "Star Chart" + "Star Chart 3D"** diagrams (`ma
 route's origin/start/center sits at the chart origin (gold ★), with distance rings measured from it and
 `limit_ly = max node distance × 1.1`. Route lines stay visible at all zooms; the per-segment labels follow the chart's
 existing **zoom-driven label decluttering** (shown once the visible half-range drops below ~15 ly), so a busy route
-starts uncluttered and reveals labels on zoom. **Phase O8 (two-star maps for opts 17/20/21) reuses this same `routes=`
-parameter** — Phase I built it first. O8 ships as panel wiring only (no new core/canvas): `gui/panels/route_planning.py`
-`_two_star_route_map(result, kind)` converts a two-star result (`kind="distance"` for opt 17's `star1_info`/`star2_info`,
-`"travel"` for opts 20/21's `origin_info`/`dest_info`) into `{stars, edges}` — star-1/origin is `stars[0]` (→ gold ★
-centre), Sol is appended as a grey reference node unless an endpoint is Sol, and one dashed edge is labelled with the
-distance (+ travel time and ×c for opts 20/21). `add_two_star_chart_tabs(panel, result, kind)` then centres via the
-shared `_centered` and adds the **"Star Chart"** + **"Star Chart 3D"** tabs (reused by `DistanceBetweenStarsPanel` (17)
-and the two `TravelTimeStars*` panels (20/21), all now `DiagramToggleMixin`).
+starts uncluttered and reveals labels on zoom.
+
+**Phase O8 — two-star maps (opts 17/20/21), rebuilt Sol-centered 2026-07-26.** Originally these reused the `routes=`
+overlay above and centred on star-1/origin. They are now **Sol-centered with full opt-18/19 parity**.
+`gui/panels/route_planning.py::_two_star_route_map(result, kind)` converts a two-star result (`kind="distance"` for opt
+17's `star1_info`/`star2_info`, `"travel"` for opts 20/21's `origin_info`/`dest_info`) into `{stars, edges}` where **Sol
+is `stars[0]` at the origin** — `make_star_chart_canvas` paints the first entry as the gold ★ only when it sits at
+(0,0,0), which is what makes these charts read exactly like opts 18/19 — and the two searched stars keep their **true
+heliocentric coordinates**, coloured by spectral class from the additive `sp_type` that
+`compute_lookup_star_for_distance` now returns. An endpoint that *is* Sol/Sun becomes the centre node rather than being
+duplicated. **`edges` is always empty**: the dashed connecting leg was dropped (the result tables already carry the
+distance / travel time), so no `routes=` passthrough is needed.
+`add_two_star_chart_tabs(panel, result, kind, link_view=None)` computes `limit_ly = max node distance × 1.1` and builds
+both tabs with the **same `_build_iso_chart_tab` the opt-18/19 panels use** (`gui/panels/diagram_tabs.py`), so
+**"Star Chart"** + **"Star Chart 3D"** carry the O16 per-class legend filter, the O17 travel-time isochrone control, the
+click-info box, and the 3D viewpoint presets. `link_view` wires O15 row↔map linking — opt 17 passes its 2-row table
+(star names in column 0); opts 20/21 omit it (their table is Origin|Destination-shaped) and a click just shows the info
+box. Because these charts hold only two or three dots, they also pass `label_max_ly` (the additive Star-Chart canvas kwarg) so the star names stay visible at any zoom instead of following the shared 15 ly decluttering threshold opts 18/19 need. Used by `DistanceBetweenStarsPanel` (17) and the two `TravelTimeStars*` panels (20/21), all `DiagramToggleMixin`.
 
 ### Dust-weighted variants (Phase T2 Part B — `core/dust_routing.py`)
 

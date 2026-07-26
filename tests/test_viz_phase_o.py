@@ -1948,24 +1948,22 @@ class O8TwoStarRouteMapTest(unittest.TestCase):
             "star1_info": {"name": "Sol", "ra_deg": 0.0, "dec_deg": 0.0,
                            "ly": 0.0, "desig_str": ""},
             "star2_info": {"name": "Star2", "ra_deg": 0.0, "dec_deg": 0.0,
-                           "ly": 10.0, "desig_str": "HD 1"},
+                           "ly": 10.0, "desig_str": "HD 1", "sp_type": "K2V"},
             "distance_ly": 10.0,
         }
         rm = _two_star_route_map(result, "distance")
-        # An endpoint is Sol (at the origin) → no extra Sol node.
+        # An endpoint is Sol (at the origin) → it becomes the centre node, not a
+        # duplicate; the searched star keeps its true heliocentric position.
         self.assertEqual(len(rm["stars"]), 2)
         self.assertEqual(rm["stars"][0]["name"], "Sol")
         self.assertAlmostEqual(rm["stars"][0]["x"], 0.0)
+        self.assertEqual(rm["stars"][0]["sp_type"], "G2V")
         self.assertAlmostEqual(rm["stars"][1]["x"], 10.0)   # ra=dec=0, ly=10 → (10,0,0)
         self.assertAlmostEqual(rm["stars"][1]["y"], 0.0)
-        self.assertEqual(len(rm["edges"]), 1)
-        e = rm["edges"][0]
-        self.assertEqual(e["label"], "10.00 ly")
-        self.assertEqual(e["style"], "dashed")
-        self.assertAlmostEqual(e["x1"], 0.0)
-        self.assertAlmostEqual(e["x2"], 10.0)
+        self.assertEqual(rm["stars"][1]["sp_type"], "K2V")
+        self.assertEqual(rm["edges"], [])                   # no connecting edge
 
-    def test_distance_neither_sol_appends_sol(self):
+    def test_distance_neither_sol_prepends_sol_centre(self):
         from gui.panels.route_planning import _two_star_route_map
         result = {
             "star1_info": {"name": "A", "ra_deg": 0.0, "dec_deg": 0.0,
@@ -1975,23 +1973,44 @@ class O8TwoStarRouteMapTest(unittest.TestCase):
             "distance_ly": 5.0,
         }
         rm = _two_star_route_map(result, "distance")
-        self.assertEqual(len(rm["stars"]), 3)               # A, B, + grey Sol
-        self.assertEqual(rm["stars"][2]["name"], "Sol")
-        self.assertAlmostEqual(rm["stars"][2]["x"], 0.0)
-        self.assertAlmostEqual(rm["stars"][1]["y"], 3.0)    # ra=90 → (0,3,0)
-        self.assertEqual(rm["edges"][0]["label"], "5.00 ly")
+        self.assertEqual(len(rm["stars"]), 3)               # Sol centre, + A, B
+        self.assertEqual(rm["stars"][0]["name"], "Sol")     # stars[0] → the gold ★
+        self.assertAlmostEqual(rm["stars"][0]["x"], 0.0)
+        self.assertAlmostEqual(rm["stars"][0]["y"], 0.0)
+        self.assertAlmostEqual(rm["stars"][0]["z"], 0.0)
+        self.assertEqual(rm["stars"][1]["name"], "A")
+        self.assertAlmostEqual(rm["stars"][1]["x"], 4.0)    # true heliocentric
+        self.assertAlmostEqual(rm["stars"][2]["y"], 3.0)    # ra=90 → (0,3,0)
+        self.assertEqual(rm["edges"], [])
 
-    def test_travel_label_has_time_and_velocity(self):
+    def test_travel_is_also_sol_centered(self):
         from gui.panels.route_planning import _two_star_route_map
         result = {
-            "origin_info": {"name": "Sol", "ra_deg": 0.0, "dec_deg": 0.0,
-                            "ly": 0.0, "desig_str": ""},
+            "origin_info": {"name": "Alt", "ra_deg": 0.0, "dec_deg": 0.0,
+                            "ly": 16.7, "desig_str": ""},
             "dest_info": {"name": "Eps Ind", "ra_deg": 0.0, "dec_deg": 0.0,
                           "ly": 11.4, "desig_str": ""},
-            "distance_ly": 11.4, "times_c": 100.0, "travel_time_str": "4 Months",
+            "distance_ly": 5.3, "times_c": 100.0, "travel_time_str": "4 Months",
         }
         rm = _two_star_route_map(result, "travel")
-        self.assertEqual(rm["edges"][0]["label"], "11.40 ly — 4 Months @ 100×c")
+        self.assertEqual(rm["stars"][0]["name"], "Sol")
+        self.assertAlmostEqual(rm["stars"][1]["x"], 16.7)
+        self.assertAlmostEqual(rm["stars"][2]["x"], 11.4)
+        self.assertEqual(rm["edges"], [])
+
+    def test_missing_sp_type_falls_back_to_grey(self):
+        """Stubs/older results without the additive sp_type key still build."""
+        from gui.panels.route_planning import _two_star_route_map
+        result = {
+            "star1_info": {"name": "A", "ra_deg": 0.0, "dec_deg": 0.0,
+                           "ly": 4.0, "desig_str": ""},
+            "star2_info": {"name": "B", "ra_deg": 90.0, "dec_deg": 0.0,
+                           "ly": 3.0, "desig_str": ""},
+            "distance_ly": 5.0,
+        }
+        rm = _two_star_route_map(result, "distance")
+        self.assertEqual(rm["stars"][1]["sp_type"], "")
+        self.assertEqual(rm["stars"][1]["color"], calc._star_map_color(""))
 
     def test_error_passthrough(self):
         from gui.panels.route_planning import _two_star_route_map
@@ -2019,16 +2038,21 @@ class O8TwoStarCanvasAndPanelTest(unittest.TestCase):
             "distance_ly": 25.0, "distance_au": None,
         }
 
-    def test_canvas_builds_with_routes(self):
-        from gui.panels.route_planning import _two_star_route_map, _centered
+    def test_canvas_builds_sol_centered(self):
+        import math
+        from gui.panels.route_planning import _two_star_route_map
         from gui.visualizations.plot_helpers import (
             make_star_chart_canvas, make_star_chart_3d_canvas)
         rm = _two_star_route_map(self._distance_result(), "distance")
-        stars, edges, limit_ly = _centered(rm)
+        stars = rm["stars"]
+        # Sol is the centre node → the canvases paint it as the gold ★.
+        self.assertEqual(stars[0]["name"], "Sol")
+        limit_ly = max(math.sqrt(s["x"] ** 2 + s["y"] ** 2 + s["z"] ** 2)
+                       for s in stars) * 1.1
         build_canvas_ok(self, make_star_chart_canvas, None, stars,
-                        limit_ly=limit_ly, routes=edges)
+                        limit_ly=limit_ly, legend_filter=True)
         build_canvas_ok(self, make_star_chart_3d_canvas, None, stars,
-                        limit_ly=limit_ly, routes=edges)
+                        limit_ly=limit_ly, legend_filter=True)
 
     def test_panels_add_two_chart_tabs(self):
         import gui.panels as panels
@@ -2051,6 +2075,56 @@ class O8TwoStarCanvasAndPanelTest(unittest.TestCase):
         t = panels.TravelTimeStarsTimesCPanel(win)
         add_two_star_chart_tabs(t, travel, "travel")
         self.assertEqual(t._viz_tabs_widget.count(), 2)
+
+    def test_two_chart_tabs_have_opt_18_19_parity(self):
+        """Both tabs are built by the opt-18/19 _build_iso_chart_tab, so each
+        carries the O17 isochrone velocity control."""
+        from PySide6.QtWidgets import QLineEdit
+        import gui.panels as panels
+        from gui.panels.route_planning import add_two_star_chart_tabs
+        d = panels.DistanceBetweenStarsPanel(self._StubWindow())
+        add_two_star_chart_tabs(d, self._distance_result(), "distance")
+        for i in range(2):
+            tab = d._viz_tabs_widget.widget(i)
+            placeholders = [w.placeholderText()
+                            for w in tab.findChildren(QLineEdit)]
+            self.assertIn("blank = distance", placeholders,
+                          msg=d._viz_tabs_widget.tabText(i))
+
+    def test_label_threshold_raised_for_sparse_two_star_charts(self):
+        """The two-star charts label their handful of dots at any zoom, while the
+        shared 15 ly default (opts 18/19 / GCNS / Phase-I callers) is untouched."""
+        from gui.visualizations.plot_helpers import make_star_chart_canvas
+        stars = [
+            {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
+             "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
+            {"name": "Vega", "desig": "", "sp_type": "A0V", "color": "#cad7ff",
+             "ly": 25.0, "x": 25.0, "y": 0.0, "z": 0.0},
+        ]
+        # limit 27.5 ly > the 15 ly default → labels start hidden…
+        canvas, _ = make_star_chart_canvas(None, stars, limit_ly=27.5)
+        texts = [t for t in canvas.figure.axes[0].texts if "Vega" in t.get_text()]
+        self.assertTrue(texts)
+        self.assertFalse(any(t.get_visible() for t in texts))
+        # …unless the caller raises the threshold (what add_two_star_chart_tabs does).
+        canvas2, _ = make_star_chart_canvas(None, stars, limit_ly=27.5,
+                                            label_max_ly=275.0)
+        texts2 = [t for t in canvas2.figure.axes[0].texts if "Vega" in t.get_text()]
+        self.assertTrue(texts2)
+        self.assertTrue(all(t.get_visible() for t in texts2))
+
+    def test_link_view_wires_row_map_linking(self):
+        """opt 17 passes its 2-row table → O15 linking is wired; omitting it
+        (opts 20/21) leaves the panel unlinked but still builds both tabs."""
+        import gui.panels as panels
+        from gui.panels.route_planning import add_two_star_chart_tabs
+        d = panels.DistanceBetweenStarsPanel(self._StubWindow())
+        table = d.make_table(["Star", "Designations"],
+                             [["Sol", ""], ["Vega", "HD 172167"]])
+        add_two_star_chart_tabs(d, self._distance_result(), "distance",
+                                link_view=table)
+        self.assertIs(d._link_view, table)
+        self.assertTrue(d._link_canvases)   # both charts registered for ringing
 
 
 # ─────────────────────────────────────────────────────────────────────────────

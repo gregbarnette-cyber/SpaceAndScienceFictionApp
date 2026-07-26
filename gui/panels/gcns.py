@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
-from gui.panels.distance_stars import _build_star_chart_3d_tab
+from gui.panels.diagram_tabs import _build_star_chart_3d_tab
 import core.databases
 from gui.visualizations.plot_helpers import mpl_available, make_star_chart_canvas
 from core.viz import _SPECTRAL_COLORS

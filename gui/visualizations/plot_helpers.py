@@ -1678,7 +1678,8 @@ def _isochrone_rings(ly_hr, limit_ly):
 
 
 def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
-                           on_star_click=None, legend_filter=False, isochrone=None):
+                           on_star_click=None, legend_filter=False, isochrone=None,
+                           label_max_ly=None):
     """Labeled 2D X-Y star chart in the dark navy style of stars_within_15ly.html.
 
     stars:     list of dicts {name, color, sp_type, ly, x, y, z, desig}.
@@ -1702,7 +1703,10 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
     # Labels are only shown when the visible half-range is ≤ LABEL_MAX_LY.
     # Beyond that the dots/text cluster too tightly to read. The same threshold
     # drives the initial visibility AND the zoom callback below.
-    LABEL_MAX_LY = 15.0
+    # `label_max_ly` overrides it for charts with only a handful of dots (the O8
+    # two-star maps, opts 17/20/21), where there is no clutter to declutter;
+    # None keeps the 15 ly default every other caller relies on.
+    LABEL_MAX_LY = 15.0 if label_max_ly is None else float(label_max_ly)
     initial_show_labels = limit_ly <= LABEL_MAX_LY
 
     fig = Figure(figsize=(8, 8), facecolor=_SC_FIG_BG)
@@ -2092,7 +2096,8 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
 # ── Star Chart 3D (labeled 3D scatter, dark theme) ────────────────────────────
 
 def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
-                              on_star_click=None, legend_filter=False, isochrone=None):
+                              on_star_click=None, legend_filter=False, isochrone=None,
+                              label_max_ly=None):
     """3D companion to make_star_chart_canvas.
 
     Same dark navy palette, spectral-class star dots, gold ★ origin marker,
@@ -2108,7 +2113,9 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers 3d projection
 
     _, major_step = _star_chart_steps(limit_ly)
-    LABEL_MAX_LY = 15.0
+    # See make_star_chart_canvas: `label_max_ly` overrides the 15 ly threshold for
+    # sparse charts (the O8 two-star maps); None keeps the default.
+    LABEL_MAX_LY = 15.0 if label_max_ly is None else float(label_max_ly)
     initial_show_labels = limit_ly <= LABEL_MAX_LY
 
     fig = Figure(figsize=(8, 8), facecolor=_SC_FIG_BG)

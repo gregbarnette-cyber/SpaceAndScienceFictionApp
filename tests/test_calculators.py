@@ -113,6 +113,11 @@ class SolSpecialCaseTest(unittest.TestCase):
             out = calc.compute_lookup_star_for_distance(name)
             self.assertEqual(out["ly"], 0.0, msg=name)
 
+    def test_sol_carries_spectral_type(self):
+        """The additive sp_type key (O8 star-chart dot colours) — G2V for Sol."""
+        out = calc.compute_lookup_star_for_distance("Sol")
+        self.assertEqual(out["sp_type"], "G2V")
+
 
 class BrachistochroneProfilesTest(unittest.TestCase):
     """_brachistochrone_profiles via compute_travel_time_system_au/lm."""

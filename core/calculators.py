@@ -193,14 +193,18 @@ def _fmt_dec(deg: float) -> str:
 
 
 def compute_lookup_star_for_distance(designation: str) -> dict:
-    """Query SIMBAD for RA, DEC, parallax, and short designations.
+    """Query SIMBAD for RA, DEC, parallax, spectral type, and short designations.
 
     Special-cases 'sun' / 'sol' (case-insensitive) → origin coordinates with
     no SIMBAD query.
 
+    `sp_type` is additive (added for the O8 two-star Star Charts, which colour
+    each dot by spectral class the way opts 18/19 do); it is "" when SIMBAD has
+    no type. Consumers must read it via `.get("sp_type", "")`.
+
     Returns:
-        {name, ra_deg, dec_deg, ly, desig_str}   on success
-        {"error": str}                            on failure
+        {name, ra_deg, dec_deg, ly, sp_type, desig_str}   on success
+        {"error": str}                                     on failure
     """
     norm = designation.strip().lower()
     if norm in ("sun", "sol"):
@@ -209,6 +213,7 @@ def compute_lookup_star_for_distance(designation: str) -> dict:
             "ra_deg":   0.0,
             "dec_deg":  0.0,
             "ly":       0.0,
+            "sp_type":  "G2V",
             "desig_str": "",
         }
 
@@ -219,7 +224,7 @@ def compute_lookup_star_for_distance(designation: str) -> dict:
             # Inside the try: _make_simbad lazily hits SIMBAD's TAP capabilities
             # endpoint, so a connection failure there is classified by
             # _network_error_msg rather than leaking a raw DALServiceError.
-            custom_simbad = _make_simbad("plx_value")
+            custom_simbad = _make_simbad("plx_value", "sp_type")
             result     = _with_retries(custom_simbad.query_object, designation)
             ids_result = _with_retries(Simbad.query_objectids, designation)
     except Exception as e:
@@ -276,7 +281,10 @@ def compute_lookup_star_for_distance(designation: str) -> dict:
                     break
     desig_str = ", ".join(v for v in desig_found.values() if v)
 
-    return {"name": name, "ra_deg": ra_deg, "dec_deg": dec_deg, "ly": ly, "desig_str": desig_str}
+    sp_type = str(_safe("sp_type") or "").strip()
+
+    return {"name": name, "ra_deg": ra_deg, "dec_deg": dec_deg, "ly": ly,
+            "sp_type": sp_type, "desig_str": desig_str}
 
 
 def compute_distance_between_stars(star1: str, star2: str) -> dict:
@@ -1606,7 +1614,8 @@ def _resolve_star_position(name: str) -> dict:
     x, y, z = _to_cartesian(s["ra_deg"], s["dec_deg"], s["ly"])
     return {
         "name": s["name"], "x": x, "y": y, "z": z, "ly": s["ly"],
-        "sp_type": "", "desig": s.get("desig_str", ""), "source": "simbad",
+        "sp_type": s.get("sp_type", ""), "desig": s.get("desig_str", ""),
+        "source": "simbad",
     }
 
 

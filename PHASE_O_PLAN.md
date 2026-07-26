@@ -143,7 +143,7 @@ brachistochrone profiles, HWC temp/ESI, transit geometry, and the size strip.
 | O14 | Planet Size-Comparison Strip | O-4 | 3, 6, Map panel | — | — | `make_size_comparison_canvas` (new) | ☑ Done (2026-06-17) |
 | O9 | Brachistochrone Profile Charts | O-5 | 22, 23, 24, 29, 30 | — | `prepare_brachistochrone_profiles` | `make_profile_canvas` (new) | ☑ Done (2026-06-18) |
 | O5 | Date Scrubber / Orbital Animation | O-5 | Map panel, 22, 23 | — (reuses `prepare_exoplanet_system_diagram`; O5b adds `compute_solar_ephemeris_track`) | — | panel-side slider/timer + `set_offsets`; `make_exoplanet_system_canvas`/`make_solar_travel_canvas` expose additive `_scrub` handles | ☑ Done (2026-06-18) |
-| O8 | Two-Star Map (Distance / Travel-Time) | O-5 | 17, 20, 21 | Phase I `routes=` (already shipped) | — | reuse `make_star_chart_canvas`/`_3d` — "Star Chart" + "Star Chart 3D" tabs (`routes=`) | ☑ Done (2026-06-18) |
+| O8 | Two-Star Map (Distance / Travel-Time) | O-5 | 17, 20, 21 | Phase I `routes=` (already shipped) | — | reuse `make_star_chart_canvas`/`_3d` — "Star Chart" + "Star Chart 3D" tabs (`routes=`) | ☑ Done (2026-06-18); **rebuilt Sol-centered w/ opt-18/19 parity 2026-07-26 — see the ⚠ note in the O8 section** |
 | O6 | Diagram Parity for Sol Regions | O-6 | 13 | — (reuses ring prep) | — | reuse existing ring canvases | ☑ Done (2026-06-18) |
 | O7 | Solar System Orbital Diagrams | O-6 | 11 | — | `prepare_solar_system_orbits` | reuse `make_orbits_canvas` (+ additive `title`/`km_axis` kwargs) | ☑ Done (2026-06-18) |
 | O10 | Honorverse Visualization (bar + ring) | O-6 | 14 (bar); 8, 9, **13** (System Regions ring, opt-in checkbox); **3, 6, Map** (Orbital Diagram ring, opt-in checkbox) | — | `prepare_hyper_limits`; `prepare_system_regions_diagram` adds `hyper_limit` key; `compute_sol_regions` sets `spectral_type="G2V"`; `science.compute_hyper_limit_for_spectral_type` | `make_hyper_bar_canvas` (new); `make_system_regions_canvas(show_hyper=)` + `wrap_system_regions_with_hyper_toggle` (new); `make_orbits_canvas(hyper_au=)` + `wrap_orbits_with_solar_toggle(hyper_au=)` | ☑ Done (2026-06-18) |
@@ -540,6 +540,24 @@ delete the slider/timer + `_SolarMapScrubber`/`_SystemMapScrubber` + `compute_so
 + the canvas `_scrub` handles (one-shot Search unchanged).
 
 ### O8 — Two-Star Map (Distance / Travel-Time)  *(opts 17, 20, 21 — reuses Phase I `routes=`)*
+
+> **⚠ SUPERSEDED 2026-07-26 — rebuilt Sol-centered with full opt-18/19 parity.** The
+> as-built spec below (origin-star centre + a dashed `routes=` edge) shipped 2026-06-18
+> and was then replaced at maintainer request: the charts now put **Sol at the origin**
+> (`stars[0]`, gold ★) with both searched stars at their **true heliocentric positions**,
+> coloured by spectral class from a new additive `sp_type` on
+> `compute_lookup_star_for_distance`. The **connecting dashed edge was dropped**
+> (`edges` is always empty; the result tables carry the distance / travel time), so no
+> `routes=` passthrough is needed. Both tabs are now built by the **same
+> `_build_iso_chart_tab`** the opt-18/19 panels use — which, with the O15/O16/O17
+> helpers, moved from `distance_stars.py` to `gui/panels/diagram_tabs.py` to avoid a
+> circular panel import — so they carry the O16 per-class legend filter, the O17
+> isochrone control, click-info and the 3D presets. `add_two_star_chart_tabs` gained
+> `link_view=` (opt 17 wires O15 row↔map linking; opts 20/21 omit it) and the Star-Chart
+> canvases gained an additive `label_max_ly=` so these sparse charts keep their labels at
+> any zoom (default `None` → the shared 15 ly cutoff, unchanged for every other caller).
+> Current behaviour: `docs/calculators.md` (Phase O8 note) + `docs/gui-architecture.md`.
+
 - **Current state:** opts 17/20/21 compute both endpoints' 3D positions but render
   **text only** — no map tab exists today (verified: `DistanceBetweenStarsPanel` is a
   plain `ResultPanel`; the `TravelTimeStars*` panels have no diagram tabs).
