@@ -316,6 +316,105 @@ def _load_main_sequence_data():
 # leading type is not OBAFGKM (white dwarfs / degenerate D... types) plus NULLs.
 _SPECTRAL_CHIP_LETTERS = ["O", "B", "A", "F", "G", "K", "M"]
 
+# Prefixes that may sit in front of the real class letter, stripped when bucketing a
+# type into a chip. Derived from a census of every distinct string preceding the first
+# uppercase OBAFGKM letter in `star_systems` + `gcns_stars` (2026-07-27):
+#   ''        plain type                              d      dwarf / lum. class V (4737)
+#   sd (429)  subdwarf VI      esd (161) / usd (68)   extreme / ultra subdwarf
+#   k (204) / h (8) / kn (1)   Am-Ap line-type notation: k = Ca II K-line type,
+#                              h = hydrogen-line type, m = metallic-line type. NOT a
+#                              luminosity prefix and NOT a binarity marker (SIMBAD
+#                              otypes show these on singles and binaries alike; the
+#                              binarity marker on such records is '+').
+#   d/sd (22) / sd: (16) / s/sd (2) / (sd) (2)        uncertain-classification forms
+# Uppercase 'D...' (DA/DC/DQ/DZ, ~13.4k rows) is the DEGENERATE white-dwarf prefix and
+# is deliberately absent — those must stay in "Other".
+#
+# CRITICAL: this is why the SQL below uses GLOB, not LIKE. SQLite's LIKE is
+# case-INSENSITIVE for ASCII, so `LIKE 'dM%'` cannot distinguish the dwarf prefix 'd'
+# from the degenerate prefix 'D' and would drag white dwarfs into the letter chips.
+# GLOB is case-SENSITIVE. Verified on this connection: core/db.py sets no
+# `PRAGMA case_sensitive_like`, no custom collation, and no like()/glob() UDF.
+# None of these strings contain a GLOB metacharacter (* ? [ ]), so they are safe to
+# bind as parameters.
+_SP_CLASS_PREFIXES = ("", "d", "sd", "esd", "usd", "k", "h", "kn",
+                      "d/sd", "sd:", "s/sd", "(sd)")
+
+# The wider letter set used for DISPLAY (dot colour + legend bucketing), as opposed to
+# the search chips above. Adds the classes that are not main-sequence OBAFGKM but are
+# still real, colourable classes: degenerate D (white dwarfs), brown dwarfs L/T/Y,
+# Wolf-Rayet W, and the carbon/S-type sequence C/N/R/S.
+#
+# Why two sets rather than one: a search chip must send `DA` to "Other" (a white dwarf
+# is not an O-B-A-F-G-K-M star), but a star chart must still PAINT it — using the chip
+# set for colour would turn every white dwarf, brown dwarf and Wolf-Rayet grey.
+#
+# Widening is provably safe: it can only let an EARLIER prefix qualify, and in every
+# containment pair the shorter member is the earlier one ('' < d < d/sd, sd < sd:,
+# k < kn) while the joining characters are 'd s e u k h ( / : n' — never uppercase.
+# So the display set can never override an answer the chip set already gave.
+# Verified: 0 disagreements over all 3,827 distinct catalogue values.
+# NOTE 'R' and 'S' are deliberately EXCLUDED. They are real historical classes (R and
+# N are the older subdivisions of carbon class C; S is the ZrO class), but they have
+# ZERO rows in star_systems / gcns_stars / hwc, and including them makes any
+# non-spectral label that happens to start with those letters resolve to a class —
+# "Red Giant" (a row label in the Honorverse hyper-limit table, which is fed through
+# the same colour helper) became carbon class R. Zero benefit, real false positives.
+# Add them back only alongside data that needs them.
+_SP_DISPLAY_LETTERS = ("O", "B", "A", "F", "G", "K", "M",
+                       "L", "T", "Y", "W", "D", "C", "N")
+
+
+def spectral_leading_class(sp_str, letters=_SPECTRAL_CHIP_LETTERS):
+    """Leading class letter of a spectral type, skipping a known luminosity prefix.
+
+    `letters` selects the alphabet: the default `_SPECTRAL_CHIP_LETTERS` (OBAFGKM) is
+    the search-chip rule; pass `_SP_DISPLAY_LETTERS` for colour/legend bucketing,
+    which must also resolve D/L/T/Y/W and the carbon classes. The default is
+    unchanged, so Part 1's search behaviour is byte-identical.
+
+        spectral_leading_class("dM6")                          -> 'M'
+        spectral_leading_class("DA")                           -> None   (chips)
+        spectral_leading_class("DA", _SP_DISPLAY_LETTERS)      -> 'D'    (display)
+        spectral_leading_class("dC:", _SP_DISPLAY_LETTERS)     -> 'C'    (carbon dwarf)
+
+
+    The Python counterpart of the GLOB rule in `spectral_where` — one definition of
+    "which chip does this type belong to". Note nothing enforces the equivalence at
+    runtime — the two implementations are kept in step by
+    `tests/test_search.py::test_sql_and_python_rules_agree`, which cross-checks them
+    over a sample covering every prefix. Change one, run that test.
+
+    Whitespace caveat: this strips the input, the GLOB fragment does not — so a type
+    with a leading space resolves here but not in SQL. Latent only (0 of 3,827
+    distinct real catalogue values have surrounding whitespace).
+
+    'dM6' -> 'M'   'sdM3.0' -> 'M'   'kA5hF0mF2' -> 'A'   'M5.5Ve' -> 'M'
+    'DA'  -> None  'DZ7.5'  -> None  'L0' -> None         '' / None -> None
+
+    Note this deliberately takes the FIRST class letter, so an Am star's Ca-K type
+    wins over its hydrogen-line type (`kA5hF0mF2` -> 'A', not 'F'). That matches
+    `_SP_PATTERN`, which already drives BC/Teff/HZ/HR everywhere else in the app.
+    Astronomically the h-type is the better temperature proxy for an Am star (Ca K
+    reads too early, metals too late) and would move ~37 rows A->F; that was
+    considered and declined, because adopting it here alone would make search
+    disagree with the region/HR calculators. Changing it would mean changing
+    `_SP_PATTERN` app-wide. See docs/star-databases.md (Phase G).
+
+    Also slightly more permissive than `_SP_PATTERN`, which requires a digit after
+    the letter: 'dMe' and 'sdK' resolve here but are (None, None) there.
+    """
+    s = (sp_str or "").strip()
+    if not s:
+        return None
+    for prefix in _SP_CLASS_PREFIXES:
+        if prefix and not s.startswith(prefix):
+            continue
+        rest = s[len(prefix):]
+        if rest and rest[0] in letters:
+            return rest[0]
+    return None
+
 
 def _escape_like(s: str) -> str:
     """Escape LIKE wildcards so user text matches literally (use with ESCAPE '\\')."""
@@ -334,9 +433,15 @@ def spectral_where(column: str, classes, refine: str):
     refine:  case-insensitive substring matched against the rest of the type.
 
     Returns (fragment, params). The fragment is '' when both inputs are empty; the
-    caller ANDs it into its WHERE clause. Letter chips match a LEADING class letter
-    via LIKE 'X%' (the canonical leading-letter rule); "Other" matches NULL or any
-    type whose leading letter is not OBAFGKM. Refine adds LIKE '%refine%' (ESCAPEd).
+    caller ANDs it into its WHERE clause. Refine adds LIKE '%refine%' (ESCAPEd).
+
+    A letter chip matches the leading class letter after skipping any prefix in
+    `_SP_CLASS_PREFIXES`, using case-sensitive GLOB — so `dM6` (Wolf 359) and
+    `sdM3.0` bucket under M, while the degenerate `DA`/`DZ7.5` white dwarfs do not.
+    See the `_SP_CLASS_PREFIXES` comment for why LIKE cannot be used here.
+
+    "Other" is the EXACT COMPLEMENT of the same expression (plus NULLs), so a star
+    can never appear under both a letter chip and Other.
     """
     classes = classes or []
     letters = [c for c in classes if c in _SPECTRAL_CHIP_LETTERS]
@@ -344,14 +449,25 @@ def spectral_where(column: str, classes, refine: str):
 
     clauses, params = [], []
 
+    def _letter_terms(letter):
+        """(sql, params) matching `letter` under every allowed prefix."""
+        sql = " OR ".join(f"{column} GLOB ?" for _ in _SP_CLASS_PREFIXES)
+        return f"({sql})", [f"{p}{letter}*" for p in _SP_CLASS_PREFIXES]
+
     sub = []
     for letter in letters:
-        sub.append(f"{column} LIKE ?")
-        params.append(f"{letter}%")
+        sql, ps = _letter_terms(letter)
+        sub.append(sql)
+        params.extend(ps)
     if want_other:
-        not_obafgkm = " OR ".join(f"{column} LIKE ?" for _ in _SPECTRAL_CHIP_LETTERS)
-        sub.append(f"({column} IS NULL OR NOT ({not_obafgkm}))")
-        params.extend(f"{l}%" for l in _SPECTRAL_CHIP_LETTERS)
+        # Complement over ALL chip letters, not just the selected ones.
+        all_sql, all_params = [], []
+        for letter in _SPECTRAL_CHIP_LETTERS:
+            sql, ps = _letter_terms(letter)
+            all_sql.append(sql)
+            all_params.extend(ps)
+        sub.append(f"({column} IS NULL OR NOT ({' OR '.join(all_sql)}))")
+        params.extend(all_params)
     if sub:
         clauses.append("(" + " OR ".join(sub) + ")")
 

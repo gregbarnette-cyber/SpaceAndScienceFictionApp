@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel
 import core.viz
+from gui.visualizations.plot_helpers import _display_class
 
 try:
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -147,7 +148,7 @@ class StarMapPanel(ResultPanel):
         # Spectral-class legend
         seen = {}
         for s in stars:
-            cls = s["sp_type"][0].upper() if s["sp_type"] else "?"
+            cls = _display_class(s["sp_type"]) or "?"
             if cls not in seen:
                 seen[cls] = s["color"]
         import matplotlib.patches as mpatches

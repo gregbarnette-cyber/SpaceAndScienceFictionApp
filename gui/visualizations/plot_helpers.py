@@ -5,6 +5,8 @@
 
 import math
 
+from core.shared import spectral_leading_class, _SP_DISPLAY_LETTERS
+
 try:
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavToolbar
@@ -24,6 +26,22 @@ _GRID_CLR  = "#cccccc"
 
 def mpl_available() -> bool:
     return _MPL_OK
+
+
+def _display_class(sp_type) -> str:
+    """Spectral type -> display class letter for legend/label/highlight bucketing.
+
+    Skips a luminosity prefix, so `dM6` (Wolf 359) buckets as M, not as the "D" the
+    old `sp[:1].upper()` produced — while `DA`/`DZ7.5` still resolve to D. Returns
+    None for an unparseable type; callers fold that into the "?" bucket.
+
+    ATOMICITY: every site that derives a class letter for display MUST use this, and
+    they must be converted together. The legend loops, `name_cls` (highlight
+    suppression, `_attach_highlight_2d/3d`), and `label_groups` (`_apply_labels`)
+    agree only by producing the SAME string. Convert a subset and a `dM6` star is
+    "M" in one map and "D" in another: legend filtering silently stops hiding its
+    label and its highlight ring, with no error and no test failure."""
+    return spectral_leading_class(sp_type, _SP_DISPLAY_LETTERS)
 
 
 def log_viz_error(context: str) -> None:
@@ -1057,7 +1075,7 @@ def _legend_filter_2d(canvas, ax, xs, ys, colors, sp_types, sizes,
 
     groups = {}
     for i, sp in enumerate(sp_types):
-        cls = (sp[0].upper() if sp else "?")
+        cls = (_display_class(sp) or "?")
         groups.setdefault(cls, []).append(i)
 
     all_colls, index_maps, toggle = {}, {}, []
@@ -1168,7 +1186,7 @@ def _legend_filter_3d(canvas, ax, xs, ys, zs, colors, sp_types, sizes,
 
     groups = {}
     for i, sp in enumerate(sp_types):
-        cls = (sp[0].upper() if sp else "?")
+        cls = (_display_class(sp) or "?")
         groups.setdefault(cls, []).append(i)
 
     all_colls, index_maps, toggle = {}, {}, []
@@ -1318,7 +1336,7 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
     if not legend_filter:
         seen = {}
         for s in stars:
-            cls = (s["sp_type"][0].upper() if s.get("sp_type") else "?")
+            cls = (_display_class(s.get("sp_type")) or "?")
             if cls not in seen:
                 seen[cls] = s["color"]
         handles = [mpatches.Patch(color=c, label=f"Class {k}")
@@ -1394,7 +1412,7 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
 
     coord_map = {s["name"]: (s[xk], s[yk]) for s in stars
                  if s.get(xk) is not None and s.get(yk) is not None}
-    name_cls = {s["name"]: ((s.get("sp_type") or "")[:1].upper() or "?")
+    name_cls = {s["name"]: (_display_class(s.get("sp_type")) or "?")
                 for s in stars}
     _attach_highlight_2d(canvas, ax, coord_map, hidden=hidden, name_cls=name_cls)
 
@@ -1478,7 +1496,7 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
     if not legend_filter:
         seen = {}
         for s in stars:
-            cls = (s["sp_type"][0].upper() if s.get("sp_type") else "?")
+            cls = (_display_class(s.get("sp_type")) or "?")
             if cls not in seen:
                 seen[cls] = s["color"]
         handles = [mpatches.Patch(color=c, label=f"Class {k}")
@@ -1584,7 +1602,7 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
     coord_map = {s["name"]: (s["x"], s["y"], s["z"]) for s in stars
                  if s.get("x") is not None and s.get("y") is not None
                  and s.get("z") is not None}
-    name_cls = {s["name"]: ((s.get("sp_type") or "")[:1].upper() or "?")
+    name_cls = {s["name"]: (_display_class(s.get("sp_type")) or "?")
                 for s in stars}
     _attach_highlight_3d(canvas, ax, coord_map, hidden=hidden, name_cls=name_cls)
 
@@ -1862,7 +1880,7 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
         )
         txt.set_path_effects([_path_stroke(linewidth=2.5, color=_SC_PLOT_BG)])
         txt.set_visible(initial_show_labels)
-        cls = (s.get("sp_type") or "")[:1].upper() or "?"
+        cls = _display_class(s.get("sp_type")) or "?"
         txt._o16_cls = cls
         label_groups.setdefault(cls, []).append(txt)
         star_labels.append(txt)
@@ -2080,7 +2098,7 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
     canvas.mpl_connect("draw_event", _declutter_labels)
 
     coord_map = {s["name"]: (s["x"], s["y"]) for s in plotted}
-    name_cls = {s["name"]: ((s.get("sp_type") or "")[:1].upper() or "?")
+    name_cls = {s["name"]: (_display_class(s.get("sp_type")) or "?")
                 for s in plotted}
     _attach_highlight_2d(canvas, ax, coord_map, hidden=hidden, name_cls=name_cls)
 
@@ -2279,7 +2297,7 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
                       ha="left", va="bottom")
         txt.set_path_effects([_path_stroke(linewidth=2.0, color=_SC_PLOT_BG)])
         txt.set_visible(initial_show_labels)
-        cls = (s.get("sp_type") or "")[:1].upper() or "?"
+        cls = _display_class(s.get("sp_type")) or "?"
         txt._o16_cls = cls
         label_groups.setdefault(cls, []).append(txt)
         star_labels.append(txt)
@@ -2429,7 +2447,7 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
     # safely push the axes nearly to the figure edges; axis labels still fit
     # because matplotlib places them inside the axes rect, not outside.
     coord_map = {s["name"]: (s["x"], s["y"], s["z"]) for s in plotted}
-    name_cls = {s["name"]: ((s.get("sp_type") or "")[:1].upper() or "?")
+    name_cls = {s["name"]: (_display_class(s.get("sp_type")) or "?")
                 for s in plotted}
     _attach_highlight_3d(canvas, ax, coord_map, hidden=hidden, name_cls=name_cls)
 

@@ -10,6 +10,7 @@ import threading
 
 from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
                      _escape_like, spectral_where, spectral_adql, LY_PER_PC,
+                     _SP_CLASS_PREFIXES,
                      _fval, _fmt,  # _fval/_fmt: one canonical copy (P4.6)
                      _parse_designations_from_ids as _parse_designations_from_ids_shared,
                      _CSV_DESIG_KEYS as _CSV_DESIG_KEYS_SHARED)
@@ -572,7 +573,7 @@ def compute_hwc(simbad_result: dict) -> dict:
 
 # ── Open Exoplanet Catalogue (Phase OEC rebuild) ─────────────────────────────
 # OEC is a recursive system → binary → star → planet → satellite tree (NOT a flat
-# table like the other Star Databases options). See PHASE_OEC_PLAN.md. This layer:
+# table like the other Star Databases options). See completed_plans/PHASE_OEC_PLAN.md. This layer:
 #   _norm_oec_name  — normalized alias key
 #   _load_oec       — disk-cached fetch + normalized name→system index
 #   _oec_num/_oec_node — generic complete field capture (D7); every reader must use a
@@ -1161,7 +1162,7 @@ def compute_oec_status():
 
 # ── OEC display helpers (shared by the CLI and the GUI; pure, no I/O) ──────────
 # Any field may be a list (repeated tag), so ALWAYS go through oec_fv — never read
-# field["value"] directly (PHASE_OEC_PLAN.md §F.1).
+# field["value"] directly (completed_plans/PHASE_OEC_PLAN.md §F.1).
 
 def oec_fv(field):
     """First-or-list accessor → the primary value dict, or None."""
@@ -3759,6 +3760,16 @@ def compute_substellar_census(ly_max=None, include_late_m=False, classes=None) -
         prefixes = prefixes + ["M7", "M8", "M9"]
     if not prefixes:
         return {"error": "No spectral classes given."}
+    # A class token is concatenated into a GLOB pattern below, and SQLite's GLOB has
+    # no ESCAPE clause — so `--classes '*'` would expand to GLOB '*' and match every
+    # typed row, returning arbitrary G/K/M stars dressed as a substellar census.
+    # Restrict to real class tokens (letter + optional subtype, e.g. L, T, M7, M7.5).
+    bad = [p for p in prefixes if not re.fullmatch(r"[A-Z][0-9]*(?:\.[0-9]+)?", p)]
+    if bad:
+        return {"error": "Invalid spectral class "
+                         + ", ".join(repr(b) for b in bad)
+                         + " — expected a class letter with an optional subtype "
+                           "(e.g. L, T, Y, M7, M7.5)."}
 
     conn = get_conn()
     try:
@@ -3768,10 +3779,17 @@ def compute_substellar_census(ly_max=None, include_late_m=False, classes=None) -
     if total == 0:
         return {"error": "gcns_stars table is empty — run option 58 (Import GCNS Data) first."}
 
+    # Case-sensitive GLOB, not LIKE: SQLite's LIKE is case-INSENSITIVE for ASCII, so
+    # `--classes D` under LIKE returned 4,918 rows = 2,561 real white dwarfs (D*)
+    # FUSED WITH 2,357 lowercase-d M dwarfs (dM6, dM4.0 …). GLOB keeps them apart.
+    # Each requested class is also matched under the `_SP_CLASS_PREFIXES` luminosity
+    # prefixes, so `--classes L` now finds sdL0/esdL7 and `--include-late-m` finds
+    # dM7/sdM7.0 (73 rows the prefix-blind form silently missed).
     or_parts, params = [], []
     for pfx in prefixes:
-        or_parts.append("spectral_type LIKE ?")
-        params.append(pfx + "%")
+        for sp in _SP_CLASS_PREFIXES:
+            or_parts.append("spectral_type GLOB ?")
+            params.append(f"{sp}{pfx}*")
     clauses = ["spectral_type IS NOT NULL", "(" + " OR ".join(or_parts) + ")"]
     if ly_max is not None:
         clauses.append("(light_years IS NOT NULL AND light_years <= ?)")

@@ -719,6 +719,14 @@ class SubstellarCensusTest(_SeededDbCase):
                 (3, "M5V", 12.0),   # ordinary M (not substellar)
                 (4, "M8V", 15.0),   # late-M (M/L boundary)
                 (5, None,  5.0),    # untyped — excluded (spectral_type IS NOT NULL)
+                # Case-sensitivity fixtures. SQLite LIKE is case-INSENSITIVE, so the
+                # pre-GLOB form fused these: `--classes D` returned the white dwarf
+                # AND both lowercase-'d' M dwarfs. Prefixed L/late-M rows were also
+                # silently missed by the prefix-blind form.
+                (6, "DA2",   9.0),   # DEGENERATE — white dwarf, 'D' is not a prefix
+                (7, "dM6",   7.0),   # M dwarf behind the 'd' luminosity prefix
+                (8, "dM8",  16.0),   # late-M behind 'd' — only via --include-late-m
+                (9, "sdL0", 22.0),   # L dwarf behind 'sd' — default L/T/Y must find it
             ],
         )
         conn.commit()
@@ -726,28 +734,60 @@ class SubstellarCensusTest(_SeededDbCase):
     def test_default_lty_contract(self):
         code, p, _ = self._q("substellar")
         self.assertEqual(code, 0)
-        self.assertEqual([s["gaia_source_id"] for s in p["stars"]], [1, 2])  # ly ASC
+        # 9 = sdL0: an L dwarf behind the 'sd' subdwarf prefix. The prefix-blind
+        # LIKE 'L%' form missed it (18 such rows in the real gcns_stars).
+        self.assertEqual([s["gaia_source_id"] for s in p["stars"]], [1, 9, 2])  # ly ASC
         self.assertEqual(p["classes"], ["L", "T", "Y"])
 
     def test_completeness_note_present(self):
         p = self._q("substellar")[1]
         self.assertIn("completeness_note", p)
         self.assertIn("lower bound", p["completeness_note"])
-        self.assertEqual(p["population"]["total_in_gcns"], 5)
-        self.assertEqual(p["population"]["with_spectral_type"], 4)   # row 5 untyped
+        self.assertEqual(p["population"]["total_in_gcns"], 9)
+        self.assertEqual(p["population"]["with_spectral_type"], 8)   # row 5 untyped
 
     def test_ly_max_filters(self):
         p = self._q("substellar", "--ly-max", "20")[1]
-        self.assertEqual([s["gaia_source_id"] for s in p["stars"]], [1])  # T2 at 30 ly out
+        # T2 (30 ly) and sdL0 (22 ly) fall outside the cut
+        self.assertEqual([s["gaia_source_id"] for s in p["stars"]], [1])
 
     def test_include_late_m(self):
         p = self._q("substellar", "--include-late-m")[1]
-        self.assertEqual({s["gaia_source_id"] for s in p["stars"]}, {1, 2, 4})  # +M8V, not M5V
+        # +M8V and +dM8 (late-M behind the 'd' prefix), not M5V/dM6
+        self.assertEqual({s["gaia_source_id"] for s in p["stars"]}, {1, 2, 4, 8, 9})
         self.assertIn("M8", p["classes"])
 
     def test_classes_override(self):
         p = self._q("substellar", "--classes", "M")[1]
-        self.assertEqual({s["gaia_source_id"] for s in p["stars"]}, {3, 4})  # all M types
+        # all M types, INCLUDING the two behind a 'd' luminosity prefix (7, 8)
+        self.assertEqual({s["gaia_source_id"] for s in p["stars"]}, {3, 4, 7, 8})
+
+    def test_classes_d_does_not_fuse_white_dwarfs_with_d_prefixed_dwarfs(self):
+        """REGRESSION PIN for the LIKE→GLOB switch.
+
+        SQLite's LIKE is case-INSENSITIVE, so `LIKE 'D%'` matched BOTH the uppercase
+        degenerate prefix (DA2 — a real white dwarf) and the lowercase dwarf prefix
+        (dM6/dM8 — M dwarfs). On the live catalogue that returned 4,918 rows =
+        2,561 white dwarfs FUSED WITH 2,357 M dwarfs. GLOB is case-sensitive.
+        """
+        p = self._q("substellar", "--classes", "D")[1]
+        self.assertEqual({s["gaia_source_id"] for s in p["stars"]}, {6})   # DA2 only
+        sp = [s["spectral_type"] for s in p["stars"]]
+        self.assertEqual(sp, ["DA2"])
+        self.assertFalse([x for x in sp if x[:1] == "d"], "lowercase-d dwarfs leaked")
+
+    def test_classes_rejects_glob_metacharacters(self):
+        """A class token is concatenated into a GLOB pattern and SQLite's GLOB has no
+        ESCAPE clause, so `--classes '*'` would match every typed row and present
+        arbitrary G/K/M stars as a substellar census."""
+        for bad in ["*", "?", "[A-Z]", "M*"]:
+            code, p, _ = self._q("substellar", "--classes", bad)
+            self.assertEqual(code, 1, bad)
+            self.assertIn("Invalid spectral class", p["error"], bad)
+
+    def test_classes_accepts_subtyped_tokens(self):
+        p = self._q("substellar", "--classes", "M8")[1]
+        self.assertEqual({s["gaia_source_id"] for s in p["stars"]}, {4, 8})
 
     def test_bad_ly_exit1(self):
         self.assertEqual(self._q("substellar", "--ly-max", "-1")[0], 1)

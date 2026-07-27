@@ -124,7 +124,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 ## Open Exoplanet Catalogue Feature (opt 7 — rebuilt, Phase OEC)
 
 Menu option 7: `query_open_exoplanet_catalogue()` (CLI) / `OecPanel` (GUI, `gui/panels/catalogs.py`).
-Ground-up rebuild (see `PHASE_OEC_PLAN.md`). **OEC is a recursive `system → binary → star → planet →
+Ground-up rebuild (see `completed_plans/PHASE_OEC_PLAN.md`). **OEC is a recursive `system → binary → star → planet →
 satellite` hierarchy — not a flat table like options 1–6** — so a resolved system is rendered as a
 **tree**, not property tables. Core: `core.databases.compute_oec(target)` →
 `{"query", "matched_name", "system": <node>, ["simbad"]}` or `{"error"}`.
@@ -174,7 +174,7 @@ satellite` hierarchy — not a flat table like options 1–6** — so a resolved
   main_id}` compat built from the host star's OEC names — empty/graceful for M/BD/WD hosts). Hosts may be a
   **star** (normal), a **binary** (circumbinary/P-type pseudo-host), or the **system** (rogue → Data tab
   only, no diagrams). *Known limitation:* a circumbinary host's HZ uses the primary component's light, not
-  the combined light (a `compute_circumbinary_hz` refinement — see `PHASE_OEC_PLAN.md`).
+  the combined light (a `compute_circumbinary_hz` refinement — see `completed_plans/PHASE_OEC_PLAN.md`).
 - **System Architecture map (Phase 3 — static 3a + interactive 3b, built 2026-07-19).** A **GUI-only**
   system-level viz tab (`OecPanel`, viz tab 0) shown for **every** matched system — including planetless
   (61 Cygni) and rogue ones that have no per-host diagrams. `core.viz.prepare_oec_architecture(system_node,
@@ -209,11 +209,11 @@ satellite` hierarchy — not a flat table like options 1–6** — so a resolved
     discovery method/year, status badges, satellites) — no network, mirroring the NASA System Map's
     click-planet dialog. Each planet dict from `prepare_oec_architecture` carries its full `node` for this;
     the pick handler dispatches planet (→ `on_planet_click`, dialog) vs star/◆ (→ `on_select`, recenter).
-  See `docs/gui-architecture.md` (OEC System Architecture map) and `PHASE_OEC_PLAN.md` §C Phase 3.
+  See `docs/gui-architecture.md` (OEC System Architecture map) and `completed_plans/PHASE_OEC_PLAN.md` §C Phase 3.
 - **Phase status:** All phases built — 1 (core + tree + Tier-1 query.py), 2 (Hypatia + per-host diagrams), 3a
   (static Architecture map), 3b (interactive map — click-to-recenter + circumbinary rings + zoom/hover +
   click-a-planet dialog), 4 (`oec-search`/`oec-census`/`oec-status` structural readers), and 5 (the app-wide HZ
-  Rings/Strip toggle, which OEC's HZ tab inherits via the shared `_make_hz_tab`). See `PHASE_OEC_PLAN.md`.
+  Rings/Strip toggle, which OEC's HZ tab inherits via the shared `_make_hz_tab`). See `completed_plans/PHASE_OEC_PLAN.md`.
 
 ## HZ Diagram — Rings / Strip toggle (Phase 5, app-wide)
 
@@ -364,10 +364,85 @@ All three filter spectral type with a friendly **chips + refine** control, not a
 raw `LIKE` box. Two core filter keys (in `core/shared.py`):
 
 - `spectral_classes: list[str]` — selected chips from `O B A F G K M Other`.
-  Each letter → a parameterized leading-anchor `LIKE 'X%'`, OR-ed together
-  (the canonical leading-letter rule, matching `_SP_PATTERN`). `Other` →
-  `(<col> IS NULL OR NOT (<col> LIKE 'O%' OR … 'M%'))` — i.e. white dwarfs /
-  degenerate `D…` types and untyped rows.
+  Each letter → a parameterized **case-sensitive `GLOB`** term per allowed
+  luminosity prefix, OR-ed together; `Other` is the **exact complement** of the
+  same expression over all seven letters, plus NULLs — so a star can never be
+  returned under both a letter chip and `Other`.
+
+  **Why GLOB and not LIKE (the load-bearing detail).** SQLite's `LIKE` is
+  case-**insensitive** for ASCII, so it cannot distinguish the lowercase *dwarf*
+  prefix `d` (`dM6` = Wolf 359, an M dwarf) from the uppercase *degenerate*
+  prefix `D` (`DA`/`DZ7.5` = white dwarfs). `GLOB` is case-sensitive. Verified:
+  `core/db.py` sets no `PRAGMA case_sensitive_like`, no custom collation, and no
+  `like()`/`glob()` UDF, so the default semantics hold on this connection.
+
+  The prefix set is `core.shared._SP_CLASS_PREFIXES` — `''`, `d`, `sd`, `esd`,
+  `usd`, `k`, `h`, `kn`, `d/sd`, `sd:`, `s/sd`, `(sd)` — derived from a census of
+  every distinct string preceding the first uppercase OBAFGKM letter in
+  `star_systems` + `gcns_stars`. `d`/`sd`/`esd`/`usd` are Yerkes/Gliese
+  luminosity prefixes (dwarf / subdwarf); `k`/`h`/`kn` are the **Am/Ap
+  line-type** notation (Ca II K-line / hydrogen-line type) — *not* a luminosity
+  prefix and *not* a binarity marker (that is the `+` in e.g.
+  `kA0hA7Sr+kA2hF2mF2(IV)`). `core.shared.spectral_leading_class(sp)` is the
+  Python counterpart of the same rule. The equivalence is not enforced at runtime —
+  it is pinned by `tests/test_search.py::test_sql_and_python_rules_agree`, which
+  cross-checks both implementations over a sample covering every prefix; run it after
+  changing either one. `spectral_leading_class(sp, letters=...)` also backs the
+  **colour/legend** path via the wider `_SP_DISPLAY_LETTERS` set — see "Spectral
+  colour & legend bucketing" below.
+
+  **Bucketing changes (2026-07-27).** Chip `M` gained 2,707 rows in
+  `star_systems` (`dM*` 2,394 · `sdM*` 194 · `esdM*` 75 · `usdM*` 28 · misc) —
+  Wolf 359 (`dM6`) and Ross 128 (`dM4`) now appear under `M` instead of `Other`.
+  `A` +103, `F` +8, `G` +5, `B` +4, `O` +1. **Chip `K` lost 75**: the ~107
+  lowercase `kA…` Am/Ap stars were previously matched by the case-insensitive
+  `LIKE 'K%'` — a second, separate pre-existing bug — and are now correctly filed
+  under `A`/`F`. An Am star buckets by its **first** class letter
+  (`kA5hF0mF2` → `A`), matching `_SP_PATTERN`, which already drives BC/Teff/HZ/HR
+  everywhere else; the astronomically better hydrogen-line-type rule (→ `F`) was
+  considered and declined, since adopting it would require changing `_SP_PATTERN`
+  app-wide. White dwarfs (`DA`, `DZ7.5`, `DQ`, `DA+dM`), brown dwarfs
+  (`L`/`T`/`Y`), and blank/NULL types are unchanged and remain in `Other`.
+  Verified invariant on live data: chips ∪ `Other` = every row exactly once, with
+  zero overlap between any two chips (all 21 pairs, across `star_systems`,
+  `gcns_stars`, and `hwc`).
+
+  **Spectral colour & legend bucketing (Part 2, 2026-07-27).** The same rule, with a
+  wider alphabet, now drives every star-chart dot colour and per-class legend entry.
+  `core.shared._SP_DISPLAY_LETTERS` = the chip letters **plus** `L T Y W D C N` —
+  the classes that are not main-sequence OBAFGKM but are still real and colourable
+  (degenerate white dwarfs, brown dwarfs, Wolf-Rayet, carbon). Two sets are required,
+  not one: a search chip must send `DA` to `Other`, but a chart must still *paint*
+  it — reusing the chip rule for colour would turn all 19,674 white-dwarf /
+  brown-dwarf / Wolf-Rayet rows **grey**. Before the fix, `sp[:1].upper()` painted
+  `dM6` (Wolf 359) white-dwarf blue and filed it under a bogus "Class D" legend
+  entry; `sdM3.0` → `S` and `esdL7` → `E` fell through to grey.
+  - Entry points: `core.viz._sp_color` (charts, HR, Night Sky, GCNS panels) and
+    `gui.visualizations.plot_helpers._display_class` (legend / label / highlight
+    bucketing). **All 17 display sites must use these** — the legend loops,
+    `name_cls` (highlight suppression) and `label_groups` (labels) agree only by
+    producing the same string, so a partial conversion breaks legend filtering
+    silently, with no error and no test failure (`test_cross_site_agreement` pins it).
+  - `R` and `S` are **deliberately excluded**: zero catalogue rows, and including
+    them made non-spectral labels resolve — `"Red Giant"` (a row label in the
+    Honorverse hyper-limit table, fed through the same helper) became carbon class R.
+  - Palette additions `Y #A9746E`, `C`/`N` `#D94F2B`. `_SPECTRAL_COLORS` is
+    **physically motivated** and deliberately fails the generic categorical-palette
+    checks (F `#F8F7FF` ↔ G `#FFF4EA` sit at OKLab ΔE 2.7 — F and G stars really are
+    both near-white). Identity is carried by *secondary encoding* — legend labels,
+    hover tooltip, click info box — never hue alone. Do not "fix" it by re-stepping
+    the hues; that would make the colours lie about the physics.
+  - `core.calculators._star_map_color` (route-planning maps + opts 17/20/21) stays a
+    **separate palette** — its G/M/D and default differ from `_SPECTRAL_COLORS`, and
+    unifying would repaint every existing route map. It got the same prefix-aware
+    derivation plus **additive-only** `L/T/W/Y/C/N` keys (those letters were falling
+    through to grey), so no pre-existing colour moved. Unification is deferred to the
+    route-chart refactor.
+
+  Note `spectral_adql` (G3, live NASA TAP) was **deliberately left on `LIKE`** —
+  `_query_tap` sends ADQL as a GET parameter and the prefixed form would add ~6 KB
+  of query string against an endpoint whose length tolerance is untested, for
+  essentially no benefit (NASA `st_spectype` uses modern MK with no `d`-prefixes).
 - `spectral_refine: str` — case-insensitive **contains** match on the rest of the
   type: `AND <col> LIKE '%refine%'` (LIKE wildcards in the refine text are escaped
   with `ESCAPE '\'`). So `V` finds the luminosity class wherever it sits, and

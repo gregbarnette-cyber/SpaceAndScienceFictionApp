@@ -487,8 +487,8 @@ def _o3_edge_stars():
          "color": "#fff4c2", "ly": 4.37, "x": -1.6, "y": -1.3, "z": -3.8},
         {"name": "* alf Cen B", "desig": "GJ 559 B", "sp_type": "K1V",     # coincident w/ above
          "color": "#ffd2a1", "ly": 4.37, "x": -1.6, "y": -1.3, "z": -3.8},
-        {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "dM6",          # dM → "D" bucket
-         "color": "#dfe6ff", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
+        {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "dM6",          # dM6 = M dwarf (prefix-aware → "M")
+         "color": "#ff9d6c", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
         {"name": "* alf CMa B", "desig": "GJ 244 B", "sp_type": "DA1.9",   # white dwarf
          "color": "#dfe6ff", "ly": 8.6, "x": -1.6, "y": 8.2, "z": -2.5},
         {"name": "NoType", "desig": "", "sp_type": "",                     # null/empty type → "?"
@@ -618,7 +618,7 @@ class O15RowMapLinkingTest(unittest.TestCase):
             {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
              "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
             {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "dM6",
-             "color": "#dfe6ff", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
+             "color": "#ff9d6c", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
             {"name": "* alf Cen B", "desig": "GJ 559 B", "sp_type": "K1V",
              "color": "#ffd2a1", "ly": 4.37, "x": -1.6, "y": -1.3, "z": -3.8},
         ]
@@ -720,8 +720,8 @@ class O16LegendFilterTest(unittest.TestCase):
         return [
             {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
              "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
-            {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "dM6",      # dM → D
-             "color": "#dfe6ff", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
+            {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "dM6",      # dM6 → "M"
+             "color": "#ff9d6c", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
             {"name": "alf Cen B", "desig": "", "sp_type": "K1V",
              "color": "#ffd2a1", "ly": 4.37, "x": -1.6, "y": -1.3, "z": -3.8},
             {"name": "Sirius", "desig": "", "sp_type": "A0",
@@ -734,7 +734,7 @@ class O16LegendFilterTest(unittest.TestCase):
         from gui.visualizations.plot_helpers import make_star_map_canvas
         c, _ = make_star_map_canvas(None, self._stars(), legend_filter=True)
         entries = {t.get_text() for t in c.figure.axes[0].get_legend().get_texts()}
-        self.assertEqual(entries, {"Class A", "Class D", "Class G", "Class K"})
+        self.assertEqual(entries, {"Class A", "Class M", "Class G", "Class K"})
         # default path: single body scatter + center ★ = 2 collections.
         c2, _ = make_star_map_canvas(None, self._stars())
         self.assertEqual(len(c2.figure.axes[0].collections), 2)
@@ -746,7 +746,7 @@ class O16LegendFilterTest(unittest.TestCase):
         self.assertIsNotNone(leg)
         # body excludes the Sol (G) centre; ? excluded.
         self.assertEqual({t.get_text() for t in leg.get_texts()},
-                         {"Class A", "Class D", "Class K"})
+                         {"Class A", "Class M", "Class K"})
         c2, _ = make_star_chart_canvas(None, self._stars(), 15.0)
         self.assertIsNone(c2.figure.axes[0].get_legend())
 
@@ -759,15 +759,22 @@ class O16LegendFilterTest(unittest.TestCase):
         ax = fig.add_subplot(111); ax.set_xlim(-10, 10); ax.set_ylim(-10, 10)
         xs, ys = [4.0, -1.6, 2.0], [4.8, -1.3, -3.0]
         hit = _legend_filter_2d(
-            fig.canvas, ax, xs, ys, ["#dfe6ff", "#ffd2a1", "#ccc"],
+            fig.canvas, ax, xs, ys, ["#ff9d6c", "#ffd2a1", "#ccc"],
             ["dM6", "K1V", ""], [36] * 3,
             scatter_kw=dict(zorder=5), legend_kw=dict(loc="upper right"),
             hidden=set())
         fig.canvas.draw()
+        # Pin the CLASS, not just the geometry. Previously this test located the
+        # target collection purely by x-coordinate, so it passed identically whether
+        # dM6 bucketed as "D" or "M" — it would not have failed if the prefix fix
+        # were reverted, and its "hide the D-class dot" comment silently went stale.
+        leg = ax.get_legend()
+        self.assertIn("Class M", [t.get_text() for t in leg.get_texts()])
+        self.assertNotIn("Class D", [t.get_text() for t in leg.get_texts()])
         dx, dy = ax.transData.transform((4.0, 4.8))
         ev = MouseEvent("motion_notify_event", fig.canvas, dx, dy)
         self.assertEqual(hit(ev), 0)                       # visible star → its index
-        for coll in ax.collections:                        # hide the D-class dot
+        for coll in ax.collections:                        # hide the M-class dot
             offs = coll.get_offsets()
             if len(offs) and abs(offs[0][0] - 4.0) < 1e-6:
                 coll.set_visible(False)
@@ -780,7 +787,7 @@ class O16LegendFilterTest(unittest.TestCase):
         ax = c.figure.axes[0]; c.draw()
         leg = ax.get_legend()
         texts = [t.get_text() for t in leg.get_texts()]
-        d_handle = leg.legend_handles[texts.index("Class D")]
+        d_handle = leg.legend_handles[texts.index("Class M")]
         d_coll = next(coll for coll in ax.collections
                       if len(coll.get_offsets()) and
                       abs(coll.get_offsets()[0][0] - 4.0) < 1e-6)
@@ -788,7 +795,7 @@ class O16LegendFilterTest(unittest.TestCase):
         me = MouseEvent("button_press_event", c, 0, 0)
         c.callbacks.process("pick_event", PickEvent("pick_event", c, me, d_handle))
         self.assertFalse(d_coll.get_visible())             # class hidden
-        d_labels = [t for t in ax.texts if getattr(t, "_o16_cls", None) == "D"]
+        d_labels = [t for t in ax.texts if getattr(t, "_o16_cls", None) == "M"]
         self.assertTrue(d_labels and not d_labels[0].get_visible())  # labels follow
 
     def test_highlight_ring_follows_class_visibility(self):
@@ -804,7 +811,7 @@ class O16LegendFilterTest(unittest.TestCase):
         self.assertTrue(ring.get_visible())
         leg = ax.get_legend()
         texts = [t.get_text() for t in leg.get_texts()]
-        d_handle = leg.legend_handles[texts.index("Class D")]
+        d_handle = leg.legend_handles[texts.index("Class M")]
         me = MouseEvent("button_press_event", c, 0, 0)
         c.callbacks.process("pick_event", PickEvent("pick_event", c, me, d_handle))
         self.assertFalse(ring.get_visible())       # ring hidden with its class
@@ -827,8 +834,8 @@ class O16LegendFilter3DTest(unittest.TestCase):
         return [
             {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
              "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
-            {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "dM6",      # dM → D
-             "color": "#dfe6ff", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
+            {"name": "Wolf 359", "desig": "GJ 406", "sp_type": "dM6",      # dM6 → "M"
+             "color": "#ff9d6c", "ly": 7.86, "x": 4.0, "y": 4.8, "z": -2.0},
             {"name": "alf Cen B", "desig": "", "sp_type": "K1V",
              "color": "#ffd2a1", "ly": 4.37, "x": -1.6, "y": -1.3, "z": -3.8},
             {"name": "Sirius", "desig": "", "sp_type": "A0",
@@ -843,7 +850,7 @@ class O16LegendFilter3DTest(unittest.TestCase):
         # entry — matches the 2D Map.
         c = make_star_map_3d_canvas(None, self._stars(), legend_filter=True)[0]
         entries = {t.get_text() for t in c.figure.axes[0].get_legend().get_texts()}
-        self.assertEqual(entries, {"Class A", "Class D", "Class G", "Class K"})
+        self.assertEqual(entries, {"Class A", "Class M", "Class G", "Class K"})
         # Default path: single body scatter + centre ★ = 2 collections.
         c2 = make_star_map_3d_canvas(None, self._stars())[0]
         self.assertEqual(len(c2.figure.axes[0].collections), 2)
@@ -855,7 +862,7 @@ class O16LegendFilter3DTest(unittest.TestCase):
         self.assertIsNotNone(leg)
         # Body excludes the Sol (G) centre ★; ? excluded from the legend.
         self.assertEqual({t.get_text() for t in leg.get_texts()},
-                         {"Class A", "Class D", "Class K"})
+                         {"Class A", "Class M", "Class K"})
         c2 = make_star_chart_3d_canvas(None, self._stars(), 15.0)[0]
         self.assertIsNone(c2.figure.axes[0].get_legend())
 
@@ -869,8 +876,8 @@ class O16LegendFilter3DTest(unittest.TestCase):
         ax = c.figure.axes[0]; c.draw()
         leg = ax.get_legend()
         texts = [t.get_text() for t in leg.get_texts()]
-        d_handle = leg.legend_handles[texts.index("Class D")]
-        d_labels = [t for t in ax.texts if getattr(t, "_o16_cls", None) == "D"]
+        d_handle = leg.legend_handles[texts.index("Class M")]
+        d_labels = [t for t in ax.texts if getattr(t, "_o16_cls", None) == "M"]
         self.assertTrue(d_labels and d_labels[0].get_visible())   # initially shown
         hidden_before = sum(1 for coll in ax.collections if not coll.get_visible())
         me = MouseEvent("button_press_event", c, 0, 0)
@@ -1102,7 +1109,7 @@ class O18FindTest(unittest.TestCase):
             {"name": "NAME Barnard's star", "desig": "GJ 699", "sp_type": "M4V",
              "color": "#ff9d6c", "ly": 5.96, "x": -0.06, "y": 5.94, "z": 0.49},
             {"name": "Wolf  359", "desig": "GJ 406", "sp_type": "M6",
-             "color": "#dfe6ff", "ly": 7.86, "x": -7.42, "y": 2.1, "z": 1.02},
+             "color": "#ff9d6c", "ly": 7.86, "x": -7.42, "y": 2.1, "z": 1.02},
         ]
         _add_map_tabs(p, map_stars, 15.0, "title", {"stars": []})
         return p

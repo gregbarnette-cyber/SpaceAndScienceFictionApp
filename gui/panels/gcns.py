@@ -26,7 +26,7 @@ from gui.panels.base import ResultPanel, DiagramToggleMixin
 from gui.panels.diagram_tabs import _build_star_chart_3d_tab
 import core.databases
 from gui.visualizations.plot_helpers import mpl_available, make_star_chart_canvas
-from core.viz import _SPECTRAL_COLORS
+from core.viz import _SPECTRAL_COLORS, _sp_color as core_sp_color
 
 
 # ── formatting helpers ────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ def _name_of(s):
 
 def _sp_color(sp):
     sp = (sp or "").strip()
-    return _SPECTRAL_COLORS.get(sp[0].upper() if sp else "", "#AAAAAA")
+    return core_sp_color(sp)   # prefix-aware: dM6 -> M, DA -> D
 
 
 def _clear_layout(layout):

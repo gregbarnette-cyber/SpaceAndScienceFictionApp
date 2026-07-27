@@ -5,7 +5,8 @@ import math
 import os
 
 from core.equations import _kopparapu_seff  # single Kopparapu Seff source (P4.6)
-from core.shared import _to_cartesian  # single canonical copy (P4.6)
+from core.shared import (_to_cartesian,  # single canonical copy (P4.6)
+                         spectral_leading_class, _SP_DISPLAY_LETTERS)
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
@@ -38,6 +39,15 @@ _SPECTRAL_COLORS = {
     "T": "#CD853F",
     "W": "#E040FB",
     "D": "#B0C4DE",
+    # Part 2 additions. Chosen for LEGIBILITY on the dark chart surface, not physical
+    # realism: the physically-accurate deep reds fail 3:1 contrast against #0b1020.
+    # C/N/R share one hue deliberately — R and N are the older subdivisions of the
+    # same modern carbon class, and the validator shows four distinguishable warm
+    # hues do not exist beside M/L/T. Identity comes from the legend label, not the
+    # hue (see the palette note on _sp_color).
+    "Y": "#A9746E",
+    "C": "#D94F2B",
+    "N": "#D94F2B",
 }
 
 # Cyclic orbit colours for system-orbit diagram
@@ -138,7 +148,7 @@ def prepare_star_map(csv_path=None) -> dict:
                     "name":  row.get("Star Name", "").strip(),
                     "desig": row.get("Star Designations", "").strip(),
                     "sp_type": sp,
-                    "color": _SPECTRAL_COLORS.get((sp[0].upper() if sp else ""), "#AAAAAA"),
+                    "color": _sp_color(sp),
                     "ly": ly,
                     "x": x, "y": y, "z": z,
                 })
@@ -445,7 +455,7 @@ def prepare_star_map_from_result(result: dict) -> dict:
                 "name":  s.get("Star Name", ""),
                 "desig": s.get("Star Designations", ""),
                 "sp_type": sp,
-                "color": _SPECTRAL_COLORS.get((sp[0].upper() if sp else ""), "#AAAAAA"),
+                "color": _sp_color(sp),
                 "ly":   s["Distance"],
                 "x":    s["x"] - cx,
                 "y":    s["y"] - cy,
@@ -467,7 +477,7 @@ def prepare_star_map_from_result(result: dict) -> dict:
             "name":  s.get("Star Name", ""),
             "desig": s.get("Star Designations", ""),
             "sp_type": sp,
-            "color": _SPECTRAL_COLORS.get((sp[0].upper() if sp else ""), "#AAAAAA"),
+            "color": _sp_color(sp),
             "ly":   s["Light Years"],
             "x":    s["x"],
             "y":    s["y"],
@@ -942,11 +952,11 @@ def prepare_exoplanet_system_diagram(planets: list, date_iso: str = None) -> dic
 # recursive mass-weighted-barycenter (Jacobi) roll-up, then mapped log-radially
 # from the system barycenter so ~6 orders of scale coexist (Proxima at 15 000 AU
 # ↔ α Cen A/B at 23 AU ↔ planets at < 1 AU). Planets ride as small log-scaled
-# rings on their host. See PHASE_OEC_PLAN.md §C Phase 3 / D5.
+# rings on their host. See completed_plans/PHASE_OEC_PLAN.md §C Phase 3 / D5.
 #
 # The node dicts consumed here are the {tag, names, fields, children} objects from
 # core.databases.compute_oec — any field may be a repeated list, so every read
-# goes through _oecv_fv (never field["value"] directly; PHASE_OEC_PLAN.md §F.1).
+# goes through _oecv_fv (never field["value"] directly; completed_plans/PHASE_OEC_PLAN.md §F.1).
 # This module stays free of the heavy core.databases import (astroquery); the node
 # is plain data, so the tiny accessors are inlined.
 
@@ -1703,8 +1713,21 @@ def _num(v):
 
 
 def _sp_color(sp_type: str) -> str:
-    letter = (sp_type or "").strip()[:1].upper()
-    return _SPECTRAL_COLORS.get(letter, "#AAAAAA")
+    """Spectral type -> dot colour, skipping any luminosity prefix.
+
+    Uses the DISPLAY letter set, so `dM6` (Wolf 359) paints as an M dwarf rather
+    than — as the old `[:1].upper()` did — a white dwarf, while `DA`/`DZ7.5` still
+    correctly resolve to D. Unknown/unparseable -> the neutral grey.
+
+    PALETTE NOTE: `_SPECTRAL_COLORS` is *physically motivated* (it approximates true
+    stellar colour), so it deliberately fails the generic categorical-palette checks
+    — F `#F8F7FF` and G `#FFF4EA` sit at OKLab ΔE 2.7, because F and G stars really
+    are both near-white. Identity is therefore carried by SECONDARY ENCODING — the
+    per-class legend labels, the hover tooltip, and the click info box — never by
+    hue alone. Do not "fix" this by re-stepping the hues onto passing values; that
+    would make the colours lie about the physics."""
+    return _SPECTRAL_COLORS.get(
+        spectral_leading_class(sp_type, _SP_DISPLAY_LETTERS), "#AAAAAA")
 
 
 def prepare_sky_from_star(result: dict, mag_limit: float = 6.5) -> dict:
@@ -1754,7 +1777,7 @@ def prepare_sky_from_star(result: dict, mag_limit: float = 6.5) -> dict:
             "ra_deg": math.degrees(math.atan2(vy, vx)) % 360.0,
             "dec_deg": math.degrees(math.asin(max(-1.0, min(1.0, vz / d)))),
             "mag": m_prime,
-            "sp_class": sp[:1].upper(),
+            "sp_class": spectral_leading_class(sp, _SP_DISPLAY_LETTERS) or "",
             "color": _sp_color(sp),
         })
 

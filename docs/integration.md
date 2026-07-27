@@ -1118,7 +1118,7 @@ exactly one; `β∉(0,1)`; a partial or non-positive cumulative set → curated 
 grain/velocity mutexes and non-numeric values → argparse exit 2. **Build note (verified
 2026-07-03):** a 1 µm / 1000 kg·m⁻³ grain is `m ≈ 4.19×10⁻¹⁵ kg`; at β 0.1 the energy is `≈1.88 J`
 (≈1.9×10⁰ J) and the TNT-equivalent `≈0.45 mg` (1 kg TNT ≡ 4.184 MJ). *This corrects two
-transcription slips in `PHASE_AD_PLAN.md`:* the plan's "1.9×10² J / 40 mg" figures were computed at
+transcription slips in `completed_plans/PHASE_AD_PLAN.md`:* the plan's "1.9×10² J / 40 mg" figures were computed at
 `v = c`, not β 0.1; and its `E/4.184e12` divisor yields **kilotons**, not kg (the kg divisor is
 `4.184×10⁶ J`). The relativistic auto-switch is `β > 0.1` (the plan prose said ~0.01, but its own
 acceptance cases require `false@β0.05` / `true@β0.2`).
@@ -1947,7 +1947,7 @@ luminosity_lsun=None, distance_au=None, par_band_nm=(400.0, 700.0))`.
 > approximation — the table carries only the energy fraction). **The table is band-fixed at 400–700 nm
 > and covers 2600–7000 K:** `--sed real` with a non-default `--par-band-nm` **errors** (→ use
 > `--sed blackbody`), as does a Teff off that grid. `sed_model` echoes the choice.
-> **Default note (deviation from PHASE_AD_PLAN.md, user decision 2026-07-03):** the plan specified
+> **Default note (deviation from completed_plans/PHASE_AD_PLAN.md, user decision 2026-07-03):** the plan specified
 > `--sed real` as the default, but that would change the existing `par-flux` output for the consumer,
 > so the default stays **`blackbody`** (backward-compatible) and `real` is opt-in.
 
@@ -2722,8 +2722,20 @@ Output: `{center, center_x, center_y, center_z, limit_ly, count, snapshot_date, 
 The three interactive-search functions, exposed with **all filters optional** (omitting every filter returns the
 first page up to the cap). Each returns `{count, capped, cap, stars[]}` (`capped=true` means the result hit the cap) or
 `{"error": str}`. Spectral-class filtering uses the friendly **chips + refine** model: `--spectral-classes` takes one
-or more of `O B A F G K M Other` (OR-ed leading-letter matches), and `--spectral-refine` is a case-insensitive
+or more of `O B A F G K M Other`, and `--spectral-refine` is a case-insensitive
 contains-match on the rest of the type (e.g. `V` for the luminosity class). See `docs/star-databases.md` (Phase G).
+
+> **Chip matching skips luminosity prefixes (changed 2026-07-27).** A letter chip matches the leading class letter
+> after stripping a known prefix — `d` (dwarf), `sd`/`esd`/`usd` (subdwarf), the Am/Ap line-type forms `k`/`h`/`kn`,
+> and the uncertain-classification forms `d/sd`/`sd:`/`s/sd`/`(sd)`. So `dM6` (Wolf 359) and `sdM3.0` now return
+> under `M`, where they previously fell into `Other`. Matching is **case-sensitive**: the uppercase degenerate
+> prefix `D…` (`DA`, `DZ7.5`, `DQ`, `DA+dM`) is *not* a luminosity prefix and stays in `Other`. `Other` is the
+> exact complement, so no star is ever returned under both a letter chip and `Other`.
+>
+> Two consequences worth noting for consumers: **chip `K` returns fewer rows** than before (the ~107 lowercase
+> `kA…` Am/Ap stars were previously matched by a case-insensitive `LIKE 'K%'` and are now correctly filed under
+> `A`/`F`), and an Am star is bucketed by its **first** class letter, so `kA5hF0mF2` → `A` (not its hydrogen-line
+> type `F`). Brown dwarfs (`L`/`T`/`Y`) and blank/NULL types are unaffected and remain in `Other`.
 
 #### `search-star-systems`
 Filter the local `star_systems` table (no network). Cap 500; sorted by light years.
@@ -2806,8 +2818,9 @@ query.py substellar
 query.py substellar --ly-max 20 --include-late-m
 query.py substellar --classes L T            # override the prefix set
 ```
-Core: `databases.compute_substellar_census(ly_max=None, include_late_m=False, classes=None)`. Selects rows whose `spectral_type` begins with one of `classes` (default `L T Y`; `--include-late-m` adds `M7/M8/M9`); `spectral_type IS NOT NULL` (only cross-matched rows carry a type); `--ly-max` filters `light_years`; sorted by distance, capped at 500. Output: `{classes, ly_max, count, capped, cap, completeness_note, population{total_in_gcns, with_spectral_type, returned}, snapshot_date, gcns_version, stars[]}` — `stars` are the standard GCNS row shape. **`completeness_note`** is the mandatory lower-bound disclosure (GCNS substellar completeness falls off beyond ~10–25 pc; only cross-matched rows carry types).
-- **Validation:** empty `gcns_stars` → `{"error"}` exit 1; `--ly-max ≤ 0` → curated `{"error"}` exit 1; non-numeric `--ly-max` → argparse exit 2.
+Core: `databases.compute_substellar_census(ly_max=None, include_late_m=False, classes=None)`. Selects rows whose `spectral_type` begins with one of `classes` **or with one of those classes behind a luminosity prefix** (`d`/`sd`/`esd`/`usd`/`k`/`h`/…), so `--classes L` also returns `sdL0`/`esdL7` (changed 2026-07-27; default `L T Y`; `--include-late-m` adds `M7/M8/M9` and now also finds `dM7`/`sdM7.0` — 73 rows the previous prefix-blind form missed); `spectral_type IS NOT NULL` (only cross-matched rows carry a type); `--ly-max` filters `light_years`; sorted by distance, capped at 500. Output: `{classes, ly_max, count, capped, cap, completeness_note, population{total_in_gcns, with_spectral_type, returned}, snapshot_date, gcns_version, stars[]}` — `stars` are the standard GCNS row shape. **`completeness_note`** is the mandatory lower-bound disclosure (GCNS substellar completeness falls off beyond ~10–25 pc; only cross-matched rows carry types).
+- **Validation:** empty `gcns_stars` → `{"error"}` exit 1; `--ly-max ≤ 0` → curated `{"error"}` exit 1; non-numeric `--ly-max` → argparse exit 2; a `--classes` token that is not a class letter with an optional subtype (`L`, `T`, `Y`, `M7`, `M7.5`) → curated `{"error"}` exit 1 — the token is concatenated into a GLOB pattern and SQLite's GLOB has **no ESCAPE clause**, so `--classes '*'` would otherwise match every typed row and present arbitrary G/K/M stars as a substellar census.
+- **Matching is case-sensitive (GLOB, changed 2026-07-27).** Previously `LIKE` fused the uppercase *degenerate* prefix with the lowercase *dwarf* one: `--classes D` returned 4,918 rows = 2,561 real white dwarfs **plus 2,357 lowercase-`d` M dwarfs** (`dM6`, `dM4.0`, …). `--classes D` now returns white dwarfs only.
 
 ### Dust / ISM (Phase T2 Part A — optional `dustmaps` extra; WSL/Linux venv)
 
