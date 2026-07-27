@@ -44,6 +44,29 @@ that takes a stellar luminosity: `habitable-zone`, `habitable-zone-sma`, `solven
 spelling. The documented spelling per command stays primary in `--help`; the other is an
 accepted synonym.
 
+### Star designation strings (2026-07-26)
+
+Several subcommands return a **comma-separated designation string** — `"Star Designations"`
+(`stars-within-sol`, `stars-within-star`), `designations` (`search-star-systems`), `desig`
+(`nearest-neighbor`, `jump-network`, `farthest-first`, `trade-route`, and the `stars[]` map dicts of
+the other route planners), and `desig_str` (`distance`, `travel-time`). **All of them now lead with
+SIMBAD's common name when the star has one**, then the catalog IDs:
+
+```
+NAME Chara, GJ 475, HD 109358, HIP 61317, HR  4785, Gaia DR3 1534011998572555776, 2MASS J12334454+4121270
+```
+
+Previously the `star_systems`-backed fields dropped the `NAME` token entirely (the SIMBAD-backed
+`desig_str` of `distance`/`travel-time` always included it, so the two families now agree). Notes for
+consumers:
+
+- **Parse with a real CSV/split-on-`", "` reader, not by position** — index 0 is no longer reliably a
+  catalog ID. A star with no common name is unchanged (no leading token is added).
+- The `star_systems`-backed fields only carry NAME **after an option-50 rebuild**; rows written before
+  2026-07-26 have none.
+- `simbad-lookup`'s `designations` **dict** is unaffected — it always had a `NAME` key (`null` when
+  absent), and dict access is order-independent.
+
 ## Quick reference
 
 Every success result is a JSON **dict** unless noted. Every failure is `{"error": "<message>"}` with exit code 1. Always check for an `"error"` key before reading other fields.
@@ -312,7 +335,7 @@ All stars in the `star_systems` DB table within N light years of Sol. No network
 query.py stars-within-sol --ly 15
 ```
 Core function: `calculators.compute_stars_within_distance_of_sol(ly)`
-Output: `{limit_ly, count, stars[]}`. Each star: `{"Star Name", "Star Designations", "Spectral Type", "Light Years", app_magnitude, parsecs, x, y, z}` (x/y/z are heliocentric light-year coords, may be `null`; `app_magnitude` = Johnson V, `parsecs` = stored distance — both may be `null`). Sorted ascending by Light Years. *(Phase O F1 added `app_magnitude`/`parsecs` — additive.)*
+Output: `{limit_ly, count, stars[]}`. Each star: `{"Star Name", "Star Designations", "Spectral Type", "Light Years", app_magnitude, parsecs, x, y, z}` (x/y/z are heliocentric light-year coords, may be `null`; `app_magnitude` = Johnson V, `parsecs` = stored distance — both may be `null`). Sorted ascending by Light Years. *(Phase O F1 added `app_magnitude`/`parsecs` — additive.)* `"Star Designations"` leads with the SIMBAD common name — see **Star designation strings** above.
 
 #### `stars-within-star`
 All stars in the `star_systems` DB table within N light years of a named star. Queries SIMBAD for the center star.
@@ -320,7 +343,7 @@ All stars in the `star_systems` DB table within N light years of a named star. Q
 query.py stars-within-star --star "Epsilon Eridani" --ly 5
 ```
 Core function: `calculators.compute_stars_within_distance_of_star(star, ly)`
-Output: `{center, center_x, center_y, center_z, limit_ly, count, stars[]}`. Each star: `{"Star Name", "Star Designations", "Spectral Type", "Distance", app_magnitude, parsecs, x, y, z}` (`Distance` in ly from the center star; `app_magnitude` = Johnson V, `parsecs` = `1000/parallax` — both may be `null`). Sorted ascending by Distance. *(Phase O F1 added `app_magnitude`/`parsecs` — additive.)*
+Output: `{center, center_x, center_y, center_z, limit_ly, count, stars[]}`. Each star: `{"Star Name", "Star Designations", "Spectral Type", "Distance", app_magnitude, parsecs, x, y, z}` (`Distance` in ly from the center star; `app_magnitude` = Johnson V, `parsecs` = `1000/parallax` — both may be `null`). Sorted ascending by Distance. *(Phase O F1 added `app_magnitude`/`parsecs` — additive.)* `"Star Designations"` leads with the SIMBAD common name — see **Star designation strings** above. Rows whose stored `ra`/`dec` cannot be parsed are **skipped** (a blank/short sexagesimal string raises `IndexError`, now caught) rather than aborting the query; `stars-within-sol` instead returns them with `x/y/z = null`.
 
 ### Travel time
 
@@ -2710,7 +2733,11 @@ query.py search-star-systems --spectral-classes M K --ly-max 20 --mag-max 10
 Core function: `databases.search_star_systems(filters)`. Flags → filter keys: `--spectral-classes`/`--spectral-refine`,
 `--ly-min`/`--ly-max`, `--mag-min`/`--mag-max`, `--designation-prefix`, and (Phase L4) `--fe-h-min`/`--fe-h-max` (an
 inner JOIN onto `hypatia_cache` — matches nothing when that cache is empty; run **Import Hypatia Cache** first). Each
-star: `{star_name, designations, spectral_type, parallax, parsecs, light_years, app_magnitude, ra, dec}`. Empty
+star: `{star_name, designations, spectral_type, parallax, parsecs, light_years, app_magnitude, ra, dec}` —
+`designations` leads with the SIMBAD common name (see **Star designation strings** above), so
+`--designation-prefix` now also matches a common name — but only as the **whole token including the
+`NAME ` prefix**: `--designation-prefix "NAME Chara"` matches, `"Chara"` does **not** (the clause
+anchors at the string start or immediately after `", "`). Catalog prefixes are unaffected. Empty
 `star_systems` → the opt-50 error.
 
 #### `search-hwc`

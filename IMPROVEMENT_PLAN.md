@@ -1,6 +1,16 @@
 # IMPROVEMENT_PLAN — Accuracy, Efficiency & Consistency Pass
 
-**Status:** planned 2026-07-04, not yet implemented.
+**Status:** planned 2026-07-04; **implemented and committed 2026-07-05** — all 8 phases, in three
+commits (`6f4e110` through Phase 2, `a55c74a` through Phase 6, `068322f` all phases). Nothing was
+deferred to a v2. *(This line read "not yet implemented" until 2026-07-26 — it was never updated at
+completion.)*
+
+**One item was missed, not deferred** (found 2026-07-26 while fixing an unrelated bug): the
+**sexagesimal RA/Dec** half of P4.6's `_to_cartesian` bullet. `_to_cartesian` itself was consolidated
+into `core/shared.py`; the four duplicate RA/Dec parsers were not, and their divergent failure
+contracts caused a live crash in opt 19. See the PARTIALLY DONE note under P4.6 for the remaining
+work and the hazard to avoid. Every other P4.6 sub-item is done and annotated `(P4.6 — one canonical
+copy)` in the source.
 **Provenance:** full-project review (6-way parallel audit of core/, query.py, gui/, docs/, tests/) run on
 commit `ed0b1d1`. Line numbers below are as of that commit — **always re-locate with the given grep
 pattern before editing**; do not trust raw line numbers.
@@ -394,10 +404,30 @@ All same-value duplicates — replace local definitions with imports from `core.
   key list, absent in databases.py's `_CSV_DESIG_KEYS`). Consolidate on ONE map + parser in
   `core/shared.py` with an explicit `keys=` parameter so each caller keeps its current key set —
   **preserving the drift as configuration, not silently changing either caller's output.**
+  - **SUPERSEDED (2026-07-26) — the drift was a bug, and is now retired.** Preserving it meant
+    SIMBAD's common name was parsed out of `ids` and then dropped, so **no** `star_systems.designations`
+    value ever carried one and every surface fed by that column (opts 18/19, opt 51's CSV, the Route
+    Planning tables, the Star Chart click-info box, the G1 search) showed catalog IDs only — e.g.
+    GJ 475 never displayed "NAME Chara". `core/databases.py` now uses `core.shared._CSV_DESIG_KEYS`
+    unchanged (NAME first). The `keys=` parameter stays for any future caller that genuinely needs a
+    subset. Requires an option-50 rebuild to take effect. See `docs/star-databases.md` (opt 50, "NAME first").
 - **`_kopparapu_seff`:** canonical copy in `core/equations.py`; make `core/shared.py` and
   `core/viz.py` import it (verify the three bodies are value-identical first — diff them).
 - **`_to_cartesian` / sexagesimal RA/Dec:** `core/viz.py` duplicates `core/calculators.py` —
   import from calculators (or move the pair to `core/shared.py`; keep it one hop, no new module).
+  - **PARTIALLY DONE (noted 2026-07-26).** `_to_cartesian` was consolidated into `core/shared.py:122`;
+    the **sexagesimal RA/Dec pair was not**. Four copies remain across six call sites:
+    `calculators.py:335` (opt 18, nested), `:414` (opt 19, nested), `:1541` `_parse_db_ra/_dec`
+    (route planning ×2), and `viz.py:54` `_parse_ra_hms/_parse_dec_dms`. They are value-identical for
+    well-formed 3-token input but have **three different failure contracts** (raise `IndexError` /
+    raise / return `None`), and that divergence caused a live bug: opt 19 caught only
+    `(ValueError, TypeError)`, so a blank `ra` aborted the whole search (fixed 2026-07-26 by adding
+    `IndexError`; `_load_star_systems_positions` had already been patched the same way in isolation).
+    **Recommended completion:** one validating pair in `core/shared.py` that raises **`ValueError`**
+    (not `IndexError`), plus `*_or_none` wrappers for `viz.py`'s value-checking contract — this needs
+    no call-site restructuring. Do **not** convert everything to the `None`-returning contract:
+    `_to_cartesian` sits *outside* the `try` at `calculators.py:443` and `:1667`, so a `None` would
+    escape those handlers as a `TypeError` and re-break both. See the analysis in the session record.
 - **`_fval`/`_fmt`:** point `core/databases.py`'s copies at `core/shared.py`'s.
 - **Two `compute_habitable_zone`s:** `databases.py`'s tuple-returning variant vs
   `equations.py`'s dict-returning one. Do NOT merge signatures (three GUI panels consume the tuple

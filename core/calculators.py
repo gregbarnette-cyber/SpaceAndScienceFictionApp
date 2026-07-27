@@ -434,7 +434,11 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
             ly = 1000.0 / plx * 3.26156
             ra_deg  = _parse_ra(row["ra"] or "")
             dec_deg = _parse_dec(row["dec"] or "")
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, IndexError):
+            # IndexError matters: opt 50 writes ra/dec as "" when SIMBAD's value fails
+            # to parse, and these split-based parsers raise IndexError (not ValueError)
+            # on a blank/short string — which used to escape this handler and abort the
+            # whole search. Matches _load_star_systems_positions' handler. Skip the row.
             continue
         x, y, z = _to_cartesian(ra_deg, dec_deg, ly)
         dist = math.sqrt((x - cx)**2 + (y - cy)**2 + (z - cz)**2)

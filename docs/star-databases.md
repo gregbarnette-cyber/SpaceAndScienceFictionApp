@@ -250,8 +250,11 @@ Report is a static PNG export, so it keeps Rings. See `docs/gui-architecture.md`
 - **Query 17**: `"plx > 9.99 & plx < 10.3 & otype = 'Star' & (maintype != 'Pl' & maintype != 'Pl?')"` — stars ~97.2–100.1 ly range.
 - Each query returns many raw rows (one per star measurement); deduplicates to unique stars in Python by `main_id`.
 - **Discard rule**: rows where `main_id` starts with `"PLX "` AND `Star Designations` is empty AND `Spectral Type` is empty are silently dropped.
+  - **Currently a no-op.** SIMBAD has since reassigned those identifiers: sampling queries 1 and 17 (2026-07-26) returns **0** `PLX …` main_ids out of 40,655 rows, and the built table contains none. The rule is retained as a cheap defensive filter.
+  - **It is a data-quality filter, not a crash guard.** It historically also removed most rows carrying degenerate `ra`/`dec` (which `_run_simbad_csv_query` writes as `""` when SIMBAD's value fails to parse), which masked an unguarded `IndexError` in opt 19's per-row coordinate parse. That parser is now hardened (see `docs/calculators.md`, opt 19) and every downstream viz prep skips `x is None`, so consumers must not depend on this rule to keep malformed rows out. Note that blank `spectral_type` (171k of 238k rows) and blank `designations` (678 rows) are already normal and handled everywhere.
 - **DB columns**: `star_name`, `designations`, `spectral_type`, `parallax`, `parsecs`, `light_years`, `app_magnitude`, `ra`, `dec`. These are also the column order written by opt 51's CSV export (`Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Apparent Magnitude, RA, DEC`).
-  - Star Name: `main_id`; Star Designations: comma-separated catalog IDs (GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS) parsed from pipe-separated `ids.ids` string via `_parse_designations_from_ids()`.
+  - Star Name: `main_id`; Star Designations: comma-separated IDs — SIMBAD's common **NAME** first, then the catalog IDs (GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS) — parsed from the pipe-separated `ids.ids` string via `_parse_designations_from_ids()`. Output order follows the key list, so a named star reads `NAME Chara, GJ 475, HD 109358, HIP 61317, …` (* bet CVn).
+    - **NAME first**: `core.databases._CSV_DESIG_KEYS` is now simply `core.shared._CSV_DESIG_KEYS` (which leads with `NAME`). It previously held a deliberately **NAME-less** copy, so SIMBAD's common name was parsed out of `ids` and then dropped — no `star_systems.designations` value ever carried one, and every surface fed by that column (opts 18/19, opt 51's CSV, the Route Planning tables, the Star Chart click-info box, the G1 search) showed catalog IDs only. **Do not re-introduce a local key set in `core/databases.py`.** Two consequences of the change: (1) rows written *before* it have no NAME token — **re-run option 50** to rebuild; (2) in principle the PLX discard rule above now keeps a `PLX …` row that has a NAME but no catalog ID and no spectral type — but **measured against live SIMBAD (2026-07-26) this is zero**: queries 1 and 17 (21,054 and 19,601 rows, the two ends of the parallax range) return **no** `PLX …` main_id at all, and the current 238,217-row table holds none either. Expect the rebuilt row count to be unchanged. Those rows would be safe to admit anyway: opt 19's coordinate parse was hardened to skip malformed `ra`/`dec` rather than raise (see the discard-rule note above). Safe by construction: the GCNS cross-match regexes (`Gaia\s+E?DR3\s+(\d+)`, `2MASS\s+J?\s*([0-9+\-.]+)`) scan the whole string, and the G1 `designation_prefix` clause already tests both the leading-token and after-`", "` branches.
     - **Gaia prefix**: SIMBAD's `ids` output labels the Gaia source `"Gaia DR3 <id>"` (it no longer emits `"Gaia EDR3"`); DR3 ≡ EDR3 source_ids, so `_CSV_PREFIX_MAP` matches both `"Gaia DR3 "` and `"Gaia EDR3 "` into the `Gaia EDR3` slot. DR1/DR2 are intentionally **not** captured (their source_ids differ from EDR3/DR3). This is what lets the GCNS import (opt 58) cross-match on Gaia `source_id`. The same prefix handling is mirrored in `compute_simbad_lookup` and `core/shared._parse_designations` so `simbad-lookup`'s `designations["Gaia EDR3"]` is likewise populated with the `Gaia DR3` id.
   - Parallax: 4dp; Parsecs = 1000/plx (3dp); Light Years = parsecs × 3.26156 (3dp); Apparent Magnitude: 3dp.
   - RA: converted from decimal degrees to sexagesimal `HH MM SS.SSSS` (divide by 15 to get hours). DEC: converted to `±DD MM SS.SSS`. Conversion is pure Python math, no extra libraries.
@@ -266,7 +269,7 @@ Report is a static PNG export, so it keeps Rings. See `docs/gui-architecture.md`
 ## Export Star Systems to CSV Feature (opt 51)
 
 - Menu option 51: `export_star_systems_csv()` — reads the `star_systems` DB table and writes `starSystems.csv` to the project directory.
-- Output columns: `Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Apparent Magnitude, RA, DEC`. Rows sorted ascending by Light Years.
+- Output columns: `Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Apparent Magnitude, RA, DEC`. Rows sorted ascending by Light Years. The export is a straight dump of the DB column, so `Star Designations` now leads with SIMBAD's `NAME …` token for named stars (see the opt-50 "NAME first" note above) — the column count/order is unchanged, but a downstream consumer that splits the field on `", "` and assumes index 0 is a catalog ID would shift.
 - Returns error if `star_systems` table is empty (directs user to run opt 50 first).
 - Core function: `core.databases.export_star_systems_csv(output_dir)` → `{"path": ..., "count": ...}` or `{"error": ...}`.
 - GUI panel: `ExportStarSystemsPanel` in `gui/panels/csv_utility.py`.
@@ -381,7 +384,11 @@ character set (quotes stripped) so it cannot break out of the ADQL string litera
 Filters the local `star_systems` table. No network. Filter keys (all optional):
 `spectral_classes` / `spectral_refine`, `ly_min` / `ly_max`, `mag_min` / `mag_max`
 (floats, inclusive), `designation_prefix` (matches `star_name` or any `designations`
-token — a parameterized `LIKE 'p%'` at the start or after a `", "` separator).
+token — a parameterized `LIKE 'p%'` at the start or after a `", "` separator; since opt 50 now
+writes SIMBAD's common name first, a common name is matchable too — but only as the **whole
+token including the prefix**, e.g. `"NAME Chara"`. A bare `"Chara"` does **not** match, because
+both branches anchor at the string start or immediately after `", "`. See "NAME first" under
+opt 50 above).
 Default sort `light_years ASC`; capped at `_SEARCH_CAP` (500). Returns
 `{"error": "star_systems table is empty — run option 50 first…"}` when the table is
 empty. **Phase L4 metallicity filter:** `fe_h_min` / `fe_h_max` are now wired — when

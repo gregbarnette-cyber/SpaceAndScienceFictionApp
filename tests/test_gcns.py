@@ -112,6 +112,40 @@ class GcnsParseTest(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertEqual(m.group(1), "5853498713190525696")
 
+    def test_opt50_parser_leads_with_simbad_name(self):
+        """The opt-50 parser must capture SIMBAD's common name ("NAME <x>") and list it
+        FIRST. It historically used a NAME-less key set, so no star_systems row carried
+        one and every table fed by that column showed catalog ids only."""
+        ids = ("HIP 61317|GJ 475|NAME Chara|HD 109358|HR  4785|"
+               "Gaia DR3 1534011998572555776|2MASS J12334454+4121270")
+        out = databases._parse_designations_from_ids(ids)
+        self.assertTrue(out.startswith("NAME Chara, "), out)
+        self.assertEqual(
+            out,
+            "NAME Chara, GJ 475, HD 109358, HIP 61317, HR  4785, "
+            "Gaia DR3 1534011998572555776, 2MASS J12334454+4121270",
+        )
+
+    def test_opt50_parser_name_does_not_disturb_crossmatch_keys(self):
+        """A leading NAME token must not break the two GCNS cross-match regexes that
+        scan the whole designations string (Gaia source_id and the 2MASS core)."""
+        import re
+        out = databases._parse_designations_from_ids(
+            "NAME Proxima Centauri|GJ 551|Gaia DR3 5853498713190525696|"
+            "2MASS J14294291-6240465")
+        self.assertIn("NAME Proxima Centauri", out)
+        m = re.search(r"Gaia\s+E?DR3\s+(\d+)", out)
+        self.assertEqual(m.group(1), "5853498713190525696")
+        tm = re.search(r"2MASS\s+J?\s*([0-9+\-.]+)", out)
+        self.assertEqual(databases._norm_2mass(tm.group(0)), "14294291-6240465")
+
+    def test_opt50_parser_unnamed_star_unchanged(self):
+        """A star with no NAME identifier keeps its exact pre-change output."""
+        self.assertEqual(
+            databases._parse_designations_from_ids("HIP 8102|GJ 71|HD 10700"),
+            "GJ 71, HD 10700, HIP 8102",
+        )
+
 
 # ── DB-backed tests (isolated temp SQLite) ───────────────────────────────────
 
@@ -210,6 +244,34 @@ class GcnsDBTest(unittest.TestCase):
         self.assertEqual(meta["gcns_resolved_pairs"], "1")
         self.assertEqual(meta["gcns_systems_count"], "1")
         self.assertIn("GCNS", meta["gcns_version"])
+
+    def test_crossmatch_with_name_leading_designations(self):
+        """Post-fix, star_systems.designations leads with SIMBAD's "NAME <x>" token.
+        The cross-match keys (Gaia source_id, 2MASS core) are found by regex over the
+        whole string, so a leading NAME must not cost a match."""
+        self._seed_star_systems([
+            ("* bet CVn",   "NAME Chara, GJ 475, HD 109358, Gaia DR3 999", "G0V", 4.26),
+            ("* alf Cen C", "NAME Proxima Centauri, GJ 551, "
+                            "2MASS J14294291-6240465",                    "M5.5Ve", 11.13),
+        ])
+        main_rows = [
+            _main_row(999, name_2mass=None,               dist_50_kpc=0.008),
+            _main_row(111, name_2mass="14294291-6240465", dist_50_kpc=0.0013),
+        ]
+        f1, f2, f3 = _patch_floors(missing=0, resolved=0)
+        with f1, f2, f3, _patch_fetch(main_rows, [], []):
+            res = databases.compute_gcns_ingest()
+
+        self.assertNotIn("error", res)
+        self.assertEqual(res["simbad_matched"], 2)
+
+        by_gaia = databases.compute_gcns_by_source_id(999)["star"]
+        self.assertEqual(by_gaia["star_name"], "* bet CVn")      # matched on Gaia DR3 999
+        self.assertEqual(by_gaia["spectral_type"], "G0V")
+
+        by_2mass = databases.compute_gcns_by_source_id(111)["star"]
+        self.assertEqual(by_2mass["star_name"], "* alf Cen C")   # matched on the 2MASS core
+        self.assertEqual(by_2mass["spectral_type"], "M5.5Ve")
 
     def test_missing_10mas_plx_inversion(self):
         f1, f2, f3 = _patch_floors()

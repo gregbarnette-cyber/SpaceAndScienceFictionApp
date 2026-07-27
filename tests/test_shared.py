@@ -179,8 +179,9 @@ class ParseDesignationsFromIdsTest(unittest.TestCase):
         self.assertEqual(shared._parse_designations_from_ids("Gaia DR2 42"), "")
 
     def test_custom_keys_subset(self):
-        # databases passes its own NAME-less key set; the `key in desig` guard means
-        # a prefix naming a key the caller omits is simply skipped.
+        # A caller may pass its own narrower key set; the `key in desig` guard means
+        # a prefix naming a key the caller omits is simply skipped. (core.databases
+        # used to do this with a NAME-less set — it now uses the default.)
         out = shared._parse_designations_from_ids("NAME Foo|HD 10700", keys=["HD"])
         self.assertEqual(out, "HD 10700")
 

@@ -120,6 +120,31 @@ class SearchDBTest(unittest.TestCase):
         names = self._names(databases.search_star_systems({"designation_prefix": "HD 1"}))
         self.assertCountEqual(names, ["Alpha Centauri A", "Tau Ceti"])
 
+    def test_designation_prefix_with_name_leading_designations(self):
+        """Post-fix, opt-50 writes SIMBAD's "NAME <x>" first in `designations`, so a
+        catalog prefix that used to match the leading-token branch now matches the
+        after-comma branch instead. Both branches are in the clause, so nothing is lost
+        — and the common name itself becomes searchable."""
+        self.conn.executemany(
+            "INSERT INTO star_systems (star_name, designations, spectral_type, "
+            "light_years, app_magnitude) VALUES (?, ?, ?, ?, ?)",
+            [("* bet CVn", "NAME Chara, GJ 475, HD 109358, HIP 61317", "G0V", 27.53, 4.26),
+             ("Tau Ceti",  "GJ 71, HD 10700, HIP 8102",                "G8.5V", 11.91, 3.50)])
+        self.conn.commit()
+
+        # GJ is no longer the leading token for * bet CVn — still found.
+        self.assertCountEqual(
+            self._names(databases.search_star_systems({"designation_prefix": "GJ 475"})),
+            ["* bet CVn"])
+        # The common name is now searchable, both with and without the NAME prefix.
+        self.assertCountEqual(
+            self._names(databases.search_star_systems({"designation_prefix": "NAME Chara"})),
+            ["* bet CVn"])
+        # A star with no NAME token is unaffected by the leading-token branch.
+        self.assertCountEqual(
+            self._names(databases.search_star_systems({"designation_prefix": "GJ 71"})),
+            ["Tau Ceti"])
+
     def test_ly_range_and_sort(self):
         self._seed_star_systems()
         result = databases.search_star_systems({"ly_max": 9.0})

@@ -11,7 +11,8 @@ import threading
 from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
                      _escape_like, spectral_where, spectral_adql, LY_PER_PC,
                      _fval, _fmt,  # _fval/_fmt: one canonical copy (P4.6)
-                     _parse_designations_from_ids as _parse_designations_from_ids_shared)
+                     _parse_designations_from_ids as _parse_designations_from_ids_shared,
+                     _CSV_DESIG_KEYS as _CSV_DESIG_KEYS_SHARED)
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
@@ -1217,20 +1218,25 @@ def oec_binary_label(node):
 
 # ── Option 50: Star Systems CSV Query ────────────────────────────────────────
 
-# P4.6: the opt-50 CSV key set — deliberately NAME-less (drift preserved as config).
-# The prefix map + parser are the single canonical copies in core.shared; this caller
-# just supplies its own key set. (shared's default key set INCLUDES "NAME".)
-_CSV_DESIG_KEYS = [
-    "GJ", "HD", "HIP", "HR", "Wolf", "LHS", "BD",
-    "K2", "Kepler", "KOI", "TOI", "CoRoT", "COCONUTS", "HAT_P", "WASP",
-    "TIC", "Gaia EDR3", "2MASS",
-]
+# The opt-50 key set is now the canonical shared one (which leads with "NAME").
+#
+# History: P4.6 kept a deliberately NAME-less copy here to preserve opt-50's historical
+# output, which meant SIMBAD's common name (e.g. "NAME Chara" for * bet CVn) was parsed
+# out of the `ids` field and then dropped — so no `star_systems.designations` value ever
+# carried one, and every table fed by that column (opts 18/19, opt 51's CSV, the Route
+# Planning tables, the Star Chart click-info box, the G1 search) showed catalog ids only.
+# The drift is retired: NAME is captured and listed FIRST. Do not re-introduce a local
+# key set here — `core.shared._CSV_DESIG_KEYS` is the single source of truth.
+#
+# Note: `star_systems` rows written before this change have no NAME token; re-run
+# option 50 to rebuild the table with them.
+_CSV_DESIG_KEYS = _CSV_DESIG_KEYS_SHARED
 
 
 def _parse_designations_from_ids(ids_string: str) -> str:
     """Parse a pipe-separated SIMBAD ids string into a comma-separated designation string.
-    Delegates to the canonical shared parser with this module's NAME-less key set (P4.6)."""
-    return _parse_designations_from_ids_shared(ids_string, keys=_CSV_DESIG_KEYS)
+    Delegates to the canonical shared parser (NAME first, then the catalog ids)."""
+    return _parse_designations_from_ids_shared(ids_string)
 
 
 def _masked_to_none(val):

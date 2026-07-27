@@ -195,11 +195,13 @@ def _parse_designations_from_ids(ids_string, keys=None):
 
     Returns a string of found designations (excluding MAIN_ID), or an empty string.
 
-    P4.6: this is the single canonical parser; ``keys`` selects the caller's key set
-    (default: the NAME-including ``_CSV_DESIG_KEYS``). ``core.databases`` passes its own
-    NAME-less key set to preserve its historical output — the ``key in desig`` guard means
-    the shared prefix map may name keys the caller omits (they're simply skipped), so one
-    prefix map serves both key sets.
+    P4.6: this is the single canonical parser. ``keys`` selects the caller's key set and
+    defaults to ``_CSV_DESIG_KEYS`` — which leads with ``NAME`` (SIMBAD's common name,
+    e.g. "NAME Chara"), so a named star reads as "NAME Chara, GJ 475, HD 109358, …".
+    ``core.databases`` (the opt-50 builder) used to override this with a NAME-less key
+    set; that drift is retired and it now uses the default. The ``key in desig`` guard
+    means a custom ``keys`` list may omit keys the prefix map names (they're simply
+    skipped), so one prefix map still serves any key set.
     """
     keys = _CSV_DESIG_KEYS if keys is None else keys
     desig = {k: None for k in keys}

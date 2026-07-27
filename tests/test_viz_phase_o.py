@@ -103,6 +103,49 @@ class F1RowExtensionTest(unittest.TestCase):
                   "Distance", "x", "y", "z"):
             self.assertIn(k, row)
 
+    def test_malformed_ra_dec_rows_are_skipped_not_fatal(self):
+        """A `star_systems` row with an unparseable RA/DEC must be skipped, not crash.
+
+        `compute_star_systems_csv` writes `ra`/`dec` as "" when SIMBAD's value fails to
+        parse, so blank/short sexagesimal strings are reachable data. The split-based
+        parsers raise **IndexError** on those (not ValueError/TypeError), so opt 19's
+        per-row `except` must include it — opt 18 already catches bare `Exception`.
+        Historically these rows were mostly filtered out incidentally by the opt-50
+        `PLX …` discard rule; that rule is not a safety net and must not be relied on.
+        """
+        self.conn.executemany(
+            "INSERT INTO star_systems "
+            "(star_name, designations, spectral_type, parallax, parsecs, "
+            " light_years, app_magnitude, ra, dec) VALUES (?,?,?,?,?,?,?,?,?)",
+            [("Blank RA",  "", "", 100.0, 10.0, 32.6, None, "",            "+10 00 00.0"),
+             ("Blank DEC", "", "", 100.0, 10.0, 32.6, None, "12 00 00.0",  ""),
+             ("Short RA",  "", "", 100.0, 10.0, 32.6, None, "12 00",       "+10 00 00.0"),
+             ("None RA",   "", "", 100.0, 10.0, 32.6, None, None,          None)],
+        )
+        self.conn.commit()
+
+        orig = calc.compute_lookup_star_for_distance
+        calc.compute_lookup_star_for_distance = lambda name: {
+            "name": "Origin", "ra_deg": 0.0, "dec_deg": 0.0, "ly": 0.0,
+        }
+        try:
+            res19 = calc.compute_stars_within_distance_of_star("Origin", 50.0)
+            res18 = calc.compute_stars_within_distance_of_sol(50.0)
+        finally:
+            calc.compute_lookup_star_for_distance = orig
+
+        # Opt 19: the four malformed rows are dropped; only the good seed row survives.
+        self.assertNotIn("error", res19)
+        self.assertEqual([r["Star Name"] for r in res19["stars"]], ["Test Star"])
+
+        # Opt 18: it filters on light_years, so the malformed rows are returned — but
+        # with x/y/z = None rather than raising.
+        self.assertNotIn("error", res18)
+        bad = [r for r in res18["stars"] if r["Star Name"] != "Test Star"]
+        self.assertEqual(len(bad), 4)
+        for r in bad:
+            self.assertIsNone(r["x"])
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # F2 — reusable help-dialog component (offscreen smoke)
