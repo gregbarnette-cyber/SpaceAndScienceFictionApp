@@ -14,7 +14,7 @@ consumer (eventually the sister `scifiWorldBuilding-Claude` project) produces it
 > GUI (Import Research Priors panel + the generator's research-policy selector + the DbStatus row).
 > The committed `tests/fixtures/research_priors_sample.json` is a **synthetic placeholder** — real
 > sister-project research content lands later as a **data swap, not a code change** (same schema).
-> See `PHASE_R3_PLAN.md`.
+> See `completed_plans/PHASE_R3_PLAN.md`.
 
 ## Why a contract
 
@@ -267,5 +267,5 @@ real-anchor host `[Fe/H]` is **Hypatia-preferred, SIMBAD `mesfe_h.fe_h` fallback
 > super-Jupiters to 13 M_J, cold-giant occurrence on the FV05 curve (solar ~9% / +0.5 ~21% / −0.5 ~1.7%).
 > All consumption is block-gated → a v1.0 dataset and `permissive` stay byte-identical (`star["feh"]=None`).
 > Only optional second-order items remain (metallicity-dependent SMA/multiplicity, hot-Jupiter channel,
-> `feh_dist` thin/thick mixture). Full plan + checkpoints: `PHASE_R3_V2_PLAN.md`; the B6 collaboration
+> `feh_dist` thin/thick mixture). Full plan + checkpoints: `completed_plans/PHASE_R3_V2_PLAN.md`; the B6 collaboration
 > record: `docs/research-priors-v2-b6-actions.md`.

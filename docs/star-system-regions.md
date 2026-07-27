@@ -90,7 +90,7 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
 >
 > Shared: `S_eff(T) = (T/T_ref)^4`, `AU = sqrt(L / S_eff)`. The P7a implied-edge-T helper
 > `implied_edge_temp(au, L, model)` inverts this to annotate each row. See `docs/equations.md`
-> (the two calculators) and `PHASE_P_PLAN.md` §0.
+> (the two calculators) and `completed_plans/PHASE_P_PLAN.md` §0.
 
 - **Solar System Regions table** — rendered by `_display_solar_system_regions()`; uses `_print_table()` (Region | AU, left-aligned); AU formatted as `{val:.4f} ({val × 8.3167:.3f} LM)`:
   - `sysilGrav = 0.2 × stellarMass`, `sysilSunlight = sqrt(bcLuminosity/16)`

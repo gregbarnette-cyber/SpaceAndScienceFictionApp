@@ -9,7 +9,7 @@
 # (f_PAR 0.04–0.07 / deficit 6–10) are REAL-SED numbers; a blackbody reproduces
 # them at Teff ≈ 2700 K (a late-M dwarf), not 3000 K — a 3000 K blackbody
 # correctly gives ~0.081. Both are asserted below; the real-SED gap is documented
-# in the module's model_note (Open-item #2 of PHASE_AA_PLAN.md).
+# in the module's model_note (Open-item #2 of completed_plans/PHASE_AA_PLAN.md).
 
 import unittest
 from unittest import mock

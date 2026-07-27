@@ -131,7 +131,7 @@ class ResearchPriors:
     ``occurrence_by_metallicity``, ``intra_system_correlation`` and ``feh_dist`` —
     each ``None`` unless a v2 dataset supplies it (``DefaultPriors`` sets them None
     too, so ``getattr`` is uniform). Stage A stores/exposes them; the sampling
-    engine consumes them in Stage B (see PHASE_R3_V2_PLAN.md).
+    engine consumes them in Stage B (see completed_plans/PHASE_R3_V2_PLAN.md).
 
     Build via ``from_file`` / ``from_contract`` (direct, used in tests) or
     ``load(cache_dir)`` (reads the importer's cache; raises ``PriorsUnavailable``

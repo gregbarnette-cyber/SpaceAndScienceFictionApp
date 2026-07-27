@@ -1,7 +1,7 @@
 # tests/test_dust_impact.py — Phase AD (C3) hypervelocity dust-impact energetics (in-process).
 #
 # Covers core/dust_impact.py (compute_dust_impact) against the corrected acceptance anchors
-# (the plan's 1.9e2 J / 40 mg figures were computed at v=c, not β 0.1 — see PHASE_AD_PLAN.md
+# (the plan's 1.9e2 J / 40 mg figures were computed at v=c, not β 0.1 — see completed_plans/PHASE_AD_PLAN.md
 # and the build note below), the relativistic auto-switch, the cumulative-fluence set, and the
 # self-validating ({"error"}) matrix. No network/DB/RNG/Qt.
 #

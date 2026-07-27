@@ -523,7 +523,7 @@ from core.databases import (oec_fv as _oec_fv, oec_format_field as _oec_fmt,
                             oec_statuses as _oec_statuses, oec_binary_label as _oec_binary_label)
 
 # Per-node headline field keys + display units (GUI). Any field may repeat — the
-# shared _oec_fv/_oec_fmt handle that (PHASE_OEC_PLAN.md §F.1).
+# shared _oec_fv/_oec_fmt handle that (completed_plans/PHASE_OEC_PLAN.md §F.1).
 _OEC_TREE_KEYS = {
     "binary":    [("separation", "sep", ""), ("semimajoraxis", "a", "AU"),
                   ("eccentricity", "e", ""), ("period", "P", "d"),

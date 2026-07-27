@@ -1,7 +1,7 @@
 # tests/test_worldbuilding.py — offline coverage for the Phase H worldbuilding
 # calculators in core/equations.py. Pure math — no network, no Qt, no DB.
 #
-# Anchored to the reference values verified in PHASE_H_PLAN.md, and locks the two
+# Anchored to the reference values verified in completed_plans/PHASE_H_PLAN.md, and locks the two
 # formula corrections vs the future_phases brainstorm:
 #   - Roche rigid coefficient = 1.26 (not 2.44)
 #   - Binary P-type mass-ratio term = +4.12μ (not −4.12μ)

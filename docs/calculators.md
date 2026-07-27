@@ -385,7 +385,7 @@ of 3D distance — least-extinction corridors, with per-leg + cumulative A_V and
 weights existing edges). The shared Dijkstra/BFS was extracted into `calculators._grid_search(... edge_cost)`
 (distance passes `edge_cost=lambda u,v,w: w` → byte-identical, guarded by the route tests). It is an **optional,
 WSL/Linux-only** path (needs the `dustmaps` extra). See `docs/integration.md` (Dust-weighted routing) and
-`PHASE_T_PLAN.md`.
+`completed_plans/PHASE_T_PLAN.md`.
 
 ## Detectability & Relativistic Calculators (Phase T1b)
 

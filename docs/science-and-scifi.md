@@ -45,7 +45,7 @@ Options 11–16. All features here display data from local CSV files or hardcode
 
 ## Honorverse Expansion (Phase K — GUI-only interactive calculators)
 
-Three interactive Honorverse calculators (panels in `gui/panels/honorverse.py` under the existing "Science Fiction" nav category, alongside the three static tables above). Pure math, no network/DB-write. All three core functions **self-validate** (return `{"error": str}` for bad input). See `PHASE_K_PLAN.md`.
+Three interactive Honorverse calculators (panels in `gui/panels/honorverse.py` under the existing "Science Fiction" nav category, alongside the three static tables above). Pure math, no network/DB-write. All three core functions **self-validate** (return `{"error": str}` for bad input). See `completed_plans/PHASE_K_PLAN.md`.
 
 ### Data centralization (K0)
 

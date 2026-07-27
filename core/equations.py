@@ -123,7 +123,7 @@ def _resolve_insolation(insolation_wm2=None, luminosity_lsun=None, distance_au=N
 # the legacy planetaryTemperature model. Centralized here so the P4 solvent-zone
 # calculator (M1) and the P5 ice-line calculator (M2) reference one definition
 # and cannot drift. Shared scaling: S_eff(T) = (T / T_ref)^4;
-# AU(S_eff, L) = sqrt(L / S_eff). See PHASE_P_PLAN.md §0.
+# AU(S_eff, L) = sqrt(L / S_eff). See completed_plans/PHASE_P_PLAN.md §0.
 
 # Earth-calibrated zero-albedo anchors:
 _T_SURF_REF_A0 = 314.9   # M1 surface (equilibrium + Earth-like greenhouse); → 288.0 K at A=0.3
@@ -185,7 +185,7 @@ def implied_edge_temp(au, luminosity_solar, model="surface", albedo=None):
 #   pressure_conditional, assumed_pressure_atm (None unless conditional),
 #   citation, plausibility (Bains 2024 four-criterion verdict — for P6).
 # Edge temps are 1-atm liquid ranges unless pressure_conditional. See
-# PHASE_P_PLAN.md §4a; values confirmed against CRC at build time.
+# completed_plans/PHASE_P_PLAN.md §4a; values confirmed against CRC at build time.
 
 _SOLVENTS = [
     {"key": "water",         "name": "Water",                      "t_low_k": 273.15, "t_high_k": 373.15, "pressure_conditional": False, "assumed_pressure_atm": None, "citation": "CRC; Asimov 1962",     "plausibility": "Functional & abundant — the baseline"},
@@ -304,7 +304,7 @@ def compute_solvent_zone(luminosity_solar, solvent=None, t_low_k=None,
 
 # ── Phase P P5 — Ice-Line Calculator (M2 equilibrium model) ──────────────────
 # Volatile condensation fronts: the single canonical water snow line (170 K — no
-# dual/formation line, see PHASE_P_PLAN.md §3c) plus the CO2/NH3/N2/CO fronts.
+# dual/formation line, see completed_plans/PHASE_P_PLAN.md §3c) plus the CO2/NH3/N2/CO fronts.
 # Ordered hot→cold (= inner→outer). The deep-cold CO/N2 fronts are really set by
 # disk-midplane temperature, so their irradiation placement is illustrative
 # (disk_line=True).

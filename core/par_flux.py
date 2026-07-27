@@ -17,7 +17,7 @@ red dwarf's f_PAR is far *below* its blackbody value (3000 K real ≈ 0.023 vs
 blackbody ≈ 0.081; the deficit is *larger*), while a Sun-like star's real f_PAR
 (≈ 0.39) sits slightly above blackbody (≈ 0.37).
 
-**Default is ``blackbody`` (deviation from PHASE_AD_PLAN.md, user decision
+**Default is ``blackbody`` (deviation from completed_plans/PHASE_AD_PLAN.md, user decision
 2026-07-03):** the plan specified ``--sed real`` as the default, but that would change
 the existing ``par-flux`` output for the downstream consumer, so the default stays
 backward-compatible and ``real`` is opt-in. The real table is **band-fixed at

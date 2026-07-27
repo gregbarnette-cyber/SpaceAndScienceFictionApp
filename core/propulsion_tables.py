@@ -11,7 +11,7 @@ Each value is an **ideal** exhaust velocity — a real drive reaches a fraction 
 (imperfect burn fraction, non-ideal directed exhaust, nozzle/divergence losses). Marked
 so in every ``note``.
 
-**Value provenance / a documented tension to confirm at shipment (see PHASE_Y_PLAN.md §9):**
+**Value provenance / a documented tension to confirm at shipment (see completed_plans/PHASE_Y_PLAN.md §9):**
 the combined request quotes an *ideal* D-T band of ~0.05–0.09 c (from the ~0.4 % mass→energy
 of D-T fusion), but its own **acceptance anchor** pins ``fusion-dt`` at *v_e ≈ 0.03 c* → the
 "marginal fusion generation ship" result (MR ≈ 28 flyby / ~800 rendezvous at β 0.1). The

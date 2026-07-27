@@ -12,7 +12,7 @@
 # The contract mirrors the DefaultPriors attribute surface 1:1 (so the two providers
 # are interchangeable in core/generate.py) and adds one new axis — origin_priors —
 # for the calibrated Layer-3 formation narrative, plus version/provenance metadata.
-# See docs/research-priors-contract.md and PHASE_R3_PLAN.md.
+# See docs/research-priors-contract.md and completed_plans/PHASE_R3_PLAN.md.
 
 import datetime
 import json
@@ -88,7 +88,7 @@ _ORIGIN_CONTEXT_KEYS = (
 # is validated *only when present*; a dataset omitting a block falls back to the v1
 # field, so v1.0 datasets stay valid and permissive output stays byte-identical.
 # Stage A (this checkpoint) validates + stores + exposes the blocks; NO engine reads
-# them yet (Stage B — see PHASE_R3_V2_PLAN.md). The block names, in stored order:
+# them yet (Stage B — see completed_plans/PHASE_R3_V2_PLAN.md). The block names, in stored order:
 _V2_BLOCK_NAMES = (
     "mass_model",                 # F1 — isolation-mass scaling (replaces mass_by_zone)
     "occurrence_by_metallicity",  # F2 — [Fe/H]-conditioned planet count / giant fraction

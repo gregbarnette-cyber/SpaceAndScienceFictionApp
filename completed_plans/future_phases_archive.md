@@ -117,7 +117,7 @@ Queries the live NASA Exoplanet Archive `pscomppars` TAP endpoint with user-supp
 
 ## Phase H — Worldbuilding Calculators ✅ IMPLEMENTED (2026-06-11)
 
-> **Implemented** per [`PHASE_H_PLAN.md`](PHASE_H_PLAN.md): five core functions in
+> **Implemented** per [`completed_plans/PHASE_H_PLAN.md`](completed_plans/PHASE_H_PLAN.md): five core functions in
 > `core/equations.py` (`compute_roche_limit`, `compute_tidal_locking_time`,
 > `compute_hill_sphere`, `compute_binary_orbit_stability`,
 > `compute_atmosphere_retention`), five panels in `gui/panels/worldbuilding.py`
@@ -126,7 +126,7 @@ Queries the live NASA Exoplanet Archive `pscomppars` TAP endpoint with user-supp
 > P-type `+4.12μ`) are in place and locked by tests. Docs updated in
 > `docs/equations.md`, `docs/integration.md`, `docs/gui-architecture.md`.
 
-> **📋 Detailed implementation plan: [`PHASE_H_PLAN.md`](PHASE_H_PLAN.md)** — build-ready
+> **📋 Detailed implementation plan: [`completed_plans/PHASE_H_PLAN.md`](completed_plans/PHASE_H_PLAN.md)** — build-ready
 > spec (core fn signatures, constants block, validation, panels, query.py subcommands,
 > tests, success criteria). Interactive mockup: [`mockups/phase-h.html`](mockups/phase-h.html).
 > **The plan corrects two formula errors in the sketch below:** (H1) the rigid Roche
@@ -246,7 +246,7 @@ Determines which atmospheric gases a planet can retain against Jeans escape, giv
 
 ## Phase I — Multi-System / Route Planning ✅ IMPLEMENTED (2026-06-12)
 
-> **Implemented** per [`PHASE_I_PLAN.md`](PHASE_I_PLAN.md): three new self-validating
+> **Implemented** per [`completed_plans/PHASE_I_PLAN.md`](completed_plans/PHASE_I_PLAN.md): three new self-validating
 > `core/calculators.py` functions (`compute_multi_stop_journey`,
 > `compute_nearest_neighbor_chain`, `compute_trade_route_mst`) + a shared
 > `_resolve_star_position` (DB-first → SIMBAD, `sol`/`sun` → origin) and
@@ -261,7 +261,7 @@ Determines which atmospheric gases a planet can retain against Jeans escape, giv
 > [`mockups/phase-i.html`](mockups/phase-i.html) (light scatter) and
 > [`mockups/phase-i-alt.html`](mockups/phase-i-alt.html) (the chosen GCNS Star-Chart maps).
 >
-> **Phase I-OPTS extension ✅ (2026-06-13)** per [`PHASE_I_OPTS_PLAN.md`](PHASE_I_OPTS_PLAN.md):
+> **Phase I-OPTS extension ✅ (2026-06-13)** per [`completed_plans/PHASE_I_OPTS_PLAN.md`](completed_plans/PHASE_I_OPTS_PLAN.md):
 > four more planners added alongside I1–I3 (none replaced) —
 > `compute_optimal_tour` (A, NN-seed + 2-opt), `compute_jump_route` (B, Dijkstra/BFS
 > over a jump-limited graph), `compute_jump_network` (C, BFS reachability tiers), and
@@ -514,7 +514,7 @@ Uses the temp-DB swap pattern (`db._DB_PATH`/`db._conn`/`db._auto_seed`, restore
 
 ## Phase K — Honorverse Expansion ✅ IMPLEMENTED (2026-06-13)
 
-> **Implemented** per [`PHASE_K_PLAN.md`](PHASE_K_PLAN.md): three interactive calculators — `compute_hyper_translation_time`
+> **Implemented** per [`completed_plans/PHASE_K_PLAN.md`](completed_plans/PHASE_K_PLAN.md): three interactive calculators — `compute_hyper_translation_time`
 > (K1) and `compute_impeller_wedge` (K2) in `core/science.py`, `compute_missile_intercept` (K3) in `core/calculators.py`,
 > all self-validating; three panels `HonorverseHyperTimePanel` / `HonorverseImpellerPanel` (live slider) /
 > `HonorverseMissilePanel` in `gui/panels/honorverse.py` under the existing **"Science Fiction"** nav category. **K0
@@ -621,7 +621,7 @@ All three new core functions **self-validate** (the Phase H contract → `{"erro
 ## Phase L — Exoplanet Comparison Dashboard
 
 > **✅ FULLY IMPLEMENTED** (L1–L3 2026-06-13, **L4 2026-06-14**) per
-> [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md):
+> [`completed_plans/PHASE_L_PLAN.md`](completed_plans/PHASE_L_PLAN.md):
 > `core/databases.compare_stars` (L1) + the `compare-stars` `query.py` subcommand,
 > `EsiRankingPanel` over the existing `search_hwc` (L2, no new core fn; gained a
 > top-N ESI bar chart), and `core/equations.compute_stellar_evolution`
@@ -748,7 +748,7 @@ Special cases:
 
 > **✅ IMPLEMENTED 2026-06-14.** The verification spike passed (`/data` carries a
 > star identifier → bulk path; rate-limit/acceptable-use cleared) and L4 shipped —
-> see [`PHASE_L_PLAN.md`](PHASE_L_PLAN.md) § "L4 — IMPLEMENTED" and
+> see [`completed_plans/PHASE_L_PLAN.md`](completed_plans/PHASE_L_PLAN.md) § "L4 — IMPLEMENTED" and
 > `docs/star-databases.md` § "Phase L4". The original deferral brainstorm below is
 > retained for provenance; its "DEFERRED"/gating language is historical.
 >
@@ -899,7 +899,7 @@ CREATE TABLE IF NOT EXISTS hypatia_cache (
 
 ## Phase M — GCNS Interactive Surfacing ✅ IMPLEMENTED (2026-06-11)
 
-> **Implemented** per [`PHASE_M_PLAN.md`](PHASE_M_PLAN.md): six GUI-only panels in
+> **Implemented** per [`completed_plans/PHASE_M_PLAN.md`](completed_plans/PHASE_M_PLAN.md): six GUI-only panels in
 > `gui/panels/gcns.py` under a new "GCNS" nav category (all reusing the existing
 > `compute_gcns_*` readers verbatim — no new core code for M1–M4), plus **M5** —
 > a non-fatal top-level `"gcns"` key on `core.databases.compute_simbad_lookup`
@@ -985,7 +985,7 @@ opt 1 already resolves `designations["Gaia EDR3"]`; M5 reuses that id **for free
 
 ## Phase N — query.py Integration Expansion ✅ IMPLEMENTED (2026-06-12)
 
-> **Implemented** per [`PHASE_N_PLAN.md`](PHASE_N_PLAN.md): five `query.py` subcommands —
+> **Implemented** per [`completed_plans/PHASE_N_PLAN.md`](completed_plans/PHASE_N_PLAN.md): five `query.py` subcommands —
 > `habitable-zone-sma`, `star-luminosity`, `brachistochrone-au`, `brachistochrone-lm`,
 > `travel-time-solar` (the only network-bound one — live JPL Horizons) — each a thin
 > verbatim wrapper over an existing `core/` function (no `core/`, GUI, CLI-menu, or DB
@@ -1085,7 +1085,7 @@ When Phase H's five equation functions are built (`compute_roche_limit`, `comput
 > System Diagrams, O-5 Travel & Motion, O-6 Region & Reference Diagrams, O-7 Hypatia
 > Kinematics, O-8 HWC Habitability Visuals). `tests/test_viz_phase_o.py` = 152 green;
 > full offline suite 512 passed (only the 3 flaky live-network baselines fail). The
-> Master Tracking Matrix in [`PHASE_O_PLAN.md`](PHASE_O_PLAN.md) is the per-item source
+> Master Tracking Matrix in [`completed_plans/PHASE_O_PLAN.md`](completed_plans/PHASE_O_PLAN.md) is the per-item source
 > of truth (all rows ☑). Mockups built &amp; reviewed: [`mockups/phase-o/`](mockups/phase-o/)
 > (`o01…o18-*.html`; generator `_gen.py`). **Resolutions worth noting:** O11 (Toomre)
 > ships the F2 **"ℹ What is this?"** Explain dialog in every host panel (opts 1, 3–6, 8),
@@ -1275,12 +1275,12 @@ Phase O is **viz-layer only** — the binding constraint is *additivity*, not a 
 
 ## Phase P — Snow Lines & Alternative-Solvent Habitable Zones (grounded + extended)
 
-> ✅ **IMPLEMENTED (2026-06-20).** Built per [`PHASE_P_PLAN.md`](PHASE_P_PLAN.md) §12 (eight checkpoints): the M1/M2 model helpers + implied-T annotations (P7), the `_SOLVENTS` table + `compute_solvent_zone` (P4), `SolventReferencePanel` (P6), `compute_ice_lines` (P5), the additive P2 solvent bands + P3 ice fronts, the P1 value corrections (hydrogen / snow-line 5.0→2.68 AU / `planetaryTemperature` albedo exponent), and the V1–V7 visualizations (10-band alt-HZ ring, system-regions relabels, solvent-zone / ice-line / liquid-range diagrams, and the opt-in snow-line + solvent-zone overlays on the opt-3/6/Map orbital diagrams). Two `query.py` subcommands (`solvent-zone`, `ice-lines`). Tests: `tests/test_solvent_zones.py`. The notes below are the original research/brainstorm record.
+> ✅ **IMPLEMENTED (2026-06-20).** Built per [`completed_plans/PHASE_P_PLAN.md`](completed_plans/PHASE_P_PLAN.md) §12 (eight checkpoints): the M1/M2 model helpers + implied-T annotations (P7), the `_SOLVENTS` table + `compute_solvent_zone` (P4), `SolventReferencePanel` (P6), `compute_ice_lines` (P5), the additive P2 solvent bands + P3 ice fronts, the P1 value corrections (hydrogen / snow-line 5.0→2.68 AU / `planetaryTemperature` albedo exponent), and the V1–V7 visualizations (10-band alt-HZ ring, system-regions relabels, solvent-zone / ice-line / liquid-range diagrams, and the opt-in snow-line + solvent-zone overlays on the opt-3/6/Map orbital diagrams). Two `query.py` subcommands (`solvent-zone`, `ice-lines`). Tests: `tests/test_solvent_zones.py`. The notes below are the original research/brainstorm record.
 
 **New panels (GUI-only)**: `SolventZonePanel`, `IceLineCalculatorPanel`, `SolventReferencePanel`
 **Existing options touched**: opts 8–10 (Star System Regions) and opt 13 (Sol Regions) — the corrected divisors in `core/regions.py` flow through their existing output (no new menu numbers); the GUI **System Regions Diagram** + **Alternate HZ Diagram** (opts 8–10) and `query.py star-regions` carry the same corrections/additions for free since they read the same region dict.
 
-Grounds the app's existing **Alternate Habitable Zone Regions** table and snow-line outputs in current astrobiology literature, fixes the divisor values that don't survive a physical check, and adds the missing solvent bands + a reusable solvent-zone engine. The existing alt-HZ bands are **Asimov's six biochemistries** ("Not As We Know It," 1962 — fluorosilicone-fluorosilicone, fluorocarbon-sulfur, protein-water, protein-ammonia, lipid-methane, lipid-hydrogen), rendered as equilibrium-temperature bands via the app's `planetaryTemperature` model (confirmed by the 2026-06-19 Gillett scan — see the provenance note below). Sourced from a 2026-06-12 deep-research pass (Bains/Petkowski/Seager 2024; National Academies *The Limits of Organic Life in Planetary Systems*; the sulfuric-acid solvent study; the protoplanetary snow-line literature). See the research findings note for the full citation list. **Build-ready plan: [`PHASE_P_PLAN.md`](PHASE_P_PLAN.md).**
+Grounds the app's existing **Alternate Habitable Zone Regions** table and snow-line outputs in current astrobiology literature, fixes the divisor values that don't survive a physical check, and adds the missing solvent bands + a reusable solvent-zone engine. The existing alt-HZ bands are **Asimov's six biochemistries** ("Not As We Know It," 1962 — fluorosilicone-fluorosilicone, fluorocarbon-sulfur, protein-water, protein-ammonia, lipid-methane, lipid-hydrogen), rendered as equilibrium-temperature bands via the app's `planetaryTemperature` model (confirmed by the 2026-06-19 Gillett scan — see the provenance note below). Sourced from a 2026-06-12 deep-research pass (Bains/Petkowski/Seager 2024; National Academies *The Limits of Organic Life in Planetary Systems*; the sulfuric-acid solvent study; the protoplanetary snow-line literature). See the research findings note for the full citation list. **Build-ready plan: [`completed_plans/PHASE_P_PLAN.md`](completed_plans/PHASE_P_PLAN.md).**
 
 ### Background — the divisors are insolation values, and they're checkable
 
@@ -1293,7 +1293,7 @@ T ≈ 288 K × S_eff^0.25                  (the same model at the default Bond a
 
 > **Model confirmed by the 2026-06-19 Gillett scan (see provenance note below).** The earlier draft of this table back-converted with the airless, zero-albedo `278.5 × S^0.25` form and concluded the bands ran "~10 K cold." That was the wrong model for the **solvent bands**. The divisors were built with the app's **own** `planetaryTemperature` formula at `A = 0.3` (`411.4 × 0.7 = 288.0 K`): under 288 K each band's edges land on the solvent's **exact 1-atm boiling (inner) / freezing (outer) points** — water 2.8/0.8 → 372/272 K (boil 373.15 / freeze 273.15), ammonia 0.48/0.21 → 240/195 K, methane 0.023/0.0094 → 112/90 K. Solving each physical anchor for the reference temp gives 287–291 K (mean ≈ 288.5), not 278.5. The solvent-band rows below are computed at **288 K**.
 
-> **Scientific re-evaluation (2026-06-19, Package A) — two models, and the snow line was genuinely wrong.** A physics review settled which model applies where (full detail in [`PHASE_P_PLAN.md`](PHASE_P_PLAN.md) §0). There are **two** temperatures, not one, and the legacy table conflated them:
+> **Scientific re-evaluation (2026-06-19, Package A) — two models, and the snow line was genuinely wrong.** A physics review settled which model applies where (full detail in [`completed_plans/PHASE_P_PLAN.md`](completed_plans/PHASE_P_PLAN.md) §0). There are **two** temperatures, not one, and the legacy table conflated them:
 > - **M1 (surface, greenhouse) — solvent *liquid* bands:** `T_surf = 314.9 × (1−A)^0.25 × S^0.25` (= 288 K at A=0.3). Whether a solvent is liquid on a *surface* depends on equilibrium **+ greenhouse**; the existing bands assume Earth-like greenhouse (a defensible, now-labeled convention). At A=0.3 this is identical to the "288 K" above — the solvent-band divisors are unchanged.
 > - **M2 (equilibrium, no greenhouse) — snow / ice / condensation lines:** `T_eq = 278.5 × (1−A)^0.25 × S^0.25`. Ice condenses in vacuum, so there is no greenhouse. Under M2 the canonical water snow line (170 K) is at **2.68 AU**.
 > - **The legacy `snowLine` (0.04 → 5.0 AU, 129 K) is wrong** — it applied the warmer surface model M1 to an ice-condensation line. **Fix: divisor 0.04 → 0.139** (170 K, 2.68 AU; Hayashi 1981; asteroid-belt C/S transition). The "dual snow line" idea is dropped (present-day and formation both ≈ 2.7 AU for the current Sun).
@@ -1322,7 +1322,7 @@ The ammonia, methane, and water bands match measured 1-atm liquid ranges **exact
 
 ### P1: Corrections to existing divisors (behavior-changing — `core/regions.py`)
 
-Each edit shifts current CLI opts 8–10/13 output, the two GUI ring diagrams, and `query.py star-regions`, so each ships with its `docs/star-system-regions.md` update + a test re-anchor (the Phase H pattern in `tests/test_worldbuilding.py`) in the same commit. **No maintainer gate** (the Gillett scan resolved it). **Package A (2026-06-19):** solvent bands use **M1** (`314.9 × (1−A)^0.25 × S^0.25`, = 288 K at A=0.3); snow/ice lines use **M2** (`278.5 × (1−A)^0.25 × S^0.25`, no greenhouse). See the model block above + [`PHASE_P_PLAN.md`](PHASE_P_PLAN.md) §0–§1.
+Each edit shifts current CLI opts 8–10/13 output, the two GUI ring diagrams, and `query.py star-regions`, so each ships with its `docs/star-system-regions.md` update + a test re-anchor (the Phase H pattern in `tests/test_worldbuilding.py`) in the same commit. **No maintainer gate** (the Gillett scan resolved it). **Package A (2026-06-19):** solvent bands use **M1** (`314.9 × (1−A)^0.25 × S^0.25`, = 288 K at A=0.3); snow/ice lines use **M2** (`278.5 × (1−A)^0.25 × S^0.25`, no greenhouse). See the model block above + [`completed_plans/PHASE_P_PLAN.md`](completed_plans/PHASE_P_PLAN.md) §0–§1.
 
 - **P1a — hydrogen band (`phInner`/`phOuter`), value fix (M1).** A liquid band's inner (hot) edge is the solvent's **boiling** point, outer (cold) the **freezing** point. H₂ boils 20.3 K / freezes 13.8 K, so under M1 the band is `phInner ≈ (20.3/288)⁴ ≈ 0.0000247` (≈ 201 AU) to `phOuter ≈ (13.8/288)⁴ ≈ 0.0000053` (≈ 436 AU). The current `phOuter` (0.000024 → 20 K) already sits at H₂'s boiling point — it belongs at the *inner* edge. Fix **both** divisors (retuning only one collapses the band to ~zero width); band relocates to ~200–440 AU.
 - **P1b — `lh2Line` (0.0025), relabel only — the value is correct under M2.** Under the equilibrium model `278.5 × 0.0025^0.25` = **62 K at 20 AU** — the **1-atm N₂/CO surface-frost** regime (N₂ 63–77 K, CO 68–82 K). Relabel it "N₂/CO (1-atm) condensation (~62 K)" and state it is a *different, complementary* convention from P3a's *disk* N₂/CO frosts (~20 K). It is **not** hydrogen (64 K is supercritical for H₂, crit 33 K). No number change.
@@ -1383,7 +1383,7 @@ A static "Alternative Solvents for Life" reference table à la `MainSequencePane
 - **`query.py`** — `solvent-zone`, `ice-lines` subcommands
 - **`docs/star-system-regions.md`** — the two-model (M1/M2) framework, corrected divisor list (incl. `snowLine` + `planetaryTemperature`) + the T-edge/citation table; **`docs/equations.md`** + **`docs/integration.md`** — the two new calculators + subcommands
 - **`tests/test_solvent_zones.py`** (+ re-anchors in `tests/test_worldbuilding.py`) — anchor the M1/M2 T↔distance conversions, the P1 corrected divisors (hydrogen, snow line, `planetaryTemperature` albedo), and the ammonia/methane reference matches
-- **Suggested sequencing** — model helpers → P7 (transparency, zero risk) → P4 (the reusable engine, biggest win) → P6 → P5 → P2/P3 (additions) → P1 (the value corrections, last). See [`PHASE_P_PLAN.md`](PHASE_P_PLAN.md) §12.
+- **Suggested sequencing** — model helpers → P7 (transparency, zero risk) → P4 (the reusable engine, biggest win) → P6 → P5 → P2/P3 (additions) → P1 (the value corrections, last). See [`completed_plans/PHASE_P_PLAN.md`](completed_plans/PHASE_P_PLAN.md) §12.
 
 ---
 
@@ -1401,7 +1401,7 @@ A static "Alternative Solvents for Life" reference table à la `MainSequencePane
 | M — GCNS Surfacing | Low | High | Low effort (reuses `compute_gcns_*` verbatim), high visibility — surfaces the only dataset with distance uncertainties |
 | N — query.py Expansion | Low | Medium | Anytime — no dependencies on G–M; pure integration-surface work over existing core functions |
 | O — Visualization Expansion | Varies (per-item S–M) | High | Mockup-gated, individually skippable items; small items (O4, O6, O9, O10, O14) are quick wins; O1/O5 carry the most wow. O8 shares the `routes` param with Phase I |
-| P — Snow Lines & Solvent Zones | Low–Medium | Med–High | Grounds + extends an existing app feature. P7/P4/P6/P5 are clean additions (pure math, query.py parity). **Gillett scan + physics review done 2026-06-19 (Package A)** — divisors are Asimov's six biochemistries; two models (M1 surface 288 K for solvent bands, M2 equilibrium 278.5 K for ice lines). P1 value fixes: hydrogen band, **snow line (5.0 → 2.68 AU)**, and the `planetaryTemperature` `(1−A)^0.25` albedo bug. Build-ready: [`PHASE_P_PLAN.md`](PHASE_P_PLAN.md). Independent of all other phases. |
+| P — Snow Lines & Solvent Zones | Low–Medium | Med–High | Grounds + extends an existing app feature. P7/P4/P6/P5 are clean additions (pure math, query.py parity). **Gillett scan + physics review done 2026-06-19 (Package A)** — divisors are Asimov's six biochemistries; two models (M1 surface 288 K for solvent bands, M2 equilibrium 278.5 K for ice lines). P1 value fixes: hydrogen band, **snow line (5.0 → 2.68 AU)**, and the `planetaryTemperature` `(1−A)^0.25` albedo bug. Build-ready: [`completed_plans/PHASE_P_PLAN.md`](completed_plans/PHASE_P_PLAN.md). Independent of all other phases. |
 | Q — Dossier Export | Low–Medium | **High** | Pure composition over existing readers — no new astronomy. One `query.py dossier` call returns a complete system writeup; the biggest single win for the downstream repo. |
 | R — Procedural Generation | Medium | **High** | Inverts the analysis tools into a generator; deterministic (seed-stable). High sci-fi worldbuilding value; reuses the Phase H + HZ + main-sequence physics. Pairs with Q (export) and S (collect). |
 | S — Project Workspaces | Medium | Medium–High | Turns the app into a worldbuilding workspace (campaign/novel manager). Builds on J2 favorites; the natural home for R-generated systems and Q batch export. Best after J, Q, R. |
@@ -1414,7 +1414,7 @@ A static "Alternative Solvents for Life" reference table à la `MainSequencePane
 ## Phase Q — System Dossier Export & Reporting (implemented 2026-06-20)
 
 > Implemented 2026-06-20 across 5 checkpoints (Q-core-1…5); suite green. As-built docs:
-> [`PHASE_Q_PLAN.md`](PHASE_Q_PLAN.md), [`PHASE_Q_MOCKUP.md`](PHASE_Q_MOCKUP.md),
+> [`completed_plans/PHASE_Q_PLAN.md`](completed_plans/PHASE_Q_PLAN.md), [`completed_plans/PHASE_Q_MOCKUP.md`](completed_plans/PHASE_Q_MOCKUP.md),
 > `docs/integration.md` (the `dossier` subcommand), `docs/gui-architecture.md` (Phase Q row).
 > The brainstorm below is the original 2026-06-13 candidate text, preserved for provenance.
 > **As-built deltas from the brainstorm:** (1) the planets section shows **both** NASA

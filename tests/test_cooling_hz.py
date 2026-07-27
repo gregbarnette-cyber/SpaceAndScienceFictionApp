@@ -4,7 +4,7 @@
 # guard on every transcribed row), the (mass, age) interpolation, the three modes
 # (snapshot / residence / CHZ), the Kopparapu validity gating, the Roche cross-check,
 # the validation matrix, determinism — and the five §Acceptance benchmarks from
-# PHASE_U_PLAN.md, anchored against the real Bedard et al. 2020 0.6 M_sun WD track.
+# completed_plans/PHASE_U_PLAN.md, anchored against the real Bedard et al. 2020 0.6 M_sun WD track.
 
 import math
 import unittest

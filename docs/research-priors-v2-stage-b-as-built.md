@@ -9,7 +9,7 @@ related:
   - research/query-api-methods/research-priors-v2-stage-b-handoff.md
   - research/query-api-methods/research-priors-v2-contract-request.md
   - design-lab/star-system-generation-priors/research_priors_v2.json
-  - PHASE_R3_V2_PLAN.md
+  - completed_plans/PHASE_R3_V2_PLAN.md
 ---
 
 # Hand-back: research-priors **v2 Stage B is built** — as-built shapes, engine knobs, and questions (B6)

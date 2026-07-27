@@ -9,7 +9,7 @@ related:
   - research/query-api-methods/research-priors-v2-b6-reply.md
   - docs/research-priors-v2-stage-b-as-built.md
   - design-lab/star-system-generation-priors/research_priors_v2.json
-  - PHASE_R3_V2_PLAN.md
+  - completed_plans/PHASE_R3_V2_PLAN.md
 ---
 
 # B6 actions — generator → Packet 3.5: **L1 implemented; L2 + mass-scale calibration deferred (with design)**

@@ -554,9 +554,9 @@ Note it in `future_phases.md` as a candidate phase instead (one line).
 - Delete `image.png` (283 KB — referenced by nothing; the two apparent hits in
   `gui/panels/reports.py` / `tests/test_reports_panel.py` are `data:image/png;base64` MIME strings,
   not this file. Re-verify with `grep -rn "image.png" --include="*.py" --include="*.md" .` first).
-- Create `archive/` and `git mv` into it: `CONSISTENCY_PLAN.md`, `GCNS_EXTENSION_REQUEST.md`,
-  `INTEGRATION_PLAN.md`, `hypatia_implementation.md`, `future_phases_archive.md`. Update the one
-  live pointer: `future_phases.md` references `future_phases_archive.md` (grep and fix the path).
+- Create `archive/` and `git mv` into it: `completed_plans/CONSISTENCY_PLAN.md`, `completed_plans/GCNS_EXTENSION_REQUEST.md`,
+  `completed_plans/INTEGRATION_PLAN.md`, `completed_plans/hypatia_implementation.md`, `completed_plans/future_phases_archive.md`. Update the one
+  live pointer: `future_phases.md` references `completed_plans/future_phases_archive.md` (grep and fix the path).
   Remove the stale `sed`-on-CONSISTENCY_PLAN allow-rule from `.claude/settings.local.json` (grep
   `CONSISTENCY_PLAN`).
 - **Leave in place:** the `PHASE_*_PLAN/MOCKUP` files, `mockups/`, `backups/`,

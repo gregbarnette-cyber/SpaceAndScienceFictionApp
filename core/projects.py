@@ -10,7 +10,7 @@
 # A GENERATED member stores its generate_system PARAMS (generated_spec JSON), not a
 # frozen body — so it re-creates byte-identically on reopen/export (the R1/R2/R3
 # determinism contract). generated_seed is a denormalised display convenience.
-# See PHASE_S_PLAN.md and docs/research-priors-contract.md's sibling, the Phase S
+# See completed_plans/PHASE_S_PLAN.md and docs/research-priors-contract.md's sibling, the Phase S
 # section of docs/gui-architecture.md.
 
 import datetime

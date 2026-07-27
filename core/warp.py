@@ -5,7 +5,7 @@ warp-bubble negative-energy budget and the metric's expansion geometry. **These 
 general relativity; whether the setting's drive USES these mechanisms is the packet's job and is
 not asserted by the tool** (the physics/canon separation the request insists on).
 
-Built in three checkpoints (see PHASE_AE_PLAN.md §7a):
+Built in three checkpoints (see completed_plans/PHASE_AE_PLAN.md §7a):
   * **AH·1** — N1 ``alcubierre-energy`` ``original`` formulation: the Alcubierre-1994 T⁰⁰
     negative-energy integral, evaluated with a plain-Python Simpson rule (no numpy — keeps
     query.py's cold start ~0.1 s).
