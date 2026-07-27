@@ -432,12 +432,15 @@ raw `LIKE` box. Two core filter keys (in `core/shared.py`):
     both near-white). Identity is carried by *secondary encoding* — legend labels,
     hover tooltip, click info box — never hue alone. Do not "fix" it by re-stepping
     the hues; that would make the colours lie about the physics.
-  - `core.calculators._star_map_color` (route-planning maps + opts 17/20/21) stays a
-    **separate palette** — its G/M/D and default differ from `_SPECTRAL_COLORS`, and
-    unifying would repaint every existing route map. It got the same prefix-aware
-    derivation plus **additive-only** `L/T/W/Y/C/N` keys (those letters were falling
-    through to grey), so no pre-existing colour moved. Unification is deferred to the
-    route-chart refactor.
+  - `core.calculators._star_map_color` (route-planning maps + opts 17/20/21) was a
+    **second palette** whose G/M/D and unknown-default differed. Part 2 left it in
+    place (giving it only the same prefix-aware derivation and additive-only
+    `L/T/W/Y/C/N` keys) to avoid repainting route maps mid-fix; the **route-chart
+    refactor deleted it on 2026-07-27** (`completed_plans/ROUTE_CHART_REFACTOR_PLAN.md` Phase 3).
+    The one palette now lives in `core/shared.py` as `_SPECTRAL_COLORS` + `sp_color`,
+    beside the `spectral_leading_class` rule it keys off, and `core.viz` re-exports it
+    as `_SPECTRAL_COLORS`/`_sp_color`. **Do not add a local palette** —
+    `test_search.py::test_there_is_exactly_one_spectral_palette` pins it.
 
   Note `spectral_adql` (G3, live NASA TAP) was **deliberately left on `LIKE`** —
   `_query_tap` sends ADQL as a GET parameter and the prefixed form would add ~6 KB

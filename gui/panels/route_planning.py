@@ -11,8 +11,17 @@
 #
 # All inherit (DiagramToggleMixin, ResultPanel) and follow the opts-18/19 pattern.
 # Maps reuse the dark-navy GCNS "Star Chart" / "Star Chart 3D" diagrams with the
-# new routes= overlay; coordinates are shifted so the route's origin/start/center
+# routes= overlay; coordinates are shifted so the route's origin/start/center
 # sits at the chart origin (gold ★) with distance rings measured from it.
+#
+# Both tab builders here — `_add_route_chart_tabs` (the seven planners) and
+# `add_two_star_chart_tabs` (opts 17/20/21) — go through the shared opt-18/19
+# `_build_iso_chart_tab`, so every route chart carries the O16 legend filter, the
+# O17 isochrone control, the click-info box and the 3D viewpoint presets. The
+# route overlay reaches the canvas through that builder's `routes=` passthrough
+# (completed_plans/ROUTE_CHART_REFACTOR_PLAN.md Phases 1–2, 2026-07-27). Phase 3 (same date)
+# retired the second `_star_map_color` palette: dot colours here now come from the
+# one app-wide `core.shared.sp_color`, so a star reads the same on every panel.
 
 import math
 
@@ -24,9 +33,8 @@ from PySide6.QtWidgets import (
 from gui.panels.base import ResultPanel, DiagramToggleMixin
 import core.calculators
 import core.viz
-from gui.visualizations.plot_helpers import (
-    mpl_available, make_star_chart_canvas, make_star_chart_3d_canvas,
-)
+from core.shared import sp_color   # the one app-wide spectral palette (Phase 3)
+from gui.visualizations.plot_helpers import mpl_available
 from gui.panels.diagram_tabs import _build_iso_chart_tab, _wire_row_map_linking
 
 
@@ -104,51 +112,35 @@ def _centered(rm):
     return s_stars, s_edges, R * 1.1
 
 
-def _route_chart_3d_tab(panel, stars, limit_ly, routes):
-    """"Star Chart 3D" tab with viewpoint preset buttons + route overlay."""
-    w = QWidget()
-    lay = QVBoxLayout(w)
-    lay.setContentsMargins(4, 4, 4, 4)
-    lay.setSpacing(0)
-    canvas3d, toolbar3d, ax3d = make_star_chart_3d_canvas(
-        panel, stars, limit_ly=limit_ly, routes=routes,
-    )
-    preset_bar = QWidget()
-    preset_bar.setFixedHeight(18)
-    prow = QHBoxLayout(preset_bar)
-    prow.setContentsMargins(0, 0, 0, 0)
-    prow.setSpacing(6)
-    style = "QPushButton { padding: 0px 8px; margin: 0px; font-size: 10px; }"
-    for label, elev, azim in [("Top View", 90, 0), ("Side View", 0, 0),
-                              ("3D Perspective", 30, -60)]:
-        btn = QPushButton(label)
-        btn.setFixedHeight(18)
-        btn.setStyleSheet(style)
-
-        def _make_cb(e=elev, a=azim):
-            def _cb():
-                try:
-                    if toolbar3d.mode:
-                        if "zoom rect" in str(toolbar3d.mode):
-                            toolbar3d.zoom()
-                        else:
-                            toolbar3d.pan()
-                except Exception:
-                    pass
-                ax3d.view_init(elev=e, azim=a)
-                canvas3d.draw_idle()
-            return _cb
-        btn.clicked.connect(_make_cb())
-        prow.addWidget(btn)
-    prow.addStretch()
-    lay.addWidget(preset_bar)
-    lay.addWidget(toolbar3d)
-    lay.addWidget(canvas3d)
-    return w
+# Above this many nodes a chart is dense enough to need the shared 15 ly label
+# decluttering (Jump Network can return thousands). Below it the route is a
+# handful of dots, so — like the O8 two-star maps — the names stay readable at
+# any zoom.
+_ROUTE_SPARSE_MAX_NODES = 25
 
 
-def _add_route_chart_tabs(panel, result):
-    """Add "Star Chart" + "Star Chart 3D" viz tabs with the route overlay."""
+def _add_route_chart_tabs(panel, result, link_view=None, name_col=1,
+                          legend_filter=True):
+    """Add "Star Chart" + "Star Chart 3D" viz tabs with the route overlay.
+
+    Built with the same `_build_iso_chart_tab` the opt-18/19 panels use, so the
+    route charts carry the O16 per-class legend filter, the O17 travel-time
+    isochrone control, the click-info box and the 3D viewpoint presets. The
+    route overlay rides along via the builder's `routes=` passthrough, and is
+    re-passed on every isochrone rebuild.
+
+    `_centered` puts the route's origin/start at the chart origin (gold ★), so
+    the isochrone rings read as travel time **from the start**.
+
+    `link_view` (optional) is the result table to wire O15 row↔map linking to;
+    `name_col` is its star-name column — 1 for the route tables, which all lead
+    with an index column (Hop # / Step / Jumps). Leg-shaped `From|To` tables
+    (Multi-Stop, Optimal Tour, Jump Route, Trade Route) omit it, as
+    `add_two_star_chart_tabs` already does for opts 20/21.
+
+    `legend_filter=False` suppresses the per-class legend for JumpNetworkPanel,
+    whose dots carry per-tier rather than spectral colours.
+    """
     if not mpl_available():
         return
     rm = core.viz.prepare_route_map(result)
@@ -156,17 +148,28 @@ def _add_route_chart_tabs(panel, result):
         return
     stars, edges, limit_ly = _centered(rm)
 
-    chart_w = QWidget()
-    chart_l = QVBoxLayout(chart_w)
-    chart_l.setContentsMargins(4, 4, 4, 4)
-    canvas, toolbar = make_star_chart_canvas(panel, stars, limit_ly=limit_ly,
-                                             routes=edges)
-    chart_l.addWidget(toolbar)
-    chart_l.addWidget(canvas)
-    panel._viz_tabs_widget.addTab(chart_w, "Star Chart")
+    canvases = []
+    click_cb = None
+    if link_view is not None:
+        from gui.panels.diagram_tabs import _star_click_select
+        click_cb = lambda nm: _star_click_select(panel, nm)
+
+    label_max_ly = (max(limit_ly * 10.0, 100.0)
+                    if len(stars) <= _ROUTE_SPARSE_MAX_NODES else None)
 
     panel._viz_tabs_widget.addTab(
-        _route_chart_3d_tab(panel, stars, limit_ly, edges), "Star Chart 3D")
+        _build_iso_chart_tab(panel, stars, limit_ly, click_cb, canvases,
+                             is_3d=False, label_max_ly=label_max_ly,
+                             routes=edges, legend_filter=legend_filter),
+        "Star Chart")
+    panel._viz_tabs_widget.addTab(
+        _build_iso_chart_tab(panel, stars, limit_ly, click_cb, canvases,
+                             is_3d=True, label_max_ly=label_max_ly,
+                             routes=edges, legend_filter=legend_filter),
+        "Star Chart 3D")
+    # Always registered so the canvases are reachable (highlighting, tests);
+    # with link_view=None this connects nothing and clicks just show the info box.
+    _wire_row_map_linking(panel, link_view, canvases, name_col=name_col)
 
 
 # ── Phase O O8 — Two-Star Map (opts 17, 20, 21) ──────────────────────────────
@@ -201,7 +204,7 @@ def _two_star_route_map(result: dict, kind: str) -> dict:
         x, y, z = core.calculators._to_cartesian(s["ra_deg"], s["dec_deg"], s["ly"])
         sp = (s.get("sp_type") or "").strip()
         return {"name": s["name"], "desig": s.get("desig_str", ""),
-                "sp_type": sp, "color": core.calculators._star_map_color(sp),
+                "sp_type": sp, "color": sp_color(sp),
                 "ly": s["ly"], "x": x, "y": y, "z": z}
 
     nodes = [_node(s1), _node(s2)]
@@ -213,12 +216,11 @@ def _two_star_route_map(result: dict, kind: str) -> dict:
         centre = at_origin[0]
         centre = {**centre, "x": 0.0, "y": 0.0, "z": 0.0,
                   "sp_type": centre["sp_type"] or "G2V",
-                  "color": core.calculators._star_map_color(
-                      centre["sp_type"] or "G2V")}
+                  "color": sp_color(centre["sp_type"] or "G2V")}
         stars = [centre] + others + at_origin[1:]
     else:
         stars = [{"name": "Sol", "desig": "", "sp_type": "G2V",
-                  "color": core.calculators._star_map_color("G2V"),
+                  "color": sp_color("G2V"),
                   "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0}] + nodes
     return {"stars": stars, "edges": [], "edge_style": "none"}
 
@@ -425,7 +427,8 @@ class NearestNeighborPanel(DiagramToggleMixin, ResultPanel):
         self._tables_layout.addWidget(view, 1)
 
         if chain:
-            _add_route_chart_tabs(self, result)
+            # One star per row → O15 row↔map linking (names in column 1).
+            _add_route_chart_tabs(self, result, link_view=view)
         self._finish_render()
 
 
@@ -652,7 +655,8 @@ class FarthestFirstPanel(DiagramToggleMixin, ResultPanel):
         self._tables_layout.addWidget(view, 1)
 
         if chain:
-            _add_route_chart_tabs(self, result)
+            # One star per row → O15 row↔map linking (names in column 1).
+            _add_route_chart_tabs(self, result, link_view=view)
         self._finish_render()
 
 
@@ -849,5 +853,8 @@ class JumpNetworkPanel(DiagramToggleMixin, ResultPanel):
         view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._tables_layout.addWidget(view, 1)
 
-        _add_route_chart_tabs(self, result)
+        # Dots carry per-TIER colours (compute_jump_network sets stars[].color),
+        # so the spectral-class legend would mislabel them — suppressed here; the
+        # tier swatch legend above the table is the key. Names are in column 1.
+        _add_route_chart_tabs(self, result, link_view=view, legend_filter=False)
         self._finish_render()

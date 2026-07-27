@@ -6,6 +6,7 @@ matplotlib>=3.6,<4
 numpy
 pyvo
 
-# Test-only (the suite is unittest.TestCase-based; the stdlib runner needs no extra
-# deps, but pytest runs the same suite unchanged — see CLAUDE.md "### Tests").
+# Test-only — pytest is the test runner (the app itself does not need it). The tests
+# are written as unittest.TestCase classes, which pytest collects natively.
+# See CLAUDE.md "### Tests".
 pytest

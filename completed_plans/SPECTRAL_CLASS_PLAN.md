@@ -549,6 +549,14 @@ Note all use `"?"` as the unknown bucket → map `None` → `"?"` to preserve th
 **Second palette (1) — `core/calculators.py:1562 _star_map_color`.** A *separate* dict
 used by route-planning maps, and it **disagrees with `_SPECTRAL_COLORS`**:
 
+> **RESOLVED 2026-07-27 — this palette no longer exists.** Part 2 left it in place
+> (additive-only) rather than repaint route maps mid-fix, deferring unification to the
+> route-chart refactor. That refactor's Phase 3 **deleted** `_star_map_color`; the one
+> palette now lives in `core/shared.py` (`_SPECTRAL_COLORS` + `sp_color`) beside the
+> `spectral_leading_class` rule, with `core.viz` re-exporting the historical names.
+> The table below is the historical record of the divergence that was closed. See
+> `completed_plans/ROUTE_CHART_REFACTOR_PLAN.md` §0b.
+
 | letter | viz `_SPECTRAL_COLORS` | calculators `_star_map_color` |
 |---|---|---|
 | G | `#FFF4EA` | `#fff4c2` |
@@ -906,4 +914,4 @@ bucketed as D or M — it would not have failed on the fix *or* its revert.
 `d`-prefixes in `st_spectype`); `oec-search --spectral-type` (its documented contract
 requires `DA` → white dwarfs); the four-way `_SP_PATTERN` duplication
 (`core/shared.py:29`, `core/regions.py:15`, `main.py:1303`, and the digit-optional
-variant `core/science.py:155`); palette unification (→ `ROUTE_CHART_REFACTOR_PLAN.md`).
+variant `core/science.py:155`); palette unification (→ `completed_plans/ROUTE_CHART_REFACTOR_PLAN.md`).

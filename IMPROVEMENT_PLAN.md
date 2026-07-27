@@ -22,8 +22,11 @@ pattern before editing**; do not trust raw line numbers.
    exist in both `core/` and `main.py` copies get fixed **only in `core/`**. Leave `OecPanel`
    (`gui/panels/catalogs.py`), `main.py:2129`'s OEC import, and `MENU_OPTIONS["7"]` alone.
 2. **Interpreter:** run everything with `venv/bin/python` (system python lacks PySide6/pyvo).
-   Full suite: `venv/bin/python -m pytest` (also verify `venv/bin/python -m unittest discover -s tests`
-   still collects — the suite is pure unittest and must stay dual-runner).
+   Full suite: `venv/bin/python -m pytest`.
+   *(Superseded 2026-07-27: this rule used to require verifying `unittest discover` too, "the suite
+   … must stay dual-runner". **pytest is now the only runner.** The tests are still written as
+   `unittest.TestCase` classes — that is a style choice pytest collects natively — but nothing
+   verifies or promises stdlib-runner parity any more. See CLAUDE.md "### Tests".)*
 3. **Downstream consumer:** the sibling `scifiWorldBuilding-Claude` repo shells out to `query.py`
    and parses the JSON. Any change to a subcommand's flags, keys, exit codes, or numeric output
    **must** be reflected in `docs/integration.md` (the contract file — read the relevant section
@@ -302,16 +305,20 @@ tests using `query.cmd_*` + `contextlib.redirect_stdout` + `assertRaises(SystemE
   faster, roll out to the remaining `test_query_*.py` exit-code matrices, **keeping ≥1 real
   subprocess happy-path test per subcommand** (the CLI-wiring smoke) and keeping all
   parity-vs-core and DB-seeded tests as-is.
-- **Verify:** full suite; confirm both runners still work (`python -m unittest discover -s tests`).
+- **Verify:** full suite (`venv/bin/python -m pytest`). *(Originally "confirm both runners still
+  work"; the dual-runner requirement was dropped 2026-07-27 — pytest is the only runner.)*
 
 ### P3.3 `core.regions._MAIN_SEQUENCE_DATA` global-cache guard
 The snapshot/restore of this module-level cache exists only in `tests/test_regions.py`
 (grep `_MAIN_SEQUENCE_DATA` in `tests/`). Any other test seeding a different `main_sequence_stars`
-table can poison it order-dependently. **Fix:** since the suite must stay dual-runner (no pytest
-fixtures), add the save/None/restore to `setUp`/`tearDown` of every test class that seeds
+table can poison it order-dependently. **Fix:** add the save/None/restore to `setUp`/`tearDown`
+of every test class that seeds
 `main_sequence_stars` or swaps `_DB_PATH` and calls into `core.regions`/`core.shared` lookups
 (grep `main_sequence_stars` in `tests/` for the list), via a tiny helper in `tests/_queryharness.py`
-(e.g. `reset_main_sequence_cache()` used in setUp+tearDown).
+(e.g. `reset_main_sequence_cache()` used in setUp+tearDown). *(This prescribed `setUp`/`tearDown`
+rather than a pytest fixture because the suite then had to stay dual-runner. That constraint was
+dropped 2026-07-27 — pytest is the only runner, so a fixture is now permissible; the
+`setUp`/`tearDown` form is still fine and is what the shipped tests use.)*
 - **Verify:** run the suite with `pytest -p no:randomly` default order AND once with
   `--deselect`-free reversed file order (`pytest tests/ --collect-only -q | ...` not needed — just
   run `pytest tests/test_viz_phase_o.py tests/test_regions.py` back-to-back both orders as canary).
@@ -577,7 +584,8 @@ Note it in `future_phases.md` as a candidate phase instead (one line).
 
 1. `venv/bin/python -m pytest` — green, and note total runtime before/after Phase 3 (expect a
    material drop from the in-process matrices).
-2. `venv/bin/python -m unittest discover -s tests` — still collects and passes (dual-runner intact).
+2. ~~`venv/bin/python -m unittest discover -s tests` — still collects and passes (dual-runner intact).~~
+   **Dropped 2026-07-27** — pytest is the only runner; there is no parity claim to check.
 3. `venv/bin/python query.py sol-regions` — angular size ≈ 0.53°; JSON shape otherwise unchanged.
 4. `venv/bin/python query.py cooling-hz --track wd --mass-solar 0.6 --mode chz --threshold-gyr 8`
    (and a Δ-pause variant) — unchanged vs pre-plan output (P1.2 touches only the degenerate branch).

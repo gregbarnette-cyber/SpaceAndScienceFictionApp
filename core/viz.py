@@ -6,7 +6,8 @@ import os
 
 from core.equations import _kopparapu_seff  # single Kopparapu Seff source (P4.6)
 from core.shared import (_to_cartesian,  # single canonical copy (P4.6)
-                         spectral_leading_class, _SP_DISPLAY_LETTERS)
+                         spectral_leading_class, _SP_DISPLAY_LETTERS,
+                         sp_color, _SPECTRAL_COLORS as _SHARED_SPECTRAL_COLORS)
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
@@ -26,29 +27,12 @@ _HZ_ZONE_DEFS = [
     ("em",   "Optimistic Outer  (mg → em)",          "#4499FF"),
 ]
 
-# Spectral class colours for star map scatter
-_SPECTRAL_COLORS = {
-    "O": "#9BB0FF",
-    "B": "#AABFFF",
-    "A": "#CAD7FF",
-    "F": "#F8F7FF",
-    "G": "#FFF4EA",
-    "K": "#FFD2A1",
-    "M": "#FF8D3F",
-    "L": "#FF4500",
-    "T": "#CD853F",
-    "W": "#E040FB",
-    "D": "#B0C4DE",
-    # Part 2 additions. Chosen for LEGIBILITY on the dark chart surface, not physical
-    # realism: the physically-accurate deep reds fail 3:1 contrast against #0b1020.
-    # C/N/R share one hue deliberately — R and N are the older subdivisions of the
-    # same modern carbon class, and the validator shows four distinguishable warm
-    # hues do not exist beside M/L/T. Identity comes from the legend label, not the
-    # hue (see the palette note on _sp_color).
-    "Y": "#A9746E",
-    "C": "#D94F2B",
-    "N": "#D94F2B",
-}
+# Spectral class colours for star map scatter. The palette + lookup now live in
+# core.shared beside the `spectral_leading_class` rule they key off (one palette
+# app-wide — completed_plans/ROUTE_CHART_REFACTOR_PLAN.md Phase 3); these are the historical names
+# the GUI imports from here, kept as aliases so no call site changed.
+_SPECTRAL_COLORS = _SHARED_SPECTRAL_COLORS
+_sp_color = sp_color
 
 # Cyclic orbit colours for system-orbit diagram
 _ORBIT_COLORS = [
@@ -1710,24 +1694,6 @@ def _num(v):
         return _ffloat(str(v).replace(",", "").strip())
     except (ValueError, TypeError):
         return None
-
-
-def _sp_color(sp_type: str) -> str:
-    """Spectral type -> dot colour, skipping any luminosity prefix.
-
-    Uses the DISPLAY letter set, so `dM6` (Wolf 359) paints as an M dwarf rather
-    than — as the old `[:1].upper()` did — a white dwarf, while `DA`/`DZ7.5` still
-    correctly resolve to D. Unknown/unparseable -> the neutral grey.
-
-    PALETTE NOTE: `_SPECTRAL_COLORS` is *physically motivated* (it approximates true
-    stellar colour), so it deliberately fails the generic categorical-palette checks
-    — F `#F8F7FF` and G `#FFF4EA` sit at OKLab ΔE 2.7, because F and G stars really
-    are both near-white. Identity is therefore carried by SECONDARY ENCODING — the
-    per-class legend labels, the hover tooltip, and the click info box — never by
-    hue alone. Do not "fix" this by re-stepping the hues onto passing values; that
-    would make the colours lie about the physics."""
-    return _SPECTRAL_COLORS.get(
-        spectral_leading_class(sp_type, _SP_DISPLAY_LETTERS), "#AAAAAA")
 
 
 def prepare_sky_from_star(result: dict, mag_limit: float = 6.5) -> dict:

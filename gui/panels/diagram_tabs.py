@@ -308,7 +308,7 @@ def _make_size_tab(panel, planets, radius_key="pl_rade", name_key="pl_name"):
 
 def _build_star_chart_3d_tab(panel, map_stars, limit_ly, on_star_click=None,
                              legend_filter=False, isochrone=None,
-                             label_max_ly=None):
+                             label_max_ly=None, routes=None):
     """Build a "Star Chart 3D" tab widget with preset viewpoint buttons.
 
     Mirrors the Map 3D tab pattern but uses the dark-themed
@@ -318,6 +318,9 @@ def _build_star_chart_3d_tab(panel, map_stars, limit_ly, on_star_click=None,
     `isochrone` (opts 18/19, O17) switches the reference spheres to travel-time
     contours; GCNS keeps None (distance spheres). `label_max_ly` raises the
     zoom-driven label threshold for sparse charts (the O8 two-star maps).
+    `routes` is the Phase-I route overlay (dashed legs / solid MST edges) —
+    default None, so opts 18/19 / GCNS are unaffected; the seven Route Planning
+    panels pass their edges through it.
     """
     chart3d_w = QWidget()
     chart3d_l = QVBoxLayout(chart3d_w)
@@ -326,7 +329,7 @@ def _build_star_chart_3d_tab(panel, map_stars, limit_ly, on_star_click=None,
     canvas3d, toolbar3d, ax3d = make_star_chart_3d_canvas(
         panel, map_stars, limit_ly=limit_ly, on_star_click=on_star_click,
         legend_filter=legend_filter, isochrone=isochrone,
-        label_max_ly=label_max_ly,
+        label_max_ly=label_max_ly, routes=routes,
     )
     preset_bar = QWidget()
     preset_bar.setFixedHeight(18)
@@ -368,25 +371,30 @@ def _build_star_chart_3d_tab(panel, map_stars, limit_ly, on_star_click=None,
 
 # ── O15 — Table-Row ↔ Map Linking (opts 18/19, all five map tabs) ─────────────
 
-def _selected_star_name(view):
-    """The Star-Name (column 0) of the table's current/last-selected row, or None.
+def _selected_star_name(view, name_col=0):
+    """The Star-Name of the table's current/last-selected row, or None.
 
     Multi-row drag-select → the current (last-interacted) row wins; an empty
     selection → None (clears the highlight). Robust to interactive column sorting
-    because it reads the model cell at the current visual row."""
+    because it reads the model cell at the current visual row.
+
+    `name_col` (default 0) is the column holding the star name. Opts 18/19 and
+    the O8 two-star maps lead with it; the Route Planning tables lead with an
+    index column instead (Hop # / Step / Jumps) and pass 1."""
     model = view.model() if view is not None else None
     sel = view.selectionModel() if view is not None else None
     if model is None or sel is None or not sel.selectedRows():
         return None
     idx = sel.currentIndex()
     row = idx.row() if idx.isValid() else sel.selectedRows()[-1].row()
-    item = model.item(row, 0)
+    item = model.item(row, name_col)
     return item.text() if item is not None else None
 
 
 def _on_link_selection(panel):
     """Table selection changed → ring that star on every map canvas (O15)."""
-    name = _selected_star_name(getattr(panel, "_link_view", None))
+    name = _selected_star_name(getattr(panel, "_link_view", None),
+                               getattr(panel, "_link_name_col", 0))
     for canvas in getattr(panel, "_link_canvases", ()):
         try:
             canvas.highlight_star(name)
@@ -411,8 +419,9 @@ def _star_click_select(panel, name):
         if sm is not None:
             sm.clearSelection()      # → selectionChanged → highlight_star(None) everywhere
         return
+    name_col = getattr(panel, "_link_name_col", 0)
     for r in range(model.rowCount()):
-        item = model.item(r, 0)
+        item = model.item(r, name_col)
         if item is not None and item.text() == name:
             idx = model.index(r, 0)
             view.selectionModel().setCurrentIndex(
@@ -424,10 +433,14 @@ def _star_click_select(panel, name):
             return
 
 
-def _wire_row_map_linking(panel, view, canvases):
-    """Connect a result table to its map canvases, both directions (O15)."""
+def _wire_row_map_linking(panel, view, canvases, name_col=0):
+    """Connect a result table to its map canvases, both directions (O15).
+
+    `name_col` is the table column holding the star name (default 0; the Route
+    Planning tables pass 1 — they lead with an index column)."""
     panel._link_view = view
     panel._link_canvases = canvases
+    panel._link_name_col = name_col
     sm = view.selectionModel() if view is not None else None
     if sm is not None:
         sm.selectionChanged.connect(lambda *a: _on_link_selection(panel))
@@ -437,7 +450,7 @@ _ISO_HOURS_PER_JULIAN_YEAR = 8765.8128   # ×c → ly/hr (matches core + plot_he
 
 
 def _build_iso_chart_tab(panel, map_stars, limit, click_cb, canvases, is_3d,
-                         label_max_ly=None):
+                         label_max_ly=None, routes=None, legend_filter=True):
     """Star Chart (2D or 3D) tab with an O17 travel-time isochrone control.
 
     A velocity field + unit (× c | LY/HR) + Apply/Clear sits above the chart;
@@ -448,7 +461,12 @@ def _build_iso_chart_tab(panel, map_stars, limit, click_cb, canvases, is_3d,
 
     `label_max_ly` (default None → the shared 15 ly threshold) raises the
     zoom-driven star-label cutoff; the O8 two-star maps pass a large value so
-    their handful of dots stay labelled at any zoom."""
+    their handful of dots stay labelled at any zoom.
+
+    `routes` (default None) is the Phase-I route overlay, re-passed on every
+    isochrone rebuild so the legs survive it. `legend_filter` (default True) is
+    the O16 per-class legend; JumpNetworkPanel passes False because it paints
+    per-TIER colours, which the class-grouped legend would mislabel."""
     w = QWidget()
     outer = QVBoxLayout(w)
     outer.setContentsMargins(4, 4, 4, 4)
@@ -523,12 +541,14 @@ def _build_iso_chart_tab(panel, map_stars, limit, click_cb, canvases, is_3d,
         if is_3d:
             inner_w, new_canvas = _build_star_chart_3d_tab(
                 panel, map_stars, limit, on_star_click=click_cb,
-                legend_filter=True, isochrone=iso, label_max_ly=label_max_ly)
+                legend_filter=legend_filter, isochrone=iso,
+                label_max_ly=label_max_ly, routes=routes)
             hl.addWidget(inner_w)
         else:
             new_canvas, new_toolbar = make_star_chart_canvas(
                 panel, map_stars, limit_ly=limit, on_star_click=click_cb,
-                legend_filter=True, isochrone=iso, label_max_ly=label_max_ly)
+                legend_filter=legend_filter, isochrone=iso,
+                label_max_ly=label_max_ly, routes=routes)
             hl.addWidget(new_toolbar)
             hl.addWidget(new_canvas)
         state["canvas"] = new_canvas

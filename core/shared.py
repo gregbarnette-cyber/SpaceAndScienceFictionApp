@@ -416,6 +416,62 @@ def spectral_leading_class(sp_str, letters=_SPECTRAL_CHIP_LETTERS):
     return None
 
 
+# ── The one spectral-class colour palette (completed_plans/ROUTE_CHART_REFACTOR_PLAN.md Phase 3) ──
+# Lives here, beside the `spectral_leading_class` rule it is keyed off, so the
+# colour and the bucketing can never drift. `core.viz` re-exports it as
+# `_SPECTRAL_COLORS`/`_sp_color` (its historical names, which the GUI imports) and
+# `core.calculators._map_node` calls `sp_color` directly.
+#
+# Until 2026-07-27 the route maps had a SECOND palette
+# (`core.calculators._star_map_color`) that disagreed on G/M/D and the unknown
+# grey, so the same star was a different colour depending on which panel you
+# opened — and, once the route charts gained the O16 per-class legend, the same
+# "Class M" legend entry was painted two different colours. That palette is gone;
+# these values (the physically-motivated set) won.
+_SPECTRAL_COLORS = {
+    "O": "#9BB0FF",
+    "B": "#AABFFF",
+    "A": "#CAD7FF",
+    "F": "#F8F7FF",
+    "G": "#FFF4EA",
+    "K": "#FFD2A1",
+    "M": "#FF8D3F",
+    "L": "#FF4500",
+    "T": "#CD853F",
+    "W": "#E040FB",
+    "D": "#B0C4DE",
+    # Part 2 additions. Chosen for LEGIBILITY on the dark chart surface, not physical
+    # realism: the physically-accurate deep reds fail 3:1 contrast against #0b1020.
+    # C/N/R share one hue deliberately — R and N are the older subdivisions of the
+    # same modern carbon class, and the validator shows four distinguishable warm
+    # hues do not exist beside M/L/T. Identity comes from the legend label, not the
+    # hue (see the palette note on sp_color).
+    "Y": "#A9746E",
+    "C": "#D94F2B",
+    "N": "#D94F2B",
+}
+
+_SP_UNKNOWN_COLOR = "#AAAAAA"
+
+
+def sp_color(sp_type: str) -> str:
+    """Spectral type -> dot colour, skipping any luminosity prefix.
+
+    Uses the DISPLAY letter set, so `dM6` (Wolf 359) paints as an M dwarf rather
+    than — as the old `[:1].upper()` did — a white dwarf, while `DA`/`DZ7.5` still
+    correctly resolve to D. Unknown/unparseable -> the neutral grey.
+
+    PALETTE NOTE: `_SPECTRAL_COLORS` is *physically motivated* (it approximates true
+    stellar colour), so it deliberately fails the generic categorical-palette checks
+    — F `#F8F7FF` and G `#FFF4EA` sit at OKLab ΔE 2.7, because F and G stars really
+    are both near-white. Identity is therefore carried by SECONDARY ENCODING — the
+    per-class legend labels, the hover tooltip, and the click info box — never by
+    hue alone. Do not "fix" this by re-stepping the hues onto passing values; that
+    would make the colours lie about the physics."""
+    return _SPECTRAL_COLORS.get(
+        spectral_leading_class(sp_type, _SP_DISPLAY_LETTERS), _SP_UNKNOWN_COLOR)
+
+
 def _escape_like(s: str) -> str:
     """Escape LIKE wildcards so user text matches literally (use with ESCAPE '\\')."""
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

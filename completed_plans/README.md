@@ -11,7 +11,6 @@ in here too, with the same history (moved with `git mv`).
 **Still at the repo root** — not complete, so not here:
 
 - `future_phases.md` — the forward-looking roadmap.
-- `ROUTE_CHART_REFACTOR_PLAN.md` — planned, not started.
 - `IMPROVEMENT_PLAN.md` — 8 phases shipped, but P4.6 is **PARTIALLY DONE**: the
   sexagesimal RA/Dec parser was never consolidated (4 copies across 6 call sites, with
   three different failure contracts). Stays at root until that closes.
@@ -22,7 +21,7 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (43 files)
+## Index (44 files)
 
 | File | Title |
 |---|---|
@@ -66,6 +65,7 @@ in here too, with the same history (moved with `git mv`).
 | [PHASE_X_PLAN.md](PHASE_X_PLAN.md) | PHASE_X_PLAN.md — Closed-Loop Life-Support & Bioregenerative Calculators |
 | [PHASE_Y_PLAN.md](PHASE_Y_PLAN.md) | Phase Y — STL Mission Energetics (`rocket-equation`, `beam-sail`) |
 | [PHASE_Z_PLAN.md](PHASE_Z_PLAN.md) | Phase Z — Rotating-Structure & Megastructure Scale (`spin-stress`, `tether-taper`, `dyso |
+| [ROUTE_CHART_REFACTOR_PLAN.md](ROUTE_CHART_REFACTOR_PLAN.md) | Route-Chart Refactor — the 7 Route Planning maps onto the shared builder (Phases 1–2) + the one-palette unification (Phase 3) |
 | [SPECTRAL_CLASS_PLAN.md](SPECTRAL_CLASS_PLAN.md) | Spectral-Class Prefix Plan — search chips (Part 1) + colour/legend (Part 2) |
 | [future_phases_archive.md](future_phases_archive.md) | Archived Phases — Space & Science Fiction App |
 | [hypatia_implementation.md](hypatia_implementation.md) | Hypatia Catalog Integration — Phase 1: Option 8 (Star System Regions Auto) |

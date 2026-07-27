@@ -356,6 +356,22 @@ route's origin/start/center sits at the chart origin (gold ★), with distance r
 existing **zoom-driven label decluttering** (shown once the visible half-range drops below ~15 ly), so a busy route
 starts uncluttered and reveals labels on zoom.
 
+**Route-chart refactor (`completed_plans/ROUTE_CHART_REFACTOR_PLAN.md` Phases 1–2, built 2026-07-27).** `_add_route_chart_tabs` no
+longer calls the canvases directly — both tabs are built by the **shared opt-18/19 `_build_iso_chart_tab`**
+(`gui/panels/diagram_tabs.py`), which gained a `routes=None` passthrough (and so did `_build_star_chart_3d_tab`,
+retiring the duplicate private `_route_chart_3d_tab`). All seven route charts therefore now carry the **O16 per-class
+legend filter**, the **O17 travel-time isochrone control** (rings centred on the route's start, so they read as travel
+time *from* it) and the 3D viewpoint presets. Two deliberate exceptions: **`JumpNetworkPanel` passes
+`legend_filter=False`** (its dots carry per-tier, not spectral, colours — the class-grouped legend would mislabel
+them; its own tier-swatch legend stands), and **`label_max_ly`** is raised only for sparse routes (≤ 25 nodes), since
+Jump Network can return thousands. **O15 row↔map linking** is wired on the three star-per-row panels
+(Nearest-Neighbor, Farthest-First, Jump Network) via an additive `name_col` on the linking helpers — those tables lead
+with an index column (`Hop #`/`Step`/`Jumps`), so they pass **1**; the default 0 keeps opts 18/19 and the two-star maps
+unchanged. The leg-shaped `From|To` panels pass no `link_view`, as opts 20/21 already did. **Phase 3** then deleted the
+`core.calculators._star_map_color` second palette: dot colours (including the `stars[].color` these planners return
+through `query.py`) now come from the single `core.shared.sp_color`, so a star reads the same on every panel. Four
+values moved — G/M/D and the unknown grey; see `docs/integration.md` for the consumer-facing note.
+
 **Phase O8 — two-star maps (opts 17/20/21), rebuilt Sol-centered 2026-07-26.** Originally these reused the `routes=`
 overlay above and centred on star-1/origin. They are now **Sol-centered with full opt-18/19 parity**.
 `gui/panels/route_planning.py::_two_star_route_map(result, kind)` converts a two-star result (`kind="distance"` for opt

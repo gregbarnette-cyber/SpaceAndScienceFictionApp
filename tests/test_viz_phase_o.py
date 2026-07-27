@@ -2060,7 +2060,10 @@ class O8TwoStarRouteMapTest(unittest.TestCase):
         }
         rm = _two_star_route_map(result, "distance")
         self.assertEqual(rm["stars"][1]["sp_type"], "")
-        self.assertEqual(rm["stars"][1]["color"], calc._star_map_color(""))
+        # Phase 3: the route maps now use the one app-wide palette (the second
+        # `calc._star_map_color` palette, whose grey was #cccccc, is deleted).
+        from core.viz import _sp_color
+        self.assertEqual(rm["stars"][1]["color"], _sp_color(""))
 
     def test_error_passthrough(self):
         from gui.panels.route_planning import _two_star_route_map

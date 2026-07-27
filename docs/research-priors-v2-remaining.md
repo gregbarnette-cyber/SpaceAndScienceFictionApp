@@ -127,7 +127,7 @@ venv/bin/python -c "import json,sys; sys.path.insert(0,'.'); \
   d=json.load(open('$V2')); print(validate_priors_contract(d) or 'VALID'); print(present_v2_blocks(d)); \
   print(compute_research_priors_ingest(path='$V2')['dataset_version'])"
 venv/bin/python query.py generate-system --seed 3 --research-policy strict
-QT_QPA_PLATFORM=offscreen venv/bin/python -m unittest discover -s tests
+QT_QPA_PLATFORM=offscreen venv/bin/python -m pytest
 ```
 
 ---

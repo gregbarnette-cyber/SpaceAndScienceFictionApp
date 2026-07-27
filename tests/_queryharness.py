@@ -1,6 +1,7 @@
 # tests/_queryharness.py — shared query.py test harness (IMPROVEMENT_PLAN Phase 3).
 #
-# Underscore prefix so unittest discovery skips it. Consolidates the ~24 duplicate
+# Not a test module: pytest only collects `test_*.py`, and the underscore prefix keeps
+# stdlib unittest discovery off it too. Consolidates the ~24 duplicate
 # module-level `_run` helpers that each spawned `query.py` as a subprocess. Two key
 # wins baked in over the ad-hoc copies:
 #   1. a `timeout=` on every spawn (the copies had none — a hung query.py would hang

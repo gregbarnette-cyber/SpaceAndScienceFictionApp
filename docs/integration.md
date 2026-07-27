@@ -44,6 +44,19 @@ that takes a stellar luminosity: `habitable-zone`, `habitable-zone-sma`, `solven
 spelling. The documented spelling per command stays primary in `--help`; the other is an
 accepted synonym.
 
+### Route-map dot colours unified (2026-07-27)
+
+The `stars[]` map dicts returned by the seven route planners (`multi-stop`, `nearest-neighbor`,
+`trade-route`, `optimal-tour`, `jump-route`, `jump-network`, `farthest-first`, plus their
+`--weight dust`/`blend` variants) carry a **`color`** hex per star. Those hexes came from a
+route-only palette that disagreed with the app's star-chart palette; it was deleted
+(`completed_plans/ROUTE_CHART_REFACTOR_PLAN.md` Phase 3) and `color` now comes from the single
+`core.shared.sp_color`. **Four values changed** — G `#fff4c2` → `#FFF4EA`, M `#ff9d6c` →
+`#FF8D3F`, D `#dfe6ff` → `#B0C4DE`, unknown/unparseable `#cccccc` → `#AAAAAA`; `O B A F K` and
+`L T W Y C N` are unchanged. Hexes are now also **uppercase**, so a consumer comparing them
+literally should casefold. Structure, keys and every other field are untouched. `jump-network`'s
+per-tier `color` (from `TIER_COLORS`) is unaffected — it overrides the spectral colour by design.
+
 ### Star designation strings (2026-07-26)
 
 Several subcommands return a **comma-separated designation string** — `"Star Designations"`

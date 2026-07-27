@@ -13,7 +13,8 @@ from collections import deque
 
 from .equations import _C_MS, _LY_M  # single source of truth (Phase Y/P4.5 promoted to equations)
 from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
-                     _to_cartesian, spectral_leading_class, _SP_DISPLAY_LETTERS)
+                     _to_cartesian, spectral_leading_class, _SP_DISPLAY_LETTERS,
+                     sp_color)   # the one app-wide spectral palette (Phase 3)
 
 HOURS_PER_JULIAN_YEAR = 8765.8128  # 365.2422 × 24 (tropical year) — legacy ly/hr↔×c anchor; NOT 365.25×24 (=8766.0).
                                    # Golden pins and the downstream consumer depend on this exact value; see IMPROVEMENT_PLAN D1.
@@ -1553,28 +1554,11 @@ def _parse_db_dec(s: str) -> float:
     return sign * (float(p[0]) + float(p[1]) / 60 + float(p[2]) / 3600)
 
 
-def _star_map_color(sp_type: str) -> str:
-    """Spectral type → route-map dot colour, skipping any luminosity prefix.
-
-    Deliberately a SEPARATE palette from `core.viz._SPECTRAL_COLORS` (its G/M/D and
-    default differ), even though both feed the same star-chart canvas. Unifying them
-    would repaint every existing route-planning map plus opts 17/20/21 for a reason
-    unrelated to the prefix bug, so it is deferred to its own visual-change ticket.
-
-    The L/T/W/Y/C/N/R entries below are an ADDITIVE extension: those letters fell
-    through to `#cccccc` before, so adding them changes only dots that were already
-    grey — brown dwarfs, Wolf-Rayets and carbon stars stop being invisible here.
-    No pre-existing colour moves.
-    """
-    palette = {
-        "O": "#9bb0ff", "B": "#aabfff", "A": "#cad7ff", "F": "#f8f7ff",
-        "G": "#fff4c2", "K": "#ffd2a1", "M": "#ff9d6c", "D": "#dfe6ff",
-        # additive — previously grey
-        "L": "#ff4500", "T": "#cd853f", "W": "#e040fb", "Y": "#a9746e",
-        "C": "#d94f2b", "N": "#d94f2b",
-    }
-    return palette.get(
-        spectral_leading_class(sp_type, _SP_DISPLAY_LETTERS), "#cccccc")
+# NOTE: the route maps used to have their own `_star_map_color` palette here,
+# disagreeing with the star-chart one on G/M/D and the unknown grey — so the same
+# star was a different colour depending on which panel you opened. It was deleted
+# 2026-07-27 (completed_plans/ROUTE_CHART_REFACTOR_PLAN.md Phase 3); `_map_node` now uses the one
+# app-wide palette, `core.shared.sp_color`. Do not reintroduce a local palette.
 
 
 def _resolve_star_position(name: str) -> dict:
@@ -1643,7 +1627,7 @@ def _map_node(rec: dict) -> dict:
     return {
         "name": rec["name"], "desig": rec.get("desig", ""),
         "sp_type": rec.get("sp_type", ""),
-        "color": _star_map_color(rec.get("sp_type", "")),
+        "color": sp_color(rec.get("sp_type", "")),
         "ly": math.sqrt(rec["x"] ** 2 + rec["y"] ** 2 + rec["z"] ** 2),
         "x": rec["x"], "y": rec["y"], "z": rec["z"],
     }

@@ -438,18 +438,46 @@ class SpectralDisplayClassTest(unittest.TestCase):
 
     def test_colour_helpers_agree_with_the_rule(self):
         from core.viz import _sp_color, _SPECTRAL_COLORS
-        from core.calculators import _star_map_color
         self.assertEqual(_sp_color("dM6"), _SPECTRAL_COLORS["M"])
         self.assertEqual(_sp_color("DA"), _SPECTRAL_COLORS["D"])
         self.assertEqual(_sp_color("Red Giant"), "#AAAAAA")
-        # _star_map_color is a deliberately separate palette; the ADDITIVE guarantee
-        # is that no letter which already had an entry changes colour.
-        for sp, unchanged in [("G2V", "#fff4c2"), ("M4V", "#ff9d6c"),
-                              ("A1V", "#cad7ff"), ("DA", "#dfe6ff"), ("", "#cccccc")]:
-            self.assertEqual(_star_map_color(sp), unchanged, sp)
-        # …and letters that were falling through to grey now resolve.
-        self.assertEqual(_star_map_color("L0"), "#ff4500")
-        self.assertEqual(_star_map_color("dM6"), "#ff9d6c")
+        self.assertEqual(_sp_color("L0"), _SPECTRAL_COLORS["L"])
+
+    def test_there_is_exactly_one_spectral_palette(self):
+        """completed_plans/ROUTE_CHART_REFACTOR_PLAN.md Phase 3. The route maps used to carry a
+        SECOND palette (`core.calculators._star_map_color`) disagreeing on G/M/D
+        and the unknown grey, so the same star was a different colour depending on
+        which panel you opened — and, once route charts gained the O16 per-class
+        legend, the same "Class M" entry was painted two different colours.
+
+        The palette now lives in core.shared beside the rule it is keyed off;
+        core.viz re-exports it under its historical names. Reintroducing a local
+        palette anywhere fails here."""
+        import core.calculators as calc
+        import core.viz as viz
+        import core.shared as shared
+        from gui.panels.route_planning import _two_star_route_map
+
+        self.assertFalse(hasattr(calc, "_star_map_color"),
+                         "the second route-map palette is back")
+        self.assertIs(viz._SPECTRAL_COLORS, shared._SPECTRAL_COLORS)
+        self.assertIs(viz._sp_color, shared.sp_color)
+
+        # Every route-map node colour == the star-chart colour for the same type.
+        for sp in ["G2V", "M4V", "A1V", "DA", "L0", "dM6", "sdM3.0", "", "Red Giant"]:
+            node = calc._map_node({"name": "x", "sp_type": sp,
+                                   "x": 1.0, "y": 0.0, "z": 0.0})
+            self.assertEqual(node["color"], viz._sp_color(sp), sp)
+
+        # …including the O8 two-star maps (opts 17/20/21), the other consumer.
+        rm = _two_star_route_map(
+            {"star1_info": {"name": "Sol", "ra_deg": 0.0, "dec_deg": 0.0,
+                            "ly": 0.0, "desig_str": "", "sp_type": "G2V"},
+             "star2_info": {"name": "B", "ra_deg": 90.0, "dec_deg": 0.0,
+                            "ly": 3.0, "desig_str": "", "sp_type": "M4V"}},
+            "distance")
+        for s in rm["stars"]:
+            self.assertEqual(s["color"], viz._sp_color(s["sp_type"]), s["name"])
 
     def test_cross_site_agreement(self):
         """§4b atomicity: the legend, highlight-suppression and label paths agree

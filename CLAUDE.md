@@ -17,8 +17,8 @@ python gui_main.py
 # Query core functions as JSON (integration tool)
 python query.py <subcommand> [arguments]
 
-# Run the test suite (invoke via the VENV — pytest or the stdlib runner both work)
-venv/bin/python -m pytest                      # or: venv/bin/python -m unittest discover -s tests
+# Run the test suite (pytest is the runner — always invoke via the VENV)
+venv/bin/python -m pytest
 # NOTE: use the venv python, not a bare `pytest` — a system-wide pytest runs on
 # system Python, which lacks this project's deps (numpy, astroquery, …) and fails
 # at collection. pytest is a test-only dep in requirements.txt (the app doesn't need it).
@@ -64,7 +64,7 @@ files, not a SQLite table, so this is file-presence status rather than a row cou
 
 Tests live in `tests/`. The bulk are **offline** and need no network or Qt. Tests that touch the SQLite store never mutate `data/space_app.db`: in-process tests monkeypatch `core.db._DB_PATH` to a tmp file with auto-seeding disabled (pattern in `tests/test_gcns.py`, `tests/test_regions.py`, `tests/test_db_backups.py`), and the `query.py` subprocess tests pass a throwaway DB via the `SPACE_APP_DB` environment variable (via the shared `tests/_queryharness.py` harness). The `*_live.py` files (`test_gcns_live.py`, `test_hypatia_live.py`) hit the **live network**, gated by `tests/_netcheck.py` via `@unittest.skipUnless(...)` (skipped when GAVO/Hypatia is unreachable).
 
-The suite is written as `unittest.TestCase` classes, so **both runners are equivalent** — `pytest` collects and runs them unchanged (`pytest.ini` sets `testpaths = tests`). Verified parity: 2100 passed, 1 skipped, 0 failures under each (2026-07-27). Always invoke through the venv (`venv/bin/python -m pytest` / `-m unittest discover -s tests`); a bare `pytest` may resolve to a system install on system Python without this project's deps.
+**`pytest` is the runner.** The tests are *written* as `unittest.TestCase` classes — pytest collects them natively, so that is a style choice, not a second runner to maintain (`pytest.ini` sets `testpaths = tests`). Current state: **2115 passed, 1 skipped, 0 failures** (2026-07-27). Always invoke through the venv (`venv/bin/python -m pytest`); a bare `pytest` may resolve to a system install on system Python without this project's deps. *(The stdlib `unittest discover` still happens to work, since nothing uses pytest-only features — but it is not verified against and no doc should promise parity; don't spend a run on it.)*
 
 **Per-test-file descriptions live in `docs/testing.md`** (read-on-demand — read it before adding or modifying tests).
 
@@ -82,9 +82,24 @@ The project has three entry points that share all computation through the `core/
 - `docs/integration.md` — the `query.py` subcommand contract (arguments + JSON output keys + exit-code behavior). **Read it before adding, modifying, or verifying any `query.py` subcommand** (it is the contract the `scifiWorldBuilding-Claude` consumer reads).
 - `docs/gui-architecture.md` — the full GUI structure, panel class → option mapping, and phase completion status. **Read it before touching `gui/` panels or the phase-status table.**
 - `docs/testing.md` — the per-test-file catalog (what each `tests/test_*.py` covers). **Read it before adding or modifying tests.**
-- `completed_plans/` — implementation plans + mockups for **shipped** work (43 files, indexed in `completed_plans/README.md`). Moved out of the repo root 2026-07-27. Plans for work that is *not* finished stay at the root: `future_phases.md` (roadmap), `ROUTE_CHART_REFACTOR_PLAN.md` (planned), and `IMPROVEMENT_PLAN.md` (P4.6 still PARTIALLY DONE). This folder also absorbed the former `archive/` directory (pre-`PHASE_*`-era plans).
-- `completed_plans/SPECTRAL_CLASS_PLAN.md` — the spectral-class **prefix** rule (built 2026-07-27): why the search chips use case-sensitive `GLOB` rather than `LIKE`, the `_SP_CLASS_PREFIXES` / `_SP_DISPLAY_LETTERS` two-alphabet split, and the colour/legend bucketing. **Read it before touching `spectral_where`, `spectral_leading_class`, `_sp_color`, `_display_class`, `_star_map_color`, or any spectral-type string handling** — the load-bearing detail is that SQLite `LIKE` is case-**insensitive**, so it cannot tell the lowercase *dwarf* prefix `d` (`dM6` = Wolf 359) from the uppercase *degenerate* prefix `D` (`DA` = a white dwarf).
-- `ROUTE_CHART_REFACTOR_PLAN.md` — planned (not started): converge the 7 Route Planning star charts onto the shared `_build_iso_chart_tab` (they currently miss the O16 legend filter / O17 isochrone / click-info / O15 linking) and retire the second `_star_map_color` palette.
+- `completed_plans/` — implementation plans + mockups for **shipped** work (44 files, indexed in `completed_plans/README.md`). Moved out of the repo root 2026-07-27. Plans for work that is *not* finished stay at the root: `future_phases.md` (roadmap) and `IMPROVEMENT_PLAN.md` (P4.6 still PARTIALLY DONE). This folder also absorbed the former `archive/` directory (pre-`PHASE_*`-era plans).
+- `completed_plans/SPECTRAL_CLASS_PLAN.md` — the spectral-class **prefix** rule (built 2026-07-27): why the search chips use case-sensitive `GLOB` rather than `LIKE`, the `_SP_CLASS_PREFIXES` / `_SP_DISPLAY_LETTERS` two-alphabet split, and the colour/legend bucketing. **Read it before touching `spectral_where`, `spectral_leading_class`, `sp_color`/`_sp_color`, `_display_class`, or any spectral-type string handling** (the `_star_map_color` second palette it describes was deleted 2026-07-27 — see `completed_plans/ROUTE_CHART_REFACTOR_PLAN.md` Phase 3) — the load-bearing detail is that SQLite `LIKE` is case-**insensitive**, so it cannot tell the lowercase *dwarf* prefix `d` (`dM6` = Wolf 359) from the uppercase *degenerate* prefix `D` (`DA` = a white dwarf).
+- `completed_plans/ROUTE_CHART_REFACTOR_PLAN.md` — **COMPLETE, built 2026-07-27**: the 7 Route Planning star charts now go
+  through the shared `_build_iso_chart_tab` (via an additive `routes=` passthrough on it and
+  `_build_star_chart_3d_tab`), so they carry the O16 legend filter, the O17 isochrone control and the 3D
+  presets; the duplicate `_route_chart_3d_tab` is gone. Two seams to know: `_build_iso_chart_tab` takes
+  `legend_filter=True` (**`JumpNetworkPanel` passes `False`** — its dots are per-tier coloured, so a
+  class-grouped legend would mislabel them), and the O15 linking helpers take `name_col=0` (**the route
+  tables pass 1** — they all lead with an index column, `Hop #`/`Step`/`Jumps`). Tests:
+  `tests/test_route_chart_tabs.py` (these tabs had no coverage at all before). **Phase 3 (same date) retired the
+  second palette**: `core.calculators._star_map_color` is **deleted** and the one app-wide palette now lives in
+  **`core/shared.py`** (`_SPECTRAL_COLORS` + `sp_color()`), beside the `spectral_leading_class`/`_SP_DISPLAY_LETTERS`
+  rule it keys off, so colour and bucketing can't drift apart again; `core/viz.py` re-exports it under its historical
+  `_SPECTRAL_COLORS`/`_sp_color` names, so no display site changed. **Do not add a local palette anywhere** —
+  `tests/test_search.py::test_there_is_exactly_one_spectral_palette` fails if you do. This repainted four values
+  (G/M/D + the unknown grey) on the 7 route panels, opts 17/20/21, and the `stars[].color` of the route
+  `query.py` subcommands (noted in `docs/integration.md`). The plan is COMPLETE and ready to move to
+  `completed_plans/`.
 
 ### CLI Architecture
 
