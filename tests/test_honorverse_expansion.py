@@ -49,6 +49,50 @@ class ParityTest(unittest.TestCase):
         self.assertEqual((iota["warship_xc"], iota["merchant_xc"]), (3600.0, 3000.0))
         self.assertEqual((eb[-1]["warship_xc"], eb[-1]["merchant_xc"]), (9949.2, 8291.0))
 
+    def test_bleed_off_formula_reproduces_canon_and_extends_past_iota(self):
+        """92·0.9215^(n−1) rounds to every canon Alpha–Iota value and fills Kappa–Omega."""
+        canon = ["92%", "85%", "78%", "72%", "66%", "61%", "56%", "52%", "48%"]
+        self.assertEqual(
+            [f"{science.honorverse_band_bleed_off(n)}%" for n in range(1, 10)], canon)
+
+        eb = science.compute_honorverse_effective_speed()["expanded_bands"]
+        self.assertEqual([b["bleed_off"] for b in eb[:9]], canon)
+        self.assertTrue(all(b["bleed_off_canon"] for b in eb[:9]))
+        # Every band now carries a value; the extrapolated ones are flagged.
+        self.assertTrue(all(b["bleed_off"] for b in eb))
+        self.assertFalse(any(b["bleed_off_canon"] for b in eb[9:]))
+        self.assertEqual(eb[9]["bleed_off"],  "44%")  # Kappa
+        self.assertEqual(eb[-1]["bleed_off"], "14%")  # Omega
+        # Monotonic decay, never negative.
+        pct = [int(b["bleed_off"].rstrip("%")) for b in eb]
+        self.assertTrue(all(a >= b for a, b in zip(pct, pct[1:])))
+        self.assertGreater(pct[-1], 0)
+
+    def test_multiplier_formula_reproduces_canon_and_drives_the_speeds(self):
+        """The 7-band +4938 ramp (+295 from Iota) is the generator for all 24 bands.
+
+        Pins two things: (1) the formula regenerates the nine canon Alpha–Iota
+        multipliers exactly, so the extrapolated Kappa–Omega bands are the same
+        rule continued rather than free-hand numbers; (2) every stored xC speed
+        is 0.6 × (warship) / 0.5 × (merchant) that multiplier.
+        """
+        canon = [62, 767, 1473, 2178, 2884, 3589, 4294, 5000, 6000]
+        self.assertEqual([science.honorverse_band_multiplier(n) for n in range(1, 10)],
+                         canon)
+        # Table 1's own multiplier column must agree with the formula.
+        t1 = science.compute_honorverse_effective_speed()["bands"]
+        self.assertEqual([b["multiplier"] for b in t1], canon)
+
+        eb = science.compute_honorverse_effective_speed()["expanded_bands"]
+        self.assertEqual(eb[-1]["multiplier"], 16582)  # Omega
+        for n, b in enumerate(eb, start=1):
+            mult = science.honorverse_band_multiplier(n)
+            self.assertEqual(b["multiplier"], mult, msg=f"multiplier off at {b['band']}")
+            self.assertAlmostEqual(b["warship_xc"],  mult * 0.6, places=6,
+                                   msg=f"warship xC off at {b['band']}")
+            self.assertAlmostEqual(b["merchant_xc"], mult * 0.5, places=6,
+                                   msg=f"merchant xC off at {b['band']}")
+
 
 # ── K1: hyper translation time ───────────────────────────────────────────────
 

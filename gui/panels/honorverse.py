@@ -4,11 +4,12 @@
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QFormLayout, QPushButton,
-    QLineEdit, QComboBox, QSlider, QWidget,
+    QLineEdit, QComboBox, QSlider, QWidget, QScrollArea,
 )
 from PySide6.QtCore import Qt
 
 from gui.panels.base import ResultPanel, DiagramToggleMixin
+from gui.panels.hypatia_tab import fit_table_height
 import core.science
 import core.calculators
 import core.viz
@@ -115,10 +116,22 @@ class HonorverseSpeedPanel(ResultPanel):
     def build_results_area(self):
         data = core.science.compute_honorverse_effective_speed()
 
+        # Both tables are sized to their exact content height and stacked inside
+        # one scroll area, so neither gets a private scrollbar and neither is
+        # padded with dead space by the layout's equal-share stretching.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        content = QWidget()
+        body = QVBoxLayout(content)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(6)
+        scroll.setWidget(content)
+
         # ── Table 1: Alpha–Iota ───────────────────────────────────────────────
         t1_label = QLabel("Effective Speed by Hyper Band")
         t1_label.setStyleSheet("font-weight: bold; margin-top: 4px;")
-        self._layout.addWidget(t1_label)
+        body.addWidget(t1_label)
 
         spd_headers = [
             "Band", "Translation Bleed-Off", "Velocity Multiplier",
@@ -136,23 +149,29 @@ class HonorverseSpeedPanel(ResultPanel):
         ]
         view1 = self.make_table(spd_headers, spd_rows)
         view1.setSortingEnabled(False)
-        self._layout.addWidget(view1)
+        fit_table_height(view1)
+        body.addWidget(view1)
 
         # ── Footnote after table 1 ────────────────────────────────────────────
         note1 = QLabel(_FOOTNOTE)
         note1.setWordWrap(True)
         note1.setStyleSheet("font-style: italic; margin-bottom: 8px;")
-        self._layout.addWidget(note1)
+        body.addWidget(note1)
 
         # ── Table 2: Alpha–Omega (expanded) ───────────────────────────────────
         t2_label = QLabel("Effective Speed by Hyper Band (Expanded)")
         t2_label.setStyleSheet("font-weight: bold; margin-top: 4px;")
-        self._layout.addWidget(t2_label)
+        body.addWidget(t2_label)
 
-        exp_headers = ["Band", "Warship (xC)", "Merchantship (xC)"]
+        exp_headers = [
+            "Band", "Translation Bleed-Off", "Velocity Multiplier",
+            "Warship (xC)", "Merchantship (xC)",
+        ]
         exp_rows = [
             [
                 b["band"],
+                b["bleed_off"] + ("" if b["bleed_off_canon"] else " †"),
+                str(b["multiplier"]),
                 _speed_str(b["warship_xc"],  b["warship_ly_hr"]),
                 _speed_str(b["merchant_xc"], b["merchant_ly_hr"], b["merchant_note"]),
             ]
@@ -160,13 +179,20 @@ class HonorverseSpeedPanel(ResultPanel):
         ]
         view2 = self.make_table(exp_headers, exp_rows)
         view2.setSortingEnabled(False)
-        self._layout.addWidget(view2)
+        fit_table_height(view2)
+        body.addWidget(view2)
 
         # ── Footnote after table 2 ────────────────────────────────────────────
-        note2 = QLabel(_FOOTNOTE)
+        note2 = QLabel(
+            _FOOTNOTE + "\n"
+            "† Bleed-off extrapolated from the canon Alpha–Iota decay "
+            "(92 × 0.9215^(n−1), ~7.85% per band); canon publishes no value above Iota.")
         note2.setWordWrap(True)
         note2.setStyleSheet("font-style: italic; margin-top: 4px;")
-        self._layout.addWidget(note2)
+        body.addWidget(note2)
+
+        body.addStretch()
+        self._layout.addWidget(scroll)
 
 
 # ── Phase K — interactive calculators ────────────────────────────────────────

@@ -713,7 +713,9 @@ Clicking any body (planet, origin, or destination) on the canvas calls `_show_bo
 
 **`_PLANET_IDS` / `_PLANET_COLORS`**: Module-level constants in `core/calculators.py` listing the 8 planets with their Horizons IDs and display colours; also mirrored as `_PLANET_SMAS` / `_PLANET_COLORS_VIZ` in `core/viz.py` for the canvas rendering layer.
 
-**`_fit_table_height(view)`**: Module-level helper in `system_travel.py` that sets a `QTableView` to a fixed height equal to its header plus all row heights. Fires once immediately and once via `QTimer.singleShot(0, …)` so the horizontal scrollbar's visibility is included in the final measurement.
+**`_fit_table_height(view)`**: Module-level helper in `system_travel.py` that sets a `QTableView` to a fixed height equal to its header plus all row heights. Fires once immediately and once via `QTimer.singleShot(0, …)` so the horizontal scrollbar's visibility is included in the final measurement. The shared twin is **`gui.panels.hypatia_tab.fit_table_height(view)`** (same idea, plus a `resizeRowsToContents` and a 50 ms re-apply).
+
+**Stacking several tables in one panel (`HonorverseSpeedPanel`, opt 16 — fixed 2026-07-27).** Two or more `QTableView`s added straight to a panel's `QVBoxLayout` **share the vertical space between them**, which is almost never what a stacked-tables panel wants: a short table gets padded with dead space while a long one is squeezed into its own scrollbar (opt 16 showed a 9-row table with a blank half and a 24-row table scrolling inside it). The pattern is: call `fit_table_height` on each view and put the whole stack inside one `QScrollArea` (`setWidgetResizable(True)`, `NoFrame`), with a trailing `addStretch()` so short content sits at the top — the panel then scrolls as a whole and each table shows all of its rows. Pinned by `tests/test_honorverse_speed_panel.py`.
 
 ## Phase Completion Status
 

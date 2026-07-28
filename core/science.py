@@ -260,6 +260,60 @@ _HONORVERSE_EXPANDED_BANDS = [
     ("Omega",   9949.2, 8291.0, " *"),
 ]
 
+# Velocity multiplier per expanded band (= warship_xc / 0.6 = merchant_xc / 0.5).
+#
+# The multiplier ramp is ARITHMETIC with a 7-band period. The nine canon
+# (Alpha–Iota) multipliers rise 62 → 5000 over the seven Alpha→Theta steps —
+# an exact +4938 per seven bands (avg step 705.43), distributed as the
+# published 705/706 pattern below — then Iota breaks the ramp with a canon
+# +1000 to 6000, i.e. a ONE-TIME +295 offset carried by every band from Iota on.
+# So, with k = band_index - 1 (Alpha = 0):
+#
+#     multiplier(n) = 62 + 4938·⌊k/7⌋ + _MULT_CYCLE[k mod 7] + (295 if n ≥ 9)
+#
+# This reproduces all nine canon values exactly and generates Kappa–Omega, which
+# is precisely how the extrapolated bands in _HONORVERSE_EXPANDED_BANDS were
+# built (verified: it regenerates all 24 stored warship/merchant xC values).
+_MULT_CYCLE = (0, 705, 1411, 2116, 2822, 3527, 4232)  # canon offsets within a cycle
+_MULT_PERIOD = 4938        # multiplier gained per 7 bands (Alpha → Theta)
+_IOTA_OFFSET = 295         # one-time canon break at Iota (5705 → 6000)
+
+
+def honorverse_band_multiplier(band_index: int) -> int:
+    """Velocity multiplier for the 1-based hyper-band index (Alpha = 1 … Omega = 24)."""
+    k = band_index - 1
+    base = 62 + _MULT_PERIOD * (k // 7) + _MULT_CYCLE[k % 7]
+    return base + (_IOTA_OFFSET if band_index >= 9 else 0)
+
+
+_HONORVERSE_EXPANDED_MULTIPLIERS = {
+    band: honorverse_band_multiplier(i)
+    for i, (band, *_rest) in enumerate(_HONORVERSE_EXPANDED_BANDS, start=1)
+}
+
+# Translation bleed-off. Unlike the multiplier's arithmetic ramp, the canon
+# bleed-off decays GEOMETRICALLY: 92·0.9215^(n−1), rounded to the nearest whole
+# percent, reproduces all nine published Alpha–Iota values exactly —
+#   92 85 78 72 66 61 56 52 48  — a ~7.85%-per-band decay
+# (log-linear least-squares fit over the nine canon points: 91.93·0.92150^(n−1),
+# max residual 0.33 pp, every value rounding to its published integer).
+# Kappa–Omega continue that decay: 44% … 14%. Canon publishes no bleed-off above
+# Iota, so those fifteen are derived, flagged per band by `bleed_off_canon`.
+_HONORVERSE_BLEED_BASE  = 92.0
+_HONORVERSE_BLEED_DECAY = 0.9215
+_HONORVERSE_CANON_BLEED = {band: bleed for band, bleed, *_ in _HONORVERSE_BANDS}
+
+
+def honorverse_band_bleed_off(band_index: int) -> int:
+    """Translation bleed-off (whole percent) for the 1-based hyper-band index."""
+    return round(_HONORVERSE_BLEED_BASE * _HONORVERSE_BLEED_DECAY ** (band_index - 1))
+
+
+_HONORVERSE_EXPANDED_BLEED_OFF = {
+    band: (_HONORVERSE_CANON_BLEED.get(band) or f"{honorverse_band_bleed_off(i)}%")
+    for i, (band, *_rest) in enumerate(_HONORVERSE_EXPANDED_BANDS, start=1)
+}
+
 
 def get_honorverse_accel_bands() -> list:
     """The mass-acceleration bands as numeric dicts (for the Phase K K2 calculator)."""
@@ -304,8 +358,10 @@ def compute_honorverse_effective_speed() -> dict:
         bands          — list of dicts for Alpha–Iota (Table 1)
         expanded_bands — list of dicts for Alpha–Omega (Table 2)
 
-    Each band dict has keys: band, bleed_off (Table 1 only), multiplier (Table 1 only),
-    warship_xc, merchant_xc, merchant_note.
+    Each band dict has keys: band, bleed_off, multiplier, warship_xc,
+    merchant_xc, merchant_note. expanded_bands additionally carries
+    bleed_off_canon — False for the bands above Iota, whose bleed-off is
+    extrapolated from the canon 92·0.9215^(n−1) decay rather than published.
     """
     def _ly_hr(xc):
         return xc / _HOURS_PER_JULIAN_YEAR if xc else 0.0
@@ -323,6 +379,9 @@ def compute_honorverse_effective_speed() -> dict:
     expanded_bands = [
         {
             "band": band,
+            "bleed_off": _HONORVERSE_EXPANDED_BLEED_OFF.get(band),
+            "bleed_off_canon": band in _HONORVERSE_CANON_BLEED,
+            "multiplier": _HONORVERSE_EXPANDED_MULTIPLIERS.get(band),
             "warship_xc": war_xc, "warship_ly_hr": _ly_hr(war_xc),
             "merchant_xc": mer_xc, "merchant_ly_hr": _ly_hr(mer_xc),
             "merchant_note": note,
