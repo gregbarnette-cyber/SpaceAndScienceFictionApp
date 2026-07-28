@@ -64,7 +64,7 @@ files, not a SQLite table, so this is file-presence status rather than a row cou
 
 Tests live in `tests/`. The bulk are **offline** and need no network or Qt. Tests that touch the SQLite store never mutate `data/space_app.db`: in-process tests monkeypatch `core.db._DB_PATH` to a tmp file with auto-seeding disabled (pattern in `tests/test_gcns.py`, `tests/test_regions.py`, `tests/test_db_backups.py`), and the `query.py` subprocess tests pass a throwaway DB via the `SPACE_APP_DB` environment variable (via the shared `tests/_queryharness.py` harness). The `*_live.py` files (`test_gcns_live.py`, `test_hypatia_live.py`) hit the **live network**, gated by `tests/_netcheck.py` via `@unittest.skipUnless(...)` (skipped when GAVO/Hypatia is unreachable).
 
-**`pytest` is the runner.** The tests are *written* as `unittest.TestCase` classes — pytest collects them natively, so that is a style choice, not a second runner to maintain (`pytest.ini` sets `testpaths = tests`). Current state: **2115 passed, 1 skipped, 0 failures** (2026-07-27). Always invoke through the venv (`venv/bin/python -m pytest`); a bare `pytest` may resolve to a system install on system Python without this project's deps. *(The stdlib `unittest discover` still happens to work, since nothing uses pytest-only features — but it is not verified against and no doc should promise parity; don't spend a run on it.)*
+**`pytest` is the runner.** The tests are *written* as `unittest.TestCase` classes — pytest collects them natively, so that is a style choice, not a second runner to maintain (`pytest.ini` sets `testpaths = tests`). Current state: **2120 passed, 1 skipped, 0 failures** (2026-07-27). Always invoke through the venv (`venv/bin/python -m pytest`); a bare `pytest` may resolve to a system install on system Python without this project's deps. *(The stdlib `unittest discover` still happens to work, since nothing uses pytest-only features — but it is not verified against and no doc should promise parity; don't spend a run on it.)*
 
 **Per-test-file descriptions live in `docs/testing.md`** (read-on-demand — read it before adding or modifying tests).
 
@@ -91,7 +91,12 @@ The project has three entry points that share all computation through the `core/
   `legend_filter=True` (**`JumpNetworkPanel` passes `False`** — its dots are per-tier coloured, so a
   class-grouped legend would mislabel them), and the O15 linking helpers take `name_col=0` (**the route
   tables pass 1** — they all lead with an index column, `Hop #`/`Step`/`Jumps`). Tests:
-  `tests/test_route_chart_tabs.py` (these tabs had no coverage at all before). **Phase 3 (same date) retired the
+  `tests/test_route_chart_tabs.py` (these tabs had no coverage at all before). **Panel descriptions
+  (2026-07-27, separate from the refactor):** each of the seven panels carries a `DESCRIPTION` class
+  attribute rendered as a hidden label at the **top of the results pane**, toggled by a Show/Hide
+  Description button in `_button_row`. The seam to respect: `_clear_tables_layout` now clears from
+  `panel._tables_keep`, **not** index 0, so a Run can't delete the label out from under its button
+  (`RouteDescriptionTest` pins it). **Phase 3 (same date) retired the
   second palette**: `core.calculators._star_map_color` is **deleted** and the one app-wide palette now lives in
   **`core/shared.py`** (`_SPECTRAL_COLORS` + `sp_color()`), beside the `spectral_leading_class`/`_SP_DISPLAY_LETTERS`
   rule it keys off, so colour and bucketing can't drift apart again; `core/viz.py` re-exports it under its historical

@@ -224,6 +224,17 @@ Three route-planning calculators in `core/calculators.py`, surfaced by the GUI *
 travel-time helpers. **No CLI menu entry**; originally GUI-only, they were later given `query.py` subcommands
 (`multi-stop` / `nearest-neighbor` / `trade-route`) — see `docs/integration.md`.
 
+### Panel descriptions (GUI, 2026-07-27)
+
+Every one of the seven Route Planning panels carries a `DESCRIPTION` class attribute — a short
+rich-text explanation of what the option does, what its inputs mean, what the result columns are,
+and how it differs from its siblings. It is rendered by `_build_description_box` as a QLabel at the
+**top of the results pane** (`_tables_widget`), so a finished Run shows it directly above its data,
+and it is **hidden by default**, toggled by a **Show/Hide Description** button that `_button_row`
+places between the Run and Show Diagrams buttons. The label is persistent: `_clear_tables_layout`
+deletes from layout index `panel._tables_keep` **onward** (not from 0), so a Run — or an error
+render — never deletes it and the button label stays in sync. GUI-only; no core or `query.py` change.
+
 ### Shared star resolution
 
 All three resolve a typed star **name** via `_resolve_star_position(name)` (no picker/autocomplete — free-hand text,
@@ -277,7 +288,8 @@ They reuse the same `_resolve_star_position` (DB-first → SIMBAD), `_load_star_
 `_map_node`, and the dark-navy Star Chart `routes=` overlay. All four are exposed as `query.py` subcommands
 (`optimal-tour` / `jump-route` / `jump-network` / `farthest-first`); the original I1/I2/I3 planners were likewise
 backfilled (`multi-stop` / `nearest-neighbor` / `trade-route`), so **all seven Route Planning options now have both a
-GUI panel and a `query.py` subcommand** — see `docs/integration.md`.
+GUI panel and a `query.py` subcommand** — see `docs/integration.md`. These four also carry the Show/Hide Description
+box (see **Panel descriptions** under Phase I above — it covers all seven panels).
 
 Shared helpers (module-level): `_node_dist(a,b)` (3D Euclidean); `_merge_endpoint(pool, endpoint)` (reuse a pool row
 matched by name or within `1e-3` ly, else append); `_SpatialGrid(nodes, cell)` — a uniform 3D grid (cell = the jump

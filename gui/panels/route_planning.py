@@ -22,9 +22,16 @@
 # (completed_plans/ROUTE_CHART_REFACTOR_PLAN.md Phases 1–2, 2026-07-27). Phase 3 (same date)
 # retired the second `_star_map_color` palette: dot colours here now come from the
 # one app-wide `core.shared.sp_color`, so a star reads the same on every panel.
+#
+# Each panel also carries a `DESCRIPTION` class attribute explaining what the
+# option does. It renders as a hidden QLabel at the top of the results pane
+# (`_build_description_box`), toggled by the Show/Hide Description button in
+# `_button_row`, and is deliberately persistent — `_clear_tables_layout` skips it
+# so a Run never destroys it.
 
 import math
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
@@ -40,11 +47,49 @@ from gui.panels.diagram_tabs import _build_iso_chart_tab, _wire_row_map_linking
 
 # ── shared scaffolding ───────────────────────────────────────────────────────
 
+_DESC_QSS = ("color: #23517d; background: #eaf3fb; border: 1px solid #c3ddf2; "
+             "border-radius: 4px; padding: 8px;")
+
+
+def _build_description_box(panel):
+    """Create the (hidden) description label at the top of the results area.
+
+    It lives inside _tables_widget — i.e. in the same pane the result tables are
+    drawn in — so a finished Run shows the description directly above its data.
+    It is a persistent widget: `_clear_tables_layout` skips it, and the
+    Show/Hide Description button toggles its visibility (hidden by default).
+    """
+    lbl = QLabel(getattr(panel, "DESCRIPTION", "").strip())
+    lbl.setWordWrap(True)
+    lbl.setTextFormat(Qt.TextFormat.RichText)
+    lbl.setStyleSheet(_DESC_QSS)
+    lbl.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+    lbl.setVisible(False)
+    panel._desc_box = lbl
+    # AlignTop: before a Run the results pane is otherwise empty, and without it
+    # the label would stretch to fill (and vertically centre in) the whole pane.
+    panel._tables_layout.addWidget(lbl, 0, Qt.AlignmentFlag.AlignTop)
+    # Everything at/above this index in _tables_layout survives a clear.
+    panel._tables_keep = panel._tables_layout.count()
+
+
+def _toggle_description(panel):
+    box = getattr(panel, "_desc_box", None)
+    if box is None:
+        return
+    # isHidden(), not isVisible(): the latter is False whenever an ancestor is
+    # hidden (diagram mode, an un-shown panel), which would desync the toggle.
+    show = box.isHidden()
+    box.setVisible(show)
+    panel._desc_btn.setText("Hide Description" if show else "Show Description")
+
+
 def _build_results_area_route(panel):
     """Create _tables_widget + diagram view (mirrors distance-star panels)."""
     panel._tables_widget = QWidget()
     panel._tables_layout = QVBoxLayout(panel._tables_widget)
     panel._tables_layout.setContentsMargins(0, 0, 0, 0)
+    _build_description_box(panel)
     panel._layout.addWidget(panel._tables_widget, 1)
     panel._setup_diagram_view()
     panel._input_count = panel._layout.count()
@@ -52,14 +97,16 @@ def _build_results_area_route(panel):
 
 def _clear_tables_layout(panel):
     lay = panel._tables_layout
-    while lay.count():
-        w = lay.takeAt(0).widget()
+    keep = getattr(panel, "_tables_keep", 0)
+    while lay.count() > keep:
+        w = lay.takeAt(keep).widget()
         if w:
             w.deleteLater()
 
 
 def _button_row(panel, run_label, enter_fields=()):
-    """Standard run + Show Diagrams button row; sets panel.run_btn / _show_diagrams_btn.
+    """Standard run + Show Description + Show Diagrams row; sets panel.run_btn /
+    panel._desc_btn / panel._show_diagrams_btn.
 
     enter_fields: QLineEdits whose Enter/Return key triggers panel._search, so the
     Route Planning panels submit on Enter like the other option panels. (Multi-line
@@ -72,10 +119,15 @@ def _button_row(panel, run_label, enter_fields=()):
     panel.run_btn.clicked.connect(panel._search)
     for f in enter_fields:
         f.returnPressed.connect(panel._search)
+    # Toggles the panel description, which is rendered at the top of the results
+    # pane (created later, in build_results_area) — hidden by default.
+    panel._desc_btn = QPushButton("Show Description")
+    panel._desc_btn.clicked.connect(lambda: _toggle_description(panel))
     panel._show_diagrams_btn = QPushButton("Show Diagrams")
     panel._show_diagrams_btn.clicked.connect(panel._enter_diagram_mode)
     panel._show_diagrams_btn.setVisible(False)
     row.addWidget(panel.run_btn)
+    row.addWidget(panel._desc_btn)
     row.addWidget(panel._show_diagrams_btn)
     row.addStretch()
     return btn_widget
@@ -275,6 +327,22 @@ def add_two_star_chart_tabs(panel, result: dict, kind: str, link_view=None):
 class MultiStopJourneyPanel(DiagramToggleMixin, ResultPanel):
     """Ordered stops → cumulative travel time + route chart."""
 
+    DESCRIPTION = """
+    <b>Multi-Stop Journey</b> — travel time along a route you order yourself.<br><br>
+    Enter two or more stars, one per line, <b>in the order you want to visit them</b>
+    (the order is used exactly as typed — nothing is re-sorted), then a cruise
+    velocity in either &times;&nbsp;c or LY/HR. Each stop is resolved to real
+    coordinates: <i>Sol</i>/<i>Sun</i> is the origin, otherwise the local
+    <code>star_systems</code> table is searched first and SIMBAD is queried only
+    if that misses. If any stop cannot be resolved, the whole run stops with an
+    error naming it.<br><br>
+    <b>You get:</b> one row per leg — straight-line 3D distance in light years,
+    the velocity in both units, the leg's travel time, and the running cumulative
+    time — plus the journey totals above the table.<br><br>
+    <b>Diagrams:</b> Star Chart and Star Chart 3D, centred on the first stop, with
+    the legs drawn as dashed lines.
+    """
+
     def build_inputs(self):
         form_widget = QWidget()
         form = QFormLayout(form_widget)
@@ -350,6 +418,22 @@ class MultiStopJourneyPanel(DiagramToggleMixin, ResultPanel):
 
 class NearestNeighborPanel(DiagramToggleMixin, ResultPanel):
     """Greedy nearest-unvisited chain from a start star."""
+
+    DESCRIPTION = """
+    <b>Nearest-Neighbor Chain</b> — hop from star to star, always taking the
+    closest one you have not visited yet.<br><br>
+    Give a start star, how many hops to take, and a maximum hop distance in light
+    years. Starting from that star, each step picks the <b>nearest unvisited</b>
+    star in the local <code>star_systems</code> catalogue that lies within the hop
+    limit; the start's own catalogue row is excluded so it cannot be hop 1. If no
+    unvisited star is within reach the chain simply ends early — that is a normal
+    result, flagged with an amber note, not an error.<br><br>
+    <b>You get:</b> one row per hop — star name, designations, spectral type,
+    distance from the previous hop, cumulative distance, and distance from Sol.<br><br>
+    <b>Use it for</b> short-range "island hopping" routes; the chain naturally
+    clusters in dense regions. For the opposite behaviour — spreading out to cover
+    territory — use <i>Farthest-First Coverage</i>.
+    """
 
     def build_inputs(self):
         form_widget = QWidget()
@@ -437,6 +521,22 @@ class NearestNeighborPanel(DiagramToggleMixin, ResultPanel):
 class TradeRoutePlannerPanel(DiagramToggleMixin, ResultPanel):
     """Minimum spanning tree connecting a set of systems."""
 
+    DESCRIPTION = """
+    <b>Trade-Route Network</b> — the cheapest way to connect a set of systems to
+    each other.<br><br>
+    Enter two or more systems, one per line (order does not matter; duplicates are
+    ignored). The planner measures every possible pair, then builds a
+    <b>minimum spanning tree</b>: it keeps adding the shortest link that does not
+    close a loop until every system is connected by exactly
+    <i>N&nbsp;&minus;&nbsp;1</i> links. The result is the shortest total length of
+    track that still reaches every system — a trade or supply network, <b>not</b>
+    a tour: it does not tell you what order to fly, and it may branch.<br><br>
+    <b>You get:</b> one row per link — From, To, and its length in light years —
+    with the node/edge counts and total network distance above the table.<br><br>
+    <b>Diagrams:</b> Star Chart and Star Chart 3D with the network drawn as solid
+    lines.
+    """
+
     def build_inputs(self):
         form_widget = QWidget()
         form = QFormLayout(form_widget)
@@ -492,6 +592,22 @@ class TradeRoutePlannerPanel(DiagramToggleMixin, ResultPanel):
 
 class OptimalTourPanel(DiagramToggleMixin, ResultPanel):
     """Shortest-total-distance visit order for a set of stars (NN + 2-opt)."""
+
+    DESCRIPTION = """
+    <b>Optimal Tour</b> — you say <i>which</i> stars to visit; this works out the
+    best <i>order</i>.<br><br>
+    Enter your stars one per line and a cruise velocity. The <b>first star stays
+    fixed</b> as the departure point; the rest are re-ordered to minimise the total
+    distance flown (a nearest-neighbour first guess, then repeated 2-opt
+    improvement — a very good route, not a proven-perfect one). Tick
+    <i>Closed loop</i> to add the return leg home.<br><br>
+    <b>You get:</b> one row per leg in the optimised order — distance, velocity in
+    both units, travel time and cumulative time — plus a summary comparing the
+    optimised total against simply flying the list as typed, and how many light
+    years (and what percentage) that saved.<br><br>
+    <b>Compare with</b> <i>Multi-Stop Journey</i>, which flies your list in exactly
+    the order given.
+    """
 
     def build_inputs(self):
         form_widget = QWidget()
@@ -575,6 +691,23 @@ class OptimalTourPanel(DiagramToggleMixin, ResultPanel):
 
 class FarthestFirstPanel(DiagramToggleMixin, ResultPanel):
     """De-clustering coverage: each step picks the star farthest from the visited set."""
+
+    DESCRIPTION = """
+    <b>Farthest-First Coverage</b> — spread out instead of hopping to the nearest
+    neighbour.<br><br>
+    Give a start star and a number of stops. Each step picks the unvisited star
+    that is <b>farthest from everything visited so far</b>, so the picks push out
+    in different directions rather than clumping — a good way to choose survey
+    sites, outposts or sensor stations that cover a volume evenly. <i>Max Reach</i>
+    optionally requires each new pick to still lie within that many light years of
+    some already-visited star (leave it blank for no limit); if nothing qualifies,
+    the run stops early with an amber note — a normal result, not an error.<br><br>
+    <b>You get:</b> one row per stop — star name, designations, spectral type, its
+    separation from the nearest visited star, its distance from the start, and its
+    distance from Sol.<br><br>
+    <b>Diagrams:</b> Star Chart and Star Chart 3D; dashed lines link each pick back
+    to the visited star nearest it, showing the exploration tree.
+    """
 
     def build_inputs(self):
         form_widget = QWidget()
@@ -664,6 +797,24 @@ class FarthestFirstPanel(DiagramToggleMixin, ResultPanel):
 
 class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
     """Route origin→destination over a jump-limited graph (Dijkstra / BFS)."""
+
+    DESCRIPTION = """
+    <b>Jump-Range Pathfinding</b> — get from A to B when your ship can only cross
+    a limited distance at a time.<br><br>
+    Give an origin, a destination and a <i>Max Jump</i> range in light years. The
+    planner treats the whole local <code>star_systems</code> catalogue as possible
+    waypoints and finds a chain of stars where <b>no single jump exceeds the
+    range</b>. <i>Optimize For</i> chooses what "best" means: <i>Min distance</i>
+    finds the shortest total path, <i>Fewest jumps</i> finds the one with the least
+    stops (which may be longer overall).<br><br>
+    <b>You get:</b> one row per jump — From, To, that jump's length and the running
+    total — with the jump count, total path length and the direct straight-line
+    distance for comparison.<br><br>
+    <b>If no route exists</b> at that range the panel says so plainly (an amber
+    note) rather than erroring. The solar neighbourhood is genuinely sparse, so a
+    short jump range often isolates a target — raise the range to connect more of
+    the catalogue.
+    """
 
     def build_inputs(self):
         form_widget = QWidget()
@@ -760,6 +911,24 @@ class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
 
 class JumpNetworkPanel(DiagramToggleMixin, ResultPanel):
     """BFS reachability tiers from a start star at a jump range."""
+
+    DESCRIPTION = """
+    <b>Jump Network / Reachability</b> — everything you can eventually get to from
+    one system at a given jump range.<br><br>
+    Give a start system and a <i>Max Jump</i> range in light years. Every star in
+    the local <code>star_systems</code> catalogue that can be reached by a chain of
+    jumps of that length is found and labelled with the <b>minimum number of jumps
+    it takes to get there</b> — tier 1 is directly reachable, tier 2 needs one
+    intermediate stop, and so on. <i>Max Jumps</i> optionally stops the expansion
+    at a chosen tier (blank = go as far as the network reaches).<br><br>
+    <b>You get:</b> the stars grouped by jump tier — name, designations, spectral
+    type, distance from the start and from Sol — plus totals for how many stars are
+    reachable and how many in the catalogue are not.<br><br>
+    <b>Diagrams:</b> Star Chart and Star Chart 3D with each dot coloured by its
+    jump tier (not by spectral class), so the reachable frontier is visible at a
+    glance. This can return thousands of stars — a short jump range keeps it
+    manageable.
+    """
 
     def build_inputs(self):
         form_widget = QWidget()

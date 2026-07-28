@@ -369,5 +369,76 @@ class RouteChartParityTest(unittest.TestCase):
         self.assertEqual(_selected_star_name(view), "Vega")
 
 
+_ROUTE_PANELS = ["MultiStopJourneyPanel", "OptimalTourPanel",
+                 "NearestNeighborPanel", "FarthestFirstPanel",
+                 "JumpRoutePanel", "JumpNetworkPanel",
+                 "TradeRoutePlannerPanel"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-panel description box: hidden by default, toggled by a Show/Hide
+# Description button, rendered in the results pane and NOT wiped by a run.
+# ─────────────────────────────────────────────────────────────────────────────
+class RouteDescriptionTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self, cls_name):
+        import gui.panels as panels
+        return getattr(panels, cls_name)(_StubWindow())
+
+    def test_every_panel_has_a_description_hidden_by_default(self):
+        for cls_name in _ROUTE_PANELS:
+            with self.subTest(cls_name):
+                p = self._panel(cls_name)
+                self.assertTrue(p._desc_box.text().strip(),
+                                "panel has no DESCRIPTION text")
+                self.assertTrue(p._desc_box.isHidden())
+                self.assertEqual(p._desc_btn.text(), "Show Description")
+
+    def test_button_toggles_visibility_and_label(self):
+        for cls_name in _ROUTE_PANELS:
+            with self.subTest(cls_name):
+                p = self._panel(cls_name)
+                p._desc_btn.click()
+                self.assertFalse(p._desc_box.isHidden())
+                self.assertEqual(p._desc_btn.text(), "Hide Description")
+                p._desc_btn.click()
+                self.assertTrue(p._desc_box.isHidden())
+                self.assertEqual(p._desc_btn.text(), "Show Description")
+
+    def test_description_lives_in_the_results_pane_and_survives_a_run(self):
+        """It sits at the top of _tables_widget (where the data is drawn), and
+        _clear_tables_layout must skip it — otherwise a Run would delete it and
+        leave the toggle button pointing at a dead widget."""
+        from gui.panels.route_planning import _clear_tables_layout
+        for cls_name in _ROUTE_PANELS:
+            with self.subTest(cls_name):
+                p = self._panel(cls_name)
+                self.assertIs(p._tables_layout.itemAt(0).widget(), p._desc_box)
+                p._desc_btn.click()
+                _clear_tables_layout(p)
+                self.assertEqual(p._tables_layout.count(), 1)
+                self.assertIs(p._tables_layout.itemAt(0).widget(), p._desc_box)
+                self.assertFalse(p._desc_box.isHidden())   # stays shown
+
+    def test_description_survives_a_full_render(self):
+        p = self._panel("NearestNeighborPanel")
+        p._desc_btn.click()
+        p._render(_chain_result())
+        self.assertIs(p._tables_layout.itemAt(0).widget(), p._desc_box)
+        self.assertFalse(p._desc_box.isHidden())
+
+    def test_error_render_keeps_the_description(self):
+        p = self._panel("JumpRoutePanel")
+        p._desc_btn.click()
+        p._render({"error": "nope"})
+        self.assertIs(p._tables_layout.itemAt(0).widget(), p._desc_box)
+        self.assertFalse(p._desc_box.isHidden())
+
+
 if __name__ == "__main__":
     unittest.main()
