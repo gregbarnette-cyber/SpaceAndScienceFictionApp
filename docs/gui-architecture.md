@@ -180,6 +180,14 @@ This makes core functions testable in isolation and callable from both the CLI a
 
 Every nav entry maps to its own independent panel class. There are no shared tab-widget panels.
 
+**Category order (17 categories, set 2026-07-27):** Star Databases · Search & Filter · Star System
+Regions · Calculators · Route Planning · GCNS · Comparison · Science · Science Fiction ·
+Worldbuilding · Planetary Equations · Rotating Habitat · Misc. Equations · Projects · Generator ·
+Reports · Utilities. The tree renders in `NAVIGATION` list order, so reordering is purely a matter of
+moving the `(category, [...])` tuples — no test pins it (the three tests that read `NAVIGATION` use
+`dict(NAVIGATION)`, which is order-independent). Note this is the **GUI** ordering only; the CLI
+`MENU_OPTIONS` numbering in `CLAUDE.md` is a separate, unchanged grouping.
+
 ### Panel Base Class (`gui/panels/base.py`)
 
 ```

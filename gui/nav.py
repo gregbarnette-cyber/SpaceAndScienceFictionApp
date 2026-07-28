@@ -21,45 +21,10 @@ NAVIGATION = [
         ("NASA Exoplanet Quick Search","NasaExoplanetSearchPanel"),
         ("Hypatia Abundance Search",   "HypatiaSearchPanel"),
     ]),
-    ("Comparison", [
-        ("Star Comparison",        "StarComparisonPanel"),
-        ("ESI Ranking",            "EsiRankingPanel"),
-        ("Stellar Evolution",      "StellarEvolutionPanel"),
-    ]),
-    ("Generator", [
-        ("System Generator",       "SystemGeneratorPanel"),
-    ]),
-    ("Projects", [
-        ("Project Workspace", "ProjectPanel"),
-    ]),
-    ("Reports", [
-        ("System Dossier Export",  "DossierExportPanel"),
-    ]),
-    ("GCNS", [
-        ("GCNS Census Browser",         "GcnsCensusBrowserPanel"),
-        ("GCNS Source Lookup",          "GcnsSourceLookupPanel"),
-        ("Resolved System Viewer",      "GcnsSystemViewerPanel"),
-        ("GCNS Distance Between 2 Stars","GcnsDistancePanel"),
-        ("GCNS Travel Time",            "GcnsTravelTimePanel"),
-        ("GCNS Stars Within a Star",    "GcnsStarsWithinStarPanel"),
-    ]),
     ("Star System Regions", [
         ("Auto (SIMBAD)",  "StarRegionsAutoPanel"),
         ("Semi-Manual",    "StarRegionsSemiManualPanel"),
         ("Manual",         "StarRegionsManualPanel"),
-    ]),
-    ("Science", [
-        ("Solar System Bodies",  "SolarSystemPanel"),
-        ("Main Sequence Stars",  "MainSequencePanel"),
-        ("Sol System Regions",   "SolRegionsPanel"),
-    ]),
-    ("Science Fiction", [
-        ("Honorverse Hyper Limits",       "HonorverseHyperPanel"),
-        ("Honorverse Acceleration Table", "HonorverseAccelPanel"),
-        ("Honorverse Effective Speed",    "HonorverseSpeedPanel"),
-        ("Honorverse Hyper Translation Time", "HonorverseHyperTimePanel"),
-        ("Honorverse Impeller Wedge",     "HonorverseImpellerPanel"),
-        ("Honorverse Missile Intercept",  "HonorverseMissilePanel"),
     ]),
     ("Calculators", [
         ("Distance Between 2 Stars",           "DistanceBetweenStarsPanel"),    # 17
@@ -88,10 +53,31 @@ NAVIGATION = [
         ("Jump Network / Reachability", "JumpNetworkPanel"),
         ("Trade-Route Network",       "TradeRoutePlannerPanel"),
     ]),
-    ("Planetary Equations", [
-        ("Orbit Periastron & Apastron", "OrbitPeriastronPanel"),
-        ("Moon Orbital Distance (24h)", "MoonDistance24Panel"),
-        ("Moon Orbital Distance (Xh)",  "MoonDistanceXPanel"),
+    ("GCNS", [
+        ("GCNS Census Browser",         "GcnsCensusBrowserPanel"),
+        ("GCNS Source Lookup",          "GcnsSourceLookupPanel"),
+        ("Resolved System Viewer",      "GcnsSystemViewerPanel"),
+        ("GCNS Distance Between 2 Stars","GcnsDistancePanel"),
+        ("GCNS Travel Time",            "GcnsTravelTimePanel"),
+        ("GCNS Stars Within a Star",    "GcnsStarsWithinStarPanel"),
+    ]),
+    ("Comparison", [
+        ("Star Comparison",        "StarComparisonPanel"),
+        ("ESI Ranking",            "EsiRankingPanel"),
+        ("Stellar Evolution",      "StellarEvolutionPanel"),
+    ]),
+    ("Science", [
+        ("Solar System Bodies",  "SolarSystemPanel"),
+        ("Main Sequence Stars",  "MainSequencePanel"),
+        ("Sol System Regions",   "SolRegionsPanel"),
+    ]),
+    ("Science Fiction", [
+        ("Honorverse Hyper Limits",       "HonorverseHyperPanel"),
+        ("Honorverse Acceleration Table", "HonorverseAccelPanel"),
+        ("Honorverse Effective Speed",    "HonorverseSpeedPanel"),
+        ("Honorverse Hyper Translation Time", "HonorverseHyperTimePanel"),
+        ("Honorverse Impeller Wedge",     "HonorverseImpellerPanel"),
+        ("Honorverse Missile Intercept",  "HonorverseMissilePanel"),
     ]),
     ("Worldbuilding", [
         ("Roche Limit",              "RocheLimitPanel"),
@@ -103,6 +89,11 @@ NAVIGATION = [
         ("Ice Line Calculator",      "IceLineCalculatorPanel"),
         ("Solvent Reference Table",  "SolventReferencePanel"),
     ]),
+    ("Planetary Equations", [
+        ("Orbit Periastron & Apastron", "OrbitPeriastronPanel"),
+        ("Moon Orbital Distance (24h)", "MoonDistance24Panel"),
+        ("Moon Orbital Distance (Xh)",  "MoonDistanceXPanel"),
+    ]),
     ("Rotating Habitat", [
         ("Gravity Acceleration",   "GravityAccelPanel"),
         ("Distance from Center",   "GravityDistancePanel"),
@@ -112,6 +103,15 @@ NAVIGATION = [
         ("Habitable Zone Calculator",       "HabZonePanel"),
         ("Habitable Zone Calculator w/SMA", "HabZoneSmaPanel"),
         ("Star Luminosity",                 "LuminosityPanel"),
+    ]),
+    ("Projects", [
+        ("Project Workspace", "ProjectPanel"),
+    ]),
+    ("Generator", [
+        ("System Generator",       "SystemGeneratorPanel"),
+    ]),
+    ("Reports", [
+        ("System Dossier Export",  "DossierExportPanel"),
     ]),
     ("Utilities", [
         ("Star Systems Database Query",    "CsvUtilityPanel"),
