@@ -32,7 +32,7 @@ AN3. Not blocking for AN0/AN1/AN2 — see §7a.
 >
 > **AO left AN one open question — a candidate `SAO` key.** AO shipped an SAO fallback join, and
 > `/code-review` found it **unreachable**: `designations` never carries an `"SAO"` key (absent from
-> both `databases.py:304` `keys_order`/`:312` `prefix_map` **and** the shared `_CSV_PREFIX_MAP`), so
+> both `databases.py:315` `keys_order`/`:323` `prefix_map` **and** the shared `_CSV_PREFIX_MAP`), so
 > the branch was dead and its test passed only against a hand-built dict shape the pipeline cannot
 > produce. AO removed it rather than implement it, **because implementing it is AN2's job**: SIMBAD
 > *does* emit `SAO nnnnn`, but capturing it adds a key to the designation set, which injects
@@ -50,9 +50,26 @@ AN3. Not blocking for AN0/AN1/AN2 — see §7a.
 > consumer's assumed input shape is one the producer can actually emit** — worth an explicit pass
 > over AN's own new keys, which are consumed in more places than AO's were.
 >
-> **Baseline moved:** the suite is now **2174 passed, 1 skipped** (§8 cites 2120). AN's differential
-> harness (AN4.1) must be built against the current tree, and `tests/test_gould.py` /
-> `test_gould_display.py` are new files it should not be surprised by.
+> **Baseline moved:** the suite is now **2174 passed, 1 skipped** (§8 cites 2120; re-confirmed by a
+> full run 2026-07-29). AN's differential harness (AN4.1) must be built against the current tree, and
+> `tests/test_gould.py` / `test_gould_display.py` are new files it should not be surprised by.
+>
+> **⚠ AO shifted the line numbers this plan cites.** AO inserted ~52 lines into `core/shared.py` (the
+> genitive table, `:83-133`) and ~93 into `core/databases.py` (`_simbad_gould_block`, `:146-215`).
+> **Every citation into those two files below the insertion point was re-anchored 2026-07-29** and
+> re-verified against the source. `main.py`, `core/calculators.py`,
+> `gui/visualizations/plot_helpers.py` and `generate_star_map_html.py` were untouched by AO — those
+> citations were checked and are still exact. To stop this recurring, §2/§6/§7 now anchor on the
+> **enclosing function or block**, with line numbers kept only where the evidence *is* a specific
+> expression (a guard, a join, an empty-case literal). §5's verified-safe sweep is deliberately left
+> un-renumbered — it is a one-shot census that AN4.1's harness supersedes; **re-run the sweep at
+> implementation time rather than trusting its coordinates.**
+>
+> **AO also added a seventh consumer of the `designations` dict** — see §5 "Verified safe" and AN4.
+> `_simbad_gould_block` reads `designations["HD"]`, so AN0 changing that slot's *shape* (a bare
+> `102365` rather than `"HD 102365"`) would silently return `None` for every Gould lookup with no
+> test failure. This is exactly the additive-and-inert class AO's closing lesson names, and a
+> differential harness that only diffs `designations` itself would not see it.
 
 > **Revision note.** The first draft of this plan was materially wrong in **eight** places, all found
 > by pre-implementation review and all verified against the source before this rewrite. Corrections
@@ -62,19 +79,46 @@ AN3. Not blocking for AN0/AN1/AN2 — see §7a.
 
 ---
 
-## ⚠ DECISIONS REQUIRED BEFORE STARTING
+## ✅ DECISIONS — **ALL SETTLED** (D1 2026-07-29 · D2–D6 2026-07-29, maintainer)
+
+**Nothing in this table blocks the phase any more.** D1 set AN0's scope; D2–D6 were settled against
+the AN4.1 harness baseline rather than by argument — the four counts in §8 turned D3 and D5 from
+judgement calls into measurements. Original recommendation text is retained in each row, per the
+house convention.
+
+| # | Decision | Chosen |
+|---|---|---|
+| **D1** | Does `main.py` come along? | **(a)** — exempt `main.py` per policy **except copy #5** (CLI opt 50), which delegates to `core.shared`. Copies 3/6/7 stay as-is. **Harness evidence:** copy 5's output is **identical to shared's on all 43/43** fixture stars, so this is a no-op refactor today; the split-brain only appears once AN2 adds keys, which is precisely why it is cheap to close now |
+| **D2** | `V*` and `**` handling | **(a) drop both.** `**` is a double-*system* id (35 in the corpus, none a name for the star queried). `V*` is defensible — 14 ids, and for a variable star it is a real designation — but redundant with the Bayer form on essentially all of them (`V* eps Eri` beside `* eps Eri`). The classifier still **returns `"Variable"` as a distinct value**, so promoting it to a key later is one line and needs no re-classification |
+| **D3** | MAIN_ID duplication (AN2d) | **(a) suppress the keyed copy when it equals MAIN_ID.** **Harness evidence: 22/43 (51%) of the corpus has a `* `-form MAIN_ID** — the duplicate is the common case, not an edge case. (c) would disfigure half of all bright-star banners; (b) drops MAIN_ID from four panels on *every* star. The harness will name exactly which stars change |
+| **D4** | Opt-50 rebuild: defer or gate? | **(a) defer** — with **explicit firing triggers**, see §5 AN2c-T below. A stale `designations` column is already an accepted state here (the NAME-first change left the same debt). **Sequencing caveat:** the AN2c `PLX …` discard-delta must be re-measured **after** D5's `"N/A"`→`""` fix lands, not before — the fix is on the value that rule tests |
+| **D5** | Adjudicate the drift table (§6) | **Fix the empty case to `""`; keep the rest; assert the MAIN_ID-missing divergence deliberately.** **Harness evidence: the `"N/A"` case fires on 0/43** — real in code, dormant in practice, and its only reachable path is the opt-50 discard rule's `desig_str == ""` test, which a literal `"N/A"` would defeat. No consumer wants the string `"N/A"`, so there is nothing to preserve. MAIN_ID-missing→query-string stays (it is wire-visible through `query.py`) but must be pinned by AN0d rather than inherited by accident |
+| **D6** | Component-suffix preference | **Prefer the component-less form** (`* alf CMi` over `* alf CMi A`). Procyon's list carries both; first-match-wins depends on SIMBAD's id ordering, which is not a stable contract |
+
+**A fifth §6 divergence, found by the harness after these decisions were framed** — the copies
+disagree on **table indexing** (column-first in `shared`, row-first in `databases`/`calculators`;
+§8). Harmless today, but AN0 must not assume one style when converging them. Not a decision, a
+constraint.
+
+<details>
+<summary><b>Original decision table, retained for the record</b> (options + pre-harness recommendations)</summary>
 
 **D1 blocks the phase.** It sets AN0's scope — a three-site or a six-site refactor — and it touches a
 standing policy, so it is not an implementer's call. The rest gate individual parts.
 
 | # | Decision | Gates | Options | Recommendation |
 |---|---|---|---|---|
-| **D1** ✅ **DECIDED (a), 2026-07-29** | **Does `main.py` come along?** (§2a — full options table there) | **AN0 — the whole phase** | **(a)** Exempt `main.py` per policy **except copy #5** (CLI opt 50). **(b)** Full consolidation, all 6 copies. **(c)** Strict policy — leave all of `main.py` | **(a).** `IMPROVEMENT_PLAN.md` ground rule 1 says don't touch `main.py` feature functions (your 2026-07-04 call), but copy #5 writes the **same `star_systems.designations` column** as GUI opt 50 — leaving it makes the two entry points write different content into one column. **(c) is not acceptable** unless CLI opt 50 is formally retired |
+| **D1** | **Does `main.py` come along?** (§2a — full options table there) | **AN0 — the whole phase** | **(a)** Exempt `main.py` per policy **except copy #5** (CLI opt 50). **(b)** Full consolidation, all 6 copies. **(c)** Strict policy — leave all of `main.py` | **(a).** `IMPROVEMENT_PLAN.md` ground rule 1 says don't touch `main.py` feature functions (your 2026-07-04 call), but copy #5 writes the **same `star_systems.designations` column** as GUI opt 50 — leaving it makes the two entry points write different content into one column. **(c) is not acceptable** unless CLI opt 50 is formally retired |
 | **D2** | **`V*` and `**` handling** (§4, AN1a) | **AN1** | **(a)** Drop both. **(b)** Drop `**`, capture `V*` as a `"Variable"` key | **(a) drop both.** `**` is a double-*system* id, not a name for this star. `V*` is a genuine designation but redundant with the Bayer form for most stars — widens the `query.py` contract for little gain. Revisit separately if wanted |
 | **D3** | **MAIN_ID duplication** (§5, AN2d) | **AN2** | **(a)** Suppress the keyed copy when it equals MAIN_ID. **(b)** Drop MAIN_ID from the `desig_str` join entirely. **(c)** Accept the duplicate | **(a).** (b) removes MAIN_ID from all four GUI banners — a visible regression. (c) renders `* alf CMi, NAME Procyon, * alf CMi, …`. This changes what every panel displays, so it is a product call, not a cleanup |
 | **D4** | **Opt-50 rebuild: defer or gate?** (§5, AN2c) | **AN2** | **(a)** Defer — lookup surfaces get the names now, DB-backed surfaces catch up at the next rebuild. **(b)** Gate the phase on a full opt-50 rebuild (17 SIMBAD queries, ~238k rows, hours) | **(a) defer.** A stale `designations` column is already an accepted state in this repo (the NAME-first change left the same debt). **Note:** the rebuild changes **row count**, not just column text — re-measure the `PLX …` discard delta when it happens |
 | **D5** | **Adjudicate the drift table** (§6) | **AN2e** | Five behavioural differences between the copies — the `key in …` guard, `"N/A"` vs `""` empty case, MAIN_ID in the join, MAIN_ID source, MAIN_ID-missing semantics. Each is keep-or-fix | **Per §1 lesson 1, judge each on merit — do not preserve drift reflexively.** P4.6 tried that and the preserved drift *was* the bug. The `"N/A"` vs `""` split is most likely a latent bug (a literal `"N/A"` reaching a DB column or JSON consumer) |
 | **D6** | **Component-suffix preference** (§4, AN1b) | AN1 | Prefer `* alf CMi` over `* alf CMi A`, or take first match | **Prefer component-less.** Low stakes, but first-match-wins is non-deterministic across SIMBAD releases. Effectively an implementer's call |
+
+*(D1 was marked ✅ DECIDED (a) in this table on 2026-07-29, ahead of D2–D6.)*
+
+</details>
+
 
 **Settled, no input needed:**
 
@@ -118,8 +162,9 @@ plan did not foresee.
 
 `IMPROVEMENT_PLAN.md:407-420` already specifies this consolidation under **P4.6 "Designation
 parsing."** Its SUPERSEDED note (2026-07-26) records that `core/databases.py` now uses
-`core.shared._CSV_DESIG_KEYS` — true of the **opt-50 builder** path (`databases.py:1234`, `:1240`
-delegate), but **the inline map inside `compute_simbad_lookup` (`databases.py:222-261`) was never
+`core.shared._CSV_DESIG_KEYS` — true of the **opt-50 builder** path (`databases.py:1334` aliases the
+shared key list, `:1379` calls the shared parser), but **the inline map inside `compute_simbad_lookup`
+(`databases.py:315-365`) was never
 consolidated**, and neither were any of the `main.py` copies. So P4.6's designation bullet is itself
 only partially done, and P4.6 does not say so.
 
@@ -146,18 +191,22 @@ the two documents will describe the same work independently.
 The original plan claimed four copies. **There are six functional copies plus a seventh hardcoded key
 list.** All verified in source 2026-07-28.
 
+**Anchors re-verified 2026-07-29 (post-AO).** Each row names the **enclosing block**, which is what
+survives an insertion above it; line numbers appear only where the claim rests on a specific line.
+
 | # | Location | Serves | State |
 |---|---|---|---|
-| 1 | `core/shared.py:35-71` — `_CSV_PREFIX_MAP` + `_CSV_DESIG_KEYS` | opt-50 builder via `databases.py:1240`; `shared._parse_designations` | canonical (P4.6) |
-| 2 | `core/databases.py:222-261` | **`compute_simbad_lookup`** — GUI SIMBAD panel **and** `query.py simbad-lookup` | inline duplicate; module imports shared names at `:15-16`, uses them at `:1234`/`:1240` but **not here** |
-| 3 | `main.py:60-114` | CLI opt 1 | inline duplicate *(original plan cited `60-105`; the match loop is `108-112`, outside that range)* |
-| 4 | `core/calculators.py:271-284` | opts 17/19/20/21 + all seven route planners | **narrow** — `NAME/HD/HR/GJ/Wolf` |
-| **5** | **`main.py:2229` `_CSV_PREFIX_MAP` + `:2261` `_CSV_DESIG_KEYS` + `:2268-2283` parser** | **CLI opt 50** via `main.py:2321` → `_run_simbad_csv_query` → `query_star_systems_csv` (`main.py:2390`, menu `:5516`) | **complete standalone re-implementation** |
-| **6** | **`main.py:2693-2711`** | **CLI opts 17/19/20/21** via `_lookup_star_for_distance` (`main.py:2642`; call sites `:2737`, `:2906`, `:3259`) | second narrow `NAME/HD/HR/GJ/Wolf` map |
+| 1 | `core/shared.py` — module-level `_CSV_PREFIX_MAP` (`:35`) + `_CSV_DESIG_KEYS` (`:67`) | opt-50 builder via `databases._parse_designations_from_ids`; `shared._parse_designations` (`:229`) | canonical (P4.6) |
+| 2 | `core/databases.py` — the inline `keys_order` (`:315`) + `prefix_map` (`:323`) + match loop (`:359`) inside **`compute_simbad_lookup`** | GUI SIMBAD panel **and** `query.py simbad-lookup` | inline duplicate; module imports the shared names at `:16-17` and uses them at `:1334` but **not here**. *(Was cited `:222-261` pre-AO — and `:304`/`:312` in §5, two stale numbers for one map.)* |
+| 3 | `main.py` — `keys_order` (`:62`) + `prefix_map` (`:76`) + loop (`:109`) in the opt-1 lookup | CLI opt 1 | inline duplicate *(original plan cited `60-105`; the match loop is outside that range)* |
+| 4 | `core/calculators.py` — `desig_found` (`:272`) + `desig_prefix_map` (`:273`) + join (`:284`) in `compute_lookup_star_for_distance` | opts 17/19/20/21 + all seven route planners | **narrow** — `NAME/HD/HR/GJ/Wolf` |
+| **5** | **`main.py` — `_CSV_PREFIX_MAP` (`:2229`) + `_CSV_DESIG_KEYS` (`:2261`) + `_parse_designations_from_ids` (`:2268`, body `:2273-2283`)** | **CLI opt 50** via `main.py:2321` → `_run_simbad_csv_query` → `query_star_systems_csv` | **complete standalone re-implementation** |
+| **6** | **`main.py` — `desig_found` (`:2693`) + `desig_prefix_map` (`:2694`) in `_lookup_star_for_distance`** | **CLI opts 17/19/20/21** | second narrow `NAME/HD/HR/GJ/Wolf` map |
 | 7 | `main.py:139-144` | CLI opt 1 "STAR DESIGNATIONS:" banner | not a prefix map — a hardcoded 20-key `keys_order` used only to build the display join. **Must be edited in AN2 or the CLI banner silently omits the new keys.** |
 
 **Verified: `main.py` imports nothing from `core.shared`.** The original plan's claim that
-"`main.py:2268` already delegates" was **false** — `main.py:2268` reads `main.py`'s *own* locals.
+"`main.py:2268` already delegates" was **false** — `main.py`'s own `_parse_designations_from_ids`
+(`:2268`) reads `main.py`'s *own* module-level locals (`:2229`, `:2261`).
 
 ### 2a. Decision required — does `main.py` come along? ⚠️
 
@@ -178,7 +227,9 @@ Three options:
 | B | Full consolidation including all `main.py` copies | Largest AN0; contradicts standing policy; `main.py` has **zero test coverage** (§7) |
 | C | Strict policy — leave all of `main.py` | CLI opt 50 writes a different designations column than GUI opt 50. **Not acceptable** unless CLI opt 50 is formally retired |
 
-**This decision gates AN0's scope and must be made before work starts.**
+**✅ DECIDED 2026-07-29: option A.** And the AN4.1 harness has since measured that copy 5's output is
+**byte-identical to shared's on all 43/43** fixture stars — so the delegation changes nothing today,
+and exists to stop the two opt-50 builders diverging the moment AN2 adds keys.
 
 ---
 
@@ -189,8 +240,8 @@ re-typing the map.
 
 ### AN0a — ordering constraint (hard) **[R3]**
 
-Copies 2, 3 and 5 match with **no `key in designations` guard** (`databases.py:267`, `main.py:110`,
-`main.py:2279`), unlike shared (`shared.py:186`, `:213`). **The moment a `* `-shaped entry is added to
+Copies 2, 3 and 5 match with **no `key in designations` guard** (`databases.py:360`, `main.py:110`,
+`main.py:2279`), unlike shared (`shared.py:248`, `:275`). **The moment a `* `-shaped entry is added to
 `shared._CSV_PREFIX_MAP` while any unguarded copy still reads it, that copy raises `KeyError`.**
 
 Copy #5 reads `main.py`'s own map, so it is insulated — but copies 2 and 3 would break if they were
@@ -206,7 +257,7 @@ The original plan said to build copy #4's map by *filtering* `shared._CSV_PREFIX
 byte-identical.**
 
 `calculators.py:284` is `", ".join(v for v in desig_found.values() if v)` — a **dict-values
-iteration**, so output order is `desig_found`'s insertion order, set at `calculators.py:271`:
+iteration**, so output order is `desig_found`'s insertion order, set at `calculators.py:272`:
 **`NAME, HD, HR, GJ, Wolf`**. Filtering `shared._CSV_PREFIX_MAP` (order `NAME, GJ, HD, HIP, HR, Wolf`)
 yields **`NAME, GJ, HD, HR, Wolf`** — GJ moves 4th→2nd, HD 2nd→3rd.
 
@@ -216,7 +267,7 @@ on every consumer: `gui/panels/distance_stars.py:106-108`, `gui/panels/travel_ti
 `gui/panels/route_planning.py:258`, `core/calculators.py:1620`.
 
 **Fix:** pass an explicit ordered key list; never derive order from the map. Note copy #6
-(`main.py:2708-2711`) re-loops an explicit `("NAME","HD","HR","GJ","Wolf")` tuple, so it is *not*
+(`main.py:2693-2711`) re-loops an explicit `("NAME","HD","HR","GJ","Wolf")` tuple, so it is *not*
 order-fragile — the two narrow copies agree today but would diverge under two different "obvious"
 fixes. That asymmetry is itself worth a regression test.
 
@@ -247,8 +298,8 @@ which is the problem this phase exists to remove.
 
 ### AN0c — `desig_str` and `MAIN_ID` **[R5]**
 
-`databases.py:271` joins over `keys_order`, whose **first element is `MAIN_ID`** (`:222`).
-`shared.py:216` joins over `_CSV_DESIG_KEYS`, which has **no `MAIN_ID`** (`:67-71`).
+`databases.py:364` joins over `keys_order`, whose **first element is `MAIN_ID`** (`:315`).
+`shared.py:278-279` joins over `_CSV_DESIG_KEYS`, which has **no `MAIN_ID`** (`:67-71`).
 
 So a shared `build_desig_str(designations, keys)` is byte-identical **only** if `compute_simbad_lookup`
 passes `["MAIN_ID"] + _CSV_DESIG_KEYS`. Passing `_CSV_DESIG_KEYS` silently drops MAIN_ID from **every**
@@ -259,8 +310,9 @@ GUI banner (`simbad.py:157`, `star_regions.py:396`, `nasa_exoplanet.py:61`, `cat
 The original plan proposed asserting `compute_simbad_lookup` and `shared._parse_designations` produce
 the same dict. **They legitimately do not.** On a masked/blank `main_id`:
 
-- shared (`shared.py:177`) → `MAIN_ID` stays `None`
-- databases (`databases.py:169`, `:228`) → `MAIN_ID` becomes **the user's query string**, set unconditionally
+- shared (`shared.py:238-239`) → `MAIN_ID` stays `None` (set only when `main_id` is in the colnames)
+- databases (`databases.py:263` `main_id = str(_safe("main_id") or star_name)`, assigned at `:321`) →
+  `MAIN_ID` becomes **the user's query string**, set unconditionally
 
 That is a real contract difference, wire-visible through `query.py:78`. The equivalence test must
 either exclude `MAIN_ID` or assert the divergence deliberately.
@@ -298,9 +350,12 @@ _classify_star_id(id_str) -> "Bayer" | "Flamsteed" | "Variable" | None
 
 Integrate as a **pre-pass** in the shared loop so all in-scope call sites inherit it from AN0.
 
-**AN1a — decision:** `**` → drop (recommended). `V*` → drop in AN1, revisit separately.
-**AN1b — component suffixes:** prefer the component-less form (`* alf CMi` over `* alf CMi A`);
-first-match-wins is non-deterministic across SIMBAD releases. Pin with Procyon's real id list.
+**AN1a — ✅ DECIDED (D2, 2026-07-29):** `**` → drop. `V*` → drop *as a key*, but the classifier still
+**returns `"Variable"`**, so step 2 above stays — promoting it to a key later is one line and needs no
+re-classification. Corpus: 35 `**` ids and 14 `V*` ids across the 43 fixtures.
+**AN1b — ✅ DECIDED (D6, 2026-07-29):** prefer the component-less form (`* alf CMi` over
+`* alf CMi A`); first-match-wins is non-deterministic across SIMBAD releases. Pin with Procyon's real
+id list, which is in the AN4.0 corpus and carries both forms.
 
 ---
 
@@ -315,8 +370,8 @@ Add `"Bayer"` / `"Flamsteed"` to `_CSV_DESIG_KEYS` / `keys_order` — **and to `
 ripple, and the same review pass.
 
 AO built an SAO fallback join for its Gould lookup and `/code-review` found it **unreachable**:
-`designations` carries no `"SAO"` key, in *any* copy — absent from `databases.py:304` `keys_order`
-/ `:312` `prefix_map` **and** from the shared `_CSV_PREFIX_MAP`. AO removed the dead branch rather
+`designations` carries no `"SAO"` key, in *any* copy — absent from `databases.py:315` `keys_order`
+/ `:323` `prefix_map` **and** from the shared `_CSV_PREFIX_MAP`. AO removed the dead branch rather
 than implement it, precisely because implementing it is this part's work.
 
 - **It is implementable.** SIMBAD *does* emit `SAO nnnnn` (verified live on HD 102365, 2026-07-28).
@@ -345,7 +400,7 @@ wire-visible** to the sibling repo — inserting after `NAME` reorders the JSON 
 
 ### AN2c — opt-50 rebuild: row **count** changes, not just column text **[R7]**
 The original plan said "existing rows keep the old content." True, but incomplete. The discard rule
-(`databases.py:1281`, `main.py:2324`) is:
+(`databases.py:1381`, `main.py:2324`) is:
 
 ```python
 if main_id.startswith("PLX ") and desig_str == "" and sp_type == "":
@@ -355,6 +410,35 @@ Adding keys makes `desig_str` non-empty for stars that previously captured nothi
 **discarded** are now **kept**. The next opt-50 rebuild therefore changes **row count**, not merely
 column text. (Live measurement says `PLX …` main_ids are currently zero, so the practical delta is
 likely nil — but the claim in the plan must be correct, and this must be re-measured at rebuild time.)
+
+**Ordering, per D5:** the discard rule tests `desig_str == ""`, which is the exact value D5 changes
+from `"N/A"` in copy 2. **Land the D5 fix first, then measure** — a delta measured against the
+`"N/A"` behaviour would be measuring the wrong thing.
+
+### AN2c-T — D4 deferral: the triggers that fire it ⚠️
+
+**D4 = defer** (decided 2026-07-29). Deferral is only safe if it is *observable*, so the debt is
+written down with the specific events that discharge it. A deferral with no trigger is how P4.6's
+sexagesimal bullet sat PARTIALLY DONE for months (§1 lesson 2).
+
+**The state being deferred:** after AN2, `compute_simbad_lookup` and the two narrow lookups emit
+Bayer/Flamsteed immediately, but **`star_systems.designations` does not**, because that column is
+written only by an opt-50 run. So lookup surfaces (opts 1, 3–6, 8–10) show the new designations while
+DB-backed surfaces (opts 18/19, opt-51's CSV export, the seven route planners, the G1
+`designation_prefix` search) do not, until a rebuild. **That asymmetry is the intended, accepted
+state — not a bug to chase.**
+
+| # | Trigger | Kind | What to do when it fires |
+|---|---|---|---|
+| **T1** | The AN2 test asserting the **opt-50 builder emits `Bayer`/`Flamsteed`** for a fixture ids string ever fails | **Mechanical — runs in CI every suite** | The deferral is **invalid**: the *code* is wrong, not just the data. Stop and fix; a rebuild would not help. This is the one trigger that fires by itself, and it is why it exists — everything below depends on a human noticing |
+| **T2** | **Anyone runs option 50** (CLI or GUI), for any reason | Event | D4 discharges itself. **Record `count` + `discarded` before and after** and re-measure the AN2c `PLX …` delta (after D5 — see above). Update this section and `docs/star-databases.md` with the measured numbers in the same commit |
+| **T3** | A Bayer/Flamsteed shows on a lookup surface but is **missing on a DB-backed one** (opt 18/19, the CSV export, a route-planner table, a G1 prefix search) | Symptom | **This is D4 firing as designed.** Do not debug the parser. Either accept it or run T2. Recognising this costs minutes; misdiagnosing it as a parser bug costs a day |
+| **T4** | The **sibling repo** asks for Bayer/Flamsteed through `search-star-systems --designation-prefix`, the `starSystems.csv` export, or any `star_systems`-backed subcommand | Consumer demand | Escalates D4 from deferred to **required**. Run the rebuild (T2) before answering, or the consumer silently gets a false negative — a prefix search for `*` would return nothing and read as "this star has no Bayer designation" |
+| **T5** | Any *other* work re-runs opt 50 — a SIMBAD refresh, a `PLX` rule change, a new designation key (**including the AN2-SAO candidate**) | Event | Fold the D4 measurement into that run rather than scheduling a second ~hours-long rebuild. Two rebuilds for one column is waste |
+
+**T1 is the only self-firing trigger, so write it in AN2's test set, not as a note.** T2–T5 are
+human-noticed; they are written here so the person who notices has the response ready instead of
+re-deriving it.
 
 ### AN2d — **MAIN_ID duplication (new — not in the original plan)** ⚠️ **[R1]**
 For essentially every bright star `MAIN_ID` *is* the Bayer string. After AN2 the `Bayer` key holds the
@@ -370,24 +454,38 @@ either suppress the keyed copy when it equals MAIN_ID, or drop MAIN_ID from the 
 decision, not a detail: it changes what every panel renders.
 
 ### Verified safe
-Exhaustive repo sweep confirms **nothing iterates the full `designations` dict** — every keyed
-consumer uses `.get()` on a fixed name (`databases.py:300-322`, `:494`, `:551-553`, `:737-740`,
-`:1885`, `binary.py:206`, `report.py:118` via the 5-key `_IDENTITY_DESIG_KEYS` at `report.py:46`,
-`main.py:290-324`, `:373`, `:566`, `:710-712`, `:1856-1859`, `gui/panels/nasa_exoplanet.py:91-92`).
-No `desig_str` positional split anywhere. The one dict-values iteration is `calculators.py:284`
-(§AN0b). The G1 `designation_prefix` filter (`databases.py:3344-3352`) and the GCNS cross-match
-regexes are unaffected.
+Exhaustive repo sweep (**run 2026-07-28, pre-AO**) confirms **nothing iterates the full
+`designations` dict** — every keyed consumer uses `.get()` on a fixed name (`databases.py`
+`_get_archive_query_params` / `_get_hwo_query_params` / the HWC + Exocat designation lookups,
+`binary.gaia_source_id_from_designations`, `report.py:118` via the 5-key `_IDENTITY_DESIG_KEYS` at
+`report.py:46`, several `main.py` sites, `gui/panels/nasa_exoplanet.py:91-92`). No `desig_str`
+positional split anywhere. The one dict-values iteration is `calculators.py:284` (§AN0b). The G1
+`designation_prefix` filter and the GCNS cross-match regexes are unaffected.
+
+**Coordinates deliberately dropped, 2026-07-29.** AO shifted every `databases.py` line here by ~+93
+and this census is a snapshot, not a contract. **Re-run the sweep at implementation time** — that is
+cheaper and more trustworthy than maintaining ~14 line numbers across phases. The *conclusion*
+(selective `.get()` everywhere, one dict-values iteration) was re-checked post-AO and still holds.
+
+**⚠ AO added a consumer this sweep predates — `databases._simbad_gould_block` (`:146`), which reads
+`designations["HD"]` via `_gould_catalog_number` (`:123`, called at `:180`).** It is `.get()`-shaped
+so it cannot raise, and that is precisely the hazard: if AN0 changes what the `"HD"` slot *holds* —
+a bare `102365` instead of `"HD 102365"` — every Gould lookup silently returns `None`, no test
+fails, and the differential harness sees nothing because `designations` itself is unchanged. This is
+the additive-and-inert class AO's own closing lesson names. **AN4 must pin it** (see AN4.5).
 
 ---
 
 ## 6. Part AN2e — Catalogued drift between the copies
 
-| Behaviour | shared | databases | main.py:60 | main.py:2268 | calculators / main.py:2693 |
+Columns are the six copies of §2 (anchors re-verified 2026-07-29 post-AO).
+
+| Behaviour | shared (copy 1) | databases (copy 2) | main.py opt-1 (copy 3) | main.py opt-50 (copy 5) | calculators (4) / main.py (6) |
 |---|---|---|---|---|---|
-| `key in …` guard | **yes** (`:186`,`:213`) | **no** (`:267`) | **no** (`:110`) | **no** (`:2279`) | no |
-| empty case | `""` (`:217`) | `"N/A"` (`:272`) | `"N/A"` (`:146`) | `""` (`:2283`) | `""` |
-| MAIN_ID in join | no | **yes** | **yes** (`:139`) | no | n/a |
-| MAIN_ID source | raw `str(result["main_id"][0])` | `_safe("main_id") or star_name` | raw | n/a | `_safe(…) or designation` |
+| `key in …` guard | **yes** (`:248`,`:275`) | **no** (`:360`) | **no** (`:110`) | **no** (`:2279`) | no |
+| empty case | `""` (`:279`) | `"N/A"` (`:365`) | `"N/A"` (`:146`) | `""` (`:2275`,`:2283`) | `""` (`calculators.py:284`) |
+| MAIN_ID in join | no | **yes** (`:364`) | **yes** (`:139`) | no | n/a |
+| MAIN_ID source | raw `str(result["main_id"][0])` (`:239`) | `_safe("main_id") or star_name` (`:263`) | raw | n/a | `_safe(…) or designation` (`:270`) |
 | MAIN_ID missing → | `None` | **the query string** | `None` | n/a | n/a |
 
 Per §1 lesson 1, each row is a decision. The `"N/A"` vs `""` split is the one most likely to be a
@@ -418,10 +516,12 @@ is second-to-last in the order.
 
 **[R8] Correction.** The original plan said the display helpers "don't exist in the repo." The
 Greek/genitive tables indeed don't — but the **`* `/`NAME `/`V* `-stripping half already exists four
-times**: `generate_star_map_html.py:30`, `gui/visualizations/plot_helpers.py:1869`, `:2291`,
-`core/databases.py:598` (`_norm_oec_name`). **All four will start receiving Bayer/Flamsteed strings
-after AN2** and must be audited — this is a fifth-copy problem in the display layer, and it was not in
-scope before.
+times**: `generate_star_map_html.py:28` (`short_name`, loop at `:30`), `gui/visualizations/plot_helpers.py:1869`,
+`:2291` (both the identical `for prefix in ("NAME ", "* ", "V* ")` loop), and
+`core/databases.py:693` (`_norm_oec_name` — **`NAME ` only**, no `* `/`V* ` handling, and it
+upper-cases; re-anchored from `:598`, and note it is a *different* shape from the other three).
+**All four will start receiving Bayer/Flamsteed strings after AN2** and must be audited — this is a
+fifth-copy problem in the display layer, and it was not in scope before.
 
 **Scope guard:** the raw SIMBAD string (`*  18 Eri`) is the identifier — stored verbatim and
 round-trippable. Pretty-rendering (`18 Eridani`) is a display-layer helper, never stored.
@@ -440,12 +540,26 @@ name is a coincidence. **There is no existing byte-identical guard to extend.**
 | Copy | Coverage |
 |---|---|
 | 1 `core/shared.py` | ✅ `tests/test_shared.py:97-186`; `databases._parse_designations_from_ids` indirectly at `tests/test_gcns.py:106-145` |
-| 2 `databases.py:222-272` | ❌ **none.** `tests/test_databases.py:98` `_simbad()` builds a *synthetic* dict — never runs the parser. `tests/test_simbad_gcns_enrichment.py:92,117` assert only the `gcns` key |
+| 2 `databases.py` (`compute_simbad_lookup`'s inline map, `:315-365`) | ❌ **none.** `tests/test_databases.py:98` `_simbad()` builds a *synthetic* dict — never runs the parser. `tests/test_simbad_gcns_enrichment.py:92,117` assert only the `gcns` key. **Phase AO's 46 tests do not change this**: `tests/test_gould.py` + `test_gould_display.py` exercise `_simbad_gould_block`, the block *attached to* this function, and feed it hand-built designation dicts — the prefix loop above it is still never executed by any test |
 | 3, 5, 6, 7 `main.py` | ❌ **zero — no test file imports `main.py` at all** |
-| 4 `calculators.py:271-284` | ❌ **none.** `tests/test_calculators.py:104-118` covers only the Sol/Sun short-circuit (`calculators.py:213-221`), which returns before the parser; `tests/test_route_planning.py:40-43` and `tests/test_viz_phase_o.py:89-96` monkeypatch the whole function away |
+| 4 `calculators.py:272-284` | ❌ **none.** `tests/test_calculators.py:104-118` covers only the Sol/Sun short-circuit (`calculators.py:213-221`), which returns before the parser; `tests/test_route_planning.py:40-43` and `tests/test_viz_phase_o.py:89-96` monkeypatch the whole function away |
 
 **So the original plan's guard set covered the one call site already tested and none of the four that
 weren't.** Required before AN0 touches anything:
+
+0. **AN4.0 — capture the fixture corpus (added 2026-07-29; must precede AN4.1).** The harness replays
+   real SIMBAD `ids` lists, which means those lists have to be **captured live once and committed**,
+   before any refactor, or the baseline is unreproducible and the harness silently depends on SIMBAD
+   uptime. This is a discrete step with a network dependency, not part of writing the harness.
+   - Cover the shapes AN1 must classify (`* alf CMi` + its `A` component, `*  18 Eri`, `* alf01 Cen`,
+     `V* eps Eri`, `** …`), the Gould anchors (HD 102365, HD 100623), and the ordinary catalogue
+     cases (`NAME`-less stars, `BD±`, `LHS`, `Wolf`, Gaia-DR3-only, planet hosts for
+     `Kepler`/`TOI`/`WASP`, and a masked-field star such as a white dwarf).
+   - **`gouldDesignations.csv` is not a substitute.** It carries Bayer/Flamsteed *values* (AO4c) but
+     not the raw pipe-separated `ids` strings the parsers consume — it validates AN1's classifier,
+     it cannot drive the harness.
+   - Commit the corpus as data. Keep the capture script beside it so a re-capture is reproducible,
+     but the JSON is the artifact (the `gouldDesignations.csv` precedent).
 
 1. A **differential harness** — capture `compute_simbad_lookup`'s full dict + `desig_str`,
    `shared._parse_designations`, and both narrow `desig_str` builders, for a few dozen real cached id
@@ -453,10 +567,53 @@ weren't.** Required before AN0 touches anything:
    agent or a reviewer, is the primary safety net.**
 2. First-ever unit tests for copies 2 and 4 (and 5 if in scope).
 3. AN1: `**`-before-`* ` ordering pin; `*  18 Eri`→Flamsteed; `* alf CMi`→Bayer; `* alf01 Cen`→Bayer;
-   component preference; the AN0a synthetic-entry KeyError pin.
-4. AN2d: no duplicate token in `desig_str`.
+   the D6 component preference (`* alf CMi` wins over `* alf CMi A`); the AN0a synthetic-entry
+   KeyError pin; and per **D2**, that `**`/`V*` ids produce **no key** while the classifier still
+   returns `"Variable"` for a `V* ` string (so promoting it later needs no re-classification).
+4. AN2d / **D3**: no duplicate token in `desig_str` — the keyed copy is suppressed when it equals
+   MAIN_ID. Assert against a `* `-MAIN_ID star (22 of the 43 fixtures qualify) **and** a non-`* ` one,
+   so the suppression can't be implemented as "always drop Bayer."
+4b. **D5**: copy 2's empty case is `""`, not `"N/A"` — and the opt-50 discard rule still behaves
+   (`desig_str == ""` on a star that captures nothing). Pin the deliberate MAIN_ID-missing
+   divergence (shared → `None`, databases → the query string) rather than letting it drift.
+4c. **AN2c-T1** — the self-firing D4 trigger: assert the **opt-50 builder** emits `Bayer`/`Flamsteed`
+   for a fixture ids string. If this fails, the deferral is invalid because the code is wrong, not the
+   data (see §5 AN2c-T).
+5. **AN4.5 — the Gould producer/consumer pin (added 2026-07-29, post-AO).** Assert
+   `compute_simbad_lookup(...)["gould"]` is non-null for **HD 102365** (`66 G. Centauri`) and
+   **GJ 432 A** (`289 G. Hydrae`), before *and* after AN0, from a cached/synthetic ids list.
+   `_simbad_gould_block` consumes `designations["HD"]` and expects the `"HD 102365"` string form
+   (§5); a consolidation that changes that slot's shape returns `None` forever with **no test
+   failure and no diff in the harness**, since `designations` itself is unchanged. A harness that
+   only diffs outputs cannot see this — it is the one check that must assert a *downstream* effect.
+   Generalise the idea: for each new AN key, verify some producer can actually emit the shape each
+   consumer assumes (AO's closing lesson).
 
-Run: `venv/bin/python -m pytest` (baseline **2174 passed, 1 skipped** as of 2026-07-29, after Phase AO; the **2120** figure below predates it).
+Run: `venv/bin/python -m pytest` (baseline **2174 passed, 1 skipped** — re-confirmed by a full run
+2026-07-29 after Phase AO; the **2120** figure below predates it).
+
+### AN4.0 + AN4.1 — BUILT 2026-07-29, and what the baseline immediately measured
+
+Shipped: `tests/_capture_designation_fixtures.py` (one-shot, live) → `tests/fixtures/designation_ids.json`
+(43 stars) → `tests/test_designation_harness.py` + `tests/fixtures/designation_golden.json`.
+Suite **2181 passed, 1 skipped** (from 2174). Copies 2, 4 and 5 now have their first coverage of any
+kind, and this is the first test in the repo that imports `main.py`.
+
+**Four measurements over the corpus that bear directly on the open decisions — these are counts, not
+estimates, and they replace guesswork in D3/D5:**
+
+| Measured | Result | Bears on |
+|---|---|---|
+| copy 1 (`shared`) vs copy 5 (`main.py` opt-50) output | **identical on all 43/43** | **D1(a)** — copy 5 already emits exactly what shared does, so delegating it is a no-op refactor, not a behaviour change. The split-brain risk §2a warned about is *latent* (it appears only once AN2 adds keys), which makes fixing it now cheap |
+| stars whose `MAIN_ID` is a `* `-form Bayer/Flamsteed string | **22 / 43 (51%)** | **D3 (AN2d)** — the duplication is not an edge case. Half the corpus would render `* alf CMi, NAME Procyon, * alf CMi, …` |
+| stars with at least one `* ` id currently **discarded** | **18 / 43 (42%)** | The phase's actual payoff, quantified for the first time |
+| stars hitting copy 2's `"N/A"` empty case | **0 / 43** | **D5** — the `"N/A"` vs `""` drift is real in code but never fires for a resolvable star. It can only surface for a star with no captured designation at all, so it is a latent bug, not an active one |
+
+**A fifth divergence the harness surfaced, not previously in §6:** the copies disagree on **how they
+index the SIMBAD table**. `shared._parse_designations` reads column-first
+(`result["main_id"][0]`, astropy semantics); `databases` and `calculators` read row-first (`result[0]`
+then `row[col]`). Harmless today — both work on a real astropy `Table` — but AN0 must not assume one
+style when converging them, and any test double has to support both (the harness's does).
 
 ---
 
@@ -479,6 +636,8 @@ Run: `venv/bin/python -m pytest` (baseline **2174 passed, 1 skipped** as of 2026
 | **[R7]** | Rebuild changes column text | Also changes **row count** via the `PLX …` discard rule |
 | **[R3]** | *(absent)* | Adding a prefix entry before AN0 completes → **`KeyError`** in 3 unguarded copies. Hard ordering constraint |
 | **[R8]** | Display helpers don't exist | The `* `-stripping half exists **4×** and will start receiving Bayer/Flamsteed strings |
+| **[A1]** *(post-AO, 2026-07-29)* | Line numbers into `core/shared.py` + `core/databases.py` | Shifted by AO (+~52 / +~93). **All re-anchored and re-verified**; §2/§6/§7 now anchor on the enclosing block. `main.py` / `calculators.py` / the display helpers were unaffected and re-checked exact. §5's sweep is intentionally un-renumbered — **re-run it, don't trust it** |
+| **[A2]** *(post-AO, 2026-07-29)* | §5's consumer census | AO added a **seventh** consumer, `_simbad_gould_block` → `designations["HD"]`. Additive, `.get()`-shaped, and **inert on a shape change** — invisible to both the test suite and AN4.1's harness. New pin **AN4.5** |
 
 ---
 
@@ -533,16 +692,23 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 
 | Part | Title | Risk | Notes |
 |---|---|---|---|
-| **2a** | **Decide `main.py` scope (D1)** | — | **Gates everything.** Option (a) recommended — see the decisions block at the top |
+| **2a** | **Decide `main.py` scope (D1)** | — | ✅ **DECIDED (a), 2026-07-29.** All of D1–D6 are now settled — see the decisions block at the top |
 | AN0 | Consolidate onto `core.shared` | **High** | AN0a ordering · AN0b explicit key order · AN0c MAIN_ID · AN0d test validity |
 | AN1 | `* ` classifier | Medium | `**`-before-`* ` is load-bearing |
-| AN2 | Key insertion + ripple | **Medium** *(was Low)* | AN2d duplication is a real behaviour change |
-| AN2e | Adjudicate the §6 drift | Medium | Per P4.6's lesson, not all drift is worth preserving |
+| AN2 | Key insertion + ripple | **Medium** *(was Low)* | AN2d duplication is a real behaviour change — **51% of stars** (D3). Carries **AN2c-T1**, the self-firing D4 trigger |
+| AN2e | Adjudicate the §6 drift | Medium→**Low** | ✅ **D5 decided** — fix the empty case to `""` (fires on 0/43, so the change is safe *and* the bug is latent), keep the rest, pin the MAIN_ID divergence |
 | AN3 | Greek table (genitive **inherited from AO**) | Low→**Medium** | +4 display helpers to audit (§7 [R8]) |
-| AN4 | Tests | **High** | Differential harness first; 4 sites have no coverage at all |
+| **AN4.0** | **Capture the fixture corpus (live SIMBAD)** | Low | ✅ **BUILT 2026-07-29** — `tests/_capture_designation_fixtures.py` → `tests/fixtures/designation_ids.json`, 43 stars / 27 Bayer / 20 Flamsteed / 35 `**` / 14 `V*` ids |
+| **AN4.1** | **Differential harness** | Medium | ✅ **BUILT 2026-07-29** — `tests/test_designation_harness.py` + `designation_golden.json`. First coverage for copies 2/4/5; includes the AN4.5 Gould pin. Suite **2181 passed, 1 skipped** |
+| AN4 | Tests | **High** | Differential harness first; 4 sites have no coverage at all. **+ AN4.5** — the Gould producer/consumer pin the harness structurally cannot catch |
 | AN5 | Docs | Low | |
 
-**Order:** §2a decision → AN4.1 (harness) → AN0 (complete, all in-scope copies) → AN1 → AN2 → AN2e →
-AN3 → AN4 rest → AN5.
+**Order:** ~~§2a decision~~ ✅ → ~~**AN4.0** (fixture capture)~~ ✅ → ~~AN4.1 (harness)~~ ✅ →
+**AN0 (complete, all in-scope copies) ← NEXT** → AN1 → AN2 → AN2e → AN3 → AN4 rest → AN5.
 
-**The harness precedes AN0.** It cannot be built after the refactor it exists to verify.
+**All decisions (D1–D6) are settled and the harness is green, so AN0 is unblocked.** Per §11, the
+highest-value review spend in the phase is a `/code-review` immediately **after AN0 lands**.
+
+**The harness precedes AN0.** It cannot be built after the refactor it exists to verify. **And the
+fixtures precede the harness** — they need live SIMBAD, so capturing them is its own step, done
+before any code moves.
