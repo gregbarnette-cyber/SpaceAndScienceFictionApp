@@ -127,9 +127,17 @@ def _classify_star_id(id_str):
 
     "Variable" is returned but is deliberately NOT a designation key (D2) — `V*` is
     redundant with the Bayer form on essentially every star that has both. It is
-    classified anyway so that promoting it to a key later is a one-line change with
-    no re-classification: callers simply never pass "Variable" in ``keys``, and
-    _match_designations' guard skips it.
+    classified anyway so that promoting it to a key later is genuinely a one-line
+    change: `_match_designations` **collects** `V* ` ids into the same candidate
+    bucket as Bayer/Flamsteed and offers them to the same guard, so adding
+    "Variable" to a key list is sufficient on its own.
+
+    That last property was NOT true when AN1 first landed — the bucket held only
+    Bayer and Flamsteed, so a `V* ` id fell through to the prefix loop, matched
+    nothing, and was stored nowhere; adding "Variable" to a key set would have
+    produced a key that was silently always None, with no error and no failing test.
+    Caught by `/code-review` (2026-07-29) reading this docstring against the code.
+    Pinned by test_promoting_variable_to_a_key_needs_no_other_change.
     """
     s = str(id_str).strip()
     if s.startswith("** "):          # must precede the `* ` test
@@ -203,7 +211,8 @@ def _match_designations(id_strings, keys):
     Phase AN1 adds a ``* `` entry.
     """
     desig = {k: None for k in keys}
-    star_ids = {"Bayer": [], "Flamsteed": []}
+    # "Variable" is collected but is not a shipped key (D2) — see _classify_star_id.
+    star_ids = {"Bayer": [], "Flamsteed": [], "Variable": []}
 
     for raw in id_strings:
         id_str = str(raw).strip()
@@ -232,7 +241,8 @@ def _match_designations(id_strings, keys):
     # sweep; see PHASE_AN_PLAN.md §4a.
     bayer = _preferred_star_id(star_ids["Bayer"], "Bayer")
     flamsteed = _preferred_star_id(star_ids["Flamsteed"], "Flamsteed", bayer)
-    for key, chosen in (("Bayer", bayer), ("Flamsteed", flamsteed)):
+    variable = _preferred_star_id(star_ids["Variable"], "Variable")
+    for key, chosen in (("Bayer", bayer), ("Flamsteed", flamsteed), ("Variable", variable)):
         if chosen is not None and key in desig and desig[key] is None:
             desig[key] = chosen
 

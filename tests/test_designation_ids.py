@@ -32,6 +32,10 @@ def _ids_for(query):
     return next(s for s in _corpus() if s["query"] == query)["ids"]
 
 
+def _corpus_row(query):
+    return next(s for s in _corpus() if s["query"] == query)["row"]
+
+
 class ClassifierTest(unittest.TestCase):
     """§4 steps 1–4. Step ORDER is the load-bearing part."""
 
@@ -82,6 +86,21 @@ class ClassifierTest(unittest.TestCase):
         desig = shared._match_designations(["V* eps Eri", "* eps Eri"], _KEYS_WITH_STAR)
         self.assertNotIn("Variable", desig)
         self.assertEqual(desig["Bayer"], "* eps Eri")
+
+    def test_promoting_variable_to_a_key_needs_no_other_change(self):
+        """The stated rationale for classifying `V*` at all — now actually true.
+
+        As first written, _match_designations bucketed only Bayer and Flamsteed, so a
+        `V* ` id fell through to the prefix loop, matched nothing, and was stored
+        nowhere: adding "Variable" to a key set would have yielded a key that was
+        silently always None — no error, no failing test. Found by /code-review
+        reading the docstring against the code (2026-07-29). This asserts the claim
+        instead of restating it.
+        """
+        keys = _KEYS_WITH_STAR + ["Variable"]
+        desig = shared._match_designations(_ids_for("Betelgeuse"), keys)
+        self.assertEqual(desig["Variable"], "V* alf Ori")
+        self.assertEqual(desig["Bayer"], "* alf Ori", "promoting Variable must not disturb Bayer")
 
     def test_lookalikes_that_must_not_classify(self):
         """Traps found while surveying the corpus, plus ordinary catalogue ids."""
@@ -139,6 +158,53 @@ class D8PrecedenceTest(unittest.TestCase):
         picked = self._pick("Fomalhaut")
         self.assertEqual(picked["Bayer"], "* alf PsA")
         self.assertEqual(picked["Flamsteed"], "*  24 PsA")
+
+    def test_system_level_query_of_a_multiple_keeps_the_bare_form(self):
+        """Algol: the bare form IS this object's own designation, and equals MAIN_ID.
+
+        Its id list carries `* bet Per` plus A/B/C components. The corpus queries the
+        SYSTEM (main_id `* bet Per`), so clause (i) selects `* bet Per` — correct, and
+        D3 will then suppress it as a MAIN_ID duplicate. Recorded because
+        /code-review raised the neighbouring COMPONENT-level case, which behaves
+        differently and is an open AN2 question — see the docstring below.
+        """
+        picked = self._pick("Algol")
+        self.assertEqual(picked["Bayer"], "* bet Per")
+        self.assertEqual(picked["Flamsteed"], "*  26 Per")
+        self.assertEqual(_corpus_row("Algol")["main_id"], "* bet Per",
+                         "premise: this is a system-level query")
+
+    def test_no_component_query_in_the_corpus_carries_a_bare_system_form(self):
+        """Why D8 clause (i) needs no MAIN_ID-aware refinement (PHASE_AN_PLAN.md §4b).
+
+        /code-review (2026-07-29) observed that clause (i) prefers the component-less
+        form unconditionally, so a COMPONENT-level query whose ids also carry the bare
+        SYSTEM form would take the system's designation. Real mechanism — but the
+        combination requires a distinct component object that ALSO lists its parent's
+        bare Bayer id, and SIMBAD does not do that: where a component is its own
+        object, the parent's bare form is absent from its ids.
+
+        This asserts the offline half over every component-level query in the corpus.
+        The live half — that `bet Per A` resolves to the SYSTEM object, so its pick
+        equals MAIN_ID and D3 suppresses it — is in test_designation_live.py, because
+        it is a claim about an external catalogue that this frozen fixture cannot
+        detect changing.
+        """
+        checked = 0
+        for star in _corpus():
+            main_id = str(star["row"].get("main_id") or "")
+            if not (main_id.startswith("* ") and shared._COMPONENT_SUFFIX_RE.search(main_id)):
+                continue
+            checked += 1
+            bare = main_id[:-2].strip()          # "* alf Cen A" -> "* alf Cen"
+            with self.subTest(star=star["query"]):
+                self.assertNotIn(
+                    bare, star["ids"],
+                    f"{star['query']} is a component object that also lists the bare "
+                    f"system form {bare!r} — the combination §4b measured as absent. "
+                    f"D8 clause (i) would attribute the system id to a component.",
+                )
+        self.assertGreaterEqual(checked, 5, "corpus lost its component-level queries")
 
     def test_flamsteed_falls_back_to_first_when_there_is_no_bayer(self):
         desig = shared._match_designations(["*  79 Aqr", "*  24 PsA"], _KEYS_WITH_STAR)

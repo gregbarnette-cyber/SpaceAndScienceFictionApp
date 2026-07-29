@@ -24,6 +24,11 @@ def reachable(host, port=443, timeout=3.0) -> bool:
         return False
 
 
+def simbad_reachable(timeout=3.0) -> bool:
+    """Is SIMBAD reachable? Gate for the Phase AN designation live tests."""
+    return reachable("simbad.u-strasbg.fr", 443, timeout)
+
+
 def cds_reachable(timeout=3.0) -> bool:
     """Is CDS (VizieR + X-Match) reachable? Gate for the Phase AM catalog live tests."""
     return reachable("vizier.cds.unistra.fr", 443, timeout)

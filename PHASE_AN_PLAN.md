@@ -472,6 +472,37 @@ superscript numeral (`alf01` → α¹) on a live path**, which §4 already lists
 Fomalhaut's Bayer is `* alf PsA`, so this selects `*  24 PsA` over `*  79 Aqr` — correct, since 79 Aqr
 is Flamsteed's historical cross-boundary duplicate. With no Bayer to key off, fall back to first.
 
+### ✅ CLOSED — clause (i) on a COMPONENT-level query (raised by `/code-review`, resolved 2026-07-29)
+
+`/code-review` flagged that clause (i) prefers the component-less form **unconditionally**, so a
+component-level query whose ids also carry the bare **system** form would take the system's Bayer id
+and attribute it to one component. Real mechanism, correctly reasoned. **It does not fire**, because
+the required combination does not exist in SIMBAD's data model — measured, not argued:
+
+| Case | SIMBAD's behaviour | Result |
+|---|---|---|
+| A component that **is its own object** (α Cen A/B, Sirius B, ο² Eri B, 61 Cyg A, 70 Oph A) | its ids do **not** carry the parent's bare form — **6 / 6** in the corpus | clause (i) picks the component or superscript form. Correct |
+| A component with **no distinct object** (`bet Per A`) | the query resolves to the **system**: `main_id = "* bet Per"`, identical to querying `bet Per` | the pick **equals MAIN_ID** → **D3 suppresses it**. Nothing misattributed |
+
+The two cases are **mutually exclusive**: the bad combination needs a distinct component object that
+*also* lists its parent's bare Bayer id. Where the component object exists the bare form is absent;
+where the bare form is present there is no component object and D3 catches it.
+
+**Method note worth keeping.** The corpus alone would have given the *right answer for the wrong
+reason* — it shows no component query carrying a bare form, which looks like "the reviewer's scenario
+is impossible." The live check showed `bet Per A` **does** return `* bet Per`, exactly as the reviewer
+said; what defuses it is `main_id` resolving to the system too. **The offline fixtures could not have
+established this**, because they are a frozen snapshot of the very thing in question.
+
+**Resolution — no design change.** The alternative was threading `main_id` into
+`_match_designations`, which would have re-opened `_parse_designations_from_ids`'s signature — the
+opt-50 parser AN0 had just unified — to fix something that cannot currently happen. Instead:
+`tests/test_designation_ids.py::test_no_component_query_in_the_corpus_carries_a_bare_system_form`
+asserts the offline half over every component query in the corpus, and the new **live-gated**
+`tests/test_designation_live.py` asserts the upstream half. **If SIMBAD ever promotes Algol A to its
+own object, the live test fails with a message naming this section** — the question then reopens with
+evidence rather than being rediscovered.
+
 **A consequence worth stating plainly, because it reframes the phase's payoff:** for every corpus star
 except α Cen A, the Bayer candidate clause (i) selects **equals MAIN_ID** — so **D3 suppresses it and
 it displays nowhere**. On the 22/43 `* `-MAIN_ID stars the visible gain from this phase is therefore
