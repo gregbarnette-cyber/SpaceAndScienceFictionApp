@@ -6,6 +6,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "* alf CMi",
     "NAME": "NAME Procyon",
+    "Bayer": "* alf CMi",
+    "Flamsteed": "*  10 CMi",
     "GJ": "GJ 280 A",
     "HD": "HD  61421",
     "HIP": "HIP 37279",
@@ -25,10 +27,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J07391805+0513298"
    },
-   "shared_parse_from_ids": "NAME Procyon, GJ 280 A, HD  61421, HIP 37279, HR  2943, LHS   233, BD+05  1739, TIC 280310048, 2MASS J07391805+0513298",
+   "shared_parse_from_ids": "NAME Procyon, * alf CMi, *  10 CMi, GJ 280 A, HD  61421, HIP 37279, HR  2943, LHS   233, BD+05  1739, TIC 280310048, 2MASS J07391805+0513298",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf CMi",
     "NAME": "NAME Procyon",
+    "Bayer": "* alf CMi",
+    "Flamsteed": "*  10 CMi",
     "GJ": "GJ 280 A",
     "HD": "HD  61421",
     "HIP": "HIP 37279",
@@ -48,17 +52,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J07391805+0513298"
    },
-   "simbad_lookup_desig_str": "* alf CMi, NAME Procyon, GJ 280 A, HD  61421, HIP 37279, HR  2943, LHS   233, BD+05  1739, TIC 280310048, 2MASS J07391805+0513298",
+   "simbad_lookup_desig_str": "* alf CMi, NAME Procyon, *  10 CMi, GJ 280 A, HD  61421, HIP 37279, HR  2943, LHS   233, BD+05  1739, TIC 280310048, 2MASS J07391805+0513298",
    "simbad_lookup_main_id": "* alf CMi",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Procyon, HD  61421, HR  2943, GJ 280 A",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Procyon, GJ 280 A, HD  61421, HIP 37279, HR  2943, LHS   233, BD+05  1739, TIC 280310048, 2MASS J07391805+0513298"
+   "main_opt50_parse_from_ids": "NAME Procyon, * alf CMi, *  10 CMi, GJ 280 A, HD  61421, HIP 37279, HR  2943, LHS   233, BD+05  1739, TIC 280310048, 2MASS J07391805+0513298"
   },
   "eps Eri": {
    "shared_parse_designations": {
     "MAIN_ID": "* eps Eri",
     "NAME": "NAME Ran",
+    "Bayer": "* eps Eri",
+    "Flamsteed": "*  18 Eri",
     "GJ": "GJ 144",
     "HD": "HD  22049",
     "HIP": "HIP 16537",
@@ -78,10 +84,12 @@
     "Gaia EDR3": "Gaia DR3 5164707970261890560",
     "2MASS": "2MASS J03325591-0927298"
    },
-   "shared_parse_from_ids": "NAME Ran, GJ 144, HD  22049, HIP 16537, HR  1084, LHS  1557, BD-09   697, TIC 118572803, Gaia DR3 5164707970261890560, 2MASS J03325591-0927298",
+   "shared_parse_from_ids": "NAME Ran, * eps Eri, *  18 Eri, GJ 144, HD  22049, HIP 16537, HR  1084, LHS  1557, BD-09   697, TIC 118572803, Gaia DR3 5164707970261890560, 2MASS J03325591-0927298",
    "simbad_lookup_designations": {
     "MAIN_ID": "* eps Eri",
     "NAME": "NAME Ran",
+    "Bayer": "* eps Eri",
+    "Flamsteed": "*  18 Eri",
     "GJ": "GJ 144",
     "HD": "HD  22049",
     "HIP": "HIP 16537",
@@ -101,17 +109,19 @@
     "Gaia EDR3": "Gaia DR3 5164707970261890560",
     "2MASS": "2MASS J03325591-0927298"
    },
-   "simbad_lookup_desig_str": "* eps Eri, NAME Ran, GJ 144, HD  22049, HIP 16537, HR  1084, LHS  1557, BD-09   697, TIC 118572803, Gaia DR3 5164707970261890560, 2MASS J03325591-0927298",
+   "simbad_lookup_desig_str": "* eps Eri, NAME Ran, *  18 Eri, GJ 144, HD  22049, HIP 16537, HR  1084, LHS  1557, BD-09   697, TIC 118572803, Gaia DR3 5164707970261890560, 2MASS J03325591-0927298",
    "simbad_lookup_main_id": "* eps Eri",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Ran, HD  22049, HR  1084, GJ 144",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Ran, GJ 144, HD  22049, HIP 16537, HR  1084, LHS  1557, BD-09   697, TIC 118572803, Gaia DR3 5164707970261890560, 2MASS J03325591-0927298"
+   "main_opt50_parse_from_ids": "NAME Ran, * eps Eri, *  18 Eri, GJ 144, HD  22049, HIP 16537, HR  1084, LHS  1557, BD-09   697, TIC 118572803, Gaia DR3 5164707970261890560, 2MASS J03325591-0927298"
   },
   "tau Cet": {
    "shared_parse_designations": {
     "MAIN_ID": "* tau Cet",
     "NAME": null,
+    "Bayer": "* tau Cet",
+    "Flamsteed": "*  52 Cet",
     "GJ": "GJ 71",
     "HD": "HD  10700",
     "HIP": "HIP 8102",
@@ -131,10 +141,12 @@
     "Gaia EDR3": "Gaia DR3 2452378776434477184",
     "2MASS": "2MASS J01440402-1556141"
    },
-   "shared_parse_from_ids": "GJ 71, HD  10700, HIP 8102, HR   509, LHS   146, BD-16   295, TIC 419015728, Gaia DR3 2452378776434477184, 2MASS J01440402-1556141",
+   "shared_parse_from_ids": "* tau Cet, *  52 Cet, GJ 71, HD  10700, HIP 8102, HR   509, LHS   146, BD-16   295, TIC 419015728, Gaia DR3 2452378776434477184, 2MASS J01440402-1556141",
    "simbad_lookup_designations": {
     "MAIN_ID": "* tau Cet",
     "NAME": null,
+    "Bayer": "* tau Cet",
+    "Flamsteed": "*  52 Cet",
     "GJ": "GJ 71",
     "HD": "HD  10700",
     "HIP": "HIP 8102",
@@ -154,17 +166,19 @@
     "Gaia EDR3": "Gaia DR3 2452378776434477184",
     "2MASS": "2MASS J01440402-1556141"
    },
-   "simbad_lookup_desig_str": "* tau Cet, GJ 71, HD  10700, HIP 8102, HR   509, LHS   146, BD-16   295, TIC 419015728, Gaia DR3 2452378776434477184, 2MASS J01440402-1556141",
+   "simbad_lookup_desig_str": "* tau Cet, *  52 Cet, GJ 71, HD  10700, HIP 8102, HR   509, LHS   146, BD-16   295, TIC 419015728, Gaia DR3 2452378776434477184, 2MASS J01440402-1556141",
    "simbad_lookup_main_id": "* tau Cet",
    "simbad_lookup_error": null,
    "calculators_desig_str": "HD  10700, HR   509, GJ 71",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "GJ 71, HD  10700, HIP 8102, HR   509, LHS   146, BD-16   295, TIC 419015728, Gaia DR3 2452378776434477184, 2MASS J01440402-1556141"
+   "main_opt50_parse_from_ids": "* tau Cet, *  52 Cet, GJ 71, HD  10700, HIP 8102, HR   509, LHS   146, BD-16   295, TIC 419015728, Gaia DR3 2452378776434477184, 2MASS J01440402-1556141"
   },
   "alf Cen A": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf Cen A",
     "NAME": "NAME Rigel Kentaurus",
+    "Bayer": "* alf01 Cen",
+    "Flamsteed": null,
     "GJ": "GJ 559 A",
     "HD": "HD 128620",
     "HIP": "HIP 71683",
@@ -184,10 +198,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J14393592-6050069"
    },
-   "shared_parse_from_ids": "NAME Rigel Kentaurus, GJ 559 A, HD 128620, HIP 71683, HR  5459, LHS    50, TIC 471011145, 2MASS J14393592-6050069",
+   "shared_parse_from_ids": "NAME Rigel Kentaurus, * alf01 Cen, GJ 559 A, HD 128620, HIP 71683, HR  5459, LHS    50, TIC 471011145, 2MASS J14393592-6050069",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf Cen A",
     "NAME": "NAME Rigel Kentaurus",
+    "Bayer": "* alf01 Cen",
+    "Flamsteed": null,
     "GJ": "GJ 559 A",
     "HD": "HD 128620",
     "HIP": "HIP 71683",
@@ -207,17 +223,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J14393592-6050069"
    },
-   "simbad_lookup_desig_str": "* alf Cen A, NAME Rigel Kentaurus, GJ 559 A, HD 128620, HIP 71683, HR  5459, LHS    50, TIC 471011145, 2MASS J14393592-6050069",
+   "simbad_lookup_desig_str": "* alf Cen A, NAME Rigel Kentaurus, * alf01 Cen, GJ 559 A, HD 128620, HIP 71683, HR  5459, LHS    50, TIC 471011145, 2MASS J14393592-6050069",
    "simbad_lookup_main_id": "* alf Cen A",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Rigel Kentaurus, HD 128620, HR  5459, GJ 559 A",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Rigel Kentaurus, GJ 559 A, HD 128620, HIP 71683, HR  5459, LHS    50, TIC 471011145, 2MASS J14393592-6050069"
+   "main_opt50_parse_from_ids": "NAME Rigel Kentaurus, * alf01 Cen, GJ 559 A, HD 128620, HIP 71683, HR  5459, LHS    50, TIC 471011145, 2MASS J14393592-6050069"
   },
   "alf Cen B": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf Cen B",
     "NAME": "NAME Toliman",
+    "Bayer": "* alf02 Cen",
+    "Flamsteed": null,
     "GJ": "GJ 559 B",
     "HD": "HD 128621",
     "HIP": "HIP 71681",
@@ -237,10 +255,12 @@
     "Gaia EDR3": null,
     "2MASS": null
    },
-   "shared_parse_from_ids": "NAME Toliman, GJ 559 B, HD 128621, HIP 71681, HR  5460, LHS    51, TIC 471011144",
+   "shared_parse_from_ids": "NAME Toliman, * alf02 Cen, GJ 559 B, HD 128621, HIP 71681, HR  5460, LHS    51, TIC 471011144",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf Cen B",
     "NAME": "NAME Toliman",
+    "Bayer": "* alf02 Cen",
+    "Flamsteed": null,
     "GJ": "GJ 559 B",
     "HD": "HD 128621",
     "HIP": "HIP 71681",
@@ -260,17 +280,19 @@
     "Gaia EDR3": null,
     "2MASS": null
    },
-   "simbad_lookup_desig_str": "* alf Cen B, NAME Toliman, GJ 559 B, HD 128621, HIP 71681, HR  5460, LHS    51, TIC 471011144",
+   "simbad_lookup_desig_str": "* alf Cen B, NAME Toliman, * alf02 Cen, GJ 559 B, HD 128621, HIP 71681, HR  5460, LHS    51, TIC 471011144",
    "simbad_lookup_main_id": "* alf Cen B",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Toliman, HD 128621, HR  5460, GJ 559 B",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Toliman, GJ 559 B, HD 128621, HIP 71681, HR  5460, LHS    51, TIC 471011144"
+   "main_opt50_parse_from_ids": "NAME Toliman, * alf02 Cen, GJ 559 B, HD 128621, HIP 71681, HR  5460, LHS    51, TIC 471011144"
   },
   "GJ 432 A": {
    "shared_parse_designations": {
     "MAIN_ID": "*  20 Crt",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": "*  20 Crt",
     "GJ": "GJ 432 A",
     "HD": "HD 100623",
     "HIP": "HIP 56452",
@@ -290,10 +312,12 @@
     "Gaia EDR3": "Gaia DR3 3478127463341507072",
     "2MASS": "2MASS J11342953-3249533"
    },
-   "shared_parse_from_ids": "GJ 432 A, HD 100623, HIP 56452, HR  4458, LHS   308, TIC 57611256, Gaia DR3 3478127463341507072, 2MASS J11342953-3249533",
+   "shared_parse_from_ids": "*  20 Crt, GJ 432 A, HD 100623, HIP 56452, HR  4458, LHS   308, TIC 57611256, Gaia DR3 3478127463341507072, 2MASS J11342953-3249533",
    "simbad_lookup_designations": {
     "MAIN_ID": "*  20 Crt",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": "*  20 Crt",
     "GJ": "GJ 432 A",
     "HD": "HD 100623",
     "HIP": "HIP 56452",
@@ -318,12 +342,14 @@
    "simbad_lookup_error": null,
    "calculators_desig_str": "HD 100623, HR  4458, GJ 432 A",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "GJ 432 A, HD 100623, HIP 56452, HR  4458, LHS   308, TIC 57611256, Gaia DR3 3478127463341507072, 2MASS J11342953-3249533"
+   "main_opt50_parse_from_ids": "*  20 Crt, GJ 432 A, HD 100623, HIP 56452, HR  4458, LHS   308, TIC 57611256, Gaia DR3 3478127463341507072, 2MASS J11342953-3249533"
   },
   "Sirius": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf CMa",
     "NAME": "NAME Sirius A",
+    "Bayer": "* alf CMa",
+    "Flamsteed": "*   9 CMa",
     "GJ": "GJ 244 A",
     "HD": "HD  48915A",
     "HIP": "HIP 32349",
@@ -343,10 +369,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J06450887-1642566"
    },
-   "shared_parse_from_ids": "NAME Sirius A, GJ 244 A, HD  48915A, HIP 32349, HR  2491, LHS   219, BD-16  1591A, TIC 322899250, 2MASS J06450887-1642566",
+   "shared_parse_from_ids": "NAME Sirius A, * alf CMa, *   9 CMa, GJ 244 A, HD  48915A, HIP 32349, HR  2491, LHS   219, BD-16  1591A, TIC 322899250, 2MASS J06450887-1642566",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf CMa",
     "NAME": "NAME Sirius A",
+    "Bayer": "* alf CMa",
+    "Flamsteed": "*   9 CMa",
     "GJ": "GJ 244 A",
     "HD": "HD  48915A",
     "HIP": "HIP 32349",
@@ -366,17 +394,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J06450887-1642566"
    },
-   "simbad_lookup_desig_str": "* alf CMa, NAME Sirius A, GJ 244 A, HD  48915A, HIP 32349, HR  2491, LHS   219, BD-16  1591A, TIC 322899250, 2MASS J06450887-1642566",
+   "simbad_lookup_desig_str": "* alf CMa, NAME Sirius A, *   9 CMa, GJ 244 A, HD  48915A, HIP 32349, HR  2491, LHS   219, BD-16  1591A, TIC 322899250, 2MASS J06450887-1642566",
    "simbad_lookup_main_id": "* alf CMa",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Sirius A, HD  48915A, HR  2491, GJ 244 A",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Sirius A, GJ 244 A, HD  48915A, HIP 32349, HR  2491, LHS   219, BD-16  1591A, TIC 322899250, 2MASS J06450887-1642566"
+   "main_opt50_parse_from_ids": "NAME Sirius A, * alf CMa, *   9 CMa, GJ 244 A, HD  48915A, HIP 32349, HR  2491, LHS   219, BD-16  1591A, TIC 322899250, 2MASS J06450887-1642566"
   },
   "61 Cyg A": {
    "shared_parse_designations": {
     "MAIN_ID": "*  61 Cyg A",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": "*  61 Cyg A",
     "GJ": "GJ 820 A",
     "HD": "HD 201091",
     "HIP": "HIP 104214",
@@ -396,10 +426,12 @@
     "Gaia EDR3": "Gaia DR3 1872046609345556480",
     "2MASS": "2MASS J21065341+3844529"
    },
-   "shared_parse_from_ids": "GJ 820 A, HD 201091, HIP 104214, HR  8085, LHS    62, BD+38  4343, TIC 165602000, Gaia DR3 1872046609345556480, 2MASS J21065341+3844529",
+   "shared_parse_from_ids": "*  61 Cyg A, GJ 820 A, HD 201091, HIP 104214, HR  8085, LHS    62, BD+38  4343, TIC 165602000, Gaia DR3 1872046609345556480, 2MASS J21065341+3844529",
    "simbad_lookup_designations": {
     "MAIN_ID": "*  61 Cyg A",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": "*  61 Cyg A",
     "GJ": "GJ 820 A",
     "HD": "HD 201091",
     "HIP": "HIP 104214",
@@ -424,12 +456,14 @@
    "simbad_lookup_error": null,
    "calculators_desig_str": "HD 201091, HR  8085, GJ 820 A",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "GJ 820 A, HD 201091, HIP 104214, HR  8085, LHS    62, BD+38  4343, TIC 165602000, Gaia DR3 1872046609345556480, 2MASS J21065341+3844529"
+   "main_opt50_parse_from_ids": "*  61 Cyg A, GJ 820 A, HD 201091, HIP 104214, HR  8085, LHS    62, BD+38  4343, TIC 165602000, Gaia DR3 1872046609345556480, 2MASS J21065341+3844529"
   },
   "Betelgeuse": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf Ori",
     "NAME": "NAME Betelgeuse",
+    "Bayer": "* alf Ori",
+    "Flamsteed": "*  58 Ori",
     "GJ": null,
     "HD": "HD  39801",
     "HIP": "HIP 27989",
@@ -449,10 +483,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J05551028+0724255"
    },
-   "shared_parse_from_ids": "NAME Betelgeuse, HD  39801, HIP 27989, HR  2061, BD+07  1055, TIC 269273552, 2MASS J05551028+0724255",
+   "shared_parse_from_ids": "NAME Betelgeuse, * alf Ori, *  58 Ori, HD  39801, HIP 27989, HR  2061, BD+07  1055, TIC 269273552, 2MASS J05551028+0724255",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf Ori",
     "NAME": "NAME Betelgeuse",
+    "Bayer": "* alf Ori",
+    "Flamsteed": "*  58 Ori",
     "GJ": null,
     "HD": "HD  39801",
     "HIP": "HIP 27989",
@@ -472,17 +508,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J05551028+0724255"
    },
-   "simbad_lookup_desig_str": "* alf Ori, NAME Betelgeuse, HD  39801, HIP 27989, HR  2061, BD+07  1055, TIC 269273552, 2MASS J05551028+0724255",
+   "simbad_lookup_desig_str": "* alf Ori, NAME Betelgeuse, *  58 Ori, HD  39801, HIP 27989, HR  2061, BD+07  1055, TIC 269273552, 2MASS J05551028+0724255",
    "simbad_lookup_main_id": "* alf Ori",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Betelgeuse, HD  39801, HR  2061",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Betelgeuse, HD  39801, HIP 27989, HR  2061, BD+07  1055, TIC 269273552, 2MASS J05551028+0724255"
+   "main_opt50_parse_from_ids": "NAME Betelgeuse, * alf Ori, *  58 Ori, HD  39801, HIP 27989, HR  2061, BD+07  1055, TIC 269273552, 2MASS J05551028+0724255"
   },
   "Algol": {
    "shared_parse_designations": {
     "MAIN_ID": "* bet Per",
     "NAME": "NAME Algol",
+    "Bayer": "* bet Per",
+    "Flamsteed": "*  26 Per",
     "GJ": "GJ 9110",
     "HD": "HD  19356",
     "HIP": "HIP 14576",
@@ -502,10 +540,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J03081012+4057204"
    },
-   "shared_parse_from_ids": "NAME Algol, GJ 9110, HD  19356, HIP 14576, HR   936, BD+40   673, TIC 346783960, 2MASS J03081012+4057204",
+   "shared_parse_from_ids": "NAME Algol, * bet Per, *  26 Per, GJ 9110, HD  19356, HIP 14576, HR   936, BD+40   673, TIC 346783960, 2MASS J03081012+4057204",
    "simbad_lookup_designations": {
     "MAIN_ID": "* bet Per",
     "NAME": "NAME Algol",
+    "Bayer": "* bet Per",
+    "Flamsteed": "*  26 Per",
     "GJ": "GJ 9110",
     "HD": "HD  19356",
     "HIP": "HIP 14576",
@@ -525,17 +565,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J03081012+4057204"
    },
-   "simbad_lookup_desig_str": "* bet Per, NAME Algol, GJ 9110, HD  19356, HIP 14576, HR   936, BD+40   673, TIC 346783960, 2MASS J03081012+4057204",
+   "simbad_lookup_desig_str": "* bet Per, NAME Algol, *  26 Per, GJ 9110, HD  19356, HIP 14576, HR   936, BD+40   673, TIC 346783960, 2MASS J03081012+4057204",
    "simbad_lookup_main_id": "* bet Per",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Algol, HD  19356, HR   936, GJ 9110",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Algol, GJ 9110, HD  19356, HIP 14576, HR   936, BD+40   673, TIC 346783960, 2MASS J03081012+4057204"
+   "main_opt50_parse_from_ids": "NAME Algol, * bet Per, *  26 Per, GJ 9110, HD  19356, HIP 14576, HR   936, BD+40   673, TIC 346783960, 2MASS J03081012+4057204"
   },
   "* zet01 UMa": {
    "shared_parse_designations": {
     "MAIN_ID": "* zet01 UMa",
     "NAME": "NAME Mizar A",
+    "Bayer": "* zet01 UMa",
+    "Flamsteed": "*  79 UMa A",
     "GJ": "GJ 3783",
     "HD": "HD 116656",
     "HIP": "HIP 65378A",
@@ -555,10 +597,12 @@
     "Gaia EDR3": "Gaia DR3 1563590579347125632",
     "2MASS": "2MASS J13235563+5455292"
    },
-   "shared_parse_from_ids": "NAME Mizar A, GJ 3783, HD 116656, HIP 65378A, HR  5054, BD+55  1598A, TIC 1001230963, Gaia DR3 1563590579347125632, 2MASS J13235563+5455292",
+   "shared_parse_from_ids": "NAME Mizar A, * zet01 UMa, *  79 UMa A, GJ 3783, HD 116656, HIP 65378A, HR  5054, BD+55  1598A, TIC 1001230963, Gaia DR3 1563590579347125632, 2MASS J13235563+5455292",
    "simbad_lookup_designations": {
     "MAIN_ID": "* zet01 UMa",
     "NAME": "NAME Mizar A",
+    "Bayer": "* zet01 UMa",
+    "Flamsteed": "*  79 UMa A",
     "GJ": "GJ 3783",
     "HD": "HD 116656",
     "HIP": "HIP 65378A",
@@ -578,17 +622,19 @@
     "Gaia EDR3": "Gaia DR3 1563590579347125632",
     "2MASS": "2MASS J13235563+5455292"
    },
-   "simbad_lookup_desig_str": "* zet01 UMa, NAME Mizar A, GJ 3783, HD 116656, HIP 65378A, HR  5054, BD+55  1598A, TIC 1001230963, Gaia DR3 1563590579347125632, 2MASS J13235563+5455292",
+   "simbad_lookup_desig_str": "* zet01 UMa, NAME Mizar A, *  79 UMa A, GJ 3783, HD 116656, HIP 65378A, HR  5054, BD+55  1598A, TIC 1001230963, Gaia DR3 1563590579347125632, 2MASS J13235563+5455292",
    "simbad_lookup_main_id": "* zet01 UMa",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Mizar A, HD 116656, HR  5054, GJ 3783",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Mizar A, GJ 3783, HD 116656, HIP 65378A, HR  5054, BD+55  1598A, TIC 1001230963, Gaia DR3 1563590579347125632, 2MASS J13235563+5455292"
+   "main_opt50_parse_from_ids": "NAME Mizar A, * zet01 UMa, *  79 UMa A, GJ 3783, HD 116656, HIP 65378A, HR  5054, BD+55  1598A, TIC 1001230963, Gaia DR3 1563590579347125632, 2MASS J13235563+5455292"
   },
   "Polaris": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf UMi",
     "NAME": "NAME Lodestar",
+    "Bayer": "* alf UMi",
+    "Flamsteed": "*   1 UMi",
     "GJ": null,
     "HD": "HD   8890",
     "HIP": "HIP 11767",
@@ -608,10 +654,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J02314822+8915503"
    },
-   "shared_parse_from_ids": "NAME Lodestar, HD   8890, HIP 11767, HR   424, BD+88     8, TIC 303256075, 2MASS J02314822+8915503",
+   "shared_parse_from_ids": "NAME Lodestar, * alf UMi, *   1 UMi, HD   8890, HIP 11767, HR   424, BD+88     8, TIC 303256075, 2MASS J02314822+8915503",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf UMi",
     "NAME": "NAME Lodestar",
+    "Bayer": "* alf UMi",
+    "Flamsteed": "*   1 UMi",
     "GJ": null,
     "HD": "HD   8890",
     "HIP": "HIP 11767",
@@ -631,17 +679,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J02314822+8915503"
    },
-   "simbad_lookup_desig_str": "* alf UMi, NAME Lodestar, HD   8890, HIP 11767, HR   424, BD+88     8, TIC 303256075, 2MASS J02314822+8915503",
+   "simbad_lookup_desig_str": "* alf UMi, NAME Lodestar, *   1 UMi, HD   8890, HIP 11767, HR   424, BD+88     8, TIC 303256075, 2MASS J02314822+8915503",
    "simbad_lookup_main_id": "* alf UMi",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Lodestar, HD   8890, HR   424",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Lodestar, HD   8890, HIP 11767, HR   424, BD+88     8, TIC 303256075, 2MASS J02314822+8915503"
+   "main_opt50_parse_from_ids": "NAME Lodestar, * alf UMi, *   1 UMi, HD   8890, HIP 11767, HR   424, BD+88     8, TIC 303256075, 2MASS J02314822+8915503"
   },
   "Vega": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf Lyr",
     "NAME": "NAME Vega",
+    "Bayer": "* alf Lyr",
+    "Flamsteed": "*   3 Lyr",
     "GJ": "GJ 721",
     "HD": "HD 172167",
     "HIP": "HIP 91262",
@@ -661,10 +711,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J18365633+3847012"
    },
-   "shared_parse_from_ids": "NAME Vega, GJ 721, HD 172167, HIP 91262, HR  7001, BD+38  3238, TIC 157587146, 2MASS J18365633+3847012",
+   "shared_parse_from_ids": "NAME Vega, * alf Lyr, *   3 Lyr, GJ 721, HD 172167, HIP 91262, HR  7001, BD+38  3238, TIC 157587146, 2MASS J18365633+3847012",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf Lyr",
     "NAME": "NAME Vega",
+    "Bayer": "* alf Lyr",
+    "Flamsteed": "*   3 Lyr",
     "GJ": "GJ 721",
     "HD": "HD 172167",
     "HIP": "HIP 91262",
@@ -684,17 +736,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J18365633+3847012"
    },
-   "simbad_lookup_desig_str": "* alf Lyr, NAME Vega, GJ 721, HD 172167, HIP 91262, HR  7001, BD+38  3238, TIC 157587146, 2MASS J18365633+3847012",
+   "simbad_lookup_desig_str": "* alf Lyr, NAME Vega, *   3 Lyr, GJ 721, HD 172167, HIP 91262, HR  7001, BD+38  3238, TIC 157587146, 2MASS J18365633+3847012",
    "simbad_lookup_main_id": "* alf Lyr",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Vega, HD 172167, HR  7001, GJ 721",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Vega, GJ 721, HD 172167, HIP 91262, HR  7001, BD+38  3238, TIC 157587146, 2MASS J18365633+3847012"
+   "main_opt50_parse_from_ids": "NAME Vega, * alf Lyr, *   3 Lyr, GJ 721, HD 172167, HIP 91262, HR  7001, BD+38  3238, TIC 157587146, 2MASS J18365633+3847012"
   },
   "Arcturus": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf Boo",
     "NAME": "NAME Arcturus",
+    "Bayer": "* alf Boo",
+    "Flamsteed": "*  16 Boo",
     "GJ": "GJ 541",
     "HD": "HD 124897",
     "HIP": "HIP 69673",
@@ -714,10 +768,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J14153968+1910558"
    },
-   "shared_parse_from_ids": "NAME Arcturus, GJ 541, HD 124897, HIP 69673, HR  5340, LHS    48, BD+19  2777, TIC 459832522, 2MASS J14153968+1910558",
+   "shared_parse_from_ids": "NAME Arcturus, * alf Boo, *  16 Boo, GJ 541, HD 124897, HIP 69673, HR  5340, LHS    48, BD+19  2777, TIC 459832522, 2MASS J14153968+1910558",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf Boo",
     "NAME": "NAME Arcturus",
+    "Bayer": "* alf Boo",
+    "Flamsteed": "*  16 Boo",
     "GJ": "GJ 541",
     "HD": "HD 124897",
     "HIP": "HIP 69673",
@@ -737,17 +793,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J14153968+1910558"
    },
-   "simbad_lookup_desig_str": "* alf Boo, NAME Arcturus, GJ 541, HD 124897, HIP 69673, HR  5340, LHS    48, BD+19  2777, TIC 459832522, 2MASS J14153968+1910558",
+   "simbad_lookup_desig_str": "* alf Boo, NAME Arcturus, *  16 Boo, GJ 541, HD 124897, HIP 69673, HR  5340, LHS    48, BD+19  2777, TIC 459832522, 2MASS J14153968+1910558",
    "simbad_lookup_main_id": "* alf Boo",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Arcturus, HD 124897, HR  5340, GJ 541",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Arcturus, GJ 541, HD 124897, HIP 69673, HR  5340, LHS    48, BD+19  2777, TIC 459832522, 2MASS J14153968+1910558"
+   "main_opt50_parse_from_ids": "NAME Arcturus, * alf Boo, *  16 Boo, GJ 541, HD 124897, HIP 69673, HR  5340, LHS    48, BD+19  2777, TIC 459832522, 2MASS J14153968+1910558"
   },
   "Capella": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf Aur",
     "NAME": "NAME Capella",
+    "Bayer": "* alf Aur",
+    "Flamsteed": "*  13 Aur",
     "GJ": "GJ 194",
     "HD": "HD  34029",
     "HIP": "HIP 24608",
@@ -767,10 +825,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J05164138+4559525"
    },
-   "shared_parse_from_ids": "NAME Capella, GJ 194, HD  34029, HIP 24608, HR  1708, BD+45  1077, TIC 368326352, 2MASS J05164138+4559525",
+   "shared_parse_from_ids": "NAME Capella, * alf Aur, *  13 Aur, GJ 194, HD  34029, HIP 24608, HR  1708, BD+45  1077, TIC 368326352, 2MASS J05164138+4559525",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf Aur",
     "NAME": "NAME Capella",
+    "Bayer": "* alf Aur",
+    "Flamsteed": "*  13 Aur",
     "GJ": "GJ 194",
     "HD": "HD  34029",
     "HIP": "HIP 24608",
@@ -790,17 +850,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J05164138+4559525"
    },
-   "simbad_lookup_desig_str": "* alf Aur, NAME Capella, GJ 194, HD  34029, HIP 24608, HR  1708, BD+45  1077, TIC 368326352, 2MASS J05164138+4559525",
+   "simbad_lookup_desig_str": "* alf Aur, NAME Capella, *  13 Aur, GJ 194, HD  34029, HIP 24608, HR  1708, BD+45  1077, TIC 368326352, 2MASS J05164138+4559525",
    "simbad_lookup_main_id": "* alf Aur",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Capella, HD  34029, HR  1708, GJ 194",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Capella, GJ 194, HD  34029, HIP 24608, HR  1708, BD+45  1077, TIC 368326352, 2MASS J05164138+4559525"
+   "main_opt50_parse_from_ids": "NAME Capella, * alf Aur, *  13 Aur, GJ 194, HD  34029, HIP 24608, HR  1708, BD+45  1077, TIC 368326352, 2MASS J05164138+4559525"
   },
   "Fomalhaut": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf PsA",
     "NAME": "NAME Fomalhaut",
+    "Bayer": "* alf PsA",
+    "Flamsteed": "*  24 PsA",
     "GJ": "GJ 881",
     "HD": "HD 216956",
     "HIP": "HIP 113368",
@@ -820,10 +882,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J22573901-2937193"
    },
-   "shared_parse_from_ids": "NAME Fomalhaut, GJ 881, HD 216956, HIP 113368, HR  8728, TIC 47552789, 2MASS J22573901-2937193",
+   "shared_parse_from_ids": "NAME Fomalhaut, * alf PsA, *  24 PsA, GJ 881, HD 216956, HIP 113368, HR  8728, TIC 47552789, 2MASS J22573901-2937193",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf PsA",
     "NAME": "NAME Fomalhaut",
+    "Bayer": "* alf PsA",
+    "Flamsteed": "*  24 PsA",
     "GJ": "GJ 881",
     "HD": "HD 216956",
     "HIP": "HIP 113368",
@@ -843,17 +907,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J22573901-2937193"
    },
-   "simbad_lookup_desig_str": "* alf PsA, NAME Fomalhaut, GJ 881, HD 216956, HIP 113368, HR  8728, TIC 47552789, 2MASS J22573901-2937193",
+   "simbad_lookup_desig_str": "* alf PsA, NAME Fomalhaut, *  24 PsA, GJ 881, HD 216956, HIP 113368, HR  8728, TIC 47552789, 2MASS J22573901-2937193",
    "simbad_lookup_main_id": "* alf PsA",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Fomalhaut, HD 216956, HR  8728, GJ 881",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Fomalhaut, GJ 881, HD 216956, HIP 113368, HR  8728, TIC 47552789, 2MASS J22573901-2937193"
+   "main_opt50_parse_from_ids": "NAME Fomalhaut, * alf PsA, *  24 PsA, GJ 881, HD 216956, HIP 113368, HR  8728, TIC 47552789, 2MASS J22573901-2937193"
   },
   "Aldebaran": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf Tau",
     "NAME": "NAME Aldebaran",
+    "Bayer": "* alf Tau",
+    "Flamsteed": "*  87 Tau",
     "GJ": "GJ 171.1 A",
     "HD": "HD  29139",
     "HIP": "HIP 21421",
@@ -873,10 +939,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J04355524+1630331"
    },
-   "shared_parse_from_ids": "NAME Aldebaran, GJ 171.1 A, HD  29139, HIP 21421, HR  1457, BD+16   629, TIC 245873777, 2MASS J04355524+1630331",
+   "shared_parse_from_ids": "NAME Aldebaran, * alf Tau, *  87 Tau, GJ 171.1 A, HD  29139, HIP 21421, HR  1457, BD+16   629, TIC 245873777, 2MASS J04355524+1630331",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf Tau",
     "NAME": "NAME Aldebaran",
+    "Bayer": "* alf Tau",
+    "Flamsteed": "*  87 Tau",
     "GJ": "GJ 171.1 A",
     "HD": "HD  29139",
     "HIP": "HIP 21421",
@@ -896,17 +964,19 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J04355524+1630331"
    },
-   "simbad_lookup_desig_str": "* alf Tau, NAME Aldebaran, GJ 171.1 A, HD  29139, HIP 21421, HR  1457, BD+16   629, TIC 245873777, 2MASS J04355524+1630331",
+   "simbad_lookup_desig_str": "* alf Tau, NAME Aldebaran, *  87 Tau, GJ 171.1 A, HD  29139, HIP 21421, HR  1457, BD+16   629, TIC 245873777, 2MASS J04355524+1630331",
    "simbad_lookup_main_id": "* alf Tau",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Aldebaran, HD  29139, HR  1457, GJ 171.1 A",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Aldebaran, GJ 171.1 A, HD  29139, HIP 21421, HR  1457, BD+16   629, TIC 245873777, 2MASS J04355524+1630331"
+   "main_opt50_parse_from_ids": "NAME Aldebaran, * alf Tau, *  87 Tau, GJ 171.1 A, HD  29139, HIP 21421, HR  1457, BD+16   629, TIC 245873777, 2MASS J04355524+1630331"
   },
   "HD 102365": {
    "shared_parse_designations": {
     "MAIN_ID": "HD 102365",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 442 A",
     "HD": "HD 102365",
     "HIP": "HIP 57443",
@@ -930,6 +1000,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "HD 102365",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 442 A",
     "HD": "HD 102365",
     "HIP": "HIP 57443",
@@ -949,7 +1021,7 @@
     "Gaia EDR3": "Gaia DR3 5381537023379295232",
     "2MASS": "2MASS J11463107-4030013"
    },
-   "simbad_lookup_desig_str": "HD 102365, GJ 442 A, HD 102365, HIP 57443, HR  4523, LHS   311, TIC 454082369, Gaia DR3 5381537023379295232, 2MASS J11463107-4030013",
+   "simbad_lookup_desig_str": "HD 102365, GJ 442 A, HIP 57443, HR  4523, LHS   311, TIC 454082369, Gaia DR3 5381537023379295232, 2MASS J11463107-4030013",
    "simbad_lookup_main_id": "HD 102365",
    "simbad_lookup_error": null,
    "calculators_desig_str": "HD 102365, HR  4523, GJ 442 A",
@@ -960,6 +1032,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "*  20 Crt",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": "*  20 Crt",
     "GJ": "GJ 432 A",
     "HD": "HD 100623",
     "HIP": "HIP 56452",
@@ -979,10 +1053,12 @@
     "Gaia EDR3": "Gaia DR3 3478127463341507072",
     "2MASS": "2MASS J11342953-3249533"
    },
-   "shared_parse_from_ids": "GJ 432 A, HD 100623, HIP 56452, HR  4458, LHS   308, TIC 57611256, Gaia DR3 3478127463341507072, 2MASS J11342953-3249533",
+   "shared_parse_from_ids": "*  20 Crt, GJ 432 A, HD 100623, HIP 56452, HR  4458, LHS   308, TIC 57611256, Gaia DR3 3478127463341507072, 2MASS J11342953-3249533",
    "simbad_lookup_designations": {
     "MAIN_ID": "*  20 Crt",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": "*  20 Crt",
     "GJ": "GJ 432 A",
     "HD": "HD 100623",
     "HIP": "HIP 56452",
@@ -1007,12 +1083,14 @@
    "simbad_lookup_error": null,
    "calculators_desig_str": "HD 100623, HR  4458, GJ 432 A",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "GJ 432 A, HD 100623, HIP 56452, HR  4458, LHS   308, TIC 57611256, Gaia DR3 3478127463341507072, 2MASS J11342953-3249533"
+   "main_opt50_parse_from_ids": "*  20 Crt, GJ 432 A, HD 100623, HIP 56452, HR  4458, LHS   308, TIC 57611256, Gaia DR3 3478127463341507072, 2MASS J11342953-3249533"
   },
   "Barnard's star": {
    "shared_parse_designations": {
     "MAIN_ID": "NAME Barnard's star",
     "NAME": "NAME Barnard's star",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 699",
     "HD": null,
     "HIP": "HIP 87937",
@@ -1036,6 +1114,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "NAME Barnard's star",
     "NAME": "NAME Barnard's star",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 699",
     "HD": null,
     "HIP": "HIP 87937",
@@ -1055,7 +1135,7 @@
     "Gaia EDR3": "Gaia DR3 4472832130942575872",
     "2MASS": "2MASS J17574849+0441405"
    },
-   "simbad_lookup_desig_str": "NAME Barnard's star, NAME Barnard's star, GJ 699, HIP 87937, LHS    57, BD+04  3561a, TIC 325554331, Gaia DR3 4472832130942575872, 2MASS J17574849+0441405",
+   "simbad_lookup_desig_str": "NAME Barnard's star, GJ 699, HIP 87937, LHS    57, BD+04  3561a, TIC 325554331, Gaia DR3 4472832130942575872, 2MASS J17574849+0441405",
    "simbad_lookup_main_id": "NAME Barnard's star",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Barnard's star, GJ 699",
@@ -1066,6 +1146,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "Wolf  359",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 406",
     "HD": null,
     "HIP": null,
@@ -1089,6 +1171,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "Wolf  359",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 406",
     "HD": null,
     "HIP": null,
@@ -1108,7 +1192,7 @@
     "Gaia EDR3": "Gaia DR3 3864972938605115520",
     "2MASS": "2MASS J10562886+0700527"
    },
-   "simbad_lookup_desig_str": "Wolf  359, GJ 406, Wolf  359, LHS    36, TIC 365006789, Gaia DR3 3864972938605115520, 2MASS J10562886+0700527",
+   "simbad_lookup_desig_str": "Wolf  359, GJ 406, LHS    36, TIC 365006789, Gaia DR3 3864972938605115520, 2MASS J10562886+0700527",
    "simbad_lookup_main_id": "Wolf  359",
    "simbad_lookup_error": null,
    "calculators_desig_str": "GJ 406, Wolf  359",
@@ -1119,6 +1203,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "Ross  128",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 447",
     "HD": null,
     "HIP": "HIP 57548",
@@ -1142,6 +1228,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "Ross  128",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 447",
     "HD": null,
     "HIP": "HIP 57548",
@@ -1172,6 +1260,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "NAME Proxima Centauri",
     "NAME": "NAME Proxima Cen",
+    "Bayer": "* alf Cen C",
+    "Flamsteed": null,
     "GJ": "GJ 551",
     "HD": null,
     "HIP": "HIP 70890",
@@ -1191,10 +1281,12 @@
     "Gaia EDR3": "Gaia DR3 5853498713190525696",
     "2MASS": "2MASS J14294291-6240465"
    },
-   "shared_parse_from_ids": "NAME Proxima Cen, GJ 551, HIP 70890, LHS    49, TIC 388857263, Gaia DR3 5853498713190525696, 2MASS J14294291-6240465",
+   "shared_parse_from_ids": "NAME Proxima Cen, * alf Cen C, GJ 551, HIP 70890, LHS    49, TIC 388857263, Gaia DR3 5853498713190525696, 2MASS J14294291-6240465",
    "simbad_lookup_designations": {
     "MAIN_ID": "NAME Proxima Centauri",
     "NAME": "NAME Proxima Cen",
+    "Bayer": "* alf Cen C",
+    "Flamsteed": null,
     "GJ": "GJ 551",
     "HD": null,
     "HIP": "HIP 70890",
@@ -1214,17 +1306,19 @@
     "Gaia EDR3": "Gaia DR3 5853498713190525696",
     "2MASS": "2MASS J14294291-6240465"
    },
-   "simbad_lookup_desig_str": "NAME Proxima Centauri, NAME Proxima Cen, GJ 551, HIP 70890, LHS    49, TIC 388857263, Gaia DR3 5853498713190525696, 2MASS J14294291-6240465",
+   "simbad_lookup_desig_str": "NAME Proxima Centauri, NAME Proxima Cen, * alf Cen C, GJ 551, HIP 70890, LHS    49, TIC 388857263, Gaia DR3 5853498713190525696, 2MASS J14294291-6240465",
    "simbad_lookup_main_id": "NAME Proxima Centauri",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Proxima Cen, GJ 551",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Proxima Cen, GJ 551, HIP 70890, LHS    49, TIC 388857263, Gaia DR3 5853498713190525696, 2MASS J14294291-6240465"
+   "main_opt50_parse_from_ids": "NAME Proxima Cen, * alf Cen C, GJ 551, HIP 70890, LHS    49, TIC 388857263, Gaia DR3 5853498713190525696, 2MASS J14294291-6240465"
   },
   "Kapteyn's star": {
    "shared_parse_designations": {
     "MAIN_ID": "HD  33793",
     "NAME": "NAME Kapteyn's star",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 191",
     "HD": "HD  33793",
     "HIP": "HIP 24186",
@@ -1248,6 +1342,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "HD  33793",
     "NAME": "NAME Kapteyn's star",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 191",
     "HD": "HD  33793",
     "HIP": "HIP 24186",
@@ -1267,7 +1363,7 @@
     "Gaia EDR3": "Gaia DR3 4810594479418041856",
     "2MASS": "2MASS J05114046-4501051"
    },
-   "simbad_lookup_desig_str": "HD  33793, NAME Kapteyn's star, GJ 191, HD  33793, HIP 24186, LHS    29, TIC 200385493, Gaia DR3 4810594479418041856, 2MASS J05114046-4501051",
+   "simbad_lookup_desig_str": "HD  33793, NAME Kapteyn's star, GJ 191, HIP 24186, LHS    29, TIC 200385493, Gaia DR3 4810594479418041856, 2MASS J05114046-4501051",
    "simbad_lookup_main_id": "HD  33793",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Kapteyn's star, HD  33793, GJ 191",
@@ -1278,6 +1374,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "BD+05  1668",
     "NAME": "NAME Luyten's star",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 273",
     "HD": null,
     "HIP": "HIP 36208",
@@ -1301,6 +1399,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "BD+05  1668",
     "NAME": "NAME Luyten's star",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 273",
     "HD": null,
     "HIP": "HIP 36208",
@@ -1320,7 +1420,7 @@
     "Gaia EDR3": "Gaia DR3 3139847906307949696",
     "2MASS": "2MASS J07272450+0513329"
    },
-   "simbad_lookup_desig_str": "BD+05  1668, NAME Luyten's star, GJ 273, HIP 36208, LHS    33, BD+05  1668, TIC 318686860, Gaia DR3 3139847906307949696, 2MASS J07272450+0513329",
+   "simbad_lookup_desig_str": "BD+05  1668, NAME Luyten's star, GJ 273, HIP 36208, LHS    33, TIC 318686860, Gaia DR3 3139847906307949696, 2MASS J07272450+0513329",
    "simbad_lookup_main_id": "BD+05  1668",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Luyten's star, GJ 273",
@@ -1331,6 +1431,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "G 139-21",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 1214",
     "HD": null,
     "HIP": null,
@@ -1354,6 +1456,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "G 139-21",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 1214",
     "HD": null,
     "HIP": null,
@@ -1384,6 +1488,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "G 268-38",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 3053",
     "HD": null,
     "HIP": null,
@@ -1407,6 +1513,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "G 268-38",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 3053",
     "HD": null,
     "HIP": null,
@@ -1437,6 +1545,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "HD 209458",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": "HD 209458",
     "HIP": "HIP 108859",
@@ -1460,6 +1570,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "HD 209458",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": "HD 209458",
     "HIP": "HIP 108859",
@@ -1479,7 +1591,7 @@
     "Gaia EDR3": "Gaia DR3 1779546757669063552",
     "2MASS": "2MASS J22031077+1853036"
    },
-   "simbad_lookup_desig_str": "HD 209458, HD 209458, HIP 108859, BD+18  4917, TOI-5972, TIC 420814525, Gaia DR3 1779546757669063552, 2MASS J22031077+1853036",
+   "simbad_lookup_desig_str": "HD 209458, HIP 108859, BD+18  4917, TOI-5972, TIC 420814525, Gaia DR3 1779546757669063552, 2MASS J22031077+1853036",
    "simbad_lookup_main_id": "HD 209458",
    "simbad_lookup_error": null,
    "calculators_desig_str": "HD 209458",
@@ -1490,6 +1602,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "HD 218396",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": "HD 218396",
     "HIP": "HIP 114189",
@@ -1513,6 +1627,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "HD 218396",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": "HD 218396",
     "HIP": "HIP 114189",
@@ -1532,7 +1648,7 @@
     "Gaia EDR3": "Gaia DR3 2832463659640297472",
     "2MASS": "2MASS J23072869+2108033"
    },
-   "simbad_lookup_desig_str": "HD 218396, HD 218396, HIP 114189, HR  8799, BD+20  5278, TIC 245368902, Gaia DR3 2832463659640297472, 2MASS J23072869+2108033",
+   "simbad_lookup_desig_str": "HD 218396, HIP 114189, HR  8799, BD+20  5278, TIC 245368902, Gaia DR3 2832463659640297472, 2MASS J23072869+2108033",
    "simbad_lookup_main_id": "HD 218396",
    "simbad_lookup_error": null,
    "calculators_desig_str": "HD 218396, HR  8799",
@@ -1543,6 +1659,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "Kepler-186",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1566,6 +1684,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "Kepler-186",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1585,7 +1705,7 @@
     "Gaia EDR3": "Gaia DR3 2079000330051813504",
     "2MASS": "2MASS J19543665+4357180"
    },
-   "simbad_lookup_desig_str": "Kepler-186, Kepler-186, KOI-571, TIC 268159861, Gaia DR3 2079000330051813504, 2MASS J19543665+4357180",
+   "simbad_lookup_desig_str": "Kepler-186, KOI-571, TIC 268159861, Gaia DR3 2079000330051813504, 2MASS J19543665+4357180",
    "simbad_lookup_main_id": "Kepler-186",
    "simbad_lookup_error": null,
    "calculators_desig_str": "",
@@ -1596,6 +1716,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "TOI-700",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1619,6 +1741,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "TOI-700",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1638,7 +1762,7 @@
     "Gaia EDR3": "Gaia DR3 5284517766615850752",
     "2MASS": "2MASS J06282325-6534456"
    },
-   "simbad_lookup_desig_str": "TOI-700, TOI-700, TIC 150428135, Gaia DR3 5284517766615850752, 2MASS J06282325-6534456",
+   "simbad_lookup_desig_str": "TOI-700, TIC 150428135, Gaia DR3 5284517766615850752, 2MASS J06282325-6534456",
    "simbad_lookup_main_id": "TOI-700",
    "simbad_lookup_error": null,
    "calculators_desig_str": "",
@@ -1649,6 +1773,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "WASP-12",
     "NAME": "NAME Bergfors-6",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1672,6 +1798,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "WASP-12",
     "NAME": "NAME Bergfors-6",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1691,7 +1819,7 @@
     "Gaia EDR3": "Gaia DR3 3435282862461427072",
     "2MASS": "2MASS J06303279+2940202"
    },
-   "simbad_lookup_desig_str": "WASP-12, NAME Bergfors-6, TOI-1725, WASP-12, TIC 86396382, Gaia DR3 3435282862461427072, 2MASS J06303279+2940202",
+   "simbad_lookup_desig_str": "WASP-12, NAME Bergfors-6, TOI-1725, TIC 86396382, Gaia DR3 3435282862461427072, 2MASS J06303279+2940202",
    "simbad_lookup_main_id": "WASP-12",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Bergfors-6",
@@ -1702,6 +1830,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "CoRoT-7",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1725,6 +1855,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "CoRoT-7",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1744,7 +1876,7 @@
     "Gaia EDR3": "Gaia DR3 3107267177757848576",
     "2MASS": "2MASS J06434947-0103468"
    },
-   "simbad_lookup_desig_str": "CoRoT-7, CoRoT-7, TIC 280304863, Gaia DR3 3107267177757848576, 2MASS J06434947-0103468",
+   "simbad_lookup_desig_str": "CoRoT-7, TIC 280304863, Gaia DR3 3107267177757848576, 2MASS J06434947-0103468",
    "simbad_lookup_main_id": "CoRoT-7",
    "simbad_lookup_error": null,
    "calculators_desig_str": "",
@@ -1755,6 +1887,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "K2-18",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1778,6 +1912,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "K2-18",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1808,6 +1944,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "BD+47  2936",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": "HIP 97657",
@@ -1831,6 +1969,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "BD+47  2936",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": "HIP 97657",
@@ -1850,7 +1990,7 @@
     "Gaia EDR3": "Gaia DR3 2086512227851023872",
     "2MASS": "2MASS J19505021+4804508"
    },
-   "simbad_lookup_desig_str": "BD+47  2936, HIP 97657, BD+47  2936, Kepler-3, KOI-3, TOI-1144, HAT-P-11, TIC 28230919, Gaia DR3 2086512227851023872, 2MASS J19505021+4804508",
+   "simbad_lookup_desig_str": "BD+47  2936, HIP 97657, Kepler-3, KOI-3, TOI-1144, HAT-P-11, TIC 28230919, Gaia DR3 2086512227851023872, 2MASS J19505021+4804508",
    "simbad_lookup_main_id": "BD+47  2936",
    "simbad_lookup_error": null,
    "calculators_desig_str": "",
@@ -1861,6 +2001,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "TRAPPIST-1",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1884,6 +2026,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "TRAPPIST-1",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -1914,6 +2058,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "* alf CMa B",
     "NAME": "NAME Sirius C",
+    "Bayer": "* alf CMa B",
+    "Flamsteed": null,
     "GJ": "GJ 244 B",
     "HD": "HD  48915B",
     "HIP": null,
@@ -1933,10 +2079,12 @@
     "Gaia EDR3": "Gaia DR3 2947050466531873024",
     "2MASS": null
    },
-   "shared_parse_from_ids": "NAME Sirius C, GJ 244 B, HD  48915B, BD-16  1591B, TIC 747459985, Gaia DR3 2947050466531873024",
+   "shared_parse_from_ids": "NAME Sirius C, * alf CMa B, GJ 244 B, HD  48915B, BD-16  1591B, TIC 747459985, Gaia DR3 2947050466531873024",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf CMa B",
     "NAME": "NAME Sirius C",
+    "Bayer": "* alf CMa B",
+    "Flamsteed": null,
     "GJ": "GJ 244 B",
     "HD": "HD  48915B",
     "HIP": null,
@@ -1961,12 +2109,14 @@
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Sirius C, HD  48915B, GJ 244 B",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Sirius C, GJ 244 B, HD  48915B, BD-16  1591B, TIC 747459985, Gaia DR3 2947050466531873024"
+   "main_opt50_parse_from_ids": "NAME Sirius C, * alf CMa B, GJ 244 B, HD  48915B, BD-16  1591B, TIC 747459985, Gaia DR3 2947050466531873024"
   },
   "GJ 35": {
    "shared_parse_designations": {
     "MAIN_ID": "Wolf   28",
     "NAME": "NAME van Maanen's Star",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 35",
     "HD": null,
     "HIP": "HIP 3829",
@@ -1990,6 +2140,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "Wolf   28",
     "NAME": "NAME van Maanen's Star",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": "GJ 35",
     "HD": null,
     "HIP": "HIP 3829",
@@ -2009,7 +2161,7 @@
     "Gaia EDR3": "Gaia DR3 2552928187080872832",
     "2MASS": "2MASS J00490996+0523173"
    },
-   "simbad_lookup_desig_str": "Wolf   28, NAME van Maanen's Star, GJ 35, HIP 3829, Wolf   28, LHS     7, TIC 257219223, Gaia DR3 2552928187080872832, 2MASS J00490996+0523173",
+   "simbad_lookup_desig_str": "Wolf   28, NAME van Maanen's Star, GJ 35, HIP 3829, LHS     7, TIC 257219223, Gaia DR3 2552928187080872832, 2MASS J00490996+0523173",
    "simbad_lookup_main_id": "Wolf   28",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME van Maanen's Star, GJ 35, Wolf   28",
@@ -2020,6 +2172,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "* omi02 Eri B",
     "NAME": null,
+    "Bayer": "* omi02 Eri B",
+    "Flamsteed": "*  40 Eri B",
     "GJ": "GJ 166 B",
     "HD": "HD  26976",
     "HIP": null,
@@ -2039,10 +2193,12 @@
     "Gaia EDR3": "Gaia DR3 3195919254111315712",
     "2MASS": "2MASS J04152196-0739254"
    },
-   "shared_parse_from_ids": "GJ 166 B, HD  26976, LHS    24, BD-07   781, Gaia DR3 3195919254111315712, 2MASS J04152196-0739254",
+   "shared_parse_from_ids": "* omi02 Eri B, *  40 Eri B, GJ 166 B, HD  26976, LHS    24, BD-07   781, Gaia DR3 3195919254111315712, 2MASS J04152196-0739254",
    "simbad_lookup_designations": {
     "MAIN_ID": "* omi02 Eri B",
     "NAME": null,
+    "Bayer": "* omi02 Eri B",
+    "Flamsteed": "*  40 Eri B",
     "GJ": "GJ 166 B",
     "HD": "HD  26976",
     "HIP": null,
@@ -2062,17 +2218,19 @@
     "Gaia EDR3": "Gaia DR3 3195919254111315712",
     "2MASS": "2MASS J04152196-0739254"
    },
-   "simbad_lookup_desig_str": "* omi02 Eri B, GJ 166 B, HD  26976, LHS    24, BD-07   781, Gaia DR3 3195919254111315712, 2MASS J04152196-0739254",
+   "simbad_lookup_desig_str": "* omi02 Eri B, *  40 Eri B, GJ 166 B, HD  26976, LHS    24, BD-07   781, Gaia DR3 3195919254111315712, 2MASS J04152196-0739254",
    "simbad_lookup_main_id": "* omi02 Eri B",
    "simbad_lookup_error": null,
    "calculators_desig_str": "HD  26976, GJ 166 B",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "GJ 166 B, HD  26976, LHS    24, BD-07   781, Gaia DR3 3195919254111315712, 2MASS J04152196-0739254"
+   "main_opt50_parse_from_ids": "* omi02 Eri B, *  40 Eri B, GJ 166 B, HD  26976, LHS    24, BD-07   781, Gaia DR3 3195919254111315712, 2MASS J04152196-0739254"
   },
   "Luhman 16": {
    "shared_parse_designations": {
     "MAIN_ID": "NAME Luhman 16",
     "NAME": "NAME WISE J1049-5319AB",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -2096,6 +2254,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "NAME Luhman 16",
     "NAME": "NAME WISE J1049-5319AB",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -2126,6 +2286,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "NAME Teegarden's Star",
     "NAME": "NAME SO J025300.5+165258",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -2149,6 +2311,8 @@
    "simbad_lookup_designations": {
     "MAIN_ID": "NAME Teegarden's Star",
     "NAME": "NAME SO J025300.5+165258",
+    "Bayer": null,
+    "Flamsteed": null,
     "GJ": null,
     "HD": null,
     "HIP": null,
@@ -2179,6 +2343,8 @@
    "shared_parse_designations": {
     "MAIN_ID": "*  70 Oph A",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": "*  70 Oph A",
     "GJ": "GJ 702 A",
     "HD": "HD 165341A",
     "HIP": null,
@@ -2198,10 +2364,12 @@
     "Gaia EDR3": "Gaia DR3 4468557611984384512",
     "2MASS": null
    },
-   "shared_parse_from_ids": "GJ 702 A, HD 165341A, LHS   458, BD+02  3482A, TIC 1674663309, Gaia DR3 4468557611984384512",
+   "shared_parse_from_ids": "*  70 Oph A, GJ 702 A, HD 165341A, LHS   458, BD+02  3482A, TIC 1674663309, Gaia DR3 4468557611984384512",
    "simbad_lookup_designations": {
     "MAIN_ID": "*  70 Oph A",
     "NAME": null,
+    "Bayer": null,
+    "Flamsteed": "*  70 Oph A",
     "GJ": "GJ 702 A",
     "HD": "HD 165341A",
     "HIP": null,
@@ -2226,12 +2394,14 @@
    "simbad_lookup_error": null,
    "calculators_desig_str": "HD 165341A, GJ 702 A",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "GJ 702 A, HD 165341A, LHS   458, BD+02  3482A, TIC 1674663309, Gaia DR3 4468557611984384512"
+   "main_opt50_parse_from_ids": "*  70 Oph A, GJ 702 A, HD 165341A, LHS   458, BD+02  3482A, TIC 1674663309, Gaia DR3 4468557611984384512"
   },
   "Castor": {
    "shared_parse_designations": {
     "MAIN_ID": "* alf Gem",
     "NAME": "NAME Castor",
+    "Bayer": "* alf Gem",
+    "Flamsteed": "*  66 Gem",
     "GJ": "GJ 278.0",
     "HD": null,
     "HIP": "HIP 36850",
@@ -2251,10 +2421,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J07343598+3153184"
    },
-   "shared_parse_from_ids": "NAME Castor, GJ 278.0, HIP 36850, BD+32  1581, TIC 239187687, 2MASS J07343598+3153184",
+   "shared_parse_from_ids": "NAME Castor, * alf Gem, *  66 Gem, GJ 278.0, HIP 36850, BD+32  1581, TIC 239187687, 2MASS J07343598+3153184",
    "simbad_lookup_designations": {
     "MAIN_ID": "* alf Gem",
     "NAME": "NAME Castor",
+    "Bayer": "* alf Gem",
+    "Flamsteed": "*  66 Gem",
     "GJ": "GJ 278.0",
     "HD": null,
     "HIP": "HIP 36850",
@@ -2274,12 +2446,12 @@
     "Gaia EDR3": null,
     "2MASS": "2MASS J07343598+3153184"
    },
-   "simbad_lookup_desig_str": "* alf Gem, NAME Castor, GJ 278.0, HIP 36850, BD+32  1581, TIC 239187687, 2MASS J07343598+3153184",
+   "simbad_lookup_desig_str": "* alf Gem, NAME Castor, *  66 Gem, GJ 278.0, HIP 36850, BD+32  1581, TIC 239187687, 2MASS J07343598+3153184",
    "simbad_lookup_main_id": "* alf Gem",
    "simbad_lookup_error": null,
    "calculators_desig_str": "NAME Castor, GJ 278.0",
    "calculators_error": null,
-   "main_opt50_parse_from_ids": "NAME Castor, GJ 278.0, HIP 36850, BD+32  1581, TIC 239187687, 2MASS J07343598+3153184"
+   "main_opt50_parse_from_ids": "NAME Castor, * alf Gem, *  66 Gem, GJ 278.0, HIP 36850, BD+32  1581, TIC 239187687, 2MASS J07343598+3153184"
   }
  }
 }

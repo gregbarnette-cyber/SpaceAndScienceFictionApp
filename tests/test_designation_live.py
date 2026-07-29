@@ -29,7 +29,12 @@ from core.shared import _classify_star_id, _match_designations, _CSV_DESIG_KEYS
 
 _ONLINE = simbad_reachable()
 
-_KEYS_WITH_STAR = list(_CSV_DESIG_KEYS) + ["Bayer", "Flamsteed"]
+# AN1 wrote this as `_CSV_DESIG_KEYS + ["Bayer", "Flamsteed"]` because the shipped key
+# set did not yet carry them. AN2 added both, so the concatenation would now merely
+# DUPLICATE them — harmless (_match_designations builds a dict) but no longer what the
+# name claims, and the one place a duplicated key list could reach _join_designations.
+# Its sibling in test_designation_ids.py was updated for the same reason.
+_KEYS_WITH_STAR = list(_CSV_DESIG_KEYS)
 
 
 def _ids(query):

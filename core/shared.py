@@ -64,8 +64,19 @@ _CSV_PREFIX_MAP = [
     ("2MASS ",      "2MASS"),
 ]
 
+# Phase AN2: "Bayer" and "Flamsteed" are the only two keys here NOT produced by
+# _CSV_PREFIX_MAP — they come from _classify_star_id's `* ` pre-pass (AN1). They sit
+# directly after NAME because that is the human-name end of the list; MAIN_ID is not
+# in this list at all, and the rendered desig_str leads with it separately (AN0c).
+#
+# Insertion POSITION is wire-visible: query.py serialises this dict verbatim, so the
+# sibling repo sees the JSON object re-ordered, not merely extended (AN2b). Documented
+# in docs/integration.md.
+#
+# "Variable" (V*) is classified but deliberately NOT a key — D2. Adding it here is the
+# whole change required; see _classify_star_id.
 _CSV_DESIG_KEYS = [
-    "NAME", "GJ", "HD", "HIP", "HR", "Wolf", "LHS", "BD",
+    "NAME", "Bayer", "Flamsteed", "GJ", "HD", "HIP", "HR", "Wolf", "LHS", "BD",
     "K2", "Kepler", "KOI", "TOI", "CoRoT", "COCONUTS", "HAT_P", "WASP",
     "TIC", "Gaia EDR3", "2MASS",
 ]
@@ -164,8 +175,21 @@ def _preferred_star_id(candidates, kind, bayer_choice=None):
 
     ``candidates`` is in SIMBAD's own id order, which is NOT a stable contract
     across releases — the whole point of D8 is to stop depending on it. Ties fall
-    back to the first candidate, which is safe precisely because tied candidates are
-    equal-shaped.
+    back to the first candidate.
+
+    **That fallback is order-dependent for one shape, which is unmeasured — say so
+    rather than invent a rule** (raised by `/code-review`, 2026-07-29). A tie means two
+    candidates the clause cannot separate, and bare-vs-superscript Bayer forms
+    (``* alf Cen`` alongside ``* alf01 Cen``, neither carrying a component letter) are
+    exactly that: the choice would come from SIMBAD's ordering, the dependency D8 was
+    written to remove. **No corpus star has this shape** — α Cen A lists
+    ``* alf Cen A`` + ``* alf01 Cen``, so the component test does separate them, which
+    is why the deliberate α¹ Cen decision (§4b) works. A secondary tie-break was
+    considered and declined: the only obvious candidate, "prefer the non-superscript",
+    would flip α Cen A's chosen designation the moment SIMBAD dropped the ``A`` form,
+    and there is no evidence for which form should win. If a real example appears, that
+    is the evidence to settle it with — and `test_ties_are_stable_on_the_first_candidate`
+    is where the current behaviour is pinned.
 
     D8(i) Bayer — prefer the candidate with **no trailing component letter**. One
         clause covers all three measured cases: Procyon ("* alf CMi" over
@@ -256,8 +280,48 @@ def _join_designations(designations, keys):
     that want MAIN_ID to lead must say so by passing it first in ``keys`` — AN0c:
     ``compute_simbad_lookup`` does, and dropping it would strip the main id from all
     four GUI designation banners.
+
+    AN2d / D3 — **a repeated VALUE is emitted once, first key wins.** For 16 of the 43
+    corpus stars SIMBAD's ``main_id`` *is* the Bayer string, so once AN2 gives that
+    string a key of its own the naive join renders
+    ``* alf CMi, NAME Procyon, * alf CMi, …`` on all four GUI banners. Deduping here
+    rather than in the dict is deliberate: the ``Bayer`` key still holds the value and
+    still reaches ``query.py``'s consumers — it is only the rendered banner that is
+    unchanged (PHASE_AN_PLAN.md §4b).
+
+    Because MAIN_ID leads the only key list that contains it, "first wins" *is* "keep
+    MAIN_ID, drop the keyed copy" — the D3 wording — without this function needing to
+    know which key is special.
+
+    **It is NOT limited to Bayer, and that is worth stating because the plan's D3
+    framing implies it is.** The rule is "any repeated value", and MAIN_ID duplicates a
+    keyed slot for plenty of stars with no `* ` id at all — a planet host whose main_id
+    is its HD number previously rendered ``HD 209458, HD 209458, HIP 108859, …``. **13
+    of the 43 corpus stars (30%) are deduped on this path alone**, none of them
+    Bayer/Flamsteed cases: HD 209458, HR 8799, Kepler-186, TOI-700, WASP-12, CoRoT-7,
+    HAT-P-11, Wolf 359, Barnard's star, GJ 35, Kapteyn's star, Luyten's star, HD 102365.
+    That duplicate was a pre-existing display wart AN2 happens to fix; it is called out
+    in docs/integration.md because a consumer splitting ``desig_str`` on ``", "`` sees a
+    token disappear on stars the Bayer/Flamsteed notes say nothing about.
+
+    Found by `/code-review` (2026-07-29), which measured the 30% and caught that both
+    this docstring and the contract doc described the dedupe as a Bayer consequence.
+
+    Pinned by tests/test_designation_an2.py::MainIdDedupeTest — on a ``* `` star, on a
+    non-``* `` star (so the suppression cannot be implemented as "always drop Bayer"),
+    and on a star with no ``* `` id whatsoever.
     """
-    return ", ".join(str(designations[k]) for k in keys if designations.get(k))
+    out, seen = [], set()
+    for k in keys:
+        val = designations.get(k)
+        if not val:
+            continue
+        val = str(val)
+        if val in seen:
+            continue
+        seen.add(val)
+        out.append(val)
+    return ", ".join(out)
 
 # ─── Constellation Genitives (Phase AO §2) ────────────────────────────────────
 #
@@ -417,11 +481,13 @@ def _safe_get(row, col_names, col):
 
 def _parse_designations(result, ids_result):
     """Extract and organise star designations from SIMBAD results."""
-    keys_order = [
-        "MAIN_ID", "NAME", "GJ", "HD", "HIP", "HR", "Wolf", "LHS", "BD",
-        "K2", "Kepler", "KOI", "TOI", "CoRoT", "COCONUTS", "HAT_P", "WASP",
-        "TIC", "Gaia EDR3", "2MASS",
-    ]
+    # AN2 (plan §4a "copy 8"): this was a hardcoded literal duplicating
+    # ["MAIN_ID"] + _CSV_DESIG_KEYS. Adding a key to the shared list but not here left
+    # the new keys at the END of insertion order (they arrived via the .update() below)
+    # instead of at the literal's position — a silent ordering split between this
+    # function and compute_simbad_lookup, which builds the same list from the shared
+    # constant. Derived now, so the two cannot drift.
+    keys_order = ["MAIN_ID"] + list(_CSV_DESIG_KEYS)
     designations = {k: None for k in keys_order}
 
     # MAIN_ID is set only when SIMBAD actually returned the column. AN0d: this is a

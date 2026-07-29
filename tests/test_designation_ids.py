@@ -1,11 +1,16 @@
 # tests/test_designation_ids.py — Phase AN1: the `* ` Bayer/Flamsteed classifier.
 #
 # AN1 adds _classify_star_id + the D8 precedence rule to core/shared.py and wires
-# them into _match_designations. It is deliberately OUTPUT-INERT: "Bayer" and
-# "Flamsteed" are not designation keys until AN2, so the guard skips them and every
-# existing call site is byte-identical. tests/test_designation_harness.py proves
-# that half; this file proves the classifier itself is right, by driving the key
-# set AN2 will introduce.
+# them into _match_designations. When AN1 shipped it was deliberately OUTPUT-INERT
+# ("Bayer"/"Flamsteed" were not yet keys, so the guard skipped them), and this file
+# carried an `InertnessTest` class asserting exactly that. **AN2 turned the keys on**,
+# so those assertions were retired — they asserted the absence of the very thing the
+# next part ships, and no correct AN2 could keep them green. What they were protecting
+# now lives in tests/test_designation_an2.py, which asserts the keys' PRESENCE and the
+# D3 dedupe; the corpus-shape counters they shared moved to CorpusCoverageTest below.
+#
+# This file's remaining job is unchanged: prove the classifier and the D8 tie-break
+# are right, independently of which key set is shipped.
 #
 # Real ids come from tests/fixtures/designation_ids.json (AN4.0, captured live).
 # Hand-written strings are used only for shapes the corpus cannot supply.
@@ -18,9 +23,12 @@ import core.shared as shared
 
 _CORPUS_PATH = pathlib.Path(__file__).resolve().parent / "fixtures" / "designation_ids.json"
 
-# The key set AN2 will ship. Passing it here lets AN1 be tested at full strength
-# while remaining inert in production.
-_KEYS_WITH_STAR = list(shared._CSV_DESIG_KEYS) + ["Bayer", "Flamsteed"]
+# AN1 defined this as `_CSV_DESIG_KEYS + ["Bayer", "Flamsteed"]` so the classifier
+# could be tested at full strength while the shipped keys stayed inert. AN2 added both
+# keys to the shipped list, so the concatenation would now merely DUPLICATE them.
+# Kept as a named alias rather than inlined: these tests are about the classifier, and
+# the name still says which property of the key set they depend on.
+_KEYS_WITH_STAR = list(shared._CSV_DESIG_KEYS)
 
 
 def _corpus():
@@ -247,31 +255,26 @@ class NarrowPathTest(unittest.TestCase):
         self.assertEqual(offenders, [])
 
 
-class InertnessTest(unittest.TestCase):
-    """AN1 ships the classifier but NOT the keys — production output must not move."""
+class CorpusCoverageTest(unittest.TestCase):
+    """A silent corpus shrink would hollow this whole file out."""
 
-    def test_the_shipped_key_sets_do_not_carry_the_new_keys_yet(self):
-        for name, keys in (("_CSV_DESIG_KEYS", shared._CSV_DESIG_KEYS),
-                           ("_NARROW_DESIG_KEYS", shared._NARROW_DESIG_KEYS)):
-            with self.subTest(key_set=name):
-                self.assertNotIn("Bayer", keys, "AN2 adds these, not AN1")
-                self.assertNotIn("Flamsteed", keys)
+    def test_no_star_family_id_ever_reaches_a_NON_star_key(self):
+        """The classifier's `continue` must not starve the prefix loop, or feed it.
 
-    def test_every_corpus_star_is_unchanged_under_the_shipped_keys(self):
-        """The classifier must be invisible until AN2 turns the keys on.
-
-        The differential harness asserts this across all producers; this states it
-        directly at the matcher, so a failure here localises instantly.
+        AN1's InertnessTest asserted that NO shipped key held a `* `-family id, which
+        AN2 deliberately ends. The durable half of that assertion survives here: a
+        `* `/`V* `/`** ` id may now land in Bayer or Flamsteed, and NOWHERE ELSE. That
+        catches both directions of a regression — a prefix entry growing to shadow the
+        family, and the classifier leaking a `** ` id it is supposed to reject.
         """
+        star_keys = {"Bayer", "Flamsteed"}
         for star in _corpus():
             with self.subTest(star=star["query"]):
                 got = shared._match_designations(star["ids"], shared._CSV_DESIG_KEYS)
                 self.assertEqual(set(got), set(shared._CSV_DESIG_KEYS))
-                captured = [v for v in got.values() if v]
-                self.assertFalse(
-                    [v for v in captured if v.startswith(("* ", "V* ", "** "))],
-                    "a `* `-family id reached a shipped key — AN1 must stay inert",
-                )
+                strays = {k: v for k, v in got.items()
+                          if v and k not in star_keys and v.startswith(("* ", "V* ", "** "))}
+                self.assertFalse(strays, f"`* `-family id reached a non-star key: {strays}")
 
     def test_the_corpus_actually_exercises_every_branch(self):
         """A silent corpus shrink would hollow this file out. Count the shapes."""

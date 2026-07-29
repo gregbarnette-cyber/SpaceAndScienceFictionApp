@@ -80,6 +80,64 @@ consumers:
 - `simbad-lookup`'s `designations` **dict** is unaffected — it always had a `NAME` key (`null` when
   absent), and dict access is order-independent.
 
+### Bayer & Flamsteed designations (Phase AN2, 2026-07-29)
+
+The designation set gained **two new keys, `Bayer` and `Flamsteed`** — the α/β/γ and numbered forms
+SIMBAD returns under an asterisk-space prefix (`* alf CMi`, `*  10 CMi`), which the app parsed and
+then silently discarded until now. **23 of 43 sampled stars had at least one such id being dropped**
+(18 of them an id that was not already visible as `main_id`).
+
+```
+"designations": { "MAIN_ID": "* alf CMi", "NAME": "NAME Procyon",
+                  "Bayer": "* alf CMi", "Flamsteed": "*  10 CMi", "GJ": "GJ 280 A", … }
+```
+
+- **Values are the verbatim SIMBAD string**, prefix intact and internal spacing untouched — note
+  Flamsteed's **double space** (`"*  10 CMi"`). The raw string is the identifier and is
+  round-trippable; pretty-rendering (`10 Canis Minoris`) is a display concern, never stored.
+- **Additive, but key ORDER moved.** The two keys are inserted directly after `NAME`, so a consumer
+  that reads the JSON object positionally sees a reordering. Read by key.
+- **`Bayer` is frequently equal to `MAIN_ID`** — for a bright star SIMBAD's main id usually *is* the
+  Bayer form (16 of 43 sampled). The dict carries both; the rendered **`desig_str` emits a repeated
+  value only once**, keeping the first (`MAIN_ID`). So `desig_str` gains the Flamsteed id on such a
+  star and not the Bayer one, while the dict has both.
+
+#### `desig_str` now suppresses **any** repeated value — including on stars with no Bayer id
+
+The dedupe above is not specific to `Bayer`, and it changes `desig_str` for stars this section
+otherwise says nothing about. `main_id` frequently duplicates an ordinary catalogue slot — a planet
+host whose main id is its HD number used to render the token twice:
+
+```
+before   "HD 209458, HD 209458, HIP 108859, TIC 420779000, …"
+after    "HD 209458, HIP 108859, TIC 420779000, …"
+```
+
+**13 of 43 sampled stars (30%) are affected this way with no `* ` id involved** — HD 209458, HR 8799,
+Kepler-186, TOI-700, WASP-12, CoRoT-7, HAT-P-11, Wolf 359, Barnard's star, GJ 35, Kapteyn's star,
+Luyten's star, HD 102365. The duplicate was a pre-existing wart; removing it is an improvement, but
+**a consumer that splits `desig_str` on `", "` and counts or indexes tokens will see one fewer**. The
+`designations` **dict is unchanged** by this — both keys still hold the value. Only the rendered
+string dedupes.
+- **`V*` variable-star ids and `**` double-*system* ids are deliberately not captured.** `**` is an
+  id for a pair, not a name for the queried star; `V*` is redundant with the Bayer form on
+  essentially every star carrying both.
+- **The narrow designation strings are unchanged** — `desig` / `desig_str` on `distance`,
+  `travel-time` and all seven route planners still carry `NAME/HD/HR/GJ/Wolf` only. Those results
+  already name the star separately, which for a bright star is the Bayer string.
+- **`search-star-systems` and the other `star_systems`-backed fields do not carry these yet** — that
+  column is written only by an option-50 rebuild, which is deferred. Same caveat as the NAME token
+  above. A `--designation-prefix` search for a Bayer/Flamsteed form will return nothing until then;
+  that is staleness, not absence.
+- `SAO` remains **uncaptured** (considered and declined alongside these two), so `gould.matched_on`
+  is still always `"hd"`.
+- **`simbad-lookup`'s `desig_str` empty case is now `""`, not the string `"N/A"`** (Phase AN2e). A
+  star with no capturable designation at all previously returned the literal two-character-plus-slash
+  token as *data*; it is an empty string now, matching every other designation-string field in this
+  contract. **Effectively unreachable** — the string leads with `main_id`, which falls back to the
+  queried name — so no real star's output changes; it is listed because a consumer testing
+  `desig_str == "N/A"` would now never match.
+
 ## Quick reference
 
 Every success result is a JSON **dict** unless noted. Every failure is `{"error": "<message>"}` with exit code 1. Always check for an `"error"` key before reading other fields.
@@ -233,7 +291,7 @@ SIMBAD star lookup — returns full star info and all known designations.
 query.py simbad-lookup --star "Tau Ceti"
 ```
 Core function: `databases.compute_simbad_lookup(star)`
-Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, desig_str, designations, gcns, gould}`. `fe_h` is the host `[Fe/H]` from SIMBAD's `mesfe_h` table (`null` when SIMBAD has no value); it is the real-anchor metallicity source for the `generate-system` v2 path. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); a catalog with no id is `null`. Numeric fields may be `null`.
+Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, desig_str, designations, gcns, gould}`. `fe_h` is the host `[Fe/H]` from SIMBAD's `mesfe_h` table (`null` when SIMBAD has no value); it is the real-anchor metallicity source for the `generate-system` v2 path. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, Bayer, Flamsteed, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); a catalog with no id is `null`. `Bayer`/`Flamsteed` are Phase AN2 (2026-07-29) — see **Bayer & Flamsteed designations** above for the verbatim-string, key-order and `desig_str`-dedupe notes. Numeric fields may be `null`.
 - **Gaia id**: the `"Gaia EDR3"` key holds the Gaia source id as SIMBAD now formats it — `"Gaia DR3 <id>"` (SIMBAD renamed EDR3→DR3 in its id output; the source_ids are identical). To get the bare numeric id, strip the `"Gaia DR3 "` / `"Gaia EDR3 "` prefix. This is the same id used as `--id` for `gcns-source`.
 - **`gcns`** (Phase M5): an **optional top-level GCNS cross-reference** — the matching `gcns_stars` row (same shape as `gcns-source`'s `star`: Bayesian `dist_pc` + `dist_lo_pc`/`dist_hi_pc`, `distance_method`, Gaia G/BP/RP, `astrom_reliable_prob`, `wd_prob`, `system_id`/`n_components`, …), giving a Bayesian distance **with 16th/84th-percentile uncertainty** beside the naive `1/ϖ` `ly`/`parsecs`. The key is **always present** but is `null` when the star has no Gaia id, is not in GCNS, or the `gcns_stars` table is empty/missing — **non-fatal and silent** (a single indexed local-DB read; no extra network). Built inside `compute_simbad_lookup`, so every `simbad`-embedding subcommand below carries it too.
 - **`gould`** (Phase AO): an **optional top-level Gould designation** — the star's *Uranometria Argentina* (Gould 1879) number, e.g. HD 102365 → **66 G. Centauri**. Shape: `{g_number, cst, constellation, designation, display, hd, sao, matched_on, source}`, where `designation` is the abbreviated form (`"66 G. Cen"`), `display` the genitive form (`"66 G. Centauri"`), `cst` the IAU 3-letter code, and `matched_on` is always `"hd"` (see the join note below). `constellation`/`display` fall back to the raw abbreviation for an unrecognised code — a name is never invented. The key is **always present** but is `null` when the star has no HD number, is absent from the catalogue, or the `gould_designations` table is empty/missing — **non-fatal and silent**, like `gcns`. **Joins on HD only:** an SAO fallback was built and then removed (code review, 2026-07-29) because `designations` never carries an `"SAO"` key, making the branch unreachable — so `matched_on` is a constant and **a consumer branching on `"sao"` would be writing dead code**. `sao` is still echoed from the matched row. Only 26 catalogue rows have an SAO number but no HD, and just 3 of those carry a Gould number. **Sourced from bundled VizieR `V/135A`, not SIMBAD** (SIMBAD's `ident` table contains zero Gould ids), so no extra network call. **`null` is the normal answer for most stars:** Gould listed only bright *southern* stars — 8471 rows, 7756 with a Gould number — so an absent designation is correct coverage, not a lookup failure. **Constellations use Gould's 1875 boundaries and may disagree with the modern IAU one for the same star** — HD 100623 is `Hya` here while SIMBAD's own Flamsteed id is `*  20 Crt` (Crater). Both are right; do not reconcile them.

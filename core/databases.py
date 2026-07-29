@@ -264,7 +264,14 @@ def compute_simbad_lookup(star_name: str) -> dict:
             return None
         return val
 
-    main_id = str(_safe("main_id") or star_name)
+    # .strip() is load-bearing for AN2's D3 dedupe, not cosmetic: _match_designations
+    # strips every id it stores, so an unstripped main_id would compare unequal to its
+    # own keyed copy and _join_designations would re-emit the duplicate token D3 exists
+    # to remove. Reachable two ways — a padded/fixed-width SIMBAD main_id, or the AN0d
+    # fallback to a user query string with stray whitespace — and the offline corpus
+    # cannot catch either, because the capture script applies _safe() normalisation.
+    # Raised by /code-review 2026-07-29.
+    main_id = str(_safe("main_id") or star_name).strip()
 
     ra_raw = _safe("ra")
     dec_raw = _safe("dec")
@@ -334,7 +341,23 @@ def compute_simbad_lookup(star_name: str) -> dict:
         _match_designations(_designation_ids_from_rows(ids_result), _CSV_DESIG_KEYS_SHARED)
     )
 
-    desig_str = _join_designations(designations, keys_order) or "N/A"
+    # AN2e / D5: the empty case is "" — this was the last of the five §6 drifts, and the
+    # only one judged a bug rather than a deliberate difference. Three of the five copies
+    # (shared, calculators, the opt-50 builder) already returned ""; this one alone
+    # substituted the literal string "N/A", which no consumer wants — it would reach a DB
+    # column, the query.py contract, and four GUI banners as data.
+    #
+    # It fires on 0 of the 43 corpus stars and is effectively unreachable: MAIN_ID leads
+    # this join and falls back to `star_name`, so an empty result needs a caller passing
+    # a blank name that SIMBAD nevertheless resolved. Latent, not active — which is why
+    # this is a safe change, not a risky one.
+    #
+    # NOTE the plan's stated reason for the fix is WRONG and is corrected there ([A6]):
+    # D5 says the "only reachable path" is the opt-50 `desig_str == ""` discard rule.
+    # That rule reads `_parse_designations_from_ids` in _run_simbad_csv_query (:1358),
+    # never this value, so a literal "N/A" could not have defeated it — and AN2c's
+    # "land D5 before re-measuring the PLX delta" ordering caveat is therefore moot.
+    desig_str = _join_designations(designations, keys_order)
 
     result = {
         "main_id":      main_id,

@@ -2237,6 +2237,14 @@ def query_open_exoplanet_catalogue():
 #
 # Verified by tests/test_designation_harness.py: the retired copy's output was
 # byte-identical to core.shared's on all 43 corpus stars, so this is a no-op today.
+#
+# Phase AN2 made the exemption VISIBLE, which is expected and not a bug: opts 1 and
+# 17/19/20/21 still loop their own local prefix maps (copies 3 and 6, above and below),
+# which have no `* ` entry, so the CLI banners do NOT show the new Bayer/Flamsteed
+# designations while GUI opt 1, `query.py simbad-lookup` and the Phase Q dossier do.
+# Before AN2 the two agreed, so this is a new split — deliberate, and the reason those
+# copies are "insulated" rather than merely exempt (they cannot KeyError on a shared-map
+# entry they never read). Retiring them is the fix if the CLI is ever revived.
 
 
 def _parse_designations_from_ids(ids_string):

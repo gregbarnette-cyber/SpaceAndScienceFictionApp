@@ -581,6 +581,89 @@ than implement it, precisely because implementing it is this part's work.
 - **The tripwire:** `tests/test_gould.py::test_sao_is_absent_from_the_designation_key_set` fails the
   moment SAO is captured. That failure is the prompt, not a bug — update it in the same commit.
 
+### ✅ AN2 — BUILT 2026-07-29
+
+**The phase's first intended output change**, so unlike AN0/AN1 the AN4.1 golden baseline **was**
+regenerated — deliberately, with the code change, in the same commit (harness rule 2). Suite **2225
+passed, 1 skipped** at AN2 (from 2206 — 2224 as first built, +1 for the `/code-review` pin below; 2228 after AN2e).
+
+**What landed — four lines of production code and one new key list position.**
+`_CSV_DESIG_KEYS` gains `"Bayer", "Flamsteed"` **immediately after `NAME`**; `_join_designations`
+dedupes by value; `shared._parse_designations`'s hardcoded key literal (the sweep's "copy 8", §4a) is
+derived from the shared constant so the two cannot split. Nothing else changed —
+`_match_designations` already routed the classified ids through its guard, which is the AN0+AN1
+payoff arriving: **AN2 is a key-list edit, not a parser edit.**
+
+**The measured diff, which is the acceptance evidence:**
+
+| | Result |
+|---|---|
+| Stars gaining at least one key | **23 / 43** — 18 of them an id that was not already visible as `main_id` |
+| Stars where D3's dedupe fires on a `* ` id | **20 / 43** — the Bayer or Flamsteed pick equals `MAIN_ID` |
+| …and on a **non**-`* ` id | **13 / 43** — see the correction below; 33/43 total |
+| `calculators_desig_str` (the narrow path, D7) | **unchanged on all 43** — the ten route/distance surfaces are untouched, as designed |
+| Fields that moved | `shared_parse_designations`, `shared_parse_from_ids`, `simbad_lookup_designations`, `simbad_lookup_desig_str`, `main_opt50_parse_from_ids` |
+
+Procyon is the worked example, and it shows both halves at once:
+
+```
+before  * alf CMi, NAME Procyon, GJ 280 A, HD  61421, …
+after   * alf CMi, NAME Procyon, *  10 CMi, GJ 280 A, HD  61421, …
+                                 ^^^^^^^^^ Flamsteed gained; the Bayer copy is deduped against MAIN_ID
+```
+
+**⚠ [A5] Two corrections from `/code-review` (2026-07-29) — both are numbers this plan
+supplied, reused in a sense it does not support.**
+
+1. **The D3 dedupe is not Bayer-specific, and its blast radius is larger than D3 describes.** The
+   rule is *any repeated value*, and `main_id` duplicates ordinary catalogue slots on stars with no
+   `* ` id at all — a planet host whose main id is its HD number rendered
+   `HD 209458, HD 209458, HIP 108859, …`. **13 of 43 corpus stars (30%) are deduped this way**, none
+   of them a Bayer/Flamsteed case. The duplicate was a pre-existing wart and removing it is an
+   improvement, but it is a `desig_str` change on stars the AN2 notes say nothing about, so it is now
+   documented in `docs/integration.md` and pinned by
+   `test_the_dedupe_also_fires_on_stars_with_no_star_id`. **The harness could not flag this as new**:
+   it diffs against a baseline regenerated in the same commit, so an unintended change riding along
+   with an intended one is invisible to it. That is a general limitation worth carrying to AN2e/AN3 —
+   *when you regenerate, read the diff for changes you did not predict*, not merely for the ones you
+   did.
+2. **§8's "22/43" is being used for two different quantities.** The measured figure is "stars whose
+   `MAIN_ID` is a `* `-form string" = 22. **"The chosen Bayer equals `MAIN_ID`" is 16**, and it is
+   that second number that justifies D3. The 22 had propagated into `_join_designations`'s docstring,
+   `docs/integration.md` and the AN2 test header before this was caught. Likewise §8's **18/43** is
+   "stars with a `* ` id **not already visible** as `main_id`"; the count of stars with a discarded
+   `* ` id outright is **23**. Both quantities are legitimate — they were simply not labelled, which
+   is what let them be swapped.
+
+**AN2-SAO — ✅ DECLINED.** The third candidate key was measured on the same corpus rather than argued:
+capturing `SAO` would append an `SAO nnnnn` token to the banner of **22 of the 43** fixture stars, to
+make **3** stars' Gould lookups resolve by an SAO fallback join instead of by HD. §5 already called it
+"a tie-breaker, not a reason"; the 22-vs-3 ratio settles it. AO's join stays removed, `matched_on`
+stays a constant `"hd"`, and `tests/test_gould.py::test_sao_is_absent_from_the_designation_key_set`
+stays the tripwire. The decision is now asserted, not merely absent, by
+`test_designation_an2.py::test_sao_was_declined_as_the_third_candidate_key`.
+
+**One test class had to be retired — and, as in AN0, it was forced rather than chosen.**
+`test_designation_ids.py::InertnessTest` asserted that the shipped key sets did **not** carry
+`Bayer`/`Flamsteed` and that no `* `-family id reached a shipped key. That is precisely what AN2
+ships, so no correct AN2 could keep it green. Its durable half survives as `CorpusCoverageTest`,
+which asserts the stronger invariant the inertness one was a temporary special case of: a
+`* `-family id may reach `Bayer`/`Flamsteed` and **nowhere else**. That catches two regressions the
+original could not — a prefix-map entry growing to shadow the family, and the classifier leaking a
+`** ` id it is supposed to reject.
+
+**Copy 7 (`main.py:139-144`) was deliberately not edited.** §5 says to add the keys there "if
+`main.py` is in scope"; under D1(a) it is not. It is also inert by construction: copy 7 only renders
+the dict that **copy 3** builds, and copy 3 loops its own local prefix map, which has no `* ` entry —
+so the CLI opt-1 banner has nothing new to omit. The AN0 finding that copies 3/6 are *insulated*
+rather than merely exempt is what makes this safe to leave.
+
+**A note for AN3 on what users will actually see.** §4b predicted it and the corpus confirms it: on a
+`* `-main_id star the Bayer pick equals `MAIN_ID` and D3 eats it, so **the visible gain from this
+phase is the Flamsteed ids** (`*  10 CMi`, `*   9 CMa`, `*   3 Lyr`, `*  24 PsA`), which are never a
+main id. α Cen A/B are the exception, surfacing `* alf01 Cen` / `* alf02 Cen`. Both shapes reach AN3's
+renderer with their double space intact (D9).
+
 ### AN2a — display order, corrected **[R5]**
 The original recommendation (`NAME, Bayer, Flamsteed, GJ, HD, …`) ignored that the rendered string
 already **leads with MAIN_ID**. Actual current output for Procyon: `* alf CMi, NAME Procyon, …`.
@@ -683,6 +766,43 @@ Columns are the six copies of §2 (anchors re-verified 2026-07-29 post-AO).
 Per §1 lesson 1, each row is a decision. The `"N/A"` vs `""` split is the one most likely to be a
 latent bug (a literal `"N/A"` reaching a DB column or a JSON consumer).
 
+### ✅ AN2e — BUILT 2026-07-29
+
+**All five rows adjudicated; exactly one changed.** Suite **2228 passed, 1 skipped**. As predicted by
+the 0/43 measurement, the AN4.1 golden baseline showed **no diff** — and per harness rule 3 *that
+emptiness is the finding*, not evidence the change failed to land. (The behaviour it fixes is
+unreachable for any real star, so a corpus of real stars cannot show it; the new test builds the case
+synthetically.)
+
+| Row | Verdict | Where it is now held |
+|---|---|---|
+| `key in …` guard | **Dissolved by AN0** — one matcher, one guard | `_match_designations`; `test_every_in_scope_copy_survives_a_new_prefix_entry` |
+| **empty case** | **FIXED → `""`** (the one bug) | `core/databases.py`; `EmptyCaseTest` |
+| MAIN_ID in join | **Keep** — dropping it strips the main id from four GUI banners | AN0c; `MainIdDivergenceTest` |
+| MAIN_ID source | **Keep** — the `or star_name` fallback is the useful behaviour | AN0d |
+| MAIN_ID missing → | **Keep, deliberately asserted** rather than inherited | `MainIdDivergenceTest` |
+
+**⚠ [A6] D5's stated rationale is wrong, and correcting it retires a sequencing constraint.**
+D5 (and §5 AN2c) justify the fix by claiming the `"N/A"`'s *"only reachable path is the opt-50 discard
+rule's `desig_str == ""` test, which a literal `"N/A"` would defeat."* **It cannot reach that rule.**
+The discard rule in `_run_simbad_csv_query` (`core/databases.py:1358`, `main.py:2295`) reads
+`_parse_designations_from_ids`, which has always returned `""` and which this change does not touch;
+`compute_simbad_lookup`'s `desig_str` is a different value with no path to it. Consequences:
+
+- **AN2c's ordering caveat is moot.** "Land the D5 fix first, then measure the `PLX …` delta" was
+  guarding against measuring the wrong value — but D5 does not change the value that rule tests. The
+  T2 re-measurement can happen whenever option 50 next runs, in any order.
+- **The fix is still right**, on D5's *other* stated ground: no consumer wants the literal string
+  `"N/A"` as data, and three of the five copies already returned `""`. Nothing rests on the false
+  mechanism.
+- Pinned by `EmptyCaseTest::test_the_opt50_discard_rule_reads_a_DIFFERENT_value`, so the false
+  mechanism cannot be re-derived from this plan.
+
+**One consumer note.** The four GUI banners spell `simbad.get("desig_str", "N/A")` — that `"N/A"` is
+a *missing-key* default and is unaffected; `compute_simbad_lookup` always sets the key. A star that
+now yields `""` would render a blank banner instead of "N/A", which is acceptable precisely because
+reaching it requires a blank query name that SIMBAD nevertheless resolved.
+
 ---
 
 ## 7. Part AN3 — Display-name tables
@@ -783,12 +903,19 @@ weren't.** Required before AN0 touches anything:
 4. AN2d / **D3**: no duplicate token in `desig_str` — the keyed copy is suppressed when it equals
    MAIN_ID. Assert against a `* `-MAIN_ID star (22 of the 43 fixtures qualify) **and** a non-`* ` one,
    so the suppression can't be implemented as "always drop Bayer."
+   **✅ Built in `tests/test_designation_an2.py` (AN2, 2026-07-29)** — Procyon and Proxima
+   respectively, plus a corpus-wide no-repeated-token sweep and a direct assertion of the mechanism
+   (`_join_designations` drops a repeated *value*, keeping the first key; because MAIN_ID leads the
+   only key list containing it, that **is** D3's wording without the function knowing MAIN_ID exists).
 4b. **D5**: copy 2's empty case is `""`, not `"N/A"` — and the opt-50 discard rule still behaves
    (`desig_str == ""` on a star that captures nothing). Pin the deliberate MAIN_ID-missing
    divergence (shared → `None`, databases → the query string) rather than letting it drift.
 4c. **AN2c-T1** — the self-firing D4 trigger: assert the **opt-50 builder** emits `Bayer`/`Flamsteed`
    for a fixture ids string. If this fails, the deferral is invalid because the code is wrong, not the
-   data (see §5 AN2c-T).
+   data (see §5 AN2c-T). **✅ Built (AN2) as `Opt50BuilderTest`** — plus two additions the plan did
+   not ask for and should have: that the **two** opt-50 builders (CLI + GUI) still agree corpus-wide,
+   which AN2 is the first change that could have split; and that an id-less star still yields exactly
+   `""`, the value the `PLX …` discard rule tests, so the T2 re-measurement has a fixed reference.
 5. **AN4.5 — the Gould producer/consumer pin (added 2026-07-29, post-AO).** Assert
    `compute_simbad_lookup(...)["gould"]` is non-null for **HD 102365** (`66 G. Centauri`) and
    **GJ 432 A** (`289 G. Hydrae`), before *and* after AN0, from a cached/synthetic ids list.
@@ -840,8 +967,8 @@ estimates, and they replace guesswork in D3/D5:**
 | Measured | Result | Bears on |
 |---|---|---|
 | copy 1 (`shared`) vs copy 5 (`main.py` opt-50) output | **identical on all 43/43** | **D1(a)** — copy 5 already emits exactly what shared does, so delegating it is a no-op refactor, not a behaviour change. The split-brain risk §2a warned about is *latent* (it appears only once AN2 adds keys), which makes fixing it now cheap |
-| stars whose `MAIN_ID` is a `* `-form Bayer/Flamsteed string | **22 / 43 (51%)** | **D3 (AN2d)** — the duplication is not an edge case. Half the corpus would render `* alf CMi, NAME Procyon, * alf CMi, …` |
-| stars with at least one `* ` id currently **discarded** | **18 / 43 (42%)** | The phase's actual payoff, quantified for the first time |
+| stars whose `MAIN_ID` is a `* `-form Bayer/Flamsteed string | **22 / 43 (51%)** | **D3 (AN2d)** — the duplication is not an edge case. Half the corpus would render `* alf CMi, NAME Procyon, * alf CMi, …`. **[A5]: this is not the same as "the chosen Bayer equals MAIN_ID", which is 16/43** — the two were conflated until `/code-review` separated them |
+| stars with at least one `* ` id currently **discarded** | **18 / 43 (42%)** | The phase's actual payoff, quantified for the first time. **[A5]: this counts ids not already visible as `main_id`; the count of stars with a discarded `* ` id outright is 23/43** |
 | stars hitting copy 2's `"N/A"` empty case | **0 / 43** | **D5** — the `"N/A"` vs `""` drift is real in code but never fires for a resolvable star. It can only surface for a star with no captured designation at all, so it is a latent bug, not an active one |
 
 **A fifth divergence the harness surfaced, not previously in §6:** the copies disagree on **how they
@@ -873,6 +1000,7 @@ style when converging them, and any test double has to support both (the harness
 | **[R8]** | Display helpers don't exist | The `* `-stripping half exists **4×** and will start receiving Bayer/Flamsteed strings |
 | **[A1]** *(post-AO, 2026-07-29)* | Line numbers into `core/shared.py` + `core/databases.py` | Shifted by AO (+~52 / +~93). **All re-anchored and re-verified**; §2/§6/§7 now anchor on the enclosing block. `main.py` / `calculators.py` / the display helpers were unaffected and re-checked exact. §5's sweep is intentionally un-renumbered — **re-run it, don't trust it** |
 | **[A2]** *(post-AO, 2026-07-29)* | §5's consumer census | AO added a **seventh** consumer, `_simbad_gould_block` → `designations["HD"]`. Additive, `.get()`-shaped, and **inert on a shape change** — invisible to both the test suite and AN4.1's harness. New pin **AN4.5** |
+| **[A5]** *(post-AN2, 2026-07-29)* | D3 is a MAIN_ID-vs-Bayer fix; §8's 22/43 and 18/43 | The dedupe is **any repeated value** and also fires on **13/43** stars with no `* ` id (a pre-existing `HD 209458, HD 209458, …` wart). And the two §8 counts are **each two different quantities**: Bayer==MAIN_ID is **16**, not 22; stars with a discarded `* ` id is **23**, not 18. Found by `/code-review`; see §5 |
 
 ---
 
@@ -930,8 +1058,8 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 | **2a** | **Decide `main.py` scope (D1)** | — | ✅ **DECIDED (a), 2026-07-29.** All of D1–D6 are now settled — see the decisions block at the top |
 | **AN0** | Consolidate onto `core.shared` | **High** | ✅ **BUILT 2026-07-29** — see §3. Zero output change; golden baseline **not** regenerated. `/code-review` passed (3 low-severity findings applied). Suite **2183 passed, 1 skipped** |
 | **AN1** | `* ` classifier | Medium | ✅ **BUILT 2026-07-29** — `_classify_star_id` + D8 precedence in `core/shared.py`, wired into `_match_designations`; `tests/test_designation_ids.py` (17 tests). **Output-inert by construction** (the keys arrive in AN2), so the AN4.1 harness stayed green and the golden baseline was not regenerated. ~~`**`-before-`* ` is load-bearing~~ — **false, see [A4]** |
-| AN2 | Key insertion + ripple | **Medium** *(was Low)* | AN2d duplication is a real behaviour change — **51% of stars** (D3). Carries **AN2c-T1**, the self-firing D4 trigger |
-| AN2e | Adjudicate the §6 drift | Medium→**Low** | ✅ **D5 decided** — fix the empty case to `""` (fires on 0/43, so the change is safe *and* the bug is latent), keep the rest, pin the MAIN_ID divergence |
+| AN2 | Key insertion + ripple | **Medium** *(was Low)* | ✅ **BUILT 2026-07-29** — see §5. `Bayer`/`Flamsteed` after `NAME`; D3 dedupe in `_join_designations`; **AN2-SAO declined** (22 banners vs 3 lookups). 23/43 stars gain a key, 20/43 hit the dedupe, the narrow path unchanged. **Golden baseline regenerated** (first intended output change of the phase). `tests/test_designation_an2.py` (24 tests, incl. AN2c-T1 and AN2e's `EmptyCaseTest`). Suite **2225 passed, 1 skipped**; `/code-review` applied ([A5] + 5 low findings) |
+| AN2e | Adjudicate the §6 drift | Medium→**Low** | ✅ **BUILT 2026-07-29** — see §6. Empty case → `""` (one line); the other four rows keep-as-is, each now held by a named test. **No golden diff**, as the 0/43 measurement predicted. **[A6]: D5's stated rationale was false** — the `"N/A"` never reached the opt-50 discard rule, which retires AN2c's ordering caveat |
 | AN3 | Greek table (genitive **inherited from AO**) | Low→**Medium** | +4 display helpers to audit (§7 [R8]) |
 | **AN4.0** | **Capture the fixture corpus (live SIMBAD)** | Low | ✅ **BUILT 2026-07-29** — `tests/_capture_designation_fixtures.py` → `tests/fixtures/designation_ids.json`, 43 stars / 27 Bayer / 20 Flamsteed / 35 `**` / 14 `V*` ids |
 | **AN4.1** | **Differential harness** | Medium | ✅ **BUILT 2026-07-29** — `tests/test_designation_harness.py` + `designation_golden.json`. First coverage for copies 2/4/5; includes the AN4.5 Gould pin. Suite **2181 passed, 1 skipped** |
@@ -939,20 +1067,24 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 | AN5 | Docs | Low | |
 
 **Order:** ~~§2a decision~~ ✅ → ~~**AN4.0** (fixture capture)~~ ✅ → ~~AN4.1 (harness)~~ ✅ →
-~~AN0 (complete, all in-scope copies)~~ ✅ → ~~AN1~~ ✅ → **AN2 ← NEXT** → AN2e → AN3 → AN4 rest → AN5.
+~~AN0 (complete, all in-scope copies)~~ ✅ → ~~AN1~~ ✅ → ~~AN2~~ ✅ → ~~AN2e~~ ✅ →
+**AN3 ← NEXT** → AN4 rest → AN5.
 
-**All decisions (D1–D9) are settled, the harness is green, AN0 has landed with its `/code-review`
-pass applied, and the §11 AN0 → AN1 agent sweep has run** (findings in **§4a**; it added D7/D8/D9 and
-corrected §7 [R8]). **AN1 is unblocked.**
+**All decisions (D1–D9) are settled and every parser-side part has landed.** What remains is the
+display layer (AN3), the leftover test items, and docs. **The `designations` dict and the `desig_str`
+contract are now final for this phase** — AN3 changes rendering only, so it cannot move the golden
+baseline, and a golden diff during AN3 means something is wrong.
 
-**Three things AN1 must carry from §4a, none of which §4 currently says:**
+**What AN3 must carry, from §7 [R8]/[A3] and AN2's own outcome:**
 
-1. The classifier pre-pass must **re-spell the `key in desig` guard itself** — AN0a's protection is
-   not a function-level invariant, and omitting it is a `KeyError` on the narrow path.
-2. **D8 needs a replace-if-better pass**, not a pre-pass. `_match_designations` is structurally
-   first-match-wins, and Sirius already contradicts Procyon inside the current corpus.
-3. Add a **narrow-path classifier test**. The existing synthetic-entry pin covers the prefix loop
-   only, so it cannot catch either of the above.
+1. **Nine strippers to audit, not four.** Three display strippers slice `name[len("* "):]` with no
+   follow-up `.strip()`, so D9's double space renders as `" 18 Eri"` — already misrendering **796
+   live `star_systems` rows** today, independent of this phase. `_norm_oec_name` is the one already
+   immune.
+2. **The Greek table must handle the superscript numeral** (`alf01` → α¹) on a live path — α Cen A/B
+   are the two corpus stars whose Bayer id survives D3, so that shape is not hypothetical.
+3. **Flamsteed is the common case to render**, not Bayer — see the AN2 build note in §5. Budget the
+   display work accordingly.
 
 **The harness precedes AN0.** It cannot be built after the refactor it exists to verify. **And the
 fixtures precede the harness** — they need live SIMBAD, so capturing them is its own step, done
