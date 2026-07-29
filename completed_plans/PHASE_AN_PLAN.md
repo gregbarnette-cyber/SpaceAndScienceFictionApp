@@ -472,6 +472,53 @@ superscript numeral (`alf01` → α¹) on a live path**, which §4 already lists
 Fomalhaut's Bayer is `* alf PsA`, so this selects `*  24 PsA` over `*  79 Aqr` — correct, since 79 Aqr
 is Flamsteed's historical cross-boundary duplicate. With no Bayer to key off, fall back to first.
 
+### ⚠ D8's residue, MEASURED — the census (2026-07-29, post-AN3)
+
+`_preferred_star_id` breaks a tie with `candidates[0]` — SIMBAD's id ordering, the dependency D8
+exists to remove. Its docstring records that the residual case (two Bayer candidates, neither
+carrying a component letter) has **no corpus example**, and asks for a real one as the evidence to
+settle it with. AN3 found one (κ Ceti). This census answers the question that raised.
+
+**Method:** one ADQL sweep of SIMBAD's `ident` table for every `* ` identifier — **6293 ids over
+4690 objects** — with the **shipped** `_classify_star_id` / `_preferred_star_id` applied to each
+object's list, so what is measured is what production does. Script
+`tests/_capture_designation_ties.py`, artifact `tests/fixtures/designation_ties.json`, counts pinned
+by `test_designation_ids.py::D8TieCensusTest` and the three shapes by
+`test_designation_live.py::D8TieShapesStillExistTest`.
+
+| System | Unresolved ties | Composition |
+|---|---|---|
+| **Bayer** | **60** | **49 bare-vs-superscript** · 8 different letters, same constellation · 2 cross-constellation · 1 case/suffix-distinct |
+| **Flamsteed** | **74** | **47 bare-vs-component** · 13 *resolved by clause (ii)* · 12 cross-constellation with no Bayer to key off · 2 other |
+
+**Three findings, in descending order of how much they change the picture:**
+
+1. **The plan never named the largest unruled shape.** Clause (i)'s component-less preference is
+   **Bayer-only**, so `*   4 Cen` vs `*   4 Cen A` — the identical shape, on the other designation
+   system — has no rule at all. At **47 objects** it is *larger* than the bare-vs-superscript
+   residue D8 documented. A reopen that fixes only the documented case leaves the bigger half
+   untouched. This was invisible to every previous pass because the fixture corpus contains no
+   example, and the corpus is a shape-coverage sample that was never meant to measure frequency.
+2. **"No example" was true of the corpus and false of the catalogue: 49, not 0.** The docstring's
+   claim was correctly scoped and correctly caveated — it just could not see past 43 stars. Worth
+   keeping as a method note: *"absent from the corpus" and "absent" are different statements*, and
+   this plan has now made that mistake in the same direction twice ([A4] and here).
+3. **A Bayer cross-constellation duplicate exists, and clause (ii) has no Bayer sibling.**
+   Alpheratz is **α Andromedae = δ Pegasi**; Elnath is **β Tauri = γ Aurigae**. Only 2 objects, but
+   they are the case where the current rule cannot be right *by construction* — both candidates are
+   legitimate designations of the same star, so ordering decides. Clause (ii) solves exactly this
+   for Flamsteed by keying off the chosen Bayer; there is nothing for Bayer to key off.
+
+**Also measured, and it argues against a rewrite: clause (ii) resolves 13 objects.** It is not dead
+weight, so a reopen should extend the rule set rather than replace it.
+
+**Still not acted on, deliberately.** Changing any of this changes *selection*, hence `designations`,
+hence the golden baseline — a separate commit with a deliberate regen. And the semantic question is
+unanswered: when SIMBAD lists both `* kap Cet` and `* kap01 Cet`, whether the bare form names the
+pair, the primary, or is a loose alias determines whether "prefer the superscript" is *right* or
+merely *consistent with α Cen*. That is a catalogue-provenance question for the sister repo, not one
+to settle by reading id lists.
+
 ### ✅ CLOSED — clause (i) on a COMPONENT-level query (raised by `/code-review`, resolved 2026-07-29)
 
 `/code-review` flagged that clause (i) prefers the component-less form **unconditionally**, so a
@@ -1138,7 +1185,7 @@ tripwire, which is the only reason closing the phase is honest:**
 | | What | Where it is watched |
 |---|---|---|
 | **D4** | `star_systems.designations` does **not** carry Bayer/Flamsteed until someone runs option 50. Lookup surfaces (opts 1, 3–6, 8–10) show them; DB-backed ones (opts 18/19, the CSV export, the route planners, the G1 prefix search) do not | §5 **AN2c-T**, five triggers. **T1 self-fires in CI** — it catches the *code* being wrong, which a rebuild would not fix. T2–T5 need a human to notice, which is why they are written as responses rather than reminders. Also documented in `docs/star-databases.md` (opt 50), the surface a reader is most likely to hit it from |
-| **D8** | The bare-vs-superscript Bayer tie falls back to SIMBAD's id ordering — the dependency D8 exists to remove. **κ Ceti is the real example the docstring asked for** (live, 2026-07-29: `* kap01 Cet` + `* kap Cet`), found during AN3 and deliberately not acted on | `_preferred_star_id`'s docstring + `test_ties_are_stable_on_the_first_candidate`. Reopening it changes selection logic → own commit, deliberate golden regen |
+| **D8** | Tie-breaks fall back to SIMBAD's id ordering. **Now measured catalogue-wide (§4b): 60 Bayer + 74 Flamsteed unresolved ties over 4690 objects** — including 47 of a shape the plan never named (Flamsteed bare-vs-component, larger than the documented case) and 2 that no ordering rule can get right (α And = δ Peg). Deliberately not acted on: it changes selection logic, and the semantic question is the sister repo's | `tests/fixtures/designation_ties.json` + `D8TieCensusTest` (counts, offline) + `D8TieShapesStillExistTest` (the three shapes, live). Reopening → own commit, deliberate golden regen |
 | **D2** | `V*` is classified but not shipped as a key | Promoting it is genuinely one line — `_match_designations` already buckets `V* ` ids and offers them to the same guard, and `test_promoting_variable_to_a_key_needs_no_other_change` pins that property so it cannot rot |
 | **AN2-SAO** | Declined on measurement — 22 banners gain a token to make 3 Gould lookups resolve by SAO instead of HD | `test_gould.py::test_sao_is_absent_from_the_designation_key_set` fails the moment SAO is captured, which is the prompt to re-enable AO's removed join |
 

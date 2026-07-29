@@ -1,0 +1,1171 @@
+{
+ "objects": 4690,
+ "bayer": [
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* D Car",
+    "* D01 Car"
+   ],
+   "chosen": "* D Car"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* alf Cap",
+    "* alf02 Cap"
+   ],
+   "chosen": "* alf Cap"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* alf Lib",
+    "* alf02 Lib"
+   ],
+   "chosen": "* alf Lib"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* bet Cap",
+    "* bet01 Cap"
+   ],
+   "chosen": "* bet Cap"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* del Lyr",
+    "* del02 Lyr"
+   ],
+   "chosen": "* del Lyr"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* del Ori",
+    "* del01 Ori"
+   ],
+   "chosen": "* del Ori"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* del Tau",
+    "* del01 Tau"
+   ],
+   "chosen": "* del Tau"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* del Vel",
+    "* del01 Vel"
+   ],
+   "chosen": "* del Vel"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* eta Dor",
+    "* eta02 Dor"
+   ],
+   "chosen": "* eta Dor"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* gam And",
+    "* gam01 And"
+   ],
+   "chosen": "* gam And"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* gam Cae",
+    "* gam01 Cae"
+   ],
+   "chosen": "* gam Cae"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* gam Sgr",
+    "* gam02 Sgr"
+   ],
+   "chosen": "* gam Sgr"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* gam Vel",
+    "* gam02 Vel"
+   ],
+   "chosen": "* gam Vel"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* iot Cyg",
+    "* iot02 Cyg"
+   ],
+   "chosen": "* iot Cyg"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* iot Lib",
+    "* iot01 Lib"
+   ],
+   "chosen": "* iot Lib"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* iot Nor",
+    "* iot01 Nor"
+   ],
+   "chosen": "* iot Nor"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* kap Cet",
+    "* kap01 Cet"
+   ],
+   "chosen": "* kap Cet"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* kap Lup",
+    "* kap01 Lup"
+   ],
+   "chosen": "* kap Lup"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* ksi Cap",
+    "* ksi02 Cap"
+   ],
+   "chosen": "* ksi Cap"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* lam Tuc",
+    "* lam02 Tuc"
+   ],
+   "chosen": "* lam Tuc"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* mu. Boo",
+    "* mu.01 Boo"
+   ],
+   "chosen": "* mu. Boo"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* mu. Cnc",
+    "* mu.02 Cnc"
+   ],
+   "chosen": "* mu. Cnc"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* mu. Her",
+    "* mu.01 Her"
+   ],
+   "chosen": "* mu. Her"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* nu. Lyr",
+    "* nu.02 Lyr"
+   ],
+   "chosen": "* nu. Lyr"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* nu. Sco",
+    "* nu.01 Sco"
+   ],
+   "chosen": "* nu. Sco"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* nu. Sco C",
+    "* nu.02 Sco A"
+   ],
+   "chosen": "* nu. Sco C"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* nu. Sco D",
+    "* nu.02 Sco B"
+   ],
+   "chosen": "* nu. Sco D"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* ome Cnc",
+    "* ome01 Cnc"
+   ],
+   "chosen": "* ome Cnc"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* ome Sco",
+    "* ome01 Sco"
+   ],
+   "chosen": "* ome Sco"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* ome Tau",
+    "* ome02 Tau"
+   ],
+   "chosen": "* ome Tau"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* omi Ori",
+    "* omi01 Ori"
+   ],
+   "chosen": "* omi Ori"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* phi Hya",
+    "* phi03 Hya"
+   ],
+   "chosen": "* phi Hya"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* pi. Boo",
+    "* pi.01 Boo"
+   ],
+   "chosen": "* pi. Boo"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* pi. Cnc",
+    "* pi.02 Cnc"
+   ],
+   "chosen": "* pi. Cnc"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* pi. Gru",
+    "* pi.01 Gru"
+   ],
+   "chosen": "* pi. Gru"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* pi. Peg",
+    "* pi.02 Peg"
+   ],
+   "chosen": "* pi. Peg"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* psi Dra",
+    "* psi01 Dra"
+   ],
+   "chosen": "* psi Dra"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* psi Ori",
+    "* psi02 Ori"
+   ],
+   "chosen": "* psi Ori"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* rho Ari",
+    "* rho03 Ari"
+   ],
+   "chosen": "* rho Ari"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* rho Cep",
+    "* rho02 Cep"
+   ],
+   "chosen": "* rho Cep"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* rho Cnc",
+    "* rho01 Cnc"
+   ],
+   "chosen": "* rho Cnc"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* rho Cnc B",
+    "* rho01 Cnc B"
+   ],
+   "chosen": "* rho Cnc B"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* tau Aqr",
+    "* tau02 Aqr"
+   ],
+   "chosen": "* tau Aqr"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* tau Ari",
+    "* tau01 Ari"
+   ],
+   "chosen": "* tau Ari"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* tau Cap",
+    "* tau02 Cap"
+   ],
+   "chosen": "* tau Cap"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* ups Cep",
+    "* ups01 Cep",
+    "* ups02 Cep"
+   ],
+   "chosen": "* ups Cep"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* zet Cnc A",
+    "* zet01 Cnc A"
+   ],
+   "chosen": "* zet Cnc A"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* zet Cnc B",
+    "* zet01 Cnc B"
+   ],
+   "chosen": "* zet Cnc B"
+  },
+  {
+   "shape": "bare_vs_superscript",
+   "candidates": [
+    "* zet Lib",
+    "* zet04 Lib"
+   ],
+   "chosen": "* zet Lib"
+  },
+  {
+   "shape": "case_or_suffix_distinct",
+   "candidates": [
+    "* gam Vir B",
+    "* gam Vir S"
+   ],
+   "chosen": "* gam Vir B"
+  },
+  {
+   "shape": "cross_constellation",
+   "candidates": [
+    "* alf And",
+    "* del Peg"
+   ],
+   "chosen": "* alf And"
+  },
+  {
+   "shape": "cross_constellation",
+   "candidates": [
+    "* bet Tau",
+    "* gam Aur"
+   ],
+   "chosen": "* bet Tau"
+  },
+  {
+   "shape": "different_letters",
+   "candidates": [
+    "* E Vir",
+    "* e Vir"
+   ],
+   "chosen": "* E Vir"
+  },
+  {
+   "shape": "different_letters",
+   "candidates": [
+    "* G Her",
+    "* g Her"
+   ],
+   "chosen": "* G Her"
+  },
+  {
+   "shape": "different_letters",
+   "candidates": [
+    "* O Aql",
+    "* omi Aql"
+   ],
+   "chosen": "* O Aql"
+  },
+  {
+   "shape": "different_letters",
+   "candidates": [
+    "* V Pup",
+    "* Y Pup"
+   ],
+   "chosen": "* V Pup"
+  },
+  {
+   "shape": "different_letters",
+   "candidates": [
+    "* chi Scl",
+    "* ksi Scl"
+   ],
+   "chosen": "* chi Scl"
+  },
+  {
+   "shape": "different_letters",
+   "candidates": [
+    "* eta03 For",
+    "* tet03 For"
+   ],
+   "chosen": "* eta03 For"
+  },
+  {
+   "shape": "different_letters",
+   "candidates": [
+    "* nu.02 Ara",
+    "* ups02 Ara"
+   ],
+   "chosen": "* nu.02 Ara"
+  },
+  {
+   "shape": "different_letters",
+   "candidates": [
+    "* omi02 Cyg",
+    "* tet02 Cyg"
+   ],
+   "chosen": "* omi02 Cyg"
+  }
+ ],
+ "flamsteed": [
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*   4 Cen",
+    "*   4 Cen A"
+   ],
+   "bayer": "* h Cen",
+   "chosen": "*   4 Cen"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*   4 Lep",
+    "*   4 Lep A"
+   ],
+   "bayer": "* kap Lep",
+   "chosen": "*   4 Lep"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*   5 Aur",
+    "*   5 Aur A"
+   ],
+   "bayer": null,
+   "chosen": "*   5 Aur"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*   7 Gem",
+    "*   7 Gem A"
+   ],
+   "bayer": "* eta Gem",
+   "chosen": "*   7 Gem"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*   8 CMa",
+    "*   8 CMa A"
+   ],
+   "bayer": "* nu.03 CMa",
+   "chosen": "*   8 CMa"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*   9 Aur",
+    "*   9 Aur A"
+   ],
+   "bayer": null,
+   "chosen": "*   9 Aur"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  13 Del",
+    "*  13 Del A"
+   ],
+   "bayer": null,
+   "chosen": "*  13 Del"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  13 UMa",
+    "*  13 UMa A"
+   ],
+   "bayer": "* sig02 UMa",
+   "chosen": "*  13 UMa"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  13 Vul",
+    "*  13 Vul A"
+   ],
+   "bayer": null,
+   "chosen": "*  13 Vul"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  15 CVn",
+    "*  15 CVn A"
+   ],
+   "bayer": null,
+   "chosen": "*  15 CVn"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  15 Mon",
+    "*  15 Mon A"
+   ],
+   "bayer": "* S Mon",
+   "chosen": "*  15 Mon"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  17 Com",
+    "*  17 Com A"
+   ],
+   "bayer": null,
+   "chosen": "*  17 Com"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  17 Ori",
+    "*  17 Ori A"
+   ],
+   "bayer": "* rho Ori",
+   "chosen": "*  17 Ori"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  19 Pup",
+    "*  19 Pup A"
+   ],
+   "bayer": null,
+   "chosen": "*  19 Pup"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  20 LMi",
+    "*  20 LMi A"
+   ],
+   "bayer": null,
+   "chosen": "*  20 LMi"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  26 Dra",
+    "*  26 Dra A"
+   ],
+   "bayer": null,
+   "chosen": "*  26 Dra"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  28 UMa",
+    "*  28 UMa A"
+   ],
+   "bayer": null,
+   "chosen": "*  28 UMa"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  29 Vir",
+    "*  29 Vir A"
+   ],
+   "bayer": "* gam Vir",
+   "chosen": "*  29 Vir"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  30 Ari Bb",
+    "*  30 Ari C"
+   ],
+   "bayer": null,
+   "chosen": "*  30 Ari Bb"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  30 Peg",
+    "*  30 Peg A"
+   ],
+   "bayer": null,
+   "chosen": "*  30 Peg"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  30 Tau",
+    "*  30 Tau A"
+   ],
+   "bayer": "* e Tau",
+   "chosen": "*  30 Tau"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  34 Peg",
+    "*  34 Peg A"
+   ],
+   "bayer": null,
+   "chosen": "*  34 Peg"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  36 Boo",
+    "*  36 Boo A"
+   ],
+   "bayer": "* eps Boo",
+   "chosen": "*  36 Boo"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  38 Lyn",
+    "*  38 Lyn A"
+   ],
+   "bayer": null,
+   "chosen": "*  38 Lyn"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  39 Com",
+    "*  39 Com A"
+   ],
+   "bayer": null,
+   "chosen": "*  39 Com"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  39 Eri",
+    "*  39 Eri A"
+   ],
+   "bayer": null,
+   "chosen": "*  39 Eri"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  39 Leo",
+    "*  39 Leo A"
+   ],
+   "bayer": null,
+   "chosen": "*  39 Leo"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  41 Ara",
+    "*  41 Ara A"
+   ],
+   "bayer": null,
+   "chosen": "*  41 Ara"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  41 Aur",
+    "*  41 Aur A"
+   ],
+   "bayer": null,
+   "chosen": "*  41 Aur"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  44 Cyg",
+    "*  44 Cyg A"
+   ],
+   "bayer": null,
+   "chosen": "*  44 Cyg"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  47 Cas",
+    "*  47 Cas B"
+   ],
+   "bayer": null,
+   "chosen": "*  47 Cas"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  49 Cyg",
+    "*  49 Cyg A"
+   ],
+   "bayer": null,
+   "chosen": "*  49 Cyg"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  51 Cnc",
+    "*  51 Cnc A"
+   ],
+   "bayer": "* sig01 Cnc",
+   "chosen": "*  51 Cnc"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  51 UMa",
+    "*  51 UMa A"
+   ],
+   "bayer": null,
+   "chosen": "*  51 UMa"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  55 Gem",
+    "*  55 Gem A"
+   ],
+   "bayer": "* del Gem",
+   "chosen": "*  55 Gem"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  56 Per",
+    "*  56 Per A"
+   ],
+   "bayer": null,
+   "chosen": "*  56 Per"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  59 Vir",
+    "*  59 Vir A"
+   ],
+   "bayer": "* E Vir",
+   "chosen": "*  59 Vir"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  63 Ari",
+    "*  63 Ari A"
+   ],
+   "bayer": "* tau02 Ari",
+   "chosen": "*  63 Ari"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  63 Dra",
+    "*  63 Dra A"
+   ],
+   "bayer": "* eps Dra",
+   "chosen": "*  63 Dra"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  65 UMa",
+    "*  65 UMa A",
+    "*  65 UMa B"
+   ],
+   "bayer": null,
+   "chosen": "*  65 UMa"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  66 Eri",
+    "*  66 Eri A",
+    "*  66 Eri B"
+   ],
+   "bayer": null,
+   "chosen": "*  66 Eri"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  68 Tau",
+    "*  68 Tau A"
+   ],
+   "bayer": "* del03 Tau",
+   "chosen": "*  68 Tau"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  78 Peg",
+    "*  78 Peg A"
+   ],
+   "bayer": null,
+   "chosen": "*  78 Peg"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  84 Vir",
+    "*  84 Vir A"
+   ],
+   "bayer": null,
+   "chosen": "*  84 Vir"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  94 Aqr",
+    "*  94 Aqr A"
+   ],
+   "bayer": null,
+   "chosen": "*  94 Aqr"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "*  99 Tau",
+    "*  99 Tau A"
+   ],
+   "bayer": null,
+   "chosen": "*  99 Tau"
+  },
+  {
+   "shape": "bare_vs_component",
+   "candidates": [
+    "* 212 Pup",
+    "* 212 Pup A"
+   ],
+   "bayer": null,
+   "chosen": "* 212 Pup"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*   1 Sex",
+    "*  10 Leo"
+   ],
+   "bayer": null,
+   "chosen": "*   1 Sex"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*   2 Ari",
+    "* 107 Psc"
+   ],
+   "bayer": null,
+   "chosen": "*   2 Ari"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*   4 Lib",
+    "*  53 Hya"
+   ],
+   "bayer": null,
+   "chosen": "*   4 Lib"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*  11 Peg",
+    "*  27 Aqr"
+   ],
+   "bayer": null,
+   "chosen": "*  11 Peg"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*  13 CVn",
+    "*  37 Com"
+   ],
+   "bayer": null,
+   "chosen": "*  13 CVn"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*  29 Com",
+    "*  36 Vir"
+   ],
+   "bayer": null,
+   "chosen": "*  29 Com"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*  30 Lyn",
+    "*  58 Cam"
+   ],
+   "bayer": null,
+   "chosen": "*  30 Lyn"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*  30 Sco",
+    "*  36 Oph C"
+   ],
+   "bayer": null,
+   "chosen": "*  30 Sco"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*  31 Sco",
+    "*  38 Oph"
+   ],
+   "bayer": null,
+   "chosen": "*  31 Sco"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*  33 Sco",
+    "* 191 Oph"
+   ],
+   "bayer": null,
+   "chosen": "*  33 Sco"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*  38 Ari",
+    "*  88 Cet"
+   ],
+   "bayer": null,
+   "chosen": "*  38 Ari"
+  },
+  {
+   "shape": "cross_constellation_no_bayer",
+   "candidates": [
+    "*  53 LMi",
+    "*  67 Leo"
+   ],
+   "bayer": null,
+   "chosen": "*  53 LMi"
+  },
+  {
+   "shape": "other",
+   "candidates": [
+    "*   9 Oph",
+    "*  90 Oph"
+   ],
+   "bayer": "* ome Oph",
+   "chosen": "*   9 Oph"
+  },
+  {
+   "shape": "other",
+   "candidates": [
+    "*  52 Her B",
+    "*  52 Her C"
+   ],
+   "bayer": null,
+   "chosen": "*  52 Her B"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*   1 Eri",
+    "*  90 Cet"
+   ],
+   "bayer": "* tau01 Eri",
+   "chosen": "*   1 Eri"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*   2 Aql",
+    "*   2 Sct"
+   ],
+   "bayer": "* del Sct",
+   "chosen": "*   2 Sct"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*   3 CMa",
+    "*   3 Col l"
+   ],
+   "bayer": "* del Col",
+   "chosen": "*   3 Col l"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*   6 Lib",
+    "*  58 Hya"
+   ],
+   "bayer": "* E Hya",
+   "chosen": "*  58 Hya"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*   6 Peg",
+    "*  25 Aqr"
+   ],
+   "bayer": "* d Aqr",
+   "chosen": "*  25 Aqr"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*  11 Oph",
+    "*  28 Her"
+   ],
+   "bayer": "* n Her",
+   "chosen": "*  28 Her"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*  17 Oph",
+    "*  43 Her"
+   ],
+   "bayer": "* i Her",
+   "chosen": "*  43 Her"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*  23 Aur",
+    "* 112 Tau"
+   ],
+   "bayer": "* bet Tau",
+   "chosen": "* 112 Tau"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*  24 Her",
+    "*  51 Ser"
+   ],
+   "bayer": "* ome Her",
+   "chosen": "*  24 Her"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*  24 PsA",
+    "*  79 Aqr"
+   ],
+   "bayer": "* alf PsA",
+   "chosen": "*  24 PsA"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*  30 Aur",
+    "*  32 Cam"
+   ],
+   "bayer": "* ksi Aur",
+   "chosen": "*  30 Aur"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*  40 And",
+    "*  69 Psc"
+   ],
+   "bayer": "* sig Psc",
+   "chosen": "*  69 Psc"
+  },
+  {
+   "shape": "resolved_by_clause_ii",
+   "candidates": [
+    "*  51 Cet",
+    "* 106 Psc"
+   ],
+   "bayer": "* nu. Psc",
+   "chosen": "* 106 Psc"
+  }
+ ],
+ "bayer_by_shape": {
+  "bare_vs_superscript": 49,
+  "different_letters": 8,
+  "cross_constellation": 2,
+  "case_or_suffix_distinct": 1
+ },
+ "flamsteed_by_shape": {
+  "bare_vs_component": 47,
+  "resolved_by_clause_ii": 13,
+  "cross_constellation_no_bayer": 12,
+  "other": 2
+ },
+ "_comment": "Catalogue-wide census of stars carrying MORE THAN ONE competing Bayer or Flamsteed id, i.e. where core.shared._preferred_star_id's D8 rule falls back to SIMBAD's id ordering. Evidence for a D8 reopen; see completed_plans/PHASE_AN_PLAN.md §4b. Regenerate with `venv/bin/python -m tests._capture_designation_ties`.",
+ "source": "SIMBAD TAP `ident` (SELECT id, oidref FROM ident WHERE id LIKE '* %'), 6293 ids",
+ "ids_total": 6293
+}

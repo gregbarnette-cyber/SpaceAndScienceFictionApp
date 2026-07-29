@@ -291,5 +291,75 @@ class CorpusCoverageTest(unittest.TestCase):
                 self.assertGreater(n, 0, f"corpus exercises no {shape} ids")
 
 
+class D8TieCensusTest(unittest.TestCase):
+    """The measured size of D8's unresolved-tie residue (census, 2026-07-29).
+
+    `_preferred_star_id` breaks a tie with `candidates[0]` — SIMBAD's own id
+    ordering, the dependency D8 exists to remove. Its docstring said the residual
+    bare-vs-superscript case had **no corpus example**, which was true of the
+    43-star fixture and false of the catalogue: a TAP census over all 4690 objects
+    carrying a `* ` id found **49** of them.
+
+    These pins are deliberately about SHAPE COUNTS, not about which candidate
+    wins. Nothing here asserts the current pick is correct — it isn't decided —
+    only that the size and composition of the problem stay as measured, so a D8
+    reopen argues from numbers instead of re-deriving them. Regenerate the census
+    with `venv/bin/python -m tests._capture_designation_ties`.
+
+    Offline: reads the committed artifact. The live half is
+    test_designation_live.py::D8TieShapesStillExistTest.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        path = pathlib.Path(__file__).resolve().parent / "fixtures" / "designation_ties.json"
+        with open(path, encoding="utf-8") as fh:
+            cls.census = json.load(fh)
+
+    def test_the_bayer_residue_is_dominated_by_the_shape_d8_left_open(self):
+        by_shape = self.census["bayer_by_shape"]
+        self.assertEqual(sum(by_shape.values()), 60)
+        self.assertEqual(by_shape["bare_vs_superscript"], 49)
+
+    def test_the_largest_unruled_shape_is_flamsteed_bare_vs_component(self):
+        """The gap the plan never named — clause (i) is Bayer-ONLY.
+
+        `*   4 Cen` vs `*   4 Cen A` is the same shape clause (i) was written for,
+        on the other designation system, where no clause applies. At 47 objects it
+        is larger than the bare-vs-superscript residue D8 documented, so a reopen
+        that fixes only the documented case would leave the bigger half untouched.
+        """
+        by_shape = self.census["flamsteed_by_shape"]
+        self.assertEqual(sum(by_shape.values()), 74)
+        self.assertEqual(by_shape["bare_vs_component"], 47)
+
+    def test_clause_ii_is_earning_its_keep(self):
+        # 13 objects genuinely resolved by the constellation match — the clause is
+        # not dead weight, which matters if a reopen proposes replacing it.
+        self.assertEqual(self.census["flamsteed_by_shape"]["resolved_by_clause_ii"], 13)
+
+    def test_a_bayer_cross_constellation_duplicate_exists_and_has_no_clause(self):
+        """Fomalhaut's problem, on the Bayer side, where clause (ii) has no sibling.
+
+        Alpheratz is α Andromedae AND δ Pegasi; Elnath is β Tauri AND γ Aurigae.
+        Only two stars, but they are the case where the CURRENT rule cannot be
+        right by construction: both candidates are legitimate designations of the
+        same star in different constellations, so ordering decides.
+        """
+        cross = [e["candidates"] for e in self.census["bayer"]
+                 if e["shape"] == "cross_constellation"]
+        self.assertEqual(len(cross), 2)
+        self.assertIn(["* alf And", "* del Peg"], cross)
+
+    def test_the_census_used_the_shipped_helpers(self):
+        # Guards the measurement itself: every recorded `chosen` must still be what
+        # _preferred_star_id returns today, so a change to the rule invalidates the
+        # census loudly instead of leaving stale numbers to be argued from.
+        for entry in self.census["bayer"]:
+            self.assertEqual(
+                shared._preferred_star_id(entry["candidates"], "Bayer"), entry["chosen"]
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

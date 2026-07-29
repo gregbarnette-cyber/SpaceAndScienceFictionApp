@@ -99,5 +99,56 @@ class ClassifierAgainstLiveIdsTest(unittest.TestCase):
         self.assertTrue(variable, "eps Eri should still carry a V* id")
 
 
+@unittest.skipUnless(_ONLINE, "SIMBAD unreachable")
+class D8TieShapesStillExistTest(unittest.TestCase):
+    """The live half of the D8 tie census (`tests/fixtures/designation_ties.json`).
+
+    The census is a catalogue-wide TAP sweep, far too slow to run per suite, so the
+    counts are pinned offline (test_designation_ids.py::D8TieCensusTest) and the
+    three SHAPES are pinned here against one star each. This is the same
+    frozen-snapshot problem the rest of this file exists for: the offline artifact
+    cannot notice SIMBAD retiring a designation.
+
+    A failure is not a bug in this repo. It means the tie residue moved, and the
+    census should be re-run (`venv/bin/python -m tests._capture_designation_ties`)
+    before anyone argues about D8 from the committed numbers.
+
+    Nothing here asserts which candidate SHOULD win — that is the open question.
+    """
+
+    def test_kappa_ceti_still_shows_the_bare_vs_superscript_tie(self):
+        """The example D8's docstring asked for, found during AN3.
+
+        `_preferred_star_id`'s clause (i) cannot separate these — neither carries a
+        component letter — so the pick comes from SIMBAD's ordering. 49 objects
+        share this shape catalogue-wide.
+        """
+        ids = _ids("kappa Cet")
+        bayer = [i for i in ids if _classify_star_id(i) == "Bayer"]
+        self.assertIn("* kap Cet", bayer)
+        self.assertIn("* kap01 Cet", bayer)
+
+    def test_alpheratz_still_carries_two_constellations(self):
+        """α And = δ Peg — the Bayer analogue of Fomalhaut, with no clause (ii).
+
+        Both are legitimate designations of the same star, so no ordering-based
+        pick can be right by construction. Two stars have this shape; Elnath
+        (β Tau = γ Aur) is the other.
+        """
+        bayer = [i for i in _ids("alpheratz") if _classify_star_id(i) == "Bayer"]
+        self.assertIn("* alf And", bayer)
+        self.assertIn("* del Peg", bayer)
+
+    def test_a_flamsteed_bare_vs_component_pair_still_exists(self):
+        """The LARGEST unruled shape (47), and the one the plan never named.
+
+        Clause (i)'s component-less preference is Bayer-only, so the identical
+        shape on a Flamsteed id has no rule at all.
+        """
+        flamsteed = [i for i in _ids("4 Cen") if _classify_star_id(i) == "Flamsteed"]
+        self.assertIn("*   4 Cen", flamsteed)
+        self.assertIn("*   4 Cen A", flamsteed)
+
+
 if __name__ == "__main__":
     unittest.main()
