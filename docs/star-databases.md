@@ -52,6 +52,14 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
     edge case, since α Cen A/B are the only corpus stars whose Bayer id survives the MAIN_ID dedupe.
     A `** ` double-*system* id renders as `None`, and an unknown constellation or an unmapped Bayer
     *extension* letter (`* b Vel` → `b Velorum`) degrades to the raw token rather than inventing one.
+  - **When a star offers several competing `* ` ids, the pick is rule-based and deterministic** (D8,
+    settled 2026-07-29 against a catalogue-wide census). Bayer prefers the component-less form and then
+    the **superscript** one (`* ksi02 Cap` over `* ksi Cap` — in 47 of 49 such stars a numbered sibling
+    exists, so the bare form does not say which star is meant); Flamsteed prefers the component-less form
+    (`*   4 Cen` over `*   4 Cen A`) and then the constellation matching the chosen Bayer (which is what
+    rejects Fomalhaut's cross-boundary `*  79 Aqr`). Where no rule can prefer — **α And *is* δ Peg** — the
+    tie breaks on the raw string, so the pick is arbitrary but cannot drift when CDS reorders its ids.
+    **No pick can be wrong**: SIMBAD attaches no `* ` id to more than one object (0 of 6293 measured).
   - **`core.shared.strip_star_prefix` is the one prefix stripper for display labels.** It strips
     `NAME `/`V* `/`* ` **and then `.strip()`s** — which matters only for Flamsteed, whose SIMBAD form
     carries a **double** space (`"*  18 Eri"`), so the fixed-width `name[len("* "):]` slice that three

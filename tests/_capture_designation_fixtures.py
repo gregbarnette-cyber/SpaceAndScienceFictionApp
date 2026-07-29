@@ -99,6 +99,23 @@ TARGETS = [
     # ── Multi-component systems (AN1b component preference) ──────────────────
     "70 Oph A",           # Flamsteed + component
     "Castor",             # * alf Gem — 6-component system, many ** ids
+
+    # ── D8 tie shapes (added 2026-07-29, after the catalogue-wide census) ─────
+    # The original corpus was chosen for CLASSIFIER shape coverage and happens to
+    # contain ZERO unresolved D8 ties, so it could neither expose the residue nor
+    # verify a fix — the census (tests/_capture_designation_ties.py) measured 134
+    # tie objects, none of them here. These four are one per measured shape.
+    "kap Cet",            # * kap Cet + * kap01 Cet — bare vs superscript, bare on
+                          # the LOWEST-numbered member (25 of 47 catalogue-wide)
+    "ksi Cap",            # * ksi Cap + * ksi02 Cap — bare on a HIGHER-numbered
+                          # member (22 of 47). This is the star that disproves
+                          # "the bare form names the primary"
+    "alf And",            # * alf And + * del Peg — Alpheratz, lettered in TWO
+                          # constellations. No rule can prefer either; only
+                          # determinism is achievable
+    "4 Cen",              # *   4 Cen + *   4 Cen A — Flamsteed bare vs component,
+                          # the largest unruled shape (47). main_id is "* h Cen",
+                          # a system, so the component-less form matches identity
 ]
 
 
@@ -141,11 +158,29 @@ def capture(name, simbad):
 
 
 def main():
-    simbad = _make_simbad(*FIELDS)
-    stars, failed = [], []
+    """Capture the corpus. `--only-new` captures only stars not already in the file.
 
-    for i, name in enumerate(TARGETS, 1):
-        print(f"[{i}/{len(TARGETS)}] {name} … ", end="", flush=True)
+    The incremental mode exists because a full re-capture would re-fetch all 43
+    existing stars, and any upstream change to one of them would land in the same
+    diff as the intentional addition — indistinguishable from a regression, which
+    is the exact confusion this corpus was frozen to prevent.
+    """
+    only_new = "--only-new" in sys.argv
+    existing = []
+    if only_new and OUT_PATH.exists():
+        with open(OUT_PATH, encoding="utf-8") as fh:
+            existing = json.load(fh)["stars"]
+        have = {s["query"] for s in existing}
+        targets = [t for t in TARGETS if t not in have]
+        print(f"--only-new: {len(existing)} kept, capturing {len(targets)}")
+    else:
+        targets = list(TARGETS)
+
+    simbad = _make_simbad(*FIELDS)
+    stars, failed = list(existing), []
+
+    for i, name in enumerate(targets, 1):
+        print(f"[{i}/{len(targets)}] {name} … ", end="", flush=True)
         try:
             rec = capture(name, simbad)
         except Exception as e:

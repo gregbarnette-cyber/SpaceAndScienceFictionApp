@@ -519,6 +519,49 @@ pair, the primary, or is a loose alias determines whether "prefer the superscrip
 merely *consistent with α Cen*. That is a catalogue-provenance question for the sister repo, not one
 to settle by reading id lists.
 
+### ✅ D8 REOPENED AND CLOSED — 2026-07-29, the same day the census measured it
+
+The census above was gathered as *evidence for a future decision*. Two further SIMBAD queries
+answered the decision outright, so it was taken rather than filed.
+
+**The finding that collapses the question: no `* ` id is attached to more than one object — 0 of
+6293.** Every candidate in every tie is an unambiguous designation of exactly the object it sits on.
+**So no tie-break can be wrong.** The entire residue is a determinism-and-informativeness problem,
+not a correctness one — which also means none of the clauses needs to consult `main_id`, the design
+change §4b declined for the component-query worry.
+
+**And the natural rule is disproved, not merely unsupported.** "Prefer the bare form, it names the
+primary" fails on the data: the bare id sits on the lowest-numbered member for **25** objects and on
+a **higher**-numbered one for **22** — α Cap is on **α² Cap**, ξ Cap on **ξ² Cap**, φ Hya on
+**φ³ Hya**. The unnumbered name historically followed the *brighter* star while the numbering runs
+by RA. Nothing keyed on "bare = primary/system" is constructible. *(Related: `* alf Cen` **does**
+exist, as its own `SB*` object — which is why α Cen A's ids lack it, and why α Cen was never an
+instance of this shape. §4b's α Cen reasoning stands; it simply is not evidence about this residue.)*
+
+**What shipped — three clauses, each justified by a measurement:**
+
+| Clause | Rule | Justification | Objects |
+|---|---|---|---|
+| D8(i) | Bayer: prefer component-less | unchanged | — |
+| **D8(i-b)** | Bayer: **then prefer the superscript** | neither is wrong, but in 47 of 49 a numbered *sibling* exists, so the bare form does not say which star is meant | 49 |
+| **D8(ii) component** | Flamsteed: **prefer component-less**, then the Bayer's constellation | **46 of the 48** such objects have a `main_id` carrying no component letter, so the component-less form matches the object's own identity. Clause (ii)'s constellation half is kept — it resolves 13 objects and is not dead weight | 47 |
+| **tail-break** | every branch ends in the raw string | Alpheratz (α And = δ Peg) and Elnath (β Tau = γ Aur) are cases where preference is *meaningless*; the only achievable property is that the pick cannot drift when CDS reorders | 2 + all residual |
+
+**Verification required expanding the corpus first, and that is the reusable lesson.** The 43-star
+fixture contained **zero** unresolved ties — it was built for *classifier shape* coverage and was
+never a frequency sample — so it could neither expose the residue nor verify the fix, and a
+regression would have produced **no golden diff at all**. Four stars were added
+(`kap Cet`, `ksi Cap`, `alf And`, `4 Cen`), one per measured shape, via a new `--only-new` mode on
+the capture script: a full re-capture would have re-fetched all 43 and mixed any upstream drift into
+the same diff as the intended addition — indistinguishable from a regression, the exact confusion
+the frozen corpus exists to prevent.
+
+**The measured diff — one star, five fields.** With the corpus expanded and the rule changed, **46
+of 47 stars are byte-identical**; only **ξ Cap** moves, `* ksi Cap` → `* ksi02 Cap`. And it moves in
+the direction §4b predicted for α Cen: the old pick *equalled* `MAIN_ID`, so D3 suppressed it and the
+star displayed nothing; the new pick differs, so `desig_str` **gains** a token. That is the phase's
+payoff arriving on 49 stars catalogue-wide rather than the one α Cen was argued from.
+
 ### ✅ CLOSED — clause (i) on a COMPONENT-level query (raised by `/code-review`, resolved 2026-07-29)
 
 `/code-review` flagged that clause (i) prefers the component-less form **unconditionally**, so a
@@ -1185,7 +1228,7 @@ tripwire, which is the only reason closing the phase is honest:**
 | | What | Where it is watched |
 |---|---|---|
 | **D4** | `star_systems.designations` does **not** carry Bayer/Flamsteed until someone runs option 50. Lookup surfaces (opts 1, 3–6, 8–10) show them; DB-backed ones (opts 18/19, the CSV export, the route planners, the G1 prefix search) do not | §5 **AN2c-T**, five triggers. **T1 self-fires in CI** — it catches the *code* being wrong, which a rebuild would not fix. T2–T5 need a human to notice, which is why they are written as responses rather than reminders. Also documented in `docs/star-databases.md` (opt 50), the surface a reader is most likely to hit it from |
-| **D8** | Tie-breaks fall back to SIMBAD's id ordering. **Now measured catalogue-wide (§4b): 60 Bayer + 74 Flamsteed unresolved ties over 4690 objects** — including 47 of a shape the plan never named (Flamsteed bare-vs-component, larger than the documented case) and 2 that no ordering rule can get right (α And = δ Peg). Deliberately not acted on: it changes selection logic, and the semantic question is the sister repo's | `tests/fixtures/designation_ties.json` + `D8TieCensusTest` (counts, offline) + `D8TieShapesStillExistTest` (the three shapes, live). Reopening → own commit, deliberate golden regen |
+| ~~**D8**~~ ✅ **CLOSED 2026-07-29** | Was: tie-breaks fall back to SIMBAD's id ordering. The census measured the residue (60 Bayer + 74 Flamsteed over 4690 objects) and two further queries **settled** it rather than merely sizing it — no `* ` id maps to >1 object, so no pick can be wrong, and "bare = primary" is disproved 25-vs-22. Three clauses shipped; ξ Cap is the only corpus star that moved | `_preferred_star_id` + `D8PrecedenceTest` (7 tests) + `D8TieCensusTest` (6, incl. the 25/22 pin) + the live shape tripwires. Corpus grew 43→47 to make the fix verifiable at all |
 | **D2** | `V*` is classified but not shipped as a key | Promoting it is genuinely one line — `_match_designations` already buckets `V* ` ids and offers them to the same guard, and `test_promoting_variable_to_a_key_needs_no_other_change` pins that property so it cannot rot |
 | **AN2-SAO** | Declined on measurement — 22 banners gain a token to make 3 Gould lookups resolve by SAO instead of HD | `test_gould.py::test_sao_is_absent_from_the_designation_key_set` fails the moment SAO is captured, which is the prompt to re-enable AO's removed join |
 

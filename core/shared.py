@@ -170,50 +170,90 @@ def _star_id_constellation(id_str):
     return tokens[1] if len(tokens) >= 2 else None
 
 
+def _has_bayer_numeral(id_str):
+    """True for a superscript-numeral Bayer token ("* alf01 Cen", "* ksi02 Cap")."""
+    m = _BAYER_NUMERAL_RE.match(str(id_str).strip()[2:].split()[0]) if id_str else None
+    return bool(m and m.group(1))
+
+
 def _preferred_star_id(candidates, kind, bayer_choice=None):
     """Apply the D8 precedence rule to same-kind `* ` candidates for one star.
 
-    ``candidates`` is in SIMBAD's own id order, which is NOT a stable contract
-    across releases — the whole point of D8 is to stop depending on it. Ties fall
-    back to the first candidate.
+    ``candidates`` arrives in SIMBAD's own id order, which is NOT a stable contract
+    across releases — removing that dependency is the whole point of D8. Every
+    branch below therefore ends in a **total** ordering: the last key component is
+    the raw string, so two candidates no clause can separate still resolve the same
+    way on every run and every SIMBAD revision.
 
-    **That fallback is order-dependent for one shape, which is unmeasured — say so
-    rather than invent a rule** (raised by `/code-review`, 2026-07-29). A tie means two
-    candidates the clause cannot separate, and bare-vs-superscript Bayer forms
-    (``* alf Cen`` alongside ``* alf01 Cen``, neither carrying a component letter) are
-    exactly that: the choice would come from SIMBAD's ordering, the dependency D8 was
-    written to remove. **No corpus star has this shape** — α Cen A lists
-    ``* alf Cen A`` + ``* alf01 Cen``, so the component test does separate them, which
-    is why the deliberate α¹ Cen decision (§4b) works. A secondary tie-break was
-    considered and declined: the only obvious candidate, "prefer the non-superscript",
-    would flip α Cen A's chosen designation the moment SIMBAD dropped the ``A`` form,
-    and there is no evidence for which form should win. If a real example appears, that
-    is the evidence to settle it with — and `test_ties_are_stable_on_the_first_candidate`
-    is where the current behaviour is pinned.
+    **The rules are measured, not chosen.** A catalogue-wide census (all 6293 `* `
+    ids over 4690 objects — ``tests/_capture_designation_ties.py``) found 60 Bayer
+    and 74 Flamsteed objects carrying competing candidates, and SIMBAD's own data
+    answers what the rule should be:
 
-    D8(i) Bayer — prefer the candidate with **no trailing component letter**. One
-        clause covers all three measured cases: Procyon ("* alf CMi" over
-        "* alf CMi A"), Sirius (same, though SIMBAD lists it in the OPPOSITE order —
-        this is the case first-match-wins got wrong), and α Cen A, where the
-        component-less candidate is the superscript form "* alf01 Cen". That last
-        one was a deliberate maintainer decision, not a fallout: α Cen A's MAIN_ID is
-        "* alf Cen A", so choosing that form would make D3 suppress it as a duplicate
-        and the star would gain nothing from the phase. See PHASE_AN_PLAN.md §4b.
+    - **No `* ` id is attached to more than one object — 0 of 6293.** Every
+      candidate is an unambiguous designation of exactly the object it sits on, so
+      **no tie-break here can be wrong**. This is a determinism and informativeness
+      question, not a correctness one. It is also why none of these clauses needs
+      to consult ``main_id``.
 
-    D8(ii) Flamsteed — prefer the candidate whose constellation matches the chosen
-        Bayer's. Fomalhaut carries "*  24 PsA" AND "*  79 Aqr"; its Bayer is
-        "* alf PsA", so this selects 24 PsA and rejects 79 Aqr, Flamsteed's
-        historical cross-boundary duplicate. With no Bayer to key off, first wins.
+    D8(i) Bayer — prefer the candidate with **no trailing component letter**.
+        Procyon ("* alf CMi" over "* alf CMi A"), Sirius (same, though SIMBAD lists
+        it in the OPPOSITE order — the case first-match-wins got wrong), and α Cen A,
+        where the component-less candidate is the superscript "* alf01 Cen". That
+        last was a deliberate decision: α Cen A's MAIN_ID is "* alf Cen A", so
+        picking it would make D3 suppress it as a duplicate and the star would gain
+        nothing (PHASE_AN_PLAN.md §4b).
+
+    D8(i-b) Bayer — then prefer the **superscript** form ("* kap01 Cet" over
+        "* kap Cet"). 49 objects need this. Justification is informativeness, since
+        neither is wrong: in 47 of the 49 a numbered SIBLING star exists, so the
+        bare form does not say which of the pair is meant.
+
+        **The obvious alternative — "prefer the bare form, it names the primary" —
+        is disproved by the census.** The bare id sits on the lowest-numbered member
+        for 25 objects and on a HIGHER-numbered one for 22 (α Cap is on α² Cap,
+        ξ Cap on ξ² Cap, φ Hya on φ³ Hya): the unnumbered name historically followed
+        the *brighter* star while the numbering runs by RA. No rule keyed on
+        "bare = primary" can be built. Earlier drafts of this docstring called the
+        shape unmeasured and declined to rule on it; the census is that measurement.
+
+    D8(ii) Flamsteed — prefer the candidate with **no component letter**, then the
+        one whose constellation matches the chosen Bayer's.
+
+        The component clause is the larger half of the residue (47 objects) and was
+        missing entirely, because clause (i) was written Bayer-only — "*   4 Cen"
+        vs "*   4 Cen A" had no rule at all. Justified by the catalogue rather than
+        by symmetry: across those 48 objects, **46 have a `main_id` carrying no
+        component letter**, so the component-less form matches the object's own
+        identity.
+
+        The constellation clause: Fomalhaut carries "*  24 PsA" AND "*  79 Aqr" and
+        its Bayer is "* alf PsA", so this selects 24 PsA and rejects 79 Aqr,
+        Flamsteed's historical cross-boundary duplicate. It resolves 13 objects, so
+        it earns its keep and must not be dropped in favour of the component clause.
+
+    **Where no rule can help — and what happens instead.** Alpheratz is α Andromedae
+    AND δ Pegasi; Elnath is β Tauri AND γ Aurigae. Both candidates are legitimate
+    designations of the same star, so preference is meaningless and the *only*
+    achievable property is determinism. That is what the raw-string tail-break
+    provides: the pick is arbitrary but fixed, and cannot drift when CDS reorders.
     """
     if not candidates:
         return None
     if kind == "Bayer":
-        return min(candidates, key=lambda s: bool(_COMPONENT_SUFFIX_RE.search(s)))
-    if kind == "Flamsteed" and bayer_choice:
-        want = _star_id_constellation(bayer_choice)
-        if want:
-            return min(candidates, key=lambda s: _star_id_constellation(s) != want)
-    return candidates[0]
+        return min(candidates, key=lambda s: (
+            bool(_COMPONENT_SUFFIX_RE.search(s)),   # (i)   component-less first
+            not _has_bayer_numeral(s),              # (i-b) then the superscript form
+            s,                                      #       then stable
+        ))
+    if kind == "Flamsteed":
+        want = _star_id_constellation(bayer_choice) if bayer_choice else None
+        return min(candidates, key=lambda s: (
+            bool(_COMPONENT_SUFFIX_RE.search(s)),   # (ii)  component-less first
+            bool(want) and _star_id_constellation(s) != want,   # then Bayer's constellation
+            s,                                      #       then stable
+        ))
+    return min(candidates)                          # Variable (unshipped) — still stable
 
 
 def _match_designations(id_strings, keys):

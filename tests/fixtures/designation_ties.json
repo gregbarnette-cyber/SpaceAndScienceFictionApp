@@ -7,7 +7,7 @@
     "* D Car",
     "* D01 Car"
    ],
-   "chosen": "* D Car"
+   "chosen": "* D01 Car"
   },
   {
    "shape": "bare_vs_superscript",
@@ -15,7 +15,7 @@
     "* alf Cap",
     "* alf02 Cap"
    ],
-   "chosen": "* alf Cap"
+   "chosen": "* alf02 Cap"
   },
   {
    "shape": "bare_vs_superscript",
@@ -23,7 +23,7 @@
     "* alf Lib",
     "* alf02 Lib"
    ],
-   "chosen": "* alf Lib"
+   "chosen": "* alf02 Lib"
   },
   {
    "shape": "bare_vs_superscript",
@@ -31,7 +31,7 @@
     "* bet Cap",
     "* bet01 Cap"
    ],
-   "chosen": "* bet Cap"
+   "chosen": "* bet01 Cap"
   },
   {
    "shape": "bare_vs_superscript",
@@ -39,7 +39,7 @@
     "* del Lyr",
     "* del02 Lyr"
    ],
-   "chosen": "* del Lyr"
+   "chosen": "* del02 Lyr"
   },
   {
    "shape": "bare_vs_superscript",
@@ -47,7 +47,7 @@
     "* del Ori",
     "* del01 Ori"
    ],
-   "chosen": "* del Ori"
+   "chosen": "* del01 Ori"
   },
   {
    "shape": "bare_vs_superscript",
@@ -55,7 +55,7 @@
     "* del Tau",
     "* del01 Tau"
    ],
-   "chosen": "* del Tau"
+   "chosen": "* del01 Tau"
   },
   {
    "shape": "bare_vs_superscript",
@@ -63,7 +63,7 @@
     "* del Vel",
     "* del01 Vel"
    ],
-   "chosen": "* del Vel"
+   "chosen": "* del01 Vel"
   },
   {
    "shape": "bare_vs_superscript",
@@ -71,7 +71,7 @@
     "* eta Dor",
     "* eta02 Dor"
    ],
-   "chosen": "* eta Dor"
+   "chosen": "* eta02 Dor"
   },
   {
    "shape": "bare_vs_superscript",
@@ -79,7 +79,7 @@
     "* gam And",
     "* gam01 And"
    ],
-   "chosen": "* gam And"
+   "chosen": "* gam01 And"
   },
   {
    "shape": "bare_vs_superscript",
@@ -87,7 +87,7 @@
     "* gam Cae",
     "* gam01 Cae"
    ],
-   "chosen": "* gam Cae"
+   "chosen": "* gam01 Cae"
   },
   {
    "shape": "bare_vs_superscript",
@@ -95,7 +95,7 @@
     "* gam Sgr",
     "* gam02 Sgr"
    ],
-   "chosen": "* gam Sgr"
+   "chosen": "* gam02 Sgr"
   },
   {
    "shape": "bare_vs_superscript",
@@ -103,7 +103,7 @@
     "* gam Vel",
     "* gam02 Vel"
    ],
-   "chosen": "* gam Vel"
+   "chosen": "* gam02 Vel"
   },
   {
    "shape": "bare_vs_superscript",
@@ -111,7 +111,7 @@
     "* iot Cyg",
     "* iot02 Cyg"
    ],
-   "chosen": "* iot Cyg"
+   "chosen": "* iot02 Cyg"
   },
   {
    "shape": "bare_vs_superscript",
@@ -119,7 +119,7 @@
     "* iot Lib",
     "* iot01 Lib"
    ],
-   "chosen": "* iot Lib"
+   "chosen": "* iot01 Lib"
   },
   {
    "shape": "bare_vs_superscript",
@@ -127,7 +127,7 @@
     "* iot Nor",
     "* iot01 Nor"
    ],
-   "chosen": "* iot Nor"
+   "chosen": "* iot01 Nor"
   },
   {
    "shape": "bare_vs_superscript",
@@ -135,7 +135,7 @@
     "* kap Cet",
     "* kap01 Cet"
    ],
-   "chosen": "* kap Cet"
+   "chosen": "* kap01 Cet"
   },
   {
    "shape": "bare_vs_superscript",
@@ -143,7 +143,7 @@
     "* kap Lup",
     "* kap01 Lup"
    ],
-   "chosen": "* kap Lup"
+   "chosen": "* kap01 Lup"
   },
   {
    "shape": "bare_vs_superscript",
@@ -151,7 +151,7 @@
     "* ksi Cap",
     "* ksi02 Cap"
    ],
-   "chosen": "* ksi Cap"
+   "chosen": "* ksi02 Cap"
   },
   {
    "shape": "bare_vs_superscript",
@@ -159,7 +159,7 @@
     "* lam Tuc",
     "* lam02 Tuc"
    ],
-   "chosen": "* lam Tuc"
+   "chosen": "* lam02 Tuc"
   },
   {
    "shape": "bare_vs_superscript",
@@ -167,7 +167,7 @@
     "* mu. Boo",
     "* mu.01 Boo"
    ],
-   "chosen": "* mu. Boo"
+   "chosen": "* mu.01 Boo"
   },
   {
    "shape": "bare_vs_superscript",
@@ -175,7 +175,7 @@
     "* mu. Cnc",
     "* mu.02 Cnc"
    ],
-   "chosen": "* mu. Cnc"
+   "chosen": "* mu.02 Cnc"
   },
   {
    "shape": "bare_vs_superscript",
@@ -183,7 +183,7 @@
     "* mu. Her",
     "* mu.01 Her"
    ],
-   "chosen": "* mu. Her"
+   "chosen": "* mu.01 Her"
   },
   {
    "shape": "bare_vs_superscript",
@@ -191,7 +191,7 @@
     "* nu. Lyr",
     "* nu.02 Lyr"
    ],
-   "chosen": "* nu. Lyr"
+   "chosen": "* nu.02 Lyr"
   },
   {
    "shape": "bare_vs_superscript",
@@ -199,7 +199,7 @@
     "* nu. Sco",
     "* nu.01 Sco"
    ],
-   "chosen": "* nu. Sco"
+   "chosen": "* nu.01 Sco"
   },
   {
    "shape": "bare_vs_superscript",
@@ -207,7 +207,7 @@
     "* nu. Sco C",
     "* nu.02 Sco A"
    ],
-   "chosen": "* nu. Sco C"
+   "chosen": "* nu.02 Sco A"
   },
   {
    "shape": "bare_vs_superscript",
@@ -215,7 +215,7 @@
     "* nu. Sco D",
     "* nu.02 Sco B"
    ],
-   "chosen": "* nu. Sco D"
+   "chosen": "* nu.02 Sco B"
   },
   {
    "shape": "bare_vs_superscript",
@@ -223,7 +223,7 @@
     "* ome Cnc",
     "* ome01 Cnc"
    ],
-   "chosen": "* ome Cnc"
+   "chosen": "* ome01 Cnc"
   },
   {
    "shape": "bare_vs_superscript",
@@ -231,7 +231,7 @@
     "* ome Sco",
     "* ome01 Sco"
    ],
-   "chosen": "* ome Sco"
+   "chosen": "* ome01 Sco"
   },
   {
    "shape": "bare_vs_superscript",
@@ -239,7 +239,7 @@
     "* ome Tau",
     "* ome02 Tau"
    ],
-   "chosen": "* ome Tau"
+   "chosen": "* ome02 Tau"
   },
   {
    "shape": "bare_vs_superscript",
@@ -247,7 +247,7 @@
     "* omi Ori",
     "* omi01 Ori"
    ],
-   "chosen": "* omi Ori"
+   "chosen": "* omi01 Ori"
   },
   {
    "shape": "bare_vs_superscript",
@@ -255,7 +255,7 @@
     "* phi Hya",
     "* phi03 Hya"
    ],
-   "chosen": "* phi Hya"
+   "chosen": "* phi03 Hya"
   },
   {
    "shape": "bare_vs_superscript",
@@ -263,7 +263,7 @@
     "* pi. Boo",
     "* pi.01 Boo"
    ],
-   "chosen": "* pi. Boo"
+   "chosen": "* pi.01 Boo"
   },
   {
    "shape": "bare_vs_superscript",
@@ -271,7 +271,7 @@
     "* pi. Cnc",
     "* pi.02 Cnc"
    ],
-   "chosen": "* pi. Cnc"
+   "chosen": "* pi.02 Cnc"
   },
   {
    "shape": "bare_vs_superscript",
@@ -279,7 +279,7 @@
     "* pi. Gru",
     "* pi.01 Gru"
    ],
-   "chosen": "* pi. Gru"
+   "chosen": "* pi.01 Gru"
   },
   {
    "shape": "bare_vs_superscript",
@@ -287,7 +287,7 @@
     "* pi. Peg",
     "* pi.02 Peg"
    ],
-   "chosen": "* pi. Peg"
+   "chosen": "* pi.02 Peg"
   },
   {
    "shape": "bare_vs_superscript",
@@ -295,7 +295,7 @@
     "* psi Dra",
     "* psi01 Dra"
    ],
-   "chosen": "* psi Dra"
+   "chosen": "* psi01 Dra"
   },
   {
    "shape": "bare_vs_superscript",
@@ -303,7 +303,7 @@
     "* psi Ori",
     "* psi02 Ori"
    ],
-   "chosen": "* psi Ori"
+   "chosen": "* psi02 Ori"
   },
   {
    "shape": "bare_vs_superscript",
@@ -311,7 +311,7 @@
     "* rho Ari",
     "* rho03 Ari"
    ],
-   "chosen": "* rho Ari"
+   "chosen": "* rho03 Ari"
   },
   {
    "shape": "bare_vs_superscript",
@@ -319,7 +319,7 @@
     "* rho Cep",
     "* rho02 Cep"
    ],
-   "chosen": "* rho Cep"
+   "chosen": "* rho02 Cep"
   },
   {
    "shape": "bare_vs_superscript",
@@ -327,7 +327,7 @@
     "* rho Cnc",
     "* rho01 Cnc"
    ],
-   "chosen": "* rho Cnc"
+   "chosen": "* rho01 Cnc"
   },
   {
    "shape": "bare_vs_superscript",
@@ -335,7 +335,7 @@
     "* rho Cnc B",
     "* rho01 Cnc B"
    ],
-   "chosen": "* rho Cnc B"
+   "chosen": "* rho01 Cnc B"
   },
   {
    "shape": "bare_vs_superscript",
@@ -343,7 +343,7 @@
     "* tau Aqr",
     "* tau02 Aqr"
    ],
-   "chosen": "* tau Aqr"
+   "chosen": "* tau02 Aqr"
   },
   {
    "shape": "bare_vs_superscript",
@@ -351,7 +351,7 @@
     "* tau Ari",
     "* tau01 Ari"
    ],
-   "chosen": "* tau Ari"
+   "chosen": "* tau01 Ari"
   },
   {
    "shape": "bare_vs_superscript",
@@ -359,7 +359,7 @@
     "* tau Cap",
     "* tau02 Cap"
    ],
-   "chosen": "* tau Cap"
+   "chosen": "* tau02 Cap"
   },
   {
    "shape": "bare_vs_superscript",
@@ -368,7 +368,7 @@
     "* ups01 Cep",
     "* ups02 Cep"
    ],
-   "chosen": "* ups Cep"
+   "chosen": "* ups01 Cep"
   },
   {
    "shape": "bare_vs_superscript",
@@ -376,7 +376,7 @@
     "* zet Cnc A",
     "* zet01 Cnc A"
    ],
-   "chosen": "* zet Cnc A"
+   "chosen": "* zet01 Cnc A"
   },
   {
    "shape": "bare_vs_superscript",
@@ -384,7 +384,7 @@
     "* zet Cnc B",
     "* zet01 Cnc B"
    ],
-   "chosen": "* zet Cnc B"
+   "chosen": "* zet01 Cnc B"
   },
   {
    "shape": "bare_vs_superscript",
@@ -392,7 +392,7 @@
     "* zet Lib",
     "* zet04 Lib"
    ],
-   "chosen": "* zet Lib"
+   "chosen": "* zet04 Lib"
   },
   {
    "shape": "case_or_suffix_distinct",

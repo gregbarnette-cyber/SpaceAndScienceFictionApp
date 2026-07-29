@@ -214,15 +214,84 @@ class D8PrecedenceTest(unittest.TestCase):
                 )
         self.assertGreaterEqual(checked, 5, "corpus lost its component-level queries")
 
-    def test_flamsteed_falls_back_to_first_when_there_is_no_bayer(self):
-        desig = shared._match_designations(["*  79 Aqr", "*  24 PsA"], _KEYS_WITH_STAR)
-        self.assertEqual(desig["Flamsteed"], "*  79 Aqr")
+    def test_flamsteed_with_no_bayer_is_stable_rather_than_first(self):
+        """Changed by the 2026-07-29 census reopen — was "first candidate wins".
 
-    def test_ties_are_stable_on_the_first_candidate(self):
-        """Equal-shaped candidates must not depend on set/dict iteration order."""
+        With no Bayer, clause (ii) has nothing to key off, so the old rule returned
+        `candidates[0]` — SIMBAD's ordering. 12 catalogue objects are in this state.
+        The pick is still arbitrary (both are real designations) but it is now
+        *fixed*, which is the only property actually achievable here.
+        """
+        for order in (["*  79 Aqr", "*  24 PsA"], ["*  24 PsA", "*  79 Aqr"]):
+            with self.subTest(order=order):
+                desig = shared._match_designations(order, _KEYS_WITH_STAR)
+                self.assertEqual(desig["Flamsteed"], "*  24 PsA")
+
+    def test_bayer_prefers_the_superscript_over_the_bare_form(self):
+        """D8(i-b), added by the census reopen — 49 catalogue objects.
+
+        Neither candidate is wrong (no `* ` id is attached to more than one object,
+        0 of 6293), so this is decided on informativeness: in 47 of the 49 a
+        numbered SIBLING star exists, so the bare form does not say which is meant.
+        """
+        for ids, want in ((["* kap Cet", "* kap01 Cet"], "* kap01 Cet"),
+                          (["* kap01 Cet", "* kap Cet"], "* kap01 Cet"),
+                          (["* ksi Cap", "* ksi02 Cap"], "* ksi02 Cap")):
+            with self.subTest(ids=ids):
+                self.assertEqual(
+                    shared._match_designations(ids, _KEYS_WITH_STAR)["Bayer"], want
+                )
+
+    def test_the_component_clause_beats_the_superscript_clause(self):
+        """Ordering of (i) before (i-b) — α Cen A is why it matters.
+
+        Its ids are "* alf Cen A" + "* alf01 Cen". Both clauses happen to select
+        the superscript here, but only because the other candidate is component-
+        suffixed; if (i-b) ran first on a star carrying "* xxx01 Cst A" alongside
+        "* xxx Cst", it would pick the component form. Pinned so the key order in
+        `_preferred_star_id` cannot be swapped silently.
+        """
+        self.assertEqual(
+            shared._preferred_star_id(["* alf01 Cen A", "* alf Cen"], "Bayer"),
+            "* alf Cen",
+        )
+
+    def test_flamsteed_prefers_the_component_less_form(self):
+        """D8(ii)'s component clause — the LARGEST shape, and it had no rule at all.
+
+        Clause (i) was written Bayer-only, so "*   4 Cen" vs "*   4 Cen A" fell to
+        SIMBAD's ordering on 47 objects. Justified by the catalogue rather than by
+        symmetry with Bayer: 46 of those 48 objects have a `main_id` carrying no
+        component letter (4 Cen's is "* h Cen", a system).
+        """
+        for order in (["*   4 Cen", "*   4 Cen A"], ["*   4 Cen A", "*   4 Cen"]):
+            with self.subTest(order=order):
+                self.assertEqual(
+                    shared._preferred_star_id(order, "Flamsteed", "* h Cen"), "*   4 Cen"
+                )
+
+    def test_the_constellation_clause_still_resolves_13_objects(self):
+        """The component clause must not shadow clause (ii). Fomalhaut is the pin."""
+        self.assertEqual(
+            shared._preferred_star_id(["*  79 Aqr", "*  24 PsA"], "Flamsteed", "* alf PsA"),
+            "*  24 PsA",
+        )
+
+    def test_ties_no_clause_can_separate_are_deterministic(self):
+        """Alpheratz: α And AND δ Peg — both legitimate, so only stability is possible.
+
+        Formerly `test_ties_are_stable_on_the_first_candidate`, which asserted the
+        weaker property that the pick did not depend on dict/set iteration order.
+        It now must not depend on SIMBAD's *input* order either.
+        """
+        for order in (["* alf And", "* del Peg"], ["* del Peg", "* alf And"]):
+            with self.subTest(order=order):
+                desig = shared._match_designations(order, _KEYS_WITH_STAR)
+                self.assertEqual(desig["Bayer"], "* alf And")
         for _ in range(5):
-            desig = shared._match_designations(["* bet Ori", "* gam Ori"], _KEYS_WITH_STAR)
-            self.assertEqual(desig["Bayer"], "* bet Ori")
+            self.assertEqual(
+                shared._match_designations(["* bet Ori", "* gam Ori"],
+                                           _KEYS_WITH_STAR)["Bayer"], "* bet Ori")
 
 
 class NarrowPathTest(unittest.TestCase):
@@ -350,6 +419,33 @@ class D8TieCensusTest(unittest.TestCase):
                  if e["shape"] == "cross_constellation"]
         self.assertEqual(len(cross), 2)
         self.assertIn(["* alf And", "* del Peg"], cross)
+
+    def test_the_bare_form_is_not_the_primary_which_is_why_i_b_prefers_superscript(self):
+        """The measurement that killed the obvious alternative rule.
+
+        "Prefer the bare form, it names the primary" is the natural reading, and it
+        is false: the bare id sits on the lowest-numbered member for 25 objects and
+        on a HIGHER-numbered one for 22 (α Cap is on α² Cap, ξ Cap on ξ² Cap). The
+        unnumbered name followed the *brighter* star; the numbering runs by RA.
+        """
+        import re
+        lowest = higher = 0
+        for entry in self.census["bayer"]:
+            if entry["shape"] != "bare_vs_superscript":
+                continue
+            nums = sorted(m.group(1) for m in
+                          (re.search(r"^\S*?(\d+)$", c.split()[1]) for c in entry["candidates"])
+                          if m)
+            bare = [c for c in entry["candidates"]
+                    if not re.search(r"\d$", c.split()[1])]
+            if not bare or not nums:
+                continue
+            if nums[0] == "01":
+                lowest += 1
+            else:
+                higher += 1
+        self.assertGreater(higher, 15, "the bare form is NOT systematically the primary")
+        self.assertGreater(lowest, 15)
 
     def test_the_census_used_the_shipped_helpers(self):
         # Guards the measurement itself: every recorded `chosen` must still be what
