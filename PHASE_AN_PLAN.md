@@ -599,6 +599,31 @@ Shipped: `tests/_capture_designation_fixtures.py` (one-shot, live) → `tests/fi
 Suite **2181 passed, 1 skipped** (from 2174). Copies 2, 4 and 5 now have their first coverage of any
 kind, and this is the first test in the repo that imports `main.py`.
 
+**How to operate it — the four rules that are not obvious from reading the file.** *(Mechanics —
+the fake-table shapes, the monkeypatch seams, the corpus format — live in the module docstring and
+are not repeated here; that file is the source of truth for how, this is the source of truth for
+when and why.)*
+
+1. **Run it before touching anything, and treat red-on-arrival as a blocker.** A failing baseline
+   before AN0 starts means the corpus or an unrelated change has already moved; diagnosing that
+   mid-refactor is exactly the situation the harness exists to prevent.
+2. **Regenerating the baseline is a decision, not a fix.** `AN_REGEN_GOLDEN=1` rewrites
+   `designation_golden.json`. Do it **only** for an adjudicated §6/D-table change, and commit the
+   regenerated file **in the same commit** as the code change so review sees both halves. A silent
+   regen converts the harness into a rubber stamp — it will still pass, forever, having stopped
+   asserting anything.
+3. **A green harness is not always good news.** AN2e applies the D5 empty-case fix (`"N/A"` → `""`)
+   and AN2 applies D3's dedupe — both are *intended* output changes. **If the harness stays green
+   through those, the change did not land.** Expect red, inspect the diff, then regenerate per (2).
+   The stars that should move are named: 22 for D3, and for D5 only a star that captures nothing at
+   all (0 in the current corpus — so D5's diff is expected to be empty, which is itself the finding).
+4. **Know what it structurally cannot catch, and compensate per key.** It diffs *outputs*. A change
+   that leaves outputs identical while breaking a downstream consumer's assumed *input shape* is
+   invisible to it — Phase AO shipped exactly that (green tests, working feature, dead branch).
+   **AN4.5 is the counter-measure for the one known case** (Gould reading `designations["HD"]`);
+   **add a sibling assertion for each new key AN introduces**, checking that some producer can
+   actually emit the shape each consumer assumes.
+
 **Four measurements over the corpus that bear directly on the open decisions — these are counts, not
 estimates, and they replace guesswork in D3/D5:**
 
