@@ -93,6 +93,97 @@ def _designation_ids_from_rows(ids_result):
     return [row["id"] for row in ids_result]
 
 
+# ─── Bayer / Flamsteed classification (Phase AN1) ─────────────────────────────
+#
+# SIMBAD returns Bayer and Flamsteed designations under an asterisk-space prefix,
+# which _CSV_PREFIX_MAP cannot express: `* ` carries TWO designation systems, told
+# apart by the shape of the first token rather than by the prefix. Hence a
+# classifier rather than more map rows.
+#
+#   *  20 Crt        Flamsteed   (note the DOUBLE space before the number)
+#   * alf CMi        Bayer
+#   * alf CMi A      Bayer + component letter
+#   * alf01 Cen      Bayer + superscript numeral (α¹)
+#   V* eps Eri       variable-star designation  — classified, but not a key (D2)
+#   ** LDS 6248A     DOUBLE-star system id      — NOT a name for this star (D2)
+
+# A trailing single capital letter is a component marker ("* alf CMi A"). Anchored
+# to the end and requiring the preceding space, so it cannot fire on a
+# constellation abbreviation ("* alf01 Cen" ends in "Cen", not a component).
+_COMPONENT_SUFFIX_RE = re.compile(r"\s[A-Z]$")
+
+
+def _classify_star_id(id_str):
+    """Classify a SIMBAD `* `-family id → "Bayer" | "Flamsteed" | "Variable" | None.
+
+    The `** ` branch is a real guard, but NOT for the reason PHASE_AN_PLAN.md §4
+    step 1 gives. The plan says "** LDS 6248A" also satisfies ``startswith("* ")``
+    and calls the ordering load-bearing; it does not and it is not — two asterisks
+    then a space never matches asterisk-then-space, so the `* ` branch could not
+    claim a `**` id even if it ran first (see plan [A4]). What the branch actually
+    guards is the two other obvious ways to write this: ``startswith("*")``, or
+    stripping asterisks first, either of which reads "** SHB    1A" as a Bayer id.
+    Pinned by tests/test_designation_ids.py::ClassifierTest.
+
+    "Variable" is returned but is deliberately NOT a designation key (D2) — `V*` is
+    redundant with the Bayer form on essentially every star that has both. It is
+    classified anyway so that promoting it to a key later is a one-line change with
+    no re-classification: callers simply never pass "Variable" in ``keys``, and
+    _match_designations' guard skips it.
+    """
+    s = str(id_str).strip()
+    if s.startswith("** "):          # must precede the `* ` test
+        return None
+    if s.startswith("V* "):
+        return "Variable"
+    if s.startswith("* "):
+        tokens = s[2:].split()
+        if not tokens:
+            return None
+        # Flamsteed numbers are bare integers; Bayer letters never are.
+        return "Flamsteed" if tokens[0].isdigit() else "Bayer"
+    return None
+
+
+def _star_id_constellation(id_str):
+    """The constellation abbreviation from a `* ` id ("*  24 PsA" → "PsA"), or None."""
+    tokens = str(id_str).strip()[2:].split()
+    return tokens[1] if len(tokens) >= 2 else None
+
+
+def _preferred_star_id(candidates, kind, bayer_choice=None):
+    """Apply the D8 precedence rule to same-kind `* ` candidates for one star.
+
+    ``candidates`` is in SIMBAD's own id order, which is NOT a stable contract
+    across releases — the whole point of D8 is to stop depending on it. Ties fall
+    back to the first candidate, which is safe precisely because tied candidates are
+    equal-shaped.
+
+    D8(i) Bayer — prefer the candidate with **no trailing component letter**. One
+        clause covers all three measured cases: Procyon ("* alf CMi" over
+        "* alf CMi A"), Sirius (same, though SIMBAD lists it in the OPPOSITE order —
+        this is the case first-match-wins got wrong), and α Cen A, where the
+        component-less candidate is the superscript form "* alf01 Cen". That last
+        one was a deliberate maintainer decision, not a fallout: α Cen A's MAIN_ID is
+        "* alf Cen A", so choosing that form would make D3 suppress it as a duplicate
+        and the star would gain nothing from the phase. See PHASE_AN_PLAN.md §4b.
+
+    D8(ii) Flamsteed — prefer the candidate whose constellation matches the chosen
+        Bayer's. Fomalhaut carries "*  24 PsA" AND "*  79 Aqr"; its Bayer is
+        "* alf PsA", so this selects 24 PsA and rejects 79 Aqr, Flamsteed's
+        historical cross-boundary duplicate. With no Bayer to key off, first wins.
+    """
+    if not candidates:
+        return None
+    if kind == "Bayer":
+        return min(candidates, key=lambda s: bool(_COMPONENT_SUFFIX_RE.search(s)))
+    if kind == "Flamsteed" and bayer_choice:
+        want = _star_id_constellation(bayer_choice)
+        if want:
+            return min(candidates, key=lambda s: _star_id_constellation(s) != want)
+    return candidates[0]
+
+
 def _match_designations(id_strings, keys):
     """Map SIMBAD id strings onto designation keys via ``_CSV_PREFIX_MAP``.
 
@@ -112,12 +203,39 @@ def _match_designations(id_strings, keys):
     Phase AN1 adds a ``* `` entry.
     """
     desig = {k: None for k in keys}
+    star_ids = {"Bayer": [], "Flamsteed": []}
+
     for raw in id_strings:
         id_str = str(raw).strip()
+        # AN1: the `* ` family is owned by the classifier, not the prefix map —
+        # collected here and resolved below, because D8's precedence needs to see
+        # every candidate before choosing. No _CSV_PREFIX_MAP entry begins with `*`
+        # or `V`, so this claims nothing the loop below would have matched; that
+        # invariant is pinned by test_no_prefix_map_entry_shadows_the_star_family.
+        kind = _classify_star_id(id_str)
+        if kind in star_ids:
+            star_ids[kind].append(id_str)
+            continue
         for prefix, key in _CSV_PREFIX_MAP:
             if id_str.startswith(prefix) and key in desig and desig[key] is None:
                 desig[key] = id_str
                 break
+
+    # AN1 second pass — D8 precedence. Bayer is resolved first because the
+    # Flamsteed clause keys off the chosen Bayer's constellation.
+    #
+    # The `kind in desig` guard is re-spelled here ON PURPOSE. AN0a's protection is
+    # one conjunct of the prefix loop's `if`, NOT a property of this function, so a
+    # pre-pass that assigned blindly would raise KeyError: 'Bayer' on the narrow
+    # key set (_NARROW_DESIG_KEYS, opts 17/19/20/21 + the seven route planners),
+    # which per D7 deliberately does not carry these keys. Found by the AN0→AN1
+    # sweep; see PHASE_AN_PLAN.md §4a.
+    bayer = _preferred_star_id(star_ids["Bayer"], "Bayer")
+    flamsteed = _preferred_star_id(star_ids["Flamsteed"], "Flamsteed", bayer)
+    for key, chosen in (("Bayer", bayer), ("Flamsteed", flamsteed)):
+        if chosen is not None and key in desig and desig[key] is None:
+            desig[key] = chosen
+
     return desig
 
 

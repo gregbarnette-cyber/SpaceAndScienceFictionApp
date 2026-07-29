@@ -395,13 +395,32 @@ Add a classifier, not more map rows:
 _classify_star_id(id_str) -> "Bayer" | "Flamsteed" | "Variable" | None
 ```
 
-1. `startswith("** ")` → `None`. **Must be tested before `* `** — `** LDS 6248A` also satisfies
-   `startswith("* ")`. Load-bearing ordering; pin it.
+1. `startswith("** ")` → `None`. ~~**Must be tested before `* `** — `** LDS 6248A` also satisfies
+   `startswith("* ")`. Load-bearing ordering; pin it.~~ **[A4] — this premise is FALSE; see below.**
 2. `startswith("V* ")` → `"Variable"` (see AN1a).
 3. `startswith("* ")` → strip, split, token 0 all-digits → `"Flamsteed"`, else `"Bayer"`.
 4. else → `None`, fall through to the prefix map.
 
 Integrate as a **pre-pass** in the shared loop so all in-scope call sites inherit it from AN0.
+
+> **[A4] Correction to step 1 (2026-07-29, found by AN1's own test).** The plan asserts three times —
+> here, in §12, and in the AN4.1 harness docstring — that `** LDS 6248A` "also satisfies
+> `startswith("* ")`", making the `** `-before-`* ` ordering **load-bearing**. **It does not, and it
+> is not.** `"** LDS 6248A".startswith("* ")` is `False`: two asterisks then a space never matches
+> asterisk-then-space. The `* ` branch could not claim a `**` id even if it ran first, so the
+> ordering is free.
+>
+> **Keep the branch anyway — it guards something real, just not that.** The two other obvious ways to
+> write this test *would* misfire: `startswith("*")` matches every `**` id, and stripping asterisks
+> first (`"** SHB    1A".lstrip("*").strip()` → `"SHB    1A"`) yields a token that reads as a Bayer
+> letter. Both are live hazards, and the display layer already contains asterisk-stripping helpers
+> of exactly that shape (§7 [R8]/[A3]), so the mistake has precedent in this repo.
+>
+> The pin survives with a corrected premise:
+> `tests/test_designation_ids.py::ClassifierTest::test_the_double_star_branch_guards_a_looser_implementation`
+> now asserts the *true* facts (`** X` fails `startswith("* ")`, passes `startswith("*")`, and
+> asterisk-stripping reads it as Bayer) rather than the false one. **This is the second plan claim
+> disproved by writing its own test** — the first being [R6]'s non-existent byte-identical guard.
 
 ### 4a. AN0 → AN1 boundary sweep — findings (2026-07-29, post-AN0, Opus agent + builder verification)
 
@@ -879,7 +898,7 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 |---|---|---|---|
 | **2a** | **Decide `main.py` scope (D1)** | — | ✅ **DECIDED (a), 2026-07-29.** All of D1–D6 are now settled — see the decisions block at the top |
 | **AN0** | Consolidate onto `core.shared` | **High** | ✅ **BUILT 2026-07-29** — see §3. Zero output change; golden baseline **not** regenerated. `/code-review` passed (3 low-severity findings applied). Suite **2183 passed, 1 skipped** |
-| AN1 | `* ` classifier | Medium | `**`-before-`* ` is load-bearing |
+| **AN1** | `* ` classifier | Medium | ✅ **BUILT 2026-07-29** — `_classify_star_id` + D8 precedence in `core/shared.py`, wired into `_match_designations`; `tests/test_designation_ids.py` (17 tests). **Output-inert by construction** (the keys arrive in AN2), so the AN4.1 harness stayed green and the golden baseline was not regenerated. ~~`**`-before-`* ` is load-bearing~~ — **false, see [A4]** |
 | AN2 | Key insertion + ripple | **Medium** *(was Low)* | AN2d duplication is a real behaviour change — **51% of stars** (D3). Carries **AN2c-T1**, the self-firing D4 trigger |
 | AN2e | Adjudicate the §6 drift | Medium→**Low** | ✅ **D5 decided** — fix the empty case to `""` (fires on 0/43, so the change is safe *and* the bug is latent), keep the rest, pin the MAIN_ID divergence |
 | AN3 | Greek table (genitive **inherited from AO**) | Low→**Medium** | +4 display helpers to audit (§7 [R8]) |
@@ -889,7 +908,7 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 | AN5 | Docs | Low | |
 
 **Order:** ~~§2a decision~~ ✅ → ~~**AN4.0** (fixture capture)~~ ✅ → ~~AN4.1 (harness)~~ ✅ →
-~~AN0 (complete, all in-scope copies)~~ ✅ → **AN1 ← NEXT** → AN2 → AN2e → AN3 → AN4 rest → AN5.
+~~AN0 (complete, all in-scope copies)~~ ✅ → ~~AN1~~ ✅ → **AN2 ← NEXT** → AN2e → AN3 → AN4 rest → AN5.
 
 **All decisions (D1–D9) are settled, the harness is green, AN0 has landed with its `/code-review`
 pass applied, and the §11 AN0 → AN1 agent sweep has run** (findings in **§4a**; it added D7/D8/D9 and
