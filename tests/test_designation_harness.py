@@ -278,12 +278,12 @@ class NarrowCopyOrderTest(_IsolatedDbTest):
                         "HD must precede GJ in the narrow copies (AN0b [R4])")
 
 
-class SharedMapGuardTest(unittest.TestCase):
+class SharedMapGuardTest(_IsolatedDbTest):
     """AN0a [R3] — the hard ordering constraint, as an executable pin.
 
-    Copies 2/3/5 match with no `key in designations` guard, so a new entry in the
-    shared map raises KeyError in any copy pointed at it. shared's own parsers ARE
-    guarded; this proves it, so AN0's convergence has a target to preserve.
+    Copies 2/3/5 matched with no `key in designations` guard, so a new entry in the
+    shared map raised KeyError in any copy pointed at it. shared's own parsers ARE
+    guarded; this proves it, so AN0's convergence had a target to preserve.
     """
 
     def test_shared_parsers_survive_a_new_prefix_entry(self):
@@ -301,17 +301,116 @@ class SharedMapGuardTest(unittest.TestCase):
         self.assertNotIn("SyntheticAN0aKey", desig,
                          "the new key must be skipped, not inserted, by the guard")
 
-    def test_unguarded_copies_are_still_unguarded(self):
-        """Documents the hazard rather than asserting it away.
+    def test_every_in_scope_copy_survives_a_new_prefix_entry(self):
+        """AN0's acceptance criterion for AN0a — replaces the pre-AN0 source check.
 
-        If this starts failing, a copy grew a guard — good news, and the AN0a
-        ordering constraint may be relaxable. Verify before deleting.
+        BEFORE AN0 this file asserted the opposite: that databases.compute_simbad_lookup
+        still contained its own unguarded `and designations[key] is None` loop, and it
+        said in as many words that failing meant "a copy grew a guard — good news,
+        verify before deleting." AN0 made all four in-scope copies delegate to the one
+        guarded core.shared matcher, so the source string is gone by construction and
+        that assertion could not survive the refactor it was written to escort.
+
+        What replaces it is stronger than a source-string check: it adds a synthetic
+        entry to the shared prefix map and drives every in-scope producer end to end.
+        That is the actual AN0a requirement — Phase AN1 adds a `* ` entry to this map,
+        and no call site may raise KeyError when it does.
         """
-        import inspect
-        src = inspect.getsource(databases.compute_simbad_lookup)
-        self.assertIn("and designations[key] is None", src)
-        self.assertNotIn("key in designations and", src,
-                         "databases copy #2 grew a guard — revisit AN0a")
+        star = next(s for s in _load_corpus()["stars"] if s["query"] == "Procyon")
+        result, ids_result, ids_string = _tables_for(star)
+        synthetic = ("Bayer* ", "SyntheticAN0aKey")
+        patched = list(shared._CSV_PREFIX_MAP) + [synthetic]
+        ids_result = list(ids_result) + [_FakeIdRow("Bayer* zzz")]
+        ids_string = ids_string + "|Bayer* zzz"
+
+        import astroquery.simbad as _aq
+        import main as cli_main
+
+        with mock.patch.object(shared, "_CSV_PREFIX_MAP", patched), \
+             mock.patch.object(databases, "_make_simbad", lambda *a, **k: _StubSimbad(result)), \
+             mock.patch.object(calculators, "_make_simbad", lambda *a, **k: _StubSimbad(result)), \
+             mock.patch.object(_aq.Simbad, "query_objectids",
+                               staticmethod(lambda *a, **k: ids_result)), \
+             mock.patch.object(databases, "Simbad", _aq.Simbad, create=True):
+            produced = {
+                "shared_dict": shared._parse_designations(result, ids_result),
+                "shared_str": shared._parse_designations_from_ids(ids_string),
+                "databases": databases.compute_simbad_lookup("Procyon"),
+                "calculators": calculators.compute_lookup_star_for_distance("Procyon"),
+                "main_opt50": cli_main._parse_designations_from_ids(ids_string),
+            }
+
+        # No copy inserted the unknown key, and none of them raised getting there.
+        self.assertNotIn("SyntheticAN0aKey", produced["shared_dict"])
+        self.assertNotIn("SyntheticAN0aKey", produced["databases"]["designations"])
+        for name in ("shared_str", "main_opt50"):
+            self.assertNotIn("Bayer* zzz", produced[name], f"{name} captured a key it never declared")
+        self.assertNotIn("Bayer* zzz", produced["databases"]["desig_str"])
+        self.assertNotIn("Bayer* zzz", produced["calculators"]["desig_str"])
+
+    def test_the_shared_matcher_is_the_only_designation_loop_in_core(self):
+        """AN0's whole point: four copies became one. Guard against a fifth returning.
+
+        Counts the loop's structural HEADER (`for prefix, key in <map>`) rather than
+        its guard expression. An earlier draft matched the guard body verbatim
+        ("key in desig and desig[key] is None"), which every copy AN0 deleted spelled
+        with `designations` instead of `desig` — so the most likely way a copy comes
+        back, re-typed in the historic naming, would have slipped straight past it.
+        The header is the one line all six copies had identically.
+
+        main.py is counted, not exempted, but its expected count is TWO, not zero:
+        copies 3 (opt-1 display) and 6 (the narrow lookup) are deliberately out of
+        scope under D1(a) — only copy 5, the opt-50 shared-state writer, was retired.
+        Pinning the number means a returning copy 5 fails here even though main.py is
+        allowed to retain loops.
+        """
+        import pathlib as _pl
+        root = _pl.Path(__file__).resolve().parents[1]
+        header = "for prefix, key in"
+        expected = {
+            "core/shared.py": 1,       # _match_designations — the canonical one
+            "core/databases.py": 0,    # copy 2, retired by AN0
+            "core/calculators.py": 0,  # copy 4, retired by AN0
+            "main.py": 2,              # copies 3 + 6 only; copy 5 retired by AN0
+        }
+        for rel, want in expected.items():
+            src = (root / rel).read_text(encoding="utf-8")
+            with self.subTest(module=rel):
+                self.assertEqual(
+                    src.count(header), want,
+                    f"{rel}: expected {want} designation match loop(s), found "
+                    f"{src.count(header)}. A new one must call "
+                    f"core.shared._match_designations instead (PHASE_AN_PLAN.md §3 AN0); "
+                    f"if a copy was deliberately retired or added, update this count.",
+                )
+
+
+class MainIdDivergenceTest(_IsolatedDbTest):
+    """AN0d [R6] — the MAIN_ID contract difference, asserted rather than inherited.
+
+    The plan's originally-proposed golden test ("assert compute_simbad_lookup and
+    shared._parse_designations agree") is invalid: on a masked/absent main_id they
+    legitimately disagree, and that disagreement is wire-visible through query.py.
+    AN0 preserves it deliberately, so it gets pinned deliberately.
+    """
+
+    def test_masked_main_id_yields_none_in_shared_and_the_query_string_in_databases(self):
+        table = _FakeTable([], {})                      # no main_id column at all
+        ids_result = [_FakeIdRow("HD 61421"), _FakeIdRow("NAME Procyon")]
+
+        self.assertIsNone(shared._parse_designations(table, ids_result)["MAIN_ID"])
+
+        import astroquery.simbad as _aq
+        with mock.patch.object(databases, "_make_simbad", lambda *a, **k: _StubSimbad(table)), \
+             mock.patch.object(_aq.Simbad, "query_objectids",
+                               staticmethod(lambda *a, **k: ids_result)), \
+             mock.patch.object(databases, "Simbad", _aq.Simbad, create=True):
+            out = databases.compute_simbad_lookup("Procyon")
+
+        self.assertEqual(out["designations"]["MAIN_ID"], "Procyon")
+        self.assertEqual(out["main_id"], "Procyon")
+        # AN0c — MAIN_ID leads the rendered join, ahead of the keyed slots.
+        self.assertTrue(out["desig_str"].startswith("Procyon, "), out["desig_str"])
 
 
 class GouldConsumerPinTest(unittest.TestCase):

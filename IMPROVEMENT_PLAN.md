@@ -418,6 +418,18 @@ All same-value duplicates — replace local definitions with imports from `core.
     GJ 475 never displayed "NAME Chara". `core/databases.py` now uses `core.shared._CSV_DESIG_KEYS`
     unchanged (NAME first). The `keys=` parameter stays for any future caller that genuinely needs a
     subset. Requires an option-50 rebuild to take effect. See `docs/star-databases.md` (opt 50, "NAME first").
+  - **✅ FINISHED 2026-07-29 by Phase AN0 — this bullet was only ever half done, and did not say so.**
+    The 2026-07-26 note above is accurate about the **opt-50 builder** path, but the inline map inside
+    `compute_simbad_lookup` was never consolidated, and neither were `core/calculators.py`'s narrow
+    copy nor `main.py`'s standalone re-implementation. A pre-implementation census found **six**
+    functional copies plus a hardcoded key list, not the two this bullet describes.
+    **AN0 retired four of them** (shared, `compute_simbad_lookup`, `calculators`, `main.py`'s opt-50
+    parser) onto one guarded matcher, `core.shared._match_designations`. The two survivors in
+    `main.py` (opt 1's display banner, and the narrow lookup behind opts 17/19/20/21) are exempt
+    under ground rule 1 and are display-only. **Do not re-derive this work from this bullet —
+    `PHASE_AN_PLAN.md` §2/§3 is the record**, including the three constraints that make it
+    non-trivial (an unguarded copy raises `KeyError` the moment a prefix entry is added; the narrow
+    copies' key order is load-bearing; `compute_simbad_lookup` joins MAIN_ID first).
 - **`_kopparapu_seff`:** canonical copy in `core/equations.py`; make `core/shared.py` and
   `core/viz.py` import it (verify the three bodies are value-identical first — diff them).
 - **`_to_cartesian` / sexagesimal RA/Dec:** `core/viz.py` duplicates `core/calculators.py` —

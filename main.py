@@ -17,6 +17,7 @@ import core.calculators
 import core.databases
 import core.equations
 import core.science
+import core.shared      # AN0: opt 50's designation parser (see _parse_designations_from_ids)
 from core.hypatia_elements import CATEGORIES, category_label, display_symbol
 
 
@@ -2226,61 +2227,26 @@ def query_open_exoplanet_catalogue():
 
 # ─── Star Systems CSV Query ───────────────────────────────────────────────────
 
-_CSV_PREFIX_MAP = [
-    ("NAME ",       "NAME"),
-    ("GJ ",         "GJ"),
-    ("HD ",         "HD"),
-    ("HIP ",        "HIP"),
-    ("HR ",         "HR"),
-    ("Wolf ",       "Wolf"),
-    ("LHS ",        "LHS"),
-    ("BD+",         "BD"),
-    ("BD-",         "BD"),
-    ("BD ",         "BD"),
-    ("K2 ",         "K2"),
-    ("Kepler-",     "Kepler"),
-    ("Kepler ",     "Kepler"),
-    ("KOI-",        "KOI"),
-    ("KOI ",        "KOI"),
-    ("TOI-",        "TOI"),
-    ("TOI ",        "TOI"),
-    ("CoRoT-",      "CoRoT"),
-    ("CoRoT ",      "CoRoT"),
-    ("COCONUTS-",   "COCONUTS"),
-    ("HAT-P-",      "HAT_P"),
-    ("WASP-",       "WASP"),
-    ("TIC ",        "TIC"),
-    # SIMBAD now labels the Gaia source "Gaia DR3 <id>" (not "Gaia EDR3"); DR3 and
-    # EDR3 source_ids are identical. DR1/DR2 are intentionally not captured.
-    ("Gaia EDR3 ",  "Gaia EDR3"),
-    ("Gaia DR3 ",   "Gaia EDR3"),
-    ("2MASS J",     "2MASS"),
-    ("2MASS ",      "2MASS"),
-]
-
-_CSV_DESIG_KEYS = [
-    "NAME", "GJ", "HD", "HIP", "HR", "Wolf", "LHS", "BD",
-    "K2", "Kepler", "KOI", "TOI", "CoRoT", "COCONUTS", "HAT_P", "WASP",
-    "TIC", "Gaia EDR3", "2MASS",
-]
+# Phase AN0 (D1(a)): CLI opt 50 and GUI opt 50 write the SAME
+# `star_systems.designations` column, so this file's standalone re-implementation of
+# the prefix map + parser was retired in favour of core.shared — otherwise the two
+# builders would write different content into one column the moment Phase AN2 adds
+# a designation key. The rest of main.py is exempt per IMPROVEMENT_PLAN ground
+# rule 1 (the CLI menu is deprecated); this one copy is not, because it is a
+# shared-state writer rather than a display path.
+#
+# Verified by tests/test_designation_harness.py: the retired copy's output was
+# byte-identical to core.shared's on all 43 corpus stars, so this is a no-op today.
 
 
 def _parse_designations_from_ids(ids_string):
     """Parse a pipe-separated SIMBAD ids string into a comma-separated designation string.
 
     Returns a string of found designations (excluding MAIN_ID), or an empty string.
+    Thin wrapper over the canonical core.shared parser — kept as a module-level name
+    because _run_simbad_csv_query below calls it.
     """
-    desig = {k: None for k in _CSV_DESIG_KEYS}
-    if not ids_string:
-        return ""
-    for id_str in ids_string.split("|"):
-        id_str = id_str.strip()
-        for prefix, key in _CSV_PREFIX_MAP:
-            if id_str.startswith(prefix) and desig[key] is None:
-                desig[key] = id_str
-                break
-    parts = [desig[k] for k in _CSV_DESIG_KEYS if desig[k] is not None]
-    return ", ".join(parts)
+    return core.shared._parse_designations_from_ids(ids_string)
 
 
 def _run_simbad_csv_query(simbad, criteria, query_num, existing_ids):

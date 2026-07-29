@@ -70,6 +70,67 @@ _CSV_DESIG_KEYS = [
     "TIC", "Gaia EDR3", "2MASS",
 ]
 
+# The narrow key set used by the cheap SIMBAD lookup behind opts 17/19/20/21 and
+# the seven route planners (core.calculators.compute_lookup_star_for_distance).
+#
+# Phase AN0b [R4]: this order is LOAD-BEARING and is NOT a filtered view of
+# _CSV_PREFIX_MAP. That map runs NAME, GJ, HD, … — filtering it to build this list
+# would move GJ from 4th to 2nd and silently reorder desig_str on ten surfaces.
+# Always pass an explicit ordered key list to the narrow call sites; never derive
+# the order from the prefix map. Pinned by
+# tests/test_designation_harness.py::NarrowCopyOrderTest.
+_NARROW_DESIG_KEYS = ("NAME", "HD", "HR", "GJ", "Wolf")
+
+
+def _designation_ids_from_rows(ids_result):
+    """Pull the raw id strings out of a SIMBAD ``query_objectids()`` result.
+
+    Accepts ``None`` (SIMBAD returned nothing) and yields an empty sequence, which
+    is what every call site wants — an id-less star still gets a full key dict.
+    """
+    if ids_result is None:
+        return []
+    return [row["id"] for row in ids_result]
+
+
+def _match_designations(id_strings, keys):
+    """Map SIMBAD id strings onto designation keys via ``_CSV_PREFIX_MAP``.
+
+    Returns ``{key: first matching id string or None}`` in ``keys`` order — first
+    match wins per key, and the id is stored with its prefix intact ("HD 102365",
+    not 102365; ``databases._simbad_gould_block`` parses the integer back out of
+    that string form, so the shape is a contract — see PHASE_AN_PLAN.md [A2]).
+
+    Phase AN0: the single canonical matcher. Every in-scope copy of the loop
+    (core.shared, databases.compute_simbad_lookup, calculators, main.py's opt-50
+    builder) delegates here, so a new prefix entry lands everywhere at once.
+
+    The ``key in desig`` guard is AN0a and is load-bearing: it lets one prefix map
+    serve any key set, so a caller passing a narrow ``keys`` list simply skips the
+    prefixes it doesn't want instead of raising ``KeyError``. Three of the copies
+    this replaces had no such guard, which is why AN0 had to land completely before
+    Phase AN1 adds a ``* `` entry.
+    """
+    desig = {k: None for k in keys}
+    for raw in id_strings:
+        id_str = str(raw).strip()
+        for prefix, key in _CSV_PREFIX_MAP:
+            if id_str.startswith(prefix) and key in desig and desig[key] is None:
+                desig[key] = id_str
+                break
+    return desig
+
+
+def _join_designations(designations, keys):
+    """Render a designation dict as the comma-separated ``desig_str`` display form.
+
+    Order comes from ``keys``, never from the dict or the prefix map (AN0b). Callers
+    that want MAIN_ID to lead must say so by passing it first in ``keys`` — AN0c:
+    ``compute_simbad_lookup`` does, and dropping it would strip the main id from all
+    four GUI designation banners.
+    """
+    return ", ".join(str(designations[k]) for k in keys if designations.get(k))
+
 # ─── Constellation Genitives (Phase AO §2) ────────────────────────────────────
 #
 # IAU 3-letter abbreviation → Latin genitive, all 88 modern constellations.
@@ -235,20 +296,17 @@ def _parse_designations(result, ids_result):
     ]
     designations = {k: None for k in keys_order}
 
+    # MAIN_ID is set only when SIMBAD actually returned the column. AN0d: this is a
+    # DELIBERATE divergence from compute_simbad_lookup, which falls back to the
+    # user's query string — that difference is wire-visible through query.py and is
+    # pinned by tests/test_designation_harness.py::MainIdDivergenceTest, not
+    # inherited by accident.
     if result is not None and "main_id" in result.colnames:
         designations["MAIN_ID"] = str(result["main_id"][0])
 
-    if ids_result is None:
-        return designations
-
-    # P4.6: reuse the module-level _CSV_PREFIX_MAP (this inline list was a duplicate of it).
-    for row in ids_result:
-        id_str = str(row["id"]).strip()
-        for prefix, key in _CSV_PREFIX_MAP:
-            if id_str.startswith(prefix) and key in designations and designations[key] is None:
-                designations[key] = id_str
-                break
-
+    # AN0: the match loop lives in _match_designations now (one copy, guarded).
+    designations.update(_match_designations(_designation_ids_from_rows(ids_result),
+                                            _CSV_DESIG_KEYS))
     return designations
 
 
@@ -266,17 +324,10 @@ def _parse_designations_from_ids(ids_string, keys=None):
     skipped), so one prefix map still serves any key set.
     """
     keys = _CSV_DESIG_KEYS if keys is None else keys
-    desig = {k: None for k in keys}
     if not ids_string:
         return ""
-    for id_str in ids_string.split("|"):
-        id_str = id_str.strip()
-        for prefix, key in _CSV_PREFIX_MAP:
-            if id_str.startswith(prefix) and key in desig and desig[key] is None:
-                desig[key] = id_str
-                break
-    parts = [desig[k] for k in keys if desig[k] is not None]
-    return ", ".join(parts)
+    # AN0: shares _match_designations/_join_designations with every other copy.
+    return _join_designations(_match_designations(ids_string.split("|"), keys), keys)
 
 
 def _parse_spectral_class(sp_str):

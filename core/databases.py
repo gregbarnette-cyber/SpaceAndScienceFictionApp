@@ -14,6 +14,10 @@ from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retri
                      _fval, _fmt,  # _fval/_fmt: one canonical copy (P4.6)
                      _parse_designations_from_ids as _parse_designations_from_ids_shared,
                      _CSV_DESIG_KEYS as _CSV_DESIG_KEYS_SHARED,
+                     # AN0: the canonical designation matcher/joiner (was re-typed
+                     # inline inside compute_simbad_lookup).
+                     _match_designations, _join_designations,
+                     _designation_ids_from_rows,
                      constellation_genitive)
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -157,8 +161,8 @@ def _simbad_gould_block(designations):
     most stars and does not indicate a failure (AO4a).
 
     **Joins on HD only.** The plan specified an SAO fallback, and it was built —
-    but `designations` can never carry an "SAO" key: neither this module's
-    keys_order/prefix_map nor the shared `_CSV_PREFIX_MAP` captures SAO ids, so
+    but `designations` can never carry an "SAO" key: the shared
+    `_CSV_PREFIX_MAP` captures no SAO ids, so
     the branch was unreachable in production and its test passed only against a
     hand-built dict shape the pipeline never produces (code review, 2026-07-29).
     It is removed rather than left as dead code. Making it reachable means adding
@@ -312,57 +316,25 @@ def compute_simbad_lookup(star_name: str) -> dict:
             pass
 
     # ── Designation parsing ───────────────────────────────────────────────────
-    keys_order = [
-        "MAIN_ID", "NAME", "GJ", "HD", "HIP", "HR", "Wolf", "LHS", "BD",
-        "K2", "Kepler", "KOI", "TOI", "CoRoT", "COCONUTS", "HAT_P", "WASP",
-        "TIC", "Gaia EDR3", "2MASS",
-    ]
+    # Phase AN0: this was an inline re-typing of core.shared's prefix map + match
+    # loop (the P4.6 consolidation reached the opt-50 builder below but never got
+    # here). It now delegates, so a new prefix entry — Phase AN1's `* ` Bayer /
+    # Flamsteed classifier — lands on this path automatically.
+    #
+    # Two properties are load-bearing and must not be "simplified":
+    #   AN0c — MAIN_ID leads the join key list. Passing _CSV_DESIG_KEYS alone would
+    #          strip the main id from all four GUI designation banners.
+    #   AN0d — MAIN_ID falls back to the query string when SIMBAD masks the column,
+    #          where shared._parse_designations leaves it None. Deliberate, and
+    #          wire-visible through query.py.
+    keys_order = ["MAIN_ID"] + list(_CSV_DESIG_KEYS_SHARED)
     designations = {k: None for k in keys_order}
     designations["MAIN_ID"] = main_id
+    designations.update(
+        _match_designations(_designation_ids_from_rows(ids_result), _CSV_DESIG_KEYS_SHARED)
+    )
 
-    prefix_map = [
-        ("NAME ",       "NAME"),
-        ("GJ ",         "GJ"),
-        ("HD ",         "HD"),
-        ("HIP ",        "HIP"),
-        ("HR ",         "HR"),
-        ("Wolf ",       "Wolf"),
-        ("LHS ",        "LHS"),
-        ("BD+",         "BD"),
-        ("BD-",         "BD"),
-        ("BD ",         "BD"),
-        ("K2 ",         "K2"),
-        ("Kepler-",     "Kepler"),
-        ("Kepler ",     "Kepler"),
-        ("KOI-",        "KOI"),
-        ("KOI ",        "KOI"),
-        ("TOI-",        "TOI"),
-        ("TOI ",        "TOI"),
-        ("CoRoT-",      "CoRoT"),
-        ("CoRoT ",      "CoRoT"),
-        ("COCONUTS-",   "COCONUTS"),
-        ("HAT-P-",      "HAT_P"),
-        ("WASP-",       "WASP"),
-        ("TIC ",        "TIC"),
-        # SIMBAD now labels the Gaia source "Gaia DR3 <id>" (not "Gaia EDR3");
-        # DR3 ≡ EDR3 source_ids, so both map to the "Gaia EDR3" key. DR1/DR2 differ
-        # and are intentionally not captured.
-        ("Gaia EDR3 ",  "Gaia EDR3"),
-        ("Gaia DR3 ",   "Gaia EDR3"),
-        ("2MASS J",     "2MASS"),
-        ("2MASS ",      "2MASS"),
-    ]
-
-    if ids_result is not None:
-        for id_row in ids_result:
-            id_str = str(id_row["id"]).strip()
-            for prefix, key in prefix_map:
-                if id_str.startswith(prefix) and designations[key] is None:
-                    designations[key] = id_str
-                    break
-
-    desig_list = [str(designations[k]) for k in keys_order if designations[k]]
-    desig_str = ", ".join(desig_list) if desig_list else "N/A"
+    desig_str = _join_designations(designations, keys_order) or "N/A"
 
     result = {
         "main_id":      main_id,

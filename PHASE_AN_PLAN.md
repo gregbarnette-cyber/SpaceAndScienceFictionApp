@@ -320,6 +320,56 @@ either exclude `MAIN_ID` or assert the divergence deliberately.
 **Acceptance for AN0:** no output change on any in-scope call site, except where §6 identifies a
 difference judged to be a bug — each such case decided explicitly and recorded here.
 
+### ✅ AN0 — BUILT 2026-07-29
+
+**Acceptance met exactly: zero output change.** The AN4.1 golden baseline
+(`designation_golden.json`) was **not regenerated** — it still matches byte-for-byte on all 43 stars
+across every in-scope producer. Suite **2183 passed, 1 skipped** (2181 + the two pins below).
+`/code-review` ran on the working diff and confirmed behavioural equivalence independently; its three
+low-severity findings were applied before this entry was written (§11's sequencing rule).
+
+**What landed.** One canonical matcher in `core/shared.py` — `_match_designations` /
+`_join_designations` / `_designation_ids_from_rows`, plus `_NARROW_DESIG_KEYS` — with all four
+in-scope copies delegating to it. Copy 2's 44-line inline prefix map, copy 4's 5-entry map, and copy
+5's standalone map + parser are deleted; `main.py` now imports `core.shared` (a first).
+
+**The four constraints, and where each is now held:**
+
+| Constraint | How it is held |
+|---|---|
+| **AN0a** ordering | The `key in desig` guard exists in exactly one place, so all four sites are guarded. AN1's `* ` entry cannot `KeyError` anywhere |
+| **AN0b** key order | `calculators` receives `_NARROW_DESIG_KEYS` explicitly; nothing derives order from the prefix map. `NarrowCopyOrderTest` still pins HD-before-GJ |
+| **AN0c** MAIN_ID first | `keys_order = ["MAIN_ID"] + _CSV_DESIG_KEYS`; asserted directly in `MainIdDivergenceTest` |
+| **AN0d** MAIN_ID divergence | Preserved **and now asserted** rather than inherited — `MainIdDivergenceTest` pins shared→`None` vs databases→the query string |
+
+**One harness test had to change — and it was forced, not chosen.**
+`SharedMapGuardTest::test_unguarded_copies_are_still_unguarded` asserted, by source inspection, that
+`compute_simbad_lookup` still contained its own **unguarded** loop. That is precisely what AN0
+removes, so no correct AN0 could keep it green; its own docstring anticipated this ("a copy grew a
+guard — good news... verify before deleting"). It was replaced by two **stronger** pins, both
+executable rather than textual:
+
+- `test_every_in_scope_copy_survives_a_new_prefix_entry` — injects a synthetic prefix entry into the
+  shared map and drives all four producers end to end. This is AN0a's actual requirement, where the
+  old test was a proxy for it.
+- `test_the_shared_matcher_is_the_only_designation_loop_in_core` — counts the loop **header**
+  (`for prefix, key in`) per module: shared 1, databases 0, calculators 0, **main.py 2**. A first
+  draft matched the guard *body* verbatim; `/code-review` correctly caught that every deleted copy
+  spelled it with `designations` rather than `desig`, so a re-typed copy in the historic naming would
+  have slipped past. The review also suggested covering `main.py` — correct in spirit, but the strict
+  form would be wrong, since main.py legitimately **keeps** two copies; pinning the count is what
+  makes a returning copy 5 fail while leaving copies 3/6 exempt.
+
+**A finding worth carrying into AN1: copies 3 and 6 are insulated, not just exempt.** They loop over
+their **own** local `prefix_map` (`main.py:110`, `:2670`), not the shared one, so AN1 adding a `* `
+entry cannot `KeyError` there. Those CLI paths simply will not gain Bayer/Flamsteed — the accepted
+D1(a) state, now verified rather than assumed.
+
+**Docs corrected in the same pass** (both were made false by this diff, and both are read-on-demand
+references that would have sent the next reader to re-add a local map):
+`docs/star-databases.md` opt-50 helper bullet, and `databases._simbad_gould_block`'s docstring, which
+still explained the dead SAO branch in terms of a module-local `prefix_map` that no longer exists.
+
 ---
 
 ## 4. Part AN1 — Classify the `* ` prefix
@@ -718,7 +768,7 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 | Part | Title | Risk | Notes |
 |---|---|---|---|
 | **2a** | **Decide `main.py` scope (D1)** | — | ✅ **DECIDED (a), 2026-07-29.** All of D1–D6 are now settled — see the decisions block at the top |
-| AN0 | Consolidate onto `core.shared` | **High** | AN0a ordering · AN0b explicit key order · AN0c MAIN_ID · AN0d test validity |
+| **AN0** | Consolidate onto `core.shared` | **High** | ✅ **BUILT 2026-07-29** — see §3. Zero output change; golden baseline **not** regenerated. `/code-review` passed (3 low-severity findings applied). Suite **2183 passed, 1 skipped** |
 | AN1 | `* ` classifier | Medium | `**`-before-`* ` is load-bearing |
 | AN2 | Key insertion + ripple | **Medium** *(was Low)* | AN2d duplication is a real behaviour change — **51% of stars** (D3). Carries **AN2c-T1**, the self-firing D4 trigger |
 | AN2e | Adjudicate the §6 drift | Medium→**Low** | ✅ **D5 decided** — fix the empty case to `""` (fires on 0/43, so the change is safe *and* the bug is latent), keep the rest, pin the MAIN_ID divergence |
@@ -729,10 +779,21 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 | AN5 | Docs | Low | |
 
 **Order:** ~~§2a decision~~ ✅ → ~~**AN4.0** (fixture capture)~~ ✅ → ~~AN4.1 (harness)~~ ✅ →
-**AN0 (complete, all in-scope copies) ← NEXT** → AN1 → AN2 → AN2e → AN3 → AN4 rest → AN5.
+~~AN0 (complete, all in-scope copies)~~ ✅ → **AN1 ← NEXT** → AN2 → AN2e → AN3 → AN4 rest → AN5.
 
-**All decisions (D1–D6) are settled and the harness is green, so AN0 is unblocked.** Per §11, the
-highest-value review spend in the phase is a `/code-review` immediately **after AN0 lands**.
+**All decisions (D1–D6) are settled, the harness is green, and AN0 has landed with its `/code-review`
+pass applied.** Per §11 the next checkpoint is an **agent sweep (Opus) at the AN0 → AN1 boundary**,
+answering two questions: (a) did AN0's landed shape change how AN1's classifier integrates, versus
+the pre-pass §4 assumes? (b) is the copy census still complete — did the refactor leave a straggler or
+reveal a seventh?
+
+**Partial answer to (a), recorded now while it is cheap:** AN1's pre-pass integrates in **one** place
+— `core.shared._match_designations`, which every in-scope copy now routes through. The §4 assumption
+holds and is in fact stronger than when it was written, since there is a single loop to modify rather
+than four. **Partial answer to (b):** `SharedMapGuardTest::test_the_shared_matcher_is_the_only_designation_loop_in_core`
+now pins the per-module loop count mechanically, so a straggler fails the suite rather than needing a
+census. The sweep should still run — those are the builder's own answers, and independence is the
+point of spending an agent.
 
 **The harness precedes AN0.** It cannot be built after the refactor it exists to verify. **And the
 fixtures precede the harness** — they need live SIMBAD, so capturing them is its own step, done

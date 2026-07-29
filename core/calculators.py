@@ -14,7 +14,11 @@ from collections import deque
 from .equations import _C_MS, _LY_M  # single source of truth (Phase Y/P4.5 promoted to equations)
 from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
                      _to_cartesian, spectral_leading_class, _SP_DISPLAY_LETTERS,
-                     sp_color)   # the one app-wide spectral palette (Phase 3)
+                     sp_color,   # the one app-wide spectral palette (Phase 3)
+                     # AN0: the canonical designation matcher + the narrow key set
+                     # (was a re-typed 5-entry prefix map in this module).
+                     _match_designations, _join_designations,
+                     _designation_ids_from_rows, _NARROW_DESIG_KEYS)
 
 HOURS_PER_JULIAN_YEAR = 8765.8128  # 365.2422 × 24 (tropical year) — legacy ly/hr↔×c anchor; NOT 365.25×24 (=8766.0).
                                    # Golden pins and the downstream consumer depend on this exact value; see IMPROVEMENT_PLAN D1.
@@ -269,19 +273,14 @@ def compute_lookup_star_for_distance(designation: str) -> dict:
 
     name = str(_safe("main_id") or designation)
 
-    desig_found = {k: None for k in ("NAME", "HD", "HR", "GJ", "Wolf")}
-    desig_prefix_map = [
-        ("NAME ", "NAME"), ("HD ",  "HD"),  ("HR ",   "HR"),
-        ("GJ ",   "GJ"),   ("Wolf ", "Wolf"),
-    ]
-    if ids_result is not None:
-        for id_row in ids_result:
-            id_str = str(id_row["id"]).strip()
-            for prefix, key in desig_prefix_map:
-                if id_str.startswith(prefix) and desig_found[key] is None:
-                    desig_found[key] = id_str
-                    break
-    desig_str = ", ".join(v for v in desig_found.values() if v)
+    # Phase AN0: the narrow (NAME/HD/HR/GJ/Wolf) designation set for this cheap
+    # lookup — opts 17/19/20/21 and all seven route planners. The key list is passed
+    # EXPLICITLY and its order is load-bearing (AN0b [R4]): deriving it by filtering
+    # core.shared._CSV_PREFIX_MAP would move GJ from 4th to 2nd in desig_str on
+    # every one of those surfaces.
+    desig_found = _match_designations(_designation_ids_from_rows(ids_result),
+                                      _NARROW_DESIG_KEYS)
+    desig_str = _join_designations(desig_found, _NARROW_DESIG_KEYS)
 
     sp_type = str(_safe("sp_type") or "").strip()
 
