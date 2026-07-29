@@ -293,12 +293,13 @@ box (see **Panel descriptions** under Phase I above — it covers all seven pane
 
 Shared helpers (module-level): `_node_dist(a,b)` (3D Euclidean); `_merge_endpoint(pool, endpoint)` (reuse a pool row
 matched by name or within `1e-3` ly, else append); `_SpatialGrid(nodes, cell)` — a uniform 3D grid (cell = the jump
-radius) giving O(neighbours) within-radius queries via `grid.neighbors(i, max_dist)`, so B/C traverse the **238k-row**
+radius) giving O(neighbours) within-radius queries via `grid.neighbors(i, max_dist)`, so B/C traverse the **~256k-row**
 `star_systems` table in ~2–5 s instead of the O(n²) all-pairs build (which was ~3.5 h — see the note below);
 `TIER_COLORS` (tier 0 = start gold). B's Dijkstra/BFS and C's BFS expand nodes lazily over the grid (Dijkstra/BFS exit
 early once the target pops). B/C still run in a background thread.
 
-> **Scale note:** `star_systems` (option 50, out to ~100 pc) holds ~238k rows, not the "few thousand" first assumed.
+> **Scale note:** `star_systems` (option 50, out to ~100 pc) holds **~256k rows** (256,003 measured 2026-07-29;
+> ~238k when the grid was built), not the "few thousand" first assumed.
 > An all-pairs adjacency build is ~2.8×10¹⁰ pairs (≈3.5 h) and would never complete — hence the spatial grid. The
 > solar neighbourhood is genuinely sparse (only Proxima/α Cen/Barnard's within ~6 ly of Sol), so a small `max_jump_ly`
 > legitimately yields a tiny reachable set / `reachable=False` for a 20-ly target — that is a correct answer, not a bug;
