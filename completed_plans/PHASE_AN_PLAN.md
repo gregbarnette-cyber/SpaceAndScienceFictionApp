@@ -780,6 +780,54 @@ likely nil — but the claim in the plan must be correct, and this must be re-me
 from `"N/A"` in copy 2. **Land the D5 fix first, then measure** — a delta measured against the
 `"N/A"` behaviour would be measuring the wrong thing.
 
+### ✅ AN2c-T / D4 — DISCHARGED 2026-07-29 by a T2 run
+
+**Option 50 was re-run the same day the phase closed** (maintainer). The deferral lasted hours, not
+the open-ended stretch it was written to survive — but it was written to survive one, and the
+measurement it demanded is below.
+
+| | Before | After |
+|---|---|---|
+| `star_systems` rows | 256,003 | **256,003** |
+| rows discarded by the `PLX …` rule | 0 | **0** |
+| `PLX ` main_ids | 0 | **0** |
+| rows carrying a `* ` designation token | **0** | **2135** (1316 Bayer + 1591 Flamsteed tokens) |
+| rows with a blank `designations` | — | 702 (the population the discard rule targets; none is a `PLX ` main_id, which is why it fires on none) |
+
+Backups: `star_systems_backup_20260729` created; three retained
+(`20260729`, `20260728`, `20260626`); none dropped.
+
+**[R7] is confirmed in mechanism and nil in effect, which is exactly what it predicted.** Adding keys
+*can* make `desig_str` non-empty for a previously-discarded row and so change the row **count** — but
+with zero `PLX ` main_ids in SIMBAD's current data there is nothing for the rule to keep, and the
+delta is **0**. The plan insisted the claim be stated correctly even though the effect was expected
+to be nil, and then insisted it be re-measured rather than assumed. Both halves held.
+
+**Spot checks against the stored column** (not the live lookup — this is the surface D4 was about):
+
+```
+* alf CMi   NAME Procyon, * alf CMi, *  10 CMi, GJ 280 A, HD  61421, …
+* eps Eri   NAME Ran, * eps Eri, *  18 Eri, GJ 144, HD  22049, …
+* ksi Cap   * ksi02 Cap, *   2 Cap, GJ 4139, HD 191862, …
+* alf Cen A NAME Rigel Kentaurus, * alf01 Cen, GJ 559 A, HD 128620, …
+```
+
+ξ Cap and α Cen A are the load-bearing ones: **D8's rule-based picks are now frozen into stored
+data**, which is why closing D8 before this run mattered. Had the rebuild come first, the column
+would hold SIMBAD-ordering picks and a later D8 fix would have needed a second rebuild to take
+effect. That sequencing was luck rather than planning, and is worth stating as such.
+
+**The T3/T4 symptom is gone**, verified through the G1 filter that was its most likely reporter:
+`designation_prefix="*  10"` → 29 rows, `"* ksi02"` → 3, `"* alf"` → 86. Before the run all three
+returned nothing, which — per T4 — would have read to a consumer as "this star has no Bayer
+designation" rather than "this column is stale."
+
+**Triggers T1/T5 remain live** (T1 in CI; T5 folds a future measurement into any later rebuild).
+T2/T3/T4 are discharged.
+
+<details>
+<summary><b>The original deferral note and its five triggers</b>, retained for the record</summary>
+
 ### AN2c-T — D4 deferral: the triggers that fire it ⚠️
 
 **D4 = defer** (decided 2026-07-29). Deferral is only safe if it is *observable*, so the debt is
@@ -804,6 +852,8 @@ state — not a bug to chase.**
 **T1 is the only self-firing trigger, so write it in AN2's test set, not as a note.** T2–T5 are
 human-noticed; they are written here so the person who notices has the response ready instead of
 re-deriving it.
+
+</details>
 
 ### AN2d — **MAIN_ID duplication (new — not in the original plan)** ⚠️ **[R1]**
 For essentially every bright star `MAIN_ID` *is* the Bayer string. After AN2 the `Bayer` key holds the
@@ -1227,7 +1277,7 @@ tripwire, which is the only reason closing the phase is honest:**
 
 | | What | Where it is watched |
 |---|---|---|
-| **D4** | `star_systems.designations` does **not** carry Bayer/Flamsteed until someone runs option 50. Lookup surfaces (opts 1, 3–6, 8–10) show them; DB-backed ones (opts 18/19, the CSV export, the route planners, the G1 prefix search) do not | §5 **AN2c-T**, five triggers. **T1 self-fires in CI** — it catches the *code* being wrong, which a rebuild would not fix. T2–T5 need a human to notice, which is why they are written as responses rather than reminders. Also documented in `docs/star-databases.md` (opt 50), the surface a reader is most likely to hit it from |
+| ~~**D4**~~ ✅ **DISCHARGED 2026-07-29** | The opt-50 rebuild ran the same day. **256,003 rows before and after (delta 0, discarded 0 — [R7] confirmed in mechanism, nil in effect); 0 → 2135 rows now carry a `* ` token.** The lookup-vs-DB asymmetry is gone, and D8's rule-based picks are frozen into the column rather than SIMBAD-ordering ones | Measured in §5 AN2c-T. T1 stays live in CI; T5 stays live for any future rebuild |
 | ~~**D8**~~ ✅ **CLOSED 2026-07-29** | Was: tie-breaks fall back to SIMBAD's id ordering. The census measured the residue (60 Bayer + 74 Flamsteed over 4690 objects) and two further queries **settled** it rather than merely sizing it — no `* ` id maps to >1 object, so no pick can be wrong, and "bare = primary" is disproved 25-vs-22. Three clauses shipped; ξ Cap is the only corpus star that moved | `_preferred_star_id` + `D8PrecedenceTest` (7 tests) + `D8TieCensusTest` (6, incl. the 25/22 pin) + the live shape tripwires. Corpus grew 43→47 to make the fix verifiable at all |
 | **D2** | `V*` is classified but not shipped as a key | Promoting it is genuinely one line — `_match_designations` already buckets `V* ` ids and offers them to the same guard, and `test_promoting_variable_to_a_key_needs_no_other_change` pins that property so it cannot rot |
 | **AN2-SAO** | Declined on measurement — 22 banners gain a token to make 3 Gould lookups resolve by SAO instead of HD | `test_gould.py::test_sao_is_absent_from_the_designation_key_set` fails the moment SAO is captured, which is the prompt to re-enable AO's removed join |
