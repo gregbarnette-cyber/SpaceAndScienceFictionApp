@@ -94,6 +94,9 @@ house convention.
 | **D4** | Opt-50 rebuild: defer or gate? | **(a) defer** — with **explicit firing triggers**, see §5 AN2c-T below. A stale `designations` column is already an accepted state here (the NAME-first change left the same debt). **Sequencing caveat:** the AN2c `PLX …` discard-delta must be re-measured **after** D5's `"N/A"`→`""` fix lands, not before — the fix is on the value that rule tests |
 | **D5** | Adjudicate the drift table (§6) | **Fix the empty case to `""`; keep the rest; assert the MAIN_ID-missing divergence deliberately.** **Harness evidence: the `"N/A"` case fires on 0/43** — real in code, dormant in practice, and its only reachable path is the opt-50 discard rule's `desig_str == ""` test, which a literal `"N/A"` would defeat. No consumer wants the string `"N/A"`, so there is nothing to preserve. MAIN_ID-missing→query-string stays (it is wire-visible through `query.py`) but must be pinned by AN0d rather than inherited by accident |
 | **D6** | Component-suffix preference | **Prefer the component-less form** (`* alf CMi` over `* alf CMi A`). Procyon's list carries both; first-match-wins depends on SIMBAD's id ordering, which is not a stable contract |
+| **D7** *(2026-07-29, AN0→AN1 sweep)* | Does `_NARROW_DESIG_KEYS` gain `Bayer`/`Flamsteed`? | **No — keep the narrow set narrow.** Opts 17/19/20/21 and the seven route planners already render the star's MAIN_ID in a **separate name column**, which for bright stars *is* the Bayer string — so adding the key would reproduce the AN2d duplication on ten more surfaces, and **D3's dedupe lives in `compute_simbad_lookup`, so it would not reach this path**. Also avoids a golden regen, keeps the AN0b order tuple stable, and keeps exempt CLI copy 6 (which hardcodes the same five keys) in sync with the GUI. **The plan never named this constant** — the gap was found by the sweep, not by the plan |
+| **D8** *(2026-07-29, AN0→AN1 sweep)* | Tie-break when a star offers several competing `* ` ids | **An explicit precedence rule, in two clauses** (needs a *replace-if-better* pass — `_match_designations` is structurally first-match-wins). **(i) Bayer: prefer the candidate with no trailing component letter.** **(ii) Flamsteed: prefer the candidate whose constellation matches the chosen Bayer's**, else first. Ties → first, which is stable because tied candidates are equal-shaped. See §4b for why one clause covers all three measured cases |
+| **D9** *(2026-07-29, AN0→AN1 sweep)* | Flamsteed's double space (`*  18 Eri`) | **Store verbatim; fix the display layer in AN3.** §7a makes the raw SIMBAD string the identifier — verbatim and round-trippable. The four strippers do `name[len("* "):]` with no follow-up strip and render `" 18 Eri"`; **this already misrenders 796 live `star_systems` rows today**, so it is a pre-existing display bug worth fixing on its own merits, not a Bayer/Flamsteed cost |
 
 **A fifth §6 divergence, found by the harness after these decisions were framed** — the copies
 disagree on **table indexing** (column-first in `shared`, row-first in `databases`/`calculators`;
@@ -400,6 +403,95 @@ _classify_star_id(id_str) -> "Bayer" | "Flamsteed" | "Variable" | None
 
 Integrate as a **pre-pass** in the shared loop so all in-scope call sites inherit it from AN0.
 
+### 4a. AN0 → AN1 boundary sweep — findings (2026-07-29, post-AN0, Opus agent + builder verification)
+
+The §11 sweep ran after AN0 landed. Every claim below was **re-verified by the builder against the
+source** before being recorded; two cases were found by that verification and are not the agent's.
+
+**Question (a) — does AN0's landed shape change how AN1's classifier integrates?**
+**Mostly no, and it is better than §4 assumed** — the pre-pass has exactly one edit point,
+`core.shared._match_designations`, and all four in-scope producers route through it. But three
+things §4 takes for granted are false:
+
+- **⚠ The AN0a guard is NOT inherited by a pre-pass.** `key in desig` is one conjunct of the `if`
+  *inside* the `_CSV_PREFIX_MAP` loop — not a function-level invariant. A pre-pass written as
+  `if k: desig[k] = id_str` raises **`KeyError: 'Bayer'`** on the narrow path (`_NARROW_DESIG_KEYS`
+  has no such key). **The pre-pass must re-spell the guard itself**, and AN1 needs a narrow-path
+  classifier test: the existing synthetic-entry pin exercises the *prefix loop*, so it cannot catch
+  this.
+- **`_NARROW_DESIG_KEYS` was unspecified** → now **D7 (no)**. With the guard correctly written the
+  narrow path silently skips the new keys, which is safe — but it means those ten surfaces never gain
+  the designations, and that had to be a decision rather than an accident.
+- **D6 cannot be implemented as a pre-pass** — see D8 and the three cases below.
+
+**The three tie-break cases (D8), measured against the committed corpus:**
+
+| Case | Evidence | Why D6 alone is insufficient |
+|---|---|---|
+| Component suffix | **Procyon** `['*  10 CMi', '* alf CMi', '* alf CMi A', …]` vs **Sirius** `['** AGC 1A', '* alf CMa A', '* alf CMa', '*   9 CMa']` | The two stars order the suffixed and component-less forms **oppositely, in the same corpus**. First-match-wins gives Procyon the right answer and Sirius the wrong one. D6's worry is demonstrable today, not a future SIMBAD-release risk |
+| Superscript numeral vs component | **α Cen A** `['* alf Cen A', '* alf01 Cen', …]` | "Prefer component-less" selects `* alf01 Cen` — **α¹ Cen, a different designation**, not the component-stripped form of `alf Cen A`. The plan's only worked example (Procyon) does not disambiguate this |
+| Two Flamsteed ids | **Fomalhaut** `['*  24 PsA', '*  79 Aqr']` | Two Flamsteed numbers in **different constellations**. First-match-wins picks 24 PsA. Neither the plan nor the sweep flagged this; found during verification |
+
+### 4b. The D8 precedence rule, resolved (2026-07-29)
+
+**Clause (i) — Bayer: prefer the candidate with no trailing component letter.** One rule covers all
+three measured cases, which is why D8 ended up cheaper than the sweep implied:
+
+| Star | Candidates | Chosen | Note |
+|---|---|---|---|
+| Procyon | `* alf CMi`, `* alf CMi A` | `* alf CMi` | D6's original example |
+| Sirius | `* alf CMa A`, `* alf CMa` | `* alf CMa` | **Ordered opposite to Procyon** — this is the case first-match-wins got wrong |
+| α Cen A | `* alf Cen A`, **`* alf01 Cen`** | **`* alf01 Cen`** | The superscript form carries no component letter, so the same clause selects it |
+
+**α Cen A was a real decision, not a mechanical fallout** (maintainer, 2026-07-29). Its MAIN_ID is
+`* alf Cen A`, so choosing that form would make **D3 suppress it as a duplicate** and the star would
+gain nothing from this phase. The superscript form differs from MAIN_ID, survives D3, and surfaces
+α¹ Cen — a real designation the app discards today. Cost: **AN3's Greek table must handle the
+superscript numeral (`alf01` → α¹) on a live path**, which §4 already lists as a shape to classify.
+
+**Clause (ii) — Flamsteed: prefer the candidate whose constellation matches the chosen Bayer's.**
+Fomalhaut's Bayer is `* alf PsA`, so this selects `*  24 PsA` over `*  79 Aqr` — correct, since 79 Aqr
+is Flamsteed's historical cross-boundary duplicate. With no Bayer to key off, fall back to first.
+
+**A consequence worth stating plainly, because it reframes the phase's payoff:** for every corpus star
+except α Cen A, the Bayer candidate clause (i) selects **equals MAIN_ID** — so **D3 suppresses it and
+it displays nowhere**. On the 22/43 `* `-MAIN_ID stars the visible gain from this phase is therefore
+the **Flamsteed** ids (`10 CMi`, `9 CMa`, `3 Lyr`, `24 PsA`), which are never a main id. The Bayer key
+still exists in the dict and reaches `query.py`'s consumers; it is the *banner* that is unchanged.
+
+**Ordering vs the prefix map: safe, and now measured.** **No entry in `_CSV_PREFIX_MAP` starts with
+`*` or `V`** (checked programmatically), and across the corpus zero of the 47 `* `, 14 `V*` and 35
+`**` ids match any existing prefix. Classifier-before-loop and after-loop are behaviourally identical
+today — pin it anyway, it is one line from being false. Two adjacent traps: the corpus contains
+`VVO 20`/`VVO 21`/`VVO 23`, so a classifier testing `startswith("V")` rather than `startswith("V* ")`
+misfires; and `** SHB    1A` carries runs of internal spaces, so `**` detection must not assume a
+single space.
+
+**Question (b) — is the census still complete?** **Yes, with one addition and one correction.**
+
+- **CONFIRMED:** `main.py` retains exactly two match loops (`:110`, `:2670`), both over their **own**
+  local maps, both with keys ⊆ their own key lists — **insulated**, cannot `KeyError` when AN1 adds a
+  shared prefix entry.
+- **CONFIRMED:** `designations["HD"]` still holds the prefixed `"HD 102365"` string, so
+  `_simbad_gould_block` is intact (AN4.5 green).
+- **CONFIRMED (§5 sweep re-run post-AN0):** nothing iterates the `designations` dict and nothing
+  splits `desig_str` positionally. Every consumer is `.get()` on fixed keys.
+- **NEW — copy 8:** `shared._parse_designations` (`core/shared.py:292-296`) carries its **own
+  hardcoded `keys_order` literal** duplicating `["MAIN_ID"] + _CSV_DESIG_KEYS`. AN2 adding a key to
+  `_CSV_DESIG_KEYS` but not here yields a dict whose new keys land at the **end** of insertion order
+  (via the `.update()`) instead of the literal's position. **And the function has no production
+  caller** — `main.py`'s eight `_parse_designations(...)` calls resolve to its *own* copy-3 local, not
+  this one. It ships nothing but is a compared producer in the harness, so do not delete it casually.
+- **⚠ §7 [R8] is factually wrong and is corrected below:** `_norm_oec_name` handles **all three**
+  prefixes today, not `NAME ` only.
+- **The straggler pin is narrower than it reads.**
+  `test_the_shared_matcher_is_the_only_designation_loop_in_core` counts a literal string in **four
+  named files**. A copy in `gui/`, `query.py`, or another `core/` module is invisible to it, as is one
+  spelled `for pfx, k in`. It pins regression in the known files; it is **not** a census.
+- **Two consumers that will stay inert unless explicitly edited:** `report.py:46`
+  `_IDENTITY_DESIG_KEYS` (the Phase Q dossier's curated 5-key subset) and copy 7
+  (`main.py:137-141`). Both are "safe" in the §5 sense and both will simply not show the new keys.
+
 **AN1a — ✅ DECIDED (D2, 2026-07-29):** `**` → drop. `V*` → drop *as a key*, but the classifier still
 **returns `"Variable"`**, so step 2 above stays — promoting it to a key later is one line and needs no
 re-classification. Corpus: 35 `**` ids and 14 `V*` ids across the 43 fixtures.
@@ -568,10 +660,28 @@ is second-to-last in the order.
 Greek/genitive tables indeed don't — but the **`* `/`NAME `/`V* `-stripping half already exists four
 times**: `generate_star_map_html.py:28` (`short_name`, loop at `:30`), `gui/visualizations/plot_helpers.py:1869`,
 `:2291` (both the identical `for prefix in ("NAME ", "* ", "V* ")` loop), and
-`core/databases.py:693` (`_norm_oec_name` — **`NAME ` only**, no `* `/`V* ` handling, and it
-upper-cases; re-anchored from `:598`, and note it is a *different* shape from the other three).
+`core/databases.py:665` (`_norm_oec_name`, loop at `:670`).
 **All four will start receiving Bayer/Flamsteed strings after AN2** and must be audited — this is a
 fifth-copy problem in the display layer, and it was not in scope before.
+
+> **[A3] Correction to [R8] (2026-07-29, AN0→AN1 sweep).** [R8] described `_norm_oec_name` as
+> **"`NAME ` only, no `* `/`V* ` handling"**. That is **wrong** — verified at `core/databases.py:665-670`,
+> it loops `("V* ", "* ", "NAME ")`, case-insensitively, and then `re.sub`s out all whitespace,
+> `-`, `_` and `*`. So it is the **one helper of the four that is already immune** both to the
+> `* ` prefix and to D9's double space. It still differs in *shape* from the other three (it
+> upper-cases and collapses whitespace, because it builds a normalised alias key rather than a
+> display label) — that part of [R8] stands. Line numbers re-anchored: `:693` → `:665`.
+>
+> **Three further `NAME `-strippers and two `MAIN_ID` asterisk-strippers** belong to this family and
+> were not in [R8]'s census: `core/databases.py:626` (`compute_hwc`), `main.py:1861` (`_query_hwc`),
+> `core/report.py:117` (`_identity_data_star`); and `gui/panels/nasa_exoplanet.py:93`, `main.py:373`,
+> `:566` (all `str(...).strip().lstrip("*").strip()`, which **does** handle D9's double space
+> correctly). AN3's audit should cover all nine, not four.
+>
+> **D9 makes this concrete:** the three display strippers slice `name[len("* "):]` with no follow-up
+> `.strip()`, so a Flamsteed id renders with a **leading space** (`" 18 Eri"`). Measured on the live
+> DB: **796 `star_systems` rows already start with `*  ` (double space)** and misrender today, out of
+> 2124 starting with `* `. AN3 fixes the strippers; the stored string stays verbatim.
 
 **Scope guard:** the raw SIMBAD string (`*  18 Eri`) is the identifier — stored verbatim and
 round-trippable. Pretty-rendering (`18 Eridani`) is a display-layer helper, never stored.
@@ -781,19 +891,18 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 **Order:** ~~§2a decision~~ ✅ → ~~**AN4.0** (fixture capture)~~ ✅ → ~~AN4.1 (harness)~~ ✅ →
 ~~AN0 (complete, all in-scope copies)~~ ✅ → **AN1 ← NEXT** → AN2 → AN2e → AN3 → AN4 rest → AN5.
 
-**All decisions (D1–D6) are settled, the harness is green, and AN0 has landed with its `/code-review`
-pass applied.** Per §11 the next checkpoint is an **agent sweep (Opus) at the AN0 → AN1 boundary**,
-answering two questions: (a) did AN0's landed shape change how AN1's classifier integrates, versus
-the pre-pass §4 assumes? (b) is the copy census still complete — did the refactor leave a straggler or
-reveal a seventh?
+**All decisions (D1–D9) are settled, the harness is green, AN0 has landed with its `/code-review`
+pass applied, and the §11 AN0 → AN1 agent sweep has run** (findings in **§4a**; it added D7/D8/D9 and
+corrected §7 [R8]). **AN1 is unblocked.**
 
-**Partial answer to (a), recorded now while it is cheap:** AN1's pre-pass integrates in **one** place
-— `core.shared._match_designations`, which every in-scope copy now routes through. The §4 assumption
-holds and is in fact stronger than when it was written, since there is a single loop to modify rather
-than four. **Partial answer to (b):** `SharedMapGuardTest::test_the_shared_matcher_is_the_only_designation_loop_in_core`
-now pins the per-module loop count mechanically, so a straggler fails the suite rather than needing a
-census. The sweep should still run — those are the builder's own answers, and independence is the
-point of spending an agent.
+**Three things AN1 must carry from §4a, none of which §4 currently says:**
+
+1. The classifier pre-pass must **re-spell the `key in desig` guard itself** — AN0a's protection is
+   not a function-level invariant, and omitting it is a `KeyError` on the narrow path.
+2. **D8 needs a replace-if-better pass**, not a pre-pass. `_match_designations` is structurally
+   first-match-wins, and Sirius already contradicts Procyon inside the current corpus.
+3. Add a **narrow-path classifier test**. The existing synthetic-entry pin covers the prefix loop
+   only, so it cannot catch either of the above.
 
 **The harness precedes AN0.** It cannot be built after the refactor it exists to verify. **And the
 fixtures precede the harness** — they need live SIMBAD, so capturing them is its own step, done
