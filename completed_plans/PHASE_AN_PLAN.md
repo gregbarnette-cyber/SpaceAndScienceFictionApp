@@ -1120,17 +1120,29 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 | AN3 | Greek table (genitive **inherited from AO**) | Low→**Medium** | ✅ **BUILT 2026-07-29** — see §7. `format_star_designation` / `format_designation_names` / `strip_star_prefix` in `core.shared` + the GUI line `add_designation_names_line` on the same four banners as AO's Gould line. Greek table **verified live**, not transcribed (`mu.`/`nu.`/`pi.` carry a trailing period; ξ/θ/ο are `ksi`/`tet`/`omi`). Sonnet sweep: **3 of 9** strippers actually broken, all fixed; **no new site** exists. **Golden baseline unmoved**, as required. `tests/test_designation_display.py` + `test_designation_display_gui.py` (33 tests). Suite **2261 passed, 1 skipped** |
 | **AN4.0** | **Capture the fixture corpus (live SIMBAD)** | Low | ✅ **BUILT 2026-07-29** — `tests/_capture_designation_fixtures.py` → `tests/fixtures/designation_ids.json`, 43 stars / 27 Bayer / 20 Flamsteed / 35 `**` / 14 `V*` ids |
 | **AN4.1** | **Differential harness** | Medium | ✅ **BUILT 2026-07-29** — `tests/test_designation_harness.py` + `designation_golden.json`. First coverage for copies 2/4/5; includes the AN4.5 Gould pin. Suite **2181 passed, 1 skipped** |
-| AN4 | Tests | **High** | Differential harness first; 4 sites have no coverage at all. **+ AN4.5** — the Gould producer/consumer pin the harness structurally cannot catch |
-| AN5 | Docs | Low | |
+| AN4 | Tests | **High** | ✅ **BUILT 2026-07-29** — every §8 item discharged, but **item 2 by substitution, which is recorded rather than silently ticked**: the plan asked for *unit* tests for copies 2/4/5, and what they got is AN4.1's harness driving all three end to end. Stronger (it replays real SIMBAD id lists through the whole producer, where a unit test would assert the loop in isolation) but not what was written. **AN4.5** landed inside the harness. Test files: `test_designation_harness.py`, `test_designation_ids.py`, `test_designation_an2.py`, `test_designation_live.py`, `test_designation_display.py`, `test_designation_display_gui.py` |
+| AN5 | Docs | Low | ✅ **BUILT 2026-07-29** — done incrementally by each part rather than as a trailing pass, per the definition-of-done rule. All five targets updated: `docs/star-databases.md` (SIMBAD + opt-50 + AN2c + AN3 rendering), `docs/integration.md` (AN2b key order **and** the unpredicted dedupe ripple), `docs/testing.md` (6 files), `CLAUDE.md`, and **`IMPROVEMENT_PLAN.md` P4.6** — whose designation bullet is now marked FINISHED and points here, closing the §1 risk that two documents describe the same work independently |
 
 **Order:** ~~§2a decision~~ ✅ → ~~**AN4.0** (fixture capture)~~ ✅ → ~~AN4.1 (harness)~~ ✅ →
 ~~AN0 (complete, all in-scope copies)~~ ✅ → ~~AN1~~ ✅ → ~~AN2~~ ✅ → ~~AN2e~~ ✅ →
 ~~AN3~~ ✅ → **AN4 rest ← NEXT** → AN5.
 
-**All decisions (D1–D9) are settled and every parser-side part has landed.** What remains is the
-display layer (AN3), the leftover test items, and docs. **The `designations` dict and the `desig_str`
-contract are now final for this phase** — AN3 changes rendering only, so it cannot move the golden
-baseline, and a golden diff during AN3 means something is wrong.
+## ✅ PHASE COMPLETE — 2026-07-29
+
+**All nine parts built, all nine decisions (D1–D9) settled.** Suite **2261 passed, 1 skipped**
+(from 2120 when the plan was drafted). Moved to `completed_plans/` on completion.
+
+**Four things outlive this phase. None is unfinished work; each has a written owner and a
+tripwire, which is the only reason closing the phase is honest:**
+
+| | What | Where it is watched |
+|---|---|---|
+| **D4** | `star_systems.designations` does **not** carry Bayer/Flamsteed until someone runs option 50. Lookup surfaces (opts 1, 3–6, 8–10) show them; DB-backed ones (opts 18/19, the CSV export, the route planners, the G1 prefix search) do not | §5 **AN2c-T**, five triggers. **T1 self-fires in CI** — it catches the *code* being wrong, which a rebuild would not fix. T2–T5 need a human to notice, which is why they are written as responses rather than reminders. Also documented in `docs/star-databases.md` (opt 50), the surface a reader is most likely to hit it from |
+| **D8** | The bare-vs-superscript Bayer tie falls back to SIMBAD's id ordering — the dependency D8 exists to remove. **κ Ceti is the real example the docstring asked for** (live, 2026-07-29: `* kap01 Cet` + `* kap Cet`), found during AN3 and deliberately not acted on | `_preferred_star_id`'s docstring + `test_ties_are_stable_on_the_first_candidate`. Reopening it changes selection logic → own commit, deliberate golden regen |
+| **D2** | `V*` is classified but not shipped as a key | Promoting it is genuinely one line — `_match_designations` already buckets `V* ` ids and offers them to the same guard, and `test_promoting_variable_to_a_key_needs_no_other_change` pins that property so it cannot rot |
+| **AN2-SAO** | Declined on measurement — 22 banners gain a token to make 3 Gould lookups resolve by SAO instead of HD | `test_gould.py::test_sao_is_absent_from_the_designation_key_set` fails the moment SAO is captured, which is the prompt to re-enable AO's removed join |
+
+**The `designations` dict and the `desig_str` contract are final for this phase.**
 
 **What AN3 had to carry, from §7 [R8]/[A3] and AN2's own outcome — all three discharged; see the
 §7 build record for what each turned out to cost:**
