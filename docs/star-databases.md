@@ -38,9 +38,10 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
     a pair, not this star, and `V*` duplicates the Bayer form on nearly every star carrying both.
     `_classify_star_id` still returns `"Variable"`, so promoting it to a key later is one line.
   - The **narrow** key set behind opts 17/19/20/21 and the seven route planners deliberately does
-    **not** gain these keys (those tables name the star in a separate column). And
-    `star_systems.designations` will not carry them until the next option-50 rebuild — see the opt-50
-    section below.
+    **not** gain these keys (those tables name the star in a separate column) — that is Phase AN's
+    D7, still true. `star_systems.designations` **does** carry them as of the 2026-07-29 option-50
+    rebuild (this bullet previously said it would not until a rebuild happened; one has) — see the
+    opt-50 section below for the measured before/after.
   - **Rendering (Phase AN3, 2026-07-29) is a display layer and stores nothing.**
     `core.shared.format_star_designation("*  10 CMi")` → `"10 Canis Minoris"`;
     `format_designation_names(designations)` gives the `[(key, display), …]` pairs the GUI line

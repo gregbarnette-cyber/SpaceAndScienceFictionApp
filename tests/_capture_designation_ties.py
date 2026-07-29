@@ -7,17 +7,19 @@ exists so a re-census is reproducible — the `_capture_designation_fixtures.py`
 
     venv/bin/python -m tests._capture_designation_ties
 
-**Why this exists.** `core.shared._preferred_star_id`'s D8 rule breaks ties by
-falling back to `candidates[0]` — SIMBAD's own id ordering, which is exactly the
-dependency D8 was written to remove. Its docstring says the residual case (two
-Bayer candidates, neither carrying a component letter) has **no corpus example**,
-so nothing depends on it, and that "if a real example appears, that is the
-evidence to settle it with."
+**Why this exists.** `core.shared._preferred_star_id` used to break ties by
+falling back to `candidates[0]` — SIMBAD's own id ordering, exactly the dependency
+D8 was written to remove. Its docstring said the residual case (two Bayer
+candidates, neither carrying a component letter) had **no corpus example**, so
+nothing depended on it, and that "if a real example appears, that is the evidence
+to settle it with."
 
-One appeared during Phase AN3 (κ Ceti). This census answers the question that
+One appeared during Phase AN3 (κ Ceti). This census answered the question that
 finding raised — *how many are there, and of what shapes?* — over the whole
-catalogue rather than the 43-star fixture corpus, because the corpus is a
-shape-coverage sample and was never meant to measure frequency.
+catalogue rather than the fixture corpus, because that corpus is a shape-coverage
+sample and was never meant to measure frequency. (It held 43 stars and zero
+unresolved ties when this census ran; four were added afterwards, one per shape
+measured here, so the fix could be verified at all.)
 
 **Method.** One ADQL query against SIMBAD's `ident` table for every `* `-prefixed
 identifier (~6.3k rows over ~4.7k objects), grouped by `oidref`, then the *real*
@@ -25,8 +27,13 @@ identifier (~6.3k rows over ~4.7k objects), grouped by `oidref`, then the *real*
 list. Using the shipped functions rather than a re-implementation is the point:
 what is measured is what production would actually do.
 
-**This script changes no behaviour and is not a fix.** It produces the evidence a
-D8 reopen would need; the reopen is its own decision, with its own golden regen.
+**D8 was then reopened and CLOSED on the strength of this census** (2026-07-29):
+Bayer prefers the superscript, Flamsteed gained the component-less clause it never
+had, and every branch now ends in the raw string so residual ties are at least
+stable. **The script itself changes no behaviour** — re-run it after any change to
+`_preferred_star_id`, because `test_designation_ids.py::D8TieCensusTest` asserts
+each recorded `chosen` still matches what the shipped helper returns, so a rule
+change invalidates this artifact loudly instead of leaving stale numbers behind.
 """
 import collections
 import json
@@ -133,8 +140,8 @@ def main():
     data = census(rows)
     data["_comment"] = (
         "Catalogue-wide census of stars carrying MORE THAN ONE competing Bayer or "
-        "Flamsteed id, i.e. where core.shared._preferred_star_id's D8 rule falls "
-        "back to SIMBAD's id ordering. Evidence for a D8 reopen; see "
+        "Flamsteed id — the residue D8's precedence clauses have to resolve. The "
+        "census that settled D8 (closed 2026-07-29); see "
         "completed_plans/PHASE_AN_PLAN.md §4b. Regenerate with "
         "`venv/bin/python -m tests._capture_designation_ties`."
     )

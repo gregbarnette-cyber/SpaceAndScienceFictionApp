@@ -125,10 +125,31 @@ string dedupes.
 - **The narrow designation strings are unchanged** — `desig` / `desig_str` on `distance`,
   `travel-time` and all seven route planners still carry `NAME/HD/HR/GJ/Wolf` only. Those results
   already name the star separately, which for a bright star is the Bayer string.
-- **`search-star-systems` and the other `star_systems`-backed fields do not carry these yet** — that
-  column is written only by an option-50 rebuild, which is deferred. Same caveat as the NAME token
-  above. A `--designation-prefix` search for a Bayer/Flamsteed form will return nothing until then;
-  that is staleness, not absence.
+- **`search-star-systems` and the other `star_systems`-backed fields DO carry these** as of the
+  **2026-07-29 option-50 rebuild** (this note previously said they did not — the column is written
+  only by a rebuild, and one had not happened when the keys shipped). **2135 rows** carry a `* `
+  token; `--designation-prefix "*  10"` returns 29 rows, `"* alf"` returns 86. Mind the **double
+  space** in a Flamsteed prefix. The rebuild changed **no row count** (256,003 before and after,
+  0 discarded).
+
+#### Which id you get when a star offers several (Phase AN, settled 2026-07-29)
+
+A star can carry more than one competing Bayer or Flamsteed id. The pick is **rule-based and
+deterministic** — it does *not* follow SIMBAD's id order, which is not a stable contract:
+
+- **Bayer** — the component-less form wins (`* alf CMi` over `* alf CMi A`), then the **superscript**
+  one (**`* ksi02 Cap` over `* ksi Cap`**; in 47 of the 49 affected stars a numbered *sibling* star
+  exists, so the bare form does not say which is meant).
+- **Flamsteed** — the component-less form wins (`*   4 Cen` over `*   4 Cen A`), then the one whose
+  constellation matches the chosen Bayer (which rejects Fomalhaut's cross-boundary `*  79 Aqr` in
+  favour of `*  24 PsA`).
+- Where no rule can prefer — **α And *is* δ Peg** — the tie breaks on the raw string, so the value is
+  arbitrary but **cannot drift** when CDS reorders its ids.
+
+**No pick can be wrong:** SIMBAD attaches no `* ` id to more than one object (0 of 6293 measured), so
+every candidate is an unambiguous designation of that star. Consumers wanting the readable form can
+call `core.shared.format_star_designation("*  10 CMi")` → `"10 Canis Minoris"`; it is **never stored
+or serialized**, so this contract always carries the raw string.
 - `SAO` remains **uncaptured** (considered and declined alongside these two), so `gould.matched_on`
   is still always `"hd"`.
 - **`simbad-lookup`'s `desig_str` empty case is now `""`, not the string `"N/A"`** (Phase AN2e). A

@@ -557,9 +557,15 @@ Their `desig_str` comes from `calculators.compute_lookup_star_for_distance` (the
 narrow `NAME/HD/HR/GJ/Wolf` lookup — Phase AN's parser **copy #4**), which has no
 `gould` key. **Do not add one by calling `_simbad_gould_block` from
 `calculators.py`** — that is a second DB read per star on planners that resolve
-dozens, and a seventh site that knows about designation parsing. If Phase AN0's
-consolidation gives the two lookups a shared result shape, `add_gould_line` makes
-these a one-line follow-on. See `PHASE_AN_PLAN.md` §3 (AN0b-note) and
+dozens, and a seventh site that knows about designation parsing.
+
+**Phase AN0 has since landed and did NOT change this** — it consolidated the
+*parser*, deliberately leaving the two lookup **functions** separate, and D7 kept
+the narrow key set narrow for the same reason. So these panels stay Gould-less
+(and Bayer/Flamsteed-less) by design, not by omission. The one-line follow-on
+described above remains available *if* the two lookups are ever given a shared
+result shape — that is a decision nobody has taken. See
+`completed_plans/PHASE_AN_PLAN.md` §3 (AN0b-note) + D7, and
 `completed_plans/PHASE_AO_PLAN.md` [B5].
 
 Also non-GUI: the Phase Q dossier's identity block carries `identity.gould`
@@ -721,7 +727,7 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 
 | Panel | Viz tab(s) | Toggle mechanism |
 |---|---|---|
-| `SimbadPanel` (1) | "Star Properties" (+ a `Gould:` line under the banner when `result["gould"]` is present — Phase AO), "GCNS" (when `result["gcns"]` present — Phase M5), "Hypatia", "Abundance Profile" + "Kinematics" (Phase O O11, when Hypatia data / U·V·W available) — inline `QTabWidget`, no Show Diagrams button | Inline (all tabs always visible) |
+| `SimbadPanel` (1) | "Star Properties" (+ a rendered `Bayer:`/`Flamsteed:` line under the banner when those keys are present — Phase AN3, and a `Gould:` line beneath that when `result["gould"]` is present — Phase AO), "GCNS" (when `result["gcns"]` present — Phase M5), "Hypatia", "Abundance Profile" + "Kinematics" (Phase O O11, when Hypatia data / U·V·W available) — inline `QTabWidget`, no Show Diagrams button | Inline (all tabs always visible) |
 | `NasaPlanetarySystemsPanel` (3) | "Orbital Diagram" (+ Phase O O4 solar-overlay checkbox & O10b hyper-limit checkbox), "HZ Diagram", "Mass–Radius" (Phase O O3), "Transit Geometry" (Phase O O13), "Size Comparison" (Phase O O14), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | Inline (uses `_scroll_area`) |
 | `NasaPlanetarySystemsMapPanel` | "System Map" (+ Phase O O5a date scrubber), "Orbital Diagram" (+ O4 solar-overlay & O10b hyper-limit checkboxes), "HZ Diagram", "Mass–Radius" (O3), "Transit Geometry" (O13), "Size Comparison" (O14), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | Inline (uses `_scroll_area`) |
 | `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |

@@ -110,11 +110,17 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - Three columns: Bolometric Luminosity (`bcLuminosity`), Luminosity from Mass (`luminosityFromMass`), Calculated Luminosity
   - Six zones in order: Optimistic Inner HZ (Recent Venus), Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass), Conservative Inner HZ (Runaway Greenhouse), Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass), Conservative Outer HZ (Maximum Greenhouse), Optimistic Outer HZ (Early Mars)
 
-## Gould designation line (opts 8/9 — GUI, Phase AO)
+## Designation-name + Gould lines (opts 8/9 — GUI, Phases AN3 + AO)
 
 Opts 8 and 9 render a SIMBAD designations banner above the region tabs, and when the star has a
 *Uranometria Argentina* (Gould 1879) designation a **`Gould: 101 G. Eridani`** line is added
-directly beneath it via the shared `gui.panels.base.add_gould_line(result_area, simbad)`. The
+directly beneath it via the shared `gui.panels.base.add_gould_line(result_area, simbad)`.
+
+**Phase AN3 adds a second line, immediately above the Gould one** —
+`gui.panels.base.add_designation_names_line(result_area, simbad)`, which renders the star's
+Bayer/Flamsteed ids in readable form (`Bayer: ε Eridani · Flamsteed: 18 Eridani`) from the raw
+strings already in the banner. Same contract: it adds **nothing at all** when the star carries
+neither key, so it is called unconditionally. The
 helper adds **nothing at all** when the key is absent, which is the normal case — Gould listed
 bright *southern* stars only. **Opt 10 (Manual) has no SIMBAD lookup**, so it has no banner and no
 Gould line. Source and caveats (including the 1875 constellation boundaries) are in

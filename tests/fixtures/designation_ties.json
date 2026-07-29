@@ -1165,7 +1165,7 @@
   "cross_constellation_no_bayer": 12,
   "other": 2
  },
- "_comment": "Catalogue-wide census of stars carrying MORE THAN ONE competing Bayer or Flamsteed id, i.e. where core.shared._preferred_star_id's D8 rule falls back to SIMBAD's id ordering. Evidence for a D8 reopen; see completed_plans/PHASE_AN_PLAN.md §4b. Regenerate with `venv/bin/python -m tests._capture_designation_ties`.",
+ "_comment": "Catalogue-wide census of stars carrying MORE THAN ONE competing Bayer or Flamsteed id — the residue D8's precedence clauses have to resolve. The census that settled D8 (closed 2026-07-29); see completed_plans/PHASE_AN_PLAN.md §4b. Regenerate with `venv/bin/python -m tests._capture_designation_ties`.",
  "source": "SIMBAD TAP `ident` (SELECT id, oidref FROM ident WHERE id LIKE '* %'), 6293 ids",
  "ids_total": 6293
 }
