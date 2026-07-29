@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate, QTimer
 
-from gui.panels.base import ResultPanel, DiagramToggleMixin
+from gui.panels.base import ResultPanel, DiagramToggleMixin, add_gould_line
 from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.viz
@@ -61,6 +61,7 @@ def _add_simbad_banner(layout, simbad):
     banner = QLabel(f"<b>SIMBAD Designations:</b><br>{simbad.get('desig_str', 'N/A')}")
     banner.setWordWrap(True)
     layout.addWidget(banner)
+    add_gould_line(layout, simbad)                # Phase AO3 — no-op when absent
 
 
 def _add_hz_table(panel, layout, rows_or_row):

@@ -272,6 +272,31 @@ class ResultPanel(QWidget):
                 pass  # button was deleted by a reset() while the thread was running
 
 
+def add_gould_line(layout, simbad):
+    """Add the Gould designation line beneath a designations banner (Phase AO3).
+
+    *simbad* is a ``compute_simbad_lookup`` result (or any dict carrying its
+    optional ``gould`` key). Adds nothing at all when the key is absent or None
+    — which is the NORMAL case: Gould listed bright southern stars only, so most
+    stars legitimately have no Gould designation (AO4a). Kept out of `desig_str`
+    on purpose: that string is what SIMBAD returned, and SIMBAD has no Gould ids.
+
+    Returns the QLabel, or None when nothing was added.
+    """
+    gould = (simbad or {}).get("gould")
+    if not gould or not gould.get("display"):
+        return None
+    label = QLabel(f"<b>Gould:</b> {gould['display']}")
+    label.setWordWrap(True)
+    label.setToolTip(
+        f"{gould.get('designation', '')} — {gould.get('source', '')}.\n"
+        "Gould's 1875 constellation boundaries predate the IAU, so this may name "
+        "a different constellation than the star's modern one."
+    )
+    layout.addWidget(label)
+    return label
+
+
 class DiagramToggleMixin:
     """Adds full-screen Show Diagrams / Show Tables toggle to ResultPanel subclasses.
 

@@ -7,6 +7,53 @@
 **Depends on:** the constellation-genitive table, **built by Phase AO** (`AO §2`) and consumed here by
 AN3. Not blocking for AN0/AN1/AN2 — see §7a.
 
+> ### ✅ AO SHIPPED 2026-07-29 — AN is unblocked
+>
+> `completed_plans/PHASE_AO_PLAN.md`. What AN inherits:
+>
+> - **The genitive table exists**, at the location this plan's §7 specifies:
+>   `core.shared._CONSTELLATION_GENITIVES` (88 entries) + `constellation_genitive(abbr)`
+>   (case/whitespace-insensitive, `None` for unknown — never invents a name). **AN3 builds only the
+>   Greek abbreviation→letter table. Do not rebuild the genitive one.** The AO §11 obligation to
+>   reconcile the two plans is discharged: no edit to §7 was needed.
+> - **`compute_simbad_lookup` gained a `"gould"` key.** It is a *sibling* of `designations`, not part
+>   of it, so it does not touch AN0's six-copy census, `desig_str`, or the AN2d duplication problem.
+>   Confirmed by `test_gould.py::test_gould_is_not_folded_into_designations`.
+> - **AO4c's cross-check bonus is now available offline.** The bundled `gouldDesignations.csv` carries
+>   `flamsteed` (1097 rows) and `bayer` (LaTeX form, e.g. `\alpha1`) — an independent southern-sky
+>   Bayer/Flamsteed set to validate **AN1's `* ` classifier** against real data, no network needed.
+>   Note `* alf01 Cen` ↔ the catalogue's `\alpha1` is exactly the AN1 superscript-numeral case.
+>
+> **D1 decided 2026-07-29: option (a)** — `main.py` is exempt per policy **except copy #5**
+> (`main.py:2229`/`:2268`, CLI opt 50), which delegates to `core.shared` so the two opt-50 builders
+> stop writing different content into one `star_systems.designations` column. Copies 3/6/7 stay as-is.
+> **AN0's scope is therefore copies 1, 2, 4 and 5.** The rest of the decision table (D2–D6) is
+> unchanged and still open.
+>
+> **AO left AN one open question — a candidate `SAO` key.** AO shipped an SAO fallback join, and
+> `/code-review` found it **unreachable**: `designations` never carries an `"SAO"` key (absent from
+> both `databases.py:304` `keys_order`/`:312` `prefix_map` **and** the shared `_CSV_PREFIX_MAP`), so
+> the branch was dead and its test passed only against a hand-built dict shape the pipeline cannot
+> produce. AO removed it rather than implement it, **because implementing it is AN2's job**: SIMBAD
+> *does* emit `SAO nnnnn`, but capturing it adds a key to the designation set, which injects
+> `SAO nnnnn` into `desig_str` on all four GUI banners and into the `query.py` contract — the exact
+> "key insertion + ripple" AN2 owns, over the exact map AN0 consolidates. **Consider it alongside
+> `Bayer`/`Flamsteed` in AN2, as a third candidate key with the same ripple.** Measured payoff: 26
+> Gould rows have an SAO number but no HD, of which **3** carry a Gould number — so this is a
+> tie-breaker at best, not a reason on its own. `tests/test_gould.py::test_sao_is_absent_from_the_designation_key_set`
+> will fail the moment AN captures SAO, which is the prompt to re-enable AO's join.
+>
+> **A method note for AN4.** AO's §9 verified the change was *fully additive* and concluded nothing
+> could break — true, and it still missed the above, because **a block can be additive and inert**.
+> The differential harness AN4.1 specifies compares outputs before/after; it would not have caught
+> this either, since dead code changes no output. **What catches this class is checking that a
+> consumer's assumed input shape is one the producer can actually emit** — worth an explicit pass
+> over AN's own new keys, which are consumed in more places than AO's were.
+>
+> **Baseline moved:** the suite is now **2174 passed, 1 skipped** (§8 cites 2120). AN's differential
+> harness (AN4.1) must be built against the current tree, and `tests/test_gould.py` /
+> `test_gould_display.py` are new files it should not be surprised by.
+
 > **Revision note.** The first draft of this plan was materially wrong in **eight** places, all found
 > by pre-implementation review and all verified against the source before this rewrite. Corrections
 > are marked **[R1]**…**[R8]** inline and summarized in §10. Per the house convention
@@ -22,7 +69,7 @@ standing policy, so it is not an implementer's call. The rest gate individual pa
 
 | # | Decision | Gates | Options | Recommendation |
 |---|---|---|---|---|
-| **D1** 🔴 | **Does `main.py` come along?** (§2a — full options table there) | **AN0 — the whole phase** | **(a)** Exempt `main.py` per policy **except copy #5** (CLI opt 50). **(b)** Full consolidation, all 6 copies. **(c)** Strict policy — leave all of `main.py` | **(a).** `IMPROVEMENT_PLAN.md` ground rule 1 says don't touch `main.py` feature functions (your 2026-07-04 call), but copy #5 writes the **same `star_systems.designations` column** as GUI opt 50 — leaving it makes the two entry points write different content into one column. **(c) is not acceptable** unless CLI opt 50 is formally retired |
+| **D1** ✅ **DECIDED (a), 2026-07-29** | **Does `main.py` come along?** (§2a — full options table there) | **AN0 — the whole phase** | **(a)** Exempt `main.py` per policy **except copy #5** (CLI opt 50). **(b)** Full consolidation, all 6 copies. **(c)** Strict policy — leave all of `main.py` | **(a).** `IMPROVEMENT_PLAN.md` ground rule 1 says don't touch `main.py` feature functions (your 2026-07-04 call), but copy #5 writes the **same `star_systems.designations` column** as GUI opt 50 — leaving it makes the two entry points write different content into one column. **(c) is not acceptable** unless CLI opt 50 is formally retired |
 | **D2** | **`V*` and `**` handling** (§4, AN1a) | **AN1** | **(a)** Drop both. **(b)** Drop `**`, capture `V*` as a `"Variable"` key | **(a) drop both.** `**` is a double-*system* id, not a name for this star. `V*` is a genuine designation but redundant with the Bayer form for most stars — widens the `query.py` contract for little gain. Revisit separately if wanted |
 | **D3** | **MAIN_ID duplication** (§5, AN2d) | **AN2** | **(a)** Suppress the keyed copy when it equals MAIN_ID. **(b)** Drop MAIN_ID from the `desig_str` join entirely. **(c)** Accept the duplicate | **(a).** (b) removes MAIN_ID from all four GUI banners — a visible regression. (c) renders `* alf CMi, NAME Procyon, * alf CMi, …`. This changes what every panel displays, so it is a product call, not a cleanup |
 | **D4** | **Opt-50 rebuild: defer or gate?** (§5, AN2c) | **AN2** | **(a)** Defer — lookup surfaces get the names now, DB-backed surfaces catch up at the next rebuild. **(b)** Gate the phase on a full opt-50 rebuild (17 SIMBAD queries, ~238k rows, hours) | **(a) defer.** A stale `designations` column is already an accepted state in this repo (the NAME-first change left the same debt). **Note:** the rebuild changes **row count**, not just column text — re-measure the `PLX …` discard delta when it happens |
@@ -173,6 +220,31 @@ on every consumer: `gui/panels/distance_stars.py:106-108`, `gui/panels/travel_ti
 order-fragile — the two narrow copies agree today but would diverge under two different "obvious"
 fixes. That asymmetry is itself worth a regression test.
 
+#### AN0b-note — copy #4 is also why opts 17/20/21 + the route planners show no Gould designation
+
+**Recorded 2026-07-29, after Phase AO shipped.** Not a bug and not AO's omission — a structural
+consequence of this copy, worth knowing before AN0 decides how far to converge it.
+
+Phase AO attaches its `"gould"` key inside **`compute_simbad_lookup`** (copy #2). But opts 17/20/21
+and all seven route planners do not call that function at all — they go through
+**`calculators.compute_lookup_star_for_distance`** (copy #4), a separate, narrower SIMBAD lookup
+whose `desig_str` is `NAME/HD/HR/GJ/Wolf` only and which has no `gould` key to render. So those
+panels are correctly Gould-less today, and no AO-side change could have fixed it.
+
+**What this means for AN0's scope decision:**
+
+- If AN0 converges copy #4 onto the shared parser but leaves the two lookup *functions* separate
+  (the likely, minimal reading of this plan), **nothing changes** — those panels stay Gould-less,
+  which is fine and should be stated rather than discovered.
+- If AN0 goes further and the two lookups come to share a result shape, those ten surfaces become a
+  **cheap follow-on**: `gui.panels.base.add_gould_line(layout, result)` already exists, is a no-op
+  when the key is absent, and is wired into four panels. That is the entire cost.
+
+**Do not "fix" this by calling `_simbad_gould_block` from `calculators.py`.** Copy #4's whole point
+is that it is the cheap path — a second DB read per star on a route planner that resolves dozens of
+stars is the wrong trade, and it would add a seventh place that knows about designation parsing,
+which is the problem this phase exists to remove.
+
 ### AN0c — `desig_str` and `MAIN_ID` **[R5]**
 
 `databases.py:271` joins over `keys_order`, whose **first element is `MAIN_ID`** (`:222`).
@@ -236,6 +308,31 @@ first-match-wins is non-deterministic across SIMBAD releases. Pin with Procyon's
 
 Add `"Bayer"` / `"Flamsteed"` to `_CSV_DESIG_KEYS` / `keys_order` — **and to `main.py:139-144`**
 (copy #7) if `main.py` is in scope.
+
+### AN2-SAO — a **third** candidate key, inherited from Phase AO (recorded 2026-07-29)
+
+**Decide this alongside `Bayer`/`Flamsteed`, not separately** — it is the same insertion, the same
+ripple, and the same review pass.
+
+AO built an SAO fallback join for its Gould lookup and `/code-review` found it **unreachable**:
+`designations` carries no `"SAO"` key, in *any* copy — absent from `databases.py:304` `keys_order`
+/ `:312` `prefix_map` **and** from the shared `_CSV_PREFIX_MAP`. AO removed the dead branch rather
+than implement it, precisely because implementing it is this part's work.
+
+- **It is implementable.** SIMBAD *does* emit `SAO nnnnn` (verified live on HD 102365, 2026-07-28).
+  A `("SAO ", "SAO")` prefix entry is all the parser needs.
+- **The ripple is identical to Bayer/Flamsteed's** — a new key means `SAO nnnnn` in `desig_str` on
+  all four GUI banners, in `star_systems.designations` at the next opt-50 rebuild, and in the
+  `query.py` contract (AN2b's key-order note applies).
+- **The payoff is small and measured: 3 stars.** 26 rows in `gouldDesignations.csv` carry an SAO
+  number but no HD, and only 3 of those have a Gould number. **This is a tie-breaker, not a
+  reason.** If `Bayer`/`Flamsteed` are going in anyway and SAO rides along for one map entry, fine;
+  if it needs its own justification, it does not have one.
+- **If AN does take it,** re-enable AO's join: restore the `("SAO","sao")` branch in
+  `databases._simbad_gould_block` and revert the docs in `docs/star-databases.md` (Join bullet) +
+  `docs/integration.md` (`matched_on` is currently documented as always `"hd"`).
+- **The tripwire:** `tests/test_gould.py::test_sao_is_absent_from_the_designation_key_set` fails the
+  moment SAO is captured. That failure is the prompt, not a bug — update it in the same commit.
 
 ### AN2a — display order, corrected **[R5]**
 The original recommendation (`NAME, Bayer, Flamsteed, GJ, HD, …`) ignored that the rendered string
@@ -359,7 +456,7 @@ weren't.** Required before AN0 touches anything:
    component preference; the AN0a synthetic-entry KeyError pin.
 4. AN2d: no duplicate token in `desig_str`.
 
-Run: `venv/bin/python -m pytest` (baseline **2120 passed, 1 skipped**).
+Run: `venv/bin/python -m pytest` (baseline **2174 passed, 1 skipped** as of 2026-07-29, after Phase AO; the **2120** figure below predates it).
 
 ---
 

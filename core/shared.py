@@ -70,6 +70,68 @@ _CSV_DESIG_KEYS = [
     "TIC", "Gaia EDR3", "2MASS",
 ]
 
+# ─── Constellation Genitives (Phase AO §2) ────────────────────────────────────
+#
+# IAU 3-letter abbreviation → Latin genitive, all 88 modern constellations.
+# The genitive is the form used in star designations: "66 G. Centauri",
+# "18 Eridani", "alpha Canis Majoris" — never the nominative ("Centaurus").
+#
+# Owned by Phase AO (Gould designations), which needs it for the `display`
+# field of its `gould` block. Phase AN3 CONSUMES it for Bayer/Flamsteed
+# rendering and must not rebuild it — see PHASE_AO_PLAN.md §2 [R1].
+
+_CONSTELLATION_GENITIVES = {
+    "And": "Andromedae",        "Ant": "Antliae",           "Aps": "Apodis",
+    "Aqr": "Aquarii",           "Aql": "Aquilae",           "Ara": "Arae",
+    "Ari": "Arietis",           "Aur": "Aurigae",           "Boo": "Boötis",
+    "Cae": "Caeli",             "Cam": "Camelopardalis",    "Cnc": "Cancri",
+    "CVn": "Canum Venaticorum", "CMa": "Canis Majoris",     "CMi": "Canis Minoris",
+    "Cap": "Capricorni",        "Car": "Carinae",           "Cas": "Cassiopeiae",
+    "Cen": "Centauri",          "Cep": "Cephei",            "Cet": "Ceti",
+    "Cha": "Chamaeleontis",     "Cir": "Circini",           "Col": "Columbae",
+    "Com": "Comae Berenices",   "CrA": "Coronae Australis", "CrB": "Coronae Borealis",
+    "Crv": "Corvi",             "Crt": "Crateris",          "Cru": "Crucis",
+    "Cyg": "Cygni",             "Del": "Delphini",          "Dor": "Doradus",
+    "Dra": "Draconis",          "Equ": "Equulei",           "Eri": "Eridani",
+    "For": "Fornacis",          "Gem": "Geminorum",         "Gru": "Gruis",
+    "Her": "Herculis",          "Hor": "Horologii",         "Hya": "Hydrae",
+    "Hyi": "Hydri",             "Ind": "Indi",              "Lac": "Lacertae",
+    "Leo": "Leonis",            "LMi": "Leonis Minoris",    "Lep": "Leporis",
+    "Lib": "Librae",            "Lup": "Lupi",              "Lyn": "Lyncis",
+    "Lyr": "Lyrae",             "Men": "Mensae",            "Mic": "Microscopii",
+    "Mon": "Monocerotis",       "Mus": "Muscae",            "Nor": "Normae",
+    "Oct": "Octantis",          "Oph": "Ophiuchi",          "Ori": "Orionis",
+    "Pav": "Pavonis",           "Peg": "Pegasi",            "Per": "Persei",
+    "Phe": "Phoenicis",         "Pic": "Pictoris",          "Psc": "Piscium",
+    "PsA": "Piscis Austrini",   "Pup": "Puppis",            "Pyx": "Pyxidis",
+    "Ret": "Reticuli",          "Sge": "Sagittae",          "Sgr": "Sagittarii",
+    "Sco": "Scorpii",           "Scl": "Sculptoris",        "Sct": "Scuti",
+    "Ser": "Serpentis",         "Sex": "Sextantis",         "Tau": "Tauri",
+    "Tel": "Telescopii",        "Tri": "Trianguli",         "TrA": "Trianguli Australis",
+    "Tuc": "Tucanae",           "UMa": "Ursae Majoris",     "UMi": "Ursae Minoris",
+    "Vel": "Velorum",           "Vir": "Virginis",          "Vol": "Volantis",
+    "Vul": "Vulpeculae",
+}
+
+# Case-insensitive index, built once. SIMBAD, VizieR and hand-typed input all
+# vary the casing of the 3-letter code ("CMa" / "cma" / "CMA"), but the
+# abbreviations are only unique case-insensitively, so a folded key is safe.
+_CONSTELLATION_GENITIVES_CI = {
+    k.lower(): v for k, v in _CONSTELLATION_GENITIVES.items()
+}
+
+
+def constellation_genitive(abbr):
+    """IAU 3-letter constellation abbreviation → Latin genitive, or None.
+
+    Case- and whitespace-insensitive. Returns None for a blank, unknown or
+    non-string input — callers fall back to the raw abbreviation rather than
+    inventing a name (Phase AO's `display` degrades to "66 G. Cen").
+    """
+    if not abbr:
+        return None
+    return _CONSTELLATION_GENITIVES_CI.get(str(abbr).strip().lower())
+
 # ─── Module-level cache for main sequence data ────────────────────────────────
 
 _MAIN_SEQUENCE_DATA = None

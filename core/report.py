@@ -116,11 +116,16 @@ def _identity_data_star(simbad):
     name_raw = desig.get("NAME")
     common = name_raw.replace("NAME ", "", 1).strip() if name_raw else None
     subset = [str(desig[k]) for k in _IDENTITY_DESIG_KEYS if desig.get(k)]
+    # Phase AO3 [R6]: the historical Gould designation, kept as its own field
+    # rather than appended to `designations` — that list is SIMBAD-sourced and
+    # Gould comes from VizieR V/135A. None for most stars (southern-only, AO4a).
+    gould = simbad.get("gould") or {}
     return {
         "primary_name": simbad.get("main_id"),
         "common_name": common,
         "spectral_type": simbad.get("sp_type"),
         "designations": subset,
+        "gould": gould.get("display"),
         "ra": simbad.get("ra"),
         "dec": simbad.get("dec"),
         "app_magnitude": simbad.get("vmag"),
@@ -137,6 +142,7 @@ def _identity_data_sol():
         "common_name": "Sun",
         "spectral_type": "G2V",
         "designations": [],
+        "gould": None,          # Gould catalogued southern stars, not the Sun
         "ra": None, "dec": None,
         "app_magnitude": -26.74,
         "parallax_mas": None,
@@ -279,6 +285,13 @@ def _blocks_identity(d):
         ("Common name", d.get("common_name") or "—"),
         ("Spectral type", d.get("spectral_type") or "—"),
         ("Designations", ", ".join(d.get("designations") or []) or "—"),
+    ]
+    # Phase AO3: shown only when the star has one. Gould covers bright southern
+    # stars only, so an always-present "—" row would be dead weight on most
+    # dossiers. The JSON `data` block carries the key either way.
+    if d.get("gould"):
+        rows.append(("Gould designation", d["gould"]))
+    rows += [
         ("RA / Dec (deg)", f"{_n(d.get('ra'), 4)} / {_n(d.get('dec'), 4)}"),
         ("Apparent magnitude (V)", _n(d.get("app_magnitude"), 2)),
         ("Parallax (mas)", _n(d.get("parallax_mas"), 4)),

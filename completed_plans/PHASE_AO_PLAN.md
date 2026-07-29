@@ -1,7 +1,8 @@
 # Phase AO — Gould Designations (Uranometria Argentina)
 
-**Status:** PLANNED (not started)
+**Status:** ✅ **COMPLETE — built 2026-07-29.** All parts shipped (§2, AO0–AO6).
 **Date drafted:** 2026-07-28 · **Revised 2026-07-28** after adversarial pre-implementation review
+· **Built + reconciled 2026-07-29** (build/review findings marked **[B1]**…**[B5]**, summarized in §13)
 **Scope:** `core/db.py`, `core/databases.py`, a bundled CSV, `gui/panels/`, `core/shared.py` (§2), tests, docs
 **Sequencing (decided 2026-07-28): this phase ships FIRST**, ahead of `PHASE_AN_PLAN.md`.
 **Depends on:** nothing. The one external need — a constellation-genitive lookup — is **owned by this
@@ -14,7 +15,15 @@ phase** (§2) rather than by AN3, which is what makes shipping first coherent.
 
 ---
 
-## ⚠ DECISIONS REQUIRED BEFORE STARTING
+## ⚠ DECISIONS — **ALL SETTLED 2026-07-29** (maintainer)
+
+| # | Decision | Chosen |
+|---|---|---|
+| **D1** | Auto-seed or import utility? | **(a) auto-seed** — `_STATIC_TABLES` + `_seed_gould`. No opt 60, no `ImportGouldPanel`; the catalogue is frozen, so a refresh path would refresh nothing |
+| **D2** | Separate `gould` key or folded into `designations`? | **(a) separate `result["gould"]`** — provenance stays honest; the four panels + the dossier took an explicit edit each |
+| **D3** | Does Gould reach the Phase Q dossier? | **(a) yes** — `identity.gould` in the JSON always; the rendered row appears only when non-null |
+
+*(Original decision text retained below for the record.)*
 
 Three open decisions. **None gates the start** — AO0 and AO1's schema can proceed today — but each
 must be settled before the part it gates. Recommendations are given; the call is the maintainer's.
@@ -125,6 +134,19 @@ export** → `gouldDesignations.csv` at the repo root beside `hwc.csv`.
 **Export columns:** `g_number, cst, hd, sao, flamsteed, bayer, name, vmag`.
 **Provenance:** VizieR catalog id + export date + Gould 1879 citation, in a header comment and the docs.
 
+> **[B1] BUILD FINDING — the export MUST request `columns=['**']`.** ⚠️ Neither
+> `Vizier(columns=['*'])` nor the default returns the full column set: `V/135A/catalog` comes back
+> with `['N','G','cst','F','f_F','let','Vmag','Spec','RAJ2000','DEJ2000','HD','RA1875','DE1875','b',
+> 'Amag','Comm','Name','Simbad']` — **no `SAO`, no `m_HD`, no `m_SAO`.** A naive export therefore
+> silently loses the entire **SAO fallback join key**, and the loss is invisible: the CSV still has
+> 8471 rows and every HD-matched star still resolves. With `columns=['**']` all 27 columns arrive and
+> `SAO` is populated on 8415 rows. §1's profile is correct; it just never said how it was obtained.
+> The export script records this at the top.
+>
+> **Shipped:** `gouldDesignations.csv` at the repo root (8471 rows, ~310 KB), `#` provenance comment
+> lines above the header (so `_seed_gould` strips `#` lines before `DictReader`). Export script kept
+> out of the repo — it is a one-shot, and the CSV is the artifact.
+
 ---
 
 ## 4. Part AO1 — Schema + load
@@ -193,12 +215,14 @@ result["gould"] = {
     "designation": "66 G. Cen",
     "display": "66 G. Centauri",
     "hd": 102365,
-    "matched_on": "hd",                # "hd" | "sao"
+    "matched_on": "hd",                # originally "hd" | "sao" — SEE [B4]: the SAO branch
+                                       # was unreachable and was removed; always "hd"
     "source": "VizieR V/135A (Gould 1879)",
 }
 ```
 
 Contract: **non-fatal and silent** — `None` on no HD/SAO, no match, empty/missing table, or any error.
+*(As built: `None` on no **HD** — the SAO half was removed, see [B4].)*
 Never raises, never blocks the lookup.
 
 **[R4] The GCNS precedent does more than the draft claimed.** The draft called it "a single indexed
@@ -217,11 +241,50 @@ rather than mirroring the count.
 `"HD 102365"`, not `102365`). Stars with no HD get `None` — Gould covers bright southern stars
 (V ≲ 7), essentially all of which carry HD numbers.
 
+> **[B4] BUILD FINDING — the SAO fallback was UNREACHABLE and has been removed.** ⚠️ Found by
+> `/code-review` (2026-07-29), verified, and fixed. **`designations` can never contain an `"SAO"`
+> key**: neither `core/databases.py`'s own `keys_order`/`prefix_map` (`:304`/`:312`) nor the shared
+> `_CSV_PREFIX_MAP` captures SAO ids. So `matched_on == "sao"` was dead code from the first commit.
+>
+> **The test made it worse, not better.** `test_sao_fallback_fires_when_no_hd` hand-built
+> `{"SAO": "SAO 223020"}` — **a dict shape the production pipeline cannot produce** — so it passed
+> green against an unreachable branch. That is false confidence, and it is the specific failure mode
+> §9's "fully additive" verification could not catch: the block was additive *and* partly inert.
+>
+> **Fix: drop the fallback, don't implement it.** SIMBAD *does* emit `SAO nnnnn`, so it is
+> implementable — but only by adding SAO to the designation key set, which also injects `SAO nnnnn`
+> into `desig_str` on all four GUI banners and into the `query.py` contract. **That is Phase AN's
+> AN2 "key insertion + ripple" (Medium risk, gated on a product decision), over the same map AN0 is
+> about to consolidate.** Doing it here would have handed AN a fresh dict-key/join-list divergence
+> next to the MAIN_ID one in AN0c. **Measured payoff if AN takes it up: 26 catalogue rows carry an
+> SAO number but no HD, of which only 3 have a Gould number** — out of 7756.
+>
+> Shipped instead: HD-only join, `matched_on` constant `"hd"`, `sao` still echoed from the matched
+> row, the column retained in the schema, and three replacement tests — including
+> **`test_sao_is_absent_from_the_designation_key_set`**, which fails the moment anything starts
+> capturing SAO ids, as the prompt to reconsider. Docs corrected in both files: a consumer branching
+> on `matched_on == "sao"` would have been writing dead code.
+
 **AO2a — duplicate keys.** 11 HD values appear on two rows (`m_HD`-flagged components). Tie-break:
 **lowest `g_number` wins**, in SQL, pinned by a test — and only correct once AO1b lands.
 **[R5] SAO duplicates are unaddressed.** The same multi-component ambiguity may exist for SAO-only
 matches. **Measure SAO duplicate counts in the source during AO0** and give SAO its own tie-break if
 they exist; do not assume congruence with the HD duplicates.
+
+> **[B2] R5 DISCHARGED — measured 2026-07-29: SAO has ZERO duplicates.** 8415 distinct SAO values
+> over 8415 non-null rows (`GROUP BY sao HAVING COUNT(*) > 1` → 0). HD is confirmed at 11 duplicate
+> keys / 11 extra rows, as §5 said. So SAO needed no separate rule — but the shipped query applies
+> the same `ORDER BY g_number LIMIT 1` on both branches anyway, so a future re-export that *does*
+> introduce SAO duplicates stays deterministic rather than silently arbitrary. Both counts are
+> **pinned by `tests/test_gould.py::test_hd_duplicates_exist_and_sao_duplicates_do_not`**, so a
+> re-export that changes them fails loudly.
+>
+> **[B3] One case §5 did not name: `g_number IS NULL` rows must be excluded from the tie-break.**
+> 715 rows carry HD/SAO but no Gould number, and **SQLite sorts NULL *first***, so a bare
+> `ORDER BY g_number LIMIT 1` on an HD shared by a numbered and an un-numbered row would return the
+> **un-numbered** one — a block with `g_number: None` and a nonsense display string. The shipped
+> query filters `AND g_number IS NOT NULL`; pinned by `test_tie_break_ignores_null_gould_rows`.
+> This is the same NULL-ordering hazard as AO1b, arriving from the opposite direction.
 
 **Free for `query.py`:** `cmd_simbad_lookup` (`query.py:77-78`) serializes the dict verbatim — the
 `gould` key appears with no dispatcher change, exactly as `gcns` did in M5.
@@ -254,6 +317,19 @@ and are places a user could reasonably expect a Gould designation to reach:
 
 Neither breaks (both use `.get()`), but "it doesn't appear automatically" was incomplete as a cost
 statement.
+
+> **[B5] Known limit — opts 17/20/21 and the seven route planners show no Gould line.** Recorded
+> 2026-07-29. Structural, not an omission: those panels never call `compute_simbad_lookup`. They go
+> through **`calculators.compute_lookup_star_for_distance`** — a separate, narrower SIMBAD lookup
+> (`NAME/HD/HR/GJ/Wolf` only, Phase AN's parser **copy #4**) that has no `gould` key to render. No
+> AO-side change could reach them.
+>
+> **Deliberately not fixed here.** Calling `_simbad_gould_block` from `calculators.py` would add a
+> second DB read per star on planners that resolve dozens of them, and would create a seventh site
+> that knows about designation parsing — the exact proliferation `PHASE_AN_PLAN.md` exists to undo.
+> If AN0's consolidation gives the two lookups a shared result shape, these ten surfaces become a
+> one-line follow-on: `add_gould_line` is already built and is a no-op when the key is absent.
+> Cross-referenced in `PHASE_AN_PLAN.md` §3 (AN0b-note).
 
 **AO3b — format.** The source's `Name` is `66G Cen`. Build `66 G. Cen` / `66 G. Centauri` from
 `g_number` + `cst` rather than reusing `Name`, so the format is ours and consistent.
@@ -320,6 +396,11 @@ wrong types in the block silently, which no test guards — hence the type asser
 
 | Tag | Original claim | Verified reality |
 |---|---|---|
+| **[B1]** *(build)* | *(unstated)* | The VizieR export **must** pass `columns=['**']`; the default omits `SAO` entirely and silently drops the fallback join key |
+| **[B2]** *(build)* | R5: "measure SAO duplicates" | **Measured: zero** (8415/8415 distinct). No SAO-specific tie-break needed; both counts now pinned by a test |
+| **[B3]** *(build)* | *(unstated)* | The tie-break must exclude `g_number IS NULL` rows — SQLite sorts NULL **first**, so an un-numbered row would win |
+| **[B4]** *(review)* | AO2's SAO fallback | **Unreachable** — `designations` never carries an `"SAO"` key, and its test hand-built a shape the pipeline can't produce. Removed; reviving it is Phase AN's AN2 call (payoff: 3 stars) |
+| **[B5]** *(scope)* | §6 display surfaces | Opts **17/20/21 + the 7 route planners** cannot show Gould — they use `compute_lookup_star_for_distance` (AN copy #4), not `compute_simbad_lookup`. Structural; a cheap follow-on if AN0 converges the two lookups |
 | **[R1]** | "Depends on AN3 only; ships independently" | Contradictory — the genitive table doesn't exist and AN3 is unstarted. **Own it here**; AN3 consumes it |
 | **[R2]** | Appears "in opt 57 / DbStatusPanel" | **No opt 57 exists** (menu jumps 56→58). GUI-only, via `gui/nav.py:128` |
 | **[R3]** | "Mirror `_seed_honorverse_hyper`" | Both precedents give **wrong NULL handling**; breaks AO2a's `ORDER BY` (SQLite NULL<INT<TEXT). Coercion must be explicit |
@@ -329,6 +410,69 @@ wrong types in the block silently, which no test guards — hence the type asser
 | **[R6]** | Display surfaces = 4 GUI panels | Also `core/report.py:114-129` (Phase Q dossier) — a deliberate include/exclude |
 | — | "Fully additive" | ✅ **Verified true** |
 | — | *(new)* | ✅ `_create_schema` runs on every `get_conn()` — new tables reach existing DBs, no migration needed |
+
+---
+
+## 13. Build record — what actually shipped (2026-07-29)
+
+| Part | Shipped as |
+|---|---|
+| §2 | `core/shared.py`: `_CONSTELLATION_GENITIVES` (88) + `_CONSTELLATION_GENITIVES_CI` + `constellation_genitive()`. Case/whitespace-insensitive; returns `None` for unknown rather than inventing a name. **All 66 codes Gould actually uses resolve** (verified against the seeded table). Location matches what `PHASE_AN_PLAN.md` §7 promises — obligation §11.1 discharged, no AN edit needed |
+| AO0 | `gouldDesignations.csv` at the repo root — 8471 rows, 7756 with a Gould number. See **[B1]** on `columns=['**']` |
+| AO1 | `gould_designations` table + 2 indexes in `_create_schema`; `_seed_gould` + `_gould_num` coercion; `_STATIC_TABLES` entry; `get_table_status()` row |
+| AO2 | `databases._simbad_gould_block` + `_gould_catalog_number` + `_gould_format`; attached as `result["gould"]` beside `result["gcns"]`. Uses `table_exists()` per **[R4]**, not the GCNS `COUNT(*)` |
+| AO3 | `gui.panels.base.add_gould_line` (one shared helper) wired into all four banner panels + `core/report.py` `identity.gould` (D3 = yes) |
+| AO4 | Both caveats documented in `docs/star-databases.md` **and** carried in the GUI tooltip, so the 1875-boundary note reaches the person looking at the odd result |
+| AO5 | `tests/test_gould.py` (33 tests, 2 fixtures per **[R3b]**) + `tests/test_gould_display.py` (12) |
+| AO6 | `docs/integration.md` (`gould` contract + `identity.gould`), `docs/star-databases.md` (new section + caveats), `docs/testing.md`, `CLAUDE.md` |
+
+**Verification:** full suite **2174 passed, 1 skipped, 0 failures** (from a 2128 baseline — +46, no
+regressions; the count includes the three tests that replaced the removed SAO ones, see [B4]). Live end-to-end through `query.py simbad-lookup`:
+
+```
+HD 102365      → "66 G. Centauri"     (matched_on: hd)
+GJ 432 A       → "289 G. Hydrae"      — and SIMBAD's main_id is "*  20 Crt"  ← AO4b, live
+Barnard's Star → null                 — northern/faint, the normal answer (AO4a)
+```
+
+**Note for whoever runs the suite:** `pytest` was **missing from the venv** on 2026-07-28 and was
+installed to establish the baseline. It is a test-only dep already listed in `requirements.txt`.
+
+### Deviations from the plan as written
+
+1. **[B1]** `columns=['**']` in the export — the plan's profile was right but the mechanism was
+   unstated, and the default silently drops `SAO`.
+2. **[B3]** `AND g_number IS NOT NULL` in the tie-break — a NULL-ordering case §5 did not name.
+3. **AO3 is one shared helper, not four inline edits.** The four banners have four different shapes
+   (`props_layout` / `result_area` / a module-level `_add_simbad_banner` / `self._result_area`), so
+   `add_gould_line(layout, simbad)` in `gui/panels/base.py` keeps the rendering and the caveat
+   tooltip in one place. Nothing in the plan required this; four copies would have been a fresh
+   instance of exactly the drift `AN §1` is about.
+4. **The dossier row is conditional, not always-present.** `identity.gould` is always in the JSON
+   (stable export contract), but the md/html row renders only when non-null — an always-"—" row
+   would be dead weight on the ~99% of dossiers with no Gould designation.
+
+### `/code-review` — run 2026-07-29, findings applied
+
+One pass over the working diff, as §11 specified. **Two findings, both real, both fixed** (the
+sequencing rule was followed: review → fix → *then* this refresh):
+
+1. **MEDIUM — the SAO fallback was unreachable.** See **[B4]** in §5. The highest-value catch of
+   the phase, and one nothing else would have found: the tests were green, the suite was green, and
+   the feature demonstrably worked end-to-end on every star anyone would try. Only reading the
+   *call-site* dict shape against the *parser* key set exposes it.
+2. **LOW — stale contract listing.** `docs/integration.md:236` still read `{… designations, gcns}`
+   while the summary table and the bullet below it both had `gould`. Fixed, along with every
+   `matched_on ∈ "hd"|"sao"` claim in both docs.
+
+**Verification after the fixes:** full suite **2174 passed, 1 skipped, 0 failures** (+1 net — three
+replacement tests for the two removed SAO ones). Live re-check: HD 102365 → `66 G. Centauri`, GJ 432 A → `289 G. Hydrae`, both `matched_on: hd`.
+
+**Lesson worth carrying into Phase AN.** §9 verified the change was *additive* and concluded nothing
+could break. That was true and still missed this: a block can be additive **and inert**. AN's
+differential harness (AN4.1) compares outputs before/after — it would not have caught this either,
+since the dead branch changes no output. **What catches this class is checking that a consumer's
+assumed input shape is one the producer can actually emit.**
 
 ---
 
@@ -383,16 +527,16 @@ Two plans describing the same artifact differently is exactly the drift that lef
 
 ## 12. Part / task summary
 
-| Part | Title | Risk | Notes |
-|---|---|---|---|
-| §2 | Constellation-genitive table | Low | **Moved into AO**; inverts the AN3 dependency |
-| AO0 | Export `V/135A` → bundled CSV | Low | **+ measure SAO duplicates** (R5) |
-| AO1 | Schema + `get_table_status` + load | Low→**Medium** | AO1b coercion is load-bearing for AO2a |
-| AO2 | `_simbad_gould_block` + attach | Low | R4: prefer `table_exists()` over `COUNT(*)` |
-| AO3 | Display surfaces | Low | AO3a/AO3b + the `report.py` decision |
-| AO4 | Caveat documentation | Low | AO4b (1875 boundaries) is the important one |
-| AO5 | Tests | **Medium** *(was Low)* | Two fixtures; type assertions |
-| AO6 | Docs | Low | `docs/star-databases.md`, `docs/integration.md`, `CLAUDE.md`, `completed_plans/README.md` |
+| Part | Title | Risk | Status | Notes |
+|---|---|---|---|---|
+| §2 | Constellation-genitive table | Low | ✅ | **Moved into AO**; inverts the AN3 dependency. Shipped in `core/shared.py` as promised |
+| AO0 | Export `V/135A` → bundled CSV | Low | ✅ | SAO duplicates measured = **0** (R5 discharged); `columns=['**']` required (**B1**) |
+| AO1 | Schema + `get_table_status` + load | Low→**Medium** | ✅ | AO1b coercion shipped + pinned by a `typeof()` test |
+| AO2 | `_simbad_gould_block` + attach | Low | ✅ | Uses `table_exists()` per R4; tie-break excludes NULL `g_number` (**B3**) |
+| AO3 | Display surfaces | Low | ✅ | One shared `add_gould_line` helper + `report.py` (D3 = yes) |
+| AO4 | Caveat documentation | Low | ✅ | AO4b also surfaced in the GUI tooltip, not just the docs |
+| AO5 | Tests | **Medium** *(was Low)* | ✅ | 45 tests across two files; two fixtures; type assertions |
+| AO6 | Docs | Low | ✅ | `docs/star-databases.md`, `docs/integration.md`, `docs/testing.md`, `CLAUDE.md` |
 
 **Order:** §2 → AO0 → AO1 → AO2 → AO5 → AO3 → AO4 → AO6.
 

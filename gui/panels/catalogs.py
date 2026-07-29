@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 
-from gui.panels.base import ResultPanel, DiagramToggleMixin
+from gui.panels.base import ResultPanel, DiagramToggleMixin, add_gould_line
 from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.viz
@@ -199,6 +199,7 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         self._result_area.addWidget(
             QLabel(f"<b>SIMBAD:</b> {simbad.get('desig_str', 'N/A')}")
         )
+        add_gould_line(self._result_area, simbad)  # Phase AO3 — no-op when absent
 
         # ── Data / Hypatia tabs ───────────────────────────────────────────────
         data_tabs = QTabWidget()

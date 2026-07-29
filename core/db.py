@@ -395,6 +395,25 @@ def _create_schema(conn: sqlite3.Connection):
             PRIMARY KEY (project_id, star_name)
         );
         CREATE INDEX IF NOT EXISTS idx_project_members_pid ON project_members(project_id);
+
+        -- Phase AO: Gould designations (Uranometria Argentina, Gould 1879), from
+        -- the bundled gouldDesignations.csv (VizieR V/135A). SIMBAD carries NO
+        -- Gould ids at all, so this is a separate data layer, not a parser change.
+        -- Bright southern stars only: 8471 rows, 7756 with a Gould number.
+        -- `cst` uses 1875 boundaries and deliberately disagrees with the modern
+        -- IAU constellation for some stars — see PHASE_AO_PLAN.md AO4b.
+        CREATE TABLE IF NOT EXISTS gould_designations (
+            g_number   INTEGER,      -- NULL for the 715 rows without one
+            cst        TEXT,         -- IAU 3-letter code, 1875 boundaries
+            hd         INTEGER,      -- primary join key
+            sao        INTEGER,      -- fallback join key
+            flamsteed  INTEGER,
+            bayer      TEXT,         -- LaTeX form as published, e.g. "\\alpha1"
+            name       TEXT,
+            vmag       REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_gould_hd  ON gould_designations(hd);
+        CREATE INDEX IF NOT EXISTS idx_gould_sao ON gould_designations(sao);
     """)
     conn.commit()
     _migrate_schema(conn)
@@ -434,6 +453,7 @@ _STATIC_TABLES = [
     ("dwarf_planets",       "dwarfPlanetInfo.csv",               "_seed_dwarf_planets"),
     ("asteroids",           "asteroidsInfo.csv",                 "_seed_asteroids"),
     ("honorverse_hyper",    "spTypeHyperLM.csv",                 "_seed_honorverse_hyper"),
+    ("gould_designations",  "gouldDesignations.csv",             "_seed_gould"),
 ]
 
 
@@ -602,6 +622,7 @@ def get_table_status() -> list:
         ("dwarf_planets",      "Dwarf Planets"),
         ("asteroids",          "Asteroids"),
         ("honorverse_hyper",   "Honorverse Hyper Limits"),
+        ("gould_designations", "Gould Designations"),
         ("projects",           "Projects"),
         ("project_members",    "Project Members"),
     ]
@@ -613,6 +634,59 @@ def get_table_status() -> list:
             count = 0
         result.append({"table": label, "rows": count, "populated": count > 0})
     return result
+
+
+def _gould_num(value, cast):
+    """Blank / placeholder → None; else `cast(value)`; else None.
+
+    Phase AO1b: the seeding precedents in this module are both WRONG for this
+    table and must not be copied. `_seed_main_sequence` inserts raw DictReader
+    strings, so a blank cell lands as empty-string TEXT rather than NULL;
+    `_seed_honorverse_hyper` `continue`s the whole row on a bad float, which
+    would drop the 715 Gould-less rows that still carry HD/SAO/Bayer data.
+
+    Getting this wrong is not cosmetic: SQLite orders NULL < INTEGER < TEXT, so
+    a column mixing ''-as-TEXT with integers makes the AO2a `ORDER BY g_number
+    LIMIT 1` tie-break silently pick the wrong component of a double star.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if s in ("", "--", "nan", "None"):
+        return None
+    try:
+        return cast(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _seed_gould(conn: sqlite3.Connection, csv_path: pathlib.Path):
+    """Load the bundled Gould catalogue (PHASE_AO_PLAN.md AO1).
+
+    The CSV carries `#` provenance comments above the header, so the reader
+    skips them before handing the file to DictReader.
+    """
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        lines = [ln for ln in f if not ln.startswith("#")]
+    rows = list(csv.DictReader(lines))
+    conn.executemany(
+        """INSERT INTO gould_designations
+           (g_number, cst, hd, sao, flamsteed, bayer, name, vmag)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            (
+                _gould_num(r.get("g_number"), int),
+                (r.get("cst") or "").strip() or None,
+                _gould_num(r.get("hd"), int),
+                _gould_num(r.get("sao"), int),
+                _gould_num(r.get("flamsteed"), int),
+                (r.get("bayer") or "").strip() or None,
+                (r.get("name") or "").strip() or None,
+                _gould_num(r.get("vmag"), float),
+            )
+            for r in rows
+        ],
+    )
 
 
 def _seed_honorverse_hyper(conn: sqlite3.Connection, csv_path: pathlib.Path):

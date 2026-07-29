@@ -37,6 +37,7 @@ in here too, with the same history (moved with `git mv`).
 | [PHASE_AK_PLAN.md](PHASE_AK_PLAN.md) | PHASE AK (Group Q) — Metric-Drive Power/Fuel + Exclusion-Boundary Calculators — Implemen |
 | [PHASE_AL_PLAN.md](PHASE_AL_PLAN.md) | Phase AL — Power Generation / Storage / Thermal Calculators (Group R; Pkt 27) |
 | [PHASE_AM_PLAN.md](PHASE_AM_PLAN.md) | Phase AM — `query.py` Catalog-Access Tier (VizieR + Gaia TAP + X-Match/HEASARC) & Binary |
+| [PHASE_AO_PLAN.md](PHASE_AO_PLAN.md) | Phase AO — Gould Designations (Uranometria Argentina) — built 2026-07-29 |
 | [PHASE_H_PLAN.md](PHASE_H_PLAN.md) | Phase H — Worldbuilding Calculators · Implementation Plan |
 | [PHASE_I_OPTS_PLAN.md](PHASE_I_OPTS_PLAN.md) | PHASE I-OPTS — Route Planning: Four New Options · Implementation Plan |
 | [PHASE_I_PLAN.md](PHASE_I_PLAN.md) | PHASE I — Multi-System / Route Planning · Implementation Plan |

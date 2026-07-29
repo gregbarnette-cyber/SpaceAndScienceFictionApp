@@ -13,7 +13,8 @@ from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retri
                      _SP_CLASS_PREFIXES,
                      _fval, _fmt,  # _fval/_fmt: one canonical copy (P4.6)
                      _parse_designations_from_ids as _parse_designations_from_ids_shared,
-                     _CSV_DESIG_KEYS as _CSV_DESIG_KEYS_SHARED)
+                     _CSV_DESIG_KEYS as _CSV_DESIG_KEYS_SHARED,
+                     constellation_genitive)
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
@@ -111,6 +112,98 @@ def _simbad_gcns_block(designations):
         if "error" in r:
             return None
         return r["star"]
+    except Exception:
+        return None
+
+
+_GOULD_ID_RE = re.compile(r"(\d+)")
+_GOULD_SOURCE = "VizieR V/135A (Gould 1879)"
+
+
+def _gould_catalog_number(designations, key):
+    """Integer catalogue number out of a designation string ('HD 102365' → 102365)."""
+    raw = (designations or {}).get(key)
+    if not raw:
+        return None
+    m = _GOULD_ID_RE.search(str(raw))
+    return int(m.group(1)) if m else None
+
+
+def _gould_format(g_number, cst):
+    """(66, 'Cen') → ('66 G. Cen', '66 G. Centauri').
+
+    AO3b: built from g_number + cst rather than reusing the catalogue's own
+    `Name` column ('66G Cen'), so the spacing/punctuation is ours and identical
+    everywhere. `display` falls back to the raw abbreviation when the
+    constellation is unknown — never invents a name.
+    """
+    designation = f"{g_number} G. {cst}" if cst else f"{g_number} G."
+    genitive = constellation_genitive(cst)
+    display = f"{g_number} G. {genitive}" if genitive else designation
+    return designation, display
+
+
+def _simbad_gould_block(designations):
+    """Optional Gould designation for a SIMBAD result (Phase AO2).
+
+    SIMBAD carries NO Gould identifiers (verified against the live `ident`
+    table — PHASE_AO_PLAN.md §0), so this reads the bundled Uranometria
+    Argentina catalogue instead, joining on HD (primary) then SAO (fallback).
+
+    Returns None when the star has no HD number, is absent from the catalogue,
+    or the table is empty/missing, and on any error: non-fatal and silent,
+    exactly like _simbad_gcns_block above. Coverage is intentionally partial —
+    Gould listed bright *southern* stars only, so None is the normal answer for
+    most stars and does not indicate a failure (AO4a).
+
+    **Joins on HD only.** The plan specified an SAO fallback, and it was built —
+    but `designations` can never carry an "SAO" key: neither this module's
+    keys_order/prefix_map nor the shared `_CSV_PREFIX_MAP` captures SAO ids, so
+    the branch was unreachable in production and its test passed only against a
+    hand-built dict shape the pipeline never produces (code review, 2026-07-29).
+    It is removed rather than left as dead code. Making it reachable means adding
+    SAO to the designation key set, which also injects "SAO nnnnn" into
+    `desig_str` on all four GUI banners and into the query.py contract — a
+    product decision belonging to Phase AN's AN2 "key insertion + ripple", which
+    is already going to touch this exact map. Payoff if AN takes it up: 26
+    catalogue rows carry an SAO number but no HD, of which only **3** have a
+    Gould number. The `sao` column is retained in the schema and echoed below.
+    """
+    try:
+        from core.db import get_conn, table_exists
+        # AO2 [R4]: an existence check, NOT the GCNS block's SELECT COUNT(*)
+        # seeded-guard — that is an O(n) scan used only to test emptiness, and
+        # this covers the missing-table case more directly. An empty table
+        # simply matches nothing below.
+        if not table_exists("gould_designations"):
+            return None
+        number = _gould_catalog_number(designations, "HD")
+        if number is None:
+            return None
+        # AO2a: 11 HD values sit on two rows (multi-component systems); lowest
+        # Gould number wins, resolved in SQL so the tie-break is deterministic.
+        # The IS NOT NULL filter is load-bearing: SQLite sorts NULL FIRST, so
+        # without it an un-numbered row sharing the HD would win (AO2a [B3]).
+        row = get_conn().execute(
+            """SELECT g_number, cst, hd, sao FROM gould_designations
+               WHERE hd = ? AND g_number IS NOT NULL
+               ORDER BY g_number LIMIT 1""",
+            (number,),
+        ).fetchone()
+        if row is None:
+            return None
+        designation, display = _gould_format(row["g_number"], row["cst"])
+        return {
+            "g_number":      row["g_number"],
+            "cst":           row["cst"],
+            "constellation": constellation_genitive(row["cst"]),
+            "designation":   designation,
+            "display":       display,
+            "hd":            row["hd"],
+            "sao":           row["sao"],
+            "matched_on":    "hd",
+            "source":        _GOULD_SOURCE,
+        }
     except Exception:
         return None
 
@@ -290,6 +383,13 @@ def compute_simbad_lookup(star_name: str) -> dict:
     # GCNS / the table is empty/missing. Lives here so query.py's simbad-lookup
     # gains the "gcns" key for free (cmd_simbad_lookup serializes this dict verbatim).
     result["gcns"] = _simbad_gcns_block(designations)
+    # Phase AO2: optional Gould designation (Uranometria Argentina 1879), kept as
+    # its own top-level key rather than folded into `designations` — that dict
+    # means "what SIMBAD returned", and SIMBAD has no Gould ids at all, so folding
+    # a VizieR-sourced value in would make desig_str misattribute provenance and
+    # put a non-SIMBAD string into star_systems.designations semantics (AO3a).
+    # Same free ride for query.py's simbad-lookup as the "gcns" key.
+    result["gould"] = _simbad_gould_block(designations)
     return result
 
 

@@ -349,6 +349,81 @@ Until Phase M, GCNS was reachable only through `query.py`. Phase M adds six **GU
 
 **M5 — opt-1 SIMBAD GCNS cross-reference.** `compute_simbad_lookup` gains a **non-fatal, silent** top-level `"gcns"` key (`_simbad_gcns_block`): it parses the Gaia id from the designations and attaches the matching `gcns_stars` row (Bayesian `dist_pc` + `dist_lo_pc`/`dist_hi_pc`, `distance_method`, Gaia G/BP/RP, `astrom_reliable_prob`, `wd_prob`, `system_id`/`n_components`) — a single indexed local read, no extra network. `None` when there is no Gaia id, the source is not in GCNS, or the table is empty. `SimbadPanel` shows it as a **"GCNS" tab** (Bayesian distance + σ beside the naive 1/ϖ distance); `query.py simbad-lookup` carries the key for free. See `docs/integration.md`.
 
+## Gould Designations (Phase AO)
+
+The star's *Uranometria Argentina* (B.A. Gould, 1879) designation — **HD 102365 = 66 G.
+Centauri**, **GJ 432 A / HD 100623 = 289 G. Hydrae**. Attached to `compute_simbad_lookup`
+as a **non-fatal, silent** top-level `"gould"` key (`_simbad_gould_block`), exactly like
+M5's `gcns`.
+
+**Why this is a data layer, not a parser change.** **SIMBAD has no Gould identifiers at
+all** — verified against the live `ident` table (2026-07-28): `id LIKE 'G. %'` → 0 rows,
+`id LIKE '% G. %'` → 0 rows, and `'%Gould%'` returns only `NAME Gould('s) Belt` (the
+nebular structure). CDS never ingested Gould's cross-identifications, so no amount of
+designation parsing can surface them.
+
+- **Source:** VizieR **`V/135A/catalog`**, exported once to the committed
+  **`gouldDesignations.csv`** (8471 rows, ~310 KB) rather than queried live — the catalogue
+  closed in 1879, and a per-star CDS round-trip would make the SIMBAD panel's latency depend
+  on VizieR availability. Columns: `g_number, cst, hd, sao, flamsteed, bayer, name, vmag`,
+  under `#` provenance comment lines. *(The export must request `columns=['**']`; VizieR's
+  default `'*'` returns a subset with **no `SAO` column**. The SAO join was later removed as
+  unreachable — see the Join bullet — but the column is exported and stored, so the flag still
+  matters for a re-export.)*
+- **Storage:** the `gould_designations` table (`core/db.py`), **auto-seeded** via
+  `_STATIC_TABLES` like `main_sequence_stars` / `planets` / `honorverse_hyper` — it
+  populates itself on first `get_conn()`, with no import step, since frozen data needs no
+  refresh path. Indexed on `hd` and `sao`. Listed in the **Database Table Status** panel.
+- **Type coercion is load-bearing** (`_gould_num`): blanks become **`NULL`, never
+  empty-string TEXT**, and a row with no Gould number is **kept** (it still carries HD/SAO).
+  Neither seeding precedent in `core/db.py` does this — `_seed_main_sequence` inserts raw
+  strings, `_seed_honorverse_hyper` drops the whole row on a bad value. It matters because
+  SQLite orders `NULL < INTEGER < TEXT`, so a mixed column would make the tie-break below
+  pick the wrong component of a double star. Pinned by a `typeof()` assertion in
+  `tests/test_gould.py`.
+- **Join: `HD` only.** The integer is parsed out of the designation string
+  (`"HD 102365"` → `102365`). **11 HD values sit on two rows** (multi-component systems) —
+  lowest `g_number` wins, resolved in SQL, with an `AND g_number IS NOT NULL` filter that is
+  load-bearing because **SQLite sorts NULL first** (without it an un-numbered row sharing the
+  HD would win). **SAO has zero duplicates** (measured 2026-07-29 over all 8415 non-null
+  values).
+  - **An `SAO` fallback was built and then removed** (code review, 2026-07-29). It was
+    **unreachable**: `designations` can never carry an `"SAO"` key — neither
+    `core/databases.py`'s `keys_order`/`prefix_map` nor the shared `_CSV_PREFIX_MAP` captures
+    SAO ids — and the test that "covered" it hand-built `{"SAO": …}`, a dict shape the
+    pipeline never produces, so it passed against dead code. `matched_on` is therefore always
+    `"hd"`; the `sao` column is retained in the schema and echoed in the block.
+  - **Reviving it is Phase AN's call, not a bug fix.** SIMBAD *does* emit `SAO nnnnn`, so the
+    fallback is implementable — but only by adding SAO to the designation key set, which also
+    injects `SAO nnnnn` into `desig_str` on all four GUI banners and into the `query.py`
+    contract. That is AN2's "key insertion + ripple", and AN is already going to touch this
+    exact map. **Payoff if taken up: 26 catalogue rows carry an SAO number but no HD, of which
+    only 3 have a Gould number.** `tests/test_gould.py::test_sao_is_absent_from_the_designation_key_set`
+    fails the moment SAO starts being captured, as the prompt to reconsider.
+- **Contract:** `{g_number, cst, constellation, designation, display, hd, sao, matched_on,
+  source}`. `designation` = `"66 G. Cen"`, `display` = `"66 G. Centauri"`, built from
+  `g_number` + `cst` via the 88-entry `core.shared._CONSTELLATION_GENITIVES` table (**owned
+  here; Phase AN3 consumes it for Bayer/Flamsteed rendering and must not rebuild it**).
+  An unrecognised code degrades to the raw abbreviation — a name is never invented.
+- **Display:** a **`Gould: 101 G. Eridani`** line beneath the designations banner on all four
+  SIMBAD-fed panels (`SimbadPanel`, `star_regions`, `nasa_exoplanet`, `catalogs`) via the
+  shared `gui.panels.base.add_gould_line`, plus a **"Gould designation"** row in the Phase Q
+  system dossier's identity block. Deliberately **not** folded into the `designations` dict:
+  that dict means "what SIMBAD returned", and mixing a VizieR value in would make `desig_str`
+  misattribute provenance and put a non-SIMBAD string into `star_systems.designations`
+  semantics.
+
+### Two documented caveats (not bugs)
+
+- **Coverage is intentionally partial.** Gould catalogued **bright southern stars** only;
+  7756 of the 8471 rows carry a Gould number. **`None` is the normal, correct answer for most
+  stars** — an absent designation is coverage, not a lookup failure.
+- **1875 constellation boundaries.** Gould predates the IAU, so `cst` sometimes names a
+  different constellation than the star sits in today. **HD 100623 is `Hya` in the catalogue
+  but lies in Crater now** — SIMBAD's own Flamsteed id for it is `*  20 Crt`. The app will
+  therefore show **both** "20 Crateris" and "289 G. Hydrae" for the same star. **This is
+  correct and must not be "reconciled"** — each designation is right within its own epoch.
+
 ## Phase G — Interactive Search & Filtering
 
 Three filter functions backing the GUI **Search & Filter** nav category. **No CLI

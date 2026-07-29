@@ -110,6 +110,16 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - Three columns: Bolometric Luminosity (`bcLuminosity`), Luminosity from Mass (`luminosityFromMass`), Calculated Luminosity
   - Six zones in order: Optimistic Inner HZ (Recent Venus), Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass), Conservative Inner HZ (Runaway Greenhouse), Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass), Conservative Outer HZ (Maximum Greenhouse), Optimistic Outer HZ (Early Mars)
 
+## Gould designation line (opts 8/9 — GUI, Phase AO)
+
+Opts 8 and 9 render a SIMBAD designations banner above the region tabs, and when the star has a
+*Uranometria Argentina* (Gould 1879) designation a **`Gould: 101 G. Eridani`** line is added
+directly beneath it via the shared `gui.panels.base.add_gould_line(result_area, simbad)`. The
+helper adds **nothing at all** when the key is absent, which is the normal case — Gould listed
+bright *southern* stars only. **Opt 10 (Manual) has no SIMBAD lookup**, so it has no banner and no
+Gould line. Source and caveats (including the 1875 constellation boundaries) are in
+`docs/star-databases.md`.
+
 ## Hypatia Catalog (opt 8 only)
 
 Opt 8 appends Hypatia Catalog data after the Calculated HZ output in both the CLI and GUI.

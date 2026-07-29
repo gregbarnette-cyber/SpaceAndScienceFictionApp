@@ -517,6 +517,56 @@ uncertainty beside opt 1's naive 1/ϖ distance**, `distance_method`,
 `query.py simbad-lookup` emits the key with **no dispatcher change** (it serializes
 the core dict verbatim).
 
+### Phase AO — the Gould designation line (4 panels, one shared helper)
+
+`compute_simbad_lookup` gains a second non-fatal/silent key, `"gould"`
+(`core/databases.py::_simbad_gould_block`) — the star's *Uranometria Argentina*
+(Gould 1879) designation, e.g. **HD 102365 → "66 G. Centauri"**, read from the
+bundled `gould_designations` table by HD number. `None` for most stars: Gould
+listed **bright southern stars only**, so an absent designation is correct
+coverage, not a failure.
+
+Unlike M5's `gcns`, this is **not** a tab — it renders as a single line directly
+beneath the existing designations banner:
+
+```
+STAR DESIGNATIONS:
+NAME Ran, *  18 Eri, GJ 144, HD 22049, HIP 16537, …
+Gould: 101 G. Eridani
+```
+
+**One shared helper, `gui.panels.base.add_gould_line(layout, simbad)`** — call it
+after adding a designations banner. It returns the `QLabel`, or **`None` having
+added nothing at all** when the key is absent or empty, so no caller needs a
+conditional. The tooltip carries the provenance (VizieR V/135A) and the 1875
+constellation-boundary caveat, so the caveat reaches whoever is looking at an odd
+result rather than living only in the docs.
+
+Wired into the four panels that render a `desig_str` banner:
+
+| Panel | Site |
+|---|---|
+| `SimbadPanel` (1) | `panels/simbad.py` — Star Properties tab, under the banner |
+| Star Regions (8/9) | `panels/star_regions.py` — under the banner, `show_designations` path |
+| NASA panels (2/3/4/5 + Map) | `panels/nasa_exoplanet.py::_add_simbad_banner` — one edit covers every caller |
+| `OecPanel` (7) | `panels/catalogs.py` — under the SIMBAD line |
+
+**Known limit — opts 17/20/21 and the seven Route Planning panels show no Gould
+line.** Structural, not an oversight: they never call `compute_simbad_lookup`.
+Their `desig_str` comes from `calculators.compute_lookup_star_for_distance` (the
+narrow `NAME/HD/HR/GJ/Wolf` lookup — Phase AN's parser **copy #4**), which has no
+`gould` key. **Do not add one by calling `_simbad_gould_block` from
+`calculators.py`** — that is a second DB read per star on planners that resolve
+dozens, and a seventh site that knows about designation parsing. If Phase AN0's
+consolidation gives the two lookups a shared result shape, `add_gould_line` makes
+these a one-line follow-on. See `PHASE_AN_PLAN.md` §3 (AN0b-note) and
+`completed_plans/PHASE_AO_PLAN.md` [B5].
+
+Also non-GUI: the Phase Q dossier's identity block carries `identity.gould`
+(`core/report.py`), rendering a **"Gould designation"** row after "Designations"
+only when non-null. `query.py simbad-lookup` emits the key with no dispatcher
+change, as `gcns` did.
+
 ## Star Regions Panel Layout Notes
 
 ### Star Regions Panels (`panels/star_regions.py`)
@@ -631,7 +681,7 @@ Viz tabs are populated during `_render()` and placed in `_viz_tabs_widget` (via 
 
 | Panel | Viz tab(s) | Toggle mechanism |
 |---|---|---|
-| `SimbadPanel` (1) | "Star Properties", "GCNS" (when `result["gcns"]` present — Phase M5), "Hypatia", "Abundance Profile" + "Kinematics" (Phase O O11, when Hypatia data / U·V·W available) — inline `QTabWidget`, no Show Diagrams button | Inline (all tabs always visible) |
+| `SimbadPanel` (1) | "Star Properties" (+ a `Gould:` line under the banner when `result["gould"]` is present — Phase AO), "GCNS" (when `result["gcns"]` present — Phase M5), "Hypatia", "Abundance Profile" + "Kinematics" (Phase O O11, when Hypatia data / U·V·W available) — inline `QTabWidget`, no Show Diagrams button | Inline (all tabs always visible) |
 | `NasaPlanetarySystemsPanel` (3) | "Orbital Diagram" (+ Phase O O4 solar-overlay checkbox & O10b hyper-limit checkbox), "HZ Diagram", "Mass–Radius" (Phase O O3), "Transit Geometry" (Phase O O13), "Size Comparison" (Phase O O14), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | Inline (uses `_scroll_area`) |
 | `NasaPlanetarySystemsMapPanel` | "System Map" (+ Phase O O5a date scrubber), "Orbital Diagram" (+ O4 solar-overlay & O10b hyper-limit checkboxes), "HZ Diagram", "Mass–Radius" (O3), "Transit Geometry" (O13), "Size Comparison" (O14), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | Inline (uses `_scroll_area`) |
 | `NasaHwoExepPanel` (4) | "HZ Diagram" (EEID from `st_eei_orbsep`), "Abundance Profile" + "Kinematics" (Phase O O11) (when Hypatia data / U·V·W available) | `DiagramToggleMixin` |

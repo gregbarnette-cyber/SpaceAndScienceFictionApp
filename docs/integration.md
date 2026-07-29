@@ -86,7 +86,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 
 | Subcommand | Required args | Network | Output top-level keys (success) |
 |---|---|---|---|
-| `simbad-lookup` | `--star` | SIMBAD | `main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, designations, desig_str, gcns` (`fe_h` = [Fe/H] from `mesfe_h`, `null` when absent; `gcns` optional — Phase M5, `null` when absent) |
+| `simbad-lookup` | `--star` | SIMBAD | `main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, designations, desig_str, gcns, gould` (`fe_h` = [Fe/H] from `mesfe_h`, `null` when absent; `gcns` optional — Phase M5, `null` when absent; `gould` optional — Phase AO, `null` when absent) |
 | `oec-system` | `--name` | none (local cache)‡ | `query, matched_name, system` (recursive node tree) |
 | `oec-planet` | `--name` | none (local cache)‡ | `query, planet, attached_to, host_chain, system_name` |
 | `oec-search` | all optional (`--min-stars/--max-stars`, `--status`, `--circumbinary`, `--discovery-method`, `--discovery-year-min/max`, `--mass-min/max`, `--radius-min/max`, `--period-min/max`, `--sma-min/max`, `--spectral-type`, `--limit`) | none (local cache)‡ | `count, capped, cap, filters, systems[]` |
@@ -233,9 +233,10 @@ SIMBAD star lookup — returns full star info and all known designations.
 query.py simbad-lookup --star "Tau Ceti"
 ```
 Core function: `databases.compute_simbad_lookup(star)`
-Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, desig_str, designations, gcns}`. `fe_h` is the host `[Fe/H]` from SIMBAD's `mesfe_h` table (`null` when SIMBAD has no value); it is the real-anchor metallicity source for the `generate-system` v2 path. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); a catalog with no id is `null`. Numeric fields may be `null`.
+Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, desig_str, designations, gcns, gould}`. `fe_h` is the host `[Fe/H]` from SIMBAD's `mesfe_h` table (`null` when SIMBAD has no value); it is the real-anchor metallicity source for the `generate-system` v2 path. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); a catalog with no id is `null`. Numeric fields may be `null`.
 - **Gaia id**: the `"Gaia EDR3"` key holds the Gaia source id as SIMBAD now formats it — `"Gaia DR3 <id>"` (SIMBAD renamed EDR3→DR3 in its id output; the source_ids are identical). To get the bare numeric id, strip the `"Gaia DR3 "` / `"Gaia EDR3 "` prefix. This is the same id used as `--id` for `gcns-source`.
 - **`gcns`** (Phase M5): an **optional top-level GCNS cross-reference** — the matching `gcns_stars` row (same shape as `gcns-source`'s `star`: Bayesian `dist_pc` + `dist_lo_pc`/`dist_hi_pc`, `distance_method`, Gaia G/BP/RP, `astrom_reliable_prob`, `wd_prob`, `system_id`/`n_components`, …), giving a Bayesian distance **with 16th/84th-percentile uncertainty** beside the naive `1/ϖ` `ly`/`parsecs`. The key is **always present** but is `null` when the star has no Gaia id, is not in GCNS, or the `gcns_stars` table is empty/missing — **non-fatal and silent** (a single indexed local-DB read; no extra network). Built inside `compute_simbad_lookup`, so every `simbad`-embedding subcommand below carries it too.
+- **`gould`** (Phase AO): an **optional top-level Gould designation** — the star's *Uranometria Argentina* (Gould 1879) number, e.g. HD 102365 → **66 G. Centauri**. Shape: `{g_number, cst, constellation, designation, display, hd, sao, matched_on, source}`, where `designation` is the abbreviated form (`"66 G. Cen"`), `display` the genitive form (`"66 G. Centauri"`), `cst` the IAU 3-letter code, and `matched_on` is always `"hd"` (see the join note below). `constellation`/`display` fall back to the raw abbreviation for an unrecognised code — a name is never invented. The key is **always present** but is `null` when the star has no HD number, is absent from the catalogue, or the `gould_designations` table is empty/missing — **non-fatal and silent**, like `gcns`. **Joins on HD only:** an SAO fallback was built and then removed (code review, 2026-07-29) because `designations` never carries an `"SAO"` key, making the branch unreachable — so `matched_on` is a constant and **a consumer branching on `"sao"` would be writing dead code**. `sao` is still echoed from the matched row. Only 26 catalogue rows have an SAO number but no HD, and just 3 of those carry a Gould number. **Sourced from bundled VizieR `V/135A`, not SIMBAD** (SIMBAD's `ident` table contains zero Gould ids), so no extra network call. **`null` is the normal answer for most stars:** Gould listed only bright *southern* stars — 8471 rows, 7756 with a Gould number — so an absent designation is correct coverage, not a lookup failure. **Constellations use Gould's 1875 boundaries and may disagree with the modern IAU one for the same star** — HD 100623 is `Hya` here while SIMBAD's own Flamsteed id is `*  20 Crt` (Crater). Both are right; do not reconcile them.
 
 #### `oec-system` / `oec-planet` (Open Exoplanet Catalogue)
 The Open Exoplanet Catalogue exposed as a recursive **`system → binary → star → planet → satellite`
@@ -2157,6 +2158,12 @@ Core function: `report.build_system_dossier(star, sections=None, fmt="markdown")
   columns), `planets` (**both** NASA pscomppars [priority 1] and HWC [priority 2] sub-tables
   when both resolve), `hypatia` (all measured species, grouped by nucleosynthetic family), and
   `gcns` (Bayesian distance + σ).
+- **`identity.gould`** (Phase AO, additive): the star's Gould designation in genitive display
+  form (`"66 G. Centauri"`), or `null`. The key is **always present** in the `json` `data`
+  payload; the rendered md/html adds a **"Gould designation"** row directly after
+  "Designations" **only when non-null**, so the ~99% of dossiers with no Gould designation are
+  byte-identical to before. It is **not** appended to the `designations` list — that list is
+  SIMBAD-sourced and Gould comes from VizieR. `null` for Sol (Gould catalogued southern stars).
 - **`Sol`/`Sun`** is the **offline reference-origin path**: identity from solar constants,
   regions/HZ from `compute_sol_regions`, `planets` from the real Solar System tables (Planets /
   Dwarf Planets / Major Asteroids; `moons` opt-in), Hypatia from the solar [X/H]≡0 zero-point,
