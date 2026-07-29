@@ -41,6 +41,25 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
     **not** gain these keys (those tables name the star in a separate column). And
     `star_systems.designations` will not carry them until the next option-50 rebuild — see the opt-50
     section below.
+  - **Rendering (Phase AN3, 2026-07-29) is a display layer and stores nothing.**
+    `core.shared.format_star_designation("*  10 CMi")` → `"10 Canis Minoris"`;
+    `format_designation_names(designations)` gives the `[(key, display), …]` pairs the GUI line
+    `gui.panels.base.add_designation_names_line` renders beneath the banner on the same four panels
+    as the Gould line. AN3 owns the **Greek abbreviation** table (`_GREEK_ABBREVIATIONS`, 24 letters
+    verified against live SIMBAD — `mu.`/`nu.`/`pi.` carry a **trailing period**, and ξ/θ/ο are
+    spelled `ksi`/`tet`/`omi`); the 88 **constellation genitives** are Phase AO's table, consumed
+    here and never rebuilt. Superscript numerals render (`* alf01 Cen` → `α¹ Centauri`) — not an
+    edge case, since α Cen A/B are the only corpus stars whose Bayer id survives the MAIN_ID dedupe.
+    A `** ` double-*system* id renders as `None`, and an unknown constellation or an unmapped Bayer
+    *extension* letter (`* b Vel` → `b Velorum`) degrades to the raw token rather than inventing one.
+  - **`core.shared.strip_star_prefix` is the one prefix stripper for display labels.** It strips
+    `NAME `/`V* `/`* ` **and then `.strip()`s** — which matters only for Flamsteed, whose SIMBAD form
+    carries a **double** space (`"*  18 Eri"`), so the fixed-width `name[len("* "):]` slice that three
+    display sites used left a stray leading space (`" 18 Eri"`). That misrendered **796 live
+    `star_systems` rows** before Phase AN existed. It deliberately leaves `** ` alone (that id names a
+    different object). Use it rather than open-coding the slice —
+    `tests/test_designation_display.py::StripperTest::test_no_display_site_open_codes_the_slice_any_more`
+    fails if a copy returns.
 - Parallax (mas) from `plx_value`; distance in parsecs = 1000 / plx; light years = parsecs × 3.26156; all rounded to 4 decimal places.
 - Missing/masked SIMBAD fields are handled by `_safe_get()` and shown as `N/A`.
 - `compute_simbad_lookup` in `core/databases.py` checks `len(result) == 0` in addition to `result is None`; SIMBAD can return an empty table (not `None`) for unknown star names, and both cases now return `{"error": "No results found for '...'"}` cleanly.

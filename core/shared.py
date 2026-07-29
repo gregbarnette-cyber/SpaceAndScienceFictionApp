@@ -385,6 +385,157 @@ def constellation_genitive(abbr):
         return None
     return _CONSTELLATION_GENITIVES_CI.get(str(abbr).strip().lower())
 
+
+# ─── Bayer / Flamsteed display rendering (Phase AN3) ──────────────────────────
+#
+# AN3 is RENDERING ONLY. The raw SIMBAD string ("*  18 Eri") stays the
+# identifier — stored verbatim, round-trippable, and what AN0–AN2 capture. The
+# pretty form ("18 Eridani") is built on demand at a display site and is never
+# written to `designations`, `star_systems.designations` or the query.py
+# contract. That scope guard is why AN3 cannot move the AN4.1 golden baseline.
+#
+# Two tables are needed and only ONE is built here: the Greek abbreviation
+# table below. The 88-entry constellation genitive table above is owned by
+# Phase AO and CONSUMED here — do not rebuild it (PHASE_AN_PLAN.md §7).
+
+# SIMBAD's 3-character Bayer abbreviations. All 24 verified against live SIMBAD
+# (2026-07-29) by querying a star for each letter and reading back the `* ` id —
+# not transcribed from a reference list. The four non-obvious spellings are the
+# reason that mattered: SIMBAD pads to three characters with a TRAILING PERIOD
+# ("mu.", "nu.", "pi."), transliterates xi as "ksi", theta as "tet", and
+# omicron as "omi" (confirmed: `mu Cet` → "* mu. Cet", `xi Boo` → "* ksi Boo",
+# `theta Ori` → "* tet Ori", `omicron Cet` → "* omi Cet").
+_GREEK_ABBREVIATIONS = {
+    "alf": "α", "bet": "β", "gam": "γ", "del": "δ",
+    "eps": "ε", "zet": "ζ", "eta": "η", "tet": "θ",
+    "iot": "ι", "kap": "κ", "lam": "λ", "mu.": "μ",
+    "nu.": "ν", "ksi": "ξ", "omi": "ο", "pi.": "π",
+    "rho": "ρ", "sig": "σ", "tau": "τ", "ups": "υ",
+    "phi": "φ", "chi": "χ", "psi": "ψ", "ome": "ω",
+}
+
+# Tolerated input spellings for the same letters. SIMBAD itself emits only the
+# keys above, but these arrive from hand-typed input and from other catalogues
+# (gouldDesignations.csv stores the LaTeX form), and none of them can collide
+# with a Bayer *extension* letter, which is always a single character.
+_GREEK_ABBREVIATIONS.update({
+    "mu": "μ", "nu": "ν", "pi": "π", "xi": "ξ", "the": "θ", "omc": "ο",
+})
+
+_SUPERSCRIPT_DIGITS = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+# A Bayer letter may carry a zero-padded numeral: "alf01" → α¹, "omi02" → ο².
+# Anchored at the end so it cannot fire on a constellation abbreviation.
+_BAYER_NUMERAL_RE = re.compile(r"^(.*?)(\d+)$")
+
+# The prefixes a star identifier may carry. Order matters only in that "V* "
+# must be tested before "* " would be — it is not, since "V* " does not start
+# with "* "; the tuple is ordered longest-first anyway so the rule is local.
+#
+# "** " is DELIBERATELY ABSENT. A `** ` id names a double-STAR SYSTEM, not this
+# star (D2), so stripping it would produce a confident-looking label for the
+# wrong object. Note it also cannot be stripped by accident: "** X" does not
+# satisfy startswith("* ") — two asterisks then a space never match
+# asterisk-then-space (PHASE_AN_PLAN.md [A4]).
+_STAR_ID_PREFIXES = ("NAME ", "V* ", "* ")
+
+
+def strip_star_prefix(name):
+    """Strip a SIMBAD identifier prefix for display: "*  18 Eri" → "18 Eri".
+
+    The canonical stripper. Three display sites previously open-coded this as
+    ``name[len(prefix):]`` with no follow-up ``.strip()``, which is correct for
+    every prefix EXCEPT the one AN2 made common: a Flamsteed id carries a
+    **double** space ("*  18 Eri", D9), so a fixed-width slice leaves a stray
+    leading space and the label renders as " 18 Eri". That already misrendered
+    **796 live `star_systems` rows** before this phase — a pre-existing display
+    bug, not a Bayer/Flamsteed cost (PHASE_AN_PLAN.md §7 [A3]).
+
+    Leaves a `** ` double-system id untouched (see _STAR_ID_PREFIXES), and
+    returns anything else unchanged, so it is safe to call on any name.
+    """
+    s = str(name or "").strip()
+    for prefix in _STAR_ID_PREFIXES:
+        if s.startswith(prefix):
+            return s[len(prefix):].strip()
+    return s
+
+
+def _format_bayer_letter(token):
+    """"alf" → "α"; "alf01" → "α¹"; an unmapped token unchanged.
+
+    Bayer designations are not exclusively Greek — the extension letters a–z
+    and A–Z are real Bayer designations (`gouldDesignations.csv` carries 300+ of
+    them). Those are already in display form, so an unmapped token is returned
+    verbatim rather than dropped or flagged.
+    """
+    base, numeral = token, ""
+    m = _BAYER_NUMERAL_RE.match(token)
+    if m and m.group(1):
+        base, numeral = m.group(1), m.group(2).lstrip("0") or "0"
+    letter = _GREEK_ABBREVIATIONS.get(base.lower(), base)
+    return letter + numeral.translate(_SUPERSCRIPT_DIGITS)
+
+
+def format_star_designation(id_str):
+    """Render a `* `-family SIMBAD id as a display name, or None if it isn't one.
+
+        "*  10 CMi"    → "10 Canis Minoris"        (Flamsteed — the common case)
+        "* alf CMi"    → "α Canis Minoris"         (Bayer)
+        "* alf CMi A"  → "α Canis Minoris A"       (Bayer + component)
+        "* alf01 Cen"  → "α¹ Centauri"             (Bayer + superscript numeral)
+        "*  40 Eri B"  → "40 Eridani B"            (Flamsteed + component)
+        "** LDS 6248A" → None                      (double-SYSTEM id, not this star)
+
+    **Flamsteed is the common case to render, not Bayer** — on a `* `-main_id
+    star the chosen Bayer id equals MAIN_ID and D3's dedupe suppresses it, so
+    the id this phase actually surfaces is the Flamsteed one, which is never a
+    main id (PHASE_AN_PLAN.md §5). The superscript branch is not hypothetical
+    either: α Cen A/B are the corpus stars whose Bayer id survives D3, and they
+    survive it precisely *because* they carry the superscript form (§4b).
+
+    Degrades rather than invents, at every step: an unknown constellation code
+    keeps its raw abbreviation ("* alf Xyz" → "α Xyz"), an unmapped letter token
+    is passed through (the Bayer extension letters), and a shape with no
+    constellation token at all is returned prefix-stripped. Mirrors
+    `constellation_genitive`'s own contract — a name is never made up.
+
+    A `V* ` id renders too (it is the same shape), which costs nothing and means
+    promoting "Variable" to a designation key later needs no display work.
+    """
+    kind = _classify_star_id(id_str)
+    if kind is None:
+        return None
+    body = strip_star_prefix(id_str)
+    tokens = body.split()
+    if not tokens:
+        return None
+
+    head = tokens[0] if kind == "Flamsteed" else _format_bayer_letter(tokens[0])
+    if len(tokens) < 2:
+        return head
+    constellation = constellation_genitive(tokens[1]) or tokens[1]
+    return " ".join([head, constellation] + tokens[2:])
+
+
+def format_designation_names(designations):
+    """Pretty display names for the Bayer/Flamsteed keys of a designation dict.
+
+    Returns ``[(key, display), …]`` in Bayer-then-Flamsteed order, skipping keys
+    the dict does not carry — so it is empty for the majority of stars and for
+    every narrow-key-set caller (D7: opts 17/19/20/21 and the seven route
+    planners deliberately do not carry these keys).
+
+    This is the display-site entry point; ``format_star_designation`` is the
+    per-id one.
+    """
+    out = []
+    for key in ("Bayer", "Flamsteed"):
+        display = format_star_designation((designations or {}).get(key))
+        if display:
+            out.append((key, display))
+    return out
+
 # ─── Module-level cache for main sequence data ────────────────────────────────
 
 _MAIN_SEQUENCE_DATA = None

@@ -272,6 +272,38 @@ class ResultPanel(QWidget):
                 pass  # button was deleted by a reset() while the thread was running
 
 
+def add_designation_names_line(layout, simbad):
+    """Add the rendered Bayer/Flamsteed names beneath a designations banner (AN3).
+
+    *simbad* is a ``compute_simbad_lookup`` result. Adds nothing when the star
+    carries neither key, which is the normal case — SIMBAD emits them for bright
+    stars only. Mirrors ``add_gould_line`` deliberately: same placement, same
+    no-op-when-absent contract, same "returns the QLabel or None".
+
+    The banner directly above already shows the RAW ids ("*  10 CMi") because
+    those are the identifiers; this line is the readable form ("10 Canis
+    Minoris"). Rendering is never stored — see ``core.shared.format_star_designation``.
+
+    On most bright stars this shows the **Flamsteed** name alone: the chosen
+    Bayer id usually equals MAIN_ID, so D3's dedupe removes it from the banner
+    while the key itself survives (PHASE_AN_PLAN.md §5). α Cen A/B are the
+    exception and show both, via the superscript form (α¹ Centauri).
+    """
+    from core.shared import format_designation_names
+
+    names = format_designation_names((simbad or {}).get("designations"))
+    if not names:
+        return None
+    label = QLabel(" · ".join(f"<b>{k}:</b> {v}" for k, v in names))
+    label.setWordWrap(True)
+    label.setToolTip(
+        "Rendered from the SIMBAD identifiers shown above. Constellation names "
+        "are the Latin genitive form used in star designations."
+    )
+    layout.addWidget(label)
+    return label
+
+
 def add_gould_line(layout, simbad):
     """Add the Gould designation line beneath a designations banner (Phase AO3).
 

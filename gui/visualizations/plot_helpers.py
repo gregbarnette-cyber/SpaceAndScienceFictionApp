@@ -5,7 +5,9 @@
 
 import math
 
-from core.shared import spectral_leading_class, _SP_DISPLAY_LETTERS
+from core.shared import (
+    spectral_leading_class, strip_star_prefix, _SP_DISPLAY_LETTERS,
+)
 
 try:
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -1865,11 +1867,9 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
     star_labels = []      # every toggleable label (for the zoom visibility cb)
     declutter_labels = []  # per-star + Sol labels the screen-space declutter moves
     for s, x, y in zip(body_stars, body_xs, body_ys):
-        nm = s["name"]
-        for prefix in ("NAME ", "* ", "V* "):
-            if nm.startswith(prefix):
-                nm = nm[len(prefix):]
-                break
+        # AN3: the one canonical stripper. The open-coded fixed-width slice this
+        # replaced left a stray leading space on Flamsteed ids ("*  18 Eri").
+        nm = strip_star_prefix(s["name"])
         z = s.get("z", 0.0)
         lbl = f"{nm} (Z={z:+.3f})"
         txt = ax.annotate(
@@ -2287,11 +2287,9 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
     # keeps its labels hidden via the `_o16_cls` tag + the `hidden` set.
     star_labels = []
     for s, x, y, z in zip(body_stars, body_xs, body_ys, body_zs):
-        nm = s["name"]
-        for prefix in ("NAME ", "* ", "V* "):
-            if nm.startswith(prefix):
-                nm = nm[len(prefix):]
-                break
+        # AN3: the one canonical stripper. The open-coded fixed-width slice this
+        # replaced left a stray leading space on Flamsteed ids ("*  18 Eri").
+        nm = strip_star_prefix(s["name"])
         lbl = f"{nm} (Z={s.get('z', 0.0):+.3f})"
         txt = ax.text(x, y, z, lbl, color=_SC_STAR_LBL, fontsize=7, zorder=8,
                       ha="left", va="bottom")

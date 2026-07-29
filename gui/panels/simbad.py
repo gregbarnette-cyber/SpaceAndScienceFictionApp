@@ -6,7 +6,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from gui.panels.base import ResultPanel, add_gould_line
+from gui.panels.base import (
+    ResultPanel, add_designation_names_line, add_gould_line,
+)
 from gui.panels.hypatia_tab import build_hypatia_tab, fit_table_height
 from gui.visualizations.plot_helpers import mpl_available, make_abundance_canvas, log_viz_error, wrap_scrollable, make_kinematics_tab
 import core.databases
@@ -159,6 +161,7 @@ class SimbadPanel(ResultPanel):
         banner.setWordWrap(True)
         banner.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         props_layout.addWidget(banner)
+        add_designation_names_line(props_layout, result)   # AN3 — no-op when absent
         add_gould_line(props_layout, result)      # Phase AO3 — no-op when absent
 
         plx    = result.get("plx_value")

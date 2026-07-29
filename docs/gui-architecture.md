@@ -567,6 +567,46 @@ Also non-GUI: the Phase Q dossier's identity block carries `identity.gould`
 only when non-null. `query.py simbad-lookup` emits the key with no dispatcher
 change, as `gcns` did.
 
+### Phase AN3 — the rendered Bayer/Flamsteed line (same 4 panels, same pattern)
+
+Phase AN2 made `compute_simbad_lookup` carry the raw ids (`designations["Bayer"]`
+= `"* alf CMi"`, `["Flamsteed"]` = `"*  10 CMi"`). AN3 renders them, and **only**
+renders them — the raw SIMBAD string stays the identifier, so nothing here is
+written to `designations`, `star_systems.designations` or the `query.py` contract.
+
+```
+STAR DESIGNATIONS:
+* alf CMi, NAME Procyon, *  10 CMi, GJ 280 A, HD  61421, …
+Bayer: α Canis Minoris · Flamsteed: 10 Canis Minoris
+```
+
+**`gui.panels.base.add_designation_names_line(layout, simbad)`** deliberately
+mirrors `add_gould_line` — same placement (it sits directly above it), same
+returns-`QLabel`-or-`None`-having-added-nothing contract, wired into the same four
+panels. It is a no-op for most stars and for **every** narrow-key-set caller
+(opts 17/20/21 + the seven route planners never carry these keys — AN D7), so it
+is safe to call unconditionally.
+
+Backed by `core.shared.format_star_designation(id_str)` (per id) and
+`format_designation_names(designations)` (per dict). Three things to know:
+
+- **Flamsteed is the common case on screen, not Bayer.** On a `* `-main_id star
+  the chosen Bayer id *equals* `MAIN_ID`, so AN2's D3 dedupe already removed it
+  from `desig_str`; the *key* survives, so the rendered line still shows both, but
+  the id the phase actually surfaces in the banner is the Flamsteed one.
+- **The superscript numeral is a live path, not a curiosity.** α Cen A/B are the
+  corpus stars whose Bayer id survives that dedupe, precisely because SIMBAD gives
+  them `* alf01 Cen` — rendered **α¹ Centauri**.
+- **It degrades, never invents.** SIMBAD's Greek abbreviations are the table AN3
+  owns (`_GREEK_ABBREVIATIONS`, all 24 verified live — note `mu.`/`nu.`/`pi.`
+  carry a trailing period and ξ/θ/ο are spelled `ksi`/`tet`/`omi`); the 88
+  constellation genitives are **Phase AO's table, consumed here**. An unknown
+  constellation code keeps its raw abbreviation, and a Bayer *extension* letter
+  (`* b Vel` → "b Velorum") passes through unmapped rather than being dropped.
+
+**Not offered on the Phase Q dossier**, unlike Gould: that identity block is a
+JSON payload the sibling repo reads, and AN3's scope guard is display-only.
+
 ## Star Regions Panel Layout Notes
 
 ### Star Regions Panels (`panels/star_regions.py`)

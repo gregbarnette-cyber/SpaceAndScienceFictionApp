@@ -13,7 +13,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from gui.panels.base import ResultPanel, DiagramToggleMixin, add_gould_line
+from gui.panels.base import (
+    ResultPanel, DiagramToggleMixin, add_designation_names_line, add_gould_line,
+)
 from gui.panels.hypatia_tab import build_hypatia_tab, _tbl
 import core.databases
 import core.regions
@@ -397,6 +399,7 @@ def _render_result(result: dict, result_area: QVBoxLayout,
         banner = QLabel(f"<b>STAR DESIGNATIONS:</b><br>{desig_str}")
         banner.setWordWrap(True)
         result_area.addWidget(banner)
+        add_designation_names_line(result_area, simbad)    # AN3 — no-op when absent
         add_gould_line(result_area, simbad)       # Phase AO3 — no-op when absent
     tabs = _build_region_tabs(result, viz_widget=viz_widget)
     result_area.addWidget(tabs, 1)

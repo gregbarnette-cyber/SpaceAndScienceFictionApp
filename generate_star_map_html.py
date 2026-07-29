@@ -6,6 +6,7 @@ import html
 import os
 from core.calculators import compute_stars_within_distance_of_sol
 from core.viz import _SPECTRAL_COLORS
+from core.shared import strip_star_prefix
 
 LIMIT_LY = 15.0
 OUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stars_within_15ly.html")
@@ -26,12 +27,10 @@ def to_px(ly_x, ly_y):
 
 
 def short_name(name):
-    # Trim common prefixes that clutter labels.
-    for prefix in ("NAME ", "* ", "V* "):
-        if name.startswith(prefix):
-            name = name[len(prefix):]
-            break
-    return name
+    # Trim common prefixes that clutter labels. Phase AN3: delegates to the one
+    # canonical stripper — the open-coded fixed-width slice this replaced left a
+    # stray leading space on Flamsteed ids ("*  18 Eri" → " 18 Eri").
+    return strip_star_prefix(name)
 
 
 def spectral_color(sp):

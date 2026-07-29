@@ -1,6 +1,6 @@
 # Phase AN — Bayer & Flamsteed Designations
 
-**Status:** PLANNED (not started)
+**Status:** IN PROGRESS — AN4.0/AN4.1/AN0/AN1/AN2/AN2e/**AN3** built 2026-07-29; AN4-rest + AN5 remain
 **Date drafted:** 2026-07-28 · **Revised 2026-07-28** after adversarial pre-implementation review
 **Scope:** `core/shared.py`, `core/databases.py`, `core/calculators.py`, `main.py` (policy decision — §2a), tests, docs
 **Sequencing (decided 2026-07-28): `PHASE_AO_PLAN.md` ships FIRST.** AN follows.
@@ -856,6 +856,63 @@ fifth-copy problem in the display layer, and it was not in scope before.
 **Scope guard:** the raw SIMBAD string (`*  18 Eri`) is the identifier — stored verbatim and
 round-trippable. Pretty-rendering (`18 Eridani`) is a display-layer helper, never stored.
 
+### ✅ AN3 — BUILT 2026-07-29
+
+**Acceptance met exactly: the AN4.1 golden baseline did not move**, which for this part is the
+whole criterion (§12: "AN3 changes rendering only, so it cannot move the golden baseline, and a
+golden diff during AN3 means something is wrong"). Suite **2261 passed, 1 skipped** (from 2228).
+
+**What landed — one table, two functions, one GUI line, three fixed strippers.**
+
+| | |
+|---|---|
+| `core.shared._GREEK_ABBREVIATIONS` | The one table AN3 owns. 24 letters + 6 tolerated aliases |
+| `core.shared.format_star_designation(id)` | `"*  10 CMi"` → `"10 Canis Minoris"`. `None` for a non-`* `-family id |
+| `core.shared.format_designation_names(desig)` | The dict entry point → `[(key, display), …]`, empty for most stars |
+| `core.shared.strip_star_prefix(name)` | The canonical stripper — the D9 double-space fix |
+| `gui.panels.base.add_designation_names_line` | The banner line, wired into the same four panels as `add_gould_line` |
+
+**The Greek table was measured, not transcribed — and that was the right call.** All 24
+abbreviations were read back from **live SIMBAD** (`query_objectids` on one star per letter,
+2026-07-29). Four spellings are not guessable: SIMBAD pads to three characters with a **trailing
+period** (`mu.`, `nu.`, `pi.` — confirmed `mu Cet` → `* mu. Cet`) and transliterates ξ/θ/ο as
+`ksi`/`tet`/`omi`. A wrong key does not raise — it renders the raw token (`"mu. Ceti"`), which is
+exactly the silent-degradation class this phase keeps finding.
+
+**The Sonnet sweep (§11) returned a smaller answer than the plan feared, and one addition.**
+Verified: **exactly three** of the nine sites are broken by the double space — the two identical
+`plot_helpers.py` label loops (`:1869`, `:2291`) and `generate_star_map_html.py::short_name` — all
+three now delegating to `strip_star_prefix`. The other six are safe for a *reason*, which is worth
+recording because "safe" was assumed rather than shown before: `_norm_oec_name`'s trailing
+`re.sub` and `_star_id_constellation`'s no-arg `.split()` eat the extra space; the three
+`.lstrip("*").strip()` sites self-correct at any run length; and the three `NAME `-only strippers
+never see a `* ` id at all. **No new star-name stripper exists anywhere in the repo** — the sweep's
+one extra hit (`system_travel.py:124`, stripping `"Origin: "` off a dialog title) is the same code
+shape on unrelated data. It also confirmed **none of the nine had any test coverage of this case**,
+which is why the fix is pinned by source inspection as well as behaviour.
+
+**One site was deliberately left alone.** `gui/panels/nasa_exoplanet.py:93` renders MAIN_ID with
+`.lstrip("*").strip()`, which handles the double space correctly but does **not** strip `V* ` —
+so a variable-star main id renders with its prefix. Routing it to `strip_star_prefix` would fix
+that and simultaneously *regress* the `** ` case: `lstrip` collapses a `** ` system main_id to a
+clean label, while the shared helper leaves `** ` intact **on purpose** (a `** ` id names a
+different object, so stripping it into a Bayer-context label would be wrong). The two behaviours
+are right for different callers; the cosmetic `V* ` gap is pre-existing and out of AN3's bug class.
+
+**The dossier was not given the line, unlike Gould.** `core/report.py`'s identity block is a JSON
+payload the sibling repo consumes — putting a rendered name there is *storing* it, which is the one
+thing §7a forbids. The GUI banners are the display surface; a consumer wanting the pretty form has
+the raw id and can call `format_star_designation` itself.
+
+**A live finding for D8, recorded but deliberately not acted on.** `_preferred_star_id`'s docstring
+states that the bare-vs-superscript Bayer tie (two candidates, neither carrying a component letter)
+has **no corpus example**, so the tie-break falls to SIMBAD's ordering, and says "if a real example
+appears, that is the evidence to settle it with." One appeared while verifying the Greek table:
+**κ Ceti returns both `* kap01 Cet` and `* kap Cet`** (live, 2026-07-29). It is not in the 43-star
+fixture corpus, so nothing today depends on the choice. **This reopens D8's declined secondary
+tie-break with the evidence it asked for — it does not belong to AN3**, which changes no selection
+logic, and folding it in would have moved the golden baseline. Left as a named follow-on.
+
 ---
 
 ## 8. Part AN4 — Tests
@@ -1031,7 +1088,7 @@ before being folded in. **This is why the plan is trustworthy now and was not be
 | **AN0 → AN1 boundary** | **agent sweep (Opus)** | Two questions: (a) did AN0's *actual* landed shape change how AN1's classifier integrates, versus the pre-pass §4 assumes? (b) is the six-copy census still complete — did the refactor leave a straggler, or reveal a seventh? |
 | After AN1 lands | **`/code-review`** | The ordering-bug class specifically: `**`-before-`* `, component-suffix determinism, the AN0a `KeyError` constraint holding |
 | After AN2 | fold into the AN1 review | AN2d (MAIN_ID dedupe) is a visible behaviour change — verify against the harness, not by reading |
-| **During AN3** | **agent sweep (Sonnet)** | **New surface, found only by the pre-implementation review** (§7 [R8]): four existing `* `-stripping display helpers will start receiving Bayer/Flamsteed strings. Which need changes — and are there others the review didn't reach? |
+| ~~**During AN3**~~ ✅ **RAN 2026-07-29** | **agent sweep (Sonnet)** | **New surface, found only by the pre-implementation review** (§7 [R8]): four existing `* `-stripping display helpers will start receiving Bayer/Flamsteed strings. Which need changes — and are there others the review didn't reach?  **Answered: 3 of the 9 ([A3] widened it from 4) are broken, all by the same fixed-width slice; the other 6 are safe for a stated reason; and there is no tenth. Also established that none of the nine had test coverage of the double-space case, which is why the fix carries a source-inspection pin as well.** |
 | AN2e, AN4 rest, AN5 | — | Self-verifying: decisions, tests, docs |
 
 **Total: 2 agent sweeps + 2–3 `/code-review` passes.** Not one per part — most part boundaries here
@@ -1060,7 +1117,7 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 | **AN1** | `* ` classifier | Medium | ✅ **BUILT 2026-07-29** — `_classify_star_id` + D8 precedence in `core/shared.py`, wired into `_match_designations`; `tests/test_designation_ids.py` (17 tests). **Output-inert by construction** (the keys arrive in AN2), so the AN4.1 harness stayed green and the golden baseline was not regenerated. ~~`**`-before-`* ` is load-bearing~~ — **false, see [A4]** |
 | AN2 | Key insertion + ripple | **Medium** *(was Low)* | ✅ **BUILT 2026-07-29** — see §5. `Bayer`/`Flamsteed` after `NAME`; D3 dedupe in `_join_designations`; **AN2-SAO declined** (22 banners vs 3 lookups). 23/43 stars gain a key, 20/43 hit the dedupe, the narrow path unchanged. **Golden baseline regenerated** (first intended output change of the phase). `tests/test_designation_an2.py` (24 tests, incl. AN2c-T1 and AN2e's `EmptyCaseTest`). Suite **2225 passed, 1 skipped**; `/code-review` applied ([A5] + 5 low findings) |
 | AN2e | Adjudicate the §6 drift | Medium→**Low** | ✅ **BUILT 2026-07-29** — see §6. Empty case → `""` (one line); the other four rows keep-as-is, each now held by a named test. **No golden diff**, as the 0/43 measurement predicted. **[A6]: D5's stated rationale was false** — the `"N/A"` never reached the opt-50 discard rule, which retires AN2c's ordering caveat |
-| AN3 | Greek table (genitive **inherited from AO**) | Low→**Medium** | +4 display helpers to audit (§7 [R8]) |
+| AN3 | Greek table (genitive **inherited from AO**) | Low→**Medium** | ✅ **BUILT 2026-07-29** — see §7. `format_star_designation` / `format_designation_names` / `strip_star_prefix` in `core.shared` + the GUI line `add_designation_names_line` on the same four banners as AO's Gould line. Greek table **verified live**, not transcribed (`mu.`/`nu.`/`pi.` carry a trailing period; ξ/θ/ο are `ksi`/`tet`/`omi`). Sonnet sweep: **3 of 9** strippers actually broken, all fixed; **no new site** exists. **Golden baseline unmoved**, as required. `tests/test_designation_display.py` + `test_designation_display_gui.py` (33 tests). Suite **2261 passed, 1 skipped** |
 | **AN4.0** | **Capture the fixture corpus (live SIMBAD)** | Low | ✅ **BUILT 2026-07-29** — `tests/_capture_designation_fixtures.py` → `tests/fixtures/designation_ids.json`, 43 stars / 27 Bayer / 20 Flamsteed / 35 `**` / 14 `V*` ids |
 | **AN4.1** | **Differential harness** | Medium | ✅ **BUILT 2026-07-29** — `tests/test_designation_harness.py` + `designation_golden.json`. First coverage for copies 2/4/5; includes the AN4.5 Gould pin. Suite **2181 passed, 1 skipped** |
 | AN4 | Tests | **High** | Differential harness first; 4 sites have no coverage at all. **+ AN4.5** — the Gould producer/consumer pin the harness structurally cannot catch |
@@ -1068,14 +1125,15 @@ context the builder already holds. Agents are spent on *independence*, not on kn
 
 **Order:** ~~§2a decision~~ ✅ → ~~**AN4.0** (fixture capture)~~ ✅ → ~~AN4.1 (harness)~~ ✅ →
 ~~AN0 (complete, all in-scope copies)~~ ✅ → ~~AN1~~ ✅ → ~~AN2~~ ✅ → ~~AN2e~~ ✅ →
-**AN3 ← NEXT** → AN4 rest → AN5.
+~~AN3~~ ✅ → **AN4 rest ← NEXT** → AN5.
 
 **All decisions (D1–D9) are settled and every parser-side part has landed.** What remains is the
 display layer (AN3), the leftover test items, and docs. **The `designations` dict and the `desig_str`
 contract are now final for this phase** — AN3 changes rendering only, so it cannot move the golden
 baseline, and a golden diff during AN3 means something is wrong.
 
-**What AN3 must carry, from §7 [R8]/[A3] and AN2's own outcome:**
+**What AN3 had to carry, from §7 [R8]/[A3] and AN2's own outcome — all three discharged; see the
+§7 build record for what each turned out to cost:**
 
 1. **Nine strippers to audit, not four.** Three display strippers slice `name[len("* "):]` with no
    follow-up `.strip()`, so D9's double space renders as `" 18 Eri"` — already misrendering **796
