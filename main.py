@@ -2944,6 +2944,14 @@ def query_stars_within_distance_of_star():
                 "Distance":          dist,
             })
 
+    # Sol is not a SIMBAD object, so `star_systems` has no row for it — synthesize
+    # one at the heliocentric origin (core.calculators._sol_result_row does the same
+    # for the GUI / query.py path).
+    sol = core.calculators._sol_result_row(cx, cy, cz, limit_ly)
+    if sol:
+        matches.append({k: sol[k] for k in
+                        ("Star Name", "Star Designations", "Spectral Type", "Distance")})
+
     matches.sort(key=lambda r: r["Distance"])
 
     print()

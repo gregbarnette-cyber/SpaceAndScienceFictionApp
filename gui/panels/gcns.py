@@ -44,8 +44,11 @@ def _sigma(s):
 
 
 def _meth(m):
+    # "synthetic_sol_origin" is the appended Sol row (no catalogue holds the Sun);
+    # without an entry here the raw key would surface in the Distance Method column.
     return {"gcns_bayesian": "Bayesian",
-            "gcns_missing_plx_inversion": "1/ϖ inversion"}.get(m, m or "N/A")
+            "gcns_missing_plx_inversion": "1/ϖ inversion",
+            "synthetic_sol_origin": "Synthetic (origin)"}.get(m, m or "N/A")
 
 
 def _yn(v):
@@ -95,7 +98,9 @@ def _gcns_map_stars(result, *, center=False):
             out.append({"name": _name_of(s), "desig": "", "sp_type": s.get("spectral_type") or "",
                         "color": _sp_color(s.get("spectral_type")),
                         "ly": s.get("Distance"),
-                        "x": s["x"] - cx, "y": s["y"] - cy, "z": s["z"] - cz})
+                        "x": s["x"] - cx, "y": s["y"] - cy, "z": s["z"] - cz,
+                        # The synthetic Sol row -> a ★ instead of a dot.
+                        "is_sol": s.get("distance_method") == "synthetic_sol_origin"})
     else:
         out.append({"name": "Sol", "desig": "", "sp_type": "G2V",
                     "color": _SPECTRAL_COLORS.get("G", "#FFD700"),

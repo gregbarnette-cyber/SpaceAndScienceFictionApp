@@ -15,6 +15,8 @@ from .equations import _C_MS, _LY_M  # single source of truth (Phase Y/P4.5 prom
 from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
                      _to_cartesian, spectral_leading_class, _SP_DISPLAY_LETTERS,
                      sp_color,   # the one app-wide spectral palette (Phase 3)
+                     # The synthetic-Sol row constants (see _sol_result_row below).
+                     _SOL_NAME, _SOL_DESIG, _SOL_SP_TYPE, _SOL_APP_MAG, _SOL_PARSECS,
                      # AN0: the canonical designation matcher + the narrow key set
                      # (was a re-typed 5-entry prefix map in this module).
                      _match_designations, _join_designations,
@@ -324,6 +326,35 @@ def compute_distance_between_stars(star1: str, star2: str) -> dict:
     return result
 
 
+# ── Sol as a *result row* (opt 19 / GCNS M4c) ────────────────────────────────
+# The `_SOL_*` constants live in core.shared (imported at the top of this module)
+# — `core.viz` needs the name to flag Sol for its ★ chart marker and must not
+# import this heavier module. See the comment block there for why `_SOL_PARSECS`
+# is 1 AU in parsecs and why that value is load-bearing.
+
+
+def _sol_result_row(cx: float, cy: float, cz: float, limit_ly: float):
+    """A synthetic Sol row for a star-centred search, or None when out of range.
+
+    Sol sits at the heliocentric origin, so its separation from the centre star is
+    just the length of the centre's own position vector. The `0.001 <` floor is the
+    same self-exclusion the DB rows use — it drops Sol when the centre *is* Sol
+    (`compute_lookup_star_for_distance` resolves "sol"/"sun" to ly = 0).
+    """
+    dist = math.sqrt(cx * cx + cy * cy + cz * cz)
+    if not (0.001 < dist <= limit_ly):
+        return None
+    return {
+        "Star Name":         _SOL_NAME,
+        "Star Designations": _SOL_DESIG,
+        "Spectral Type":     _SOL_SP_TYPE,
+        "Distance":          dist,
+        "app_magnitude":     _SOL_APP_MAG,
+        "parsecs":           _SOL_PARSECS,
+        "x": 0.0, "y": 0.0, "z": 0.0,
+    }
+
+
 def compute_stars_within_distance_of_sol(limit_ly: float) -> dict:
     """List all stars in the star_systems DB table within limit_ly light years of Sol.
 
@@ -387,7 +418,9 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
     """List all stars in the star_systems DB table within limit_ly light years of center_star.
 
     Queries SIMBAD for center_star, then iterates star_systems and computes
-    3D Euclidean distances.
+    3D Euclidean distances. A synthetic **Sol** row is appended when the centre is
+    within limit_ly of the origin — the Sun is not a SIMBAD object, so the catalogue
+    has no row for it (see `_sol_result_row`).
 
     Returns:
         {center, limit_ly, count, stars: [sorted list of dicts with 'Distance' key]}
@@ -454,6 +487,11 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
                 "parsecs":           1000.0 / plx,
                 "x": x, "y": y, "z": z,
             })
+
+    # Sol is never a `star_systems` row, so it has to be synthesized (see above).
+    sol = _sol_result_row(cx, cy, cz, limit_ly)
+    if sol:
+        matches.append(sol)
 
     matches.sort(key=lambda r: r["Distance"])
     return {

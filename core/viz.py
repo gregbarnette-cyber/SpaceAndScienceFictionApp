@@ -7,7 +7,8 @@ import os
 from core.equations import _kopparapu_seff  # single Kopparapu Seff source (P4.6)
 from core.shared import (_to_cartesian,  # single canonical copy (P4.6)
                          spectral_leading_class, _SP_DISPLAY_LETTERS,
-                         sp_color, _SPECTRAL_COLORS as _SHARED_SPECTRAL_COLORS)
+                         sp_color, _SPECTRAL_COLORS as _SHARED_SPECTRAL_COLORS,
+                         _SOL_NAME)   # flags Sol for the ★ chart marker
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "..")
@@ -444,6 +445,10 @@ def prepare_star_map_from_result(result: dict) -> dict:
                 "x":    s["x"] - cx,
                 "y":    s["y"] - cy,
                 "z":    s["z"] - cz,
+                # Painted as a ★ rather than a dot by the chart canvases — Sol is
+                # a synthesized row (no catalogue holds the Sun), and on a busy
+                # chart it is the dot readers are usually hunting for.
+                "is_sol": s.get("Star Name") == _SOL_NAME,
             })
         center_name = result.get("center", "Center Star")
         stars.insert(0, {
@@ -1702,7 +1707,9 @@ def prepare_sky_from_star(result: dict, mag_limit: float = 6.5) -> dict:
     Input is a `compute_stars_within_distance_of_star` result: each star carries
     absolute heliocentric x/y/z (ly) + the F1 `app_magnitude`/`parsecs` keys, and the
     centre is given by `center_x/y/z`. For each star the vector FROM the vantage
-    (centre) is `(x-cx, y-cy, z-cz)`; Sol is added at `-(cx,cy,cz)` with M_V 4.83.
+    (centre) is `(x-cx, y-cy, z-cz)`. Sol arrives as an ordinary entry in the star
+    list (synthesized at the origin by `compute_stars_within_distance_of_star`),
+    so it is no longer special-cased here.
 
     Apparent magnitude from the vantage: `M = V + 5 − 5·log₁₀(parsecs)` (absolute mag
     from the Sol-centric values), then `m' = M − 5 + 5·log₁₀(d_ly/3.26156)`. Stars with
@@ -1747,17 +1754,12 @@ def prepare_sky_from_star(result: dict, mag_limit: float = 6.5) -> dict:
             "color": _sp_color(sp),
         })
 
-    # Sol as seen from the vantage (vector back toward the origin).
-    d_sol = math.sqrt(cx * cx + cy * cy + cz * cz)
-    if d_sol > 1e-9:
-        m_sol = 4.83 - 5.0 + 5.0 * math.log10(d_sol / 3.26156)
-        if m_sol <= mag_limit:
-            sky.append({
-                "name": "Sol",
-                "ra_deg": math.degrees(math.atan2(-cy, -cx)) % 360.0,
-                "dec_deg": math.degrees(math.asin(max(-1.0, min(1.0, -cz / d_sol)))),
-                "mag": m_sol, "sp_class": "G", "color": _SPECTRAL_COLORS["G"],
-            })
+    # NOTE: Sol used to be appended here as a special case. It no longer is —
+    # `compute_stars_within_distance_of_star` now carries a synthetic Sol row
+    # (see `core.calculators._sol_result_row`), which flows through the loop
+    # above and yields an identical magnitude: its `app_magnitude`/`parsecs`
+    # recover M_V = 4.83 exactly, which is the constant this block hard-coded.
+    # Re-adding it here would place Sol on the sky twice.
 
     return {
         "vantage_name": vantage,

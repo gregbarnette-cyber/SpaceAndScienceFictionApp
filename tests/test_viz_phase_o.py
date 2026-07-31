@@ -247,6 +247,15 @@ class O1SkyFromStarTest(unittest.TestCase):
                 # no V magnitude → skipped + counted
                 {"Star Name": "NoMag", "Spectral Type": "M0", "app_magnitude": None,
                  "parsecs": 5.0, "x": 3.0, "y": 0.0, "z": 2.0},
+                # Sol. `prepare_sky_from_star` used to append this itself; it now
+                # arrives as an ordinary star row synthesized by
+                # `compute_stars_within_distance_of_star` (see
+                # tests/test_sol_result_row.py), so the fixture supplies it. Its
+                # app_magnitude/parsecs recover M_V = 4.83 — the constant the removed
+                # special case hard-coded — giving the same m' as before.
+                {"Star Name": "Sol", "Spectral Type": "G2V",
+                 "app_magnitude": calc._SOL_APP_MAG, "parsecs": calc._SOL_PARSECS,
+                 "x": 0.0, "y": 0.0, "z": 0.0},
             ],
         }
 

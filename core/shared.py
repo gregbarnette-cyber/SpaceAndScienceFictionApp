@@ -970,6 +970,28 @@ def sp_color(sp_type: str) -> str:
         spectral_leading_class(sp_type, _SP_DISPLAY_LETTERS), _SP_UNKNOWN_COLOR)
 
 
+# ── Sol as a *result row* ─────────────────────────────────────────────────────
+# The Sun is not a SIMBAD catalog object, so `star_systems` can never hold a row
+# for it (nor can `gcns_stars` — Gaia doesn't observe the Sun either). But from
+# any *other* star Sol is a perfectly ordinary neighbour: 11.9 ly from Tau Ceti,
+# 4.24 ly from Proxima. Without a synthetic row it silently vanishes from every
+# "stars within X of <star>" result — table, star charts, HR diagram and sky.
+#
+# These live here rather than beside the row builder (`_sol_result_row` in
+# core/calculators.py) because `core.viz` needs the name to flag Sol for the ★
+# chart marker, and viz must not import the heavier calculators module.
+#
+# `_SOL_PARSECS` is load-bearing. The HR-diagram and night-sky preps recover an
+# absolute magnitude as `M = V + 5 − 5·log₁₀(pc)`; feeding Sol's Earth-apparent
+# V of −26.74 together with 1 AU expressed in parsecs makes that round-trip land
+# on Sol's true M_V of 4.83, so neither prep needs a Sol special case.
+_SOL_NAME     = "Sol"
+_SOL_DESIG    = "Sun"
+_SOL_SP_TYPE  = "G2V"
+_SOL_APP_MAG  = -26.74          # apparent V magnitude, seen from Earth (1 AU)
+_SOL_PARSECS  = 4.84813681e-06  # 1 AU in parsecs
+
+
 def _escape_like(s: str) -> str:
     """Escape LIKE wildcards so user text matches literally (use with ESCAPE '\\')."""
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

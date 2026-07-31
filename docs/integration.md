@@ -438,6 +438,8 @@ query.py stars-within-star --star "Epsilon Eridani" --ly 5
 Core function: `calculators.compute_stars_within_distance_of_star(star, ly)`
 Output: `{center, center_x, center_y, center_z, limit_ly, count, stars[]}`. Each star: `{"Star Name", "Star Designations", "Spectral Type", "Distance", app_magnitude, parsecs, x, y, z}` (`Distance` in ly from the center star; `app_magnitude` = Johnson V, `parsecs` = `1000/parallax` — both may be `null`). Sorted ascending by Distance. *(Phase O F1 added `app_magnitude`/`parsecs` — additive.)* `"Star Designations"` leads with the SIMBAD common name — see **Star designation strings** above. Rows whose stored `ra`/`dec` cannot be parsed are **skipped** (a blank/short sexagesimal string raises `IndexError`, now caught) rather than aborting the query; `stars-within-sol` instead returns them with `x/y/z = null`.
 
+**A synthetic `Sol` row is included** when the center star lies within `limit_ly` of the origin, so `count` and `stars[]` carry one entry that has no `star_systems` backing. The Sun is not a SIMBAD catalog object, so no catalogue build can ever supply it — yet from any other star Sol is an ordinary neighbour (11.91 ly from τ Ceti). The row is `{"Star Name": "Sol", "Star Designations": "Sun", "Spectral Type": "G2V", app_magnitude: -26.74, parsecs: 4.84813681e-06, x/y/z: 0}` with `Distance` = the center's heliocentric radius. `parsecs` is **1 AU expressed in parsecs**, not a measured distance — it is the value that makes the standard `M = V + 5 − 5·log₁₀(pc)` recovery yield Sol's true M_V of 4.83, so a consumer computing absolute magnitudes needs no special case. A consumer that wants catalogue rows only can filter on `"Star Name" == "Sol"`. Centering *on* Sol excludes it (distance 0 fails the existing `0.001` self-exclusion floor).
+
 ### Travel time
 
 #### `travel-time`
@@ -2815,6 +2817,8 @@ query.py gcns-stars-within-star --id 5853498713190525696 --ly 5
 ```
 Core function: `databases.compute_gcns_stars_within_star(star=, source_id=, limit_ly=)`
 Output: `{center, center_x, center_y, center_z, limit_ly, count, snapshot_date, gcns_version, stars[]}`. `center` is the resolved center row (with its own `x`/`y`/`z` added). Each star in `stars[]` mirrors `gcns-within-sol`'s row shape (the full GCNS fields + `system_id`/`n_components` + heliocentric `x`/`y`/`z`) **plus** a per-row `Distance` (ly from the center). The center itself is excluded **precisely** by `gaia_source_id` (with a `Distance < 1e-9` exact-self skip for a `missing_10mas` center that has no id), so Gaia-resolved **close companions remain** in the results — unlike the SIMBAD `stars-within-star`, which drops everything within `0.001` ly (~63 AU) of the center.
+
+**A synthetic `Sol` row is included** when the center lies within `limit_ly` of the origin (same reasoning as `stars-within-star` above — Gaia does not observe the Sun, so `gcns_stars` can never hold a row for it). It fills the standard row shape with `star_name: "Sol"`, `spectral_type: "G2V"`, `app_magnitude: -26.74`, `dist_pc`/`light_years` `0.0`, `x/y/z` `0.0`, and **every other GCNS field `null`** — no `gaia_source_id`, no Bayesian distance, no Gaia photometry, since none exists. It is flagged `in_gcns: false` with `distance_method: "synthetic_sol_origin"`, so it can never be mistaken for catalogue astrometry; filter on either field to get catalogue rows only.
 
 ### Search & Filter (Phase G — local DB, except `search-exoplanets`)
 

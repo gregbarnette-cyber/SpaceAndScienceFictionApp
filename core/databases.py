@@ -3317,11 +3317,16 @@ def compute_gcns_stars_within_star(star=None, source_id=None, limit_ly=None) -> 
     < 1e-9 exact-self skip for a missing_10mas center (no id) — so Gaia-resolved close
     companions remain in the results.
 
+    A synthetic **Sol** row is appended when the centre lies within limit_ly of the
+    origin — Gaia does not observe the Sun, so the catalogue has no row for it. It
+    carries `in_gcns = False` and `distance_method = "synthetic_sol_origin"`.
+
     Returns {center, center_x, center_y, center_z, limit_ly, count, snapshot_date,
     gcns_version, stars[]} (each star = gcns-within-sol row shape + 'Distance') or
     {"error": str}.
     """
-    from core.calculators import _to_cartesian
+    from core.calculators import (_to_cartesian, _SOL_NAME, _SOL_SP_TYPE,
+                                  _SOL_APP_MAG)
     from core.db import get_conn
 
     if limit_ly is None or limit_ly <= 0:
@@ -3363,6 +3368,28 @@ def compute_gcns_stars_within_star(star=None, source_id=None, limit_ly=None) -> 
             d["x"], d["y"], d["z"] = x, y, z
             d["Distance"] = dist
             matches.append(d)
+
+    # Gaia does not observe the Sun, so `gcns_stars` has no Sol row — synthesize one
+    # at the origin, the same gap `compute_stars_within_distance_of_star` fills for
+    # `star_systems` (see `core.calculators._sol_result_row`). It is flagged
+    # `in_gcns = False` with `distance_method = "synthetic_sol_origin"` so a consumer
+    # can never mistake it for catalogue astrometry.
+    sol_dist = math.sqrt(cx * cx + cy * cy + cz * cz)
+    if 1e-9 < sol_dist <= limit_ly:
+        sol = {c: None for c in _GCNS_ROW_COLS}
+        sol.update({
+            "star_name":       _SOL_NAME,
+            "spectral_type":   _SOL_SP_TYPE,
+            "app_magnitude":   _SOL_APP_MAG,
+            "dist_pc":         0.0,
+            "light_years":     0.0,
+            "in_gcns":         False,
+            "in_simbad":       False,
+            "distance_method": "synthetic_sol_origin",
+            "x": 0.0, "y": 0.0, "z": 0.0,
+            "Distance":        sol_dist,
+        })
+        matches.append(sol)
 
     matches.sort(key=lambda r: r["Distance"])
 

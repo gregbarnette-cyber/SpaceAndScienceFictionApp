@@ -6,7 +6,7 @@
 import math
 
 from core.shared import (
-    spectral_leading_class, strip_star_prefix, _SP_DISPLAY_LETTERS,
+    spectral_leading_class, strip_star_prefix, _SP_DISPLAY_LETTERS, sp_color,
 )
 
 try:
@@ -1280,6 +1280,43 @@ def _legend_filter_3d(canvas, ax, xs, ys, zs, colors, sp_types, sizes,
     return _hit
 
 
+_SPECTRAL_G = sp_color("G2V")   # Sol's dot colour, from the one app-wide palette
+
+
+def _overlay_sol_marker(ax, stars, *, xk="x", yk="y", zk=None, size=110,
+                        skip_first=False):
+    """Repaint any star flagged `is_sol` as a ★ so it stands out among the dots.
+
+    Sol is not in any star catalogue — the Sun is not a SIMBAD object and Gaia
+    does not observe it — so on a star-centred chart it arrives as a synthesized
+    row (`core.calculators._sol_result_row`). It is an ordinary small dot there,
+    and on a crowded chart it is usually the dot the reader came to find.
+
+    Drawn as an OVERLAY on top of the body scatter rather than by swapping the
+    marker in place, for two concrete reasons: the body scatter is a single
+    PathCollection whose point ORDER backs hit-testing, legend filtering and the
+    O15 selection ring; and in 3D `do_3d_projection` depth-sorts the sizes and
+    colours but **not** the paths, so a per-point path swap would migrate the ★
+    onto whichever star happened to sort into that slot as the view rotates.
+    This mirrors how the centre star is already highlighted in the map canvases.
+
+    The ★ keeps Sol's spectral (G) colour: shape carries the identity, colour
+    still carries the physics — and it stays distinct from the gold centre ★.
+    `skip_first=True` leaves index 0 alone, so on a Sol-centred chart (opt 18)
+    Sol is not marked twice on top of its own gold centre ★.
+    """
+    for i, s in enumerate(stars):
+        if (skip_first and i == 0) or not s.get("is_sol"):
+            continue
+        kw = dict(c=[s.get("color") or _SPECTRAL_G], s=size, marker="*",
+                  zorder=6, edgecolors="#fff8a0", linewidths=0.9)
+        if zk is None:
+            art = ax.scatter([s[xk]], [s[yk]], **kw)
+        else:
+            art = ax.scatter([s[xk]], [s[yk]], [s[zk]], depthshade=False, **kw)
+        art._sol_overlay = True   # tag for the tests; matplotlib ignores it
+
+
 def make_star_map_canvas(parent, stars: list, title: str = "",
                          xk: str = "x", yk: str = "y",
                          xlabel: str = "X (ly)", ylabel: str = "Y (ly)",
@@ -1324,6 +1361,9 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
     # Highlight center star
     ax.scatter([xs[0]], [ys[0]], c=[colors[0]], s=90, marker="*",
                zorder=5, edgecolors="#333333", linewidths=0.5)
+
+    # Sol (when it is not itself the centre) — a ★ so it stands out.
+    _overlay_sol_marker(ax, stars, xk=xk, yk=yk, size=90, skip_first=True)
 
     ax.set_xlabel(xlabel, color=_LABEL_CLR, fontsize=9)
     ax.set_ylabel(ylabel, color=_LABEL_CLR, fontsize=9)
@@ -1478,6 +1518,9 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
     ax.scatter([xs[0]], [ys[0]], [zs[0]], c=[colors[0]], s=100,
                marker="*", zorder=5, edgecolors="#333333", linewidths=0.5,
                depthshade=False)
+
+    # Sol (when it is not itself the centre) — a ★ so it stands out.
+    _overlay_sol_marker(ax, stars, zk="z", size=100, skip_first=True)
 
     ax.set_xlabel("X (ly)", color=_LABEL_CLR, fontsize=9)
     ax.set_ylabel("Y (ly)", color=_LABEL_CLR, fontsize=9)
@@ -1941,6 +1984,10 @@ def make_star_chart_canvas(parent, stars: list, limit_ly: float, routes=None,
             cont, ind = sc.contains(event)
             return ind["ind"][0] if cont else None
 
+    # Sol — a ★ over its dot so it stands out. `body_stars` already excludes an
+    # origin centre, so a Sol-centred chart cannot double-mark it.
+    _overlay_sol_marker(ax, body_stars, size=110)
+
     # Hover tooltip (offset annotation, follows the cursor).
     annot = ax.annotate(
         "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
@@ -2279,6 +2326,10 @@ def make_star_chart_3d_canvas(parent, stars: list, limit_ly: float, routes=None,
         def hit(event):
             cont, ind = sc.contains(event)
             return ind["ind"][0] if cont else None
+
+    # Sol — a ★ over its dot so it stands out. `body_stars` already excludes an
+    # origin centre, so a Sol-centred chart cannot double-mark it.
+    _overlay_sol_marker(ax, body_stars, zk="z", size=120)
 
     # Per-star labels anchored at each star's exact 3D point (left/bottom
     # aligned) so the label tracks its dot precisely on rotation and zoom — a
