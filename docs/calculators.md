@@ -325,17 +325,82 @@ Shortest-total-distance visit order for a set of stars (nearest-neighbor seed fr
 - **GUI table**: Leg # | Origin | Destination | Distance (LY) | LY/HR | × c | Travel Time | Cumulative Time; a
   totals line reports optimized vs as-typed distance and the saved ly / %.
 
-### B — Jump-Range Pathfinding — `compute_jump_route(origin, destination, max_jump_ly, optimize="distance")`
+### B — Jump-Range Pathfinding — `compute_jump_route(origin, destination, max_jump_ly, optimize="distance", via=None)`
 
 Route origin→destination through intermediate stars, each single jump ≤ `max_jump_ly`. `optimize="distance"` →
-**Dijkstra** (min total ly); `"jumps"` → **BFS** (fewest jumps). Graph = pool ∪ {origin, dest} (deduped).
+**Dijkstra** (min total ly); `"jumps"` → **BFS** (fewest jumps). Graph = pool ∪ {origin, dest, *waypoints*} (deduped).
 - Validate: `max_jump_ly > 0`; `optimize ∈ {distance, jumps}`; both endpoints resolvable; same endpoint (name or
-  within `1e-3` ly) → error.
+  within `1e-3` ly) → error. Waypoints: see **Required waypoints** below.
 - An unreachable destination is a **clear result, not an error**: `reachable=False`, empty `route`,
-  `stars=[origin, dest]`.
+  `unreachable_leg={from,to}` naming the hop that failed, and `stars` = **every terminal**
+  (origin + waypoints + destination) so the chart still draws the requested stars. Without waypoints that is the
+  historical `[origin, dest]`.
 - Returns `{origin_info, dest_info, reachable, optimize, jumps, total_ly, direct_ly,
-  route:[{jump, from, to, jump_ly, cumulative_ly}], max_jump_ly, stars:[map dicts along the route]}`.
-- **GUI table**: Jump # | From | To | Jump Dist (LY) | Cumulative (LY); amber "unreachable" note when `reachable=False`.
+  route:[{jump, from, to, jump_ly, cumulative_ly, waypoint}], max_jump_ly, stars:[map dicts along the route],
+  via, via_legs, unreachable_leg}`.
+- **GUI table**: Jump # | From | To | Jump Dist (LY) | Cumulative (LY); amber "unreachable" note when
+  `reachable=False`, naming the hop from `unreachable_leg`. A **"Via (optional, comma-separated)"** field sits
+  between Destination and Max Jump (blank = no waypoints); a waypointed route lists the chosen visit order above
+  the table and prefixes each waypoint-arrival row's **To** cell with **◆** (from `route[i]["waypoint"]`).
+
+#### Required waypoints (`via=`)
+
+`via` is `None` or a list of star names the route **must** pass through — an **unordered set** (D2): the planner
+picks the cheapest visit order under whatever `optimize` selects, so typing them in the expensive order still
+returns the cheap one. Implemented by the `_route_through` helper in `core/calculators.py`, shared by **all three**
+jump-route planners (plain + the two dust forks — see "Waypoints on the forks" under Dust-weighted variants below),
+each passing its own `edge_cost`. It is a fixed-endpoint Hamiltonian path over the **metric closure** of the
+terminals:
+**stage 1** runs the existing `_grid_search` between each terminal pair (each unordered pair once — costs are
+symmetric to within float-summation ULPs, so the stored path is reversed for the other direction; the direct
+origin↔destination pair is skipped, since with ≥1 waypoint no permutation uses it); **stage 2** brute-forces the
+`k!` orders and breaks ties on the permutation tuple (deterministic — ties are common under `optimize="jumps"`,
+whose objective is a small integer; this is also why `via` must be an ordered **list/tuple** — a set would make
+the tie-break vary between interpreter runs); **stage 3** stitches the winning legs, de-duplicating the junction
+node at each seam. **An infinite pair short-circuits the whole closure.** Reachability is an equivalence relation on an undirected
+graph, so one unreachable pair means those two terminals are in different components and *no* visit order can
+work — stage 1 returns `unreachable_leg` at once instead of searching the rest. This is load-bearing, not tidy:
+`_grid_search`'s early exit fires only on **success**, so an unreachable pair drains the entire reachable
+component every time it is searched, and without the short-circuit one stranded waypoint would cost k+1 full
+sweeps. Pairs are ordered origin-first, so a terminal disconnected from the origin is caught on the first
+search (measured: a stranded Vega at `max_jump 4.5` over the 256k pool returns in ~8 s). Stranding a route with
+a far-flung waypoint is a documented, expected outcome, so this is a likely path rather than an exotic one.
+
+The **pairwise** closure is deliberate and measured: the alternative (one full single-source
+sweep per terminal, k+2 runs) was built and timed against the real 256k-row pool — Sol → 38 Vir via 70 Vir at
+`max_jump 20` took **227 s** as sweeps vs **4.96 s** as pairs, because `_grid_search` early-exits when the target
+pops while a sweep must settle the whole reachable component. Cost at the cap is still real (44 searches; ~12 s
+measured at k=3, `max_jump 20`), which is why the GUI runs it on a background thread. All terminals are merged into the node list **before** `_SpatialGrid` is constructed — the grid indexes
+at construction, so a later append is invisible to `neighbors()`.
+
+Three always-present output keys (`[]`/`[]`/`null` when unused): **`via`** — resolved waypoint names in the
+**chosen** visit order when `reachable`, and in the **requested** (typed) order when not, since no order was
+chosen (`via_legs` is `[]` there for the same reason); **`via_legs`** — `[{from, to, jumps, ly}]` per waypoint-to-waypoint leg; **`unreachable_leg`**.
+Plus an always-present **`waypoint`** boolean on every `route[]` row, `true` on the row that *arrives at a waypoint
+at a leg boundary* — flagged by route index, not by name match, so a leg incidentally passing back through a
+waypoint is not flagged. Invariant: `count(waypoint) == len(via)`. `route[]` stays flat and continuously numbered
+across the whole trip.
+
+Validation (all `{"error"}`): more than **8** waypoints (`MAX_VIA_WAYPOINTS`, enforced *before* resolution so an
+over-cap list fires no SIMBAD lookups); `via` a bare string or a list holding a non-string; an unresolvable
+waypoint → `"Waypoint N ('…'): <reason>"` (1-based over the whitespace-stripped list, matching
+`compute_multi_stop_journey`'s "Stop N"); and any two terminals that resolve to **the same post-merge node index**
+— checked on indices, not on the resolved records, because `_merge_endpoint` matches a pool row by name *or*
+within 1e-3 ly, so two terminals up to 2e-3 apart can still collapse onto one node. `"Sol"`/`"Sun"` therefore
+collide correctly even though the name arm misses. **One deliberate behaviour change on the `via=None` path**:
+that same post-merge check now also catches an *origin/destination* pair that collides only after merge (each
+within 1e-3 ly of one pool row but >1e-3 from each other, so the older pre-merge check missed them). It used to
+return a degenerate `reachable=True, jumps=0, route=[], stars=[one node]`; it now returns
+`"Origin and destination are the same star."`
+
+**Accepted caveats (documented, not bugs).** The stitched route is **not a simple path** — legs may reuse stars, so
+a star can appear **twice** in `route[]`/`stars[]`. This is `jump-route`'s first repeated star (`multi-stop` /
+`optimal-tour` already do it): `len({s["name"] for s in stars}) != len(stars)` is now possible, and any
+`{s["name"]: s}` index silently loses route position. Per-leg optimal ≠ globally optimal; forcing node-disjointness
+is NP-hard. On the charts a revisited star is labelled twice at identical coordinates, and if the route revisits
+the **origin** only index 0 gets the gold ★. Finally, two *aliases* of one star that resolve via different paths
+(DB vs SIMBAD coordinates) can land > 1e-3 ly apart and merge as two nodes — pre-existing, but waypoints are the
+first feature where typing an alias is likely.
 
 ### C — Jump Network / Reachability — `compute_jump_network(start, max_jump_ly, max_jumps=None)`
 
@@ -393,7 +458,8 @@ refactor left behind — is now on all seven too. Unlike opts 18/19 it searches 
 list**, not the result table (`panel._find_rows`, deduped by name), which is what covers the four
 leg-shaped `From|To` panels that pass no `link_view`; and it rings each canvas **directly** rather
 than via table selection, which those panels have no path to. The start ★ is excluded, and Jump
-Route's `reachable=False` two-endpoint chart passes `find_box=False`. The shared implementation
+Route's `reachable=False` chart passes `find_box=False` **only when it carries no waypoints** — with
+`--via` stars that chart holds k+2 terminals, so there is something to find (2026-07-31). The shared implementation
 moved to `gui/panels/diagram_tabs.py` (re-exported from `distance_stars.py`, which imports
 `route_planning` and so could not be imported back). Tests: `tests/test_route_find.py`. **Phase 3** then deleted the
 `core.calculators._star_map_color` second palette: dot colours (including the `stars[].color` these planners return
@@ -430,6 +496,17 @@ weights existing edges). The shared Dijkstra/BFS was extracted into `calculators
 (distance passes `edge_cost=lambda u,v,w: w` → byte-identical, guarded by the route tests). It is an **optional,
 WSL/Linux-only** path (needs the `dustmaps` extra). See `docs/integration.md` (Dust-weighted routing) and
 `completed_plans/PHASE_T_PLAN.md`.
+
+**Waypoints on the forks (2026-07-31).** The two `jump-route` forks (`compute_jump_route_dust` /
+`compute_jump_route_blend`) take the same additive `via=None`, sharing `calculators._route_through` and passing
+their own `edge_cost` — so the waypoint **visit order is chosen under the weight the caller selected** (least
+A_V for dust, blended for blend), not under distance. Their front half is the shared `_jump_setup` (validate →
+resolve → pool → merge → post-merge terminal check, mirroring `compute_jump_route`'s order and messages) and
+their `via_legs` rows carry **`a_v`** alongside `ly`. The `dref` distance-optimal comparison threads `via`
+through, so `extra_ly`/`saved_av` compare the constrained dust route against the **constrained** distance route
+— without it the two sides are different problems and both numbers are meaningless. The other three forks
+(tour/multi-stop/nearest-neighbor/MST) take no `via`: waypoints are a `jump-route` concept, since those
+planners already visit a caller-supplied star set.
 
 ## Detectability & Relativistic Calculators (Phase T1b)
 

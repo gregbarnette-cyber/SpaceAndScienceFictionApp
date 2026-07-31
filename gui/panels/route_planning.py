@@ -835,17 +835,29 @@ class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
     a limited distance at a time.<br><br>
     Give an origin, a destination and a <i>Max Jump</i> range in light years. The
     planner treats the whole local <code>star_systems</code> catalogue as possible
-    waypoints and finds a chain of stars where <b>no single jump exceeds the
+    stepping stones and finds a chain of stars where <b>no single jump exceeds the
     range</b>. <i>Optimize For</i> chooses what "best" means: <i>Min distance</i>
     finds the shortest total path, <i>Fewest jumps</i> finds the one with the least
     stops (which may be longer overall).<br><br>
+    <b>Via (optional)</b> — comma-separated stars the route <b>must</b> pass
+    through, e.g. <code>70 Vir</code>. They are a <i>set</i>, not a sequence: type
+    them in any order and the planner visits them in whichever order is cheapest
+    under <i>Optimize For</i>, so the order it reports back may not be the order you
+    typed. Every single jump still obeys the range. Up to <b>8</b> waypoints.<br><br>
     <b>You get:</b> one row per jump — From, To, that jump's length and the running
     total — with the jump count, total path length and the direct straight-line
-    distance for comparison.<br><br>
+    distance for comparison. With waypoints, the arrival at each one is marked
+    <b>◆</b> and listed in visit order above the table.<br><br>
+    <b>A waypointed route may visit the same star twice.</b> Each leg is planned
+    optimally on its own, so a detour out to a waypoint and back can re-use stars —
+    that is normal for "must pass through" routing, not a glitch, and it is why the
+    same name can appear on more than one row.<br><br>
     <b>If no route exists</b> at that range the panel says so plainly (an amber
-    note) rather than erroring. The solar neighbourhood is genuinely sparse, so a
-    short jump range often isolates a target — raise the range to connect more of
-    the catalogue.
+    note) rather than erroring, naming the <i>particular hop</i> that failed — with
+    waypoints that is often not origin→destination. The solar neighbourhood is
+    genuinely sparse, so a short jump range often isolates a target, and adding a
+    far-flung waypoint can strand a route that worked without it — raise the range
+    to connect more of the catalogue.
     """
 
     def build_inputs(self):
@@ -860,6 +872,11 @@ class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
         self._dest.setPlaceholderText("e.g. Procyon")
         form.addRow("Destination:", self._dest)
 
+        # Blank = no waypoints; there is deliberately no on/off control.
+        self._via = QLineEdit()
+        self._via.setPlaceholderText("e.g. 70 Vir, 61 Vir  (max 8, blank = none)")
+        form.addRow("Via (optional, comma-separated):", self._via)
+
         self._max = QLineEdit()
         self._max.setPlaceholderText("e.g. 9.0")
         form.addRow("Max Jump (LY):", self._max)
@@ -869,7 +886,8 @@ class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
         form.addRow("Optimize For:", self._opt)
 
         form.addRow("", _button_row(self, "Find Route",
-                                    enter_fields=(self._origin, self._dest, self._max)))
+                                    enter_fields=(self._origin, self._dest,
+                                                  self._via, self._max)))
         self._form_widget = form_widget
         self._layout.addWidget(form_widget)
         self._input_count = self._layout.count()
@@ -893,9 +911,12 @@ class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
             _error_label(self, "Max jump must be a positive number.")
             return
         optimize = "jumps" if self._opt.currentText().startswith("Fewest") else "distance"
+        # An empty Via field is the off switch; the core validates the rest
+        # (cap, resolution, duplicate terminals) and returns {"error"}.
+        via = [p.strip() for p in self._via.text().split(",") if p.strip()]
         self.run_in_background(
             core.calculators.compute_jump_route,
-            origin, dest, max_jump, optimize,
+            origin, dest, max_jump, optimize, via,
             on_result=self._render,
         )
 
@@ -909,13 +930,22 @@ class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
         o = result["origin_info"]["name"]
         d = result["dest_info"]["name"]
         if not result["reachable"]:
+            # The failing hop is not necessarily origin→destination: with
+            # waypoints it is whichever leg has no route (e.g. Sol→70 Vir).
+            leg = result.get("unreachable_leg") or {"from": o, "to": d}
             note = QLabel(
-                f"No route from {o} to {d} with jumps ≤ {result['max_jump_ly']:.2f} ly — "
-                f"destination unreachable (disconnected from the origin's jump network).")
+                f"No route from {leg['from']} to {leg['to']} with jumps ≤ "
+                f"{result['max_jump_ly']:.2f} ly — unreachable (disconnected from "
+                f"the origin's jump network)."
+                + (f"<br>The whole {o} → {d} route fails because of that leg."
+                   if result.get("via") else ""))
             note.setStyleSheet("color: #b8860b; font-weight: 600;")
             note.setWordWrap(True)
             self._tables_layout.addWidget(note)
-            _add_route_chart_tabs(self, result, find_box=False)
+            # With waypoints the chart carries k+2 terminals, so the Find box has
+            # something to find; without them it is still just the two endpoints.
+            _add_route_chart_tabs(self, result,
+                                  find_box=bool(result.get("via")))
             self._finish_render()
             return
 
@@ -925,10 +955,21 @@ class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
             f"<b>{result['total_ly']:.3f} LY</b> · direct line {result['direct_ly']:.3f} LY · "
             f"optimized for {mode}"))
 
+        via = result.get("via") or []
+        if via:
+            names = [s["name"] for s in result["stars"]]
+            revisit = ("  ·  note: this route re-visits a star (each leg is "
+                       "planned optimally on its own)"
+                       if len(set(names)) != len(names) else "")
+            self._tables_layout.addWidget(QLabel(
+                "Via (in the visit order chosen, marked <b>◆</b> below): <b>"
+                + " → ".join(via) + "</b>" + revisit))
+
         headers = ["Jump #", "From", "To", "Jump Dist (LY)", "Cumulative (LY)"]
         rows = [
-            [str(r["jump"]), r["from"], r["to"], f"{r['jump_ly']:.3f}",
-             f"{r['cumulative_ly']:.3f}"]
+            [str(r["jump"]), r["from"],
+             ("◆ " + r["to"]) if r.get("waypoint") else r["to"],
+             f"{r['jump_ly']:.3f}", f"{r['cumulative_ly']:.3f}"]
             for r in result["route"]
         ]
         view = self.make_table(headers, rows)

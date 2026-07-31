@@ -142,6 +142,106 @@ class JumpRouteDustTest(_DustRoutingBase):
                                            optimize="distance", map_sel="auto")
         self.assertFalse(r["reachable"])
         self.assertEqual(r["route"], [])
+        self.assertEqual(r["unreachable_leg"], {"from": "Sol", "to": "D"})
+
+    def test_via_routes_through_the_waypoint_under_dust(self):
+        # N is the clear detour, M the dusty direct corridor. Forcing --via M
+        # must put M on the route even though the dust optimum avoids it.
+        self._seed_detour()
+        cost = {frozenset({"Sol", "M"}): 1.0, frozenset({"M", "D"}): 1.0,
+                frozenset({"Sol", "N"}): 0.2, frozenset({"N", "D"}): 0.2}
+        with mock.patch.object(dr, "_seg", _seg_factory(cost)):
+            free = dr.compute_jump_route_dust("Sol", "D", max_jump_ly=9.0,
+                                              optimize="distance", map_sel="auto")
+            r = dr.compute_jump_route_dust("Sol", "D", max_jump_ly=9.0,
+                                           optimize="distance", map_sel="auto",
+                                           via=["M"])
+        self.assertEqual([leg["to"] for leg in free["route"]], ["N", "D"])
+        self.assertTrue(r["reachable"])
+        self.assertEqual(r["via"], ["M"])
+        # The least-A_V way to visit M is out via the clear N and back (0.2+0.5
+        # each way = 1.4) rather than the dusty direct corridor (2.0) — so the
+        # route legitimately RE-VISITS N. That is the documented waypoint
+        # behaviour, not a bug.
+        self.assertEqual([leg["to"] for leg in r["route"]], ["N", "M", "N", "D"])
+        self.assertEqual([leg["to"] for leg in r["route"] if leg["waypoint"]], ["M"])
+        self.assertAlmostEqual(r["total_av"], 1.4, places=6)
+        # via_legs carry A_V as well as ly on the dust fork.
+        self.assertAlmostEqual(sum(l["a_v"] for l in r["via_legs"]),
+                               r["total_av"], places=6)
+
+    def test_via_comparison_is_like_for_like(self):
+        # The dref bug: without threading `via`, extra_ly/saved_av would compare
+        # a waypoint-CONSTRAINED dust route against an UNCONSTRAINED distance
+        # one. --via N discriminates: the unconstrained distance route is
+        # Sol→M→D (12.0 ly), the N-constrained one is Sol→N→D (~15.6 ly).
+        self._seed_detour()
+        cost = {frozenset({"Sol", "M"}): 1.0, frozenset({"M", "D"}): 1.0,
+                frozenset({"Sol", "N"}): 0.2, frozenset({"N", "D"}): 0.2}
+        with mock.patch.object(dr, "_seg", _seg_factory(cost)):
+            r = dr.compute_jump_route_dust("Sol", "D", max_jump_ly=9.0,
+                                           optimize="distance", map_sel="auto",
+                                           via=["N"])
+        unconstrained = calc.compute_jump_route("Sol", "D", 9.0, "distance")
+        constrained = calc.compute_jump_route("Sol", "D", 9.0, "distance",
+                                              via=["N"])
+        self.assertAlmostEqual(unconstrained["total_ly"], 12.0, places=4)
+        self.assertGreater(constrained["total_ly"], 15.0)
+        # The comparison must be against the CONSTRAINED route.
+        self.assertAlmostEqual(r["distance_optimal_ly"], constrained["total_ly"],
+                               places=6)
+        self.assertNotAlmostEqual(r["distance_optimal_ly"],
+                                  unconstrained["total_ly"], places=3)
+        # Both routes are then the same one, so the deltas are honestly zero —
+        # with the unconstrained reference they would have been ~3.6 / ~1.6.
+        self.assertAlmostEqual(r["extra_ly"], 0.0, places=6)
+        self.assertAlmostEqual(r["saved_av"], 0.0, places=6)
+
+    def test_via_unreachable_names_the_leg(self):
+        self._seed_detour()
+        with mock.patch.object(dr, "_seg", _seg_factory({})):
+            r = dr.compute_jump_route_dust("Sol", "D", max_jump_ly=3.0,
+                                           optimize="distance", map_sel="auto",
+                                           via=["M"])
+        self.assertFalse(r["reachable"])
+        self.assertEqual(r["unreachable_leg"], {"from": "Sol", "to": "M"})
+        self.assertEqual([s["name"] for s in r["stars"]], ["Sol", "M", "D"])
+
+    def test_via_validation_matches_the_plain_planner(self):
+        self._seed_detour()
+        with mock.patch.object(dr, "_seg", _seg_factory({})):
+            over = dr.compute_jump_route_dust("Sol", "D", 9.0, map_sel="auto",
+                                              via=[f"W{i}" for i in range(9)])
+            dupe = dr.compute_jump_route_dust("Sol", "D", 9.0, map_sel="auto",
+                                              via=["M", "m"])
+            same = dr.compute_jump_route_blend("Sol", "D", 9.0, map_sel="auto",
+                                               via=["D"])
+        self.assertEqual(over["error"], "At most 8 waypoints.")
+        self.assertIn("waypoint 1", dupe["error"])
+        self.assertIn("destination", same["error"])
+
+    def test_via_keys_present_on_both_forks(self):
+        self._seed_detour()
+        with mock.patch.object(dr, "_seg", _seg_factory({})):
+            dust_r = dr.compute_jump_route_dust("Sol", "D", max_jump_ly=9.0,
+                                                optimize="distance", map_sel="auto")
+            blend_r = dr.compute_jump_route_blend("Sol", "D", max_jump_ly=9.0,
+                                                  optimize="distance", map_sel="auto")
+            unreach = dr.compute_jump_route_dust("Sol", "D", max_jump_ly=3.0,
+                                                 optimize="distance", map_sel="auto")
+        plain = calc.compute_jump_route("Sol", "D", 9.0, "distance")
+        for r in (dust_r, blend_r, unreach):
+            self.assertEqual(r["via"], [])
+            self.assertEqual(r["via_legs"], [])
+            self.assertIn("unreachable_leg", r)
+            for row in r["route"]:
+                self.assertFalse(row["waypoint"])
+        self.assertIsNone(dust_r["unreachable_leg"])
+        # Every via-related key on the plain path exists on the forks too.
+        for k in ("via", "via_legs", "unreachable_leg"):
+            self.assertIn(k, dust_r)
+            self.assertIn(k, blend_r)
+        self.assertEqual(set(plain["route"][0]) - set(dust_r["route"][0]), set())
 
 
 class JumpRouteBlendTest(_DustRoutingBase):

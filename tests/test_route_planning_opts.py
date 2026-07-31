@@ -206,6 +206,271 @@ class JumpRouteTest(_SeededDBTest):
         self.assertTrue(r["reachable"])
 
 
+# ── B — Jump-Range Pathfinding: required waypoints (via=) ────────────────────
+
+class JumpRouteViaTest(_SeededDBTest):
+    """Waypoint routing (JUMP_ROUTE_WAYPOINTS_PLAN Phase 1)."""
+
+    def _seed_line(self):
+        # Colinear +x ladder at 3 ly spacing (traversable at max_jump 4).
+        for n in (3, 6, 9, 12):
+            self._seed_xyz(f"V{n}", float(n), 0.0, 0.0)
+
+    # ── the §2 guard: via=None must not perturb the existing output ──────────
+
+    def test_via_none_output_is_the_pre_existing_shape(self):
+        self._seed_default()
+        r = calc.compute_jump_route("Sol", "AX8", 4.0, "distance")
+        self.assertEqual(set(r), {
+            "origin_info", "dest_info", "reachable", "optimize", "jumps",
+            "total_ly", "direct_ly", "route", "max_jump_ly", "stars",
+            # additive, always present:
+            "via", "via_legs", "unreachable_leg",
+        })
+        # Pre-existing values unchanged (same pins as test_multi_hop_via_intermediate).
+        self.assertTrue(r["reachable"])
+        self.assertEqual(r["optimize"], "distance")
+        self.assertEqual(r["jumps"], 3)
+        self.assertAlmostEqual(r["total_ly"], 8.0, places=4)
+        self.assertAlmostEqual(r["direct_ly"], 8.0, places=4)
+        self.assertEqual(r["max_jump_ly"], 4.0)
+        self.assertEqual([h["to"] for h in r["route"]], ["AX3", "AX5", "AX8"])
+        self.assertEqual([s["name"] for s in r["stars"]],
+                         ["Sol", "AX3", "AX5", "AX8"])
+        self.assertEqual(len(r["stars"]), r["jumps"] + 1)
+        # Route rows: the old fields plus the always-present waypoint flag.
+        for row in r["route"]:
+            self.assertEqual(set(row), {"jump", "from", "to", "jump_ly",
+                                        "cumulative_ly", "waypoint"})
+            self.assertFalse(row["waypoint"])
+        self.assertEqual(r["via"], [])
+        self.assertEqual(r["via_legs"], [])
+        self.assertIsNone(r["unreachable_leg"])
+
+    def test_via_none_and_empty_list_agree(self):
+        self._seed_default()
+        a = calc.compute_jump_route("Sol", "AX8", 4.0, "distance")
+        b = calc.compute_jump_route("Sol", "AX8", 4.0, "distance", via=[])
+        c = calc.compute_jump_route("Sol", "AX8", 4.0, "distance", via=["", "  "])
+        self.assertEqual(a, b)
+        self.assertEqual(a, c)
+
+    # ── routing through waypoints ────────────────────────────────────────────
+
+    def test_route_visits_the_waypoint(self):
+        self._seed_line()
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance", via=["V6"])
+        self.assertTrue(r["reachable"])
+        self.assertEqual(r["via"], ["V6"])
+        self.assertIn("V6", [h["to"] for h in r["route"]])
+        self.assertEqual(r["jumps"], 4)
+        self.assertAlmostEqual(r["total_ly"], 12.0, places=4)
+        self.assertEqual(len(r["stars"]), r["jumps"] + 1)
+        # route[] stays flat and continuously numbered.
+        self.assertEqual([h["jump"] for h in r["route"]], [1, 2, 3, 4])
+        for i in range(1, len(r["route"])):
+            self.assertEqual(r["route"][i]["from"], r["route"][i - 1]["to"])
+
+    def test_waypoint_flag_counts_and_position(self):
+        self._seed_line()
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance", via=["V6"])
+        flagged = [h for h in r["route"] if h["waypoint"]]
+        self.assertEqual(len(flagged), len(r["via"]))
+        self.assertEqual(flagged[0]["to"], "V6")
+
+    def test_via_legs_partition_the_route(self):
+        self._seed_line()
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance", via=["V6"])
+        self.assertEqual([(l["from"], l["to"]) for l in r["via_legs"]],
+                         [("Sol", "V6"), ("V6", "V12")])
+        self.assertEqual(sum(l["jumps"] for l in r["via_legs"]), r["jumps"])
+        self.assertAlmostEqual(sum(l["ly"] for l in r["via_legs"]),
+                               r["total_ly"], places=6)
+
+    def test_waypoints_are_reordered_to_the_cheap_order(self):
+        self._seed_line()
+        # Typed expensively (V9 first); the planner must return V3 then V9.
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance",
+                                    via=["V9", "V3"])
+        self.assertTrue(r["reachable"])
+        self.assertEqual(r["via"], ["V3", "V9"])
+        self.assertAlmostEqual(r["total_ly"], 12.0, places=4)
+        self.assertEqual(r["jumps"], 4)
+
+    def test_tie_break_is_deterministic_under_optimize_jumps(self):
+        # Symmetric pair: either visit order costs 3 jumps.
+        self._seed_xyz("PX", 3.0, 0.0, 0.0)
+        self._seed_xyz("QY", 0.0, 3.0, 0.0)
+        self._seed_xyz("DD", 3.0, 3.0, 0.0)
+        a = calc.compute_jump_route("Sol", "DD", 5.0, "jumps", via=["PX", "QY"])
+        b = calc.compute_jump_route("Sol", "DD", 5.0, "jumps", via=["PX", "QY"])
+        self.assertEqual(a["via"], b["via"])
+        self.assertEqual(a["route"], b["route"])
+        # The tie breaks on the permutation tuple → the typed order wins.
+        self.assertEqual(a["via"], ["PX", "QY"])
+        rev = calc.compute_jump_route("Sol", "DD", 5.0, "jumps", via=["QY", "PX"])
+        self.assertEqual(rev["via"], ["QY", "PX"])
+
+    def test_route_may_revisit_a_star(self):
+        # A spur waypoint off the +x ladder forces a there-and-back through Sol.
+        self._seed_line()
+        self._seed_xyz("SPUR", 0.0, 0.0, 3.0)
+        r = calc.compute_jump_route("Sol", "V6", 4.0, "distance", via=["SPUR"])
+        names = [s["name"] for s in r["stars"]]
+        self.assertEqual(names, ["Sol", "SPUR", "Sol", "V3", "V6"])
+        self.assertEqual(r["jumps"], 4)
+        self.assertEqual(len(r["stars"]), r["jumps"] + 1)
+        self.assertAlmostEqual(r["total_ly"], 12.0, places=4)
+        # Documented consequence: names are no longer unique.
+        self.assertLess(len({s["name"] for s in r["stars"]}), len(r["stars"]))
+
+    # ── unreachable ──────────────────────────────────────────────────────────
+
+    def test_unreachable_waypoint_names_the_failed_leg(self):
+        self._seed_line()
+        self._seed_xyz("FARWP", 0.0, 0.0, 50.0)
+        r = calc.compute_jump_route("Sol", "V6", 4.0, "distance", via=["FARWP"])
+        self.assertFalse(r["reachable"])
+        self.assertEqual(r["route"], [])
+        self.assertEqual(r["unreachable_leg"], {"from": "Sol", "to": "FARWP"})
+        # All terminals are still returned so the chart can draw them.
+        self.assertEqual([s["name"] for s in r["stars"]], ["Sol", "FARWP", "V6"])
+        self.assertEqual(r["via"], ["FARWP"])
+        self.assertEqual(r["via_legs"], [])
+
+    def test_unreachable_via_is_the_requested_order_not_a_chosen_one(self):
+        # Documented branch difference: `via` echoes the CHOSEN visit order when
+        # reachable, and the REQUESTED order when not — there is no chosen order
+        # to report, and `via_legs` is empty for the same reason.
+        self._seed_line()
+        self._seed_xyz("FARWP", 0.0, 0.0, 50.0)
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance",
+                                    via=["V9", "FARWP", "V3"])
+        self.assertFalse(r["reachable"])
+        self.assertEqual(r["via"], ["V9", "FARWP", "V3"])   # as typed
+        self.assertEqual(r["via_legs"], [])
+        reachable = calc.compute_jump_route("Sol", "V12", 4.0, "distance",
+                                            via=["V9", "V3"])
+        self.assertEqual(reachable["via"], ["V3", "V9"])     # as chosen
+
+    def test_one_stranded_waypoint_short_circuits_the_closure(self):
+        # A disconnected terminal makes every order infeasible (reachability is
+        # an equivalence relation), so stage 1 must bail on the FIRST infinite
+        # pair rather than paying a full component sweep per remaining pair.
+        self._seed_line()
+        self._seed_xyz("FARWP", 0.0, 0.0, 50.0)
+        calls = []
+        real = calc._grid_search
+
+        def _counting(*a, **kw):
+            calls.append(a[2:4])
+            return real(*a, **kw)
+
+        calc._grid_search = _counting
+        try:
+            r = calc.compute_jump_route("Sol", "V12", 4.0, "distance",
+                                        via=["FARWP", "V3", "V6", "V9"])
+        finally:
+            calc._grid_search = real
+        self.assertFalse(r["reachable"])
+        self.assertEqual(r["unreachable_leg"], {"from": "Sol", "to": "FARWP"})
+        # Origin-first pair order ⇒ the very first search finds it.
+        self.assertEqual(len(calls), 1)
+
+    def test_plain_unreachable_still_two_stars(self):
+        self._seed_default()
+        r = calc.compute_jump_route("Sol", "AX8", 2.0, "distance")
+        self.assertFalse(r["reachable"])
+        self.assertEqual(len(r["stars"]), 2)
+        self.assertEqual(r["unreachable_leg"], {"from": "Sol", "to": "AX8"})
+
+    # ── validation ───────────────────────────────────────────────────────────
+
+    def test_cap_is_enforced_before_resolution(self):
+        self._seed_line()
+
+        def _boom(name):
+            raise AssertionError("waypoints must not be resolved past the cap")
+
+        calc.compute_lookup_star_for_distance = _boom
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance",
+                                    via=[f"W{i}" for i in range(9)])
+        self.assertEqual(r["error"], "At most 8 waypoints.")
+
+    def test_bare_string_via_rejected(self):
+        self._seed_line()
+        self.assertIn("error", calc.compute_jump_route("Sol", "V12", 4.0,
+                                                       "distance", via="V6"))
+
+    def test_unordered_container_rejected(self):
+        # A set would iterate in an order the caller never chose, and stage 2
+        # breaks ties on input order — so the "deterministic" visit order would
+        # vary between interpreter runs.
+        self._seed_line()
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance",
+                                    via={"V3", "V6"})
+        self.assertIn("error", r)
+
+    def test_non_string_waypoint_rejected(self):
+        self._seed_line()
+        self.assertIn("error", calc.compute_jump_route("Sol", "V12", 4.0,
+                                                       "distance", via=[3]))
+
+    def test_unresolvable_waypoint_error(self):
+        self._seed_line()
+        calc.compute_lookup_star_for_distance = lambda n: {
+            "error": f"No results found for '{n}'"}
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance",
+                                    via=["V3", "NOPE"])
+        self.assertIn("error", r)
+        self.assertIn("Waypoint 2 ('NOPE')", r["error"])
+
+    def test_waypoint_same_as_origin_via_sun_alias(self):
+        self._seed_line()
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance", via=["Sun"])
+        self.assertIn("error", r)
+        self.assertIn("origin", r["error"])
+
+    def test_waypoint_same_as_destination(self):
+        self._seed_line()
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance", via=["v12"])
+        self.assertIn("error", r)
+        self.assertIn("destination", r["error"])
+
+    def test_duplicate_waypoints_error(self):
+        self._seed_line()
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance",
+                                    via=["V6", "v6"])
+        self.assertIn("error", r)
+        self.assertIn("waypoint 1", r["error"])
+
+    def test_endpoints_colliding_only_after_merge_now_error(self):
+        # Deliberate behaviour change on the via=None path: two endpoints >1e-3
+        # ly apart from EACH OTHER (so the pre-merge check misses them) but each
+        # within 1e-3 ly of the same pool row used to merge to one node and
+        # return a degenerate reachable=True, jumps=0, single-star route. The
+        # post-merge index check now reports it as the same star.
+        self._seed_line()
+        calc.compute_lookup_star_for_distance = lambda n: {
+            "name": n, "ra_deg": 0.0, "dec_deg": 0.0,
+            "ly": 6.0 - 9e-4 if n == "AAA" else 6.0 + 9e-4, "desig_str": ""}
+        r = calc.compute_jump_route("AAA", "BBB", 4.0, "distance")
+        self.assertEqual(r["error"], "Origin and destination are the same star.")
+
+    def test_duplicate_detected_on_post_merge_index(self):
+        # Two distinct names that both merge onto the same pool node: the DB row
+        # V6, and a SIMBAD-resolved star 5e-4 ly away (under _merge_endpoint's
+        # 1e-3 tolerance but a different name).
+        self._seed_line()
+        calc.compute_lookup_star_for_distance = lambda n: {
+            "name": "NEARV6", "ra_deg": 0.0, "dec_deg": 0.0,
+            "ly": 6.0005, "desig_str": ""}
+        r = calc.compute_jump_route("Sol", "V12", 4.0, "distance",
+                                    via=["V6", "NEARV6"])
+        self.assertIn("error", r)
+        self.assertIn("waypoint 1", r["error"])
+
+
 # ── C — Jump Network / Reachability ──────────────────────────────────────────
 
 class JumpNetworkTest(_SeededDBTest):
@@ -369,6 +634,21 @@ class PrepareRouteMapOptsTest(_SeededDBTest):
         rm = viz.prepare_route_map(r)
         self.assertEqual(rm["edge_style"], "dashed")
         self.assertEqual(len(rm["edges"]), len(rm["stars"]) - 1)
+
+    def test_jump_route_with_repeated_star_stays_index_parallel(self):
+        # A waypointed route may revisit a star; the B-branch is purely
+        # index-parallel, so edges must still pair stars[i] → stars[i+1].
+        self._seed_default()
+        self._seed_xyz("V3", 3.0, 0.0, 0.0)
+        self._seed_xyz("V6", 6.0, 0.0, 0.0)
+        self._seed_xyz("SPUR", 0.0, 0.0, 3.0)
+        r = calc.compute_jump_route("Sol", "V6", 4.0, "distance", via=["SPUR"])
+        self.assertLess(len({s["name"] for s in r["stars"]}), len(r["stars"]))
+        rm = viz.prepare_route_map(r)
+        self.assertEqual(len(rm["edges"]), len(rm["stars"]) - 1)
+        for i, e in enumerate(rm["edges"]):
+            self.assertAlmostEqual(e["x1"], rm["stars"][i]["x"], places=9)
+            self.assertAlmostEqual(e["x2"], rm["stars"][i + 1]["x"], places=9)
 
     def test_jump_route_unreachable_no_edges(self):
         self._seed_default()

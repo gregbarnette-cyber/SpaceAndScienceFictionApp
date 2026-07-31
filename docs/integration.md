@@ -44,6 +44,28 @@ that takes a stellar luminosity: `habitable-zone`, `habitable-zone-sma`, `solven
 spelling. The documented spelling per command stays primary in `--help`; the other is an
 accepted synonym.
 
+### `jump-route` gains four always-present waypoint keys (2026-07-31)
+
+**Additive; no existing key changed value or type.** `jump-route` now returns three new top-level keys —
+**`via`** (list, `[]`), **`via_legs`** (list, `[]`) and **`unreachable_leg`** (`null`, or `{from, to}` naming the
+hop that failed when `reachable: false`) — plus an always-present boolean **`waypoint`** on every `route[]` row.
+They are present on **every `--weight` value** (`distance`, `dust`, `blend`), so no `KeyError` branch is needed.
+
+They back **`--via N [N …]`** (see the `jump-route` section below): required intermediate waypoints, a *set* of
+stars the route must pass through, visited in whichever order is cheapest under `--optimize`. Without `--via`
+every response has `via: []` / `via_legs: []` / `waypoint: false`, exactly as before. Two things to code for:
+
+- **A waypointed route may revisit a star.** `route[]`/`stars[]` can repeat a name — `jump-route`'s first-ever
+  repeated star (`multi-stop`/`optimal-tour` already do it). So `len({s["name"] for s in stars}) != len(stars)`
+  becomes possible, and any `{s["name"]: s for s in stars}` index **silently loses route position**. Index by
+  position, not by name.
+- **`reachable: false` no longer implies two stars.** `stars[]` returns *every* terminal (origin + waypoints +
+  destination), and `unreachable_leg` — not the origin/destination pair — names what actually failed.
+
+`route[]` stays flat and continuously numbered (`jump: 1..n`) across the whole trip; `route[i]["from"] ==
+route[i-1]["to"]` and `len(stars) == jumps + 1` still hold. Full semantics: `docs/calculators.md` §B
+("Required waypoints").
+
 ### Route-map dot colours unified (2026-07-27)
 
 The `stars[]` map dicts returned by the seven route planners (`multi-stop`, `nearest-neighbor`,
@@ -257,7 +279,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `travel-time-times-c` | `--distance-ly --times-c` | none | `distance_ly, times_c, ly_hr, total_hours, travel_time_str` |
 | `travel-time-solar` | `--origin --destination --accel-g` [`--v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, accel_g, distance_au, distance_lm, v_cap_pct, departure_date, profiles[], …` |
 | `optimal-tour` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--closed` `--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `legs[], total_ly, total_time, naive_total_ly, optimized_total_ly, saved_ly, saved_pct, closed, stars[]` |
-| `jump-route` | `--origin --destination --max-jump` [`--optimize distance\|jumps` `--weight distance\|dust\|`**`blend`**` --alpha --beta --map --dust-step-pc`] | SIMBAD† (names) | `origin_info, dest_info, reachable, jumps, total_ly, direct_ly, route[], stars[]`; blend adds `weight:"blend", alpha, beta, total_av, total_blend_cost` |
+| `jump-route` | `--origin --destination --max-jump` [**`--via N [N …]`** `--optimize distance\|jumps` `--weight distance\|dust\|`**`blend`**` --alpha --beta --map --dust-step-pc`] | SIMBAD† (names) | `origin_info, dest_info, reachable, jumps, total_ly, direct_ly, route[], stars[]`, **`via, via_legs, unreachable_leg`**; blend adds `weight:"blend", alpha, beta, total_av, total_blend_cost` |
 | `jump-network` | `--start --max-jump` [`--max-jumps`] | SIMBAD† (names) | `start_name, max_tier, reachable_count, total_in_pool, unreachable_count, tiers[], stars[]` |
 | `multi-stop` | `--stars N [N …]` (`--ly-hr` \| `--times-c`) [`--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `legs[], total_ly, total_hours, total_time, stars[]` |
 | `nearest-neighbor` | `--start --hops --max-ly` [`--weight dust --map --dust-step-pc`] | SIMBAD† (names) | `chain[], stars[], total_ly, stopped_early, start_name` |
@@ -2543,11 +2565,37 @@ Dijkstra) or `jumps` (BFS).
 query.py jump-route --origin Sol --destination Procyon --max-jump 9
 query.py jump-route --origin Sol --destination "Epsilon Indi" --max-jump 7 --optimize jumps
 ```
-Core function: `calculators.compute_jump_route(origin, destination, max_jump_ly, optimize="distance")`. Output:
-`{origin_info, dest_info, reachable, optimize, jumps, total_ly, direct_ly, route:[{jump, from, to, jump_ly,
-cumulative_ly}], max_jump_ly, stars[]}`. **An unreachable destination is a normal result** (`reachable=false`, empty
-`route`, **exit 0**) — not an error. Same origin/destination, `max_jump ≤ 0`, or an unresolvable endpoint → `{"error"}`
-exit 1; `--optimize` other than `distance`/`jumps` is an argparse exit 2.
+Core function: `calculators.compute_jump_route(origin, destination, max_jump_ly, optimize="distance", via=None)`.
+Output: `{origin_info, dest_info, reachable, optimize, jumps, total_ly, direct_ly, route:[{jump, from, to, jump_ly,
+cumulative_ly, waypoint}], max_jump_ly, stars[], via, via_legs, unreachable_leg}`. **An unreachable destination is a
+normal result** (`reachable=false`, empty `route`, **exit 0**) — not an error; it now also carries
+`unreachable_leg:{from,to}` naming the hop that failed. Same origin/destination, `max_jump ≤ 0`, or an unresolvable
+endpoint → `{"error"}` exit 1; `--optimize` other than `distance`/`jumps` is an argparse exit 2.
+
+**`--via N [N …]` — required intermediate waypoints.** Stars the route must pass through, on **every `--weight`
+value** (`distance`, `dust`, `blend`). They are an **unordered set**: type them in any order and the planner
+visits them in whichever order is cheapest under `--optimize`, so `via` echoes back the *chosen* order, which
+may differ from the typed one. Every single jump still obeys `--max-jump`; reachability is unchanged.
+```bash
+query.py jump-route --origin Sol --destination "38 Vir" --max-jump 15 --via "70 Vir"
+query.py jump-route --origin Sol --destination "36 Oph" --max-jump 8 --via "70 Oph" --weight dust
+```
+Output: `via` (the **chosen** visit order when `reachable: true`; the **requested** order when `false`, since
+no order was chosen — `via_legs` is `[]` there too), `via_legs` (`[{from, to, jumps, ly}]` per waypoint-to-waypoint leg; the
+dust/blend forks add `a_v`), `unreachable_leg`, and a **`waypoint`** boolean on every `route[]` row — `true`
+on the row that *arrives* at a waypoint at a leg boundary, flagged by route index rather than name match, so
+`count(waypoint) == len(via)`. All four are **always present** (`[]`/`[]`/`null`/`false` without `--via`).
+
+**Two consumer-visible consequences.** (1) **A waypointed route may revisit a star** — `route[]`/`stars[]` can
+repeat a name, so index by position, never by name (see the 2026-07-31 change note above). (2) **`reachable:
+false` no longer implies two stars**: `stars[]` carries every terminal and `unreachable_leg` names the hop that
+actually failed, which with waypoints is often `origin → waypoint` rather than `origin → destination`. Adding a
+far-flung waypoint can strand a route that worked without it — that is a correct result, still **exit 0**.
+
+Errors (all curated, **exit 1**): more than **8** waypoints (`"At most 8 waypoints."`, checked before any name
+resolution); an unresolvable waypoint (`"Waypoint N ('…'): <reason>"`, 1-based); and any two terminals that
+resolve to the same star — including the `Sol`/`Sun` alias pair. `--via` with no value is argparse **exit 2**.
+Full semantics: `docs/calculators.md` §B ("Required waypoints").
 
 #### `jump-network`
 BFS reachability tiers from a start star at jump range `--max-jump`; optional `--max-jumps` cap.
@@ -3054,8 +3102,9 @@ query.py jump-route --origin Sol --destination Procyon --max-jump 9 --weight dus
 query.py jump-route --origin Sol --destination Procyon --max-jump 9 --weight dust --map near-field --dust-step-pc 2
 query.py trade-route --stars Sol Sirius Procyon "61 Cygni" --weight dust
 ```
-Core: `dust_routing.compute_jump_route_dust` / `compute_optimal_tour_dust` / `compute_multi_stop_dust` /
-`compute_nearest_neighbor_dust` / `compute_trade_route_dust`. **A_V is a non-negative additive edge weight**,
+Core: `dust_routing.compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance",
+map_sel="auto", dust_step_pc=5.0, via=None)` / `compute_optimal_tour_dust` / `compute_multi_stop_dust` /
+`compute_nearest_neighbor_dust` / `compute_trade_route_dust` (only the two `jump-route` forks take `via`). **A_V is a non-negative additive edge weight**,
 so Dijkstra (`jump-route --optimize distance`) and Kruskal (`trade-route`) stay correct; `jump-route
 --optimize jumps` is still BFS (fewest jumps, dust reported). Each result extends its distance sibling's
 shape with **per-leg/edge** `a_v`, `a_v_lo`, `a_v_hi`, `weight_value`, `fully_covered`, `cumulative_av`, and
@@ -3069,6 +3118,15 @@ An out-of-coverage leg integrates only its covered portion and is flagged `fully
 > exit 1 as `dust-sightline`); a bad `--weight`/`--map` is argparse exit 2; the underlying planner's own
 > validation (positive `--max-jump`, ≥2 stars, resolvable names) is unchanged.
 
+> **Waypoints compose with the weight (2026-07-31).** `jump-route --via` works under **every** `--weight`
+> value. The forks share the plain planner's `_route_through` helper and their own `edge_cost`, so the
+> waypoint *visit order* is chosen under the same metric the weight selects — least-A_V ordering for
+> `--weight dust`, blended for `blend`. Their `via_legs` rows carry `a_v` alongside `ly`. The
+> distance-optimal comparison (`extra_ly` / `saved_av`) is computed against the **via-constrained**
+> distance route, so the two sides stay like-for-like; without that threading the numbers would compare a
+> constrained route against an unconstrained one and be meaningless. Note that `--optimize jumps` ignores
+> `edge_cost` entirely (its BFS never calls it) — pre-existing, but waypoints make it more visible.
+
 ##### `jump-route --weight blend` (Phase AD C11)
 
 **`jump-route` only** (the `_grid_search` planner) gains a third weight, **`--weight blend`**, with
@@ -3080,7 +3138,7 @@ distance corridor toward the least-dust detour). Both default to 1.0 when omitte
 query.py jump-route --origin Sol --destination Procyon --max-jump 9 --weight blend --alpha 1 --beta 50
 ```
 Core: `dust_routing.compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distance",
-alpha=1.0, beta=1.0, map_sel="auto", dust_step_pc=5.0)`. Output mirrors the dust route's shape plus
+alpha=1.0, beta=1.0, map_sel="auto", dust_step_pc=5.0, via=None)`. Output mirrors the dust route's shape plus
 `weight:"blend"`, echoed `alpha`/`beta`, and `total_blend_cost` (= `α·total_ly + β·total_av`).
 **Validation:** negative `--alpha`/`--beta`, or both 0, → curated `{"error"}` exit 1; `--alpha`/`--beta`
 supplied **without** `--weight blend` → exit 1 (handler guard); the dust preflight (missing extra /

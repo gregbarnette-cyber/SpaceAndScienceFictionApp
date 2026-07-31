@@ -21,12 +21,13 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (47 files)
+## Index (48 files)
 
 | File | Title |
 |---|---|
 | [CONSISTENCY_PLAN.md](CONSISTENCY_PLAN.md) | Consistency Fix Plan |
 | [GCNS_EXTENSION_REQUEST.md](GCNS_EXTENSION_REQUEST.md) | Feature Request: Extend the local catalog with GCNS for completeness + real distances |
+| [JUMP_ROUTE_WAYPOINTS_PLAN.md](JUMP_ROUTE_WAYPOINTS_PLAN.md) | Jump-Route Waypoints — required `via` stars on the Phase I-OPTS B planner — built 2026-07-31 (all four phases; both `/code-review` checkpoints run, §12/§13 record the findings) |
 | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) | Integration Plan: SpaceAndScienceFictionApp → ScienceFictionResearch |
 | [PHASE_AA_PLAN.md](PHASE_AA_PLAN.md) | Phase AA — PAR / Photosynthesis by Stellar Type (`par-flux`) |
 | [PHASE_AB_PLAN.md](PHASE_AB_PLAN.md) | Phase AB — Planetary Energy Balance / Terraforming (`equilibrium-temp`, `insolation-shif |

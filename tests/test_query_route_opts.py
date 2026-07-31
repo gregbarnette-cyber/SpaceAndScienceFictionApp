@@ -115,6 +115,69 @@ class _SeededQueryTest(unittest.TestCase):
         self.assertEqual(code, 0)            # unreachable is a normal result
         self.assertFalse(payload["reachable"])
 
+    # ── jump-route --via (required waypoints) ────────────────────────────────
+
+    def test_jump_route_via_reachable(self):
+        code, payload, _ = self._run("jump-route", "--origin", "Sol",
+                                     "--destination", "AX8", "--max-jump", "4",
+                                     "--via", "AX5")
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["reachable"])
+        self.assertEqual(payload["via"], ["AX5"])
+        self.assertIn("AX5", [h["to"] for h in payload["route"]])
+        self.assertEqual([h["to"] for h in payload["route"] if h["waypoint"]],
+                         ["AX5"])
+        self.assertEqual(len(payload["via_legs"]), 2)
+        self.assertIsNone(payload["unreachable_leg"])
+
+    def test_jump_route_without_via_echoes_empty_keys(self):
+        code, payload, _ = self._run("jump-route", "--origin", "Sol",
+                                     "--destination", "AX8", "--max-jump", "4")
+        self.assertEqual(payload["via"], [])
+        self.assertEqual(payload["via_legs"], [])
+        self.assertIsNone(payload["unreachable_leg"])
+        self.assertFalse(any(h["waypoint"] for h in payload["route"]))
+
+    def test_jump_route_via_reorders_to_the_cheap_order(self):
+        # Typed expensively (AX8 first); the planner returns AX3 → AX5.
+        code, payload, _ = self._run("jump-route", "--origin", "Sol",
+                                     "--destination", "AX8", "--max-jump", "4",
+                                     "--via", "AX5", "AX3")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["via"], ["AX3", "AX5"])
+
+    def test_jump_route_via_unreachable_exit0_names_the_leg(self):
+        # BY5 is off-axis at 5 ly; at max-jump 4 it is isolated.
+        code, payload, _ = self._run("jump-route", "--origin", "Sol",
+                                     "--destination", "AX8", "--max-jump", "4",
+                                     "--via", "BY5")
+        self.assertEqual(code, 0)            # unreachable is a normal result
+        self.assertFalse(payload["reachable"])
+        self.assertEqual(payload["unreachable_leg"], {"from": "Sol", "to": "BY5"})
+        self.assertEqual([s["name"] for s in payload["stars"]],
+                         ["Sol", "BY5", "AX8"])
+
+    def test_jump_route_via_over_cap_exit1(self):
+        code, payload, _ = self._run("jump-route", "--origin", "Sol",
+                                     "--destination", "AX8", "--max-jump", "4",
+                                     "--via", *[f"W{i}" for i in range(9)])
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["error"], "At most 8 waypoints.")
+
+    def test_jump_route_via_same_as_endpoint_exit1(self):
+        code, payload, _ = self._run("jump-route", "--origin", "Sol",
+                                     "--destination", "AX8", "--max-jump", "4",
+                                     "--via", "AX8")
+        self.assertEqual(code, 1)
+        self.assertIn("destination", payload["error"])
+
+    def test_jump_route_via_empty_value_exit2(self):
+        code, _, stderr = self._run("jump-route", "--origin", "Sol",
+                                    "--destination", "AX8", "--max-jump", "4",
+                                    "--via")
+        self.assertEqual(code, 2)            # argparse nargs="+" needs a value
+        self.assertTrue(stderr)
+
     def test_jump_route_bad_max_jump_exit1(self):
         code, payload, _ = self._run("jump-route", "--origin", "Sol",
                                      "--destination", "AX3", "--max-jump", "-1")

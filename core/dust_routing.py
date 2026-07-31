@@ -30,6 +30,7 @@ import core.dust as dust
 from core.calculators import (
     _resolve_star_position, _load_star_systems_positions, _map_node, _node_dist,
     _merge_endpoint, _SpatialGrid, _grid_search, _UnionFind,
+    _normalize_via, _resolve_via, _check_terminal_indices, _route_through,
     HOURS_PER_JULIAN_YEAR, format_travel_time,
 )
 
@@ -148,33 +149,98 @@ def _compare(our_total_ly, our_total_av, dist_seq, map_sel, step_pc, dist_total_
 
 # ── B (flagship): jump-route --weight dust ───────────────────────────────────
 
-def compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance",
-                            map_sel="auto", dust_step_pc=5.0):
-    """Least-extinction route origin→destination over the same jump-limited graph
-    as `compute_jump_route`. `optimize="distance"` → Dijkstra over A_V (least
-    total extinction); `optimize="jumps"` → BFS (fewest jumps, dust reported)."""
-    pf = _preflight(map_sel)
-    if pf:
-        return pf
+def _jump_setup(origin, destination, max_jump_ly, optimize, via):
+    """Shared validate → resolve → pool → merge → grid front half of both jump
+    forks, mirroring `compute_jump_route`'s (same order, same messages, same
+    post-merge terminal check). Returns (ctx, None) or (None, {"error"})."""
     if max_jump_ly is None or max_jump_ly <= 0:
-        return {"error": "Max jump distance must be positive."}
+        return None, {"error": "Max jump distance must be positive."}
     if optimize not in ("distance", "jumps"):
-        return {"error": "optimize must be 'distance' or 'jumps'."}
+        return None, {"error": "optimize must be 'distance' or 'jumps'."}
+    via_names, err = _normalize_via(via)
+    if err:
+        return None, err
 
     o = _resolve_star_position(origin)
     if "error" in o:
-        return {"error": f"Origin: {o['error']}"}
+        return None, {"error": f"Origin: {o['error']}"}
     d = _resolve_star_position(destination)
     if "error" in d:
-        return {"error": f"Destination: {d['error']}"}
+        return None, {"error": f"Destination: {d['error']}"}
     if o["name"].strip().lower() == d["name"].strip().lower() or _node_dist(o, d) <= 1e-3:
-        return {"error": "Origin and destination are the same star."}
+        return None, {"error": "Origin and destination are the same star."}
+    via_recs, err = _resolve_via(via_names)
+    if err:
+        return None, err
 
     pool_res = _load_star_systems_positions()
     nodes = list(pool_res["stars"]) if "stars" in pool_res else []
+    # All terminals merged BEFORE the grid is built (it indexes at construction).
     s = _merge_endpoint(nodes, o)
     t = _merge_endpoint(nodes, d)
-    grid = _SpatialGrid(nodes, max_jump_ly)
+    via_idx = [_merge_endpoint(nodes, w) for w in via_recs]
+    err = _check_terminal_indices(s, t, via_idx, via_names)
+    if err:
+        return None, err
+    return {"o": o, "d": d, "nodes": nodes, "s": s, "t": t, "via_idx": via_idx,
+            "grid": _SpatialGrid(nodes, max_jump_ly)}, None
+
+
+def _via_block(nodes, path, seams, route, via_idx):
+    """The `via` / `via_legs` half of a fork's result (A_V-aware `via_legs`)."""
+    legs = []
+    for i in range(len(seams) - 1):
+        p0, p1 = seams[i], seams[i + 1]
+        legs.append({
+            "from": nodes[path[p0]]["name"], "to": nodes[path[p1]]["name"],
+            "jumps": p1 - p0,
+            "ly": sum(r["jump_ly"] for r in route[p0:p1]),
+            "a_v": sum(r["a_v"] for r in route[p0:p1]),
+        })
+    return {"via": [nodes[path[p]]["name"] for p in seams[1:-1]],
+            "via_legs": legs if via_idx else []}
+
+
+def _distance_reference(ctx, max_jump_ly, our_ly, our_av, map_sel, step_pc, memo):
+    """The distance-optimal comparison block for a jump fork.
+
+    Runs the min-ly route over the fork's OWN `nodes`/`grid` under the SAME
+    waypoint constraint, rather than re-entering `calc.compute_jump_route` with
+    the raw names. Two reasons: (1) correctness — `extra_ly`/`saved_av` must
+    compare like with like, so the reference has to be waypoint-constrained too;
+    (2) cost — re-entering would re-resolve every terminal (up to 10 DB/SIMBAD
+    lookups, some of them network) and re-run the whole stage-1 closure on a
+    freshly built pool and grid, on top of the dust-weighted closure just done.
+    Same graph, same terminals ⇒ the same route, for a fraction of the work.
+    """
+    path, _seams, unreachable = _route_through(
+        ctx["nodes"], ctx["grid"], ctx["s"], ctx["t"], ctx["via_idx"],
+        max_jump_ly, "distance", lambda u, v, w: w)
+    if unreachable is not None:
+        return {"distance_optimal_ly": None, "distance_optimal_av": None,
+                "extra_ly": None, "saved_av": None}
+    seq = [ctx["nodes"][i] for i in path]
+    d_ly = sum(_node_dist(seq[i], seq[i + 1]) for i in range(len(seq) - 1))
+    return _compare(our_ly, our_av, seq, map_sel, step_pc, d_ly, memo=memo)
+
+
+def compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance",
+                            map_sel="auto", dust_step_pc=5.0, via=None):
+    """Least-extinction route origin→destination over the same jump-limited graph
+    as `compute_jump_route`. `optimize="distance"` → Dijkstra over A_V (least
+    total extinction); `optimize="jumps"` → BFS (fewest jumps, dust reported).
+
+    `via` (required intermediate waypoints) behaves exactly as on
+    `compute_jump_route` — same helper, same validation, ordered by least A_V
+    here rather than least distance."""
+    pf = _preflight(map_sel)
+    if pf:
+        return pf
+    ctx, err = _jump_setup(origin, destination, max_jump_ly, optimize, via)
+    if err:
+        return err
+    o, d, nodes = ctx["o"], ctx["d"], ctx["nodes"]
+    s, t, via_idx, grid = ctx["s"], ctx["t"], ctx["via_idx"], ctx["grid"]
 
     cost_cache, errors, seg_memo = {}, [], {}
 
@@ -190,27 +256,26 @@ def compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance
         cost_cache[key] = val
         return val
 
-    prev, dist_arr = _grid_search(nodes, grid, s, t, max_jump_ly, optimize, dust_cost)
+    path, seams, unreachable_leg = _route_through(
+        nodes, grid, s, t, via_idx, max_jump_ly, optimize, dust_cost)
     if errors:
         return {"error": errors[0]}
 
     direct_ly = _node_dist(o, d)
-    reachable = dist_arr[t] != float("inf")
-    if not reachable:
+    if unreachable_leg is not None:
         return {
             "origin_info": o, "dest_info": d, "reachable": False, "weight": "dust",
             "optimize": optimize, "jumps": 0, "total_ly": 0.0, "total_av": 0.0,
             "direct_ly": direct_ly, "route": [], "max_jump_ly": max_jump_ly,
-            "map": map_sel, "stars": [_map_node(o), _map_node(d)],
+            "map": map_sel,
+            "stars": ([_map_node(o)] + [_map_node(nodes[i]) for i in via_idx]
+                      + [_map_node(d)]),
+            "via": [nodes[i]["name"] for i in via_idx], "via_legs": [],
+            "unreachable_leg": unreachable_leg,
         }
 
-    path = []
-    cur = t
-    while cur != -1:
-        path.append(cur)
-        cur = prev[cur]
-    path.reverse()
     seq = [nodes[i] for i in path]
+    waypoint_at = set(seams[1:-1])
 
     route = []
     cum_ly = cum_av = cum_var = 0.0
@@ -228,16 +293,11 @@ def compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance
             "a_v": seg["a_v"], "a_v_lo": seg["a_v_lo"], "a_v_hi": seg["a_v_hi"],
             "fully_covered": seg["covered"], "weight_value": seg["a_v"],
             "cumulative_ly": cum_ly, "cumulative_av": cum_av,
+            "waypoint": (i + 1) in waypoint_at,
         })
 
-    # Distance-optimal comparison: the min-ly route over the same graph.
-    dref = calc.compute_jump_route(origin, destination, max_jump_ly, "distance")
-    if "error" not in dref and dref.get("reachable"):
-        cmp = _compare(cum_ly, cum_av, _nodes_from_stars(dref["stars"]),
-                       map_sel, dust_step_pc, dref["total_ly"], memo=seg_memo)
-    else:
-        cmp = {"distance_optimal_ly": None, "distance_optimal_av": None,
-               "extra_ly": None, "saved_av": None}
+    cmp = _distance_reference(ctx, max_jump_ly, cum_ly, cum_av, map_sel,
+                              dust_step_pc, seg_memo)
 
     sig = math.sqrt(cum_var)
     return {
@@ -247,13 +307,15 @@ def compute_jump_route_dust(origin, destination, max_jump_ly, optimize="distance
         "total_av_hi": cum_av + sig, "all_legs_covered": all_cov,
         "direct_ly": direct_ly, "route": route, "max_jump_ly": max_jump_ly,
         "map": map_sel, "stars": [_map_node(n) for n in seq], **cmp,
+        **_via_block(nodes, path, seams, route, via_idx), "unreachable_leg": None,
     }
 
 
 # ── C11 (Phase AD): jump-route --weight blend (α·distance + β·A_V) ────────────
 
 def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distance",
-                             alpha=1.0, beta=1.0, map_sel="auto", dust_step_pc=5.0):
+                             alpha=1.0, beta=1.0, map_sel="auto", dust_step_pc=5.0,
+                             via=None):
     """Blended-cost route origin→destination: each edge costs ``α·distance_ly + β·A_V``,
     fed to the same Dijkstra (`_grid_search`) as `compute_jump_route`/`_dust`.
 
@@ -265,6 +327,8 @@ def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distanc
     pf = _preflight(map_sel)
     if pf:
         return pf
+    # Kept ahead of the α/β checks so the message precedence is unchanged
+    # (`_jump_setup` re-checks both, harmlessly).
     if max_jump_ly is None or max_jump_ly <= 0:
         return {"error": "Max jump distance must be positive."}
     if optimize not in ("distance", "jumps"):
@@ -273,21 +337,11 @@ def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distanc
         return {"error": "alpha and beta must be ≥ 0."}
     if alpha == 0 and beta == 0:
         return {"error": "alpha and beta cannot both be 0 (a zero cost has no optimum)."}
-
-    o = _resolve_star_position(origin)
-    if "error" in o:
-        return {"error": f"Origin: {o['error']}"}
-    d = _resolve_star_position(destination)
-    if "error" in d:
-        return {"error": f"Destination: {d['error']}"}
-    if o["name"].strip().lower() == d["name"].strip().lower() or _node_dist(o, d) <= 1e-3:
-        return {"error": "Origin and destination are the same star."}
-
-    pool_res = _load_star_systems_positions()
-    nodes = list(pool_res["stars"]) if "stars" in pool_res else []
-    s = _merge_endpoint(nodes, o)
-    t = _merge_endpoint(nodes, d)
-    grid = _SpatialGrid(nodes, max_jump_ly)
+    ctx, err = _jump_setup(origin, destination, max_jump_ly, optimize, via)
+    if err:
+        return err
+    o, d, nodes = ctx["o"], ctx["d"], ctx["nodes"]
+    s, t, via_idx, grid = ctx["s"], ctx["t"], ctx["via_idx"], ctx["grid"]
 
     cost_cache, errors, seg_memo = {}, [], {}
 
@@ -305,28 +359,27 @@ def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distanc
         cost_cache[key] = val
         return val
 
-    prev, dist_arr = _grid_search(nodes, grid, s, t, max_jump_ly, optimize, blend_cost)
+    path, seams, unreachable_leg = _route_through(
+        nodes, grid, s, t, via_idx, max_jump_ly, optimize, blend_cost)
     if errors:
         return {"error": errors[0]}
 
     direct_ly = _node_dist(o, d)
-    reachable = dist_arr[t] != float("inf")
-    if not reachable:
+    if unreachable_leg is not None:
         return {
             "origin_info": o, "dest_info": d, "reachable": False, "weight": "blend",
             "alpha": alpha, "beta": beta, "optimize": optimize, "jumps": 0,
             "total_ly": 0.0, "total_av": 0.0, "total_blend_cost": 0.0,
             "direct_ly": direct_ly, "route": [], "max_jump_ly": max_jump_ly,
-            "map": map_sel, "stars": [_map_node(o), _map_node(d)],
+            "map": map_sel,
+            "stars": ([_map_node(o)] + [_map_node(nodes[i]) for i in via_idx]
+                      + [_map_node(d)]),
+            "via": [nodes[i]["name"] for i in via_idx], "via_legs": [],
+            "unreachable_leg": unreachable_leg,
         }
 
-    path = []
-    cur = t
-    while cur != -1:
-        path.append(cur)
-        cur = prev[cur]
-    path.reverse()
     seq = [nodes[i] for i in path]
+    waypoint_at = set(seams[1:-1])
 
     route = []
     cum_ly = cum_av = cum_cost = cum_var = 0.0
@@ -345,16 +398,11 @@ def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distanc
             "a_v": seg["a_v"], "a_v_lo": seg["a_v_lo"], "a_v_hi": seg["a_v_hi"],
             "fully_covered": seg["covered"], "weight_value": alpha * ly + beta * seg["a_v"],
             "cumulative_ly": cum_ly, "cumulative_av": cum_av,
+            "waypoint": (i + 1) in waypoint_at,
         })
 
-    # Distance-optimal comparison (same graph, min-ly route).
-    dref = calc.compute_jump_route(origin, destination, max_jump_ly, "distance")
-    if "error" not in dref and dref.get("reachable"):
-        cmp = _compare(cum_ly, cum_av, _nodes_from_stars(dref["stars"]),
-                       map_sel, dust_step_pc, dref["total_ly"], memo=seg_memo)
-    else:
-        cmp = {"distance_optimal_ly": None, "distance_optimal_av": None,
-               "extra_ly": None, "saved_av": None}
+    cmp = _distance_reference(ctx, max_jump_ly, cum_ly, cum_av, map_sel,
+                              dust_step_pc, seg_memo)
 
     sig = math.sqrt(cum_var)
     return {
@@ -365,6 +413,7 @@ def compute_jump_route_blend(origin, destination, max_jump_ly, optimize="distanc
         "all_legs_covered": all_cov, "direct_ly": direct_ly, "route": route,
         "max_jump_ly": max_jump_ly, "map": map_sel,
         "stars": [_map_node(n) for n in seq], **cmp,
+        **_via_block(nodes, path, seams, route, via_idx), "unreachable_leg": None,
     }
 
 

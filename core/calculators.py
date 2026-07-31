@@ -7,6 +7,7 @@
 
 import csv
 import heapq
+import itertools
 import math
 import os
 from collections import deque
@@ -2047,6 +2048,174 @@ def _grid_search(nodes, grid, s, t, max_jump_ly, optimize, edge_cost):
     return prev, dist_arr
 
 
+# ── Waypoints ("via") — shared by the plain / dust / blend jump routes ────────
+#
+# A required-intermediate route is a fixed-endpoint Hamiltonian path over the
+# metric closure of the terminals (origin + waypoints + destination): pairwise
+# shortest paths (stage 1), brute-force the k! visit orders (stage 2), stitch the
+# winning legs (stage 3). Waypoints are an unordered SET — the planner picks the
+# cheapest order under whatever metric `optimize`/`edge_cost` selects.
+#
+# The stitched route is NOT a simple path: legs may reuse stars, so a star can
+# appear twice in route[]/stars[]. Inherent to waypoint routing (forcing
+# node-disjointness is NP-hard); documented rather than "fixed".
+
+MAX_VIA_WAYPOINTS = 8
+
+
+def _normalize_via(via):
+    """Validate/clean a `via` argument. Returns (names, None) or (None, {"error"}).
+
+    None/[]/whitespace-only entries → []. A bare string is rejected (it would
+    iterate as characters). The cap is enforced here, BEFORE any resolution, so
+    an over-cap list doesn't fire k SIMBAD lookups first.
+    """
+    if via is None:
+        return [], None
+    if isinstance(via, str):
+        return None, {"error": "via must be a list of star names, not a single string."}
+    # An ORDERED sequence only. A set/dict/generator would iterate in an order
+    # the caller never chose, and stage 2 breaks ties on input order — so an
+    # unordered container would silently make the "deterministic" visit order
+    # vary between interpreter runs (string hash randomization).
+    if not isinstance(via, (list, tuple)):
+        return None, {"error": "via must be None or a list of star names."}
+    names = []
+    for v in via:
+        if v is None:
+            continue
+        if not isinstance(v, str):
+            return None, {"error": "via must be a list of star names."}
+        if v.strip():
+            names.append(v)
+    if len(names) > MAX_VIA_WAYPOINTS:
+        return None, {"error": f"At most {MAX_VIA_WAYPOINTS} waypoints."}
+    return names, None
+
+
+def _resolve_via(names):
+    """Resolve cleaned waypoint names to node records, fail-fast.
+
+    Returns (records, None) or (None, {"error"}); the "Waypoint N" index is
+    1-based over the stripped list, matching compute_multi_stop_journey's
+    "Stop N" wording.
+    """
+    recs = []
+    for i, nm in enumerate(names):
+        rec = _resolve_star_position(nm)
+        if "error" in rec:
+            return None, {"error": f"Waypoint {i + 1} ('{nm.strip()}'): {rec['error']}"}
+        recs.append(rec)
+    return recs, None
+
+
+def _check_terminal_indices(s, t, via_idx, via_names):
+    """Reject terminals that collapsed onto the same pool node after merge.
+
+    Checked on POST-MERGE indices, not on the resolved records: `_merge_endpoint`
+    matches a pool row by name OR within 1e-3 ly, so two terminals each within
+    1e-3 ly of the *same* pool star can be up to 2e-3 apart from each other —
+    they pass a pairwise coordinate check and still merge to one index, which
+    would make a stage-1 pair search from a node to itself.
+    """
+    if s == t:
+        return {"error": "Origin and destination are the same star."}
+    for i, wi in enumerate(via_idx):
+        nm = via_names[i].strip()
+        if wi == s:
+            return {"error": f"Waypoint {i + 1} ('{nm}') is the same star as the origin."}
+        if wi == t:
+            return {"error": f"Waypoint {i + 1} ('{nm}') is the same star as the destination."}
+        for j in range(i):
+            if wi == via_idx[j]:
+                return {"error": f"Waypoint {i + 1} ('{nm}') is the same star as "
+                                 f"waypoint {j + 1} ('{via_names[j].strip()}')."}
+    return None
+
+
+def _route_through(nodes, grid, s, t, via_idx, max_jump_ly, optimize, edge_cost):
+    """Shortest s→t path visiting every node in `via_idx` (in any order).
+
+    Returns ``(path, seams, unreachable_leg)``:
+      * ``path``  — flat list of node indices, junction nodes de-duplicated;
+      * ``seams`` — positions in `path` of the leg boundaries, first and last
+        included, so ``seams[1:-1]`` are the waypoint arrivals in visit order;
+      * ``unreachable_leg`` — ``None`` on success, else ``{"from", "to"}``.
+
+    With `via_idx` empty this is a straight passthrough to the single
+    `_grid_search` + reconstruction the un-waypointed route has always used.
+    """
+    terminals = [s] + list(via_idx) + [t]
+    k = len(via_idx)
+
+    # Stage 1 — metric closure: one `_grid_search` per terminal PAIR
+    # (C(k+2,2)−1, i.e. 2 at k=1 … 44 at the cap). Costs are symmetric, so each
+    # unordered pair is searched once and the stored path reversed for the other
+    # direction. The direct origin↔destination pair is skipped when waypoints
+    # exist (the path must route through them, so no permutation uses it).
+    #
+    # The plan's alternative — one full single-source sweep per terminal (k+2
+    # runs, via a sentinel target that never matches) — was built and MEASURED
+    # against the real 256k-row pool: Sol → 38 Vir via 70 Vir at max_jump 20
+    # took 227 s as sweeps vs 4.96 s as pairs (k=3: 11.7 s as pairs). Pairwise
+    # wins decisively because `_grid_search` early-exits when the target pops,
+    # while a sweep must settle the entire reachable component — which at a
+    # usable jump range is most of the catalogue. Do not "optimize" this back.
+    #
+    # An infinite pair SHORT-CIRCUITS the whole closure. Reachability is an
+    # equivalence relation on an undirected graph, so cost(a,b) = ∞ means a and
+    # b sit in different components — and then no visit order can work, because
+    # a route visiting every terminal would put them all in one component. This
+    # is the difference between one full sweep and k+1 of them: the early exit
+    # fires only on SUCCESS, so an unreachable pair drains the entire reachable
+    # component every time it is searched. Stranding a route with a far-flung
+    # waypoint is a documented, expected outcome, so this is a likely path, not
+    # an exotic one. Pairs are ordered origin-first, so a terminal disconnected
+    # from the origin is caught on the first sweep.
+    paths, costs = {}, {}
+    for i in range(len(terminals)):
+        for j in range(i + 1, len(terminals)):
+            if k and i == 0 and j == len(terminals) - 1:
+                continue
+            a, b = terminals[i], terminals[j]
+            prev, dist_arr = _grid_search(nodes, grid, a, b, max_jump_ly,
+                                          optimize, edge_cost)
+            if dist_arr[b] == float("inf"):
+                return [], [], {"from": nodes[a]["name"], "to": nodes[b]["name"]}
+            fwd, cur = [], b
+            while cur != -1:
+                fwd.append(cur)
+                cur = prev[cur]
+            fwd.reverse()
+            # Reconstruct now and drop `prev` — retaining one ~256k-int array per
+            # pair would be tens of MB at the waypoint cap.
+            paths[(a, b)] = fwd
+            paths[(b, a)] = list(reversed(fwd))
+            costs[(a, b)] = costs[(b, a)] = dist_arr[b]
+
+    # Stage 2 — order selection. Every pair is finite by the short-circuit
+    # above, so this only picks the cheapest. itertools.permutations yields in
+    # lexicographic order of the waypoint indices and the comparison is strict,
+    # so the first (lexicographically smallest) permutation wins any tie —
+    # determinism that matters under optimize="jumps", where the objective is a
+    # small integer and ties are common.
+    best_order, best_cost = (), float("inf")
+    for perm in itertools.permutations(range(k)):
+        seq = [s] + [via_idx[i] for i in perm] + [t]
+        c = sum(costs[(seq[i], seq[i + 1])] for i in range(len(seq) - 1))
+        if c < best_cost:
+            best_cost, best_order = c, perm
+
+    # Stage 3 — stitch, de-duplicating the junction node at each seam.
+    seq = [s] + [via_idx[i] for i in best_order] + [t]
+    path, seams = [], [0]
+    for i in range(len(seq) - 1):
+        leg = paths[(seq[i], seq[i + 1])]
+        path.extend(leg if i == 0 else leg[1:])
+        seams.append(len(path) - 1)
+    return path, seams, None
+
+
 # ── A: Optimal Tour ──────────────────────────────────────────────────────────
 
 def _tour_len(order: list, closed: bool) -> float:
@@ -2172,22 +2341,30 @@ def compute_optimal_tour(star_names, velocity_input: float,
 # ── B: Jump-Range Pathfinding ────────────────────────────────────────────────
 
 def compute_jump_route(origin: str, destination: str, max_jump_ly: float,
-                       optimize: str = "distance") -> dict:
+                       optimize: str = "distance", via=None) -> dict:
     """Route origin→destination through intermediate stars, each jump ≤ max_jump_ly.
 
     optimize="distance" → Dijkstra (min total ly); "jumps" → BFS (fewest jumps).
     An unreachable destination is a clear result (reachable=False), not an error.
 
+    `via` is None or a list of star names that the route MUST pass through — an
+    unordered set, visited in whichever order is cheapest under `optimize` (cap
+    MAX_VIA_WAYPOINTS). With waypoints the route may revisit a star, so
+    route[]/stars[] can repeat a name; see _route_through.
+
     Returns:
         {origin_info, dest_info, reachable, optimize, jumps, total_ly, direct_ly,
-         route:[{jump, from, to, jump_ly, cumulative_ly}], max_jump_ly,
-         stars:[map dicts along the route]}
+         route:[{jump, from, to, jump_ly, cumulative_ly, waypoint}], max_jump_ly,
+         stars:[map dicts along the route], via, via_legs, unreachable_leg}
         or {"error": str}
     """
     if max_jump_ly is None or max_jump_ly <= 0:
         return {"error": "Max jump distance must be positive."}
     if optimize not in ("distance", "jumps"):
         return {"error": "optimize must be 'distance' or 'jumps'."}
+    via_names, err = _normalize_via(via)
+    if err:
+        return err
 
     o = _resolve_star_position(origin)
     if "error" in o:
@@ -2197,34 +2374,43 @@ def compute_jump_route(origin: str, destination: str, max_jump_ly: float,
         return {"error": f"Destination: {d['error']}"}
     if o["name"].strip().lower() == d["name"].strip().lower() or _node_dist(o, d) <= 1e-3:
         return {"error": "Origin and destination are the same star."}
+    via_recs, err = _resolve_via(via_names)
+    if err:
+        return err
 
     pool_res = _load_star_systems_positions()
     nodes = list(pool_res["stars"]) if "stars" in pool_res else []
+    # Every terminal must be merged BEFORE the grid is built — _SpatialGrid
+    # indexes at construction, so a node appended after is invisible to it.
     s = _merge_endpoint(nodes, o)
     t = _merge_endpoint(nodes, d)
+    via_idx = [_merge_endpoint(nodes, w) for w in via_recs]
+    err = _check_terminal_indices(s, t, via_idx, via_names)
+    if err:
+        return err
     grid = _SpatialGrid(nodes, max_jump_ly)
 
-    prev, dist_arr = _grid_search(nodes, grid, s, t, max_jump_ly, optimize,
-                                  edge_cost=lambda u, v, w: w)
+    path, seams, unreachable_leg = _route_through(
+        nodes, grid, s, t, via_idx, max_jump_ly, optimize,
+        edge_cost=lambda u, v, w: w)
 
     direct_ly = _node_dist(o, d)
-    reachable = dist_arr[t] != float("inf")
-    if not reachable:
+    if unreachable_leg is not None:
         return {
             "origin_info": o, "dest_info": d, "reachable": False,
             "optimize": optimize, "jumps": 0, "total_ly": 0.0,
             "direct_ly": direct_ly, "route": [], "max_jump_ly": max_jump_ly,
-            "stars": [_map_node(o), _map_node(d)],
+            # Waypoints are reported from their MERGED pool nodes, exactly as the
+            # reachable branch does, so an alias that merges onto a catalogue row
+            # reports the same name and spectral colour either way. The two
+            # endpoints keep the resolved-record form this branch has always used.
+            "stars": ([_map_node(o)] + [_map_node(nodes[i]) for i in via_idx]
+                      + [_map_node(d)]),
+            "via": [nodes[i]["name"] for i in via_idx], "via_legs": [],
+            "unreachable_leg": unreachable_leg,
         }
 
-    # Reconstruct the path.
-    path = []
-    cur = t
-    while cur != -1:
-        path.append(cur)
-        cur = prev[cur]
-    path.reverse()
-
+    waypoint_at = set(seams[1:-1])
     route = []
     cumulative_ly = 0.0
     for i in range(len(path) - 1):
@@ -2234,6 +2420,16 @@ def compute_jump_route(origin: str, destination: str, max_jump_ly: float,
         route.append({
             "jump": i + 1, "from": a["name"], "to": b["name"],
             "jump_ly": jd, "cumulative_ly": cumulative_ly,
+            "waypoint": (i + 1) in waypoint_at,
+        })
+
+    via_legs = []
+    for i in range(len(seams) - 1):
+        p0, p1 = seams[i], seams[i + 1]
+        via_legs.append({
+            "from": nodes[path[p0]]["name"], "to": nodes[path[p1]]["name"],
+            "jumps": p1 - p0,
+            "ly": sum(r["jump_ly"] for r in route[p0:p1]),
         })
 
     return {
@@ -2241,6 +2437,9 @@ def compute_jump_route(origin: str, destination: str, max_jump_ly: float,
         "optimize": optimize, "jumps": len(path) - 1, "total_ly": cumulative_ly,
         "direct_ly": direct_ly, "route": route, "max_jump_ly": max_jump_ly,
         "stars": [_map_node(nodes[i]) for i in path],
+        "via": [nodes[path[p]]["name"] for p in seams[1:-1]],
+        "via_legs": via_legs if via_idx else [],
+        "unreachable_leg": None,
     }
 
 

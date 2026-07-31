@@ -91,13 +91,60 @@ def _mst_result():
 
 
 def _unreachable_jump_route():
-    """B — jump route with no path: two endpoints, zero edges."""
+    """B — jump route with no path: two endpoints, zero edges.
+
+    Carries the always-present waypoint keys (`via`/`via_legs`/`unreachable_leg`)
+    added with `via=` support; with no waypoints `unreachable_leg` is just the
+    origin/destination pair.
+    """
     return {
         "origin_info": {"name": "Sol"}, "dest_info": {"name": "Vega"},
         "reachable": False, "optimize": "distance", "jumps": 0,
         "total_ly": 0.0, "direct_ly": 25.0, "route": [], "max_jump_ly": 2.0,
         "stars": [_star("Sol", 0.0, 0.0, 0.0),
                   _star("Vega", 25.0, 0.0, 0.0, "A0V", "#cad7ff")],
+        "via": [], "via_legs": [],
+        "unreachable_leg": {"from": "Sol", "to": "Vega"},
+    }
+
+
+def _unreachable_via_jump_route():
+    """B — the waypoint case: three terminals, and the leg that failed is
+    Sol→Vega (the waypoint), not Sol→the destination."""
+    return {
+        "origin_info": {"name": "Sol"}, "dest_info": {"name": "Procyon"},
+        "reachable": False, "optimize": "distance", "jumps": 0,
+        "total_ly": 0.0, "direct_ly": 11.4, "route": [], "max_jump_ly": 2.0,
+        "stars": [_star("Sol", 0.0, 0.0, 0.0),
+                  _star("Vega", 25.0, 0.0, 0.0, "A0V", "#cad7ff"),
+                  _star("Procyon", 11.4, 0.0, 0.0, "F5IV", "#f8f7ff")],
+        "via": ["Vega"], "via_legs": [],
+        "unreachable_leg": {"from": "Sol", "to": "Vega"},
+    }
+
+
+def _via_jump_route():
+    """B — a reachable waypointed route that RE-VISITS Sol (Sol→Wz→Sol→P)."""
+    stars = [_star("Sol", 0.0, 0.0, 0.0),
+             _star("Wz", 0.0, 0.0, 3.0, "M3V", "#FF8D3F"),
+             _star("Sol", 0.0, 0.0, 0.0),
+             _star("Procyon", 3.0, 0.0, 0.0, "F5IV", "#f8f7ff")]
+    route = [
+        {"jump": 1, "from": "Sol", "to": "Wz", "jump_ly": 3.0,
+         "cumulative_ly": 3.0, "waypoint": True},
+        {"jump": 2, "from": "Wz", "to": "Sol", "jump_ly": 3.0,
+         "cumulative_ly": 6.0, "waypoint": False},
+        {"jump": 3, "from": "Sol", "to": "Procyon", "jump_ly": 3.0,
+         "cumulative_ly": 9.0, "waypoint": False},
+    ]
+    return {
+        "origin_info": {"name": "Sol"}, "dest_info": {"name": "Procyon"},
+        "reachable": True, "optimize": "distance", "jumps": 3,
+        "total_ly": 9.0, "direct_ly": 3.0, "route": route, "max_jump_ly": 4.0,
+        "stars": stars, "via": ["Wz"],
+        "via_legs": [{"from": "Sol", "to": "Wz", "jumps": 1, "ly": 3.0},
+                     {"from": "Wz", "to": "Procyon", "jumps": 2, "ly": 6.0}],
+        "unreachable_leg": None,
     }
 
 
@@ -367,6 +414,109 @@ class RouteChartParityTest(unittest.TestCase):
             QItemSelectionModel.SelectionFlag.ClearAndSelect
             | QItemSelectionModel.SelectionFlag.Rows)
         self.assertEqual(_selected_star_name(view), "Vega")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JumpRoutePanel waypoints (JUMP_ROUTE_WAYPOINTS_PLAN Phase 2): the Via field,
+# the ◆ marker + visit-order line, and the unreachable branch naming the leg.
+# ─────────────────────────────────────────────────────────────────────────────
+class JumpRouteViaPanelTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self):
+        import gui.panels as panels
+        return panels.JumpRoutePanel(_StubWindow())
+
+    def _labels(self, panel):
+        from PySide6.QtWidgets import QLabel
+        return [w.text() for w in panel._tables_widget.findChildren(QLabel)]
+
+    def _table_rows(self, panel):
+        from PySide6.QtWidgets import QTableView
+        view = panel._tables_widget.findChild(QTableView)
+        m = view.model()
+        return [[m.index(r, c).data() for c in range(m.columnCount())]
+                for r in range(m.rowCount())]
+
+    def test_via_field_exists_and_splits_on_commas(self):
+        captured = {}
+        p = self._panel()
+        p._origin.setText("Sol")
+        p._dest.setText("Procyon")
+        p._max.setText("9")
+        p._via.setText(" 70 Vir , , 61 Vir ")
+        p.run_in_background = lambda fn, *a, **kw: captured.update(args=a)
+        p._search()
+        # blanks dropped, entries stripped, passed as the 5th positional.
+        self.assertEqual(captured["args"][4], ["70 Vir", "61 Vir"])
+
+    def test_blank_via_is_the_off_switch(self):
+        captured = {}
+        p = self._panel()
+        p._origin.setText("Sol")
+        p._dest.setText("Procyon")
+        p._max.setText("9")
+        p.run_in_background = lambda fn, *a, **kw: captured.update(args=a)
+        p._search()
+        self.assertEqual(captured["args"][4], [])
+
+    def test_reachable_via_route_marks_waypoints_and_lists_visit_order(self):
+        p = self._panel()
+        p._render(_via_jump_route())
+        rows = self._table_rows(p)
+        self.assertEqual([r[2] for r in rows], ["◆ Wz", "Sol", "Procyon"])
+        joined = " ".join(self._labels(p))
+        self.assertIn("Via (in the visit order chosen", joined)
+        self.assertIn("Wz", joined)
+        self.assertIn("re-visits a star", joined)   # this fixture repeats Sol
+
+    def test_plain_route_has_no_via_line_and_no_markers(self):
+        p = self._panel()
+        r = _via_jump_route()
+        r = {**r, "via": [], "via_legs": [],
+             "route": [{**h, "waypoint": False} for h in r["route"]]}
+        p._render(r)
+        self.assertEqual([row[2] for row in self._table_rows(p)],
+                         ["Wz", "Sol", "Procyon"])
+        joined = " ".join(self._labels(p))
+        self.assertNotIn("Via (in the visit order chosen", joined)
+
+    def test_unreachable_names_the_failed_leg_not_the_endpoints(self):
+        p = self._panel()
+        p._render(_unreachable_via_jump_route())
+        joined = " ".join(self._labels(p))
+        self.assertIn("No route from Sol to Vega", joined)   # the waypoint leg
+        self.assertNotIn("No route from Sol to Procyon", joined)
+        self.assertIn("Sol → Procyon route fails because of that leg", joined)
+
+    def test_plain_unreachable_wording_unchanged(self):
+        p = self._panel()
+        p._render(_unreachable_jump_route())
+        joined = " ".join(self._labels(p))
+        self.assertIn("No route from Sol to Vega", joined)
+        self.assertNotIn("because of that leg", joined)
+
+    @unittest.skipUnless(_mpl_available(), "matplotlib not available")
+    def test_find_box_appears_only_when_the_failed_chart_has_waypoints(self):
+        from PySide6.QtWidgets import QLineEdit
+
+        def _find_boxes(panel):
+            # The O18 box lives on the viz container, above the tabs widget.
+            w = getattr(panel, "_find_widget", None)
+            return [] if w is None or not w.isVisibleTo(panel._viz_container) \
+                else w.findChildren(QLineEdit)
+
+        plain = self._panel()
+        plain._render(_unreachable_jump_route())
+        self.assertEqual(_find_boxes(plain), [])     # just the two endpoints
+
+        withvia = self._panel()
+        withvia._render(_unreachable_via_jump_route())
+        self.assertTrue(_find_boxes(withvia))        # three terminals to find
 
 
 _ROUTE_PANELS = ["MultiStopJourneyPanel", "OptimalTourPanel",

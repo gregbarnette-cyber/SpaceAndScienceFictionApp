@@ -1221,22 +1221,24 @@ def cmd_jump_route(args):
     if (alpha is not None or beta is not None) and weight != "blend":
         _out({"error": "--alpha/--beta apply only with --weight blend."})
         return
+    via = getattr(args, "via", None)
     if weight == "dust":
         import core.dust_routing as dust_routing
         _out(dust_routing.compute_jump_route_dust(
             args.origin, args.destination, args.max_jump, optimize=args.optimize,
-            map_sel=args.map, dust_step_pc=args.dust_step_pc,
+            map_sel=args.map, dust_step_pc=args.dust_step_pc, via=via,
         ))
     elif weight == "blend":
         import core.dust_routing as dust_routing
         _out(dust_routing.compute_jump_route_blend(
             args.origin, args.destination, args.max_jump, optimize=args.optimize,
             alpha=1.0 if alpha is None else alpha, beta=1.0 if beta is None else beta,
-            map_sel=args.map, dust_step_pc=args.dust_step_pc,
+            map_sel=args.map, dust_step_pc=args.dust_step_pc, via=via,
         ))
     else:
         _out(calculators.compute_jump_route(
             args.origin, args.destination, args.max_jump, optimize=args.optimize,
+            via=via,
         ))
 
 
@@ -3253,6 +3255,10 @@ def main(argv=None):
                    help="Maximum single-jump distance in light years")
     p.add_argument("--optimize", choices=["distance", "jumps"], default="distance",
                    help="Minimize total distance (default) or number of jumps")
+    p.add_argument("--via", nargs="+", default=None,
+                   help="Required intermediate waypoints (max 8) — an unordered SET; "
+                        "the route must pass through every one, visited in whichever "
+                        "order is cheapest under --optimize. May revisit a star.")
     # jump-route gets the extra `blend` weight (C11) + α/β on top of the shared distance/dust flags.
     p.add_argument("--weight", choices=["distance", "dust", "blend"], default="distance",
                    help="Edge weight: distance (default, 3D ly), dust (integrated A_V), or "

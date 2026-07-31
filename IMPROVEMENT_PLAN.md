@@ -197,6 +197,15 @@ pattern before editing**; do not trust raw line numbers.
 - **Verify:** `tests/test_search.py`.
 
 ### P2.6 Dust-routing segment-integral reuse
+- **✅ FINISHED — verified built 2026-07-31, this entry was stale.** Both fixes are in
+  `core/dust_routing.py`: **Fix 1** — the Dijkstra closures stash each full seg dict in `seg_memo` and
+  the route-detail loops read it back through `_seg_cached` (grep the `# P2.6 reuse` /
+  `# P2.6: reuse Dijkstra integrals` comments in `compute_jump_route_dust`/`_blend`); **Fix 2** — the
+  tour and MST builders thread the same `seg_memo` into `_compare(..., memo=seg_memo)` →
+  `_total_av_along(..., memo=)`. The stated constraint held: `_seg`'s signature is untouched, so the
+  mocked-`_seg` tests in `tests/test_dust_routing.py` still patch cleanly. *(Noticed while building the
+  jump-route waypoints plan, which had flagged this entry as a pending collision on the same
+  functions — see `completed_plans/JUMP_ROUTE_WAYPOINTS_PLAN.md` §4/§12.)*
 - **File:** `core/dust_routing.py`.
 - **Fix 1 (route-detail reuse):** in `compute_jump_route_dust` and `compute_jump_route_blend`, the
   Dijkstra edge-cost closure caches integrals (grep `cost_cache`), but the final route-detail loop
