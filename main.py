@@ -1915,7 +1915,7 @@ def _display_hwc_star_properties(row):
         _f("S_DEC", 4),
         _f("S_DISTANCE", 5),
         ly,
-        _f("S_METALLICITY", 2),
+        _f("S_METALLICITY", 3),
         _f("S_AGE", 2),
     ]
     aligns = ["l", "l", "l", "l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r"]

@@ -250,7 +250,7 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
             _sf("S_HZ_OPT_MIN", 6), _sf("S_HZ_CON_MIN", 6),
             _sf("S_HZ_CON_MAX", 6), _sf("S_HZ_OPT_MAX", 6),
             _sf("S_HZ_CON1_MIN", 6), _sf("S_HZ_CON1_MAX", 6),
-            _sf("S_TIDAL_LOCK"), _sf("S_ABIO_ZONE"), _sf("S_SNOW_LINE"),
+            _sf("S_TIDAL_LOCK", 6), _sf("S_ABIO_ZONE", 6), _sf("S_SNOW_LINE", 6),
         ]
         t = self.make_table(sh_headers, [sh_row])
         _fit_table_height(t)
