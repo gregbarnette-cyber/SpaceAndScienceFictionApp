@@ -1,8 +1,6 @@
 # gui/panels/distance_stars.py — Options 17, 18, 19: star distance and proximity.
 # Each option has its own standalone panel.
 
-import re
-
 from PySide6.QtWidgets import (
     QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel,
     QSizePolicy, QWidget, QVBoxLayout,
@@ -18,6 +16,13 @@ from gui.visualizations.plot_helpers import (
 )
 from gui.panels.diagram_tabs import (
     _build_iso_chart_tab, _star_click_select, _wire_row_map_linking,
+    # O18 find box — moved to diagram_tabs (see the note further down). Only
+    # `_add_find_box` is called here; the other three are RE-EXPORTS with no
+    # in-module use, kept so `tests/test_viz_phase_o.py::O18FindTest` can go on
+    # importing them from this module. An "unused import" cleanup would silently
+    # break those tests.
+    _add_find_box,
+    _norm_find, _find_on_map, _clear_find,   # noqa: F401  (re-export)
 )
 from gui.panels.route_planning import add_two_star_chart_tabs
 
@@ -139,168 +144,11 @@ def _clear_tables_layout(panel):
             w.deleteLater()
 
 
-
-
-
-
-# ── O18 — Find-Star-on-Map box (opts 18/19; depends on O15's highlight) ───────
-
-_WS_RE = re.compile(r"\s+")
-
-
-def _norm_find(s):
-    """Whitespace-collapsed, case-folded text for substring matching. Collapsing
-    runs of spaces lets a query like `61 Cyg A` match the stored `*  61 Cyg A`."""
-    return _WS_RE.sub(" ", (s or "").strip()).lower()
-
-
-def _find_on_map(panel):
-    """Find a star by substring (name OR designations) across the result table and
-    centre + ring it on every map (O18). Repeating the same query cycles matches;
-    a new query restarts at the first. No match → status-bar message, no view
-    change. A found star whose spectral class is legend-filtered off is revealed
-    first, so find never centres on an invisible dot."""
-    inp = getattr(panel, "_find_input", None)
-    raw = inp.text().strip() if inp is not None else ""
-    q = _norm_find(raw)
-    if not q:
-        return
-    view = getattr(panel, "_link_view", None)
-    model = view.model() if view is not None else None
-    if model is None:
-        return
-
-    matches = []
-    for r in range(model.rowCount()):
-        nm_item = model.item(r, 0)
-        nm = nm_item.text() if nm_item is not None else ""
-        dz_item = model.item(r, 1) if model.columnCount() > 1 else None
-        dz = dz_item.text() if dz_item is not None else ""
-        if q in _norm_find(nm) or q in _norm_find(dz):
-            matches.append(nm)
-
-    readout = getattr(panel, "_find_readout", None)
-    if not matches:
-        panel._find_matches = []
-        if readout is not None:
-            readout.setText("No match")
-        try:
-            panel.set_status(f"No star matching '{raw}' on the map.")
-        except Exception:
-            pass
-        return
-
-    if matches != getattr(panel, "_find_matches", None):
-        panel._find_matches = matches
-        panel._find_idx = 0
-    else:
-        panel._find_idx = (panel._find_idx + 1) % len(matches)
-    name = matches[panel._find_idx]
-
-    # Reveal a legend-hidden class first (so the dot/ring are visible), then
-    # select the row (rings every canvas via O15) and centre each map on it.
-    for c in getattr(panel, "_link_canvases", ()):
-        reveal = getattr(c, "_o16_reveal_class", None)
-        cls = getattr(c, "_o16_name_cls", {}).get(name)
-        if reveal is not None and cls:
-            try:
-                reveal(cls)
-            except Exception:
-                pass
-    _star_click_select(panel, name)
-    for c in getattr(panel, "_link_canvases", ()):
-        center = getattr(c, "center_on", None)
-        if center is not None:
-            try:
-                center(name)
-            except Exception:
-                pass
-
-    n = len(matches)
-    msg = (f"{panel._find_idx + 1} of {n} matches — {name}" if n > 1
-           else f"Found: {name}")
-    if readout is not None:
-        readout.setText(msg)
-    try:
-        panel.set_status(msg)
-    except Exception:
-        pass
-
-
-def _clear_find(panel):
-    """Reset the O18 Find box: empty the search field + readout, reset the cycle
-    state, drop the found-star highlight (deselect on every map), and restore each
-    map to the view it had before find started centring."""
-    inp = getattr(panel, "_find_input", None)
-    if inp is not None:
-        inp.clear()
-    readout = getattr(panel, "_find_readout", None)
-    if readout is not None:
-        readout.setText("")
-    panel._find_matches = []
-    panel._find_idx = 0
-    _star_click_select(panel, None)   # clears the selection → ring off everywhere
-    for c in getattr(panel, "_link_canvases", ()):
-        reset = getattr(c, "reset_view", None)
-        if reset is not None:
-            try:
-                reset()
-            except Exception:
-                pass
-
-
-def _add_find_box(panel):
-    """Insert the O18 Find box above the map tabs (once per viz container). Resets
-    the cycle state on every render so a fresh result starts clean."""
-    cont = getattr(panel, "_viz_container", None)
-    if cont is None:
-        return
-    panel._find_matches = []
-    panel._find_idx = 0
-    existing = getattr(panel, "_find_widget", None)
-    # `_find_widget` is a panel-level attribute that survives reset() as a
-    # dangling reference: reset() deletes the old container via deleteLater(),
-    # and the real event loop's DeferredDelete pass frees the old find widget's
-    # C++ object. Touching a freed widget (even `.parent()`) raises RuntimeError,
-    # which would abort _render() before _finish_render() — leaving the table
-    # visible but the "Show Diagrams" button hidden. Treat a freed/mismatched
-    # widget as stale and rebuild a fresh box.
-    try:
-        reuse = existing is not None and existing.parent() is cont
-    except RuntimeError:
-        reuse = False
-    if reuse:
-        existing.show()
-        if getattr(panel, "_find_input", None) is not None:
-            panel._find_input.clear()
-        if getattr(panel, "_find_readout", None) is not None:
-            panel._find_readout.setText("")
-        return
-
-    w = QWidget()
-    row = QHBoxLayout(w)
-    row.setContentsMargins(0, 0, 0, 2)
-    row.addWidget(QLabel("Find star:"))
-    panel._find_input = QLineEdit()
-    panel._find_input.setMaximumWidth(180)
-    panel._find_input.setPlaceholderText("name or designation")
-    find_btn = QPushButton("Find")
-    clear_btn = QPushButton("Clear")
-    panel._find_readout = QLabel("")
-    panel._find_readout.setStyleSheet("color: #3a73ad;")
-    row.addWidget(panel._find_input)
-    row.addWidget(find_btn)
-    row.addWidget(clear_btn)
-    row.addWidget(panel._find_readout)
-    row.addStretch()
-    find_btn.clicked.connect(lambda: _find_on_map(panel))
-    panel._find_input.returnPressed.connect(lambda: _find_on_map(panel))
-    clear_btn.clicked.connect(lambda: _clear_find(panel))
-    panel._find_widget = w
-    # Insert just below the "Show Tables" button row, above the tabs widget.
-    cont.layout().insertWidget(1, w)
-
-
+# ── O18 — Find-Star-on-Map box ───────────────────────────────────────────────
+# Moved to gui/panels/diagram_tabs.py (Route-Find, 2026-07-31) so the seven Route
+# Planning panels can share it — it could not stay here, because this module
+# imports route_planning, so the reverse import would be circular. Imported (and
+# partly re-exported) at the top of this file.
 
 
 def _add_map_tabs(panel, map_stars, limit, title, result):

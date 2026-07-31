@@ -9,6 +9,7 @@
 # to these keys). Extracted from nasa_exoplanet.py so no panel imports another panel's privates.
 
 import math
+import re
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QButtonGroup,
@@ -446,6 +447,247 @@ def _wire_row_map_linking(panel, view, canvases, name_col=0):
         sm.selectionChanged.connect(lambda *a: _on_link_selection(panel))
 
 
+# ── O18 — Find-Star-on-Map box (depends on O15's highlight) ──────────────────
+#
+# Lives here rather than in distance_stars.py so the Route Planning panels can
+# reach it: distance_stars imports route_planning, so the reverse import would
+# be circular. distance_stars re-exports these names for its own callers and
+# for the tests that import them from there.
+
+_WS_RE = re.compile(r"\s+")
+
+
+def _norm_find(s):
+    """Whitespace-collapsed, case-folded text for substring matching. Collapsing
+    runs of spaces lets a query like `61 Cyg A` match the stored `*  61 Cyg A`."""
+    return _WS_RE.sub(" ", (s or "").strip()).lower()
+
+
+def _dedupe_find_rows(rows):
+    """Normalize a `(name, designations)` sequence into the `_find_rows` shape:
+    blank names dropped, deduped by name with the first occurrence winning, order
+    preserved. Dedupe is load-bearing, not defensive — Multi-Stop and Optimal Tour
+    legitimately emit one node per typed stop, so revisiting a star yields the same
+    name twice, and the canvases' name-keyed coord maps collapse those to one dot.
+    Without this a find would read "1 of 2" while centring the same point twice."""
+    out, seen = [], set()
+    for name, desig in rows:
+        name = name or ""
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append((name, desig or ""))
+    return out
+
+
+def _find_rows_from_table(panel):
+    """Build `_find_rows` from the linked result table: the star-name column
+    (`_link_name_col`) plus the column immediately after it (designations). This
+    is the opts-18/19 shape (name_col 0 → designations in 1)."""
+    view = getattr(panel, "_link_view", None)
+    model = view.model() if view is not None else None
+    if model is None:
+        return []
+    nc = getattr(panel, "_link_name_col", 0)
+    dc = nc + 1
+    rows = []
+    for r in range(model.rowCount()):
+        nm_item = model.item(r, nc)
+        nm = nm_item.text() if nm_item is not None else ""
+        dz_item = model.item(r, dc) if model.columnCount() > dc else None
+        dz = dz_item.text() if dz_item is not None else ""
+        rows.append((nm, dz))
+    return _dedupe_find_rows(rows)
+
+
+def _find_on_map(panel):
+    """Find a star by substring (name OR designations) over `panel._find_rows` and
+    centre + ring it on every map (O18). Repeating the same query cycles matches;
+    a new query restarts at the first. No match → status-bar message, no view
+    change. A found star whose spectral class is legend-filtered off is revealed
+    first, so find never centres on an invisible dot.
+
+    `_find_rows` — not the result table — is the searchable set, so the four
+    leg-shaped Route Planning panels (whose tables are `From|To` rows, not one row
+    per star) are searchable too. When the panel *does* have a linked per-star
+    table the row is additionally selected and scrolled to (the O15 gesture), but
+    the ring is applied directly to every canvas either way: table selection is an
+    extra, not the mechanism."""
+    inp = getattr(panel, "_find_input", None)
+    raw = inp.text().strip() if inp is not None else ""
+    q = _norm_find(raw)
+    if not q:
+        return
+    # Table-sourced panels (opts 18/19) re-derive on every find rather than using
+    # the render-time snapshot: `make_table` enables sorting and `QStandardItemModel`
+    # physically reorders rows, so a snapshot would cycle matches in render order
+    # while the user is looking at a sorted table. The old live scan followed the
+    # sort; keep that.
+    #
+    # Route panels never set the flag — including Nearest-Neighbor, Farthest-First
+    # and Jump Network, which DO render sortable per-star tables. It is not that
+    # they have no table to follow: their searchable set is the route star list by
+    # design (D2), which is what covers the four leg-shaped panels, and re-deriving
+    # from the table would change the *set*, not just its order — Jump Network's
+    # table carries the start (tier 0), which D6 deliberately excludes. The visible
+    # consequence is that after a user sorts one of those three tables the ring
+    # cycles in route order (hop / step / tier) while `_star_click_select` scrolls
+    # the selection non-monotonically. Route order is the more meaningful cycle on
+    # a route panel, so this is the intended trade, not an oversight.
+    if getattr(panel, "_find_rows_live", False):
+        panel._find_rows = _find_rows_from_table(panel)
+    find_rows = getattr(panel, "_find_rows", None) or []
+    if not find_rows:
+        return
+
+    matches = [nm for nm, dz in find_rows
+               if q in _norm_find(nm) or q in _norm_find(dz)]
+
+    readout = getattr(panel, "_find_readout", None)
+    if not matches:
+        panel._find_matches = []
+        if readout is not None:
+            readout.setText("No match")
+        try:
+            panel.set_status(f"No star matching '{raw}' on the map.")
+        except Exception:
+            pass
+        return
+
+    if matches != getattr(panel, "_find_matches", None):
+        panel._find_matches = matches
+        panel._find_idx = 0
+    else:
+        panel._find_idx = (panel._find_idx + 1) % len(matches)
+    name = matches[panel._find_idx]
+
+    # Reveal a legend-hidden class first (so the dot/ring are visible), then
+    # select the matching table row if there is one, then ring + centre each map.
+    for c in getattr(panel, "_link_canvases", ()):
+        reveal = getattr(c, "_o16_reveal_class", None)
+        cls = getattr(c, "_o16_name_cls", {}).get(name)
+        if reveal is not None and cls:
+            try:
+                reveal(cls)
+            except Exception:
+                pass
+    # O15 extra: only the star-per-row panels have a linked table. `_star_click_select`
+    # no-ops without one, so this is a nicety — the ring below is the mechanism.
+    _star_click_select(panel, name)
+    for c in getattr(panel, "_link_canvases", ()):
+        try:
+            c.highlight_star(name)
+        except Exception:
+            pass
+        center = getattr(c, "center_on", None)
+        if center is not None:
+            try:
+                center(name)
+            except Exception:
+                pass
+
+    n = len(matches)
+    msg = (f"{panel._find_idx + 1} of {n} matches — {name}" if n > 1
+           else f"Found: {name}")
+    if readout is not None:
+        readout.setText(msg)
+    try:
+        panel.set_status(msg)
+    except Exception:
+        pass
+
+
+def _clear_find(panel):
+    """Reset the O18 Find box: empty the search field + readout, reset the cycle
+    state, drop the found-star highlight (deselect on every map), and restore each
+    map to the view it had before find started centring."""
+    inp = getattr(panel, "_find_input", None)
+    if inp is not None:
+        inp.clear()
+    readout = getattr(panel, "_find_readout", None)
+    if readout is not None:
+        readout.setText("")
+    panel._find_matches = []
+    panel._find_idx = 0
+    _star_click_select(panel, None)   # clears the selection → ring off (linked panels)
+    for c in getattr(panel, "_link_canvases", ()):
+        try:
+            c.highlight_star(None)    # …and directly, for the unlinked ones
+        except Exception:
+            pass
+        reset = getattr(c, "reset_view", None)
+        if reset is not None:
+            try:
+                reset()
+            except Exception:
+                pass
+
+
+def _add_find_box(panel, rows=None):
+    """Insert the O18 Find box above the map tabs (once per viz container). Resets
+    the cycle state on every render so a fresh result starts clean.
+
+    `rows` is the searchable `(name, designations)` set — the Route Planning panels
+    pass their route star list, so the leg-shaped ones are searchable too. Omitted
+    (opts 18/19) it is derived from the linked result table. Either way it is
+    deduped by name; an empty set means there is nothing to find, so no box is
+    added."""
+    cont = getattr(panel, "_viz_container", None)
+    if cont is None:
+        return
+    panel._find_rows_live = rows is None      # table-sourced → re-derive per find
+    panel._find_rows = (_dedupe_find_rows(rows) if rows is not None
+                        else _find_rows_from_table(panel))
+    if not panel._find_rows:
+        return
+    panel._find_matches = []
+    panel._find_idx = 0
+    existing = getattr(panel, "_find_widget", None)
+    # `_find_widget` is a panel-level attribute that survives reset() as a
+    # dangling reference: reset() deletes the old container via deleteLater(),
+    # and the real event loop's DeferredDelete pass frees the old find widget's
+    # C++ object. Touching a freed widget (even `.parent()`) raises RuntimeError,
+    # which would abort _render() before _finish_render() — leaving the table
+    # visible but the "Show Diagrams" button hidden. Treat a freed/mismatched
+    # widget as stale and rebuild a fresh box.
+    try:
+        reuse = existing is not None and existing.parent() is cont
+    except RuntimeError:
+        reuse = False
+    if reuse:
+        # Load-bearing: `_prepare_render` hides the box at the start of every
+        # render, so this is what brings it back for a result that has one.
+        existing.show()
+        if getattr(panel, "_find_input", None) is not None:
+            panel._find_input.clear()
+        if getattr(panel, "_find_readout", None) is not None:
+            panel._find_readout.setText("")
+        return
+
+    w = QWidget()
+    row = QHBoxLayout(w)
+    row.setContentsMargins(0, 0, 0, 2)
+    row.addWidget(QLabel("Find star:"))
+    panel._find_input = QLineEdit()
+    panel._find_input.setMaximumWidth(180)
+    panel._find_input.setPlaceholderText("name or designation")
+    find_btn = QPushButton("Find")
+    clear_btn = QPushButton("Clear")
+    panel._find_readout = QLabel("")
+    panel._find_readout.setStyleSheet("color: #3a73ad;")
+    row.addWidget(panel._find_input)
+    row.addWidget(find_btn)
+    row.addWidget(clear_btn)
+    row.addWidget(panel._find_readout)
+    row.addStretch()
+    find_btn.clicked.connect(lambda: _find_on_map(panel))
+    panel._find_input.returnPressed.connect(lambda: _find_on_map(panel))
+    clear_btn.clicked.connect(lambda: _clear_find(panel))
+    panel._find_widget = w
+    # Insert just below the "Show Tables" button row, above the tabs widget.
+    cont.layout().insertWidget(1, w)
+
+
 _ISO_HOURS_PER_JULIAN_YEAR = 8765.8128   # ×c → ly/hr (matches core + plot_helpers)
 
 
@@ -557,6 +799,25 @@ def _build_iso_chart_tab(panel, map_stars, limit, click_cb, canvases, is_3d,
             try:
                 new_canvas.highlight_star(prev_hl)
             except Exception:
+                pass
+        # D9 — the rebuilt canvas gets a fresh `view0`, so any O18 find cycle in
+        # flight is stale: leaving `_find_idx` set would make the next identical
+        # Find *advance* the cycle instead of re-centring, and a later Clear would
+        # silently fail to restore the view (reset_view() returns False with no
+        # captured lims). Reset the cycle, not the highlight.
+        #
+        # The readout goes with it: the chart has just been rebuilt at its default
+        # un-centred view and the cycle is back at 0, so a leftover "2 of 3
+        # matches — Wolf 359" would be describing a state that no longer exists,
+        # and the next Find with that query re-centres match *1*. The query itself
+        # stays in the box — it is still what the user wants to search for.
+        panel._find_matches = []
+        panel._find_idx = 0
+        ro = getattr(panel, "_find_readout", None)
+        if ro is not None:
+            try:
+                ro.setText("")
+            except RuntimeError:
                 pass
 
     def _clear():

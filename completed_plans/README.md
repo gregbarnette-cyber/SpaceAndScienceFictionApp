@@ -21,7 +21,7 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (45 files)
+## Index (47 files)
 
 | File | Title |
 |---|---|
@@ -67,6 +67,7 @@ in here too, with the same history (moved with `git mv`).
 | [PHASE_X_PLAN.md](PHASE_X_PLAN.md) | PHASE_X_PLAN.md — Closed-Loop Life-Support & Bioregenerative Calculators |
 | [PHASE_Y_PLAN.md](PHASE_Y_PLAN.md) | Phase Y — STL Mission Energetics (`rocket-equation`, `beam-sail`) |
 | [PHASE_Z_PLAN.md](PHASE_Z_PLAN.md) | Phase Z — Rotating-Structure & Megastructure Scale (`spin-stress`, `tether-taper`, `dyso |
+| [ROUTE_FIND_PLAN.md](ROUTE_FIND_PLAN.md) | Route-Find — the O18 Find-Star box moved to the shared builder and wired to all 7 Route Planning panels |
 | [ROUTE_CHART_REFACTOR_PLAN.md](ROUTE_CHART_REFACTOR_PLAN.md) | Route-Chart Refactor — the 7 Route Planning maps onto the shared builder (Phases 1–2) + the one-palette unification (Phase 3) |
 | [SPECTRAL_CLASS_PLAN.md](SPECTRAL_CLASS_PLAN.md) | Spectral-Class Prefix Plan — search chips (Part 1) + colour/legend (Part 2) |
 | [future_phases_archive.md](future_phases_archive.md) | Archived Phases — Space & Science Fiction App |

@@ -396,6 +396,24 @@ class DiagramToggleMixin:
         self._exit_diagram_mode()
         self._show_diagrams_btn.setVisible(False)
         self._clear_viz_tabs()
+        # O18 find: every panel renders twice per Run and every error path returns
+        # before the chart tabs (and so before _add_find_box) are built, so the
+        # searchable set must be dropped here or it goes stale against the new
+        # result. The box itself is HIDDEN rather than deleted — `_viz_container`
+        # and `_find_widget` both outlive a render, so a result that builds charts
+        # but no find box (an unreachable Jump Route after a reachable one) would
+        # otherwise leave the previous run's box on screen, carrying its old query,
+        # over an empty searchable set. `_add_find_box` shows it again.
+        self._find_rows = []
+        self._find_rows_live = False
+        self._find_matches = []
+        self._find_idx = 0
+        w = getattr(self, "_find_widget", None)
+        if w is not None:
+            try:
+                w.hide()
+            except RuntimeError:
+                pass          # freed by a reset(); _add_find_box rebuilds it
 
     def _finish_render(self):
         """Call at the end of _render(): show Show Diagrams btn if viz tabs exist."""

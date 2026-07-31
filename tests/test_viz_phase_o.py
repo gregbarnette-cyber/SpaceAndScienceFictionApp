@@ -1244,6 +1244,49 @@ class O18FindTest(unittest.TestCase):
         self._find(p, "barnard")
         self.assertNotIn("M", _hidden_classes(ax))
 
+    def test_render_after_reset_survives_stale_find_widget(self):
+        """`_add_find_box`'s stale-`_find_widget` guard: reset() deletes the viz
+        container (and with it the find box) while `panel._find_widget` keeps a
+        dangling reference. A second _render must still reach _finish_render —
+        i.e. rebuild a fresh box rather than raise RuntimeError on the freed one
+        and abort mid-render, leaving the table up but Show Diagrams hidden."""
+        from PySide6.QtCore import QEvent
+        from PySide6.QtWidgets import QApplication
+        import gui.panels as panels
+
+        result = {
+            "limit_ly": 10.0, "count": 2,
+            "stars": [
+                {"Star Name": "NAME Barnard's star", "Star Designations": "GJ 699",
+                 "Spectral Type": "M4V", "Light Years": 5.96, "Distance": 5.96,
+                 "x": -0.06, "y": 5.94, "z": 0.49},
+                {"Star Name": "Wolf 359", "Star Designations": "GJ 406",
+                 "Spectral Type": "M6", "Light Years": 7.86, "Distance": 7.86,
+                 "x": -7.42, "y": 2.1, "z": 1.02},
+            ],
+        }
+        p = panels.StarsWithinDistanceSolPanel(self._StubWindow())
+        p._render(result)
+        self.assertTrue(p._viz_tabs_widget.count() > 0)
+        self.assertFalse(p._show_diagrams_btn.isHidden())
+        stale = p._find_widget
+        old_container = p._container
+
+        p.reset()
+        # Force the DeferredDelete pass the real event loop would run, so the old
+        # find widget's C++ object is actually freed (that is what makes the
+        # dangling reference raise). Scoped to this panel's old container — a
+        # global `sendPostedEvents(None, …)` would also free widgets other test
+        # classes still hold class-level references to, segfaulting later files.
+        QApplication.sendPostedEvents(old_container, QEvent.Type.DeferredDelete)
+        self.assertIs(p._find_widget, stale)   # panel attr survived reset()
+
+        p._render(result)                      # must not raise
+        self.assertTrue(p._viz_tabs_widget.count() > 0)
+        self.assertFalse(p._show_diagrams_btn.isHidden())   # _finish_render reached
+        self.assertIsNot(p._find_widget, stale)             # fresh box built
+        self.assertIs(p._find_widget.parent(), p._viz_container)
+
 
 def _hidden_classes(ax):
     """The set of spectral classes whose per-class scatter is currently hidden."""

@@ -388,7 +388,14 @@ them; its own tier-swatch legend stands), and **`label_max_ly`** is raised only 
 Jump Network can return thousands. **O15 row↔map linking** is wired on the three star-per-row panels
 (Nearest-Neighbor, Farthest-First, Jump Network) via an additive `name_col` on the linking helpers — those tables lead
 with an index column (`Hop #`/`Step`/`Jumps`), so they pass **1**; the default 0 keeps opts 18/19 and the two-star maps
-unchanged. The leg-shaped `From|To` panels pass no `link_view`, as opts 20/21 already did. **Phase 3** then deleted the
+unchanged. The leg-shaped `From|To` panels pass no `link_view`, as opts 20/21 already did. **O18 Find-star box (Route-Find, 2026-07-31)** — the last opt-18/19 chart feature the
+refactor left behind — is now on all seven too. Unlike opts 18/19 it searches the **route star
+list**, not the result table (`panel._find_rows`, deduped by name), which is what covers the four
+leg-shaped `From|To` panels that pass no `link_view`; and it rings each canvas **directly** rather
+than via table selection, which those panels have no path to. The start ★ is excluded, and Jump
+Route's `reachable=False` two-endpoint chart passes `find_box=False`. The shared implementation
+moved to `gui/panels/diagram_tabs.py` (re-exported from `distance_stars.py`, which imports
+`route_planning` and so could not be imported back). Tests: `tests/test_route_find.py`. **Phase 3** then deleted the
 `core.calculators._star_map_color` second palette: dot colours (including the `stars[].color` these planners return
 through `query.py`) now come from the single `core.shared.sp_color`, so a star reads the same on every panel. Four
 values moved — G/M/D and the unknown grey; see `docs/integration.md` for the consumer-facing note.

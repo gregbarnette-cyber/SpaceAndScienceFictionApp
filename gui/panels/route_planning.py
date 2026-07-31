@@ -42,7 +42,9 @@ import core.calculators
 import core.viz
 from core.shared import sp_color   # the one app-wide spectral palette (Phase 3)
 from gui.visualizations.plot_helpers import mpl_available
-from gui.panels.diagram_tabs import _build_iso_chart_tab, _wire_row_map_linking
+from gui.panels.diagram_tabs import (
+    _build_iso_chart_tab, _wire_row_map_linking, _add_find_box,
+)
 
 
 # ── shared scaffolding ───────────────────────────────────────────────────────
@@ -172,7 +174,7 @@ _ROUTE_SPARSE_MAX_NODES = 25
 
 
 def _add_route_chart_tabs(panel, result, link_view=None, name_col=1,
-                          legend_filter=True):
+                          legend_filter=True, find_box=True):
     """Add "Star Chart" + "Star Chart 3D" viz tabs with the route overlay.
 
     Built with the same `_build_iso_chart_tab` the opt-18/19 panels use, so the
@@ -192,6 +194,10 @@ def _add_route_chart_tabs(panel, result, link_view=None, name_col=1,
 
     `legend_filter=False` suppresses the per-class legend for JumpNetworkPanel,
     whose dots carry per-tier rather than spectral colours.
+
+    `find_box=False` suppresses the O18 Find box — passed by Jump Route's
+    `reachable=False` branch, whose chart is just the two endpoints (the same
+    "nothing to find" reasoning that keeps the box off opts 17/20/21).
     """
     if not mpl_available():
         return
@@ -222,6 +228,32 @@ def _add_route_chart_tabs(panel, result, link_view=None, name_col=1,
     # Always registered so the canvases are reachable (highlighting, tests);
     # with link_view=None this connects nothing and clicks just show the info box.
     _wire_row_map_linking(panel, link_view, canvases, name_col=name_col)
+
+    # O18 Find box, sourced from the route star list rather than the result table
+    # — the leg-shaped panels' tables are From|To rows, not one row per star.
+    # The start (stars[0], the gold ★) is excluded on all seven, so the gesture has
+    # ONE outcome everywhere — here and on opts 18/19, where the centre star has no
+    # table row at all. The O16 hazard is what motivated it: the ★ is drawn outside
+    # the per-class scatter but *is* in the ring's name→class map, so filtering its
+    # class off would suppress the ring while the ★ stayed visible, and the reveal
+    # step would then un-hide a class the user deliberately filtered off.
+    #
+    # Note that neither premise holds for JumpNetworkPanel specifically: its start
+    # DOES have a table row (`tiers[0]`), and it passes `legend_filter=False`, so no
+    # class is ever hidden and `_o16_reveal_class` does not exist. Typing the start's
+    # name there reports "No match" for a star that is visibly in the table and in
+    # the canvas coord_map. That asymmetry is accepted deliberately: making it the
+    # one panel where the start IS findable would give the same gesture two outcomes
+    # across the seven, which is the inconsistency D6 exists to remove.
+    #
+    # Excluded by NAME, not by index: Multi-Stop and Optimal Tour emit one node
+    # per typed stop, so a route that returns to its start (Sol → Sirius → Sol)
+    # carries the start again at a later index — and the canvases' name-keyed
+    # coord maps point every copy at the same ★.
+    if find_box:
+        start = stars[0]["name"]
+        _add_find_box(panel, [(s["name"], s.get("desig", ""))
+                              for s in stars[1:] if s["name"] != start])
 
 
 # ── Phase O O8 — Two-Star Map (opts 17, 20, 21) ──────────────────────────────
@@ -883,7 +915,7 @@ class JumpRoutePanel(DiagramToggleMixin, ResultPanel):
             note.setStyleSheet("color: #b8860b; font-weight: 600;")
             note.setWordWrap(True)
             self._tables_layout.addWidget(note)
-            _add_route_chart_tabs(self, result)
+            _add_route_chart_tabs(self, result, find_box=False)
             self._finish_render()
             return
 
