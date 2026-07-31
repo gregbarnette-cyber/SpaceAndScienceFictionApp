@@ -469,9 +469,14 @@ designation parsing can surface them.
   `g_number` + `cst` via the 88-entry `core.shared._CONSTELLATION_GENITIVES` table (**owned
   here; Phase AN3 consumes it for Bayer/Flamsteed rendering and must not rebuild it**).
   An unrecognised code degrades to the raw abbreviation — a name is never invented.
-- **Display:** a **`Gould: 101 G. Eridani`** line beneath the designations banner on all four
-  SIMBAD-fed panels (`SimbadPanel`, `star_regions`, `nasa_exoplanet`, `catalogs`) via the
-  shared `gui.panels.base.add_gould_line`, plus a **"Gould designation"** row in the Phase Q
+- **Display:** a **`Gould: 101 G. Eridani`** segment on the historical-names line beneath the
+  designations banner on all four SIMBAD-fed panels (`SimbadPanel`, `star_regions`,
+  `nasa_exoplanet`, `catalogs`), via the shared
+  `gui.panels.base.add_gould_line(layout, simbad, inline_with=<the AN3 label>)` — passing
+  `inline_with` **appends** it to the Phase AN3 Bayer/Flamsteed label instead of starting a second
+  line, so the star reads `Bayer: ε Eridani · Flamsteed: 18 Eridani · Gould: 101 G. Eridani`
+  (with `inline_with=None` — a star with no Bayer/Flamsteed id — it still gets its own line).
+  Plus a **"Gould designation"** row in the Phase Q
   system dossier's identity block. Deliberately **not** folded into the `designations` dict:
   that dict means "what SIMBAD returned", and mixing a VizieR value in would make `desig_str`
   misattribute provenance and put a non-SIMBAD string into `star_systems.designations`

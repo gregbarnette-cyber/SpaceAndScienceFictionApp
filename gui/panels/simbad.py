@@ -161,8 +161,8 @@ class SimbadPanel(ResultPanel):
         banner.setWordWrap(True)
         banner.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         props_layout.addWidget(banner)
-        add_designation_names_line(props_layout, result)   # AN3 — no-op when absent
-        add_gould_line(props_layout, result)      # Phase AO3 — no-op when absent
+        names_line = add_designation_names_line(props_layout, result)  # AN3 — no-op when absent
+        add_gould_line(props_layout, result, inline_with=names_line)   # AO3 — same line as AN3's
 
         plx    = result.get("plx_value")
         parsec = result.get("parsecs")

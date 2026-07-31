@@ -526,19 +526,25 @@ bundled `gould_designations` table by HD number. `None` for most stars: Gould
 listed **bright southern stars only**, so an absent designation is correct
 coverage, not a failure.
 
-Unlike M5's `gcns`, this is **not** a tab — it renders as a single line directly
-beneath the existing designations banner:
+Unlike M5's `gcns`, this is **not** a tab — it renders on the single
+historical-names line directly beneath the existing designations banner, sharing
+it with the Phase AN3 Bayer/Flamsteed names:
 
 ```
 STAR DESIGNATIONS:
 NAME Ran, *  18 Eri, GJ 144, HD 22049, HIP 16537, …
-Gould: 101 G. Eridani
+Flamsteed: 18 Eridani · Gould: 101 G. Eridani
 ```
 
-**One shared helper, `gui.panels.base.add_gould_line(layout, simbad)`** — call it
-after adding a designations banner. It returns the `QLabel`, or **`None` having
-added nothing at all** when the key is absent or empty, so no caller needs a
-conditional. The tooltip carries the provenance (VizieR V/135A) and the 1875
+**One shared helper, `gui.panels.base.add_gould_line(layout, simbad,
+inline_with=None)`** — call it after `add_designation_names_line`, passing that
+call's return value as `inline_with`. When `inline_with` is a `QLabel`, the Gould
+designation is **appended** to it as one more ` · ` segment (no second widget; the
+two tooltips are joined by a blank line) and that same label is returned. When it
+is `None` — the star carries no Bayer/Flamsteed id — Gould gets its own line, the
+original AO3 behaviour. Either way it returns **`None` having added nothing at
+all** when the `gould` key is absent or empty, so no caller needs a conditional.
+The tooltip carries the provenance (VizieR V/135A) and the 1875
 constellation-boundary caveat, so the caveat reaches whoever is looking at an odd
 result rather than living only in the docs.
 
@@ -587,9 +593,11 @@ Bayer: α Canis Minoris · Flamsteed: 10 Canis Minoris
 ```
 
 **`gui.panels.base.add_designation_names_line(layout, simbad)`** deliberately
-mirrors `add_gould_line` — same placement (it sits directly above it), same
+mirrors `add_gould_line` — same placement, same
 returns-`QLabel`-or-`None`-having-added-nothing contract, wired into the same four
-panels. It is a no-op for most stars and for **every** narrow-key-set caller
+panels. It **owns the line**: `add_gould_line` is called immediately after with
+`inline_with=<this label>` and appends the Gould designation to it, so all three
+historical names read as one line. It is a no-op for most stars and for **every** narrow-key-set caller
 (opts 17/20/21 + the seven route planners never carry these keys — AN D7), so it
 is safe to call unconditionally.
 

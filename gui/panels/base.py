@@ -304,8 +304,8 @@ def add_designation_names_line(layout, simbad):
     return label
 
 
-def add_gould_line(layout, simbad):
-    """Add the Gould designation line beneath a designations banner (Phase AO3).
+def add_gould_line(layout, simbad, inline_with=None):
+    """Add the Gould designation beneath a designations banner (Phase AO3).
 
     *simbad* is a ``compute_simbad_lookup`` result (or any dict carrying its
     optional ``gould`` key). Adds nothing at all when the key is absent or None
@@ -313,18 +313,32 @@ def add_gould_line(layout, simbad):
     stars legitimately have no Gould designation (AO4a). Kept out of `desig_str`
     on purpose: that string is what SIMBAD returned, and SIMBAD has no Gould ids.
 
-    Returns the QLabel, or None when nothing was added.
+    *inline_with* is the QLabel returned by ``add_designation_names_line`` (or
+    None). When given, the Gould designation is appended to that label as one
+    more ` · `-separated segment — Bayer/Flamsteed/Gould all read as one line of
+    historical names — and no second widget is added. When it is None (the star
+    has no Bayer/Flamsteed id, or the caller doesn't render that line at all)
+    Gould gets its own label, exactly as before.
+
+    Returns the QLabel the designation ended up on, or None when nothing was added.
     """
     gould = (simbad or {}).get("gould")
     if not gould or not gould.get("display"):
         return None
-    label = QLabel(f"<b>Gould:</b> {gould['display']}")
-    label.setWordWrap(True)
-    label.setToolTip(
+    text = f"<b>Gould:</b> {gould['display']}"
+    tip = (
         f"{gould.get('designation', '')} — {gould.get('source', '')}.\n"
         "Gould's 1875 constellation boundaries predate the IAU, so this may name "
         "a different constellation than the star's modern one."
     )
+    if inline_with is not None:
+        inline_with.setText(f"{inline_with.text()} · {text}")
+        existing = inline_with.toolTip()
+        inline_with.setToolTip(f"{existing}\n\n{tip}" if existing else tip)
+        return inline_with
+    label = QLabel(text)
+    label.setWordWrap(True)
+    label.setToolTip(tip)
     layout.addWidget(label)
     return label
 

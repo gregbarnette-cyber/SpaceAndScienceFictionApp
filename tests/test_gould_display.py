@@ -62,6 +62,32 @@ class AddGouldLineTest(unittest.TestCase):
         self.assertIn("Gould 1879", tip)
         self.assertIn("1875", tip)          # AO4b — must not be "reconciled" away
 
+    def test_inline_with_appends_to_the_bayer_flamsteed_line(self):
+        # The Gould designation shares one line with the AN3 Bayer/Flamsteed
+        # names rather than sitting on a line of its own.
+        from gui.panels.base import add_designation_names_line, add_gould_line
+        layout = self._layout()
+        names = add_designation_names_line(
+            layout, {"designations": {"Flamsteed": "*  18 Eri"}})
+        label = add_gould_line(layout, {"gould": _GOULD}, inline_with=names)
+        self.assertIs(label, names)
+        self.assertEqual(layout.count(), 1)          # no second widget
+        self.assertIn("18 Eridani", label.text())
+        self.assertIn("66 G. Centauri", label.text())
+        self.assertIn("·", label.text())
+        self.assertIn("1875", label.toolTip())       # both tooltips survive
+        self.assertIn("genitive", label.toolTip())
+
+    def test_inline_with_none_still_gets_its_own_line(self):
+        # A star with no Bayer/Flamsteed id — add_designation_names_line
+        # returned None, so Gould falls back to a standalone label.
+        from gui.panels.base import add_gould_line
+        layout = self._layout()
+        label = add_gould_line(layout, {"gould": _GOULD}, inline_with=None)
+        self.assertIsNotNone(label)
+        self.assertEqual(layout.count(), 1)
+        self.assertIn("66 G. Centauri", label.text())
+
     def test_adds_nothing_when_absent(self):
         # The normal case: Gould listed bright southern stars only.
         from gui.panels.base import add_gould_line

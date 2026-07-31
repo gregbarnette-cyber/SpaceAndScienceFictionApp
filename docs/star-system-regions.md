@@ -110,21 +110,22 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - Three columns: Bolometric Luminosity (`bcLuminosity`), Luminosity from Mass (`luminosityFromMass`), Calculated Luminosity
   - Six zones in order: Optimistic Inner HZ (Recent Venus), Conservative Inner HZ (Runaway Greenhouse - 5 Earth Mass), Conservative Inner HZ (Runaway Greenhouse), Conservative Inner HZ (Runaway Greenhouse - 0.1 Earth Mass), Conservative Outer HZ (Maximum Greenhouse), Optimistic Outer HZ (Early Mars)
 
-## Designation-name + Gould lines (opts 8/9 — GUI, Phases AN3 + AO)
+## Designation-name line (opts 8/9 — GUI, Phases AN3 + AO)
 
-Opts 8 and 9 render a SIMBAD designations banner above the region tabs, and when the star has a
-*Uranometria Argentina* (Gould 1879) designation a **`Gould: 101 G. Eridani`** line is added
-directly beneath it via the shared `gui.panels.base.add_gould_line(result_area, simbad)`.
+Opts 8 and 9 render a SIMBAD designations banner above the region tabs, and directly beneath it a
+**single** historical-names line carrying Bayer, Flamsteed **and** Gould:
+`Bayer: ε Eridani · Flamsteed: 18 Eridani · Gould: 101 G. Eridani`.
 
-**Phase AN3 adds a second line, immediately above the Gould one** —
-`gui.panels.base.add_designation_names_line(result_area, simbad)`, which renders the star's
-Bayer/Flamsteed ids in readable form (`Bayer: ε Eridani · Flamsteed: 18 Eridani`) from the raw
-strings already in the banner. Same contract: it adds **nothing at all** when the star carries
-neither key, so it is called unconditionally. The
-helper adds **nothing at all** when the key is absent, which is the normal case — Gould listed
-bright *southern* stars only. **Opt 10 (Manual) has no SIMBAD lookup**, so it has no banner and no
-Gould line. Source and caveats (including the 1875 constellation boundaries) are in
-`docs/star-databases.md`.
+It is built by two shared helpers called in order —
+`gui.panels.base.add_designation_names_line(result_area, simbad)` (AN3; renders the Bayer/Flamsteed
+ids in readable form from the raw strings already in the banner) and then
+`add_gould_line(result_area, simbad, inline_with=<that label>)` (AO3), which **appends** the Gould
+designation to the label AN3 returned rather than adding a second widget. Both tooltips are kept
+(joined by a blank line). Each helper adds **nothing at all** when its key is absent, which is the
+normal case — Gould listed bright *southern* stars only — so both are called unconditionally; when
+AN3 returns `None` (no Bayer/Flamsteed id), `inline_with=None` and Gould falls back to a line of its
+own. **Opt 10 (Manual) has no SIMBAD lookup**, so it has no banner and no names line. Source and
+caveats (including the 1875 constellation boundaries) are in `docs/star-databases.md`.
 
 ## Hypatia Catalog (opt 8 only)
 

@@ -399,8 +399,8 @@ def _render_result(result: dict, result_area: QVBoxLayout,
         banner = QLabel(f"<b>STAR DESIGNATIONS:</b><br>{desig_str}")
         banner.setWordWrap(True)
         result_area.addWidget(banner)
-        add_designation_names_line(result_area, simbad)    # AN3 — no-op when absent
-        add_gould_line(result_area, simbad)       # Phase AO3 — no-op when absent
+        names_line = add_designation_names_line(result_area, simbad)  # AN3 — no-op when absent
+        add_gould_line(result_area, simbad, inline_with=names_line)   # AO3 — same line as AN3's
     tabs = _build_region_tabs(result, viz_widget=viz_widget)
     result_area.addWidget(tabs, 1)
 

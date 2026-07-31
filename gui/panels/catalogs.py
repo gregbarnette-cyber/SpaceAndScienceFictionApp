@@ -201,8 +201,8 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         self._result_area.addWidget(
             QLabel(f"<b>SIMBAD:</b> {simbad.get('desig_str', 'N/A')}")
         )
-        add_designation_names_line(self._result_area, simbad)  # AN3 — no-op
-        add_gould_line(self._result_area, simbad)  # Phase AO3 — no-op when absent
+        names_line = add_designation_names_line(self._result_area, simbad)  # AN3 — no-op
+        add_gould_line(self._result_area, simbad, inline_with=names_line)   # AO3 — same line
 
         # ── Data / Hypatia tabs ───────────────────────────────────────────────
         data_tabs = QTabWidget()

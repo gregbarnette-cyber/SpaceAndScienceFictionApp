@@ -63,8 +63,8 @@ def _add_simbad_banner(layout, simbad):
     banner = QLabel(f"<b>SIMBAD Designations:</b><br>{simbad.get('desig_str', 'N/A')}")
     banner.setWordWrap(True)
     layout.addWidget(banner)
-    add_designation_names_line(layout, simbad)    # AN3 — no-op when absent
-    add_gould_line(layout, simbad)                # Phase AO3 — no-op when absent
+    names_line = add_designation_names_line(layout, simbad)   # AN3 — no-op when absent
+    add_gould_line(layout, simbad, inline_with=names_line)    # AO3 — same line as AN3's
 
 
 def _add_hz_table(panel, layout, rows_or_row):
