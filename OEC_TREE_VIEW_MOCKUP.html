@@ -1,0 +1,1180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OEC System View — Enhancement Options</title>
+<style>
+  :root{
+    --bg:#070b18; --panel:#0e1428; --panel2:#141d38; --line:#2a3868; --line2:#1a2448;
+    --ink:#dfe7f7; --dim:#93a4c8; --dim2:#6b7ea6;
+    --gold:#FFD700; --star:#ffd88a; --planet:#7fd4ff; --moon:#c9b6ff; --bin:#ff9ecb; --sys:#9dffcf;
+    --ok:#5fd68a; --warn:#ffc266; --bad:#ff7a7a; --derived:#b8a0ff;
+    --mono:ui-monospace,"Cascadia Code",Consolas,"DejaVu Sans Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1400px;margin:0 auto;padding:28px 22px 80px}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:.2px}
+  h2{font-size:19px;margin:34px 0 10px;color:#fff;border-bottom:1px solid var(--line);padding-bottom:8px}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--star)}
+  p{color:var(--dim);margin:8px 0}
+  .sub{color:var(--dim2);font-size:13px}
+  code,.mono{font-family:var(--mono);font-size:12.5px}
+  .card{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+
+  /* nav */
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:18px 0 6px;position:sticky;top:0;
+        background:var(--bg);padding:10px 0;z-index:20;border-bottom:1px solid var(--line2)}
+  .tab{background:var(--panel);border:1px solid var(--line);color:var(--dim);
+       padding:7px 13px;border-radius:7px;cursor:pointer;font-size:13px}
+  .tab:hover{color:var(--ink);border-color:#3f5490}
+  .tab.on{background:var(--panel2);color:#fff;border-color:var(--gold);box-shadow:0 0 0 1px rgba(255,215,0,.25) inset}
+  section[hidden]{display:none}
+
+  table{border-collapse:collapse;width:100%;font-size:12.7px}
+  th,td{text-align:left;padding:5px 9px;border-bottom:1px solid var(--line2);vertical-align:top}
+  th{color:var(--dim2);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;
+     border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+  tbody tr:nth-child(even){background:rgba(255,255,255,.022)}
+  td.num{text-align:right;font-family:var(--mono)}
+  .scroll{overflow-x:auto;border:1px solid var(--line2);border-radius:8px;background:var(--panel)}
+
+  .pill{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;border:1px solid;line-height:1.6}
+  .p-ok{color:var(--ok);border-color:rgba(95,214,138,.45);background:rgba(95,214,138,.09)}
+  .p-warn{color:var(--warn);border-color:rgba(255,194,102,.45);background:rgba(255,194,102,.09)}
+  .p-bad{color:var(--bad);border-color:rgba(255,122,122,.45);background:rgba(255,122,122,.09)}
+  .p-info{color:var(--planet);border-color:rgba(127,212,255,.45);background:rgba(127,212,255,.09)}
+  .p-der{color:var(--derived);border-color:rgba(184,160,255,.45);background:rgba(184,160,255,.10)}
+  .p-dim{color:var(--dim2);border-color:var(--line);background:rgba(255,255,255,.03)}
+
+  .new{color:var(--gold)}
+  .der{color:var(--derived)}
+  .err{color:var(--dim2);font-size:11px}
+  .unit{color:var(--dim2)}
+
+  /* tree mock */
+  .tree{font-family:var(--mono);font-size:12.6px;background:var(--panel);border:1px solid var(--line2);
+        border-radius:8px;overflow:auto}
+  .tr{display:grid;align-items:baseline;padding:4px 10px;border-bottom:1px solid rgba(255,255,255,.04)}
+  .tr:hover{background:rgba(127,212,255,.07)}
+  .tr.sel{background:rgba(255,215,0,.10);box-shadow:inset 2px 0 0 var(--gold)}
+  .tr .c{padding-right:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ind1{padding-left:18px}.ind2{padding-left:36px}.ind3{padding-left:54px}
+  .g-sys{color:var(--sys)}.g-star{color:var(--star)}.g-planet{color:var(--planet)}
+  .g-moon{color:var(--moon)}.g-bin{color:var(--bin)}
+  .head{background:var(--panel2);color:var(--dim2);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .head .c{white-space:nowrap}
+
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:9px 11px;background:var(--panel2);
+           border:1px solid var(--line2);border-bottom:none;border-radius:8px 8px 0 0;font-size:12.5px}
+  .btn{background:#182348;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:4px 10px;font-size:12px}
+  .btn.on{border-color:var(--gold);color:var(--gold)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .seg span{padding:4px 10px;font-size:12px;color:var(--dim)}
+  .seg span.on{background:#22305c;color:#fff}
+  .chk{color:var(--dim);display:inline-flex;gap:5px;align-items:center}
+
+  .split{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:0;
+         border:1px solid var(--line2);border-radius:0 0 8px 8px;overflow:hidden}
+  @media(max-width:1000px){.split{grid-template-columns:1fr}}
+  .pane{background:var(--panel);padding:0}
+  .pane.right{border-left:1px solid var(--line2);padding:14px 16px;background:#0b1124}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 14px;font-size:12.6px}
+  .kv dt{color:var(--dim2)}
+  .kv dd{margin:0;font-family:var(--mono)}
+  .sect{margin:14px 0 6px;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--gold);
+        border-bottom:1px solid var(--line2);padding-bottom:4px}
+
+  /* dossier cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+  .pcard{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:12px 14px}
+  .pcard h4{margin:0 0 2px;font-size:14.5px;color:var(--planet)}
+  .pcard .meta{font-size:11.5px;color:var(--dim2);margin-bottom:8px}
+  .pcard .row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12.3px;
+              padding:2px 0;border-bottom:1px dotted rgba(255,255,255,.06)}
+  .pcard .row span:first-child{color:var(--dim2);font-family:inherit;font-size:12px}
+  .desc{font-size:11.8px;color:var(--dim);margin-top:9px;line-height:1.5;
+        max-height:66px;overflow:hidden;position:relative}
+  .desc:after{content:"";position:absolute;bottom:0;left:0;right:0;height:22px;
+              background:linear-gradient(transparent,var(--panel))}
+
+  .note{border-left:3px solid var(--gold);background:rgba(255,215,0,.05);padding:9px 13px;margin:12px 0;
+        font-size:12.8px;color:var(--dim)}
+  .rec{border-left:3px solid var(--ok);background:rgba(95,214,138,.06)}
+  ul{color:var(--dim);margin:8px 0 8px 18px;padding:0}
+  li{margin:4px 0}
+  .kbd{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+  .rrow{cursor:pointer}
+  .hostband{background:#101a36;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer}
+  .hostband:hover{border-color:var(--gold)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--dim2);margin:8px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>OEC System View — Evaluation &amp; Enhancement Options</h1>
+<p class="sub">Option 7 · <code>OecPanel</code> "Data" tab (<code>gui/panels/catalogs.py::_oec_tree_item</code>) ·
+mockups only, nothing implemented · 2026-08-01</p>
+
+<div class="tabs" id="tabs">
+  <button class="tab on" data-t="eval">0 · Evaluation</button>
+  <button class="tab" data-t="r" style="border-color:var(--gold);color:var(--gold)">★ Recommended</button>
+  <button class="tab" data-t="a">A · Columnar Tree</button>
+  <button class="tab" data-t="b">B · Tree + Detail Pane</button>
+  <button class="tab" data-t="c">C · Tree + Tier Tables</button>
+  <button class="tab" data-t="d">D · Dossier Cards</button>
+  <button class="tab" data-t="e">E · Planet Matrix</button>
+  <button class="tab" data-t="f">F · Toolbar Layer</button>
+  <button class="tab" data-t="g">G · Derived Fields</button>
+</div>
+
+<!-- ══════════════════════════ 0 · EVALUATION ══════════════════════════ -->
+<section id="s-eval">
+  <h2>What the view does today</h2>
+  <p>A two-column <code>QTreeWidget</code>: column&nbsp;0 is the node name (icon + name + spectral type or
+  status badges), column&nbsp;1 is a single string of space-joined <code>label=value unit</code> fragments
+  built from a fixed per-tag key list (<code>_OEC_TREE_KEYS</code>). Everything is expanded on load and
+  nothing is sortable, selectable-for-detail, or copyable as data.</p>
+
+  <h3>Current rendering — Alpha Centauri</h3>
+  <div class="tree" style="border-radius:8px">
+    <div class="tr" style="grid-template-columns:minmax(300px,1.1fr) 2fr">
+      <div class="c g-sys">◆ Alpha Centauri</div><div class="c">Cen · d=1.295 ±0.0045 pc</div></div>
+    <div class="tr" style="grid-template-columns:minmax(300px,1.1fr) 2fr">
+      <div class="c ind1 g-bin">⋔ Binary (Centauri + Centauri)</div><div class="c">a=15000 AU</div></div>
+    <div class="tr" style="grid-template-columns:minmax(300px,1.1fr) 2fr">
+      <div class="c ind2 g-star">★ Proxima Centauri  M5.5V</div>
+      <div class="c">M=0.120 ±0.02 M_sun&nbsp;&nbsp; R=0.141 +0.022/-0.019 R_sun&nbsp;&nbsp; T=2900 ±100 K</div></div>
+    <div class="tr" style="grid-template-columns:minmax(300px,1.1fr) 2fr">
+      <div class="c ind3 g-planet">● Proxima Centauri b  [Confirmed planets / Planets in binary systems, S-type]</div>
+      <div class="c">M=0.003691 ±0.000271 M_jup&nbsp;&nbsp; P=11.18427 ±0.0007 d&nbsp;&nbsp; a=0.04857 +0.0041/-0.0051 AU&nbsp;&nbsp; e=&lt;= 0.35</div></div>
+    <div class="tr" style="grid-template-columns:minmax(300px,1.1fr) 2fr">
+      <div class="c ind3 g-planet">● Proxima Centauri c  [Confirmed planets / Planets in binary systems, S-type]</div>
+      <div class="c">M=0.022024 ±0.003146 M_jup&nbsp;&nbsp; P=1929 ±20 d&nbsp;&nbsp; i=133 ±1 °</div></div>
+    <div class="tr" style="grid-template-columns:minmax(300px,1.1fr) 2fr">
+      <div class="c ind2 g-bin">⋔ Alpha Centauri</div>
+      <div class="c">a=23.518 ±0.048 AU&nbsp;&nbsp; e=0.5179 ±0.00076&nbsp;&nbsp; P=29187.1 ±4 d&nbsp;&nbsp; i=79.20 ±0.041 °</div></div>
+    <div class="tr" style="grid-template-columns:minmax(300px,1.1fr) 2fr">
+      <div class="c ind3 g-star">★ Alpha Centauri A  G2 V</div>
+      <div class="c">M=1.100 ±0.006 M_sun&nbsp;&nbsp; R=1.227 ±0.005 R_sun&nbsp;&nbsp; T=5790 ±30 K&nbsp;&nbsp; [Fe/H]=0.20 ±0.02</div></div>
+    <div class="tr" style="grid-template-columns:minmax(300px,1.1fr) 2fr">
+      <div class="c ind3 g-star">★ Alpha Centauri B  K1 V</div>
+      <div class="c">M=0.907 ±0.006 M_sun&nbsp;&nbsp; R=0.865 ±0.006 R_sun&nbsp;&nbsp; T=5260 ±30 K&nbsp;&nbsp; [Fe/H]=0.23 ±0.03</div></div>
+  </div>
+
+  <h3>Assessment</h3>
+  <div class="grid2">
+    <div class="card">
+      <b style="color:var(--ok)">Works well</b>
+      <ul>
+        <li>The hierarchy is the right primary encoding — OEC really is recursive, and the tree makes
+            <code>binary → binary → star → planet</code> legible at a glance.</li>
+        <li>Icon prefixes (◆ ⋔ ★ ● ☾) read fast; the <code>M·sin i</code> relabel and multi-status badges are correct
+            and non-obvious wins.</li>
+        <li>The generic node walker already <b>captures every field in the XML</b> — the shortfall is purely
+            presentational, so all options below are display-layer work with zero core changes.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <b style="color:var(--bad)">Limits</b>
+      <ul>
+        <li><b>One string, no columns.</b> Values can't align, sort, or be scanned down a column; long rows
+            truncate at the panel edge and the whole per-node payload is lost.</li>
+        <li><b>Fixed 4–6 keys per tag.</b> Everything else the parser captured is invisible in this tab —
+            including planet <code>description</code> (93% coverage) and every satellite orbital element.</li>
+        <li><b>No drill-down.</b> Clicking a node does nothing; the only rich per-planet view is the
+            Architecture map's click dialog, which is unreachable from the Data tab.</li>
+        <li><b>Errors inflate the cell.</b> <code>+0.0041/-0.0051</code> inline triples the width of every
+            measured value and buries the number it qualifies.</li>
+        <li><b>No units toggle.</b> Planet mass/radius are M♃/R♃ only; a 0.0037 M♃ planet is unreadable
+            where 1.17 M⊕ is not.</li>
+        <li><b>Nothing derived.</b> Distance is pc-only (no ly), no density, no insolation, no HZ verdict —
+            though the app computes all of these elsewhere.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Field coverage census — what exists vs. what is shown</h3>
+  <p class="sub">Measured over the live cache <code>data/oec/systems.xml.gz</code>
+  (4,081 systems · 4,300 stars · 5,414 planets · 224 binaries · 18 satellites).
+  <span class="p-ok pill">shown</span> = in the tree today ·
+  <span class="p-bad pill">hidden</span> = parsed but never displayed in this tab.</p>
+
+  <div class="scroll" style="max-height:520px">
+  <table>
+    <thead><tr><th>Node</th><th>Field</th><th class="num">Coverage</th><th>Status</th><th>Comment</th></tr></thead>
+    <tbody>
+      <tr><td>system</td><td>constellation</td><td class="num">100%</td><td><span class="pill p-ok">shown</span></td><td></td></tr>
+      <tr><td>system</td><td>distance</td><td class="num">95.0%</td><td><span class="pill p-ok">shown</span></td><td>pc only — no light-years</td></tr>
+      <tr><td>system</td><td><b>rightascension</b></td><td class="num">100%</td><td><span class="pill p-bad">hidden</span></td><td>sexagesimal, ready to print</td></tr>
+      <tr><td>system</td><td><b>declination</b></td><td class="num">100%</td><td><span class="pill p-bad">hidden</span></td><td></td></tr>
+      <tr><td>system</td><td><b>videolink</b></td><td class="num">0.7%</td><td><span class="pill p-bad">hidden</span></td><td>30 systems</td></tr>
+      <tr><td>binary</td><td>separation / a / e / P / i</td><td class="num">21–107%</td><td><span class="pill p-ok">shown</span></td><td>separation repeats (AU + arcsec)</td></tr>
+      <tr><td>binary</td><td><b>positionangle</b></td><td class="num">49.6%</td><td><span class="pill p-bad">hidden</span></td><td>half of all binaries</td></tr>
+      <tr><td>binary</td><td><b>periastron / periastrontime / ascendingnode</b></td><td class="num">8–14%</td><td><span class="pill p-bad">hidden</span></td><td>full orbital element set</td></tr>
+      <tr><td>binary</td><td><b>magB…magK</b></td><td class="num">2–7%</td><td><span class="pill p-bad">hidden</span></td><td></td></tr>
+      <tr><td>star</td><td>mass / temperature / radius / metallicity / age</td><td class="num">11–96%</td><td><span class="pill p-ok">shown</span></td><td></td></tr>
+      <tr><td>star</td><td><b>magV</b></td><td class="num">50.3%</td><td><span class="pill p-bad">hidden</span></td><td>the one magnitude every other panel shows</td></tr>
+      <tr><td>star</td><td><b>magK / magJ / magH</b></td><td class="num">64–65%</td><td><span class="pill p-bad">hidden</span></td><td>better covered than spectral type</td></tr>
+      <tr><td>star</td><td><b>magB / magI / magR / magU</b></td><td class="num">0.5–26%</td><td><span class="pill p-bad">hidden</span></td><td>B−V is derivable when B+V both present</td></tr>
+      <tr><td>star</td><td>spectraltype</td><td class="num">37.7%</td><td><span class="pill p-ok">shown</span></td><td>appended to the name, not a field</td></tr>
+      <tr><td>star</td><td><b>discoveryyear</b></td><td class="num">1.0%</td><td><span class="pill p-bad">hidden</span></td><td></td></tr>
+      <tr><td>planet</td><td>mass / radius / period / semimajoraxis / eccentricity / inclination</td><td class="num">32–94%</td><td><span class="pill p-ok">shown</span></td><td>M♃/R♃ only</td></tr>
+      <tr><td>planet</td><td>list (status)</td><td class="num">104.8%</td><td><span class="pill p-ok">shown</span></td><td>repeats — bracketed in the name column</td></tr>
+      <tr><td>planet</td><td><b>description</b></td><td class="num">93.2%</td><td><span class="pill p-bad">hidden</span></td><td><b>the single biggest omission</b> — prose discovery narrative</td></tr>
+      <tr><td>planet</td><td><b>lastupdate</b></td><td class="num">99.9%</td><td><span class="pill p-bad">hidden</span></td><td>record freshness</td></tr>
+      <tr><td>planet</td><td><b>discoveryyear</b></td><td class="num">99.8%</td><td><span class="pill p-bad">hidden</span></td><td>in the click-dialog only</td></tr>
+      <tr><td>planet</td><td><b>discoverymethod</b></td><td class="num">99.8%</td><td><span class="pill p-bad">hidden</span></td><td>RV / transit / imaging / microlensing / timing</td></tr>
+      <tr><td>planet</td><td><b>istransiting</b></td><td class="num">75.0%</td><td><span class="pill p-bad">hidden</span></td><td>boolean → a badge</td></tr>
+      <tr><td>planet</td><td><b>transittime</b></td><td class="num">44.5%</td><td><span class="pill p-bad">hidden</span></td><td>BJD ephemeris</td></tr>
+      <tr><td>planet</td><td><b>temperature</b></td><td class="num">30.3%</td><td><span class="pill p-bad">hidden</span></td><td>equilibrium temp — derivable for the other 70%</td></tr>
+      <tr><td>planet</td><td><b>periastron / periastrontime</b></td><td class="num">3.7–18.7%</td><td><span class="pill p-bad">hidden</span></td><td></td></tr>
+      <tr><td>planet</td><td><b>image / imagedescription</b></td><td class="num">1.8%</td><td><span class="pill p-bad">hidden</span></td><td>ESO artwork ids (97 planets)</td></tr>
+      <tr><td>planet</td><td><b>spinorbitalignment</b></td><td class="num">0.6%</td><td><span class="pill p-bad">hidden</span></td><td>obliquity — rare but high-value</td></tr>
+      <tr><td>planet</td><td><b>impactparameter / ascendingnode / meananomaly / longitude / tilt / positionangle / separation / new / age / metallicity</b></td><td class="num">0.1–2.1%</td><td><span class="pill p-bad">hidden</span></td><td>the long tail</td></tr>
+      <tr><td>satellite</td><td>mass / radius / semimajoraxis / period</td><td class="num">100%</td><td><span class="pill p-ok">shown</span></td><td></td></tr>
+      <tr><td>satellite</td><td><b>eccentricity / periastron / longitude / inclination / ascendingnode</b></td><td class="num">100%</td><td><span class="pill p-bad">hidden</span></td><td>every moon carries all of these</td></tr>
+      <tr><td>satellite</td><td><b>tilt</b></td><td class="num">72.2%</td><td><span class="pill p-bad">hidden</span></td><td></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">Headline: the parser captures <b>~50 distinct field names</b>; the tree renders
+  <b>4–6 per node type</b>. Two fields with &gt;93% coverage on planets (<code>description</code>,
+  <code>lastupdate</code>) and one with 100% coverage on systems (RA/Dec) are never shown anywhere in
+  this tab. No new core code is needed to surface any of them.</div>
+
+  <h3>The seven options at a glance</h3>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Option</th><th>Shape</th><th>Fields gained</th><th>Effort</th><th>Best for</th></tr></thead>
+    <tbody>
+      <tr><td><b>A · Columnar Tree</b></td><td>Same tree, 8–10 real columns</td><td>+8 headline per tag, aligned &amp; sortable</td><td><span class="pill p-ok">Small</span></td><td>Scanning a multi-planet system</td></tr>
+      <tr><td><b>B · Tree + Detail Pane</b></td><td>Master/detail split</td><td><b>All ~50</b>, grouped, with errors + derived</td><td><span class="pill p-warn">Medium</span></td><td>Completeness without crowding</td></tr>
+      <tr><td><b>C · Tree + Tier Tables</b></td><td>Tree navigator + Stars/Planets/Moons tables</td><td>All per tier, sortable, copyable</td><td><span class="pill p-warn">Medium</span></td><td>Parity with the other Star-Databases panels</td></tr>
+      <tr><td><b>D · Dossier Cards</b></td><td>Scrolling card deck</td><td>Adds <code>description</code>, badges, imagery</td><td><span class="pill p-warn">Medium</span></td><td>Reading a system, worldbuilding</td></tr>
+      <tr><td><b>E · Planet Matrix</b></td><td>Properties × planets, transposed</td><td>Full property set, side-by-side</td><td><span class="pill p-ok">Small</span></td><td>Comparing planets within one system</td></tr>
+      <tr><td><b>F · Toolbar Layer</b></td><td>Controls over A or C</td><td>Units, hide-empty, density, columns, export</td><td><span class="pill p-ok">Small</span></td><td>Making A/C usable at both extremes</td></tr>
+      <tr><td><b>G · Derived Fields</b></td><td>Computed additions to any option</td><td>~18 values from existing core functions</td><td><span class="pill p-warn">Medium</span></td><td>Turning a catalogue into an assessment</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note rec"><b>They compose.</b> A+F+G is the smallest coherent upgrade; A+B+F+G is the strongest
+  (tree gains columns, selection drives a complete detail card). C, D and E are additional
+  <i>tabs</i> beside "Data" rather than replacements — none of them require removing the tree.</div>
+</section>
+
+<!-- ══════════════════════════ R · RECOMMENDED ══════════════════════════ -->
+<section id="s-r" hidden>
+  <h2>★ Recommended View — Option B, star-first</h2>
+  <p>Option&nbsp;B's master/detail split, with three changes that answer "more detail about the stars in
+  view": the tree rows carry the star's key numbers <b>in the same columns as the planets</b> (Option&nbsp;A);
+  the detail pane is a full <b>star dossier</b> when a star is selected; and when a <i>planet</i> is selected
+  the host star stays pinned as a context band at the top of the pane, so you never lose the star while
+  reading its planets. Toolbar from&nbsp;F, derived values from&nbsp;G.</p>
+  <p class="sub">Shown with real cache data for <b>tau Ceti</b> (HD 10700) — 20 alias names, all seven
+  magnitudes, mass/radius/T<sub>eff</sub>/[Fe/H]/age/spectral type, and 7 planets including two retracted
+  candidates. Derived values computed with this repo's own functions.</p>
+
+  <div class="toolbar">
+    <span class="chk">Units <span class="seg"><span class="on">M⊕/R⊕</span><span>M♃/R♃</span></span></span>
+    <span class="chk">Detail <span class="seg"><span class="on">Right</span><span>Below</span><span>Hidden</span></span></span>
+    <span class="chk"><input type="checkbox" checked> Errors</span>
+    <span class="chk"><input type="checkbox" checked> Derived</span>
+    <span class="chk"><input type="checkbox" checked> Hide empty columns</span>
+    <span class="chk"><input type="checkbox" checked> Pin host star</span>
+    <span style="flex:1"></span><button class="btn">Columns…</button><button class="btn">Copy TSV</button>
+  </div>
+  <div style="background:rgba(255,215,0,.07);border:1px solid var(--line2);border-top:none;
+              padding:6px 12px;font-size:12.4px;color:var(--gold)">
+    ▶ This mockup is live — <b>click any row in the tree</b> to swap the detail pane. Selecting a planet
+    replaces the star dossier with the planet's record; the host-star band stays pinned at the top, and
+    clicking that band returns you to the full star dossier.
+  </div>
+
+  <div class="split">
+    <!-- ── master: columnar tree, star rows populated ── -->
+    <div class="pane">
+      <div class="tr" style="border:none;border-radius:0">
+        <div class="tr head" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c">Node</div><div class="c">Type</div><div class="c">M</div><div class="c">R</div>
+          <div class="c">P (d)</div><div class="c">a (AU)</div><div class="c">e</div>
+          <div class="c">T (K)</div><div class="c der">S⊕</div><div class="c der">HZ</div></div>
+
+        <div class="tr rrow" data-n="system" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c g-sys">◆ tau Ceti</div><div class="c">system</div><div class="c">—</div><div class="c">—</div>
+          <div class="c">—</div><div class="c">—</div><div class="c">—</div><div class="c">—</div>
+          <div class="c der">—</div><div class="c">Cet</div></div>
+
+        <div class="tr rrow sel" data-n="star" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c ind1 g-star">★ tau Ceti</div><div class="c">G8.5V</div>
+          <div class="c">0.783<span class="err">☉</span></div><div class="c">0.793<span class="err">☉</span></div>
+          <div class="c">—</div><div class="c">—</div><div class="c">—</div>
+          <div class="c">5344</div><div class="c der">0.46<span class="err">L☉</span></div>
+          <div class="c der">.66–1.18</div></div>
+
+        <div class="tr rrow" data-n="b" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c ind2 g-planet">● b <span class="pill p-bad">Retr</span></div><div class="c">planet</div>
+          <div class="c">2.00</div><div class="c">—</div><div class="c">13.965</div><div class="c">0.105</div>
+          <div class="c">0.16</div><div class="c der">—</div><div class="c der">41.7</div>
+          <div class="c der"><span class="pill p-bad">int.</span></div></div>
+        <div class="tr rrow" data-n="c" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c ind2 g-planet">● c <span class="pill p-bad">Retr</span></div><div class="c">planet</div>
+          <div class="c">3.10</div><div class="c">—</div><div class="c">35.362</div><div class="c">0.195</div>
+          <div class="c">0.03</div><div class="c der">—</div><div class="c der">12.1</div>
+          <div class="c der"><span class="pill p-bad">int.</span></div></div>
+        <div class="tr rrow" data-n="d" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c ind2 g-planet">● d <span class="pill p-bad">Retr</span></div><div class="c">planet</div>
+          <div class="c">3.59</div><div class="c">—</div><div class="c">94.11</div><div class="c">0.374</div>
+          <div class="c">0.08</div><div class="c der">—</div><div class="c der">3.29</div>
+          <div class="c der"><span class="pill p-bad">int.</span></div></div>
+        <div class="tr rrow" data-n="e" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c ind2 g-planet">● e <span class="pill p-ok">Conf</span></div><div class="c">planet</div>
+          <div class="c">3.94</div><div class="c">—</div><div class="c">162.87</div><div class="c">0.538</div>
+          <div class="c">0.18</div><div class="c der">—</div><div class="c der">1.59</div>
+          <div class="c der"><span class="pill p-warn">opt.</span></div></div>
+        <div class="tr rrow" data-n="f" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c ind2 g-planet">● f <span class="pill p-ok">Conf</span></div><div class="c">planet</div>
+          <div class="c">3.94</div><div class="c">—</div><div class="c">636.13</div><div class="c">1.334</div>
+          <div class="c">0.16</div><div class="c der">—</div><div class="c der">0.26</div>
+          <div class="c der"><span class="pill p-dim">beyond</span></div></div>
+        <div class="tr rrow" data-n="g" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c ind2 g-planet">● g <span class="pill p-ok">Conf</span></div><div class="c">planet</div>
+          <div class="c">1.75</div><div class="c">—</div><div class="c">20.00</div><div class="c err">n/a</div>
+          <div class="c">0.06</div><div class="c der">—</div><div class="c der">—</div>
+          <div class="c der">—</div></div>
+        <div class="tr rrow" data-n="h" style="grid-template-columns:minmax(190px,1.25fr) 60px 68px 62px 82px 68px 56px 62px 56px 66px">
+          <div class="c ind2 g-planet">● h <span class="pill p-ok">Conf</span></div><div class="c">planet</div>
+          <div class="c">1.83</div><div class="c">—</div><div class="c">49.41</div><div class="c">0.243</div>
+          <div class="c">0.23</div><div class="c der">—</div><div class="c der">7.79</div>
+          <div class="c der"><span class="pill p-bad">int.</span></div></div>
+      </div>
+      <div style="padding:8px 11px;font-size:11.6px;color:var(--dim2);border-top:1px solid var(--line2)">
+        Star rows populate the <b>same</b> columns as planets — M/R in solar units, T = T<sub>eff</sub>,
+        S⊕ column carries the derived luminosity, HZ column the conservative bounds. Nothing about the
+        star is hidden behind a selection.
+      </div>
+    </div>
+
+    <!-- ── detail: star dossier ── -->
+    <div class="pane right" id="rpane">
+    </div>
+  </div>
+
+  <h3>Star detail — what each block adds over today</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Block</th><th>Catalogued fields surfaced</th><th>Derived additions</th><th>Currently visible?</th></tr></thead>
+      <tbody>
+        <tr><td>Identity</td><td>all <code>&lt;name&gt;</code> aliases (up to 22 on α Cen A)</td><td>—</td><td><span class="pill p-bad">no — only names[0]</span></td></tr>
+        <tr><td>Position &amp; distance</td><td>RA, Dec, constellation, distance</td><td>light-years, parallax, angular diameter</td><td><span class="pill p-bad">no RA/Dec anywhere</span></td></tr>
+        <tr><td>Photometry</td><td>magU B V R I J H K</td><td>B−V, V−K, M<sub>V</sub></td><td><span class="pill p-bad">no magnitudes at all</span></td></tr>
+        <tr><td>Physical</td><td>mass, radius, T<sub>eff</sub>, [Fe/H], age, spectral type</td><td>luminosity, log g, density, MS lifetime, stage</td><td><span class="pill p-warn">the 6 raw ones only</span></td></tr>
+        <tr><td>HZ &amp; ice lines</td><td>—</td><td>4 Kopparapu bounds, snow line, NH₃/CO₂ fronts, hyper limit</td><td><span class="pill p-warn">drawn in HZ tab, never numeric</span></td></tr>
+        <tr><td>Planets hosted</td><td>per-planet status, mass, P, a</td><td>insolation, RV semi-amplitude</td><td><span class="pill p-warn">as sibling tree rows</span></td></tr>
+        <tr><td>Companions</td><td>parent binary's a, e, P, i, sep, PA, node</td><td>separation in ly, mass ratio, S/P-type critical SMA</td><td><span class="pill p-warn">on the binary row only</span></td></tr>
+        <tr><td>Cross-refs</td><td>—</td><td>links to Hypatia / GCNS / HR / SIMBAD</td><td><span class="pill p-bad">no</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Binary component — the Companions block populated</h3>
+  <p>tau Ceti is single, so its Hierarchy line reads "no catalogued companion". For a component of a
+  binary the same pane grows a Companions section from the <i>parent</i> <code>&lt;binary&gt;</code> node —
+  the orbital elements that today live only on the binary's own tree row, restated from the selected
+  star's point of view:</p>
+  <div class="card" style="max-width:620px">
+    <div style="font-size:15px;color:var(--star)">★ Alpha Centauri B <span class="err">K1 V</span></div>
+    <div class="sect">Companions &amp; hierarchy</div>
+    <dl class="kv">
+      <dt>Parent</dt><dd>⋔ Alpha Centauri AB</dd>
+      <dt>Companion</dt><dd>★ Alpha Centauri A (G2 V, 1.100 M☉)</dd>
+      <dt>Semi-major axis</dt><dd>23.518 <span class="err">±0.048</span> AU</dd>
+      <dt>Eccentricity</dt><dd>0.5179 <span class="err">±0.00076</span></dd>
+      <dt>Period</dt><dd>29187.1 <span class="err">±4.0</span> d <span class="der">= 79.9 yr</span></dd>
+      <dt>Inclination</dt><dd>79.20 <span class="err">±0.041</span> °</dd>
+      <dt>Arg. of periastron</dt><dd>231.65 <span class="err">±0.076</span> °</dd>
+      <dt>Ascending node</dt><dd>204.85 <span class="err">±0.084</span> °</dd>
+      <dt>Periastron time</dt><dd>2406130.3 <span class="err">±4.4</span> BJD</dd>
+      <dt class="der">Mass ratio μ</dt><dd class="der">0.452</dd>
+      <dt class="der">Periastron / apastron</dt><dd class="der">11.34 / 35.70 AU</dd>
+      <dt class="der">S-type critical SMA</dt><dd class="der">2.78 AU <span class="pill p-dim">planets stable inside</span></dd>
+      <dt>Wider hierarchy</dt><dd>⋔ C + AB — Proxima at 15 000 AU <span class="der">(0.24 ly)</span></dd>
+    </dl>
+  </div>
+
+  <h3>Planet selected — the host star stays pinned</h3>
+  <p><b>Yes — the planet's record replaces the star's in the same pane</b> (one pane, one selection, like
+  any master/detail tree). What does <i>not</i> go away is the star: with <b>Pin host star</b> on, the
+  planet pane carries a compact, always-present star band with the numbers you need to judge a planet
+  against — L, HZ bounds, snow line, distance. Clicking the band restores the full dossier. Try it in the
+  live tree above; the static copy below shows the same thing for reference.</p>
+
+  <div class="card" style="padding:0;max-width:640px;overflow:hidden">
+    <div style="background:#101a36;padding:9px 13px;border-bottom:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">
+        <div><span class="g-star">★ tau Ceti</span> <span class="err">G8.5 V · host</span></div>
+        <div class="err">click to expand ▾</div>
+      </div>
+      <div class="mono" style="font-size:11.6px;color:var(--dim);margin-top:3px">
+        0.783 M☉ · 0.793 R☉ · 5344 K · [Fe/H] −0.55 · 5.8 Gyr · V 3.50 ·
+        <span class="der">L 0.460 L☉ · HZ 0.66–1.18 AU · snow line 1.82 AU · 11.905 ly</span></div>
+    </div>
+    <div style="padding:12px 14px">
+      <div style="font-size:15px;color:var(--planet)">● tau Ceti e</div>
+      <div style="margin:4px 0 6px">
+        <span class="pill p-ok">Confirmed</span> <span class="pill p-info">RV · 2012</span>
+        <span class="pill p-warn">non-transiting</span>
+        <span class="pill p-der">optimistic HZ</span></div>
+      <dl class="kv">
+        <dt>Mass (M·sin i)</dt><dd>3.94 <span class="err">+0.83/−0.64</span> M⊕ <span class="err">= 0.0124 M♃</span></dd>
+        <dt>Period</dt><dd>162.87 <span class="err">+1.08/−0.46</span> d</dd>
+        <dt>Semi-major axis</dt><dd>0.538 <span class="err">±0.006</span> AU</dd>
+        <dt>Eccentricity</dt><dd>0.18 <span class="err">+0.18/−0.14</span></dd>
+        <dt>Arg. periastron</dt><dd>22.3 <span class="err">+73.9/−45.8</span> °</dd>
+        <dt>Mean anomaly</dt><dd>355.8 <span class="err">+66.5/−53.9</span> °</dd>
+        <dt class="der">Insolation</dt><dd class="der">1.59 S⊕ <span class="err">— between Recent Venus and Runaway GH</span></dd>
+        <dt class="der">Periastron / apastron</dt><dd class="der">0.441 / 0.635 AU
+             <span class="err">— stays inside the optimistic HZ all orbit</span></dd>
+        <dt class="der">RV semi-amplitude</dt><dd class="der">0.54 m/s</dd>
+        <dt class="der">Transit probability</dt><dd class="der">0.69%</dd>
+      </dl>
+      <div class="sect">Description</div>
+      <p style="font-size:12.2px;margin:4px 0 0;color:var(--dim)">Multiple periodic signals were found by
+      Tuomi et al. in 2012 in the radial velocity data from HARPS, AAPS and HIRES. The planetary
+      interpretation of these signals…</p>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><b>Why this composition</b>
+      <ul>
+        <li><b>Star data is never behind a click.</b> The tree columns carry M, R, T<sub>eff</sub>,
+            derived L and the HZ bounds on the star row itself, so a glance at the system already tells
+            you what kind of star it is.</li>
+        <li><b>The pane is the only place ~50 fields can live.</b> Photometry alone is eight fields and
+            three derived colours; there is no column budget for that anywhere else.</li>
+        <li><b>The pinned band solves the real complaint</b> — in a plain master/detail, selecting a
+            planet makes the star vanish. Pinning keeps L, HZ and snow line on screen exactly when you
+            are judging a planet against them.</li>
+        <li><b>Derived is always violet + badged</b>, so a computed luminosity is never mistaken for a
+            catalogued one, and one checkbox removes the whole class.</li>
+        <li>Reuses what exists: the planet click-dialog becomes the pane's planet mode; HZ / evolution /
+            RV / transit numbers all come from functions already in <code>core/</code>.</li>
+      </ul>
+    </div>
+    <div class="card"><b>Build order</b>
+      <ol style="color:var(--dim);margin:8px 0 0 18px">
+        <li>Columnar tree + star rows populated (Option A) — biggest visible gain, smallest change.</li>
+        <li>Detail pane skeleton with per-tag section tables; planet mode wired to the existing dialog content.</li>
+        <li>Star dossier blocks: identity, position, photometry, physical.</li>
+        <li>Derived layer (luminosity → HZ → insolation → the rest) behind one toggle.</li>
+        <li>Pinned host band + Companions block from the parent binary.</li>
+        <li>Toolbar: units, errors, hide-empty, copy/export.</li>
+      </ol>
+      <p style="margin-top:8px" class="err">All display-layer. The node walker already carries every field
+      used above; no core change is required except calling existing calculators for the derived block.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ A ══════════════════════════ -->
+<section id="s-a" hidden>
+  <h2>Option A · Columnar Tree</h2>
+  <p>Keep the tree exactly as it is structurally; replace the single crammed properties string with
+  real aligned columns. Errors move to a subscript so the value stays scannable. Numbers are
+  right-aligned so magnitudes compare down the column. Columns are per-tag-polymorphic — a star's
+  "M" is M☉, a planet's is M♃/M⊕, and the header adapts to the selected unit system.</p>
+
+  <div class="toolbar">
+    <span class="chk">Units: <span class="seg"><span class="on">M⊕/R⊕</span><span>M♃/R♃</span></span></span>
+    <span class="chk"><input type="checkbox" checked> Show ± errors</span>
+    <span class="chk"><input type="checkbox" checked> Hide empty columns</span>
+    <span class="chk"><input type="checkbox"> Collapse to hosts</span>
+    <span style="flex:1"></span><button class="btn">Columns…</button><button class="btn">Copy TSV</button>
+  </div>
+  <div class="tree" style="border-radius:0 0 8px 8px;border-top:none">
+    <div class="tr head" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c">System / Component / Planet</div><div class="c">Type</div><div class="c">Mass</div>
+      <div class="c">Radius</div><div class="c">Period&nbsp;(d)</div><div class="c">a&nbsp;(AU)</div>
+      <div class="c">e</div><div class="c">i&nbsp;(°)</div><div class="c">T&nbsp;(K)</div><div class="c">Discovery</div>
+    </div>
+
+    <div class="tr" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c g-sys">◆ Alpha Centauri</div><div class="c">system</div>
+      <div class="c">—</div><div class="c">—</div><div class="c">—</div><div class="c">—</div>
+      <div class="c">—</div><div class="c">—</div><div class="c">—</div><div class="c">Cen</div></div>
+
+    <div class="tr" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c ind1 g-bin">⋔ Binary (C + AB)</div><div class="c">binary</div><div class="c">—</div>
+      <div class="c">—</div><div class="c">—</div><div class="c">15000</div><div class="c">—</div>
+      <div class="c">—</div><div class="c">—</div><div class="c">—</div></div>
+
+    <div class="tr" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c ind2 g-star">★ Proxima Centauri</div><div class="c">M5.5V</div>
+      <div class="c">0.120<span class="err"> ±.02</span></div><div class="c">0.141<span class="err"> ±.02</span></div>
+      <div class="c">—</div><div class="c">—</div><div class="c">—</div><div class="c">—</div>
+      <div class="c">2900<span class="err"> ±100</span></div><div class="c">—</div></div>
+
+    <div class="tr sel" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c ind3 g-planet">● Proxima Centauri b <span class="pill p-ok">Conf</span> <span class="pill p-dim">S-type</span></div>
+      <div class="c">planet</div>
+      <div class="c">1.17<span class="err"> ±.09</span></div><div class="c new">—</div>
+      <div class="c">11.184<span class="err"> ±.0007</span></div><div class="c">0.0486</div>
+      <div class="c">≤0.35</div><div class="c">—</div><div class="c">234<span class="err"> +6/−14</span></div>
+      <div class="c">RV · 2016</div></div>
+
+    <div class="tr" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c ind3 g-planet">● Proxima Centauri c <span class="pill p-ok">Conf</span> <span class="pill p-dim">S-type</span></div>
+      <div class="c">planet</div>
+      <div class="c">7.00<span class="err"> ±1.0</span></div><div class="c">—</div>
+      <div class="c">1929<span class="err"> ±20</span></div><div class="c">—</div><div class="c">—</div>
+      <div class="c">133<span class="err"> ±1</span></div><div class="c">—</div><div class="c">RV · 2019</div></div>
+
+    <div class="tr" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c ind3 g-planet">● Proxima Centauri d <span class="pill p-ok">Conf</span> <span class="pill p-dim">S-type</span></div>
+      <div class="c">planet</div>
+      <div class="c">0.26<span class="err"> ±.05</span></div><div class="c">—</div>
+      <div class="c">5.122<span class="err"> +.002/−.036</span></div><div class="c">0.0289</div>
+      <div class="c">0.04</div><div class="c">—</div><div class="c">—</div><div class="c">RV · 2022</div></div>
+
+    <div class="tr" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c ind2 g-bin">⋔ Alpha Centauri AB</div><div class="c">binary</div><div class="c">—</div>
+      <div class="c">—</div><div class="c">29187<span class="err"> ±4</span></div><div class="c">23.518</div>
+      <div class="c">0.5179</div><div class="c">79.20</div><div class="c">—</div><div class="c">—</div></div>
+
+    <div class="tr" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c ind3 g-star">★ Alpha Centauri A</div><div class="c">G2 V</div>
+      <div class="c">1.100<span class="err"> ±.006</span></div><div class="c">1.227<span class="err"> ±.005</span></div>
+      <div class="c">—</div><div class="c">—</div><div class="c">—</div><div class="c">—</div>
+      <div class="c">5790<span class="err"> ±30</span></div><div class="c">—</div></div>
+
+    <div class="tr" style="grid-template-columns:minmax(260px,1.3fr) 66px 92px 92px 96px 84px 74px 74px 78px 100px">
+      <div class="c ind3 g-star">★ Alpha Centauri B</div><div class="c">K1 V</div>
+      <div class="c">0.907<span class="err"> ±.006</span></div><div class="c">0.865<span class="err"> ±.006</span></div>
+      <div class="c">—</div><div class="c">—</div><div class="c">—</div><div class="c">—</div>
+      <div class="c">5260<span class="err"> ±30</span></div><div class="c">—</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <b>Field gain per node type</b>
+      <ul>
+        <li><b>system</b> → + RA, Dec, distance in ly beside pc, planet count, star count</li>
+        <li><b>binary</b> → + position angle, periastron, ascending node, both separation forms</li>
+        <li><b>star</b> → + magV, magB, magK, B−V (derived), age, luminosity (derived)</li>
+        <li><b>planet</b> → + T<sub>eq</sub>, discovery method &amp; year, transiting badge, last update</li>
+        <li><b>satellite</b> → + e, i, periastron, ascending node, tilt (all at 100% coverage)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <b>Design notes</b>
+      <ul>
+        <li>Status moves from a bracket in the name to compact <span class="pill p-ok">Conf</span> /
+            <span class="pill p-warn">Cand</span> / <span class="pill p-dim">S-type</span> badges — the
+            name column stops being 90 characters wide.</li>
+        <li>Errors render as a dimmed suffix at ~85% size: present but visually subordinate.
+            A checkbox drops them entirely for a clean scan.</li>
+        <li>Columns irrelevant to a node stay blank rather than showing <code>—</code> if you prefer;
+            "Hide empty columns" removes a column no visible node populates (a single-star system
+            loses the binary-only columns automatically).</li>
+        <li><code>QTreeWidget</code> supports sortable columns natively — but sorting a hierarchy sorts
+            within each parent, which is exactly right for planets under a host.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note"><b>Trade-off.</b> Ten columns is roughly the panel's width budget. This option makes
+  the top ~10 fields excellent and leaves the other ~40 still hidden — which is why it pairs naturally
+  with B or F.</div>
+</section>
+
+<!-- ══════════════════════════ B ══════════════════════════ -->
+<section id="s-b" hidden>
+  <h2>Option B · Tree + Detail Pane (master/detail)</h2>
+  <p>The tree becomes a navigator. Selecting any node — system, binary, star, planet or moon — fills a
+  right-hand pane with <b>every field the parser captured</b> for that node, grouped into sections,
+  with full uncertainties, units, bound markers, all alias names, and a derived block. Nothing is ever
+  dropped because it wouldn't fit.</p>
+
+  <div class="toolbar">
+    <span class="chk">Detail pane: <span class="seg"><span class="on">Right</span><span>Below</span><span>Hidden</span></span></span>
+    <span class="chk"><input type="checkbox" checked> Include derived values</span>
+    <span class="chk"><input type="checkbox"> Show raw XML for node</span>
+    <span style="flex:1"></span><button class="btn">Copy node as JSON</button>
+  </div>
+  <div class="split">
+    <div class="pane">
+      <div class="tree" style="border:none;border-radius:0">
+        <div class="tr" style="grid-template-columns:1fr"><div class="c g-sys">◆ Alpha Centauri <span class="err">3 stars · 3 planets</span></div></div>
+        <div class="tr" style="grid-template-columns:1fr"><div class="c ind1 g-bin">⋔ Binary (C + AB) <span class="err">a=15000 AU</span></div></div>
+        <div class="tr" style="grid-template-columns:1fr"><div class="c ind2 g-star">★ Proxima Centauri <span class="err">M5.5V · 0.12 M☉</span></div></div>
+        <div class="tr sel" style="grid-template-columns:1fr"><div class="c ind3 g-planet">● Proxima Centauri b <span class="err">1.17 M⊕ · 11.18 d</span></div></div>
+        <div class="tr" style="grid-template-columns:1fr"><div class="c ind3 g-planet">● Proxima Centauri c <span class="err">7.00 M⊕ · 1929 d</span></div></div>
+        <div class="tr" style="grid-template-columns:1fr"><div class="c ind3 g-planet">● Proxima Centauri d <span class="err">0.26 M⊕ · 5.12 d</span></div></div>
+        <div class="tr" style="grid-template-columns:1fr"><div class="c ind2 g-bin">⋔ Alpha Centauri AB <span class="err">a=23.5 AU · e=0.518</span></div></div>
+        <div class="tr" style="grid-template-columns:1fr"><div class="c ind3 g-star">★ Alpha Centauri A <span class="err">G2 V · 1.10 M☉</span></div></div>
+        <div class="tr" style="grid-template-columns:1fr"><div class="c ind3 g-star">★ Alpha Centauri B <span class="err">K1 V · 0.91 M☉</span></div></div>
+      </div>
+    </div>
+    <div class="pane right">
+      <div style="font-size:16px;color:var(--planet);font-weight:600">● Proxima Centauri b</div>
+      <div style="margin:4px 0 2px">
+        <span class="pill p-ok">Confirmed planets</span>
+        <span class="pill p-dim">Planets in binary systems, S-type</span>
+        <span class="pill p-warn">non-transiting</span>
+      </div>
+      <div class="err" style="margin-bottom:6px">Host: Proxima Centauri (M5.5V) · attached to star · last update 2016-08-22</div>
+
+      <div class="sect">Identity — 5 names</div>
+      <div class="mono" style="font-size:12px;color:var(--dim)">
+        Proxima Centauri b · α Centauri C b · GL 551 b · HIP 70890 b · Proxima b</div>
+
+      <div class="sect">Orbit</div>
+      <dl class="kv">
+        <dt>Period</dt><dd>11.18427 <span class="err">±0.00070</span> <span class="unit">d</span></dd>
+        <dt>Semi-major axis</dt><dd>0.04857 <span class="err">+0.0041 / −0.0051</span> <span class="unit">AU</span></dd>
+        <dt>Eccentricity</dt><dd>&lt;= 0.35 <span class="err">(upper limit)</span></dd>
+        <dt>Inclination</dt><dd class="err">— not in catalogue</dd>
+        <dt>Longitude</dt><dd>110 <span class="err">±8</span> <span class="unit">°</span></dd>
+        <dt>Periastron</dt><dd class="err">—</dd>
+      </dl>
+
+      <div class="sect">Physical</div>
+      <dl class="kv">
+        <dt>Mass (M·sin i)</dt><dd>1.173 <span class="err">±0.086</span> <span class="unit">M⊕</span>
+             <span class="err">= 0.003691 M♃</span></dd>
+        <dt>Radius</dt><dd class="err">— not measured (non-transiting)</dd>
+        <dt>Equilibrium T</dt><dd>234 <span class="err">+6 / −14</span> <span class="unit">K</span></dd>
+        <dt>Spin–orbit align.</dt><dd class="err">—</dd>
+      </dl>
+
+      <div class="sect">Discovery &amp; provenance</div>
+      <dl class="kv">
+        <dt>Method</dt><dd>RV</dd>
+        <dt>Year</dt><dd>2016</dd>
+        <dt>Transiting</dt><dd>no</dd>
+        <dt>Transit time</dt><dd class="err">—</dd>
+        <dt>Last update</dt><dd>16/08/22</dd>
+        <dt>Image</dt><dd>eso1629a</dd>
+      </dl>
+
+      <div class="sect"><span class="der">Derived</span> <span class="pill p-der">computed, not catalogued</span></div>
+      <dl class="kv">
+        <dt class="der">Insolation</dt><dd class="der">0.65 S⊕</dd>
+        <dt class="der">HZ position</dt><dd class="der">inside conservative HZ <span class="pill p-ok">habitable zone</span></dd>
+        <dt class="der">Density</dt><dd class="der">— (no radius)</dd>
+        <dt class="der">Surface gravity</dt><dd class="der">— (no radius)</dd>
+        <dt class="der">RV semi-amplitude</dt><dd class="der">1.38 m/s</dd>
+        <dt class="der">Transit probability</dt><dd class="der">1.3%</dd>
+        <dt class="der">Tidal-lock time</dt><dd class="der">&lt; 0.01 Gyr <span class="pill p-warn">likely locked</span></dd>
+      </dl>
+
+      <div class="sect">Description</div>
+      <p style="font-size:12.2px;margin:4px 0 0">Astronomers using ESO telescopes and other facilities have
+      found clear evidence of a planet orbiting the closest star to Earth, Proxima Centauri. The
+      long-sought world, designated Proxima b, orbits its cool red parent star every 11 days and has a
+      temperature suitable for liquid water to exist on its surface…</p>
+      <div style="margin-top:8px"><button class="btn">Open in Architecture map</button>
+        <button class="btn">Copy field table</button></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><b>Why this is the strongest completeness answer</b>
+      <ul>
+        <li>The pane is scrollable, so <b>field count is unbounded</b> — the long tail
+            (impact parameter, mean anomaly, tilt, position angle) shows when present and silently
+            disappears when not.</li>
+        <li>It is the only option that can show <b>all alias names</b> — α Cen A carries 22 of them,
+            all currently invisible.</li>
+        <li>Bound-only values (<code>e ≤ 0.35</code>) and asymmetric errors get room to be honest
+            instead of being truncated.</li>
+        <li>"— not in catalogue" vs. "— not measured (non-transiting)" distinguishes <i>absent data</i>
+            from <i>physically unmeasurable</i>. The tree can't make that distinction in a cell.</li>
+        <li>Reuses the existing planet click-dialog content — the dialog becomes an embedded pane
+            that also works for stars, binaries and moons.</li>
+      </ul>
+    </div>
+    <div class="card"><b>Costs / decisions</b>
+      <ul>
+        <li>Halves the tree's horizontal room — mitigated by the Right/Below/Hidden toggle
+            (Below suits wide-and-shallow systems, Right suits deep hierarchies).</li>
+        <li>Needs a per-tag field ordering + label table (~50 entries) and a "known keys first,
+            then everything else alphabetically" fallback so a future OEC field never goes missing.</li>
+        <li>The derived block needs a clear visual mark — the <span class="pill p-der">computed</span>
+            badge and violet tint — so a computed insolation is never mistaken for a catalogue value.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ C ══════════════════════════ -->
+<section id="s-c" hidden>
+  <h2>Option C · Tree Navigator + Per-Tier Tables</h2>
+  <p>Keep the tree small at the top as a structure map, and put the data in flat, sortable,
+  full-width tables — one per tier. This is the shape every other Star-Databases panel already uses
+  (opts 1–6), so it inherits their conventions: dense columns, right-aligned numbers, copyable rows.
+  A system's whole planet inventory becomes one sortable table regardless of how deep in the
+  hierarchy each planet hangs — with an "Attached to" column preserving the topology.</p>
+
+  <div class="toolbar">
+    <span class="seg"><span>Structure</span><span>Stars (3)</span><span class="on">Planets (3)</span><span>Moons (0)</span><span>Binaries (2)</span></span>
+    <span style="flex:1"></span>
+    <span class="chk"><input type="checkbox" checked> M⊕/R⊕</span>
+    <span class="chk"><input type="checkbox"> Show ± errors as columns</span>
+    <button class="btn">Export CSV</button>
+  </div>
+  <div class="scroll" style="border-radius:0 0 8px 8px;border-top:none">
+    <table>
+      <thead><tr>
+        <th>Planet</th><th>Attached to</th><th>Status</th><th class="num">M (M⊕)</th><th class="num">R (R⊕)</th>
+        <th class="num">P (d)</th><th class="num">a (AU)</th><th class="num">e</th><th class="num">i (°)</th>
+        <th class="num">T<sub>eq</sub> (K)</th><th>Method</th><th class="num">Year</th><th>Transits</th>
+        <th class="num der">S (S⊕)</th><th class="der">HZ</th><th>Updated</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Proxima Centauri b</td><td>★ Proxima Centauri</td><td><span class="pill p-ok">Confirmed</span></td>
+            <td class="num">1.17</td><td class="num">—</td><td class="num">11.184</td><td class="num">0.0486</td>
+            <td class="num">≤0.35</td><td class="num">—</td><td class="num">234</td><td>RV</td><td class="num">2016</td>
+            <td>no</td><td class="num der">0.65</td><td class="der"><span class="pill p-ok">inside</span></td><td>16/08/22</td></tr>
+        <tr><td>Proxima Centauri c</td><td>★ Proxima Centauri</td><td><span class="pill p-ok">Confirmed</span></td>
+            <td class="num">7.00</td><td class="num">—</td><td class="num">1929</td><td class="num">1.49</td>
+            <td class="num">—</td><td class="num">133</td><td class="num">—</td><td>RV</td><td class="num">2019</td>
+            <td>no</td><td class="num der">0.0007</td><td class="der"><span class="pill p-dim">beyond</span></td><td>20/08/29</td></tr>
+        <tr><td>Proxima Centauri d</td><td>★ Proxima Centauri</td><td><span class="pill p-ok">Confirmed</span></td>
+            <td class="num">0.26</td><td class="num">—</td><td class="num">5.122</td><td class="num">0.0289</td>
+            <td class="num">0.04</td><td class="num">—</td><td class="num">—</td><td>RV</td><td class="num">2022</td>
+            <td>no</td><td class="num der">1.84</td><td class="der"><span class="pill p-bad">interior</span></td><td>22/02/10</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Stars tier — same table, star columns</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr>
+        <th>Star</th><th>In</th><th>Sp. type</th><th class="num">M (M☉)</th><th class="num">R (R☉)</th>
+        <th class="num">T<sub>eff</sub> (K)</th><th class="num">[Fe/H]</th><th class="num">Age (Gyr)</th>
+        <th class="num">V</th><th class="num">B</th><th class="num">J</th><th class="num">H</th><th class="num">K</th>
+        <th class="num der">B−V</th><th class="num der">L (L☉)</th><th class="num der">HZ (AU)</th><th class="num">Planets</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Alpha Centauri A</td><td>⋔ AB</td><td>G2 V</td><td class="num">1.100</td><td class="num">1.227</td>
+            <td class="num">5790</td><td class="num">0.20</td><td class="num">—</td><td class="num">0.01</td>
+            <td class="num">0.72</td><td class="num">−1.15</td><td class="num">−1.38</td><td class="num">−1.49</td>
+            <td class="num der">0.71</td><td class="num der">1.52</td><td class="num der">1.09–1.93</td><td class="num">0</td></tr>
+        <tr><td>Alpha Centauri B</td><td>⋔ AB</td><td>K1 V</td><td class="num">0.907</td><td class="num">0.865</td>
+            <td class="num">5260</td><td class="num">0.23</td><td class="num">—</td><td class="num">1.33</td>
+            <td class="num">2.21</td><td class="num">−0.01</td><td class="num">−0.49</td><td class="num">−0.60</td>
+            <td class="num der">0.88</td><td class="num der">0.50</td><td class="num der">0.63–1.11</td><td class="num">0</td></tr>
+        <tr><td>Proxima Centauri</td><td>⋔ C+AB</td><td>M5.5V</td><td class="num">0.120</td><td class="num">0.141</td>
+            <td class="num">2900</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+            <td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+            <td class="num der">—</td><td class="num der">0.0015</td><td class="num der">0.034–0.061</td><td class="num">3</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><b>Strengths</b>
+      <ul>
+        <li>Sortable and copyable — click "P (d)" to order a 8-planet system by period; select rows and
+            paste into a spreadsheet. Neither is possible in the tree today.</li>
+        <li>Column budget is ~16 instead of ~10, and each tier gets columns tuned to it rather than a
+            lowest-common-denominator set.</li>
+        <li>Consistent with HWC / NASA / Mission-Exocat panels — the user already knows how to read it.</li>
+        <li>The moons tier finally has somewhere to show all ten of its 100%-coverage fields.</li>
+      </ul>
+    </div>
+    <div class="card"><b>Weaknesses</b>
+      <ul>
+        <li>Flattening loses the visual hierarchy — mitigated by the "Attached to" column and the
+            retained Structure sub-tab, but a deep α&nbsp;Cen-style nesting reads worse than in a tree.</li>
+        <li>Five sub-tabs on top of the existing Data / Hypatia tabs is a lot of chrome; the empty
+            tiers (Moons&nbsp;0) should hide themselves.</li>
+        <li>Still no home for <code>description</code> — needs D, or a detail row expander.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ D ══════════════════════════ -->
+<section id="s-d" hidden>
+  <h2>Option D · Dossier Cards</h2>
+  <p>A reading view rather than a data view. The system gets a header block, each star a compact card,
+  each planet a full card carrying the fields <i>plus</i> the <code>description</code> prose that 93% of
+  planets have and that nothing in the app currently shows. Badges encode status, method and
+  transiting-ness. This is the view that answers "tell me about this system" rather than "give me the
+  numbers".</p>
+
+  <div class="card" style="border-color:var(--line)">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:baseline">
+      <div><span style="font-size:19px;color:var(--sys)">◆ Alpha Centauri</span>
+        <span class="err">Rigil Kentaurus · Toliman · Bungula · +3 aliases</span></div>
+      <div class="mono err">RA 14 39 36.204 · Dec −60 50 08.23 · Centaurus</div>
+    </div>
+    <div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:8px" class="mono">
+      <div><span class="err">Distance</span> 1.295 ±0.0045 pc <span class="der">(4.22 ly)</span></div>
+      <div><span class="err">Stars</span> 3</div>
+      <div><span class="err">Planets</span> 3</div>
+      <div><span class="err">Moons</span> 0</div>
+      <div><span class="err">Topology</span> hierarchical triple <span class="pill p-dim">binary depth 2</span></div>
+    </div>
+  </div>
+
+  <h3>Stars</h3>
+  <div class="cards">
+    <div class="pcard">
+      <h4 style="color:var(--star)">★ Alpha Centauri A</h4>
+      <div class="meta">G2 V · component of ⋔ Alpha Centauri AB · 22 catalogue names</div>
+      <div class="row"><span>Mass</span><span>1.100 ±0.006 M☉</span></div>
+      <div class="row"><span>Radius</span><span>1.227 ±0.005 R☉</span></div>
+      <div class="row"><span>T<sub>eff</sub></span><span>5790 ±30 K</span></div>
+      <div class="row"><span>[Fe/H]</span><span>0.20 ±0.02</span></div>
+      <div class="row"><span>V / B / K</span><span>0.01 / 0.72 / −1.49</span></div>
+      <div class="row"><span class="der">Luminosity</span><span class="der">1.52 L☉</span></div>
+      <div class="row"><span class="der">Cons. HZ</span><span class="der">1.09 – 1.93 AU</span></div>
+      <div class="row"><span>Planets</span><span>none catalogued</span></div>
+    </div>
+    <div class="pcard">
+      <h4 style="color:var(--star)">★ Proxima Centauri</h4>
+      <div class="meta">M5.5V · component of ⋔ C + AB · 5 names · 3 planets</div>
+      <div class="row"><span>Mass</span><span>0.120 ±0.02 M☉</span></div>
+      <div class="row"><span>Radius</span><span>0.141 +0.022/−0.019 R☉</span></div>
+      <div class="row"><span>T<sub>eff</sub></span><span>2900 ±100 K</span></div>
+      <div class="row"><span>[Fe/H]</span><span>—</span></div>
+      <div class="row"><span class="der">Luminosity</span><span class="der">0.0015 L☉</span></div>
+      <div class="row"><span class="der">Cons. HZ</span><span class="der">0.034 – 0.061 AU</span></div>
+      <div class="row"><span class="der">Sep. from AB</span><span class="der">15 000 AU ≈ 0.24 ly</span></div>
+    </div>
+  </div>
+
+  <h3>Planets</h3>
+  <div class="cards">
+    <div class="pcard">
+      <h4>● Proxima Centauri b</h4>
+      <div class="meta">Host ★ Proxima Centauri · updated 16/08/22</div>
+      <div style="margin-bottom:7px">
+        <span class="pill p-ok">Confirmed</span> <span class="pill p-dim">S-type binary</span>
+        <span class="pill p-info">RV · 2016</span> <span class="pill p-warn">non-transiting</span>
+        <span class="pill p-der">in HZ</span></div>
+      <div class="row"><span>Mass (M·sin i)</span><span>1.17 ±0.09 M⊕</span></div>
+      <div class="row"><span>Radius</span><span>—</span></div>
+      <div class="row"><span>Period</span><span>11.18427 ±0.0007 d</span></div>
+      <div class="row"><span>Semi-major axis</span><span>0.04857 AU</span></div>
+      <div class="row"><span>Eccentricity</span><span>≤ 0.35</span></div>
+      <div class="row"><span>T<sub>eq</sub></span><span>234 +6/−14 K</span></div>
+      <div class="row"><span class="der">Insolation</span><span class="der">0.65 S⊕</span></div>
+      <div class="row"><span>Artwork</span><span>eso1629a</span></div>
+      <div class="desc">Astronomers using ESO telescopes and other facilities have found clear evidence of a
+        planet orbiting the closest star to Earth, Proxima Centauri. The long-sought world, designated
+        Proxima b, orbits its cool red parent star every 11 days and has a temperature suitable for
+        liquid water to exist on its surface. This rocky world is a little more massive than the Earth…</div>
+      <div style="margin-top:6px"><button class="btn">Read full description</button></div>
+    </div>
+    <div class="pcard">
+      <h4>● Proxima Centauri d</h4>
+      <div class="meta">Host ★ Proxima Centauri · updated 22/02/10</div>
+      <div style="margin-bottom:7px">
+        <span class="pill p-ok">Confirmed</span> <span class="pill p-dim">S-type binary</span>
+        <span class="pill p-info">RV · 2022</span> <span class="pill p-warn">non-transiting</span>
+        <span class="pill p-bad">interior to HZ</span></div>
+      <div class="row"><span>Mass (M·sin i)</span><span>0.26 ±0.05 M⊕</span></div>
+      <div class="row"><span>Period</span><span>5.122 +0.002/−0.036 d</span></div>
+      <div class="row"><span>Semi-major axis</span><span>0.02885 AU</span></div>
+      <div class="row"><span>Eccentricity</span><span>0.04 +0.15/−0.04</span></div>
+      <div class="row"><span class="der">Insolation</span><span class="der">1.84 S⊕</span></div>
+      <div class="row"><span>Artwork</span><span>eso2202a</span></div>
+      <div class="desc">This planet has been found using a large set of observations taken with the ESPRESSO
+        spectrograph at the VLT. This candidate planet is the third detected in the system and the
+        lightest yet found around Proxima Centauri…</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><b>Strengths</b>
+      <ul>
+        <li>The only option that gives <code>description</code> a natural home — 5,044 planets carry one and
+            it is the richest human-readable content in the catalogue.</li>
+        <li>Badges compress six boolean/enum fields (status ×n, method, year, transiting, HZ verdict)
+            into one scannable line.</li>
+        <li>Cards reflow — works at any panel width, unlike a 16-column table.</li>
+        <li>Naturally accommodates the <code>image</code>/<code>imagedescription</code> fields
+            (97 planets carry ESO artwork ids) if you ever want thumbnails.</li>
+      </ul>
+    </div>
+    <div class="card"><b>Weaknesses</b>
+      <ul>
+        <li>Poor for comparison — you cannot scan a column of periods down eight cards.</li>
+        <li>Vertically expensive: a Kepler-90-style 8-planet system is a long scroll.</li>
+        <li>Duplicates the hierarchy in prose ("component of ⋔ AB") rather than showing it — pairs
+            best with the Architecture map, not as a replacement for the tree.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">Cheapest useful subset of D: keep the tree, and add a <b>description expander row</b>
+  under each planet node (a wrapped grey italic child row, collapsed by default). That single change
+  surfaces the biggest missing field with no new view.</div>
+</section>
+
+<!-- ══════════════════════════ E ══════════════════════════ -->
+<section id="s-e" hidden>
+  <h2>Option E · Planet Comparison Matrix</h2>
+  <p>Transposed: properties down the rows, planets across the columns — the same shape
+  <code>StarComparisonPanel</code> (Phase L1) already uses for stars. For a multi-planet system this is
+  the fastest way to see how planets differ, and it can carry the <b>full</b> property list because rows
+  are cheap. Blank cells make catalogue gaps immediately visible as a pattern.</p>
+
+  <div class="toolbar">
+    <span class="chk">Host: <span class="seg"><span class="on">TRAPPIST-1</span></span></span>
+    <span class="chk"><input type="checkbox" checked> Hide all-empty rows</span>
+    <span class="chk"><input type="checkbox" checked> M⊕/R⊕</span>
+    <span class="chk"><input type="checkbox"> Sort planets by period</span>
+    <span style="flex:1"></span><button class="btn">Add Solar System reference column</button>
+  </div>
+  <div class="scroll" style="border-radius:0 0 8px 8px;border-top:none">
+    <table>
+      <thead><tr><th style="min-width:190px">Property</th>
+        <th class="num">b</th><th class="num">c</th><th class="num">d</th><th class="num">e</th>
+        <th class="num">f</th><th class="num">g</th><th class="num">h</th>
+        <th class="num" style="color:var(--gold)">Earth</th></tr></thead>
+      <tbody>
+        <tr><td>Status</td><td colspan="7" style="color:var(--ok)">Confirmed planets (all)</td><td></td></tr>
+        <tr><td>Mass (M⊕)</td><td class="num">1.374</td><td class="num">1.308</td><td class="num">0.388</td>
+            <td class="num">0.692</td><td class="num">1.039</td><td class="num">1.321</td><td class="num">0.326</td>
+            <td class="num" style="color:var(--gold)">1.000</td></tr>
+        <tr><td>Radius (R⊕)</td><td class="num">1.116</td><td class="num">1.097</td><td class="num">0.788</td>
+            <td class="num">0.920</td><td class="num">1.045</td><td class="num">1.129</td><td class="num">0.755</td>
+            <td class="num" style="color:var(--gold)">1.000</td></tr>
+        <tr><td class="der">Density (g/cm³)</td><td class="num der">5.47</td><td class="num der">5.46</td>
+            <td class="num der">4.38</td><td class="num der">4.91</td><td class="num der">5.03</td>
+            <td class="num der">5.08</td><td class="num der">4.18</td>
+            <td class="num" style="color:var(--gold)">5.51</td></tr>
+        <tr><td class="der">Surface gravity (g)</td><td class="num der">1.10</td><td class="num der">1.09</td>
+            <td class="num der">0.62</td><td class="num der">0.82</td><td class="num der">0.95</td>
+            <td class="num der">1.04</td><td class="num der">0.57</td>
+            <td class="num" style="color:var(--gold)">1.00</td></tr>
+        <tr><td>Period (d)</td><td class="num">1.511</td><td class="num">2.422</td><td class="num">4.049</td>
+            <td class="num">6.101</td><td class="num">9.207</td><td class="num">12.353</td><td class="num">18.767</td>
+            <td class="num" style="color:var(--gold)">365.25</td></tr>
+        <tr><td>Semi-major axis (AU)</td><td class="num">0.0115</td><td class="num">0.0158</td><td class="num">0.0223</td>
+            <td class="num">0.0293</td><td class="num">0.0385</td><td class="num">0.0469</td><td class="num">0.0619</td>
+            <td class="num" style="color:var(--gold)">1.000</td></tr>
+        <tr><td>Eccentricity</td><td class="num">0.006</td><td class="num">0.007</td><td class="num">0.008</td>
+            <td class="num">0.005</td><td class="num">0.010</td><td class="num">0.003</td><td class="num">0.006</td>
+            <td class="num" style="color:var(--gold)">0.017</td></tr>
+        <tr><td>Inclination (°)</td><td class="num">89.56</td><td class="num">89.70</td><td class="num">89.89</td>
+            <td class="num">89.74</td><td class="num">89.74</td><td class="num">89.74</td><td class="num">89.80</td>
+            <td class="num">—</td></tr>
+        <tr><td>T<sub>eq</sub> (K)</td><td class="num">400</td><td class="num">342</td><td class="num">288</td>
+            <td class="num">251</td><td class="num">219</td><td class="num">199</td><td class="num">173</td>
+            <td class="num" style="color:var(--gold)">255</td></tr>
+        <tr><td class="der">Insolation (S⊕)</td><td class="num der">4.15</td><td class="num der">2.21</td>
+            <td class="num der">1.11</td><td class="num der">0.64</td><td class="num der">0.37</td>
+            <td class="num der">0.25</td><td class="num der">0.14</td>
+            <td class="num" style="color:var(--gold)">1.00</td></tr>
+        <tr><td class="der">HZ verdict</td>
+            <td><span class="pill p-bad">int.</span></td><td><span class="pill p-bad">int.</span></td>
+            <td><span class="pill p-warn">opt.</span></td><td><span class="pill p-ok">cons.</span></td>
+            <td><span class="pill p-ok">cons.</span></td><td><span class="pill p-warn">opt.</span></td>
+            <td><span class="pill p-dim">beyond</span></td><td><span class="pill p-ok">cons.</span></td></tr>
+        <tr><td>Transiting</td><td colspan="7" style="color:var(--ok)">yes (all 7)</td><td></td></tr>
+        <tr><td>Transit time (BJD)</td><td class="num">2457322.52</td><td class="num">2457282.81</td>
+            <td class="num">2457670.14</td><td class="num">2457660.38</td><td class="num">2457671.39</td>
+            <td class="num">2457665.35</td><td class="num">2457662.55</td><td class="num">—</td></tr>
+        <tr><td>Discovery</td><td class="num">2016</td><td class="num">2016</td><td class="num">2016</td>
+            <td class="num">2017</td><td class="num">2017</td><td class="num">2017</td><td class="num">2017</td><td class="num">—</td></tr>
+        <tr><td>Last update</td><td class="num">21/07/13</td><td class="num">21/07/13</td><td class="num">21/07/13</td>
+            <td class="num">21/07/13</td><td class="num">21/07/13</td><td class="num">21/07/13</td><td class="num">21/07/13</td><td class="num">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="sub">Illustrative values for layout review.</p>
+
+  <div class="grid2">
+    <div class="card"><b>Strengths</b>
+      <ul>
+        <li>Row count is unconstrained — every planet field can appear, including the long tail,
+            because adding a property costs one row not one column.</li>
+        <li>Gaps become a visible pattern: an all-blank "Radius" row instantly says
+            "this is an RV system".</li>
+        <li>Reuses the L1 transposed-table idiom already in the codebase, and the Solar-System
+            reference column mirrors the O4 orbital-diagram overlay.</li>
+      </ul>
+    </div>
+    <div class="card"><b>Weaknesses</b>
+      <ul>
+        <li>Per-host only — needs the Host combo, and says nothing about multi-star topology.
+            Useless for a single-planet system.</li>
+        <li>Wide systems (Kepler-90, 8 planets + reference) push against the panel width.</li>
+        <li>Complements rather than replaces: it is a third view, not a new default.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ F ══════════════════════════ -->
+<section id="s-f" hidden>
+  <h2>Option F · Toolbar / Control Layer</h2>
+  <p>Not a view — the controls that make A or C work at both extremes (a bare 1-planet RV detection and
+  a fully-characterised 8-planet transit system). Each control is independently useful and independently
+  cheap; they can be adopted one at a time.</p>
+
+  <div class="toolbar" style="border-radius:8px">
+    <span class="chk">Units <span class="seg"><span class="on">M⊕ / R⊕</span><span>M♃ / R♃</span><span>SI</span></span></span>
+    <span class="chk">Density <span class="seg"><span>Compact</span><span class="on">Comfortable</span></span></span>
+    <span class="chk"><input type="checkbox" checked> Hide empty columns</span>
+    <span class="chk"><input type="checkbox" checked> Errors</span>
+    <span class="chk"><input type="checkbox" checked> Derived</span>
+    <button class="btn">Columns…</button>
+    <button class="btn">Expand ▾ / Collapse ▴</button>
+    <input class="btn" style="width:150px" placeholder="Filter nodes…">
+    <button class="btn">Copy TSV</button><button class="btn">Export CSV</button>
+  </div>
+
+  <div class="grid2" style="margin-top:14px">
+    <div class="card"><b>Unit toggle</b> <span class="pill p-ok">high value</span>
+      <p style="margin:6px 0 0">OEC stores planet mass/radius in Jupiter units. For the terrestrial planets
+      that dominate the catalogue this is unreadable — Proxima b is <code>0.003691 M♃</code>, i.e.
+      <code>1.17 M⊕</code>. The conversion already exists in <code>catalogs.py</code>
+      (<code>_MJUP_MEARTH</code> / <code>_RJUP_REARTH</code>) for the diagram adapter; this exposes it in
+      the tables. Suggested default: <b>auto</b> — M⊕ below 0.1 M♃, M♃ above.</p></div>
+
+    <div class="card"><b>Hide empty columns / rows</b> <span class="pill p-ok">high value</span>
+      <p style="margin:6px 0 0">Coverage is wildly uneven (mass 52%, radius 77%, inclination 32%).
+      Dropping columns no visible node populates recovers 30–50% of the width on a typical system,
+      which is what makes a 10–16 column layout viable at all.</p></div>
+
+    <div class="card"><b>Errors on/off</b>
+      <p style="margin:6px 0 0">Uncertainty is essential for research use and pure noise for scanning.
+      Three states are worth having: <i>off</i>, <i>inline dimmed</i> (default), and <i>own column</i>
+      (± as separate sortable columns, for the tier tables in C).</p></div>
+
+    <div class="card"><b>Column chooser</b>
+      <p style="margin:6px 0 0">A checklist per node type over all captured field names, so a rare field
+      (spin–orbit alignment, impact parameter) is reachable without a code change and without being on
+      screen by default. Persist the choice per node type in QSettings.</p></div>
+
+    <div class="card"><b>Filter box</b>
+      <p style="margin:6px 0 0">Type <code>b</code> or <code>transit</code> to prune the tree to matching
+      nodes and their ancestors. Mostly matters for large systems and for the Structure tab in C.</p></div>
+
+    <div class="card"><b>Copy / export</b> <span class="pill p-ok">high value</span>
+      <p style="margin:6px 0 0">Nothing in the Data tab is currently extractable. Copy-TSV of the
+      selection and Export-CSV of the tier follows the existing opt-51 export idiom, and is the
+      cheapest of all these controls to build.</p></div>
+  </div>
+
+  <div class="note"><b>Expand-state default.</b> Today the tree calls <code>expandAll()</code>
+  unconditionally. For α Cen that is right; for a 8-planet system with binary nesting it overflows the
+  360&nbsp;px minimum height immediately. Suggested rule: expand all when the node count ≤ 25,
+  otherwise expand to the star level and leave planets collapsed — with the Expand/Collapse button
+  always available.</div>
+</section>
+
+<!-- ══════════════════════════ G ══════════════════════════ -->
+<section id="s-g" hidden>
+  <h2>Option G · Derived Fields</h2>
+  <p>Values not in OEC that the app already computes elsewhere. Every one is a call into an existing
+  <code>core/</code> function on data already in the node — no new physics, no network. They would be
+  marked <span class="pill p-der">computed</span> (violet) everywhere they appear so a derived value is
+  never mistaken for a catalogued one.</p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Derived value</th><th>Applies to</th><th>Needs</th><th>Existing source</th><th>Why it matters here</th></tr></thead>
+      <tbody>
+        <tr><td class="der">Distance in light-years</td><td>system</td><td>distance (pc)</td><td>×3.26156 (app-wide)</td><td>Every other panel shows ly; OEC shows pc only</td></tr>
+        <tr><td class="der">Star luminosity L☉</td><td>star</td><td>radius + T<sub>eff</sub></td><td><code>compute_star_luminosity</code> (opt 41)</td><td>Gates every HZ and insolation number below; 83% of stars have both inputs</td></tr>
+        <tr><td class="der">B−V colour</td><td>star</td><td>magB + magV</td><td>subtraction</td><td>26% of stars carry both; feeds the HR-diagram idiom</td></tr>
+        <tr><td class="der">Habitable zone bounds</td><td>star</td><td>T<sub>eff</sub> + L</td><td><code>compute_habitable_zone</code> (Kopparapu)</td><td>Already drawn in the HZ tab — but never stated numerically in the tree</td></tr>
+        <tr><td class="der">Circumbinary HZ</td><td>binary</td><td>both components' T + L</td><td><code>compute_circumbinary_hz</code> (T1a C1)</td><td>Fixes the known OEC limitation: a P-type host currently uses the primary's light only</td></tr>
+        <tr><td class="der">Insolation S⊕</td><td>planet</td><td>a + host L</td><td>L / a²</td><td>The single most useful habitability number; derivable for ~52% of planets</td></tr>
+        <tr><td class="der">HZ verdict</td><td>planet</td><td>insolation + Kopparapu S<sub>eff</sub></td><td><code>compute_habitable_zone</code> boundaries</td><td>interior / optimistic / conservative / beyond — a badge, not a number</td></tr>
+        <tr><td class="der">Equilibrium temperature</td><td>planet</td><td>a + host L (+ albedo)</td><td><code>_t_ref_equilibrium</code> (Phase P)</td><td>OEC carries T for only 30% of planets; this fills the rest, flagged as derived</td></tr>
+        <tr><td class="der">Density g/cm³</td><td>planet</td><td>mass + radius</td><td>arithmetic</td><td>Rock vs. gas at a glance; needs both, so ~45% of planets</td></tr>
+        <tr><td class="der">Surface gravity (g)</td><td>planet</td><td>mass + radius</td><td>arithmetic</td><td>Worldbuilding-relevant, same input pair</td></tr>
+        <tr><td class="der">Escape velocity</td><td>planet</td><td>mass + radius</td><td><code>compute_atmosphere_retention</code> (H5)</td><td>Gateway to the atmospheric-retention verdict</td></tr>
+        <tr><td class="der">Atmosphere retention</td><td>planet</td><td>mass + radius + T</td><td><code>compute_atmosphere_retention</code> (H5)</td><td>"retains N₂/CO₂, loses H₂/He" — a one-line badge set</td></tr>
+        <tr><td class="der">Periastron / apastron</td><td>planet, moon</td><td>a + e</td><td><code>compute_orbit_distance</code> (opt 33)</td><td>OEC has periastron for only 19% of planets; trivially derivable for 42%</td></tr>
+        <tr><td class="der">RV semi-amplitude K</td><td>planet</td><td>mass + P + host mass</td><td><code>compute_rv_semi_amplitude</code> (T1b A1)</td><td>Detectability context — why this planet was found by RV and its siblings weren't</td></tr>
+        <tr><td class="der">Transit depth / probability</td><td>planet</td><td>radii + a</td><td><code>compute_transit_signal</code> (T1b A2)</td><td>Cross-checks the <code>istransiting</code> flag</td></tr>
+        <tr><td class="der">Hill sphere / moon limit</td><td>planet</td><td>masses + a + e</td><td><code>compute_hill_sphere</code> (H3 + Domingos)</td><td>The only sanity check available on OEC's 18 catalogued satellites</td></tr>
+        <tr><td class="der">Tidal-lock timescale</td><td>planet</td><td>host mass + a + radius</td><td><code>compute_tidal_locking_time</code> (H2)</td><td>Nearly every short-period M-dwarf planet is locked; worth stating</td></tr>
+        <tr><td class="der">S-type / P-type stability</td><td>planet in binary</td><td>binary a + e + masses</td><td><code>compute_binary_orbit_stability</code> (H4)</td><td>OEC tags planets "S-type" in a <code>&lt;list&gt;</code>; this checks it holds</td></tr>
+        <tr><td class="der">Roche limit</td><td>planet</td><td>mass + satellite density</td><td><code>compute_roche_limit</code> (H1)</td><td>Bounds the moon-bearing region</td></tr>
+        <tr><td class="der">Topology summary</td><td>system</td><td>tree walk</td><td><code>oec-census</code> logic (Phase 4)</td><td>"hierarchical triple · binary depth 2 · 3 planets, all S-type"</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><b>Rules this should follow</b>
+      <ul>
+        <li><b>Never merge into the catalogue block.</b> Derived values get their own section (B), their
+            own column tint (A/C/E) or an explicit badge (D). A derived T<sub>eq</sub> and a catalogued
+            T<sub>eq</sub> must be distinguishable at a glance.</li>
+        <li><b>Prefer the catalogued value when both exist</b>, and offer the derived one beside it as a
+            cross-check — a disagreement is itself informative.</li>
+        <li><b>Say what is missing.</b> "— (no radius)" beats a blank cell: it tells the user the
+            calculation was attempted and why it failed.</li>
+        <li><b>One toggle kills them all</b> (F's "Derived" checkbox) for anyone who wants the raw
+            catalogue and nothing else.</li>
+      </ul>
+    </div>
+    <div class="card"><b>Cheapest high-value subset</b>
+      <ol style="color:var(--dim);margin:8px 0 0 18px">
+        <li>Distance in ly (one multiplication, 95% coverage)</li>
+        <li>Star luminosity + HZ bounds (existing calls, 83% coverage)</li>
+        <li>Planet insolation + HZ verdict (depends on 2, 52% coverage)</li>
+        <li>Density + surface gravity (arithmetic, ~45% coverage)</li>
+        <li>Equilibrium T where OEC has none (fills 70% of the gap)</li>
+      </ol>
+      <p style="margin-top:8px">Those five cover the questions a reader actually asks of a system and
+      need no new core code at all.</p>
+    </div>
+  </div>
+</section>
+
+<h2 style="margin-top:40px">Recommendation</h2>
+<div class="note rec">
+  <b>Build the ★ Recommended view</b> — Option&nbsp;B's master/detail split, star-first: the tree gains
+  Option&nbsp;A's columns <i>with the star rows populated</i> (M, R, T<sub>eff</sub>, derived L, HZ bounds),
+  the detail pane becomes a full star dossier (all aliases, RA/Dec, all eight magnitudes + colours,
+  physical + evolutionary state, HZ and ice lines, hosted-planet inventory, companion orbit), and the host
+  star stays pinned as a context band while you read its planets. Option&nbsp;F's toolbar (units, errors,
+  hide-empty, copy/export) and Option&nbsp;G's derived layer ride along behind toggles.<br><br>
+  It is entirely display-layer work: the node walker already captures every field shown, and every derived
+  value comes from a function already in <code>core/</code>.<br><br>
+  <b>Still worth taking separately:</b> D's description expander (one collapsed child row per planet
+  surfaces the 93%-covered <code>description</code> for almost nothing), and C or E as extra tabs later if
+  sorting and side-by-side comparison turn out to matter more than hierarchy.
+</div>
+
+</div>
+<script>
+  const PANES = {"system": "<div style=\"font-size:17px;color:var(--sys);font-weight:600\">\u25c6 tau Ceti</div>\n<div style=\"margin:5px 0 2px\"><span class=\"pill p-info\">1 star</span>\n <span class=\"pill p-ok\">7 planets</span> <span class=\"pill p-dim\">single \u2014 no binary node</span>\n <span class=\"pill p-der\">3.65 pc</span></div>\n<div class=\"seg\" style=\"margin:9px 0 2px\"><span class=\"on\">Overview</span><span>All fields</span>\n <span>Names (2)</span><span>Derived</span><span>Raw XML</span></div>\n\n<div class=\"sect\">Identity</div>\n<div class=\"mono\" style=\"font-size:11.8px;color:var(--dim)\">tau Ceti \u00b7 HD 10700</div>\n\n<div class=\"sect\">Position &amp; distance</div>\n<dl class=\"kv\">\n  <dt>Right ascension</dt><dd>01 44 04.08338</dd>\n  <dt>Declination</dt><dd>\u221215 56 14.9262</dd>\n  <dt>Constellation</dt><dd>Cetus</dd>\n  <dt>Distance</dt><dd>3.6502 <span class=\"err\">\u00b10.0023</span> <span class=\"unit\">pc</span>\n      <span class=\"der\">= 11.905 ly</span></dd>\n  <dt class=\"der\">Parallax</dt><dd class=\"der\">273.96 mas</dd>\n</dl>\n\n<div class=\"sect\"><span class=\"der\">Topology</span> <span class=\"pill p-der\">derived from the node tree</span></div>\n<dl class=\"kv\">\n  <dt class=\"der\">Structure</dt><dd class=\"der\">single star, flat \u2014 no <code>&lt;binary&gt;</code> node</dd>\n  <dt class=\"der\">Binary depth</dt><dd class=\"der\">0</dd>\n  <dt class=\"der\">Planet attachment</dt><dd class=\"der\">7 to a star \u00b7 0 circumbinary \u00b7 0 rogue</dd>\n  <dt class=\"der\">Statuses</dt><dd class=\"der\">4 confirmed \u00b7 3 retracted candidates</dd>\n  <dt class=\"der\">Detection methods</dt><dd class=\"der\">RV \u00d77</dd>\n  <dt class=\"der\">Catalogued moons</dt><dd class=\"der\">0</dd>\n</dl>\n<p class=\"err\" style=\"margin:6px 0 0\">Select the star or any planet in the tree to see its full record.</p>\n", "star": "\n      <div style=\"display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap\">\n        <div style=\"font-size:17px;color:var(--star);font-weight:600\">\u2605 tau Ceti</div>\n        <div class=\"err\">\u25c6 tau Ceti \u00b7 single star \u00b7 no catalogued companion</div>\n      </div>\n      <div style=\"margin:5px 0 2px\">\n        <span class=\"pill p-info\">G8.5 V</span>\n        <span class=\"pill p-ok\">7 planets</span>\n        <span class=\"pill p-der\">main sequence</span>\n        <span class=\"pill p-warn\">metal-poor [Fe/H] \u22120.55</span>\n        <span class=\"pill p-der\">3.65 pc</span>\n      </div>\n\n      <div class=\"seg\" style=\"margin:9px 0 2px\">\n        <span class=\"on\">Overview</span><span>All fields (18)</span><span>Names (20)</span>\n        <span>Derived</span><span>Raw XML</span></div>\n\n      <div class=\"sect\">Identity</div>\n      <div class=\"mono\" style=\"font-size:11.8px;color:var(--dim)\">\n        tau Ceti \u00b7 tau Cet \u00b7 \u03c4 Cet \u00b7 HD 10700 \u00b7 52 Cet \u00b7 HIP 8102 \u00b7 HR 509 \u00b7 GJ 71 \u00b7 BD\u221216 205 \u00b7\n        SAO 147986 \u00b7 LHS 146 \u00b7 2MASS J01440402\u22121556141 \u00b7 TYC 5855-2292-1 \u00b7 Gaia DR2 2452378776434276992\n        <span class=\"err\">+6 more</span></div>\n\n      <div class=\"sect\">Position &amp; distance</div>\n      <dl class=\"kv\">\n        <dt>Right ascension</dt><dd>01 44 04.08338</dd>\n        <dt>Declination</dt><dd>\u221215 56 14.9262</dd>\n        <dt>Constellation</dt><dd>Cetus</dd>\n        <dt>Distance</dt><dd>3.6502 <span class=\"err\">\u00b10.0023</span> <span class=\"unit\">pc</span>\n            <span class=\"der\">= 11.905 ly</span></dd>\n        <dt class=\"der\">Parallax</dt><dd class=\"der\">273.96 mas</dd>\n        <dt class=\"der\">Angular diameter</dt><dd class=\"der\">2.02 mas</dd>\n      </dl>\n\n      <div class=\"sect\">Photometry \u2014 7 bands</div>\n      <table style=\"font-size:12px;margin-top:2px\">\n        <thead><tr><th>U</th><th>B</th><th>V</th><th>R</th><th>I</th><th>J</th><th>H</th><th>K</th></tr></thead>\n        <tbody><tr>\n          <td class=\"num err\">\u2014</td><td class=\"num\">4.22</td><td class=\"num\">3.50</td><td class=\"num\">2.88</td>\n          <td class=\"num\">2.41</td><td class=\"num\">2.15<span class=\"err\">\u00b1.31</span></td>\n          <td class=\"num\">1.800<span class=\"err\">\u00b1.23</span></td><td class=\"num\">1.794<span class=\"err\">\u00b1.27</span></td>\n        </tr></tbody>\n      </table>\n      <dl class=\"kv\" style=\"margin-top:6px\">\n        <dt class=\"der\">B \u2212 V</dt><dd class=\"der\">0.72 <span class=\"err\">(K0-ish colour)</span></dd>\n        <dt class=\"der\">V \u2212 K</dt><dd class=\"der\">1.71</dd>\n        <dt class=\"der\">Absolute mag M<sub>V</sub></dt><dd class=\"der\">5.688</dd>\n      </dl>\n\n      <div class=\"sect\">Physical</div>\n      <dl class=\"kv\">\n        <dt>Mass</dt><dd>0.783 <span class=\"err\">\u00b10.012</span> <span class=\"unit\">M\u2609</span></dd>\n        <dt>Radius</dt><dd>0.793 <span class=\"err\">\u00b10.004</span> <span class=\"unit\">R\u2609</span></dd>\n        <dt>T<sub>eff</sub></dt><dd>5344 <span class=\"err\">\u00b150</span> <span class=\"unit\">K</span></dd>\n        <dt>Metallicity [Fe/H]</dt><dd>\u22120.55 <span class=\"err\">\u00b10.05</span></dd>\n        <dt>Age</dt><dd>5.8 <span class=\"unit\">Gyr</span></dd>\n        <dt>Spectral type</dt><dd>G8.5 V</dd>\n        <dt class=\"der\">Luminosity</dt><dd class=\"der\">0.4602 L\u2609 <span class=\"err\">R\u00b2(T/5778)\u2074</span></dd>\n        <dt class=\"der\">log g</dt><dd class=\"der\">4.533 <span class=\"unit\">cgs</span></dd>\n        <dt class=\"der\">Mean density</dt><dd class=\"der\">2.214 <span class=\"unit\">g/cm\u00b3</span></dd>\n        <dt class=\"der\">MS lifetime</dt><dd class=\"der\">18.6 Gyr <span class=\"pill p-dim\">&gt; Hubble time</span></dd>\n        <dt class=\"der\">Evolutionary stage</dt><dd class=\"der\">Main Sequence <span class=\"err\">(31% elapsed at 5.8 Gyr)</span></dd>\n      </dl>\n\n      <div class=\"sect\"><span class=\"der\">Habitable zone &amp; ice lines</span> <span class=\"pill p-der\">Kopparapu / Hayashi</span></div>\n      <dl class=\"kv\">\n        <dt class=\"der\">Optimistic inner (Recent Venus)</dt><dd class=\"der\">0.522 AU</dd>\n        <dt class=\"der\">Conservative inner (Runaway GH)</dt><dd class=\"der\">0.661 AU</dd>\n        <dt class=\"der\">Conservative outer (Max GH)</dt><dd class=\"der\">1.182 AU</dd>\n        <dt class=\"der\">Optimistic outer (Early Mars)</dt><dd class=\"der\">1.246 AU</dd>\n        <dt class=\"der\">Water snow line</dt><dd class=\"der\">1.82 AU</dd>\n        <dt class=\"der\">NH\u2083 / CO\u2082 fronts</dt><dd class=\"der\">8.22 / 10.74 AU</dd>\n        <dt class=\"der\">Hyper limit <span class=\"err\">(fiction)</span></dt><dd class=\"der\">2.17 AU <span class=\"err\">\u2014 matched class G9</span></dd>\n      </dl>\n\n      <div class=\"sect\">Planets hosted \u2014 7</div>\n      <table style=\"font-size:11.8px\">\n        <thead><tr><th>Planet</th><th>Status</th><th class=\"num\">M\u00b7sin i</th><th class=\"num\">P (d)</th>\n          <th class=\"num\">a (AU)</th><th class=\"num der\">S\u2295</th><th class=\"num der\">K (m/s)</th></tr></thead>\n        <tbody>\n          <tr><td>b</td><td><span class=\"pill p-bad\">Retracted</span></td><td class=\"num\">2.00</td><td class=\"num\">13.97</td><td class=\"num\">0.105</td><td class=\"num der\">41.7</td><td class=\"num der\">0.63</td></tr>\n          <tr><td>c</td><td><span class=\"pill p-bad\">Retracted</span></td><td class=\"num\">3.10</td><td class=\"num\">35.36</td><td class=\"num\">0.195</td><td class=\"num der\">12.1</td><td class=\"num der\">0.71</td></tr>\n          <tr><td>d</td><td><span class=\"pill p-bad\">Retracted</span></td><td class=\"num\">3.59</td><td class=\"num\">94.11</td><td class=\"num\">0.374</td><td class=\"num der\">3.29</td><td class=\"num der\">0.60</td></tr>\n          <tr><td>e</td><td><span class=\"pill p-ok\">Confirmed</span></td><td class=\"num\">3.94</td><td class=\"num\">162.87</td><td class=\"num\">0.538</td><td class=\"num der\">1.59</td><td class=\"num der\">0.54</td></tr>\n          <tr><td>f</td><td><span class=\"pill p-ok\">Confirmed</span></td><td class=\"num\">3.94</td><td class=\"num\">636.13</td><td class=\"num\">1.334</td><td class=\"num der\">0.26</td><td class=\"num der\">0.35</td></tr>\n          <tr><td>g</td><td><span class=\"pill p-ok\">Confirmed</span></td><td class=\"num\">1.75</td><td class=\"num\">20.00</td><td class=\"num err\">\u2014</td><td class=\"num der\">\u2014</td><td class=\"num der\">0.42</td></tr>\n          <tr><td>h</td><td><span class=\"pill p-ok\">Confirmed</span></td><td class=\"num\">1.83</td><td class=\"num\">49.41</td><td class=\"num\">0.243</td><td class=\"num der\">7.79</td><td class=\"num der\">0.38</td></tr>\n        </tbody>\n      </table>\n      <p class=\"err\" style=\"margin:4px 0 0\">All seven are RV detections with M\u00b7sin i only \u2014 no radius, hence\n      no density column. Sub-1 m/s amplitudes explain why: this is a system at the detection floor.</p>\n\n      <div class=\"sect\">Cross-references</div>\n      <div style=\"display:flex;gap:6px;flex-wrap:wrap\">\n        <button class=\"btn\">Hypatia abundances \u2192</button>\n        <button class=\"btn\">GCNS Bayesian distance \u2192</button>\n        <button class=\"btn\">Show on Architecture map</button>\n        <button class=\"btn\">HR diagram position</button>\n        <button class=\"btn\">Open in SIMBAD panel</button>\n      </div>\n      <p class=\"err\" style=\"margin:6px 0 0\">OEC cache 2026-07-26 \u00b7 node last update 17/11/28 \u00b7\n      <a href=\"#\" style=\"color:var(--dim)\">copy node as JSON</a></p>", "b": "<div class=\"hostband\" onclick=\"showNode('star')\"><div style=\"display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px\"><div><span class=\"g-star\">\u2605 tau Ceti</span> <span class=\"err\">G8.5 V \u00b7 host</span></div><div class=\"err\">click to open the full star dossier \u25b8</div></div><div class=\"mono\" style=\"font-size:11.6px;color:var(--dim);margin-top:3px\">0.783 M\u2609 \u00b7 0.793 R\u2609 \u00b7 5344 K \u00b7 [Fe/H] \u22120.55 \u00b7 5.8 Gyr \u00b7 V 3.50 \u00b7 <span class=\"der\">L 0.460 L\u2609 \u00b7 HZ 0.66\u20131.18 AU \u00b7 snow line 1.82 AU \u00b7 11.905 ly</span></div></div>\n<div style=\"font-size:17px;color:var(--planet);font-weight:600;margin-top:10px\">\u25cf tau Ceti b</div>\n<div style=\"margin:5px 0 2px\"><span class=\"pill p-bad\">Retracted planet candidate</span> <span class=\"pill p-info\">RV \u00b7 2012</span>\n  <span class=\"pill p-warn\">non-transiting</span> <span class=\"pill p-bad\">interior</span></div>\n<div class=\"seg\" style=\"margin:9px 0 2px\"><span class=\"on\">Overview</span><span>All fields</span>\n  <span>Names (7)</span><span>Derived</span><span>Raw XML</span></div>\n\n<div class=\"sect\">Identity</div>\n<div class=\"mono\" style=\"font-size:11.8px;color:var(--dim)\">tau Ceti b \u00b7 HD 10700 b \u00b7 GJ 71 b \u00b7\n HIP 8102 b \u00b7 TYC 5855-2292-1 b \u00b7 Gaia DR2 2452378776434276992 b</div>\n\n<div class=\"sect\">Orbit</div>\n<dl class=\"kv\">\n  <dt>Period</dt><dd>13.965 <span class=\"err\">+0.017/\u22120.023</span> <span class=\"unit\">d</span></dd>\n  <dt>Semi-major axis</dt><dd>0.105 <span class=\"err\">+0.005/\u22120.006</span> <span class=\"unit\">AU</span></dd>\n  <dt>Eccentricity</dt><dd>0.16 <span class=\"err\">+0.22/\u22120.16</span></dd>\n  <dt>Arg. of periastron</dt><dd>86 <span class=\"unit\">\u00b0</span></dd>\n  <dt>Mean anomaly</dt><dd>\u2014</dd>\n  <dt>Periastron time</dt><dd>2450004.17 <span class=\"unit\">BJD</span></dd>\n  <dt>Inclination</dt><dd class=\"err\">\u2014 not in catalogue (RV detection)</dd>\n</dl>\n\n<div class=\"sect\">Physical</div>\n<dl class=\"kv\">\n  <dt>Mass (M\u00b7sin i)</dt><dd>2.00 <span class=\"err\">\u00b10.80</span> <span class=\"unit\">M\u2295</span></dd>\n  <dt>Radius</dt><dd class=\"err\">\u2014 not measured (non-transiting)</dd>\n  <dt>Equilibrium T</dt><dd class=\"err\">\u2014 not in catalogue</dd>\n</dl>\n\n<div class=\"sect\"><span class=\"der\">Derived</span> <span class=\"pill p-der\">computed, not catalogued</span></div>\n<dl class=\"kv\">\n  <dt class=\"der\">Insolation</dt><dd class=\"der\">41.74 S\u2295</dd>\n  <dt class=\"der\">HZ verdict</dt><dd class=\"der\">interior</dd>\n  <dt class=\"der\">Periastron / apastron</dt><dd class=\"der\">0.088 / 0.122 AU</dd>\n  <dt class=\"der\">RV semi-amplitude</dt><dd class=\"der\">0.62 m/s</dd>\n  <dt class=\"der\">Density / gravity</dt><dd class=\"der\">\u2014 (no radius)</dd>\n</dl>\n<p class=\"err\" style=\"margin:5px 0 0\">Well interior to the Recent-Venus edge (0.522 AU). Signal retracted as stellar activity.</p>\n\n<div class=\"sect\">Discovery &amp; provenance</div>\n<dl class=\"kv\">\n  <dt>Method</dt><dd>RV</dd><dt>Year</dt><dd>2012</dd>\n  <dt>Transiting</dt><dd>not flagged</dd>\n  <dt>Last update</dt><dd>17/11/28</dd><dt>Artwork</dt><dd>tau_ceti <span class=\"err\">(shared system image)</span></dd>\n</dl>\n\n<div class=\"sect\">Description</div>\n<p style=\"font-size:12.2px;margin:4px 0 0;color:var(--dim)\">Multiple periodic signals were found by Tuomi et al. in 2012 in the radial velocity data from HARPS, AAPS and HIRES. The planetary interpretation of these signals is not certain \u2014 subsequent reanalysis attributed several to stellar activity\u2026</p>\n", "c": "<div class=\"hostband\" onclick=\"showNode('star')\"><div style=\"display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px\"><div><span class=\"g-star\">\u2605 tau Ceti</span> <span class=\"err\">G8.5 V \u00b7 host</span></div><div class=\"err\">click to open the full star dossier \u25b8</div></div><div class=\"mono\" style=\"font-size:11.6px;color:var(--dim);margin-top:3px\">0.783 M\u2609 \u00b7 0.793 R\u2609 \u00b7 5344 K \u00b7 [Fe/H] \u22120.55 \u00b7 5.8 Gyr \u00b7 V 3.50 \u00b7 <span class=\"der\">L 0.460 L\u2609 \u00b7 HZ 0.66\u20131.18 AU \u00b7 snow line 1.82 AU \u00b7 11.905 ly</span></div></div>\n<div style=\"font-size:17px;color:var(--planet);font-weight:600;margin-top:10px\">\u25cf tau Ceti c</div>\n<div style=\"margin:5px 0 2px\"><span class=\"pill p-bad\">Retracted planet candidate</span> <span class=\"pill p-info\">RV \u00b7 2012</span>\n  <span class=\"pill p-warn\">non-transiting</span> <span class=\"pill p-bad\">interior</span></div>\n<div class=\"seg\" style=\"margin:9px 0 2px\"><span class=\"on\">Overview</span><span>All fields</span>\n  <span>Names (7)</span><span>Derived</span><span>Raw XML</span></div>\n\n<div class=\"sect\">Identity</div>\n<div class=\"mono\" style=\"font-size:11.8px;color:var(--dim)\">tau Ceti c \u00b7 HD 10700 c \u00b7 GJ 71 c \u00b7\n HIP 8102 c \u00b7 TYC 5855-2292-1 c \u00b7 Gaia DR2 2452378776434276992 c</div>\n\n<div class=\"sect\">Orbit</div>\n<dl class=\"kv\">\n  <dt>Period</dt><dd>35.362 <span class=\"err\">+0.088/\u22120.106</span> <span class=\"unit\">d</span></dd>\n  <dt>Semi-major axis</dt><dd>0.195 <span class=\"err\">+0.009/\u22120.011</span> <span class=\"unit\">AU</span></dd>\n  <dt>Eccentricity</dt><dd>0.03 <span class=\"err\">+0.28/\u22120.03</span></dd>\n  <dt>Arg. of periastron</dt><dd>172 <span class=\"unit\">\u00b0</span></dd>\n  <dt>Mean anomaly</dt><dd>\u2014</dd>\n  <dt>Periastron time</dt><dd>2450020.62 <span class=\"unit\">BJD</span></dd>\n  <dt>Inclination</dt><dd class=\"err\">\u2014 not in catalogue (RV detection)</dd>\n</dl>\n\n<div class=\"sect\">Physical</div>\n<dl class=\"kv\">\n  <dt>Mass (M\u00b7sin i)</dt><dd>3.10 <span class=\"err\">+1.40/\u22121.10</span> <span class=\"unit\">M\u2295</span></dd>\n  <dt>Radius</dt><dd class=\"err\">\u2014 not measured (non-transiting)</dd>\n  <dt>Equilibrium T</dt><dd class=\"err\">\u2014 not in catalogue</dd>\n</dl>\n\n<div class=\"sect\"><span class=\"der\">Derived</span> <span class=\"pill p-der\">computed, not catalogued</span></div>\n<dl class=\"kv\">\n  <dt class=\"der\">Insolation</dt><dd class=\"der\">12.10 S\u2295</dd>\n  <dt class=\"der\">HZ verdict</dt><dd class=\"der\">interior</dd>\n  <dt class=\"der\">Periastron / apastron</dt><dd class=\"der\">0.189 / 0.201 AU</dd>\n  <dt class=\"der\">RV semi-amplitude</dt><dd class=\"der\">0.71 m/s</dd>\n  <dt class=\"der\">Density / gravity</dt><dd class=\"der\">\u2014 (no radius)</dd>\n</dl>\n<p class=\"err\" style=\"margin:5px 0 0\">Retracted candidate; retained in OEC with its status list intact.</p>\n\n<div class=\"sect\">Discovery &amp; provenance</div>\n<dl class=\"kv\">\n  <dt>Method</dt><dd>RV</dd><dt>Year</dt><dd>2012</dd>\n  <dt>Transiting</dt><dd>not flagged</dd>\n  <dt>Last update</dt><dd>17/11/28</dd><dt>Artwork</dt><dd>tau_ceti <span class=\"err\">(shared system image)</span></dd>\n</dl>\n\n<div class=\"sect\">Description</div>\n<p style=\"font-size:12.2px;margin:4px 0 0;color:var(--dim)\">Multiple periodic signals were found by Tuomi et al. in 2012 in the radial velocity data from HARPS, AAPS and HIRES. The planetary interpretation of these signals is not certain \u2014 subsequent reanalysis attributed several to stellar activity\u2026</p>\n", "d": "<div class=\"hostband\" onclick=\"showNode('star')\"><div style=\"display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px\"><div><span class=\"g-star\">\u2605 tau Ceti</span> <span class=\"err\">G8.5 V \u00b7 host</span></div><div class=\"err\">click to open the full star dossier \u25b8</div></div><div class=\"mono\" style=\"font-size:11.6px;color:var(--dim);margin-top:3px\">0.783 M\u2609 \u00b7 0.793 R\u2609 \u00b7 5344 K \u00b7 [Fe/H] \u22120.55 \u00b7 5.8 Gyr \u00b7 V 3.50 \u00b7 <span class=\"der\">L 0.460 L\u2609 \u00b7 HZ 0.66\u20131.18 AU \u00b7 snow line 1.82 AU \u00b7 11.905 ly</span></div></div>\n<div style=\"font-size:17px;color:var(--planet);font-weight:600;margin-top:10px\">\u25cf tau Ceti d</div>\n<div style=\"margin:5px 0 2px\"><span class=\"pill p-bad\">Retracted planet candidate</span> <span class=\"pill p-info\">RV \u00b7 2012</span>\n  <span class=\"pill p-warn\">non-transiting</span> <span class=\"pill p-bad\">interior</span></div>\n<div class=\"seg\" style=\"margin:9px 0 2px\"><span class=\"on\">Overview</span><span>All fields</span>\n  <span>Names (7)</span><span>Derived</span><span>Raw XML</span></div>\n\n<div class=\"sect\">Identity</div>\n<div class=\"mono\" style=\"font-size:11.8px;color:var(--dim)\">tau Ceti d \u00b7 HD 10700 d \u00b7 GJ 71 d \u00b7\n HIP 8102 d \u00b7 TYC 5855-2292-1 d \u00b7 Gaia DR2 2452378776434276992 d</div>\n\n<div class=\"sect\">Orbit</div>\n<dl class=\"kv\">\n  <dt>Period</dt><dd>94.11 <span class=\"err\">+0.70/\u22120.63</span> <span class=\"unit\">d</span></dd>\n  <dt>Semi-major axis</dt><dd>0.374 <span class=\"err\">+0.017/\u22120.020</span> <span class=\"unit\">AU</span></dd>\n  <dt>Eccentricity</dt><dd>0.08 <span class=\"err\">+0.26/\u22120.08</span></dd>\n  <dt>Arg. of periastron</dt><dd>229 <span class=\"unit\">\u00b0</span></dd>\n  <dt>Mean anomaly</dt><dd>\u2014</dd>\n  <dt>Periastron time</dt><dd>2450002.31 <span class=\"unit\">BJD</span></dd>\n  <dt>Inclination</dt><dd class=\"err\">\u2014 not in catalogue (RV detection)</dd>\n</dl>\n\n<div class=\"sect\">Physical</div>\n<dl class=\"kv\">\n  <dt>Mass (M\u00b7sin i)</dt><dd>3.59 <span class=\"err\">\u00b11.68</span> <span class=\"unit\">M\u2295</span></dd>\n  <dt>Radius</dt><dd class=\"err\">\u2014 not measured (non-transiting)</dd>\n  <dt>Equilibrium T</dt><dd class=\"err\">\u2014 not in catalogue</dd>\n</dl>\n\n<div class=\"sect\"><span class=\"der\">Derived</span> <span class=\"pill p-der\">computed, not catalogued</span></div>\n<dl class=\"kv\">\n  <dt class=\"der\">Insolation</dt><dd class=\"der\">3.29 S\u2295</dd>\n  <dt class=\"der\">HZ verdict</dt><dd class=\"der\">interior</dd>\n  <dt class=\"der\">Periastron / apastron</dt><dd class=\"der\">0.344 / 0.404 AU</dd>\n  <dt class=\"der\">RV semi-amplitude</dt><dd class=\"der\">0.59 m/s</dd>\n  <dt class=\"der\">Density / gravity</dt><dd class=\"der\">\u2014 (no radius)</dd>\n</dl>\n<p class=\"err\" style=\"margin:5px 0 0\">Retracted candidate.</p>\n\n<div class=\"sect\">Discovery &amp; provenance</div>\n<dl class=\"kv\">\n  <dt>Method</dt><dd>RV</dd><dt>Year</dt><dd>2012</dd>\n  <dt>Transiting</dt><dd>not flagged</dd>\n  <dt>Last update</dt><dd>17/11/28</dd><dt>Artwork</dt><dd>tau_ceti <span class=\"err\">(shared system image)</span></dd>\n</dl>\n\n<div class=\"sect\">Description</div>\n<p style=\"font-size:12.2px;margin:4px 0 0;color:var(--dim)\">Multiple periodic signals were found by Tuomi et al. in 2012 in the radial velocity data from HARPS, AAPS and HIRES. The planetary interpretation of these signals is not certain \u2014 subsequent reanalysis attributed several to stellar activity\u2026</p>\n", "e": "<div class=\"hostband\" onclick=\"showNode('star')\"><div style=\"display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px\"><div><span class=\"g-star\">\u2605 tau Ceti</span> <span class=\"err\">G8.5 V \u00b7 host</span></div><div class=\"err\">click to open the full star dossier \u25b8</div></div><div class=\"mono\" style=\"font-size:11.6px;color:var(--dim);margin-top:3px\">0.783 M\u2609 \u00b7 0.793 R\u2609 \u00b7 5344 K \u00b7 [Fe/H] \u22120.55 \u00b7 5.8 Gyr \u00b7 V 3.50 \u00b7 <span class=\"der\">L 0.460 L\u2609 \u00b7 HZ 0.66\u20131.18 AU \u00b7 snow line 1.82 AU \u00b7 11.905 ly</span></div></div>\n<div style=\"font-size:17px;color:var(--planet);font-weight:600;margin-top:10px\">\u25cf tau Ceti e</div>\n<div style=\"margin:5px 0 2px\"><span class=\"pill p-ok\">Confirmed planets</span> <span class=\"pill p-info\">RV \u00b7 2012</span>\n  <span class=\"pill p-warn\">non-transiting</span> <span class=\"pill p-warn\">optimistic HZ</span></div>\n<div class=\"seg\" style=\"margin:9px 0 2px\"><span class=\"on\">Overview</span><span>All fields</span>\n  <span>Names (7)</span><span>Derived</span><span>Raw XML</span></div>\n\n<div class=\"sect\">Identity</div>\n<div class=\"mono\" style=\"font-size:11.8px;color:var(--dim)\">tau Ceti e \u00b7 HD 10700 e \u00b7 GJ 71 e \u00b7\n HIP 8102 e \u00b7 TYC 5855-2292-1 e \u00b7 Gaia DR2 2452378776434276992 e</div>\n\n<div class=\"sect\">Orbit</div>\n<dl class=\"kv\">\n  <dt>Period</dt><dd>162.87 <span class=\"err\">+1.08/\u22120.46</span> <span class=\"unit\">d</span></dd>\n  <dt>Semi-major axis</dt><dd>0.538 <span class=\"err\">\u00b10.006</span> <span class=\"unit\">AU</span></dd>\n  <dt>Eccentricity</dt><dd>0.18 <span class=\"err\">+0.18/\u22120.14</span></dd>\n  <dt>Arg. of periastron</dt><dd>22.3 <span class=\"err\">+73.9/\u221245.8</span> <span class=\"unit\">\u00b0</span></dd>\n  <dt>Mean anomaly</dt><dd>355.8 <span class=\"err\">+66.5/\u221253.9</span> <span class=\"unit\">\u00b0</span></dd>\n  <dt>Periastron time</dt><dd>\u2014</dd>\n  <dt>Inclination</dt><dd class=\"err\">\u2014 not in catalogue (RV detection)</dd>\n</dl>\n\n<div class=\"sect\">Physical</div>\n<dl class=\"kv\">\n  <dt>Mass (M\u00b7sin i)</dt><dd>3.94 <span class=\"err\">+0.83/\u22120.64</span> <span class=\"unit\">M\u2295</span></dd>\n  <dt>Radius</dt><dd class=\"err\">\u2014 not measured (non-transiting)</dd>\n  <dt>Equilibrium T</dt><dd class=\"err\">\u2014 not in catalogue</dd>\n</dl>\n\n<div class=\"sect\"><span class=\"der\">Derived</span> <span class=\"pill p-der\">computed, not catalogued</span></div>\n<dl class=\"kv\">\n  <dt class=\"der\">Insolation</dt><dd class=\"der\">1.59 S\u2295</dd>\n  <dt class=\"der\">HZ verdict</dt><dd class=\"der\">optimistic HZ</dd>\n  <dt class=\"der\">Periastron / apastron</dt><dd class=\"der\">0.441 / 0.635 AU</dd>\n  <dt class=\"der\">RV semi-amplitude</dt><dd class=\"der\">0.54 m/s</dd>\n  <dt class=\"der\">Density / gravity</dt><dd class=\"der\">\u2014 (no radius)</dd>\n</dl>\n<p class=\"err\" style=\"margin:5px 0 0\">Between Recent Venus (0.522 AU) and Runaway Greenhouse (0.661 AU) \u2014 and the full eccentric orbit (0.441\u20130.635 AU) stays inside that band.</p>\n\n<div class=\"sect\">Discovery &amp; provenance</div>\n<dl class=\"kv\">\n  <dt>Method</dt><dd>RV</dd><dt>Year</dt><dd>2012</dd>\n  <dt>Transiting</dt><dd>not flagged</dd>\n  <dt>Last update</dt><dd>17/11/28</dd><dt>Artwork</dt><dd>tau_ceti <span class=\"err\">(shared system image)</span></dd>\n</dl>\n\n<div class=\"sect\">Description</div>\n<p style=\"font-size:12.2px;margin:4px 0 0;color:var(--dim)\">Multiple periodic signals were found by Tuomi et al. in 2012 in the radial velocity data from HARPS, AAPS and HIRES. The planetary interpretation of these signals is not certain \u2014 subsequent reanalysis attributed several to stellar activity\u2026</p>\n", "f": "<div class=\"hostband\" onclick=\"showNode('star')\"><div style=\"display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px\"><div><span class=\"g-star\">\u2605 tau Ceti</span> <span class=\"err\">G8.5 V \u00b7 host</span></div><div class=\"err\">click to open the full star dossier \u25b8</div></div><div class=\"mono\" style=\"font-size:11.6px;color:var(--dim);margin-top:3px\">0.783 M\u2609 \u00b7 0.793 R\u2609 \u00b7 5344 K \u00b7 [Fe/H] \u22120.55 \u00b7 5.8 Gyr \u00b7 V 3.50 \u00b7 <span class=\"der\">L 0.460 L\u2609 \u00b7 HZ 0.66\u20131.18 AU \u00b7 snow line 1.82 AU \u00b7 11.905 ly</span></div></div>\n<div style=\"font-size:17px;color:var(--planet);font-weight:600;margin-top:10px\">\u25cf tau Ceti f</div>\n<div style=\"margin:5px 0 2px\"><span class=\"pill p-ok\">Confirmed planets</span> <span class=\"pill p-info\">RV \u00b7 2012</span>\n  <span class=\"pill p-warn\">non-transiting</span> <span class=\"pill p-dim\">beyond</span></div>\n<div class=\"seg\" style=\"margin:9px 0 2px\"><span class=\"on\">Overview</span><span>All fields</span>\n  <span>Names (7)</span><span>Derived</span><span>Raw XML</span></div>\n\n<div class=\"sect\">Identity</div>\n<div class=\"mono\" style=\"font-size:11.8px;color:var(--dim)\">tau Ceti f \u00b7 HD 10700 f \u00b7 GJ 71 f \u00b7\n HIP 8102 f \u00b7 TYC 5855-2292-1 f \u00b7 Gaia DR2 2452378776434276992 f</div>\n\n<div class=\"sect\">Orbit</div>\n<dl class=\"kv\">\n  <dt>Period</dt><dd>636.13 <span class=\"err\">+11.70/\u221247.69</span> <span class=\"unit\">d</span></dd>\n  <dt>Semi-major axis</dt><dd>1.334 <span class=\"err\">+0.017/\u22120.044</span> <span class=\"unit\">AU</span></dd>\n  <dt>Eccentricity</dt><dd>0.16 <span class=\"err\">+0.07/\u22120.16</span></dd>\n  <dt>Arg. of periastron</dt><dd>119.7 <span class=\"err\">+41.3/\u221270.5</span> <span class=\"unit\">\u00b0</span></dd>\n  <dt>Mean anomaly</dt><dd>\u221239.0 <span class=\"err\">+56.1/\u221236.7</span> <span class=\"unit\">\u00b0</span></dd>\n  <dt>Periastron time</dt><dd>\u2014</dd>\n  <dt>Inclination</dt><dd class=\"err\">\u2014 not in catalogue (RV detection)</dd>\n</dl>\n\n<div class=\"sect\">Physical</div>\n<dl class=\"kv\">\n  <dt>Mass (M\u00b7sin i)</dt><dd>3.94 <span class=\"err\">+1.05/\u22121.37</span> <span class=\"unit\">M\u2295</span></dd>\n  <dt>Radius</dt><dd class=\"err\">\u2014 not measured (non-transiting)</dd>\n  <dt>Equilibrium T</dt><dd class=\"err\">\u2014 not in catalogue</dd>\n</dl>\n\n<div class=\"sect\"><span class=\"der\">Derived</span> <span class=\"pill p-der\">computed, not catalogued</span></div>\n<dl class=\"kv\">\n  <dt class=\"der\">Insolation</dt><dd class=\"der\">0.26 S\u2295</dd>\n  <dt class=\"der\">HZ verdict</dt><dd class=\"der\">beyond</dd>\n  <dt class=\"der\">Periastron / apastron</dt><dd class=\"der\">1.121 / 1.547 AU</dd>\n  <dt class=\"der\">RV semi-amplitude</dt><dd class=\"der\">0.34 m/s</dd>\n  <dt class=\"der\">Density / gravity</dt><dd class=\"der\">\u2014 (no radius)</dd>\n</dl>\n<p class=\"err\" style=\"margin:5px 0 0\">Just outside the Early-Mars edge (1.246 AU) \u2014 but periastron at 1.121 AU dips inside it, so the verdict depends on which point of the orbit you judge.</p>\n\n<div class=\"sect\">Discovery &amp; provenance</div>\n<dl class=\"kv\">\n  <dt>Method</dt><dd>RV</dd><dt>Year</dt><dd>2012</dd>\n  <dt>Transiting</dt><dd>not flagged</dd>\n  <dt>Last update</dt><dd>17/11/28</dd><dt>Artwork</dt><dd>tau_ceti <span class=\"err\">(shared system image)</span></dd>\n</dl>\n\n<div class=\"sect\">Description</div>\n<p style=\"font-size:12.2px;margin:4px 0 0;color:var(--dim)\">Multiple periodic signals were found by Tuomi et al. in 2012 in the radial velocity data from HARPS, AAPS and HIRES. The planetary interpretation of these signals is not certain \u2014 subsequent reanalysis attributed several to stellar activity\u2026</p>\n", "g": "<div class=\"hostband\" onclick=\"showNode('star')\"><div style=\"display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px\"><div><span class=\"g-star\">\u2605 tau Ceti</span> <span class=\"err\">G8.5 V \u00b7 host</span></div><div class=\"err\">click to open the full star dossier \u25b8</div></div><div class=\"mono\" style=\"font-size:11.6px;color:var(--dim);margin-top:3px\">0.783 M\u2609 \u00b7 0.793 R\u2609 \u00b7 5344 K \u00b7 [Fe/H] \u22120.55 \u00b7 5.8 Gyr \u00b7 V 3.50 \u00b7 <span class=\"der\">L 0.460 L\u2609 \u00b7 HZ 0.66\u20131.18 AU \u00b7 snow line 1.82 AU \u00b7 11.905 ly</span></div></div>\n<div style=\"font-size:17px;color:var(--planet);font-weight:600;margin-top:10px\">\u25cf tau Ceti g</div>\n<div style=\"margin:5px 0 2px\"><span class=\"pill p-ok\">Confirmed planets</span> <span class=\"pill p-info\">RV \u00b7 2017</span>\n  <span class=\"pill p-warn\">non-transiting</span> <span class=\"pill p-bad\">interior</span></div>\n<div class=\"seg\" style=\"margin:9px 0 2px\"><span class=\"on\">Overview</span><span>All fields</span>\n  <span>Names (7)</span><span>Derived</span><span>Raw XML</span></div>\n\n<div class=\"sect\">Identity</div>\n<div class=\"mono\" style=\"font-size:11.8px;color:var(--dim)\">tau Ceti g \u00b7 HD 10700 g \u00b7 GJ 71 g \u00b7\n HIP 8102 g \u00b7 TYC 5855-2292-1 g \u00b7 Gaia DR2 2452378776434276992 g</div>\n\n<div class=\"sect\">Orbit</div>\n<dl class=\"kv\">\n  <dt>Period</dt><dd>20.00 <span class=\"err\">+0.02/\u22120.01</span> <span class=\"unit\">d</span></dd>\n  <dt>Semi-major axis</dt><dd><span class=\"der\">0.133</span> <span class=\"err\"><span class=\"err\">derived \u2014 Kepler III</span></span> <span class=\"unit\">AU</span></dd>\n  <dt>Eccentricity</dt><dd>0.06 <span class=\"err\">+0.13/\u22120.06</span></dd>\n  <dt>Arg. of periastron</dt><dd>395.3 <span class=\"err\">+36.1/\u221284.8</span> <span class=\"unit\">\u00b0</span></dd>\n  <dt>Mean anomaly</dt><dd>43.4 <span class=\"err\">+92.2/\u221221.2</span> <span class=\"unit\">\u00b0</span></dd>\n  <dt>Periastron time</dt><dd>\u2014</dd>\n  <dt>Inclination</dt><dd class=\"err\">\u2014 not in catalogue (RV detection)</dd>\n</dl>\n\n<div class=\"sect\">Physical</div>\n<dl class=\"kv\">\n  <dt>Mass (M\u00b7sin i)</dt><dd>1.75 <span class=\"err\">+0.25/\u22120.40</span> <span class=\"unit\">M\u2295</span></dd>\n  <dt>Radius</dt><dd class=\"err\">\u2014 not measured (non-transiting)</dd>\n  <dt>Equilibrium T</dt><dd class=\"err\">\u2014 not in catalogue</dd>\n</dl>\n\n<div class=\"sect\"><span class=\"der\">Derived</span> <span class=\"pill p-der\">computed, not catalogued</span></div>\n<dl class=\"kv\">\n  <dt class=\"der\">Insolation</dt><dd class=\"der\">26.05 S\u2295</dd>\n  <dt class=\"der\">HZ verdict</dt><dd class=\"der\">interior</dd>\n  <dt class=\"der\">Periastron / apastron</dt><dd class=\"der\">0.125 / 0.141 AU</dd>\n  <dt class=\"der\">RV semi-amplitude</dt><dd class=\"der\">0.49 m/s</dd>\n  <dt class=\"der\">Density / gravity</dt><dd class=\"der\">\u2014 (no radius)</dd>\n</dl>\n<p class=\"err\" style=\"margin:5px 0 0\">OEC carries <b>no semi-major axis</b> for g. The derived layer recovers it from the period and the host mass, which then unlocks insolation, periastron and the HZ verdict \u2014 a whole row of blanks filled from two fields that are present.</p>\n\n<div class=\"sect\">Discovery &amp; provenance</div>\n<dl class=\"kv\">\n  <dt>Method</dt><dd>RV</dd><dt>Year</dt><dd>2017</dd>\n  <dt>Transiting</dt><dd>not flagged</dd>\n  <dt>Last update</dt><dd>17/11/28</dd>\n</dl>\n\n<div class=\"sect\">Description</div>\n<p style=\"font-size:12.2px;margin:4px 0 0;color:var(--dim)\">Analysis of the Tau Ceti RV data taking into account wavelength-dependent noise indicated a four planet system around the star. Two of the previously reported signals were not recovered\u2026</p>\n", "h": "<div class=\"hostband\" onclick=\"showNode('star')\"><div style=\"display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px\"><div><span class=\"g-star\">\u2605 tau Ceti</span> <span class=\"err\">G8.5 V \u00b7 host</span></div><div class=\"err\">click to open the full star dossier \u25b8</div></div><div class=\"mono\" style=\"font-size:11.6px;color:var(--dim);margin-top:3px\">0.783 M\u2609 \u00b7 0.793 R\u2609 \u00b7 5344 K \u00b7 [Fe/H] \u22120.55 \u00b7 5.8 Gyr \u00b7 V 3.50 \u00b7 <span class=\"der\">L 0.460 L\u2609 \u00b7 HZ 0.66\u20131.18 AU \u00b7 snow line 1.82 AU \u00b7 11.905 ly</span></div></div>\n<div style=\"font-size:17px;color:var(--planet);font-weight:600;margin-top:10px\">\u25cf tau Ceti h</div>\n<div style=\"margin:5px 0 2px\"><span class=\"pill p-ok\">Confirmed planets</span> <span class=\"pill p-info\">RV \u00b7 2017</span>\n  <span class=\"pill p-warn\">non-transiting</span> <span class=\"pill p-bad\">interior</span></div>\n<div class=\"seg\" style=\"margin:9px 0 2px\"><span class=\"on\">Overview</span><span>All fields</span>\n  <span>Names (7)</span><span>Derived</span><span>Raw XML</span></div>\n\n<div class=\"sect\">Identity</div>\n<div class=\"mono\" style=\"font-size:11.8px;color:var(--dim)\">tau Ceti h \u00b7 HD 10700 h \u00b7 GJ 71 h \u00b7\n HIP 8102 h \u00b7 TYC 5855-2292-1 h \u00b7 Gaia DR2 2452378776434276992 h</div>\n\n<div class=\"sect\">Orbit</div>\n<dl class=\"kv\">\n  <dt>Period</dt><dd>49.41 <span class=\"err\">+0.08/\u22120.10</span> <span class=\"unit\">d</span></dd>\n  <dt>Semi-major axis</dt><dd>0.243 <span class=\"err\">\u00b10.003</span> <span class=\"unit\">AU</span></dd>\n  <dt>Eccentricity</dt><dd>0.23 <span class=\"err\">+0.16/\u22120.15</span></dd>\n  <dt>Arg. of periastron</dt><dd>7.4 <span class=\"err\">+37.2/\u221248.1</span> <span class=\"unit\">\u00b0</span></dd>\n  <dt>Mean anomaly</dt><dd>\u221272.8 <span class=\"err\">+43.0/\u221232.7</span> <span class=\"unit\">\u00b0</span></dd>\n  <dt>Periastron time</dt><dd>\u2014</dd>\n  <dt>Inclination</dt><dd class=\"err\">\u2014 not in catalogue (RV detection)</dd>\n</dl>\n\n<div class=\"sect\">Physical</div>\n<dl class=\"kv\">\n  <dt>Mass (M\u00b7sin i)</dt><dd>1.83 <span class=\"err\">+0.68/\u22120.26</span> <span class=\"unit\">M\u2295</span></dd>\n  <dt>Radius</dt><dd class=\"err\">\u2014 not measured (non-transiting)</dd>\n  <dt>Equilibrium T</dt><dd class=\"err\">\u2014 not in catalogue</dd>\n</dl>\n\n<div class=\"sect\"><span class=\"der\">Derived</span> <span class=\"pill p-der\">computed, not catalogued</span></div>\n<dl class=\"kv\">\n  <dt class=\"der\">Insolation</dt><dd class=\"der\">7.79 S\u2295</dd>\n  <dt class=\"der\">HZ verdict</dt><dd class=\"der\">interior</dd>\n  <dt class=\"der\">Periastron / apastron</dt><dd class=\"der\">0.187 / 0.299 AU</dd>\n  <dt class=\"der\">RV semi-amplitude</dt><dd class=\"der\">0.38 m/s</dd>\n  <dt class=\"der\">Density / gravity</dt><dd class=\"der\">\u2014 (no radius)</dd>\n</dl>\n<p class=\"err\" style=\"margin:5px 0 0\">Interior to the HZ throughout its orbit.</p>\n\n<div class=\"sect\">Discovery &amp; provenance</div>\n<dl class=\"kv\">\n  <dt>Method</dt><dd>RV</dd><dt>Year</dt><dd>2017</dd>\n  <dt>Transiting</dt><dd>not flagged</dd>\n  <dt>Last update</dt><dd>17/11/28</dd>\n</dl>\n\n<div class=\"sect\">Description</div>\n<p style=\"font-size:12.2px;margin:4px 0 0;color:var(--dim)\">Analysis of the Tau Ceti RV data taking into account wavelength-dependent noise indicated a four planet system around the star. Two of the previously reported signals were not recovered\u2026</p>\n"};
+  function showNode(n){
+    const p=document.getElementById('rpane'); if(!p||!PANES[n]) return;
+    p.innerHTML=PANES[n]; p.scrollTop=0;
+    document.querySelectorAll('#s-r .rrow').forEach(r=>r.classList.toggle('sel', r.dataset.n===n));
+  }
+  document.addEventListener('click',e=>{
+    const row=e.target.closest('#s-r .rrow'); if(row) showNode(row.dataset.n);
+  });
+  const tabs=document.getElementById('tabs');
+  const ids=['eval','r','a','b','c','d','e','f','g'];
+  tabs.addEventListener('click',e=>{
+    const b=e.target.closest('.tab'); if(!b) return;
+    [...tabs.children].forEach(x=>x.classList.toggle('on',x===b));
+    ids.forEach(i=>document.getElementById('s-'+i).hidden = (i!==b.dataset.t));
+    window.scrollTo({top:0,behavior:'instant'});
+  });
+</script>
+</body>
+</html>
