@@ -308,6 +308,73 @@ def prepare_hyper_limits() -> dict:
     }
 
 
+# ── Honorverse hyper-limit rings (class-grouped) ──────────────────────────────
+# The 44 catalogue rows collapse into eight display groups. This is a REGROUPING
+# of prepare_hyper_limits()'s data, not new data: every subtype row is kept
+# inside its group, so nothing is dropped.
+#
+# COLOUR: taken from `sp_color` per group, which means "Red Giant" — not a
+# spectral class, and not resolvable by `spectral_leading_class` — comes back as
+# the unknown grey #AAAAAA. That is deliberate and must stay: a hue invented here
+# would both imply a class that does not exist and constitute a second palette,
+# which tests/test_search.py::test_there_is_exactly_one_spectral_palette forbids.
+_HYPER_RING_RED_GIANT = "Red Giant"
+_HYPER_RING_RG_KEY = "RG"
+
+
+def prepare_hyper_limit_rings() -> dict:
+    """Class-grouped Honorverse hyper-limit ring data (O · B · A · F · G · K · M · RG).
+
+    Groups ``core.science.compute_honorverse_hyper_limits()`` by leading spectral
+    letter, in catalogue order (hot → cool, i.e. outermost group first), so a ring
+    diagram can draw eight labelled class rings instead of 44 unlabelled ones.
+    "Red Giant" is its own group (key ``"RG"``) — it is not a spectral class.
+
+    Returns::
+
+        {"groups": [{key, label, color, rows: [{spectral_class, lm, au}],
+                     lo_au, hi_au, lo_class, hi_class}],
+         "min_au", "max_au"}
+
+    or ``{"error": str}``. ``lo_*``/``hi_*`` are the group's coolest (innermost)
+    and hottest (outermost) rows; a single-row group has ``lo == hi``.
+    """
+    import core.science
+    rows = core.science.compute_honorverse_hyper_limits()
+    if not rows:
+        return {"error": "Honorverse hyper-limit table is empty."}
+
+    order, buckets = [], {}
+    for r in rows:
+        name = r["spectral_class"]
+        key = _HYPER_RING_RG_KEY if name == _HYPER_RING_RED_GIANT else name[:1]
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append({"spectral_class": name, "lm": r["lm"], "au": r["au"]})
+
+    groups = []
+    for key in order:
+        grp = buckets[key]
+        aus = [g["au"] for g in grp]
+        hi = max(range(len(grp)), key=lambda i: aus[i])
+        lo = min(range(len(grp)), key=lambda i: aus[i])
+        label = (grp[0]["spectral_class"] if len(grp) == 1
+                 else f"{grp[hi]['spectral_class']}–{grp[lo]['spectral_class']}")
+        groups.append({
+            "key": key,
+            "label": label,
+            "color": _sp_color(grp[0]["spectral_class"]),
+            "rows": grp,
+            "hi_au": aus[hi], "lo_au": aus[lo],
+            "hi_class": grp[hi]["spectral_class"],
+            "lo_class": grp[lo]["spectral_class"],
+        })
+
+    all_au = [g["au"] for grp in buckets.values() for g in grp]
+    return {"groups": groups, "min_au": min(all_au), "max_au": max(all_au)}
+
+
 # Plausibility colours for the solvent reference bar chart (Phase P V5 / P6).
 # Keyed by _SOLVENTS key; mirrors the mockup's _PLAUS_COLOR.
 _SOLVENT_PLAUS_COLORS = {

@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Honorverse Hyper Limits — diagram options (mockup)</title>
+<style>
+  :root{
+    --bg:#070b18; --panel:#0b1020; --ink:#e6ecf8; --ink2:#a9b8d4; --muted:#7b8bab;
+    --grid:#1a2448; --grid2:#2a3868; --axis:#4a6a99; --accent:#ffd700; --fiction:#cc2222;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-size:22px;margin:0 0 6px}
+  h2{font-size:17px;margin:0 0 4px}
+  .sub{color:var(--ink2);margin:0 0 24px}
+  .opt{background:var(--panel);border:1px solid var(--grid);border-radius:10px;
+       padding:18px 18px 12px;margin:0 0 26px}
+  .tag{display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+       color:var(--muted);border:1px solid var(--grid2);border-radius:999px;padding:2px 9px;margin-left:8px;vertical-align:2px}
+  .desc{color:var(--ink2);margin:6px 0 14px;max-width:78ch}
+  .desc b{color:var(--ink);font-weight:600}
+  .ctl{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:0 0 10px;
+       color:var(--ink2);font-size:13px}
+  .ctl label{display:flex;gap:6px;align-items:center;cursor:pointer}
+  .ctl select{background:#131a30;color:var(--ink);border:1px solid var(--grid2);
+              border-radius:6px;padding:3px 8px}
+  .chartbox{overflow-x:auto}
+  svg{display:block;max-width:100%}
+  .pros{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;margin:12px 0 0;
+        font-size:13px;color:var(--ink2)}
+  .pros ul{margin:4px 0 0;padding-left:18px} .pros li{margin:2px 0}
+  .pros h4{margin:8px 0 0;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .note{border-left:3px solid var(--grid2);padding:2px 0 2px 12px;color:var(--ink2);margin:14px 0}
+  table.data{border-collapse:collapse;font-size:12.5px;color:var(--ink2)}
+  table.data th,table.data td{border:1px solid var(--grid);padding:3px 9px;text-align:right}
+  table.data th{color:var(--muted);font-weight:600;text-align:left}
+  table.data td:first-child{text-align:left;color:var(--ink)}
+  #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .08s;
+       background:#131a30;border:1px solid var(--grid2);border-radius:6px;
+       padding:6px 9px;font-size:12px;color:var(--ink);box-shadow:0 4px 14px #0008;z-index:9}
+  #tip b{color:#fff}
+  .foot{color:var(--muted);font-size:12.5px;margin-top:30px;border-top:1px solid var(--grid);padding-top:14px}
+</style>
+</head>
+<body>
+<div id="tip"></div>
+<div class="wrap">
+
+<h1>Honorverse Hyper Limits — diagram options</h1>
+<p class="sub">Mockup only — nothing in the app was changed. Option 14's chart today is
+<b>44 horizontal bars</b> (one per catalogue row), scroll-wrapped to ~16 inches tall.
+Below are five ways to show the same data in one screen, grouped by spectral class
+(O · B · A · F · G · K · M · Red Giant) and drawn in the ring/reference-line idiom the HZ,
+snow-line and ice-line diagrams already use.</p>
+
+<div class="note">
+The underlying numbers are perfectly regular: <b>F0 → M9 falls by a constant ~0.44 LM per
+subtype</b> (26.42 → 9.24 LM), so the 40 subtype rows are one straight line, not 40 facts.
+O/B/A each have a single value, and "Red Giant" is a lone outlier at 5.64 LM. That is the
+argument for collapsing — and for showing the trend rather than enumerating it.
+</div>
+
+<!-- ── A ───────────────────────────────────────────────────────────────── -->
+<section class="opt">
+  <h2>Option A — Class range bands<span class="tag">8 bars, all 44 values kept</span></h2>
+  <p class="desc">One bar per class letter, spanning that class's <b>hottest → coolest</b>
+  hyper limit, with a faint tick for every subtype inside the band and the endpoints
+  labelled (e.g. F: F0 3.18 AU → F9 2.70 AU). Single-value classes (O, B, A, Red Giant)
+  draw as a short capsule. This is the same idiom as the Solvent liquid-range chart
+  (Phase P V5), so it will look native. Nothing is hidden — the subtypes are ticks.</p>
+  <div class="ctl">
+    <label><input type="checkbox" id="a-ticks" checked> Show subtype ticks</label>
+    <label><input type="checkbox" id="a-unit"> X axis in light-minutes (default AU)</label>
+  </div>
+  <div class="chartbox"><svg id="chartA" width="1040" height="330"></svg></div>
+  <div class="pros">
+    <div><h4>Good</h4><ul>
+      <li>Fits one screen — no scroll wrapper needed.</li>
+      <li>Keeps every catalogue value visible as a tick.</li>
+      <li>Shows class <em>spread</em>, which the 44-bar chart buries.</li>
+    </ul></div>
+    <div><h4>Costs</h4><ul>
+      <li>Exact per-subtype numbers need hover (or the table beside it).</li>
+      <li>New prep + canvas (a range chart, not a bar chart).</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ── B ───────────────────────────────────────────────────────────────── -->
+<section class="opt">
+  <h2>Option B — Spectral sequence line<span class="tag">1 line, 44 points</span></h2>
+  <p class="desc">X = the spectral sequence in catalogue order (O → M9), Y = hyper limit.
+  Class letters become shaded backdrop bands with the letter in the margin. The whole
+  table becomes <b>one monotone curve</b>, which makes the constant 0.44 LM/subtype step
+  and the O/B/A jumps immediately obvious. Red Giant sits off-sequence, so it is drawn
+  as a separate dashed reference line rather than a 45th point on the curve.</p>
+  <div class="ctl">
+    <label><input type="checkbox" id="b-rg" checked> Show Red Giant reference line</label>
+    <label><input type="checkbox" id="b-pts" checked> Show per-subtype points</label>
+  </div>
+  <div class="chartbox"><svg id="chartB" width="1040" height="360"></svg></div>
+  <div class="pros">
+    <div><h4>Good</h4><ul>
+      <li>Densest, most honest reading of the data's actual shape.</li>
+      <li>Every one of the 44 values is a real plotted point.</li>
+      <li>Cheapest to build — a line chart over the existing prep.</li>
+    </ul></div>
+    <div><h4>Costs</h4><ul>
+      <li>Reads as an analysis chart, not a lookup table.</li>
+      <li>Red Giant has to be handled as an exception.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ── C ───────────────────────────────────────────────────────────────── -->
+<section class="opt">
+  <h2>Option C — Concentric class rings<span class="tag">√AU, snow-line idiom</span></h2>
+  <p class="desc">The direct analogue of the Ice Line / System Regions ring maps: a star at
+  centre, <b>one dashed ring per class letter</b> on a √AU scale, each labelled
+  <code>G · 2.65–2.17 AU</code>. Where a class covers a range, the ring is drawn as a thin
+  shaded annulus between its hottest and coolest subtype, so you can see the classes
+  interleave outward. Red Giant is the innermost ring, O the outermost.</p>
+  <div class="ctl">
+    <label><input type="checkbox" id="c-band" checked> Show class spread as annulus</label>
+  </div>
+  <div class="chartbox"><svg id="chartC" width="1040" height="560"></svg></div>
+  <div class="pros">
+    <div><h4>Good</h4><ul>
+      <li>Visually consistent with every other "distance from the star" diagram.</li>
+      <li>Reads as a physical distance, which is what a hyper limit is.</li>
+      <li>Only 8 labels on screen.</li>
+    </ul></div>
+    <div><h4>Costs</h4><ul>
+      <li>√ compression makes small differences hard to compare precisely.</li>
+      <li>Rings crowd in the F/G/K/M middle — the four bands nearly touch.</li>
+      <li>Most work to build of the five.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ── D ───────────────────────────────────────────────────────────────── -->
+<section class="opt">
+  <h2>Option D — Reference-line strip<span class="tag">closest to Snow Line / Tidal Lock</span></h2>
+  <p class="desc">A single horizontal AU axis — the HZ <b>Strip</b> layout — with each class
+  drawn as a labelled dashed vertical reference line, exactly the way the water snow line
+  is drawn. Optionally the 40 subtypes appear as faint hairlines behind the 8 named ones,
+  so the class letters stay legible while the full catalogue is still on the axis.
+  This is also the layout that would drop straight onto an existing HZ strip as an
+  overlay, if you ever want "where does the hyper limit fall vs the habitable zone".</p>
+  <div class="ctl">
+    <label><input type="checkbox" id="d-sub" checked> Show all 44 as hairlines</label>
+    <label><input type="checkbox" id="d-hz" checked> Sample HZ bands behind (Sol-like star)</label>
+  </div>
+  <div class="chartbox"><svg id="chartD" width="1040" height="260"></svg></div>
+  <div class="pros">
+    <div><h4>Good</h4><ul>
+      <li>Exactly the Snow-Line treatment you asked about.</li>
+      <li>Compact — ~200 px tall, no scrolling.</li>
+      <li>Composes with the HZ strip as a real overlay later.</li>
+    </ul></div>
+    <div><h4>Costs</h4><ul>
+      <li>Labels collide in the F/G/K/M cluster unless staggered (shown staggered here).</li>
+      <li>Least useful as a standalone "table replacement".</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ── E ───────────────────────────────────────────────────────────────── -->
+<section class="opt">
+  <h2>Option E — Collapsed bars + drill-down<span class="tag">keeps today's bar chart</span></h2>
+  <p class="desc">Smallest change: keep the current horizontal bar chart, but plot
+  <b>8 class bars</b> (bar = the class's coolest limit, whisker out to its hottest) and add a
+  class selector. Pick <em>F</em> and the chart swaps to F0–F9's ten bars — the existing
+  44-bar rendering, just one class at a time. "All subtypes" restores today's view for
+  anyone who wants it.</p>
+  <div class="ctl">
+    <label>Class:
+      <select id="e-sel">
+        <option value="__grouped">By class (8 bars)</option>
+        <option value="O">O</option><option value="B">B</option><option value="A">A</option>
+        <option value="F">F</option><option value="G">G</option><option value="K">K</option>
+        <option value="M">M</option><option value="RG">Red Giant</option>
+        <option value="__all">All subtypes (today's chart)</option>
+      </select>
+    </label>
+  </div>
+  <div class="chartbox"><svg id="chartE" width="1040" height="380"></svg></div>
+  <div class="pros">
+    <div><h4>Good</h4><ul>
+      <li>Reuses the existing canvas almost as-is; lowest risk.</li>
+      <li>Nothing is lost — today's view is one dropdown away.</li>
+    </ul></div>
+    <div><h4>Costs</h4><ul>
+      <li>Needs a control widget in the viz tab (none there today).</li>
+      <li>Grouped view alone doesn't show the linear trend the way B does.</li>
+    </ul></div>
+  </div>
+</section>
+
+<section class="opt">
+  <h2>Catalogue (for reference)</h2>
+  <p class="desc">44 rows, straight from <code>spTypeHyperLM.csv</code>. AU = LM ÷ 8.3167.</p>
+  <div class="chartbox"><table class="data" id="tbl"></table></div>
+</section>
+
+<p class="foot">
+Notes · All five keep the app's spectral palette (<code>core.shared._SPECTRAL_COLORS</code>) so a
+class reads the same colour here as on the star charts; because F/G/A are near-white by
+design, identity is carried by the <em>label</em>, never the hue alone. · The per-star hyper-limit
+<em>ring</em> on opts 8/9/13 and the orbital-diagram ring (Phase O O10b) are unaffected by any of
+this — this is only the option-14 reference chart. · Mockup file, not wired to the app.
+</p>
+
+</div>
+
+<script>
+const LM_PER_AU = 8.3167;
+const RAW = [["O",49.60],["B",33.42],["A",28.75],
+["F0",26.42],["F1",25.98],["F2",25.54],["F3",25.10],["F4",24.66],["F5",24.20],["F6",23.76],["F7",23.32],["F8",22.88],["F9",22.44],
+["G0",22.00],["G1",21.56],["G2",21.12],["G3",20.68],["G4",20.24],["G5",19.80],["G6",19.36],["G7",18.92],["G8",18.48],["G9",18.04],
+["K0",17.60],["K1",17.15],["K2",16.72],["K3",16.28],["K4",15.84],["K5",15.40],["K6",14.96],["K7",14.52],["K8",14.04],["K9",13.64],
+["M0",13.20],["M1",12.76],["M2",12.32],["M3",11.88],["M4",11.44],["M5",11.00],["M6",10.56],["M7",10.12],["M8",9.68],["M9",9.24],
+["Red Giant",5.64]];
+const ROWS = RAW.map(([c,lm],i)=>({cls:c, lm, au:lm/LM_PER_AU, i,
+  grp: c==="Red Giant" ? "RG" : c[0]}));
+
+// App palette (core.shared._SPECTRAL_COLORS) + a distinct swatch for the Red Giant row.
+const COLOR = {O:"#9BB0FF",B:"#AABFFF",A:"#CAD7FF",F:"#F8F7FF",G:"#FFF4EA",
+               K:"#FFD2A1",M:"#FF8D3F",RG:"#D94F2B"};
+const GRP_ORDER = ["O","B","A","F","G","K","M","RG"];
+const GRP_LABEL = {O:"O",B:"B",A:"A",F:"F0–F9",G:"G0–G9",K:"K0–K9",M:"M0–M9",RG:"Red Giant"};
+const GROUPS = GRP_ORDER.map(g=>{
+  const rs = ROWS.filter(r=>r.grp===g);
+  return {g, rows:rs, hi:Math.max(...rs.map(r=>r.au)), lo:Math.min(...rs.map(r=>r.au)),
+          hiRow:rs[0], loRow:rs[rs.length-1], color:COLOR[g], label:GRP_LABEL[g]};
+});
+
+const NS="http://www.w3.org/2000/svg";
+const el=(t,a={})=>{const n=document.createElementNS(NS,t);
+  for(const k in a) n.setAttribute(k,a[k]); return n;};
+const txt=(x,y,s,a={})=>{const n=el("text",Object.assign(
+  {x,y,fill:"#a9b8d4","font-size":11,"font-family":"inherit"},a)); n.textContent=s; return n;};
+const clear=id=>{const s=document.getElementById(id); while(s.firstChild) s.removeChild(s.firstChild); return s;};
+
+const tip=document.getElementById("tip");
+function hover(node, html){
+  node.style.cursor="crosshair";
+  node.addEventListener("mousemove",e=>{tip.innerHTML=html;tip.style.opacity=1;
+    tip.style.left=Math.min(e.clientX+14, innerWidth-230)+"px";
+    tip.style.top=(e.clientY+16)+"px";});
+  node.addEventListener("mouseleave",()=>tip.style.opacity=0);
+}
+const fmt=r=>`<b>${r.cls}</b><br>${r.au.toFixed(3)} AU · ${r.lm.toFixed(2)} LM`;
+
+/* ── A: class range bands ───────────────────────────────────────────── */
+function drawA(){
+  const s=clear("chartA"), W=1040,H=330, L=92,R=40,T=34,B=42;
+  const lmMode=document.getElementById("a-unit").checked;
+  const ticks=document.getElementById("a-ticks").checked;
+  const val=r=>lmMode?r.lm:r.au, max=lmMode?52:6.3;
+  const x=v=>L+(v/max)*(W-L-R), band=(H-T-B)/GROUPS.length;
+  const gstep = lmMode?10:1;
+  for(let v=0;v<=max;v+=gstep){
+    s.appendChild(el("line",{x1:x(v),y1:T-8,x2:x(v),y2:H-B,stroke:"#1a2448","stroke-width":1}));
+    s.appendChild(txt(x(v),H-B+16,v.toFixed(0),{"text-anchor":"middle",fill:"#7b8bab"}));
+  }
+  s.appendChild(txt(L,H-B+32,lmMode?"Hyper limit — light-minutes (LM)":"Hyper limit — AU",{fill:"#7b8bab"}));
+  GROUPS.forEach((G,i)=>{
+    const yc=T+band*i+band/2, h=15;
+    const x0=x(lmMode?G.loRow.lm:G.lo), x1=x(lmMode?G.hiRow.lm:G.hi);
+    s.appendChild(txt(L-12,yc+4,G.label,{"text-anchor":"end",fill:"#e6ecf8","font-size":12}));
+    s.appendChild(el("line",{x1:L,y1:yc,x2:W-R,y2:yc,stroke:"#131c36","stroke-width":1}));
+    const w=Math.max(x1-x0,10);
+    const rect=el("rect",{x:x0,y:yc-h/2,width:w,height:h,rx:4,
+      fill:G.color,"fill-opacity":.82,stroke:"#0b1020","stroke-width":2});
+    hover(rect,`<b>Class ${G.g==="RG"?"Red Giant":G.g}</b><br>${G.rows.length} row${G.rows.length>1?"s":""}<br>${G.lo.toFixed(3)} – ${G.hi.toFixed(3)} AU`);
+    s.appendChild(rect);
+    if(ticks && G.rows.length>1) G.rows.forEach(r=>{
+      const tk=el("line",{x1:x(val(r)),y1:yc-h/2+2,x2:x(val(r)),y2:yc+h/2-2,
+        stroke:"#0b1020","stroke-width":1,"stroke-opacity":.55});
+      s.appendChild(tk);
+    });
+    // endpoint labels
+    const lab = G.rows.length>1
+      ? `${G.loRow.cls} ${G.lo.toFixed(2)} ← → ${G.hiRow.cls} ${G.hi.toFixed(2)} AU`
+      : `${(lmMode?G.hiRow.lm:G.hi).toFixed(2)} ${lmMode?"LM":"AU"}`;
+    s.appendChild(txt(x1+10,yc+4,lab,{fill:"#a9b8d4","font-size":11}));
+  });
+  s.appendChild(txt(L,T-16,"Hotter classes lie farther out — the limit scales with the star",{fill:"#7b8bab","font-size":11.5}));
+}
+
+/* ── B: sequence line ───────────────────────────────────────────────── */
+function drawB(){
+  const s=clear("chartB"), W=1040,H=360,L=64,R=150,T=28,B=52;
+  const showRG=document.getElementById("b-rg").checked;
+  const showPts=document.getElementById("b-pts").checked;
+  const seq=ROWS.filter(r=>r.grp!=="RG");
+  const x=i=>L+(i/(seq.length-1))*(W-L-R), y=v=>H-B-((v-0.4)/(6.3-0.4))*(H-T-B);
+  for(let v=1;v<=6;v++){
+    s.appendChild(el("line",{x1:L,y1:y(v),x2:W-R,y2:y(v),stroke:"#1a2448"}));
+    s.appendChild(txt(L-10,y(v)+4,v.toFixed(0),{"text-anchor":"end",fill:"#7b8bab"}));
+  }
+  s.appendChild(txt(L-46,T+6,"AU",{fill:"#7b8bab"}));
+  // class backdrop bands
+  GRP_ORDER.filter(g=>g!=="RG").forEach(g=>{
+    const idx=seq.filter(r=>r.grp===g).map(r=>r.i);
+    const x0=x(Math.min(...idx))-(g==="O"?6:8), x1=x(Math.max(...idx))+8;
+    s.appendChild(el("rect",{x:x0,y:T,width:x1-x0,height:H-T-B,
+      fill:COLOR[g],"fill-opacity":.055}));
+    s.appendChild(el("line",{x1:x1,y1:T,x2:x1,y2:H-B,stroke:"#1a2448"}));
+    s.appendChild(txt((x0+x1)/2,H-B+18,g,{"text-anchor":"middle",fill:COLOR[g],"font-size":13,"font-weight":600}));
+  });
+  s.appendChild(txt(L,H-B+36,"Spectral class / subtype (hot → cool)",{fill:"#7b8bab"}));
+  const d=seq.map((r,k)=>`${k?"L":"M"}${x(r.i)},${y(r.au)}`).join(" ");
+  s.appendChild(el("path",{d,fill:"none",stroke:"#8fb6ff","stroke-width":2,"stroke-linejoin":"round"}));
+  if(showPts) seq.forEach(r=>{
+    const c=el("circle",{cx:x(r.i),cy:y(r.au),r:3.6,fill:COLOR[r.grp],
+      stroke:"#0b1020","stroke-width":1.5});
+    hover(c,fmt(r)); s.appendChild(c);
+  });
+  if(showRG){
+    const rg=ROWS[ROWS.length-1];
+    s.appendChild(el("line",{x1:L,y1:y(rg.au),x2:W-R,y2:y(rg.au),
+      stroke:COLOR.RG,"stroke-width":1.6,"stroke-dasharray":"7 5"}));
+    s.appendChild(txt(W-R+8,y(rg.au)+4,`Red Giant  ${rg.au.toFixed(2)} AU`,{fill:COLOR.RG}));
+  }
+  // direct labels on the two ends
+  const a=seq[0], z=seq[seq.length-1];
+  s.appendChild(txt(x(a.i)+8,y(a.au)+4,`O  ${a.au.toFixed(2)} AU`,{fill:"#cfd8ea"}));
+  s.appendChild(txt(W-R+8,y(z.au)+4,`M9  ${z.au.toFixed(2)} AU`,{fill:"#cfd8ea"}));
+  s.appendChild(txt(W-R+8,T+14,"F0 → M9 falls by a",{fill:"#7b8bab"}));
+  s.appendChild(txt(W-R+8,T+30,"constant 0.44 LM per",{fill:"#7b8bab"}));
+  s.appendChild(txt(W-R+8,T+46,"subtype — one straight line.",{fill:"#7b8bab"}));
+}
+
+/* ── C: concentric rings ────────────────────────────────────────────── */
+function drawC(){
+  const s=clear("chartC"), W=1040,H=560, cx=W/2, cy=H/2+6, RMAX=232;
+  const band=document.getElementById("c-band").checked;
+  const maxAU=6.3, r=au=>Math.sqrt(au/maxAU)*RMAX;
+  s.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"#070b18"}));
+  [1,2,3,4,5,6].forEach(v=>{
+    s.appendChild(el("circle",{cx,cy,r:r(v),fill:"none",stroke:"#141d3a"}));
+    s.appendChild(txt(cx+4,cy-r(v)+13,`${v} AU`,{fill:"#4a6a99","font-size":10}));
+  });
+  GROUPS.slice().reverse().forEach((G,k)=>{
+    if(band && G.rows.length>1){
+      const outer=el("circle",{cx,cy,r:r(G.hi),fill:G.color,"fill-opacity":.10,stroke:"none"});
+      const inner=el("circle",{cx,cy,r:r(G.lo),fill:"#070b18",stroke:"none"});
+      s.appendChild(outer); s.appendChild(inner);
+    }
+    [G.hi, G.rows.length>1?G.lo:null].filter(v=>v!==null).forEach((au,j)=>{
+      const c=el("circle",{cx,cy,r:r(au),fill:"none",stroke:G.color,"stroke-width":1.5,
+        "stroke-dasharray":j? "3 5":"7 5","stroke-opacity":.95});
+      hover(c,`<b>Class ${G.g==="RG"?"Red Giant":G.g}</b><br>${au.toFixed(3)} AU · ${(au*LM_PER_AU).toFixed(2)} LM`);
+      s.appendChild(c);
+    });
+    // label on alternating diagonals so they never stack
+    const ang=(k%2? 135:45)*Math.PI/180, rr=r(G.hi);
+    const lx=cx+Math.cos(ang)*rr, ly=cy-Math.sin(ang)*rr;
+    const t=txt(lx+(k%2?-8:8), ly-4,
+      G.rows.length>1?`${G.g} · ${G.hi.toFixed(2)}–${G.lo.toFixed(2)} AU`
+                     :`${G.label} · ${G.hi.toFixed(2)} AU`,
+      {fill:G.color,"font-size":11.5,"text-anchor":k%2?"end":"start"});
+    s.appendChild(t);
+  });
+  s.appendChild(el("circle",{cx,cy,r:6,fill:"#FFEE55"}));
+  s.appendChild(txt(cx,cy+H/2-26,"√AU scale · dashed = hottest subtype, dotted = coolest, shading = class spread",
+    {"text-anchor":"middle",fill:"#7b8bab","font-size":11.5}));
+}
+
+/* ── D: reference-line strip ────────────────────────────────────────── */
+function drawD(){
+  const s=clear("chartD"), W=1040,H=260,L=56,R=40,T=58,B=54;
+  const sub=document.getElementById("d-sub").checked;
+  const hz=document.getElementById("d-hz").checked;
+  const maxAU=6.4, x=au=>L+Math.sqrt(au/maxAU)*(W-L-R);
+  const yTop=T, yBot=H-B;
+  s.appendChild(el("rect",{x:L,y:yTop,width:W-L-R,height:yBot-yTop,fill:"#0d1428",stroke:"#1a2448"}));
+  if(hz){ // illustrative Sol-like HZ bands, same palette language as the HZ strip
+    const opt=[0.75,1.77], con=[0.95,1.67];
+    s.appendChild(el("rect",{x:x(opt[0]),y:yTop,width:x(opt[1])-x(opt[0]),height:yBot-yTop,
+      fill:"#2e8b57","fill-opacity":.18}));
+    s.appendChild(el("rect",{x:x(con[0]),y:yTop,width:x(con[1])-x(con[0]),height:yBot-yTop,
+      fill:"#2e8b57","fill-opacity":.28}));
+    s.appendChild(txt(x(1.2),yTop+16,"habitable zone (example)",{"text-anchor":"middle",fill:"#8fd6ab","font-size":11}));
+  }
+  [0.5,1,2,3,4,5,6].forEach(v=>{
+    s.appendChild(el("line",{x1:x(v),y1:yBot,x2:x(v),y2:yBot+6,stroke:"#4a6a99"}));
+    s.appendChild(txt(x(v),yBot+20,v,{"text-anchor":"middle",fill:"#7b8bab"}));
+  });
+  s.appendChild(txt(L,yBot+38,"Distance from star — AU (√ scale)",{fill:"#7b8bab"}));
+  if(sub) ROWS.forEach(r=>{
+    const ln=el("line",{x1:x(r.au),y1:yTop+4,x2:x(r.au),y2:yBot-4,
+      stroke:COLOR[r.grp],"stroke-width":1,"stroke-opacity":.25});
+    hover(ln,fmt(r)); s.appendChild(ln);
+  });
+  GROUPS.forEach((G,i)=>{
+    const au=G.rows.length>1?(G.hi+G.lo)/2:G.hi, up=i%2===0;
+    const ln=el("line",{x1:x(au),y1:yTop-(up?18:0),x2:x(au),y2:yBot+(up?0:16),
+      stroke:G.color,"stroke-width":1.8,"stroke-dasharray":"6 4"});
+    hover(ln,`<b>Class ${G.g==="RG"?"Red Giant":G.g}</b><br>${G.rows.length>1?
+      `${G.lo.toFixed(2)}–${G.hi.toFixed(2)} AU (midpoint ${au.toFixed(2)})`:`${au.toFixed(3)} AU`}`);
+    s.appendChild(ln);
+    s.appendChild(txt(x(au), up? yTop-24 : yBot+30, G.g==="RG"?"RG":G.g,
+      {"text-anchor":"middle",fill:G.color,"font-size":12.5,"font-weight":600}));
+  });
+  s.appendChild(txt(L,26,"Hyper limit by spectral class — drawn like the water snow line",{fill:"#a9b8d4","font-size":12}));
+}
+
+/* ── E: collapsed bars + drill-down ─────────────────────────────────── */
+function drawE(){
+  const s=clear("chartE"), W=1040,H=380,L=110,R=150,T=26,B=44;
+  const sel=document.getElementById("e-sel").value;
+  let items;
+  if(sel==="__grouped") items=GROUPS.map(G=>({label:G.label,lo:G.lo,hi:G.hi,color:G.color,
+      note:`${G.rows.length} row${G.rows.length>1?"s":""}`}));
+  else if(sel==="__all") items=ROWS.map(r=>({label:r.cls,lo:r.au,hi:r.au,color:COLOR[r.grp],note:""}));
+  else items=ROWS.filter(r=>r.grp===sel).map(r=>({label:r.cls,lo:r.au,hi:r.au,color:COLOR[r.grp],note:""}));
+  const maxAU=6.3, x=au=>L+(au/maxAU)*(W-L-R);
+  const n=items.length, step=Math.min(30,(H-T-B)/n), h=Math.max(3,step*0.62);
+  for(let v=0;v<=6;v++){
+    s.appendChild(el("line",{x1:x(v),y1:T-6,x2:x(v),y2:T+step*n+4,stroke:"#1a2448"}));
+    s.appendChild(txt(x(v),T+step*n+20,v,{"text-anchor":"middle",fill:"#7b8bab"}));
+  }
+  s.appendChild(txt(L,T+step*n+38,"Hyper limit — AU",{fill:"#7b8bab"}));
+  items.forEach((it,i)=>{
+    const yc=T+step*i+step/2;
+    const rect=el("rect",{x:L,y:yc-h/2,width:x(it.lo)-L,height:h,rx:Math.min(4,h/2),
+      fill:it.color,"fill-opacity":.85,stroke:"#0b1020","stroke-width":1.5});
+    hover(rect,`<b>${it.label}</b><br>${it.hi>it.lo?`${it.lo.toFixed(3)} – ${it.hi.toFixed(3)} AU`:`${it.lo.toFixed(3)} AU`}`);
+    s.appendChild(rect);
+    if(it.hi>it.lo){ // whisker out to the hottest subtype
+      s.appendChild(el("line",{x1:x(it.lo),y1:yc,x2:x(it.hi),y2:yc,stroke:it.color,"stroke-width":1.5}));
+      s.appendChild(el("line",{x1:x(it.hi),y1:yc-h/2.4,x2:x(it.hi),y2:yc+h/2.4,stroke:it.color,"stroke-width":1.5}));
+    }
+    if(step>=12) s.appendChild(txt(L-10,yc+4,it.label,{"text-anchor":"end",fill:"#e6ecf8","font-size":11.5}));
+    if(step>=12) s.appendChild(txt(x(it.hi)+10,yc+4,
+      it.hi>it.lo?`${it.lo.toFixed(2)}–${it.hi.toFixed(2)} AU  ·  ${it.note}`
+                 :`${it.lo.toFixed(2)} AU (${(it.lo*LM_PER_AU).toFixed(2)} LM)`,
+      {fill:"#a9b8d4","font-size":11}));
+  });
+}
+
+/* table */
+(function(){
+  const t=document.getElementById("tbl");
+  const head=el("tr"); ["Class","LM","AU","Class","LM","AU"].forEach(h=>{
+    const th=document.createElement("th"); th.textContent=h; head.appendChild(th);});
+  t.appendChild(head);
+  const half=Math.ceil(ROWS.length/2);
+  for(let i=0;i<half;i++){
+    const tr=document.createElement("tr");
+    [ROWS[i],ROWS[i+half]].forEach(r=>{
+      const c=[r?r.cls:"",r?r.lm.toFixed(2):"",r?r.au.toFixed(4):""];
+      c.forEach(v=>{const td=document.createElement("td"); td.textContent=v; tr.appendChild(td);});
+    });
+    t.appendChild(tr);
+  }
+})();
+
+["a-ticks","a-unit"].forEach(id=>document.getElementById(id).addEventListener("change",drawA));
+["b-rg","b-pts"].forEach(id=>document.getElementById(id).addEventListener("change",drawB));
+document.getElementById("c-band").addEventListener("change",drawC);
+["d-sub","d-hz"].forEach(id=>document.getElementById(id).addEventListener("change",drawD));
+document.getElementById("e-sel").addEventListener("change",drawE);
+drawA();drawB();drawC();drawD();drawE();
+</script>
+</body>
+</html>

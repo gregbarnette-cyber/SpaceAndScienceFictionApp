@@ -4,7 +4,7 @@
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QFormLayout, QPushButton,
-    QLineEdit, QComboBox, QSlider, QWidget, QScrollArea,
+    QLineEdit, QComboBox, QSlider, QWidget, QScrollArea, QCheckBox,
 )
 from PySide6.QtCore import Qt
 
@@ -14,7 +14,7 @@ import core.science
 import core.calculators
 import core.viz
 from gui.visualizations.plot_helpers import (
-    mpl_available, make_hyper_bar_canvas, wrap_scrollable,
+    mpl_available, make_hyper_bar_canvas, make_hyper_ring_canvas, wrap_scrollable,
 )
 
 _FOOTNOTE = (
@@ -33,6 +33,76 @@ def _speed_str(xc: float, ly_hr: float, note: str = "") -> str:
     if note.strip():
         s += note
     return s
+
+
+def _hyper_ring_tab(data, mode):
+    """Class-grouped hyper-limit ring tab: a per-class checkbox row (plus Select
+    All / Clear All) over an auto-rebuilt make_hyper_ring_canvas — the
+    solvent_zones._ice_ring_tab scaffold.
+
+    Unchecking a class drops it from the dial and rescales to what is left — in
+    sector mode the survivors also re-divide the full circle, so a two- or
+    three-class view is far more readable than a filtered eight-class one.
+    Clearing every class is a valid state: the canvas renders its "No spectral
+    classes selected." card.
+    """
+    w = QWidget()
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(4, 4, 4, 4)
+
+    row = QWidget()
+    rl = QHBoxLayout(row)
+    rl.setContentsMargins(0, 0, 0, 0)
+    rl.setSpacing(10)
+    rl.addWidget(QLabel("Show classes:"))
+    boxes = []
+    for g in data.get("groups", []):
+        cb = QCheckBox(g["label"])
+        cb.setChecked(True)
+        n = len(g["rows"])
+        cb.setToolTip(f"{n} row{'s' if n != 1 else ''}  ·  "
+                      f"{g['lo_au']:.2f}–{g['hi_au']:.2f} AU")
+        boxes.append((g["key"], cb))
+        rl.addWidget(cb)
+    rl.addStretch()
+    btn_all = QPushButton("Select All")
+    btn_none = QPushButton("Clear All")
+    rl.addWidget(btn_all)
+    rl.addWidget(btn_none)
+    lay.addWidget(row)
+
+    holder = QWidget()
+    hlay = QVBoxLayout(holder)
+    hlay.setContentsMargins(0, 0, 0, 0)
+    lay.addWidget(holder, 1)
+
+    def _rebuild():
+        while hlay.count():
+            it = hlay.takeAt(0)
+            ww = it.widget()
+            if ww:
+                ww.deleteLater()
+        keys = [k for k, cb in boxes if cb.isChecked()]
+        canvas, toolbar = make_hyper_ring_canvas(None, data, mode=mode, classes=keys)
+        if canvas is not None:
+            hlay.addWidget(toolbar)
+            hlay.addWidget(canvas)
+
+    def _set_all(state):
+        # Signals are blocked during the bulk set so the canvas is rebuilt ONCE
+        # at the end rather than once per checkbox (eight full redraws).
+        for _k, cb in boxes:
+            cb.blockSignals(True)
+            cb.setChecked(state)
+            cb.blockSignals(False)
+        _rebuild()
+
+    for _k, cb in boxes:
+        cb.toggled.connect(lambda _checked: _rebuild())
+    btn_all.clicked.connect(lambda: _set_all(True))
+    btn_none.clicked.connect(lambda: _set_all(False))
+    _rebuild()
+    return w
 
 
 class HonorverseHyperPanel(DiagramToggleMixin, ResultPanel):
@@ -71,9 +141,19 @@ class HonorverseHyperPanel(DiagramToggleMixin, ResultPanel):
         tl.addWidget(view)
         self._layout.addWidget(self._tables_widget, 1)
 
-        # ── Phase O O10a: Hyper Limits bar-chart viz tab ──────────────────────
+        # ── Hyper Limits viz tabs ─────────────────────────────────────────────
+        # Tab order is deliberate: the two class-grouped ring diagrams first
+        # (ghost is the default view), then the original Phase O O10a 44-bar
+        # chart, which stays as-is — it still answers "what is the exact number
+        # for K3" better than any ring can.
         self._setup_diagram_view()
         if mpl_available():
+            rings = core.viz.prepare_hyper_limit_rings()
+            if "error" not in rings:
+                self._viz_tabs_widget.addTab(
+                    _hyper_ring_tab(rings, "ghost"), "Class Rings")
+                self._viz_tabs_widget.addTab(
+                    _hyper_ring_tab(rings, "sector"), "Class Sectors")
             data = core.viz.prepare_hyper_limits()
             if "error" not in data:
                 canvas, toolbar = make_hyper_bar_canvas(None, data)

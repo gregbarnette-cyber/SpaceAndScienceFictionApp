@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hyper Limits — ring-diagram variants (mockup 2)</title>
+<style>
+  :root{--bg:#070b18;--panel:#0b1020;--ink:#e6ecf8;--ink2:#a9b8d4;--muted:#7b8bab;
+        --grid:#1a2448;--grid2:#2a3868;--axis:#4a6a99}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1060px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-size:22px;margin:0 0 6px} h2{font-size:17px;margin:0 0 4px}
+  .sub{color:var(--ink2);margin:0 0 22px;max-width:82ch}
+  .opt{background:var(--panel);border:1px solid var(--grid);border-radius:10px;
+       padding:18px;margin:0 0 26px}
+  .tag{display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+       color:var(--muted);border:1px solid var(--grid2);border-radius:999px;padding:2px 9px;
+       margin-left:8px;vertical-align:2px}
+  .desc{color:var(--ink2);margin:6px 0 12px;max-width:80ch}
+  .desc b{color:var(--ink);font-weight:600}
+  .ctl{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:0 0 8px;
+       color:var(--ink2);font-size:13px}
+  .ctl label{display:flex;gap:6px;align-items:center;cursor:pointer}
+  .ctl select{background:#131a30;color:var(--ink);border:1px solid var(--grid2);
+              border-radius:6px;padding:3px 8px}
+  .chip{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--grid2);
+        border-radius:999px;padding:2px 10px;cursor:pointer;user-select:none;font-size:12.5px}
+  .chip .sw{width:9px;height:9px;border-radius:2px}
+  .chip.off{opacity:.38}
+  .pros{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;margin:10px 0 0;font-size:13px;color:var(--ink2)}
+  .pros ul{margin:4px 0 0;padding-left:18px} .pros li{margin:2px 0}
+  .pros h4{margin:8px 0 0;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .note{border-left:3px solid var(--grid2);padding:2px 0 2px 12px;color:var(--ink2);margin:14px 0;max-width:82ch}
+  svg{display:block;max-width:100%}
+  #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .08s;background:#131a30;
+       border:1px solid var(--grid2);border-radius:6px;padding:6px 9px;font-size:12px;
+       color:var(--ink);box-shadow:0 4px 14px #0008;z-index:9}
+  #tip b{color:#fff}
+  .foot{color:var(--muted);font-size:12.5px;margin-top:30px;border-top:1px solid var(--grid);padding-top:14px;max-width:82ch}
+</style>
+</head>
+<body>
+<div id="tip"></div>
+<div class="wrap">
+
+<h1>Hyper Limits as dotted rings — four ways to fit all 44</h1>
+<p class="sub">Follow-ups to Option C. All keep the star-at-centre, dotted-ring, √AU idiom of the
+Ice Line / System Regions maps and the app's spectral palette. Nothing in the app was changed.</p>
+
+<div class="note">
+<b>The density problem, measured.</b> The 44 limits span 0.68–5.96 AU, but 40 of them (F0–M9) are
+packed into <b>1.11–3.18 AU</b>. On a √AU dial with a 230 px radius that's ~67 px of radius for 40
+rings — <b>1.7 px apart</b>, thinner than the stroke. So "draw all 44 as full circles" is not
+achievable at any scale; each variant below trades something specific to get there.
+</div>
+
+<!-- V1 -->
+<section class="opt">
+  <h2>V1 — Ghost rings + class rings<span class="tag">all 44 drawn, 8 labelled</span></h2>
+  <p class="desc">Every subtype is drawn as a very faint dotted ring; on top, each class's
+  <b>hottest and coolest</b> ring is drawn bold and labelled once (<code>G · 2.65–2.17 AU</code>).
+  You see the true texture — where the catalogue is dense, where it jumps — without 44 labels.
+  Hover any ghost ring for its exact subtype. This is the smallest departure from your Option C.</p>
+  <div class="ctl">
+    <label><input type="checkbox" id="v1-ghost" checked> Show all 44 subtype rings</label>
+    <label><input type="checkbox" id="v1-fill" checked> Shade each class's span</label>
+  </div>
+  <svg id="v1" width="1000" height="560"></svg>
+  <div class="pros">
+    <div><h4>Good</h4><ul><li>Literally shows all 44 rings.</li>
+      <li>Only 8 labels — no collisions.</li><li>Closest to the ice-line chart already in the app.</li></ul></div>
+    <div><h4>Costs</h4><ul><li>Ghost rings merge into a haze in the F–M band.</li>
+      <li>Individual subtypes are hover-only.</li></ul></div>
+  </div>
+</section>
+
+<!-- V2 -->
+<section class="opt">
+  <h2>V2 — Class sectors<span class="tag">all 44 readable, zero collisions</span></h2>
+  <p class="desc">The dial is divided into <b>eight 45° wedges, one per class</b>. Each subtype is
+  drawn as an <b>arc at its true radius</b>, but only inside its own class's wedge — so the F arcs
+  and the G arcs never overlap even though their radii nearly do. Class name sits at the wedge
+  edge, and each wedge's first/last subtype is labelled along its mid-angle. All 44 values are
+  individually visible and pickable, at true distance.</p>
+  <div class="ctl">
+    <label><input type="checkbox" id="v2-spokes" checked> Show wedge dividers</label>
+    <label><input type="checkbox" id="v2-every" > Label every subtype (dense)</label>
+  </div>
+  <svg id="v2" width="1000" height="600"></svg>
+  <div class="pros">
+    <div><h4>Good</h4><ul><li>Every subtype is a distinct, hittable mark.</li>
+      <li>Radius stays honest — an arc's distance from centre is its real AU.</li>
+      <li>Grouping by class is structural, not just colour.</li></ul></div>
+    <div><h4>Costs</h4><ul><li>Angle carries no meaning — needs one line of caption to say so.</li>
+      <li>Novel form; not currently in the app anywhere.</li></ul></div>
+  </div>
+</section>
+
+<!-- V3 -->
+<section class="opt">
+  <h2>V3 — Class rings with drill-down<span class="tag">8 by default, 10 on demand</span></h2>
+  <p class="desc">Default view is 8 clean labelled class rings (the class's midpoint, with its span
+  shaded). <b>Click a class — or its legend chip — and that class expands</b> into its full set of
+  subtype rings, each labelled, while the other classes fade to thin guides. Click again to
+  collapse. Same interaction the OEC architecture map already uses (click a node to recenter).</p>
+  <div class="ctl" id="v3-chips"></div>
+  <svg id="v3" width="1000" height="580"></svg>
+  <div class="pros">
+    <div><h4>Good</h4><ul><li>Uncluttered at rest; full detail one click away.</li>
+      <li>Labels are always legible — never more than 10 at once.</li>
+      <li>Matches an interaction pattern already in the codebase.</li></ul></div>
+    <div><h4>Costs</h4><ul><li>The whole catalogue is never on screen at once.</li>
+      <li>A static PNG export (e.g. the dossier) shows only the collapsed state.</li></ul></div>
+  </div>
+</section>
+
+<!-- V4 -->
+<section class="opt">
+  <h2>V4 — Filtered rings<span class="tag">legend-filter idiom (O16)</span></h2>
+  <p class="desc">All subtype rings of the <b>selected</b> classes are drawn full and labelled;
+  unchecked classes vanish. Start with two or three classes ticked. This reuses the per-class
+  legend filter the star charts already have (Phase O O16), so it needs no new interaction
+  vocabulary — the legend <em>is</em> the control. A zoom toggle ("inner focus / full range",
+  as on the ice-line chart) handles the fact that O sits twice as far out as M9.</p>
+  <div class="ctl" id="v4-chips"></div>
+  <div class="ctl">
+    <label><input type="checkbox" id="v4-fit" checked> Auto-fit scale to visible classes</label>
+  </div>
+  <svg id="v4" width="1000" height="580"></svg>
+  <div class="pros">
+    <div><h4>Good</h4><ul><li>Zero new UI concepts — it's the existing legend filter.</li>
+      <li>Every visible ring is fully labelled at its true radius.</li>
+      <li>Auto-fit turns a crowded band into a readable one.</li></ul></div>
+    <div><h4>Costs</h4><ul><li>Default state has to pick classes for the user.</li>
+      <li>Ticking all 8 reproduces the hairball — needs a cap or an auto-collapse.</li></ul></div>
+  </div>
+</section>
+
+<p class="foot">
+If you want one: <b>V2 (class sectors)</b> is the only variant where all 44 are simultaneously
+visible, individually labelled, and at true radius — it answers "show them all, grouped by
+spectral type" exactly. <b>V1</b> is the safest and cheapest if you'd rather stay inside the
+existing ice-line chart's shape. V3 and V4 are the same chart plus an interaction, and they
+compose — V3's drill-down could sit on top of V1's ghost rings.
+</p>
+</div>
+
+<script>
+const LM_PER_AU=8.3167;
+const RAW=[["O",49.60],["B",33.42],["A",28.75],
+["F0",26.42],["F1",25.98],["F2",25.54],["F3",25.10],["F4",24.66],["F5",24.20],["F6",23.76],["F7",23.32],["F8",22.88],["F9",22.44],
+["G0",22.00],["G1",21.56],["G2",21.12],["G3",20.68],["G4",20.24],["G5",19.80],["G6",19.36],["G7",18.92],["G8",18.48],["G9",18.04],
+["K0",17.60],["K1",17.15],["K2",16.72],["K3",16.28],["K4",15.84],["K5",15.40],["K6",14.96],["K7",14.52],["K8",14.04],["K9",13.64],
+["M0",13.20],["M1",12.76],["M2",12.32],["M3",11.88],["M4",11.44],["M5",11.00],["M6",10.56],["M7",10.12],["M8",9.68],["M9",9.24],
+["Red Giant",5.64]];
+const ROWS=RAW.map(([c,lm])=>({cls:c,lm,au:lm/LM_PER_AU,grp:c==="Red Giant"?"RG":c[0]}));
+const COLOR={O:"#9BB0FF",B:"#AABFFF",A:"#CAD7FF",F:"#F8F7FF",G:"#FFF4EA",K:"#FFD2A1",M:"#FF8D3F",RG:"#D94F2B"};
+const ORDER=["O","B","A","F","G","K","M","RG"];
+const NAME={O:"O",B:"B",A:"A",F:"F0–F9",G:"G0–G9",K:"K0–K9",M:"M0–M9",RG:"Red Giant"};
+const GROUPS=ORDER.map(g=>{const rs=ROWS.filter(r=>r.grp===g);
+  return{g,rows:rs,hi:Math.max(...rs.map(r=>r.au)),lo:Math.min(...rs.map(r=>r.au)),
+         color:COLOR[g],name:NAME[g]};});
+
+const NS="http://www.w3.org/2000/svg";
+const el=(t,a={})=>{const n=document.createElementNS(NS,t);for(const k in a)n.setAttribute(k,a[k]);return n;};
+const txt=(x,y,s,a={})=>{const n=el("text",Object.assign({x,y,fill:"#a9b8d4","font-size":11},a));n.textContent=s;return n;};
+const clear=id=>{const s=document.getElementById(id);while(s.firstChild)s.removeChild(s.firstChild);return s;};
+const tip=document.getElementById("tip");
+function hover(n,html){n.style.cursor="pointer";
+  n.addEventListener("mousemove",e=>{tip.innerHTML=html;tip.style.opacity=1;
+    tip.style.left=Math.min(e.clientX+14,innerWidth-220)+"px";tip.style.top=(e.clientY+16)+"px";});
+  n.addEventListener("mouseleave",()=>tip.style.opacity=0);}
+const info=r=>`<b>${r.cls}</b><br>${r.au.toFixed(3)} AU · ${r.lm.toFixed(2)} LM`;
+
+function auGrid(s,cx,cy,rf,maxAU,step){
+  for(let v=step;v<=maxAU;v+=step){
+    s.appendChild(el("circle",{cx,cy,r:rf(v),fill:"none",stroke:"#141d3a"}));
+    s.appendChild(txt(cx+4,cy-rf(v)+13,`${v} AU`,{fill:"#3f5f8f","font-size":10}));
+  }
+}
+const star=(s,cx,cy)=>s.appendChild(el("circle",{cx,cy,r:6,fill:"#FFEE55"}));
+
+/* ── V1 ───────────────────────────────────────────────────────────── */
+function drawV1(){
+  const s=clear("v1"),W=1000,H=560,cx=W/2,cy=H/2+4,R=228,maxAU=6.3;
+  const rf=au=>Math.sqrt(au/maxAU)*R;
+  const ghost=document.getElementById("v1-ghost").checked;
+  const fill=document.getElementById("v1-fill").checked;
+  auGrid(s,cx,cy,rf,6,1);
+  if(fill) GROUPS.slice().reverse().forEach(G=>{
+    if(G.rows.length<2)return;
+    s.appendChild(el("circle",{cx,cy,r:rf(G.hi),fill:G.color,"fill-opacity":.09}));
+    s.appendChild(el("circle",{cx,cy,r:rf(G.lo),fill:"#070b18"}));
+  });
+  if(ghost) ROWS.forEach(r=>{
+    const c=el("circle",{cx,cy,r:rf(r.au),fill:"none",stroke:COLOR[r.grp],
+      "stroke-width":1,"stroke-opacity":.30,"stroke-dasharray":"2 4"});
+    hover(c,info(r)); s.appendChild(c);
+  });
+  GROUPS.slice().reverse().forEach((G,k)=>{
+    [G.hi,G.rows.length>1?G.lo:null].filter(v=>v!==null).forEach(au=>{
+      const c=el("circle",{cx,cy,r:rf(au),fill:"none",stroke:G.color,"stroke-width":1.7,
+        "stroke-dasharray":"6 5"});
+      hover(c,`<b>Class ${G.name}</b><br>${au.toFixed(3)} AU · ${(au*LM_PER_AU).toFixed(2)} LM`);
+      s.appendChild(c);
+    });
+    const ang=(k%2?142:38)*Math.PI/180,rr=rf(G.hi);
+    s.appendChild(txt(cx+Math.cos(ang)*rr+(k%2?-8:8),cy-Math.sin(ang)*rr-4,
+      G.rows.length>1?`${G.g} · ${G.hi.toFixed(2)}–${G.lo.toFixed(2)} AU`:`${G.name} · ${G.hi.toFixed(2)} AU`,
+      {fill:G.color,"font-size":11.5,"text-anchor":k%2?"end":"start"}));
+  });
+  star(s,cx,cy);
+  s.appendChild(txt(cx,H-12,"√AU scale · faint = individual subtypes, bold = each class's hottest & coolest",
+    {"text-anchor":"middle",fill:"#7b8bab","font-size":11.5}));
+}
+
+/* ── V2 ───────────────────────────────────────────────────────────── */
+function arc(cx,cy,r,a0,a1){
+  const p=a=>[cx+r*Math.cos(a*Math.PI/180),cy-r*Math.sin(a*Math.PI/180)];
+  const [x0,y0]=p(a0),[x1,y1]=p(a1);
+  return `M${x0},${y0} A${r},${r} 0 0 0 ${x1},${y1}`;
+}
+function drawV2(){
+  const s=clear("v2"),W=1000,H=600,cx=W/2,cy=H/2+6,R=232,maxAU=6.3;
+  const rf=au=>Math.sqrt(au/maxAU)*R;
+  const spokes=document.getElementById("v2-spokes").checked;
+  const every=document.getElementById("v2-every").checked;
+  auGrid(s,cx,cy,rf,6,1);
+  const pad=3.5;
+  GROUPS.forEach((G,i)=>{
+    const a0=i*45+pad,a1=(i+1)*45-pad,mid=(a0+a1)/2;
+    if(spokes){
+      const rr=R*1.04,ar=(i*45)*Math.PI/180;
+      s.appendChild(el("line",{x1:cx,y1:cy,x2:cx+Math.cos(ar)*rr,y2:cy-Math.sin(ar)*rr,
+        stroke:"#141d3a","stroke-width":1}));
+    }
+    G.rows.forEach((r,j)=>{
+      const p=el("path",{d:arc(cx,cy,rf(r.au),a0,a1),fill:"none",stroke:G.color,
+        "stroke-width":2,"stroke-dasharray":"5 4","stroke-opacity":.95,"stroke-linecap":"round"});
+      hover(p,info(r)); s.appendChild(p);
+      if(every||j===0||j===G.rows.length-1){
+        const ang=(every? a0+ (a1-a0)*0.5 : (j===0? a1-2 : a0+2))*Math.PI/180;
+        const rr=rf(r.au);
+        s.appendChild(txt(cx+Math.cos(ang)*rr,cy-Math.sin(ang)*rr-3,
+          every?r.cls:`${r.cls} ${r.au.toFixed(2)}`,
+          {fill:G.color,"font-size":every?8.5:10,"text-anchor":"middle"}));
+      }
+    });
+    // class name just outside the wedge
+    const ar=mid*Math.PI/180,rr=R*1.09;
+    s.appendChild(txt(cx+Math.cos(ar)*rr,cy-Math.sin(ar)*rr+4,G.name,
+      {fill:G.color,"font-size":13,"font-weight":600,"text-anchor":"middle"}));
+  });
+  star(s,cx,cy);
+  s.appendChild(txt(cx,H-10,"Radius = true hyper limit (√AU). Angle carries no meaning — each class owns one wedge.",
+    {"text-anchor":"middle",fill:"#7b8bab","font-size":11.5}));
+}
+
+/* ── V3 ───────────────────────────────────────────────────────────── */
+let v3focus=null;
+function drawV3(){
+  const s=clear("v3"),W=1000,H=580,cx=W/2,cy=H/2+4,R=228,maxAU=6.3;
+  const rf=au=>Math.sqrt(au/maxAU)*R;
+  auGrid(s,cx,cy,rf,6,1);
+  GROUPS.forEach((G,i)=>{
+    const on=v3focus===G.g, dim=v3focus&&!on;
+    if(on){
+      s.appendChild(el("circle",{cx,cy,r:rf(G.hi),fill:G.color,"fill-opacity":.10}));
+      if(G.rows.length>1) s.appendChild(el("circle",{cx,cy,r:rf(G.lo),fill:"#070b18"}));
+      G.rows.forEach((r,j)=>{
+        const c=el("circle",{cx,cy,r:rf(r.au),fill:"none",stroke:G.color,"stroke-width":1.6,
+          "stroke-dasharray":"6 5"});
+        hover(c,info(r)); s.appendChild(c);
+        const ang=((j%2?128:52)+ (j%4<2?0:6))*Math.PI/180,rr=rf(r.au);
+        s.appendChild(txt(cx+Math.cos(ang)*rr+(j%2?-6:6),cy-Math.sin(ang)*rr-3,
+          `${r.cls} ${r.au.toFixed(2)}`,{fill:G.color,"font-size":10,"text-anchor":j%2?"end":"start"}));
+      });
+    }else{
+      const au=G.rows.length>1?(G.hi+G.lo)/2:G.hi;
+      const c=el("circle",{cx,cy,r:rf(au),fill:"none",stroke:G.color,
+        "stroke-width":dim?1:1.8,"stroke-opacity":dim?.28:.95,"stroke-dasharray":"6 5"});
+      c.addEventListener("click",()=>{v3focus=G.g;syncV3();});
+      hover(c,`<b>Class ${G.name}</b><br>${G.rows.length>1?`${G.lo.toFixed(2)}–${G.hi.toFixed(2)} AU`:`${au.toFixed(3)} AU`}<br><i>click to expand</i>`);
+      s.appendChild(c);
+      if(!dim){
+        const ang=(i%2?142:38)*Math.PI/180,rr=rf(au);
+        s.appendChild(txt(cx+Math.cos(ang)*rr+(i%2?-8:8),cy-Math.sin(ang)*rr-4,
+          `${G.name} · ${au.toFixed(2)} AU`,{fill:G.color,"font-size":11.5,"text-anchor":i%2?"end":"start"}));
+      }
+    }
+  });
+  star(s,cx,cy);
+  s.appendChild(txt(cx,H-10, v3focus? `Class ${NAME[v3focus]} expanded — click its chip again to collapse`
+                                     : "Click a ring (or a chip above) to expand that class into its subtypes",
+    {"text-anchor":"middle",fill:"#7b8bab","font-size":11.5}));
+}
+function syncV3(){
+  const box=document.getElementById("v3-chips");
+  box.innerHTML="";
+  GROUPS.forEach(G=>{
+    const c=document.createElement("span");
+    c.className="chip"+(v3focus&&v3focus!==G.g?" off":"");
+    c.innerHTML=`<span class="sw" style="background:${G.color}"></span>${G.name}`;
+    c.onclick=()=>{v3focus=(v3focus===G.g)?null:G.g;syncV3();};
+    box.appendChild(c);
+  });
+  drawV3();
+}
+
+/* ── V4 ───────────────────────────────────────────────────────────── */
+const v4on=new Set(["G","K","RG"]);
+function drawV4(){
+  const s=clear("v4"),W=1000,H=580,cx=W/2,cy=H/2+4,R=228;
+  const vis=ROWS.filter(r=>v4on.has(r.grp));
+  const fit=document.getElementById("v4-fit").checked;
+  const maxAU=(fit&&vis.length)?Math.max(...vis.map(r=>r.au))*1.12:6.3;
+  const rf=au=>Math.sqrt(au/maxAU)*R;
+  auGrid(s,cx,cy,rf,maxAU,maxAU>4?1:0.5);
+  GROUPS.filter(G=>v4on.has(G.g)).forEach(G=>{
+    G.rows.forEach((r,j)=>{
+      const c=el("circle",{cx,cy,r:rf(r.au),fill:"none",stroke:G.color,"stroke-width":1.6,
+        "stroke-dasharray":"6 5"});
+      hover(c,info(r)); s.appendChild(c);
+      const ang=((j%2?125:55)+(j%4<2?0:8))*Math.PI/180,rr=rf(r.au);
+      s.appendChild(txt(cx+Math.cos(ang)*rr+(j%2?-6:6),cy-Math.sin(ang)*rr-3,
+        `${r.cls} ${r.au.toFixed(2)}`,{fill:G.color,"font-size":10,"text-anchor":j%2?"end":"start"}));
+    });
+  });
+  star(s,cx,cy);
+  s.appendChild(txt(cx,H-10,
+    vis.length? `${vis.length} rings shown · ${fit?"scale fitted to visible classes":"fixed 0–6.3 AU scale"}`
+              : "No classes selected",
+    {"text-anchor":"middle",fill:"#7b8bab","font-size":11.5}));
+}
+function syncV4(){
+  const box=document.getElementById("v4-chips");
+  box.innerHTML="";
+  GROUPS.forEach(G=>{
+    const c=document.createElement("span");
+    c.className="chip"+(v4on.has(G.g)?"":" off");
+    c.innerHTML=`<span class="sw" style="background:${G.color}"></span>${G.name}`;
+    c.onclick=()=>{v4on.has(G.g)?v4on.delete(G.g):v4on.add(G.g);syncV4();};
+    box.appendChild(c);
+  });
+  drawV4();
+}
+
+["v1-ghost","v1-fill"].forEach(i=>document.getElementById(i).addEventListener("change",drawV1));
+["v2-spokes","v2-every"].forEach(i=>document.getElementById(i).addEventListener("change",drawV2));
+document.getElementById("v4-fit").addEventListener("change",drawV4);
+drawV1();drawV2();syncV3();syncV4();
+</script>
+</body>
+</html>

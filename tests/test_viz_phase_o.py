@@ -2377,6 +2377,9 @@ class O7SolarSystemCanvasAndPanelTest(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 # O-6 — O10 Honorverse Visualization.
 #   O10a (opt 14): prepare_hyper_limits + make_hyper_bar_canvas + panel tab.
+#   Class-grouped rings (2026-07-31, post-Phase-O): prepare_hyper_limit_rings +
+#     make_hyper_ring_canvas (ghost/sector) + the two opt-14 ring tabs, which
+#     precede — and do not replace — the O10a bar chart.
 #   O10b (opts 8/9): compute_hyper_limit_for_spectral_type ceiling rule;
 #     prepare_system_regions_diagram adds `hyper_limit` only when spectral_type
 #     resolves; the ring draws only with show_hyper=True; the wrapper's checkbox
@@ -2396,6 +2399,87 @@ class O10aHyperLimitsPrepTest(unittest.TestCase):
         # Red Giant has no OBAFGKM leading letter → default grey.
         self.assertEqual(d["colors"][d["classes"].index("Red Giant")], "#AAAAAA")
         self.assertEqual(len(d["lm"]), len(d["au"]))
+
+
+class HyperRingPrepTest(unittest.TestCase):
+    """prepare_hyper_limit_rings — the class-grouped regrouping behind the
+    Class Rings / Class Sectors tabs. It must not lose a row and must not
+    invent a colour for 'Red Giant'."""
+
+    def setUp(self):
+        self.d = viz.prepare_hyper_limit_rings()
+
+    def test_eight_groups_in_catalogue_order(self):
+        self.assertEqual([g["key"] for g in self.d["groups"]],
+                         ["O", "B", "A", "F", "G", "K", "M", "RG"])
+        self.assertEqual([g["label"] for g in self.d["groups"]],
+                         ["O", "B", "A", "F0–F9", "G0–G9", "K0–K9", "M0–M9",
+                          "Red Giant"])
+
+    def test_no_row_is_dropped_or_duplicated(self):
+        flat = viz.prepare_hyper_limits()
+        grouped = [r["spectral_class"] for g in self.d["groups"] for r in g["rows"]]
+        self.assertEqual(len(grouped), 44)
+        self.assertEqual(sorted(grouped), sorted(flat["classes"]))
+
+    def test_bounds(self):
+        g = {x["key"]: x for x in self.d["groups"]}
+        self.assertAlmostEqual(g["F"]["hi_au"], 26.42 / 8.3167, places=4)
+        self.assertAlmostEqual(g["F"]["lo_au"], 22.44 / 8.3167, places=4)
+        self.assertEqual(g["F"]["hi_class"], "F0")
+        self.assertEqual(g["F"]["lo_class"], "F9")
+        # A single-row group collapses to lo == hi.
+        self.assertEqual(g["O"]["hi_au"], g["O"]["lo_au"])
+        self.assertAlmostEqual(self.d["max_au"], 49.60 / 8.3167, places=4)
+        self.assertAlmostEqual(self.d["min_au"], 5.64 / 8.3167, places=4)
+
+    def test_red_giant_keeps_the_unknown_grey(self):
+        # "Red Giant" is not a spectral class — it must come back as the shared
+        # unknown grey, never a hue invented for this diagram (one palette rule).
+        rg = [g for g in self.d["groups"] if g["key"] == "RG"][0]
+        self.assertEqual(rg["color"], "#AAAAAA")
+        self.assertEqual([g["color"] for g in self.d["groups"]][:3],
+                         ["#9BB0FF", "#AABFFF", "#CAD7FF"])
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class HyperRingCanvasTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _canvas(self, **kw):
+        from gui.visualizations.plot_helpers import make_hyper_ring_canvas
+        return make_hyper_ring_canvas(None, viz.prepare_hyper_limit_rings(), **kw)
+
+    def test_both_modes_build(self):
+        for mode in ("ghost", "sector"):
+            cv, tb = self._canvas(mode=mode)
+            self.assertIsNotNone(cv, mode)
+            self.assertIsNotNone(tb, mode)
+
+    def test_unknown_mode_falls_back_and_error_data_is_handled(self):
+        from gui.visualizations.plot_helpers import make_hyper_ring_canvas
+        self.assertIsNotNone(self._canvas(mode="nonsense")[0])
+        self.assertIsNotNone(make_hyper_ring_canvas(None, {"error": "empty"})[0])
+        self.assertIsNotNone(make_hyper_ring_canvas(None, None)[0])
+
+    def test_class_filter_limits_the_legend(self):
+        for mode in ("ghost", "sector"):
+            cv, _ = self._canvas(mode=mode, classes=["G", "M"])
+            ax = cv.figure.axes[0]
+            labels = [t.get_text() for t in ax.get_legend().get_texts()]
+            self.assertEqual(len(labels), 2, mode)
+            self.assertTrue(labels[0].startswith("G0–G9"), labels)
+            self.assertTrue(labels[1].startswith("M0–M9"), labels)
+
+    def test_empty_selection_is_a_message_not_a_crash(self):
+        cv, tb = self._canvas(classes=[])
+        self.assertIsNotNone(cv)
+        texts = [t.get_text() for t in cv.figure.axes[0].texts]
+        self.assertIn("No spectral classes selected.", texts)
 
 
 class O10bHyperLookupTest(unittest.TestCase):
@@ -2495,6 +2579,45 @@ class O10CanvasAndPanelTest(unittest.TestCase):
         names = [p._viz_tabs_widget.tabText(i)
                  for i in range(p._viz_tabs_widget.count())]
         self.assertIn("Hyper Limits", names)
+
+    def test_opt14_ring_tabs_precede_the_bar_chart(self):
+        # Tab order is a deliberate choice: the two class-grouped ring diagrams
+        # first (ghost default), then the original O10a 44-bar chart, which must
+        # survive untouched.
+        from PySide6.QtWidgets import QCheckBox
+        import gui.panels as panels
+
+        class _StubWindow:
+            pass
+        p = panels.HonorverseHyperPanel(_StubWindow())
+        names = [p._viz_tabs_widget.tabText(i)
+                 for i in range(p._viz_tabs_widget.count())]
+        self.assertEqual(names[:3], ["Class Rings", "Class Sectors", "Hyper Limits"])
+        # One checkbox per display group on each ring tab.
+        for i in (0, 1):
+            boxes = p._viz_tabs_widget.widget(i).findChildren(QCheckBox)
+            self.assertEqual(len(boxes), 8, names[i])
+            self.assertTrue(all(b.isChecked() for b in boxes), names[i])
+            self.assertEqual(boxes[0].text(), "O")
+            self.assertEqual(boxes[-1].text(), "Red Giant")
+
+    def test_opt14_ring_tabs_select_all_clear_all(self):
+        from PySide6.QtWidgets import QCheckBox, QPushButton
+        import gui.panels as panels
+
+        class _StubWindow:
+            pass
+        p = panels.HonorverseHyperPanel(_StubWindow())
+        for i in (0, 1):
+            tab = p._viz_tabs_widget.widget(i)
+            boxes = tab.findChildren(QCheckBox)
+            btns = {b.text(): b for b in tab.findChildren(QPushButton)}
+            self.assertIn("Select All", btns)
+            self.assertIn("Clear All", btns)
+            btns["Clear All"].click()
+            self.assertEqual([b for b in boxes if b.isChecked()], [])
+            btns["Select All"].click()
+            self.assertTrue(all(b.isChecked() for b in boxes))
 
     def test_region_tabs_checkbox_gating(self):
         # add_region_diagram_tabs: System Regions tab gets a checkbox only when

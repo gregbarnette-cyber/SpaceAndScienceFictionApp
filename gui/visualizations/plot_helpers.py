@@ -5132,6 +5132,239 @@ def make_hyper_bar_canvas(parent, data: dict):
     return canvas, toolbar
 
 
+_HYPER_RING_MODES = ("ghost", "sector")
+
+
+def make_hyper_ring_canvas(parent, data: dict, mode: str = "ghost", classes=None):
+    """Class-grouped Honorverse hyper-limit ring diagram (star at centre, √AU).
+
+    The companion to make_hyper_bar_canvas: the same 44 catalogue rows drawn as
+    rings in the Ice-Line / System-Regions idiom, grouped by spectral class so the
+    chart carries 8 labels rather than 44. (Class rings/arcs are dashed; the ghost
+    subtype rings are solid hairlines — see the GHOST_LS note below.)
+
+    data    : core.viz.prepare_hyper_limit_rings() → {groups, min_au, max_au}.
+    mode    : "ghost"  — every subtype as a faint ring, with each class's hottest
+                         and coolest ring drawn bold and labelled once.
+              "sector" — the dial split into one wedge per visible class; every
+                         subtype is an ARC at its true radius, confined to its
+                         class's wedge, so classes whose radii nearly coincide
+                         (F/G/K/M all live between 1.1 and 3.2 AU) cannot collide.
+              An unknown mode falls back to "ghost".
+    classes : None → all groups; otherwise an iterable of group keys
+              ("O".."M", "RG") to draw. Filtering rescales the dial to what is
+              visible, and in sector mode the survivors re-divide the full circle.
+
+    Why the radial crowding matters: 40 of the 44 limits sit between 1.11 and
+    3.18 AU, so at a typical canvas size full circles for all of them land under
+    2 px apart — which is why "ghost" de-emphasises them and "sector" separates
+    them by angle instead of radius.
+
+    Returns (canvas, toolbar), or (None, None) when matplotlib is unavailable.
+    """
+    if not _MPL_OK:
+        return None, None
+
+    # SURFACE: the dark Star-Chart palette, NOT the light _SPACE_BG the other ring
+    # diagrams use. The spectral palette is built for #0b1020 — F (#F8F7FF) and
+    # G (#FFF4EA) are near-white *by design* (see core.shared.sp_color's palette
+    # note), so on the light surface those two classes are invisible. Ice/solvent
+    # rings can use the light surface because their colours are per-species.
+    def _error_canvas(msg):
+        fig = Figure(figsize=(7, 7), dpi=100, facecolor=_SC_FIG_BG)
+        cv = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(_SC_PLOT_BG)
+        ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha="center", va="center",
+                color=_SC_STAR_LBL, fontsize=11)
+        ax.axis("off")
+        return cv, NavToolbar(cv, parent)
+
+    if not data or "error" in data:
+        return _error_canvas(data.get("error", "No data") if data else "No data")
+
+    groups = list(data.get("groups") or [])
+    if classes is not None:
+        keep = {str(c) for c in classes}
+        groups = [g for g in groups if g["key"] in keep]
+    if not groups:
+        return _error_canvas("No spectral classes selected.")
+    if mode not in _HYPER_RING_MODES:
+        mode = "ghost"
+
+    from matplotlib.lines import Line2D
+
+    max_au = max(g["hi_au"] for g in groups) * 1.06
+
+    def au_to_r(au):
+        return math.sqrt(au / max_au)
+
+    MAX_R = 1.0
+    # Sector mode parks a class label outside the outermost arc, so the view has
+    # to be wider than the dial or those labels clip at the axes edge.
+    VIEW_R = 1.20 if mode == "sector" else 1.10
+    STAR_R = MAX_R * 0.016
+    # Ghost rings are fine SOLID hairlines, not dotted: at these radii a dotted
+    # stroke moirés into a hatch field instead of reading as concentric circles.
+    # The bold class rings carry the dash, which is what distinguishes them.
+    GHOST_LS = "-"
+    BOLD_LS = (0, (6, 5))
+
+    fig = Figure(figsize=(7, 7), dpi=100, facecolor=_SC_FIG_BG)
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111, aspect="equal", facecolor=_SC_PLOT_BG)
+    ax.set_xlim(-VIEW_R, VIEW_R)
+    ax.set_ylim(-VIEW_R, VIEW_R)
+    ax.axis("off")
+
+    # AU scale rings
+    step = 1.0 if max_au > 2.5 else 0.5
+    v = step
+    while v <= max_au:
+        ax.add_patch(Circle((0, 0), au_to_r(v), fill=False, edgecolor=_SC_RING,
+                            linewidth=0.6, alpha=0.55, zorder=1))
+        ax.text(0.012, au_to_r(v) - 0.030, f"{v:g} AU",
+                color=_SC_RING_LBL, fontsize=6.5, zorder=3,
+                path_effects=[_path_stroke(1.8, _SC_PLOT_BG)])
+        v += step
+
+    handles = []
+    drawn = []      # {row, r, a0, a1, group} — a0/a1 None in ghost mode
+    markers = []    # click-to-info entries (ghost mode only)
+
+    def _handle(g):
+        rng = (f"{g['hi_au']:.2f} AU" if len(g["rows"]) == 1
+               else f"{g['hi_au']:.2f}–{g['lo_au']:.2f} AU")
+        handles.append(Line2D([0], [0], color=g["color"], lw=1.6, ls="--",
+                              label=f"{g['label']}  ({rng})"))
+
+    if mode == "ghost":
+        for i, g in enumerate(groups):
+            for row in g["rows"]:
+                r = au_to_r(row["au"])
+                ax.add_patch(Circle((0, 0), r, fill=False, edgecolor=g["color"],
+                                    linewidth=0.8, linestyle=GHOST_LS,
+                                    alpha=0.30, zorder=4))
+                drawn.append({"row": row, "r": r, "a0": None, "a1": None, "g": g})
+            bounds = ([g["hi_au"]] if len(g["rows"]) == 1
+                      else [g["hi_au"], g["lo_au"]])
+            for au in bounds:
+                ax.add_patch(Circle((0, 0), au_to_r(au), fill=False,
+                                    edgecolor=g["color"], linewidth=1.6,
+                                    linestyle=BOLD_LS, alpha=0.95, zorder=6))
+                markers.append({
+                    "label": f"Class {g['label']}", "au": au, "color": g["color"],
+                    "body": f"{au:.3f} AU  ·  {au * _HYPER_LM_PER_AU:.2f} LM"})
+            # Label on alternating diagonals so consecutive class labels can't stack.
+            ang = math.radians(142 if i % 2 else 38)
+            rr = au_to_r(g["hi_au"])
+            ax.text(rr * math.cos(ang), rr * math.sin(ang) + 0.012,
+                    f"{g['label']} · {g['hi_au']:.2f}"
+                    + ("" if len(g["rows"]) == 1 else f"–{g['lo_au']:.2f}") + " AU",
+                    color=g["color"], fontsize=8,
+                    ha="right" if i % 2 else "left", va="bottom", zorder=9,
+                    clip_on=False,
+                    path_effects=[_path_stroke(1.6, _SC_PLOT_BG)])
+            _handle(g)
+    else:
+        n = len(groups)
+        span = 360.0 / n
+        pad = min(4.0, span * 0.10)
+        for i, g in enumerate(groups):
+            a0, a1 = i * span + pad, (i + 1) * span - pad
+            spoke = math.radians(i * span)
+            ax.plot([0, MAX_R * 0.99 * math.cos(spoke)],
+                    [0, MAX_R * 0.99 * math.sin(spoke)],
+                    color=_GRID_CLR, linewidth=0.6, alpha=0.85, zorder=2)
+            last = len(g["rows"]) - 1
+            mang = math.radians((a0 + a1) / 2.0)
+            mx, my = math.cos(mang), math.sin(mang)
+            for j, row in enumerate(g["rows"]):
+                r = au_to_r(row["au"])
+                ts = [math.radians(a0 + (a1 - a0) * k / 40.0) for k in range(41)]
+                ax.plot([r * math.cos(t) for t in ts],
+                        [r * math.sin(t) for t in ts],
+                        color=g["color"], linewidth=1.6, linestyle=(0, (3, 2.5)),
+                        solid_capstyle="round", alpha=0.95, zorder=6)
+                drawn.append({"row": row, "r": r, "a0": a0, "a1": a1, "g": g})
+                # Endpoint labels ride the wedge BISECTOR, offset radially
+                # (hottest outward, coolest inward). Labelling at the wedge edges
+                # instead puts two classes' labels at nearly the same point, which
+                # is exactly the collision the sectors exist to avoid.
+                if j in (0, last):
+                    off = 0.055 if j == 0 else -0.055
+                    rr = r + off
+                    ax.text(rr * mx, rr * my,
+                            f"{row['spectral_class']} {row['au']:.2f}",
+                            color=g["color"], fontsize=6.5, ha="center",
+                            va="bottom" if j == 0 else "top", zorder=9,
+                            clip_on=False,
+                            path_effects=[_path_stroke(1.6, _SC_PLOT_BG)])
+            ax.text(MAX_R * 1.04 * mx, MAX_R * 1.04 * my, g["label"],
+                    color=g["color"], fontsize=9.5, fontweight="bold",
+                    ha="left" if mx > 0.15 else ("right" if mx < -0.15 else "center"),
+                    va="bottom" if my > 0.15 else ("top" if my < -0.15 else "center"),
+                    zorder=10, clip_on=False,
+                    path_effects=[_path_stroke(2.0, _SC_PLOT_BG)])
+            _handle(g)
+
+    ax.add_patch(Circle((0, 0), STAR_R, color="#FFEE55", zorder=12))
+
+    note = ("faint = each subtype, bold = class hottest & coolest"
+            if mode == "ghost"
+            else "radius = true limit; angle carries no meaning (one wedge per class)")
+    ax.set_title(f"Honorverse Hyper Limits by Spectral Class  (√AU scale)\n{note}",
+                 color=_SC_AXIS_TITLE, fontsize=9, pad=8)
+    ax.legend(handles=handles, loc="upper right", fontsize=6,
+              framealpha=0.9, labelcolor=_SC_STAR_LBL, facecolor=_SC_PLOT_BG,
+              edgecolor=_SC_GRID_MAJOR, borderpad=0.6, labelspacing=0.35)
+
+    # Click-to-info: ghost mode only. In sector mode a ring occupies one wedge, so
+    # a radius-only hit test would report a class the user did not click on.
+    if mode == "ghost":
+        _attach_ring_click(canvas, ax, _make_info_box(ax), [],
+                           r_to_au=lambda r: (r ** 2) * max_au, markers=markers)
+
+    # ── Cursor-anchored hover ─────────────────────────────────────────────────
+    annot = ax.annotate(
+        "", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+        bbox=dict(boxstyle="round", fc="#ffffe0", ec="#888888", alpha=0.95),
+        fontsize=7, color="#222222", zorder=30, visible=False,
+    )
+
+    def _on_move(event):
+        if event.inaxes is not ax or event.xdata is None:
+            if annot.get_visible():
+                annot.set_visible(False)
+                canvas.draw_idle()
+            return
+        r = math.hypot(event.xdata, event.ydata)
+        ang = math.degrees(math.atan2(event.ydata, event.xdata)) % 360.0
+        best, best_d = None, None
+        for d in drawn:
+            if d["a0"] is not None and not (d["a0"] - 2.0 <= ang <= d["a1"] + 2.0):
+                continue
+            dd = abs(d["r"] - r)
+            if best_d is None or dd < best_d:
+                best, best_d = d, dd
+        if best is not None and best_d <= 0.020:
+            row = best["row"]
+            annot.xy = (event.xdata, event.ydata)
+            annot.set_text(f"{row['spectral_class']}  ·  class {best['g']['label']}\n"
+                           f"{row['au']:.3f} AU  ·  {row['lm']:.2f} LM")
+            annot.set_visible(True)
+            canvas.draw_idle()
+        elif annot.get_visible():
+            annot.set_visible(False)
+            canvas.draw_idle()
+
+    canvas.mpl_connect("motion_notify_event", _on_move)
+
+    fig.tight_layout(pad=0.5)
+    toolbar = NavToolbar(canvas, parent)
+    return canvas, toolbar
+
+
 def make_solvent_bar_canvas(parent, data: dict):
     """Horizontal solvent liquid-range bar chart (Phase P V5; mirrors the O10a
     hyper-bar style).

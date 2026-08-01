@@ -4,6 +4,9 @@ Implementation plans and mockups for work that is **built and shipped** — kept
 historical record: the rationale, the measured numbers, and (where it matters) the
 corrections that reviews forced.
 
+Two entries are **`.html`, not `.md`** — the interactive Honorverse hyper-limit diagram
+mockups (open them in a browser; they are self-contained, with no external assets).
+
 Consolidated here 2026-07-27. This folder replaces the former `archive/` directory,
 which held the pre-`PHASE_*`-era plans under a separate convention; those files are now
 in here too, with the same history (moved with `git mv`).
@@ -21,7 +24,7 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (48 files)
+## Index (50 files)
 
 | File | Title |
 |---|---|
@@ -29,6 +32,8 @@ in here too, with the same history (moved with `git mv`).
 | [GCNS_EXTENSION_REQUEST.md](GCNS_EXTENSION_REQUEST.md) | Feature Request: Extend the local catalog with GCNS for completeness + real distances |
 | [JUMP_ROUTE_WAYPOINTS_PLAN.md](JUMP_ROUTE_WAYPOINTS_PLAN.md) | Jump-Route Waypoints — required `via` stars on the Phase I-OPTS B planner — built 2026-07-31 (all four phases; both `/code-review` checkpoints run, §12/§13 record the findings) |
 | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) | Integration Plan: SpaceAndScienceFictionApp → ScienceFictionResearch |
+| [HYPER_LIMITS_DIAGRAM_MOCKUP.html](HYPER_LIMITS_DIAGRAM_MOCKUP.html) | Honorverse Hyper Limits (opt 14) — five diagram options for the 44-row bar chart (range bands / sequence line / class rings / reference-line strip / drill-down). **Open in a browser** — self-contained, interactive. Round 1 of the review that shipped the Class Rings + Class Sectors tabs, 2026-07-31 |
+| [HYPER_LIMITS_RINGS_MOCKUP.html](HYPER_LIMITS_RINGS_MOCKUP.html) | Honorverse Hyper Limits (opt 14) — round 2: four ways to fit all 44 limits into the ring idiom (ghost rings / class sectors / drill-down / filtered). V1 + V2 were the ones built; records the measured density problem (40 of 44 limits inside 1.11–3.18 AU) |
 | [PHASE_AA_PLAN.md](PHASE_AA_PLAN.md) | Phase AA — PAR / Photosynthesis by Stellar Type (`par-flux`) |
 | [PHASE_AB_PLAN.md](PHASE_AB_PLAN.md) | Phase AB — Planetary Energy Balance / Terraforming (`equilibrium-temp`, `insolation-shif |
 | [PHASE_AC_PLAN.md](PHASE_AC_PLAN.md) | Phase AC — ISM-Drag / Magnetic-Sail Calculators (Group K) |
