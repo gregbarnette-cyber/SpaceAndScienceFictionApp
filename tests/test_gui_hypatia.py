@@ -65,6 +65,38 @@ class TestGuiHypatia(unittest.TestCase):
         widget = wrap_scrollable(None, canvas, toolbar)
         self.assertIsNotNone(widget)
 
+    def test_wheel_over_the_canvas_scrolls_the_pane(self):
+        """A wheel event on the canvas must scroll the enclosing QScrollArea.
+
+        A matplotlib canvas accepts wheel events, so without the forwarder the
+        pane only scrolls while the pointer is over the scrollbar itself.
+        """
+        from PySide6.QtCore import QEvent, QPoint, QPointF, Qt as _Qt
+        from PySide6.QtGui import QWheelEvent
+        from PySide6.QtWidgets import QScrollArea
+        from core.viz import prepare_abundance_profile
+        from gui.visualizations.plot_helpers import make_abundance_canvas, wrap_scrollable
+
+        ab = prepare_abundance_profile(self.hypatia)
+        canvas, toolbar = make_abundance_canvas(None, ab, "Test Star")
+        widget = wrap_scrollable(None, canvas, toolbar)
+        widget.resize(600, 300)      # force the tall figure to overflow the viewport
+        widget.show()
+        self.app.processEvents()
+
+        scroll = widget.findChild(QScrollArea)
+        bar = scroll.verticalScrollBar()
+        self.assertGreater(bar.maximum(), bar.minimum(),
+                           "figure should overflow the viewport for this test")
+        before = bar.value()
+        ev = QWheelEvent(QPointF(50, 50), canvas.mapToGlobal(QPoint(50, 50)),
+                         QPoint(0, -120), QPoint(0, -120),
+                         _Qt.MouseButton.NoButton, _Qt.KeyboardModifier.NoModifier,
+                         _Qt.ScrollPhase.NoScrollPhase, False)
+        self.app.sendEvent(canvas, ev)
+        self.assertGreater(bar.value(), before)
+        widget.hide()
+
 
 if __name__ == "__main__":
     unittest.main()

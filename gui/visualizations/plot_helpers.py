@@ -59,6 +59,40 @@ def log_viz_error(context: str) -> None:
     traceback.print_exc()
 
 
+def _install_wheel_forwarder(canvas, scroll):
+    """Make the mouse wheel scroll `scroll` while the cursor is over `canvas`.
+
+    A matplotlib FigureCanvasQTAgg **accepts** every wheel event it receives (it
+    turns them into matplotlib ``scroll_event``s), so Qt never propagates them to
+    the enclosing QScrollArea. Inside `wrap_scrollable` the canvas *is* the scroll
+    area's widget and covers the whole viewport, so without this the pane only
+    scrolls while the pointer is over the scrollbar itself.
+
+    Safe here because no `wrap_scrollable`-wrapped canvas connects `scroll_event`
+    (the four that do — the two Star Charts, the 3D star map and the OEC
+    architecture map — zoom on the wheel and are embedded directly, not wrapped).
+    **Do not wrap a scroll-zooming canvas without revisiting this**, or its zoom
+    would fight the pane scroll. Returns the filter, which the caller must keep a
+    reference to (Qt does not own it).
+    """
+    from PySide6.QtCore import QObject, QEvent
+
+    class _WheelForwarder(QObject):
+        def eventFilter(self, obj, event):
+            if event.type() == QEvent.Type.Wheel:
+                bar = scroll.verticalScrollBar()
+                if bar.maximum() > bar.minimum():
+                    dy = event.angleDelta().y()
+                    # 120 units == one notch == the scrollbar's page-less step.
+                    bar.setValue(bar.value() - int(dy / 120.0 * bar.singleStep() * 3))
+                    return True
+            return False
+
+    filt = _WheelForwarder(scroll)
+    canvas.installEventFilter(filt)
+    return filt
+
+
 def wrap_scrollable(parent, canvas, toolbar):
     """Wrap a (canvas, toolbar) pair in a widget whose canvas can scroll vertically.
 
@@ -67,6 +101,9 @@ def wrap_scrollable(parent, canvas, toolbar):
     embedding the canvas directly; for tall ones (e.g. an abundance chart with 50+
     bars) the chart keeps its readable per-bar height and the user scrolls instead
     of the bars being squashed to fit the tab.
+
+    The wheel scrolls the pane from anywhere over the canvas — see
+    `_install_wheel_forwarder` for why that needs an explicit event filter.
     """
     from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea
 
@@ -90,6 +127,8 @@ def wrap_scrollable(parent, canvas, toolbar):
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
     scroll.setWidget(canvas)
+    # Keep a reference on the container: Qt does not take ownership of the filter.
+    container._wheel_forwarder = _install_wheel_forwarder(canvas, scroll)
     lay.addWidget(scroll)
     return container
 
