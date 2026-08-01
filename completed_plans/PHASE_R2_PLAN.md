@@ -19,7 +19,7 @@
 > `tests/test_nbody.py` (+ additions to `tests/test_query_generate.py` / `tests/test_generator_panel.py`).
 >
 > **Companion mockups (approved):** `PHASE_R2_MOCKUP.md` (design + analysis) and
-> `PHASE_R2_MOCKUP.html` (panel layout). **No code until this plan is signed off** (house rule).
+> `mockups/PHASE_R2_MOCKUP.html` (panel layout). **No code until this plan is signed off** (house rule).
 
 ---
 

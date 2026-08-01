@@ -1,7 +1,7 @@
 # PHASE R2 — Constraint / Feasibility Engine · Analysis + Mockup
 
 > **This is the analysis + mockup gate for R2 — design only, NO code.** Companion to
-> [`PHASE_R2_MOCKUP.html`](PHASE_R2_MOCKUP.html) (panel layout). The numbered, build-ready
+> [`PHASE_R2_MOCKUP.html`](../mockups/PHASE_R2_MOCKUP.html) (panel layout). The numbered, build-ready
 > `PHASE_R2_PLAN.md` is the **next** gate and is written only after this mockup is signed
 > off (house rule: no code until the plan is approved).
 >
@@ -229,7 +229,7 @@ R2 **extends the R1 panel in place** (no new panel, no new nav entry). Additive:
   Layer-4 alternatives (each a clickable chip that **applies the change** and re-runs). Below
   that, the **existing** R1 Planet Table (Source-coloured) + Orbit Diagram / HZ Ring tabs render
   the satisfied system. **Copy JSON** carries the full 4-layer envelope.
-- See `PHASE_R2_MOCKUP.html` for the layout.
+- See `mockups/PHASE_R2_MOCKUP.html` for the layout.
 
 ---
 

@@ -25,7 +25,7 @@
 > `tests/test_generate.py` / `tests/test_query_generate.py` / `tests/test_generator_panel.py`).
 >
 > **Companion mockups (approved 2026-06-24):** `PHASE_R3_MOCKUP.md` (design + analysis) and
-> `PHASE_R3_MOCKUP.html` (panel + data-contract layout). **No code until this plan is signed off**
+> `mockups/PHASE_R3_MOCKUP.html` (panel + data-contract layout). **No code until this plan is signed off**
 > (house rule).
 >
 > **As-built correction (2026-06-24):** this plan references a committed sample template at

@@ -18,7 +18,7 @@
 > `tests/test_query_*`, the panel smokes).
 >
 > **Companion mockups (approved 2026-06-24):** `PHASE_S_MOCKUP.md` (design + analysis) and
-> `PHASE_S_MOCKUP.html` (master-detail layout). **No code until this plan is signed off** (house rule).
+> `mockups/PHASE_S_MOCKUP.html` (master-detail layout). **No code until this plan is signed off** (house rule).
 
 ---
 

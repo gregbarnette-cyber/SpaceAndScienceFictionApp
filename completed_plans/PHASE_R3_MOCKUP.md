@@ -1,7 +1,7 @@
 # PHASE R3 — Research-Priors Hook · Analysis + Mockup
 
 > **This is the analysis + mockup gate for R3 — design only, NO code.** Companion to
-> [`PHASE_R3_MOCKUP.html`](PHASE_R3_MOCKUP.html) (panel + data-contract layout). The numbered,
+> [`PHASE_R3_MOCKUP.html`](../mockups/PHASE_R3_MOCKUP.html) (panel + data-contract layout). The numbered,
 > build-ready `PHASE_R3_PLAN.md` is the **next** gate and is written only after this mockup is
 > signed off (house rule: no code until the plan is approved).
 >
@@ -277,7 +277,7 @@ R3 is mostly backend, but three small, pattern-matching GUI touches make the hoo
    version), via a pure-`pathlib`/JSON status read (no `ResearchPriors` import needed), exactly as it
    appends the cached dust-map files today.
 
-> The mockup HTML (`PHASE_R3_MOCKUP.html`) lays out the importer panel, the policy selector + badge
+> The mockup HTML (`mockups/PHASE_R3_MOCKUP.html`) lays out the importer panel, the policy selector + badge
 > flip in the generator, and the data-contract schema card.
 
 ---

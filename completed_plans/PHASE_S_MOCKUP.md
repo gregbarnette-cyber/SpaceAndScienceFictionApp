@@ -1,7 +1,7 @@
 # PHASE S — Project Workspaces (Campaign / Novel Manager) · Analysis + Mockup
 
 > **This is the analysis + mockup gate for S — design only, NO code.** Companion to
-> [`PHASE_S_MOCKUP.html`](PHASE_S_MOCKUP.html) (panel layout). The numbered, build-ready
+> [`PHASE_S_MOCKUP.html`](../mockups/PHASE_S_MOCKUP.html) (panel layout). The numbered, build-ready
 > `PHASE_S_PLAN.md` is the **next** gate and is written only after this mockup is signed off
 > (house rule: no code until the plan is approved).
 >
@@ -198,7 +198,7 @@ New **"Projects"** nav category (top-level, near "Reports"); `gui/panels/project
   Both are guarded so the panels are unchanged until clicked; no behavioural change to existing flows.
 - `DbStatusPanel` (opt 57) appends **Projects** / **Project Members** rows.
 
-See `PHASE_S_MOCKUP.html` for the master-detail layout + the Add-to-project menu + the export dialog.
+See `mockups/PHASE_S_MOCKUP.html` for the master-detail layout + the Add-to-project menu + the export dialog.
 
 ---
 

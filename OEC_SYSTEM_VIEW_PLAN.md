@@ -1,7 +1,7 @@
 # OEC System View — Star-First Master/Detail (option 7 Data tab)
 
 **Status:** PLANNED — not started. Design approved 2026-08-01 against
-`OEC_TREE_VIEW_MOCKUP.html` (★ Recommended tab).
+`mockups/OEC_TREE_VIEW_MOCKUP.html` (★ Recommended tab).
 **Revision 2 (2026-08-01)** — folds in three plan reviews (codebase fact-check, plan/risk,
 derived-layer physics). Changes from r1: coverage figures re-measured; the derived layer's
 raise-paths and unit traps made explicit; Stage 4 split; three stages added; Copy/Export deferred;
@@ -36,7 +36,7 @@ For derived work also read §D.2 (domain gates) in full.
 
 **Standing rules while building:**
 - Run tests as `venv/bin/python -m pytest` — a bare `pytest` uses system Python and fails at collection.
-- The approved visual target is `OEC_TREE_VIEW_MOCKUP.html`, ★ Recommended tab.
+- The approved visual target is `mockups/OEC_TREE_VIEW_MOCKUP.html`, ★ Recommended tab.
 - Decisions D1–D12 are **locked** (§E). If one turns out to be wrong, stop and raise it — do not
   silently re-decide.
 - `tests/test_oec.py` edits are a tripwire (§0); any permitted edit is recorded in §M.

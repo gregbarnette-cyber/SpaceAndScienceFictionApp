@@ -14,7 +14,7 @@
 > subcommand), `docs/` updates, new `tests/test_generate.py`.
 >
 > **Companion mockups (approved):** `PHASE_R_MOCKUP.md` (design + analysis) and
-> `PHASE_R_MOCKUP.html` (panel layout). **No code until this plan is signed off** (house rule).
+> `mockups/PHASE_R_MOCKUP.html` (panel layout). **No code until this plan is signed off** (house rule).
 
 ---
 
