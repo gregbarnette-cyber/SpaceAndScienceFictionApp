@@ -22,6 +22,15 @@ HOURS_PER_YEAR  = 365.25 * 24        # 8765.82  (Julian year)
 HOURS_PER_MONTH = HOURS_PER_YEAR / 12
 LY_PER_PC       = 3.26156            # light years per parsec
 
+# Jupiter → Earth conversions. THE canonical pair — do not copy these literals
+# anywhere else (OEC_SYSTEM_VIEW_PLAN §B.2; pinned by
+# tests/test_oec_view.py::test_one_conversion_constant_by_value).
+# Both are EQUATORIAL radii/masses, matching `core.equations._JUP_RADIUS_M`
+# (7.1492e7 m) and OEC's 1-bar radii. Against a *mean* Earth radius (6371 km)
+# the radius ratio would be 11.221 — that convention is deliberately not used.
+M_JUP_EARTH  = 317.828               # Jupiter mass in Earth masses
+R_JUP_EARTH  = 11.209                # Jupiter equatorial radius in Earth radii
+
 # ─── Spectral Class Helpers ───────────────────────────────────────────────────
 
 # Negative lookbehind prevents matching the OBAFGKM letter when preceded by

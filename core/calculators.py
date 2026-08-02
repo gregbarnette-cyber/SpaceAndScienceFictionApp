@@ -21,7 +21,9 @@ from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retri
                      # AN0: the canonical designation matcher + the narrow key set
                      # (was a re-typed 5-entry prefix map in this module).
                      _match_designations, _join_designations,
-                     _designation_ids_from_rows, _NARROW_DESIG_KEYS)
+                     _designation_ids_from_rows, _NARROW_DESIG_KEYS,
+                     # B.2: the one Jupiter→Earth mass constant (OEC_SYSTEM_VIEW_PLAN)
+                     M_JUP_EARTH as _M_JUP_EARTH_SHARED)
 
 HOURS_PER_JULIAN_YEAR = 8765.8128  # 365.2422 × 24 (tropical year) — legacy ly/hr↔×c anchor; NOT 365.25×24 (=8766.0).
                                    # Golden pins and the downstream consumer depend on this exact value; see IMPROVEMENT_PLAN D1.
@@ -513,7 +515,7 @@ _M_PER_AU  = 149_597_870_700.0    # metres per AU
 _M_PER_LM  = _C_MS * 60.0        # metres per light-minute
 
 # ── Physical constants for the Phase T1b detectability / relativistic calcs ───
-_M_JUP_EARTH         = 317.828            # Jupiter mass in Earth masses
+_M_JUP_EARTH         = _M_JUP_EARTH_SHARED  # Jupiter mass in Earth masses (core.shared)
 _M_SUN_EARTH         = 332_946.0          # Sun mass in Earth masses
 _R_SUN_AU            = 0.00465047          # solar radius in AU
 _R_EARTH_AU          = 4.25875e-5          # Earth radius in AU

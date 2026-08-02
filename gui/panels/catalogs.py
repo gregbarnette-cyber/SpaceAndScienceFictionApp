@@ -8,8 +8,8 @@ import re
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QTabWidget, QSizePolicy,
-    QTreeWidget, QTreeWidgetItem, QComboBox,
-    QDialog, QGridLayout, QDialogButtonBox,
+    QTreeWidget, QTreeWidgetItem, QComboBox, QHeaderView, QSplitter, QCheckBox,
+    QDialog, QDialogButtonBox,
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -20,6 +20,8 @@ from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.viz
 import core.science
+import core.oec_derived
+import core.equations
 from gui.visualizations.plot_helpers import (
     mpl_available, make_hz_canvas, make_orbits_canvas, make_abundance_canvas, wrap_scrollable,
     make_kinematics_tab, make_hwc_temp_canvas, make_hwc_esi_canvas,
@@ -523,79 +525,340 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
 
 # ── Option 7: Open Exoplanet Catalogue ───────────────────────────────────────
 
-from core.databases import (oec_fv as _oec_fv, oec_format_field as _oec_fmt,
+from core.databases import (oec_fv as _oec_fv,
                             oec_statuses as _oec_statuses, oec_binary_label as _oec_binary_label)
 
-# Per-node headline field keys + display units (GUI). Any field may repeat — the
-# shared _oec_fv/_oec_fmt handle that (completed_plans/PHASE_OEC_PLAN.md §F.1).
-_OEC_TREE_KEYS = {
-    "binary":    [("separation", "sep", ""), ("semimajoraxis", "a", "AU"),
-                  ("eccentricity", "e", ""), ("period", "P", "d"),
-                  ("inclination", "i", "°")],
-    "star":      [("mass", "M", "M_sun"), ("radius", "R", "R_sun"),
-                  ("temperature", "T", "K"), ("metallicity", "[Fe/H]", ""),
-                  ("age", "age", "Gyr")],
-    "planet":    [("mass", "M", "M_jup"), ("radius", "R", "R_jup"),
-                  ("period", "P", "d"), ("semimajoraxis", "a", "AU"),
-                  ("eccentricity", "e", ""), ("inclination", "i", "°")],
-    "satellite": [("mass", "M", "M_earth"), ("radius", "R", "R_earth"),
-                  ("semimajoraxis", "a", "AU"), ("period", "P", "d")],
-}
+# ── Columnar tree (OEC_SYSTEM_VIEW_PLAN Stage 1) ─────────────────────────────
+# Star rows populate the SAME columns as planets (M/R/T + the derived L and HZ
+# cells), so nothing about a star is hidden behind a selection. The old
+# `_OEC_TREE_KEYS` / `_oec_tree_bits` crammed-string model is replaced, not extended.
+
 _OEC_TREE_PREFIX = {"system": "◆", "binary": "⋔", "star": "★",
                     "planet": "●", "satellite": "☾"}
 
+_OEC_COLUMNS = ["Node", "Type", "M", "R", "P (d)", "a (AU)", "e", "T (K)",
+                "L / S⊕", "HZ"]
+(_OEC_COL_NODE, _OEC_COL_TYPE, _OEC_COL_M, _OEC_COL_R, _OEC_COL_P,
+ _OEC_COL_A, _OEC_COL_E, _OEC_COL_T, _OEC_COL_L, _OEC_COL_HZ) = range(10)
 
-def _oec_tree_bits(node):
-    """`label=value unit` fragments for a node's headline fields."""
-    f, tag = node["fields"], node["tag"]
-    bits = []
-    for key, label, unit in _OEC_TREE_KEYS.get(tag, []):
-        if not f.get(key):
+# Columns 8/9 are derived (violet in the pane; here they simply carry a value or
+# stay empty). Stage 1b fills them for stars via `_oec_tree_derived_cells`.
+_OEC_DERIVED_COLUMNS = (_OEC_COL_L, _OEC_COL_HZ)
+
+
+# The value formatters live in gui/panels/oec_detail.py so the tree and the
+# detail pane can never render the same field two different ways (§B.6).
+from gui.panels.oec_detail import (
+    oec_value_cell as _oec_value_cell,
+    oec_planet_units as _oec_planet_units,
+    oec_mass_label as _oec_mass_label,
+    oec_num as _oec_num,
+    build_detail_pane as _oec_build_detail_pane,
+    build_context as _oec_build_context,
+    oec_star_xrefs as _oec_star_xrefs,
+    oec_hz_short as _oec_hz_short,
+)
+
+
+def _oec_node_tooltip(node):
+    """Every catalogued field of a node, one per line — so no value is unreachable
+    at any build stage (the detail pane, Stage 3, is the permanent home)."""
+    lines = []
+    for key in sorted(node.get("fields", {})):
+        if key == "list":
             continue
-        if key == "mass" and tag == "planet":
-            fv = _oec_fv(f["mass"])
-            if fv and fv.get("type") == "msini":
-                label = "M·sin i"
-        bits.append(f"{label}={_oec_fmt(f[key], unit)}")
-    return bits
+        # repeats=True: a binary's `separation` is catalogued in AU *and* arcsec,
+        # so first-value-only would break this function's whole promise.
+        txt = _oec_value_cell(node["fields"][key], repeats=True)
+        if txt:
+            lines.append(f"{key}: {txt}")
+    return "\n".join(lines)
 
 
-def _oec_tree_item(node):
-    """Build a QTreeWidgetItem (col 0 = name, col 1 = properties) for an OEC node."""
-    tag = node["tag"]
+def _oec_field_by_unit(field, want_unit):
+    """The numeric value of the repeat whose `unit` attribute matches, or None.
+
+    A repeated field is not "the first one plus some extras" — a binary's
+    `separation` is genuinely two different measurements of one pair (AU and
+    arcsec), and taking the first would silently mix the units."""
+    if field is None:
+        return None
+    for fv in (field if isinstance(field, list) else [field]):
+        if str(fv.get("unit") or "").strip().lower() == want_unit.lower():
+            try:
+                return float(fv.get("value"))
+            except (TypeError, ValueError):
+                # Keep scanning: a blank AU row must not mask a usable one that
+                # follows it.
+                continue
+    return None
+
+
+def _oec_node_values(node):
+    """OEC node → the plain numeric dict `core.oec_derived` consumes (it never
+    sees a node dict, so it stays Qt-free and headlessly testable)."""
+    f = node.get("fields", {}) or {}
+    out = {}
+    for key in ("mass", "radius", "temperature", "semimajoraxis", "period",
+                "eccentricity", "inclination", "distance", "age", "metallicity",
+                "separation", "magU", "magB", "magV", "magR", "magI",
+                "magJ", "magH", "magK"):
+        v = _oec_num(f.get(key))
+        if v is not None:
+            out[key] = v
+    if node.get("tag") == "binary":
+        # The circumbinary HZ needs both components' light (D9).
+        out["components"] = [_oec_node_values(c) for c in node.get("children", [])
+                             if c.get("tag") == "star"]
+        # `separation` REPEATS — the same pair is catalogued in AU and in arcsec.
+        # Select by the unit attribute; `_oec_num` would hand back whichever came
+        # first, so a 400 AU pair could arrive as "80" (arcsec).
+        out["separation_au"] = _oec_field_by_unit(f.get("separation"), "au")
+        out["separation_arcsec"] = _oec_field_by_unit(f.get("separation"), "arcsec")
+        masses = [c.get("mass") for c in out["components"]]
+        nested = [c for c in node.get("children", []) if c.get("tag") == "binary"]
+        if len(masses) >= 2 and all(m is not None for m in masses) and not nested:
+            # Kepler III needs M_total; 61 Cygni has a period but no
+            # `semimajoraxis`, so without this the pair has no `a` at all.
+            #
+            # A NESTED binary component disqualifies the sum: α Cen's outer pair is
+            # Proxima + the AB binary, and a `<binary>` carries no mass of its own,
+            # so summing the star children alone would yield 0.12 M☉ for a ~2.1 M☉
+            # pair and a Kepler-recovered `a` wrong by a factor of ~2.4.
+            out["total_mass"] = sum(masses)
+    fv = _oec_fv(f.get("spectraltype"))
+    if fv:
+        out["spectraltype"] = fv.get("value")
+    fvm = _oec_fv(f.get("mass"))
+    if fvm and fvm.get("type"):
+        out["mass_type"] = fvm.get("type")
+    return out
+
+
+def _oec_host_of(node, ctx):
+    """The node a planet orbits — a `<star>` parent, or the `<binary>` itself for a
+    circumbinary (P-type) planet. None for a rogue planet."""
+    parent = (ctx.get("parents") or {}).get(id(node))
+    if parent is None or parent.get("tag") not in ("star", "binary"):
+        return None
+    return parent
+
+
+def _oec_pair_host_values(binary):
+    """A circumbinary planet's host is the PAIR, not its primary component.
+
+    A P-type planet orbits the barycenter and is lit by both stars, so Kepler III
+    needs `M₁+M₂` and the insolation needs `L₁+L₂`. Taking the first component
+    alone understates both: measured on the real cache, TIC 172900988 b's recovered
+    semi-major axis came out **0.7115 AU instead of 0.8921 AU (−20%)**, and
+    KIC 7177553 b's insolation read 0.361 S⊕ where the pair's own pane row (one
+    click away) implies 0.708 — the same panel disagreeing with itself by ~2×."""
+    comps = [c for c in binary.get("children", []) if c.get("tag") == "star"]
+    nested = [c for c in binary.get("children", []) if c.get("tag") == "binary"]
+    vals = [_oec_node_values(c) for c in comps]
+    out = {"host_kind": "pair"}
+
+    masses = [v.get("mass") for v in vals]
+    # A nested `<binary>` component carries no mass of its own, so the sum would
+    # silently omit it (α Cen's outer pair → 0.12 M☉ for ~2.1 M☉).
+    if len(masses) >= 2 and all(m is not None for m in masses) and not nested:
+        out["mass"] = sum(masses)
+
+    lums, weighted = [], []
+    for v in vals:
+        r, t = v.get("radius"), v.get("temperature")
+        if r and r > 0 and t and t > 0:
+            lum = core.equations.compute_star_luminosity(r, t)["luminosity"]
+            lums.append(lum)
+            weighted.append(lum * t)
+    if len(lums) >= 2 and not nested:
+        out["luminosity"] = sum(lums)
+        # The same luminosity-weighted effective Teff `compute_circumbinary_hz`
+        # uses, so the pane's planet rows and its binary HZ row agree.
+        out["temperature"] = sum(weighted) / sum(lums)
+    # Transit geometry is against a single disc; the primary's radius is the only
+    # defensible R★ for a pair, and the transit source says so.
+    if vals and vals[0].get("radius"):
+        out["radius"] = vals[0]["radius"]
+    return out
+
+
+def _oec_host_values(node, ctx):
+    """Host values for a planet's derived layer (empty for everything else)."""
+    if node.get("tag") != "planet":
+        return {}
+    host = _oec_host_of(node, ctx)
+    if host is None:
+        return {}
+    if host.get("tag") == "binary":
+        return _oec_pair_host_values(host)
+    return _oec_node_values(host)
+
+
+def _oec_star_tree_cells(node):
+    """(L / S⊕, HZ) tree cells for a star — Stage 1b's derived minimum."""
+    d = core.oec_derived.derive("star", _oec_node_values(node))
+    lum = d.get("luminosity_lsun", {})
+    hz = d.get("hz_bounds", {})
+    lum_cell = f"{lum['value']:.4g} L☉" if lum.get("value") is not None else ""
+    hz_cell = ""
+    if hz.get("value"):
+        inner = hz["value"].get("conservative_inner_au")
+        outer = hz["value"].get("conservative_outer_au")
+        if inner is not None and outer is not None:
+            hz_cell = f"{inner:.3g}–{outer:.3g} AU"
+    return lum_cell, hz_cell
+
+
+def _oec_derived_tree_provider(node):
+    """The tree's derived-cell provider. Only stars carry cells at Stage 1b;
+    planet insolation / HZ verdict arrive with Stage 4b."""
+    if node.get("tag") == "star":
+        return _oec_star_tree_cells(node)
+    return "", ""
+
+
+def _oec_tree_derived_cells(node, ctx):
+    """(L / S⊕, HZ) cells. Filled by the derived provider in ``ctx`` when one is
+    installed (Stage 1b); ('', '') otherwise."""
+    provider = (ctx or {}).get("derived_cells", _oec_derived_tree_provider)
+    if provider is None:
+        return "", ""
+    try:
+        return provider(node)
+    except Exception:                            # a derived value must never break the tree
+        log_viz_error("OEC derived tree cells")
+        return "", ""
+
+
+def _oec_tree_item(node, ctx=None):
+    """Build a 10-column QTreeWidgetItem for an OEC node (children recursed).
+
+    ``ctx`` carries display state: ``units`` ("auto"/"earth"/"jupiter"),
+    ``errors`` (bool) and an optional ``derived_cells`` provider."""
+    ctx = ctx or {}
+    errs = ctx.get("errors", True)
+    tag, f = node["tag"], node["fields"]
+    cells = [""] * len(_OEC_COLUMNS)
     prefix = _OEC_TREE_PREFIX.get(tag, "")
+
     if tag == "system":
         name = node["names"][0] if node.get("names") else "System"
         extra = []
-        if node["fields"].get("constellation"):
-            extra.append(_oec_fv(node["fields"]["constellation"])["value"])
-        if node["fields"].get("distance"):
-            extra.append("d=" + _oec_fmt(node["fields"]["distance"], "pc"))
-        detail = " · ".join(extra)
+        if f.get("constellation"):
+            extra.append(_oec_fv(f["constellation"])["value"])
+        if f.get("distance"):
+            extra.append("d=" + _oec_value_cell(f["distance"], "pc", show_errors=errs))
+        if extra:
+            name += "  ·  " + " · ".join(extra)
+        cells[_OEC_COL_TYPE] = "system"
     elif tag == "binary":
         name = _oec_binary_label(node)
-        detail = "   ".join(_oec_tree_bits(node))
+        if f.get("separation"):
+            name += "  ·  sep " + _oec_value_cell(f["separation"], show_errors=errs)
+        cells[_OEC_COL_TYPE] = "binary"
+        cells[_OEC_COL_P] = _oec_value_cell(f.get("period"), show_errors=errs)
+        cells[_OEC_COL_A] = _oec_value_cell(f.get("semimajoraxis"), show_errors=errs)
+        cells[_OEC_COL_E] = _oec_value_cell(f.get("eccentricity"), show_errors=errs)
     elif tag == "star":
-        base = node["names"][0] if node.get("names") else "Star"
-        sp = _oec_fv(node["fields"]["spectraltype"])["value"] if node["fields"].get("spectraltype") else ""
-        name = f"{base}  {sp}".strip()
-        detail = "   ".join(_oec_tree_bits(node))
+        name = node["names"][0] if node.get("names") else "Star"
         if not node.get("children"):
-            detail = (detail + "   ") if detail else ""
-            detail += "(no planets catalogued)"
+            name += "  ·  (no planets catalogued)"
+        sp = _oec_fv(f["spectraltype"])["value"] if f.get("spectraltype") else ""
+        cells[_OEC_COL_TYPE] = sp or "star"
+        cells[_OEC_COL_M] = _oec_value_cell(f.get("mass"), "M☉", show_errors=errs)
+        cells[_OEC_COL_R] = _oec_value_cell(f.get("radius"), "R☉", show_errors=errs)
+        cells[_OEC_COL_T] = _oec_value_cell(f.get("temperature"), show_errors=errs)
     elif tag == "satellite":
         name = node["names"][0] if node.get("names") else "Moon"
-        detail = "   ".join(_oec_tree_bits(node))
+        cells[_OEC_COL_TYPE] = "satellite"
+        cells[_OEC_COL_M] = _oec_value_cell(f.get("mass"), "M⊕", show_errors=errs)
+        cells[_OEC_COL_R] = _oec_value_cell(f.get("radius"), "R⊕", show_errors=errs)
+        cells[_OEC_COL_P] = _oec_value_cell(f.get("period"), show_errors=errs)
+        cells[_OEC_COL_A] = _oec_value_cell(f.get("semimajoraxis"), show_errors=errs)
+        cells[_OEC_COL_E] = _oec_value_cell(f.get("eccentricity"), show_errors=errs)
     else:  # planet
-        base = node["names"][0] if node.get("names") else "Planet"
-        statuses = _oec_statuses(node["fields"])
-        name = f"{base}  [{' / '.join(statuses)}]" if statuses else base
-        detail = "   ".join(_oec_tree_bits(node))
+        name = node["names"][0] if node.get("names") else "Planet"
+        statuses = _oec_statuses(f)
+        if statuses:
+            name += f"  [{' / '.join(statuses)}]"
+        mf, mu, rf, ru = _oec_planet_units(node, ctx.get("units", "auto"))
+        cells[_OEC_COL_TYPE] = "planet"
+        cells[_OEC_COL_M] = _oec_value_cell(f.get("mass"), mu, mf, show_errors=errs)
+        # `oec_mass_label` returns "M·sin i" or "Mass" — never "M". Comparing
+        # against "M" made EVERY mass an RV minimum mass (2,581 of 2,844 real
+        # masses mislabelled). Test the positive value, not a near-miss.
+        if cells[_OEC_COL_M] and _oec_mass_label(node) == "M·sin i":
+            cells[_OEC_COL_M] = "M·sin i " + cells[_OEC_COL_M]
+        cells[_OEC_COL_R] = _oec_value_cell(f.get("radius"), ru, rf, show_errors=errs)
+        cells[_OEC_COL_P] = _oec_value_cell(f.get("period"), show_errors=errs)
+        cells[_OEC_COL_A] = _oec_value_cell(f.get("semimajoraxis"), show_errors=errs)
+        cells[_OEC_COL_E] = _oec_value_cell(f.get("eccentricity"), show_errors=errs)
+        cells[_OEC_COL_T] = _oec_value_cell(f.get("temperature"), show_errors=errs)
 
-    item = QTreeWidgetItem([f"{prefix} {name}".strip(), detail])
+    cells[_OEC_COL_NODE] = f"{prefix} {name}".strip()
+    if ctx.get("derived", True):
+        cells[_OEC_COL_L], cells[_OEC_COL_HZ] = _oec_tree_derived_cells(node, ctx)
+
+    item = QTreeWidgetItem(cells)
+    # Python attribute, NOT setData(…, UserRole, node): PySide6 marshals a dict
+    # through QVariantMap and hands back a *copy*, so identity — which every
+    # selection path keys on — would be lost.
+    item._oec_node = node
+    tip = _oec_node_tooltip(node)
+    if tip:
+        item.setToolTip(_OEC_COL_NODE, tip)
+    for col in range(1, len(_OEC_COLUMNS)):
+        item.setTextAlignment(
+            col, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     for child in node.get("children", []):
-        item.addChild(_oec_tree_item(child))
+        item.addChild(_oec_tree_item(child, ctx))
     return item
+
+
+def _oec_item_node(item):
+    """The OEC node dict a tree item was built from (None if absent)."""
+    return getattr(item, "_oec_node", None)
+
+
+def _oec_node_count(node):
+    return 1 + sum(_oec_node_count(c) for c in node.get("children", []))
+
+
+def _oec_expand_tree(tree, root_item, node_count):
+    """D5 — `expandAll()` at ≤ 25 nodes, else expand only down to star level."""
+    if node_count <= 25:
+        tree.expandAll()
+        return
+
+    def walk(item):
+        node = _oec_item_node(item) or {}
+        if node.get("tag") in ("system", "binary"):
+            item.setExpanded(True)
+            for i in range(item.childCount()):
+                walk(item.child(i))
+
+    walk(root_item)
+
+
+def _oec_hide_empty_columns(tree):
+    """Hide every value column no row populates (toolbar 'Hide empty columns')."""
+    def cells(item, col, out):
+        out.append(item.text(col))
+        for i in range(item.childCount()):
+            cells(item.child(i), col, out)
+
+    roots = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
+    for col in range(1, tree.columnCount()):
+        texts = []
+        for r in roots:
+            cells(r, col, texts)
+        tree.setColumnHidden(col, not any(t.strip() for t in texts))
+
+
+def _oec_show_all_columns(tree):
+    for col in range(tree.columnCount()):
+        tree.setColumnHidden(col, False)
 
 
 # ── Phase 2: Star-Databases parity (Hypatia + per-host diagrams) ──────────────
@@ -606,19 +869,8 @@ from gui.panels.diagram_tabs import (
     _make_transit_tab, _make_size_tab,
 )
 
-_MJUP_MEARTH = 317.828   # M_jup → M_earth
-_RJUP_REARTH = 11.209    # R_jup → R_earth
-
-
-def _oec_num(field):
-    """Numeric value of a (possibly repeated) OEC field, or None."""
-    fv = _oec_fv(field)
-    if fv is None:
-        return None
-    try:
-        return float(fv.get("value"))
-    except (TypeError, ValueError):
-        return None
+# B.2 — the canonical pair lives in core.shared; do not re-type the literals here.
+from core.shared import M_JUP_EARTH as _MJUP_MEARTH, R_JUP_EARTH as _RJUP_REARTH
 
 
 def _oec_collect_hosts(system):
@@ -709,99 +961,49 @@ def _oec_with_hypatia(name):
     return result
 
 
-# Display labels + units for the planet info dialog, keyed off the shared tree-keys.
-_OEC_PLANET_DIALOG_LABELS = {
-    "mass": ("Mass", "M♃"), "radius": ("Radius", "R♃"), "period": ("Period", "days"),
-    "semimajoraxis": ("Semi-Major Axis", "AU"), "eccentricity": ("Eccentricity", ""),
-    "inclination": ("Inclination", "°"),
-}
-# Extra descriptive fields shown below the headline ones (not in the tree set).
-_OEC_PLANET_DIALOG_EXTRA = [
-    ("temperature", "Equilibrium Temp", "K"), ("periastron", "Periastron", "AU"),
-    ("discoverymethod", "Discovery Method", ""), ("discoveryyear", "Discovery Year", ""),
-    ("spectraltype", "Spectral Type", ""), ("lastupdate", "Last Update", ""),
-]
+def _show_oec_planet_dialog(parent_widget, planet, ctx=None):
+    """Non-modal dialog of a clicked OEC planet's fields (mirrors the NASA System
+    Map's click-planet dialog). All data comes from the planet node already in hand
+    — no network. Kept alive by Qt parent-ownership + WA_DeleteOnClose.
 
-
-def _show_oec_planet_dialog(parent_widget, planet):
-    """Non-modal dialog of a clicked OEC planet's fields (mirrors the NASA System Map's
-    click-planet dialog). All data comes from the planet node already in hand — no
-    network. Kept alive by Qt parent-ownership + WA_DeleteOnClose."""
+    D7 — the map has no detail pane, so the dialog stays; it renders from the SAME
+    section builder as the pane (`gui.panels.oec_detail`), so the two can never
+    disagree about a field's label, unit or presence. Its own hand-written label
+    table is gone with it — that table is where the `periastron` collision lived
+    (it labelled the argument of periastron, in degrees, as "Periastron ... AU")."""
     node = planet.get("node") or {}
-    fields = node.get("fields", {}) or {}
     name = planet.get("name") or "Planet"
-    statuses = _oec_statuses(fields)
 
     dlg = QDialog(parent_widget)
     dlg.setWindowTitle(f"Planet Info — {name}")
-    dlg.setMinimumWidth(440)
+    dlg.setMinimumWidth(460)
     dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.Window)
 
     outer = QVBoxLayout(dlg)
     outer.setContentsMargins(12, 12, 12, 8)
-    outer.setSpacing(8)
+    outer.setSpacing(6)
 
-    hdr_bits = [f"<b>{name}</b>"]
     if planet.get("host"):
-        hdr_bits.append(f"Host: {planet['host']}")
-    if statuses:
-        hdr_bits.append("Status: " + " · ".join(statuses))
-    hdr = QLabel("<br/>".join(hdr_bits))
-    hdr.setWordWrap(True)
-    hdr.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    outer.addWidget(hdr)
+        host_lbl = QLabel(f"Host: {planet['host']}")
+        host_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        outer.addWidget(host_lbl)
 
-    sep = QLabel()
-    sep.setFrameShape(QLabel.Shape.HLine)
-    sep.setFrameShadow(QLabel.Shadow.Sunken)
-    outer.addWidget(sep)
-
-    content = QWidget()
-    grid = QGridLayout(content)
-    grid.setContentsMargins(4, 4, 4, 4)
-    grid.setHorizontalSpacing(16)
-    grid.setVerticalSpacing(4)
-    grid.setColumnStretch(1, 1)
-    outer.addWidget(content)
-
-    row = 0
-
-    def _add(label, value):
-        nonlocal row
-        lbl = QLabel(f"<b>{label}:</b>")
-        val = QLabel(str(value))
-        val.setWordWrap(True)
-        val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        grid.addWidget(lbl, row, 0, Qt.AlignmentFlag.AlignTop)
-        grid.addWidget(val, row, 1, Qt.AlignmentFlag.AlignTop)
-        row += 1
-
-    # Headline fields (mass gets the M·sin i label when it's an RV minimum mass).
-    for key, (label, unit) in _OEC_PLANET_DIALOG_LABELS.items():
-        if not fields.get(key):
-            continue
-        if key == "mass":
-            fv = _oec_fv(fields["mass"])
-            if fv and fv.get("type") == "msini":
-                label = "Mass (M·sin i)"
-        _add(label, _oec_fmt(fields[key], unit))
-
-    for key, label, unit in _OEC_PLANET_DIALOG_EXTRA:
-        if fields.get(key):
-            _add(label, _oec_fmt(fields[key], unit))
+    body = QScrollArea()
+    body.setWidgetResizable(True)
+    # The panel passes its live ctx so the dialog shows the SAME derived rows and
+    # honours the same units mode as the tree pane. A hard-coded ctx would leave
+    # `derived_values` empty and silently drop the entire Derived block — the one
+    # thing the shared builder is meant to make impossible.
+    body.setWidget(_oec_build_detail_pane(
+        node, ctx if ctx is not None else {"units": "auto", "errors": True}))
+    body.setMinimumHeight(320)
+    outer.addWidget(body, 1)
 
     moons = [c for c in node.get("children", []) if c.get("tag") == "satellite"]
     if moons:
-        moon_names = ", ".join((m["names"][0] if m.get("names") else "moon") for m in moons)
-        _add("Satellites", f"{len(moons)} ({moon_names})")
-
-    desc = _oec_fv(fields.get("description"))
-    if desc and desc.get("value"):
-        _add("Description", desc["value"])
-
-    if row == 0:
-        _add("Details", "No catalogued orbital/physical parameters.")
+        names = ", ".join((m["names"][0] if m.get("names") else "moon") for m in moons)
+        outer.addWidget(QLabel(f"<b>Satellites:</b> {len(moons)} ({names})"))
 
     close_btn = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
     close_btn.rejected.connect(dlg.close)
@@ -877,6 +1079,21 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         # on (None = whole-system barycenter) and which host drives the detail tabs.
         self._oec_focus = None
         self._oec_host_idx = 0 if self._oec_hosts else None
+        # Session-only view state (D6 — no QSettings). Defaults: D1 auto units,
+        # D3 derived on, D4 errors on, hide-empty on.
+        #
+        # Initialised ONCE per panel, not per result: rebuilding it here would
+        # revert the user's pane position and toggles on every new search, and
+        # Stage 6 adds three more controls to this same dict.
+        if not getattr(self, "_oec_view", None):
+            self._oec_view = {"units": "auto", "errors": True, "derived": True,
+                              "hide_empty": True, "pane": "Right"}
+        # §B.3 — the ONE selection attribute the tree, the map, the host combo
+        # and (Stage 5) the pinned band all converge on.
+        self._oec_sel = None
+        self._oec_syncing = False     # guards the programmatic tree-cursor sync
+        self._oec_ctx = _oec_build_context(result["system"])
+        self._oec_derived_cache = {}  # cleared per result (§D.4 rule 4 / T19)
 
         if result.get("matched_name"):
             hdr = QLabel(f"Matched on: <b>{result['matched_name']}</b>")
@@ -899,14 +1116,7 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
 
         self._data_tabs = QTabWidget()
         self._data_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        tree = QTreeWidget()
-        tree.setHeaderLabels(["System / Component / Planet", "Properties"])
-        tree.setColumnWidth(0, 340)
-        tree.setAlternatingRowColors(True)
-        tree.addTopLevelItem(_oec_tree_item(result["system"]))
-        tree.expandAll()
-        tree.setMinimumHeight(360)
-        self._data_tabs.addTab(tree, "Data")
+        self._data_tabs.addTab(self._build_oec_data_widget(result["system"]), "Data")
         self._result_area.addWidget(self._data_tabs, 1)
 
         # System Architecture map (Phase 3) — a system-level viz tab, always tab 0,
@@ -914,7 +1124,383 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         self._add_architecture_tab()
         if self._oec_hosts:
             self._render_host(0)
+        self._set_oec_selection(self._oec_cold_selection(result["system"]))
         self._finish_render()
+
+    def _oec_tree_ctx(self):
+        """Display state handed to `_oec_tree_item` (units / errors / derived)."""
+        ctx = dict(getattr(self, "_oec_view", None) or {})
+        # The panel's own provider: it can reach the host star (a planet's S⊕ and
+        # HZ verdict need the host's light) and shares the derived cache, which the
+        # module-level fallback provider cannot.
+        ctx["derived_cells"] = self._oec_tree_cells
+        return ctx
+
+    def _oec_tree_cells(self, node):
+        """(L / S⊕, HZ) tree cells for a star or a planet."""
+        tag = node.get("tag")
+        if tag not in ("star", "planet"):
+            return "", ""
+        d = self._oec_derived_for(node)
+        if tag == "star":
+            lum, hz = d.get("luminosity_lsun", {}), d.get("hz_bounds", {})
+            lum_cell = (f"{lum['value']:.4g} L☉"
+                        if lum.get("value") is not None else "")
+            hz_cell = ""
+            if hz.get("value"):
+                inner = hz["value"].get("conservative_inner_au")
+                outer = hz["value"].get("conservative_outer_au")
+                if inner is not None and outer is not None:
+                    hz_cell = f"{inner:.3g}–{outer:.3g} AU"
+            return lum_cell, hz_cell
+        seff, verdict = d.get("insolation_searth", {}), d.get("hz_verdict", {})
+        seff_cell = (f"{seff['value']:.3g}"
+                     if seff.get("value") is not None else "")
+        return seff_cell, _oec_hz_short(verdict.get("value"))
+
+    def _oec_detail_ctx(self, node):
+        """Display state + the parent chain + this node's derived values.
+
+        A star's position/distance live on the **system** node and its companions
+        on the **parent binary**, so the pane needs the context, not just the node
+        (`oec_detail.build_context`)."""
+        ctx = dict(self._oec_tree_ctx())
+        ctx.pop("derived_cells", None)
+        ctx.update(getattr(self, "_oec_ctx", None) or {})
+        ctx["derived_values"] = self._oec_derived_for(node)
+        # A star's Companions block reports the PARENT PAIR's mass ratio and
+        # S/P-type critical SMAs (the mockup shows exactly that). Those keys live
+        # on the binary's derived entry, not the star's, so without this the rows
+        # are silently dropped by `_derived_rows` and the whole stability
+        # derivation is invisible in the UI.
+        parent = (ctx.get("parents") or {}).get(id(node))
+        ctx["parent_derived"] = (self._oec_derived_for(parent)
+                                 if parent is not None
+                                 and parent.get("tag") == "binary" else {})
+        ctx["on_lookup"] = self._open_oec_star_lookup
+        return ctx
+
+    def _oec_derived_for(self, node):
+        """Derived entries for one node, memoised per result.
+
+        §D.4 rule 4 warns that a bare `id(node)` key is a wrong-numbers bug: ids
+        are reused after GC and the node dicts are rebuilt per search. Three things
+        together make this safe, and **all three are load-bearing** —
+          1. the cache is cleared in `_on_oec_result`, so entries never outlive
+             the result they were computed for;
+          2. each entry stores the node itself, `(node, values)`, keeping a strong
+             reference so that id cannot be reused while the entry is live;
+          3. the read re-checks `hit[0] is node`, so a reused id can never return
+             another node's numbers.
+        Removing any one of them reintroduces the bug (T19)."""
+        cache = getattr(self, "_oec_derived_cache", None)
+        if cache is None:
+            cache = self._oec_derived_cache = {}
+        key = id(node)
+        hit = cache.get(key)
+        if hit is not None and hit[0] is node:
+            return hit[1]
+        ctx = getattr(self, "_oec_ctx", None) or {}
+        system = ctx.get("system") or node
+        try:
+            values = core.oec_derived.derive(
+                node.get("tag"), _oec_node_values(node),
+                host_values=_oec_host_values(node, ctx),
+                system_values=_oec_node_values(system))
+        except Exception:
+            log_viz_error("OEC derived values")
+            values = {}
+        values.update(self._oec_panel_derived(node))
+        cache[key] = (node, values)
+        return values
+
+    def _oec_panel_derived(self, node):
+        """Derived values the pure module deliberately cannot produce.
+
+        Two of them: `compute_hyper_limit_for_spectral_type` does a **SQLite
+        read**, so it is computed here and merged in, keeping
+        `core/oec_derived.py` free of I/O (§D rule 6 / D.1); and `topology` is a
+        **tree walk**, and the derived module only ever sees a flat value dict."""
+        if node.get("tag") == "system":
+            return {"topology": self._oec_topology(node)}
+        if node.get("tag") != "star":
+            return {}
+        fv = _oec_fv((node.get("fields") or {}).get("spectraltype"))
+        sp = (fv or {}).get("value")
+        src = ("core.science.compute_hyper_limit_for_spectral_type — "
+               "Honorverse (fiction), not physics")
+        if not sp:
+            return {"hyper_limit_au": {"value": None, "unit": "AU",
+                                       "reason": "no catalogued spectral type",
+                                       "source": src}}
+        try:
+            # Returns {"lm", "au", "matched_class"} — NOT a bare float.
+            hit = core.science.compute_hyper_limit_for_spectral_type(sp)
+        except Exception:
+            log_viz_error("OEC hyper limit")
+            hit = None
+        au = hit.get("au") if isinstance(hit, dict) else hit
+        if au is None:
+            return {"hyper_limit_au": {
+                "value": None, "unit": "AU",
+                "reason": f"no hyper limit for spectral type '{sp}' "
+                          "(not an O/B/A/F/G/K/M class)", "source": src}}
+        return {"hyper_limit_au": {"value": au, "unit": "AU",
+                                   "reason": None, "source": src}}
+
+    def _open_oec_star_lookup(self, node):
+        """Cross-reference action — open the star in a SimbadPanel (which carries
+        Hypatia, GCNS and Gould) in a separate non-modal window, mirroring
+        `ProjectsPanel._open_real`. User-initiated, so the network call is fine."""
+        xrefs = _oec_star_xrefs(node)
+        name = xrefs[0][1] if xrefs else (node.get("names") or [""])[0]
+        if not name:
+            return
+        from gui.panels.simbad import SimbadPanel
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"SIMBAD — {name}")
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.Window)
+        v = QVBoxLayout(dlg)
+        panel = SimbadPanel(self.window)
+        if hasattr(panel, "_name_input"):
+            panel._name_input.setText(name)
+        v.addWidget(panel)
+        dlg.resize(820, 640)
+        dlg.setModal(False)
+        dlg.show()
+        try:
+            panel._search()
+        except Exception:
+            log_viz_error("OEC cross-reference lookup")
+        return dlg
+
+    def _build_oec_tree(self, system):
+        """The 10-column Data tree (Stage 1). Star rows carry M/R/T in the same
+        columns as planets; §B.5 keeps alternating rows and drops the fixed
+        column-0 width in favour of Stretch + ResizeToContents."""
+        tree = QTreeWidget()
+        tree.setHeaderLabels(_OEC_COLUMNS)
+        tree.setAlternatingRowColors(True)
+        tree.setUniformRowHeights(True)
+        root = _oec_tree_item(system, self._oec_tree_ctx())
+        tree.addTopLevelItem(root)
+        _oec_expand_tree(tree, root, _oec_node_count(system))
+
+        hdr = tree.header()
+        hdr.setSectionResizeMode(_OEC_COL_NODE, QHeaderView.ResizeMode.Stretch)
+        for col in range(1, len(_OEC_COLUMNS)):
+            hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        tree.setMinimumHeight(240)
+        if self._oec_view.get("hide_empty", True):
+            _oec_hide_empty_columns(tree)
+        self._oec_tree = tree
+        return tree
+
+    # ── Stage 2: the detail pane, its splitter, and selection (§B.3 / §B.4) ──
+
+    def _build_oec_data_widget(self, system):
+        """The Data tab: tree + detail pane in a QSplitter.
+
+        §B.4 — the pane lives **inside** the Data tab, never as a sibling tab:
+        `_rebuild_after_focus` deletes every tab above index 0, so a pane-as-tab
+        would be silently destroyed on every map recenter and host switch (T10)."""
+        tree = self._build_oec_tree(system)
+
+        pane = QScrollArea()
+        pane.setWidgetResizable(True)
+        pane.setMinimumWidth(300)
+        self._oec_pane = pane
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(tree)
+        splitter.addWidget(pane)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        splitter.setChildrenCollapsible(False)
+        self._oec_splitter = splitter
+
+        container = QWidget()
+        v = QVBoxLayout(container)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(3)
+
+        bar = QWidget()
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(4, 2, 4, 0)
+        h.addWidget(QLabel("Detail pane:"))
+        combo = QComboBox()
+        combo.addItems(["Right", "Below", "Hidden"])
+        combo.setCurrentText(self._oec_view.get("pane", "Right"))
+        combo.currentTextChanged.connect(self._on_oec_pane_position)
+        self._oec_pane_combo = combo
+        h.addWidget(combo)
+        # Hide-empty needs its own control from the moment it exists: without one
+        # a column hidden as empty can never be re-shown for the session. The rest
+        # of the toolbar (units / errors / derived) arrives in Stage 6.
+        hide = QCheckBox("Hide empty columns")
+        hide.setChecked(self._oec_view.get("hide_empty", True))
+        hide.toggled.connect(self._on_oec_hide_empty)
+        self._oec_hide_empty_box = hide
+        h.addWidget(hide)
+        h.addStretch()
+        v.addWidget(bar)
+        v.addWidget(splitter, 1)
+        # §B.5 / T10b — the enclosing QScrollArea layout is AlignTop, which gives
+        # each item its size hint rather than stretching it, so the height floor
+        # has to be explicit or the tree collapses to a sliver.
+        container.setMinimumHeight(420)
+
+        tree.selectionModel().currentChanged.connect(self._on_oec_tree_current)
+        self._on_oec_pane_position(self._oec_view.get("pane", "Right"))
+        return container
+
+    def _on_oec_hide_empty(self, checked):
+        """Toggle the empty-column filter without rebuilding the tree."""
+        self._oec_view["hide_empty"] = bool(checked)
+        tree = getattr(self, "_oec_tree", None)
+        if tree is None:
+            return
+        if checked:
+            _oec_hide_empty_columns(tree)
+        else:
+            _oec_show_all_columns(tree)
+
+    def _on_oec_pane_position(self, text):
+        """Detail pane Right (default) / Below / Hidden — session-only (D2, D6)."""
+        self._oec_view["pane"] = text
+        splitter = getattr(self, "_oec_splitter", None)
+        pane = getattr(self, "_oec_pane", None)
+        if splitter is None or pane is None:
+            return
+        if text == "Hidden":
+            pane.setVisible(False)
+            return
+        splitter.setOrientation(Qt.Orientation.Vertical if text == "Below"
+                                else Qt.Orientation.Horizontal)
+        pane.setVisible(True)
+
+    def _on_oec_tree_current(self, current, _previous):
+        """Tree selection → the shared selection attribute.
+
+        Wired to `currentChanged`, NOT `itemClicked` (§B.3): with `itemClicked`,
+        arrow-key navigation silently stops updating the pane."""
+        tree = getattr(self, "_oec_tree", None)
+        if tree is None or not current.isValid() or getattr(self, "_oec_syncing", False):
+            return
+        node = _oec_item_node(tree.itemFromIndex(current))
+        if node is not None:
+            self._set_oec_selection(node, sync_tree=False)
+
+    def _set_oec_selection(self, node, sync_tree=True):
+        """The single entry point every selector funnels through. Renders the
+        detail pane — and NOTHING else: a selection change must never rebuild the
+        viz tabs, or clicking a planet would tear down the diagram in view."""
+        if node is None:
+            return
+        self._oec_sel = (node, node.get("tag"))
+        if sync_tree:
+            self._select_oec_tree_node(node)
+        self._render_oec_detail(node)
+
+    def _select_oec_tree_node(self, node):
+        """Move the tree cursor to `node` without re-entering `_set_oec_selection`."""
+        tree = getattr(self, "_oec_tree", None)
+        if tree is None:
+            return
+
+        def find(item):
+            if _oec_item_node(item) is node:
+                return item
+            for i in range(item.childCount()):
+                hit = find(item.child(i))
+                if hit is not None:
+                    return hit
+            return None
+
+        for i in range(tree.topLevelItemCount()):
+            item = find(tree.topLevelItem(i))
+            if item is not None:
+                # A re-entrancy FLAG, not blockSignals(). Two traps here:
+                #   * `tree.blockSignals()` does not stop `currentChanged` at all —
+                #     that signal belongs to the selection model, so the pane would
+                #     be built twice.
+                #   * `selectionModel().blockSignals()` does stop it, but also
+                #     suppresses the VIEW's own slots, so the row moves without
+                #     being painted as selected or scrolled into view.
+                self._oec_syncing = True
+                try:
+                    tree.setCurrentItem(item)
+                finally:
+                    self._oec_syncing = False
+                return
+
+    def _render_oec_detail(self, node):
+        """Rebuild the pane's contents for one node. Never blanks the panel: a
+        failing section degrades inside `build_detail_pane` (T18), and a failure
+        of the pane as a whole is logged and leaves the previous pane in place."""
+        pane = getattr(self, "_oec_pane", None)
+        if pane is None:
+            return
+        try:
+            pane.setWidget(_oec_build_detail_pane(node, self._oec_detail_ctx(node)))
+        except Exception:
+            log_viz_error("OEC detail pane")
+
+    def _oec_topology(self, system):
+        """The system's shape, in the same vocabulary `oec-census` uses (§D.1):
+        star count, max binary nesting depth, and where the planets attach —
+        circumbinary (to a `<binary>`), rogue (to the `<system>`), or to a star."""
+        src = "tree walk — same classification as `query.py oec-census`"
+        stars = attached = circumbinary = rogue = 0
+        depth = 0
+
+        def walk(node, d):
+            nonlocal stars, attached, circumbinary, rogue, depth
+            depth = max(depth, d)
+            for child in node.get("children", []):
+                tag = child.get("tag")
+                if tag == "star":
+                    stars += 1
+                elif tag == "planet":
+                    if node.get("tag") == "binary":
+                        circumbinary += 1
+                    elif node.get("tag") == "system":
+                        rogue += 1
+                    else:
+                        attached += 1
+                walk(child, d + 1 if tag == "binary" else d)
+
+        walk(system, 0)
+        bits = [f"{stars} star{'s' if stars != 1 else ''}"]
+        if depth:
+            bits.append(f"binary nesting depth {depth}")
+        planets = attached + circumbinary + rogue
+        if not planets:
+            bits.append("no planets catalogued")
+        else:
+            if circumbinary:
+                bits.append(f"{circumbinary} circumbinary (P-type)")
+            if rogue:
+                bits.append(f"{rogue} rogue (attached to the system)")
+            if attached:
+                bits.append(f"{attached} attached to a star")
+        return {"value": " · ".join(bits), "unit": "", "reason": None,
+                "source": src}
+
+    def _show_oec_planet(self, planet):
+        """Map click → the planet dialog, rendered with the panel's live context so
+        it carries the same derived rows and units as the tree pane."""
+        node = planet.get("node") or {}
+        ctx = self._oec_detail_ctx(node) if node.get("tag") else None
+        return _show_oec_planet_dialog(self, planet, ctx)
+
+    def _oec_cold_selection(self, system):
+        """D10 — the primary host star on build, so the pane paints immediately."""
+        if self._oec_hosts:
+            host = self._oec_hosts[0]
+            return _oec_host_star(host) or host["node"]
+        return system
 
     def _add_architecture_tab(self):
         """Insert the system Architecture map as viz tab 0. Interactive (Phase-3b):
@@ -930,7 +1516,7 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
                 return
             canvas, toolbar = make_oec_architecture_canvas(
                 None, data, on_select=self._on_arch_select,
-                on_planet_click=lambda p: _show_oec_planet_dialog(self, p))
+                on_planet_click=self._show_oec_planet)
             if canvas is None:
                 return
             self._arch_canvas = canvas
@@ -970,6 +1556,7 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         Host combo as the selector). Deferred via a 0-timer so the canvas whose
         pick-event is firing isn't torn down mid-callback."""
         self._oec_focus = node
+        self._set_oec_selection(node)          # §B.3 — one selection attribute
         host_idx = next(
             (i for i, h in enumerate(self._oec_hosts) if h["node"] is node), None)
         if host_idx is not None and getattr(self, "_host_combo", None) is not None:
@@ -997,6 +1584,9 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         """Host combo change — also recenter the map on that host so map + detail
         stay in sync."""
         self._oec_focus = self._oec_hosts[idx]["node"] if self._oec_hosts else None
+        if self._oec_hosts:
+            host = self._oec_hosts[idx]
+            self._set_oec_selection(_oec_host_star(host) or host["node"])
         self._rebuild_after_focus(idx)
 
     def _rebuild_after_focus(self, host_idx):

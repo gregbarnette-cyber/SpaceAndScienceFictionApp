@@ -19,13 +19,21 @@ checkbox below is unticked — do not re-plan, re-review, or re-litigate settled
 
 Progress ledger — tick a box only when that stage is complete *and* the full suite is green:
 
-- [ ] **Stage 1** — Columnar tree + hide-empty + B.2 constant move (T1, T2, T7)
-- [ ] **Stage 1b** — Star-side derived minimum: `luminosity_lsun` + `hz_bounds` (T16, T8/T9 subset)
-- [ ] **Stage 2** — Detail pane + registry + selection ▲ **review R1** (T3, T6, T10, T10b, T18)
-- [ ] **Stage 3** — Star dossier blocks (T4, T5, T15)
-- [ ] **Stage 3b** — Binary / system / satellite sections (T20, T6 per tag)
-- [ ] **Stage 4a** — Star-side derived ▲ **review R2a**
-- [ ] **Stage 4b** — Planet-side derived ▲ **review R2b** (T8, T9, T17, T19)
+- [x] **Stage 1** — Columnar tree + hide-empty + B.2 constant move (T1, T2, T7) — done
+      2026-08-01; suite **2402 passed, 1 skipped** (17 new in `tests/test_oec_view.py`).
+- [x] **Stage 1b** — Star-side derived minimum: `luminosity_lsun` + `hz_bounds` (T16, T8/T9 subset)
+      — done 2026-08-01; suite **2421 passed, 1 skipped** (`core/oec_derived.py`,
+      `tests/test_oec_derived.py`, T16 in `tests/test_oec_view.py`).
+- [x] **Stage 2** — Detail pane + registry + selection ▲ **review R1** (T3, T6, T10, T10b, T18)
+      — built 2026-08-01; **R1 run and all six findings fixed**; suite **2448 passed, 1 skipped**.
+- [x] **Stage 3** — Star dossier blocks (T4, T5, T15) — done 2026-08-01
+- [x] **Stage 3b** — Binary / system / satellite sections (T20, T6 per tag) — done
+      2026-08-01; suite **2478 passed, 1 skipped**. **V1/V2 run early and clean** (below).
+- [x] **Stage 4a** — Star-side derived ▲ **review R2a** — built 2026-08-01; **R2a run, all
+      four findings fixed**; suite **2510 passed, 1 skipped**.
+- [x] **Stage 4b** — Planet-side derived ▲ **review R2b** (T8, T9, T17, T19) — built
+      2026-08-01; **R2b run, all eight findings fixed**; suite **2555 passed, 1 skipped**
+      (2026-08-02).
 - [ ] **Stage 5** — Pinned host band (T11)
 - [ ] **Stage 6** — Toolbar (T12a, T12b, T12c)
 - [ ] **Stage 7** — Validation sweeps V1–V6 + §L docs ▲ **review R3 (full diff)**
@@ -277,7 +285,18 @@ M/R/T; status badges; dimmed errors; §B.5 sizing; D5 expand rule. **Includes hi
 *(r2 #2 — a column-model concern, and without it Stage 1 ships an unreadable sliver)* and the
 **B.2 constant move** *(prerequisite for D1 auto-units)*.
 **Tests:** T1, T2, T7. **Acceptance:** tau Ceti readable at the default panel width, no horizontal
-scrolling. **Baseline:** record today's tree build time here for §H.8.
+scrolling. **Baseline (measured 2026-08-01, real cache, `_oec_tree_item` × 20, warm):** tau Ceti 9 nodes
+**0.80 ms** · α Cen 11 nodes **0.93 ms** · TRAPPIST-1 9 nodes **0.90 ms** (a cold first call in a
+fresh process is ~4–6 ms — Qt/font warm-up, not tree work; measure warm). V5's ceiling is 2× these.
+Stage 1b's per-star derived call is inside these figures.
+
+**Two implementation notes worth keeping:**
+- The node dict is attached to each item as a **Python attribute** (`item._oec_node`, read via
+  `_oec_item_node`), *not* `setData(…, UserRole, node)` — PySide6 marshals a dict through
+  `QVariantMap` and hands back a **copy**, so the identity every selection path keys on (§B.3, T3)
+  would be silently lost. Verified.
+- Every node also carries a **tooltip of all its catalogued fields**, so no value is unreachable in
+  the stages before the detail pane exists (`[Fe/H]`, `age`, `inclination` have no column).
 
 ### Stage 1b — Star-side derived minimum *(~½ day)* — **new** *(r2 #1)*
 `core/oec_derived.py` with `luminosity_lsun` + `hz_bounds` only (both existing `core/` calls, both
@@ -291,6 +310,48 @@ Stage 4.
 `log_viz_error` wrapping; **pane-position toggle** *(moved here from Stage 6 — r2 #2)*.
 **Tests:** T3, T6, T10, T10b, T18. **Gate:** ▲ **code review R1**.
 
+**Built 2026-08-01.** Three things the plan did not anticipate, all now pinned by tests:
+- **`tree.blockSignals()` does not block `currentChanged`** — that signal belongs to the
+  *selection model*, a separate QObject. The programmatic tree sync must block
+  `tree.selectionModel()`, or `_set_oec_selection` re-enters through
+  `_on_oec_tree_current` and builds the pane twice. Pinned by
+  `test_programmatic_selection_builds_the_pane_exactly_once` (verified to fail against the
+  naive version).
+- **The value formatters moved into `gui/panels/oec_detail.py`**, and `catalogs.py` imports
+  them — the tree and the pane must not be able to render one field two ways. (The reverse
+  import direction would be circular.)
+- **D7 discharged by deletion:** `_show_oec_planet_dialog` now renders `build_detail_pane`,
+  and its hand-written `_OEC_PLANET_DIALOG_LABELS` / `_EXTRA` tables are gone. That is where
+  the T17 `periastron` collision actually lived — the dialog labelled the argument of
+  periastron (degrees) as "Periastron … AU". The registry labels it
+  "Argument of periastron (°)".
+
+**R1 (2026-08-01) — six findings, all fixed, each pinned by a test that fails against the
+reviewed code.** The two worth remembering:
+- **Every planet mass was labelled `M·sin i`.** The tree guarded on
+  `oec_mass_label(node) != "M"`, but that function returns `"M·sin i"` or `"Mass"` — never
+  `"M"` — so the branch always fired: **2,581 of 2,844** real masses mislabelled as RV minimum
+  masses. The existing T2 covered only the positive case. *Lesson for the remaining stages: test
+  the negative case of any label/flag branch.*
+- **Neither obvious way to sync the tree cursor is correct.** `tree.blockSignals()` does not
+  block `currentChanged` (it belongs to the selection model) → the pane builds twice;
+  `selectionModel().blockSignals()` does block it but also suppresses the **view's own** slots,
+  so the row moves without being painted as selected or scrolled into view. The answer is a
+  re-entrancy flag (`_oec_syncing`) checked in `_on_oec_tree_current`.
+
+The other four: `image` sat in `_HANDLED_ELSEWHERE` but was rendered nowhere (97 planets, and the
+fallback could not catch it — the exclusion list must be *proved* rendered, which
+`test_every_handled_elsewhere_key_is_actually_rendered` now does); error-bar symmetry was compared
+on **strings**, so 997 fields with `"0.06"`/`"0.060"` rendered `+0.060/-0.06`; `hide_empty` had no
+control, making a hidden column unrecoverable (a checkbox now ships in Stage 2, ahead of the Stage-6
+toolbar); and repeated fields rendered first-value-only, so a binary's `separation` lost its second
+unit — `oec_value_cell(..., repeats=True)` is now used by the pane and the tooltip, while the tree
+stays first-only for column width.
+
+**V4 spot-checked early** (not deferred to Stage 7) because the B.2 constant move touches
+`compute_rv_semi_amplitude`: `rv-semi-amplitude`, `oec-system`, `oec-census` and `oec-status`
+are md5-identical against `git stash`.
+
 ### Stage 3 — Star dossier blocks *(~1 day)*
 Identity (all aliases) · Position & distance · Photometry · Physical · Planets hosted ·
 Companions (parent `<binary>`) · Cross-reference buttons.
@@ -301,17 +362,156 @@ The three tags §A.2 promises and §H.1 commits to but r1 never staged. Satellit
 e / i / periastron / longitude / ascendingnode / tilt at 100% coverage.
 **Tests:** T20, T6 extended per tag.
 
+**Stages 3 + 3b built 2026-08-01.** Notes:
+- **Rows are dicts, not `(label, value)` tuples** — `{label, value, derived, tip}`. Derived rows
+  had to be distinguishable *inside* a shared section (Luminosity sits in Physical, HZ bounds in
+  their own block), which a tuple cannot express. `tip` carries the `source` (§D.4 rule 3).
+- **The pane needs a context, not just a node.** A star's RA/Dec/distance live on the **system**
+  node and its companions on the **parent binary** — neither is reachable from the star.
+  `oec_detail.build_context(system)` supplies the parent map; the panel builds it once per result.
+- **In a multiple system the position block says so** ("Recorded on: the system as a whole") —
+  otherwise the system's shared coordinates read as this component's own.
+- **§F's fixture extension lives in `tests/test_oec_view.py`, not `test_oec.py`** (`_VIEW_FIXTURE`
+  + `OecViewFixtureBase`): growing the tripwire file's shared fixture changes what every test in
+  it sees. It carries the photometry-rich star, the no-`semimajoraxis` planet, the A-type
+  (9000 K) host that exercises the D.2 raise path end-to-end, and the full-element satellite.
+- **Cross-references ship as one button, not four.** "Look up this star in SIMBAD →" opens a
+  `SimbadPanel` in a non-modal window (the `ProjectsPanel._open_real` idiom) — that panel already
+  carries Hypatia, GCNS and Gould, so it covers the mockup's four links. It appears only when the
+  star has a resolvable designation *and* the panel supplied the callback; `oec_detail` owns no
+  navigation.
+
+**V1 / V2 run early (2026-08-01), on the real cache — clean:** the section model built for all
+**14,037 nodes** (4,081 systems · 4,300 stars · 5,414 planets · 224 binaries · 18 satellites) with
+**0 exceptions, 0 failed sections, 0 un-labelled keys**. Exactly three keys reach the
+"Other catalogued fields" fallback — `star.discoveryyear` (45), `system.videolink` (30),
+`system.spectraltype` (1) — which is the fallback doing its job, not a gap. Re-run at Stage 7.
+
 ### Stage 4a — Star-side derived *(~1 day)*
 `log_g`, `mean_density_gcc`, `abs_mag_v`, colours, `angular_diameter_mas`, `light_years`,
 `parallax_mas`, `ms_lifetime_gyr`/`stage`, `ice_lines`, `hz_circumbinary`, panel-side
 `hyper_limit_au`.
 **Gate:** ▲ **code review R2a**.
 
+**Built 2026-08-01.** Deviations and findings, all deliberate:
+- **The three scale constants are DERIVED from `core.equations`, not typed.** `_LOG_G_SUN`
+  (4.4382), `_RHO_SUN_GCC` (1.4102) and `_ANG_DIAM_MAS` (**9.3009**) come from `_G`,
+  `_SOLAR_MASS_KG`, `_SUN_RADIUS_M` and `_M_PER_AU`. **§D.1 pinned the angular-diameter
+  coefficient at 9.305**, which implies R☉ = 6.96e8 m; the repo's own `_SUN_RADIUS_M` is the
+  IAU-2015 6.957e8, giving 9.3009 — a **0.04%** difference that leaves T8's 2.021 mas anchor
+  intact. Typing 9.305 would have introduced a fourth solar-constant convention into a repo that
+  already documents three (§D rule 8). Raised here rather than silently re-decided.
+- **`compute_hyper_limit_for_spectral_type` returns `{lm, au, matched_class}`, not a float.**
+  §D.1 reads as though it returns AU. Formatting the dict raised inside `_fmt_scalar` and — via
+  the T18 isolation — took the *entire* HZ block down with it, silently. Found by running the
+  real cache, not by a test. Pinned by
+  `test_hyper_limit_is_an_au_value_not_the_returned_dict`.
+- **A < 0.8 M☉ main-sequence lifetime is a bound, not a figure.** `compute_stellar_evolution`
+  extrapolates `T_ms = 10¹⁰·M^−2.5` uncapped, so Kepler-16 B (0.20 M☉) reports **564 Gyr**. The
+  pane now renders `> 13.8 Gyr` plus the reason; the raw figure is kept in `value` for
+  programmatic consumers. This established a contract refinement worth knowing: **`reason`
+  beside a non-None `value` is a QUALIFIER, not an absence**, and the renderer must show it or a
+  caveated number reads as an uncaveated one.
+- **`compute_ice_lines`' `species` is already a label** ("Water snow line", "NH₃ front") — do not
+  append a second noun.
+- **D9's note ships.** The binary pane's "Habitable zone (circumbinary)" block states in the pane
+  that the HZ *Diagram* tab still uses primary-component light alone, so the two tabs' visible
+  disagreement is explained rather than silent.
+
+**R2a (2026-08-01) — four findings, no crash-class bugs, all fixed.** The two structural ones:
+- **The star plan had no Description section**, yet `consumed` is seeded from
+  `_HANDLED_ELSEWHERE` for *every* tag — so a `<description>`/`<image>` on a star would have been
+  removed from the fallback *and* rendered nowhere. Latent only because those keys currently
+  appear on planets alone, and invisible to the guard test because it hard-coded
+  `"tag": "planet"`. **The guard test is now parameterised over all five tags** — that
+  generalisation is the durable fix; the missing section was just its first catch.
+- **The Hubble-time qualifier keyed on `low_mass` (M < 0.8) while the display bound keys on the
+  value**, and `T_ms` crosses 13.8 Gyr at **≈0.883 M☉** — so the well-populated 0.80–0.88 M☉ band
+  showed a bare "> 13.8 Gyr" with nothing to say whether it was a real figure or a caveat. Now
+  keyed on the value throughout, with the low-mass range named only when it applies.
+
+The other two: `_oec_view` was rebuilt inside `_on_oec_result`, silently reverting the user's pane
+position and toggles on every new search (and Stage 6 adds three more controls to that dict); and
+`_oec_derived_for`'s docstring asserted the opposite of its code — it says "never on `id(node)`"
+above a literal `key = id(node)`. The behaviour was correct; the docstring now names the three
+mechanisms that make it correct (per-result clear + stored strong reference + `hit[0] is node`
+re-check) and says that all three are load-bearing.
+
+**V1 re-run after 4a — clean.** All 4,081 systems: **0 exceptions, 0 failed sections**. Derived
+coverage measured on the real cache: `light_years`/`parallax_mas` 4,089 · `ms_lifetime_gyr` 4,052 ·
+`log_g`/`mean_density_gcc` 3,513 · `luminosity_lsun`/`ice_lines` 3,437 · `angular_diameter_mas`
+3,422 · `hz_bounds` 3,390 · `abs_mag_v` 2,134 · `v_minus_k` 1,844 · `b_minus_v` 1,104 · `stage` 444
+(only 444 stars carry an age) · `hz_circumbinary` 27 binaries. Every absence carries a stated
+reason; the four commonest are "no catalogued age" (3,608), "needs both B and V magnitudes"
+(3,196), "needs both V and K" (2,456) and "no catalogued V magnitude" (2,140).
+
 ### Stage 4b — Planet-side derived *(~1½ days)*
 Recovered `sma_au`, `insolation_searth` + `hz_verdict` (via `compute_habitable_zone_sma`),
 `peri_distance_au`/`apo_distance_au`, `density_gcc`, `surface_gravity_g`, escape/retention,
 `rv_semi_amplitude_ms`, transit, Hill, `stype/ptype_critical_au`, `topology`.
 **Tests:** T8, T9, T17, T19. **Gate:** ▲ **code review R2b**.
+
+**Built 2026-08-01. Every T8 planet anchor reproduces exactly** against the real cache — tau Cet e
+S = 1.5898, peri/apo 0.4412 / 0.6348, **K = 0.5522** (the e = 0.18 value; a test that also passes
+at 0.5432 is not testing the eccentricity path), tau Cet g recovered a = **0.1329 AU**. α Cen AB
+gives μ = 0.4519 and S-type critical 2.795 AU, matching the mockup's 0.452 / 2.78.
+
+Five things found by running real data, not by tests:
+- **A `<satellite>` must NOT be routed through `_derive_planet`.** OEC catalogues satellite
+  mass/radius in **Earth** units and planet mass/radius in **Jupiter** units (§D.0), so reuse would
+  be wrong by 317×/11× with nothing raising. `satellite` is deliberately absent from `_DISPATCH`.
+- **A binary's `separation` must be selected by its `unit` attribute** (`_oec_field_by_unit`), not
+  by `oec_fv`'s first value: the same pair is catalogued in AU *and* arcsec, and Binary S would
+  have taken "80" (arcsec) as 80 AU. An arcsec-only separation is **not** converted — that needs
+  the distance and yields a *projected* separation, not `a`.
+- **A nested binary disqualifies the Kepler-recovery total mass.** α Cen's outer pair is Proxima +
+  the AB *binary*, and a `<binary>` carries no mass of its own, so summing the star children gave
+  **0.12 M☉ for a ~2.1 M☉ pair** — a recovered `a` wrong by ~2.4×. Now suppressed when any
+  component is itself a binary. 61 Cygni (period, no `semimajoraxis`, no nesting) recovers
+  correctly: a ≈ 85 AU → S-type critical 10.55 AU.
+- **HZ and stability must not short-circuit each other.** A pair with masses but no temperatures
+  gets its critical SMAs and no HZ, and vice versa — the original single-`out` early-returns lost
+  one whenever the other was ungated.
+- **T7's own guard caught a literal in a comment I wrote** (`R_JUP_EARTH = 11.209`). Working as
+  designed; the comment now names the constant instead of its value.
+
+**R2b (2026-08-01) — eight findings, all fixed, each pinned by a test verified to fail against
+the reviewed code.** The two that mattered:
+- **A circumbinary planet was derived from its primary component, not the pair.** `_oec_host_of`
+  returned the binary's *first* star, so Kepler III, insolation, RV K and the Hill radius all used
+  one star's mass and light. Measured: TIC 172900988 b's recovered a came out **0.7115 AU instead
+  of 0.8921 (−20%)**, Kepler-413 b 0.300 vs 0.355, and KIC 7177553 b's insolation read 0.361 S⊕
+  where the *same panel's* binary HZ row implied 0.708 — a ~2× self-contradiction one click apart.
+  Fixed by `_oec_pair_host_values`: M₁+M₂, L₁+L₂, and the same luminosity-weighted effective Teff
+  `compute_circumbinary_hz` uses, so the two rows now agree by construction. It reuses the
+  nested-binary guard (a `<binary>` component carries no mass, so the sum must be suppressed) and
+  keeps the primary's radius for transit geometry, saying so in `source`.
+- **The whole S/P-type stability derivation was invisible.** `_companions_section` read
+  `mass_ratio` / `stype_critical_au` / `ptype_critical_au` from the **star's** derived entry, but
+  those keys only exist on the **binary's** — and `_derived_rows` skips missing keys silently, so
+  a fully unit-tested Stage-4b deliverable rendered nothing anywhere. Now the star's ctx carries
+  `parent_derived` (which is what the mockup's "S-type critical SMA 2.78 AU" row wants), and the
+  binary tag gained its own **Planet stability** section.
+
+The other six: the map's planet dialog passed a hard-coded ctx, so clicking a planet on the
+Architecture map showed catalogue fields only while the tree pane showed the derived block — the
+exact divergence the shared builder exists to prevent; an out-of-range eccentricity was **refused**
+in `_derive_peri_apo` but silently **zeroed** in `_derive_hill`/`_derive_rv`/`_derive_binary_stability`
+(now one `_eccentricity` helper distinguishes catalogued-and-bound · not-catalogued, which is an
+assumption and is labelled one · unbound, which is a refusal); msini masses fed density, gravity and
+Hill with no qualifier though all are monotonic in mass (261 of 263 affected); **`topology` was
+listed in Stage 4b and never implemented** — now a panel-side tree walk in the census vocabulary;
+`_oec_field_by_unit` `return`ed instead of `continue`d on an unparseable repeat, so a blank AU row
+masked a usable one behind it; and `or 90.0` treated a catalogued **0°** inclination as absent,
+reporting maximum K for a face-on orbit.
+
+**Coverage after 4b, measured on the real cache (V3 update):** the recovered `sma_au` reaches
+**5,151 of 5,414 planets (95.1%)** against 2,815 catalogued (52.0%) — **+2,336**, close to r2's
+predicted 2,490 (the shortfall is planets whose host has no catalogued mass). `insolation_searth`
+reaches **4,451 (82.2%)**, far above r2's V3 estimate of 41.6%, precisely because the recovered `a`
+feeds it. Then `hz_verdict` 4,400 · transit depth/probability 3,923 · RV K / Hill / moon limit
+2,586 · peri/apo 2,165 · density + surface gravity 1,554 · escape velocity + retention 1,042.
+**0 exceptions, 0 failed sections** across all 14,037 nodes.
 
 ### Stage 5 — Pinned host band *(~½ day)*
 Absent for non-planet selections and for rogue planets with no host star.
@@ -389,7 +589,7 @@ no `data/oec/systems.xml.gz` skips cleanly rather than failing.
 
 | # | Sweep | Expected |
 |---|---|---|
-| **V1** | Build the section model headlessly for all 4,081 systems / 4,300 stars / 5,414 planets / 224 binaries / 18 satellites | 0 exceptions, 0 un-labelled keys |
+| **V1** | Build the section model headlessly for all 4,081 systems / 4,300 stars / 5,414 planets / 224 binaries / 18 satellites — **via the pure path, see below** | 0 exceptions, 0 un-labelled keys |
 | **V2** | Per-tag diff: walker keys vs. section-model keys | empty |
 | **V3** | Derived coverage — **re-measured 2026-08-01, r1's figures were estimates** | star L (R+T) **80.0%** (3440/4300) · planet density (M+R) **29.8%** (1616/5414) — *r1 said 45%* · planet has `a` **52.0%** (2815) · planet `a` **and** host L **41.6%** (2253) — *r1 conflated this with the 52%* · planet P but no `a` **46.0%** (2490, the recovered-`a` gain) |
 | **V4** | JSON before/after for `oec-system` / `oec-planet` / `oec-search` / `oec-census` **and `rv-semi-amplitude`** | byte-identical. The Phase-T1b calculator is included because the B.2 constant move edits `core/calculators.py:561` (`compute_rv_semi_amplitude`), which `query.py` exposes and the sibling scifiWorldBuilding repo consumes — the value is unchanged (317.828), so this gate proves it. |
@@ -398,6 +598,20 @@ no `data/oec/systems.xml.gz` skips cleanly rather than failing.
 
 **Edge shapes:** planetless · rogue (no band, no insolation) · circumbinary (D9) · no spectral type ·
 non-OBAFGKM host · msini mass · bound-only field (`e ≤ 0.35`) · `periastron` present as degrees.
+
+### How to run V1 — the PURE path, never a panel per system
+
+**Build the sweep out of `core.databases._oec_node` + `oec_detail.build_context` +
+`detail_model`, with `core.oec_derived.derive` called directly.** Do **not** construct an
+`OecPanel` per system: each one creates a `QTreeWidget`, a splitter, a detail pane and a
+matplotlib Architecture canvas, and Qt reclaims those through `deleteLater()` — which needs
+an event loop a plain script never runs. Doing it over 4,081 systems exhausted an 8 GB WSL box
+on 2026-08-01 and the machine had to be killed. The pure path walked all **14,037 nodes**
+comfortably and is what produced every coverage figure in this plan.
+
+The three panel-only values (`hyper_limit_au`, `topology`, and the pair-host values for a
+circumbinary planet) need a panel — **sample a handful of systems** for those, don't sweep them.
+And **run V1 alone**: the full suite by itself is ~2.5 GB on this machine.
 
 ---
 
