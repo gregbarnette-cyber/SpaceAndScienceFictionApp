@@ -545,6 +545,12 @@ _OEC_COLUMNS = ["Node", "Type", "M", "R", "P (d)", "a (AU)", "e", "T (K)",
 # stay empty). Stage 1b fills them for stars via `_oec_tree_derived_cells`.
 _OEC_DERIVED_COLUMNS = (_OEC_COL_L, _OEC_COL_HZ)
 
+# D1 — the tri-state units control. Label → the `units` value `oec_planet_units`
+# understands; the reverse map seeds the combo from the current state.
+_OEC_NODE_COL_WIDTH = 300      # a name column, not what Stretch leaves over
+_OEC_UNIT_LABELS = {"Auto": "auto", "M⊕ / R⊕": "earth", "M♃ / R♃": "jupiter"}
+_OEC_UNIT_LABEL_OF = {v: k for k, v in _OEC_UNIT_LABELS.items()}
+
 
 # The value formatters live in gui/panels/oec_detail.py so the tree and the
 # detail pane can never render the same field two different ways (§B.6).
@@ -731,11 +737,13 @@ def _oec_tree_derived_cells(node, ctx):
         return "", ""
 
 
-def _oec_tree_item(node, ctx=None):
-    """Build a 10-column QTreeWidgetItem for an OEC node (children recursed).
+def _oec_tree_cells(node, ctx=None):
+    """The 10 column strings for one OEC node.
 
-    ``ctx`` carries display state: ``units`` ("auto"/"earth"/"jupiter"),
-    ``errors`` (bool) and an optional ``derived_cells`` provider."""
+    Split out of `_oec_tree_item` so the Stage-6 toolbar can re-render the cells of
+    the EXISTING items (`_oec_refresh_tree_cells`) instead of rebuilding the tree:
+    a rebuild would drop the expansion state, the scroll position and the selection
+    every time a checkbox moved (T12a asserts item identity survives)."""
     ctx = ctx or {}
     errs = ctx.get("errors", True)
     tag, f = node["tag"], node["fields"]
@@ -772,8 +780,14 @@ def _oec_tree_item(node, ctx=None):
     elif tag == "satellite":
         name = node["names"][0] if node.get("names") else "Moon"
         cells[_OEC_COL_TYPE] = "satellite"
-        cells[_OEC_COL_M] = _oec_value_cell(f.get("mass"), "M⊕", show_errors=errs)
-        cells[_OEC_COL_R] = _oec_value_cell(f.get("radius"), "R⊕", show_errors=errs)
+        # A `<satellite>`'s mass/radius are catalogued in JUPITER units, exactly
+        # like a planet's (the Moon is 0.000039 M♃ / 0.024847 R♃) — labelling the
+        # raw number M⊕/R⊕ was wrong by 318× / 11×. Converted, always to Earth: a
+        # moon is unreadable in Jupiter units, and the D1 toolbar stays planet-only.
+        cells[_OEC_COL_M] = _oec_value_cell(f.get("mass"), "M⊕", _MJUP_MEARTH,
+                                            show_errors=errs)
+        cells[_OEC_COL_R] = _oec_value_cell(f.get("radius"), "R⊕", _RJUP_REARTH,
+                                            show_errors=errs)
         cells[_OEC_COL_P] = _oec_value_cell(f.get("period"), show_errors=errs)
         cells[_OEC_COL_A] = _oec_value_cell(f.get("semimajoraxis"), show_errors=errs)
         cells[_OEC_COL_E] = _oec_value_cell(f.get("eccentricity"), show_errors=errs)
@@ -799,7 +813,16 @@ def _oec_tree_item(node, ctx=None):
     cells[_OEC_COL_NODE] = f"{prefix} {name}".strip()
     if ctx.get("derived", True):
         cells[_OEC_COL_L], cells[_OEC_COL_HZ] = _oec_tree_derived_cells(node, ctx)
+    return cells
 
+
+def _oec_tree_item(node, ctx=None):
+    """Build a 10-column QTreeWidgetItem for an OEC node (children recursed).
+
+    ``ctx`` carries display state: ``units`` ("auto"/"earth"/"jupiter"),
+    ``errors`` (bool) and an optional ``derived_cells`` provider."""
+    ctx = ctx or {}
+    cells = _oec_tree_cells(node, ctx)
     item = QTreeWidgetItem(cells)
     # Python attribute, NOT setData(…, UserRole, node): PySide6 marshals a dict
     # through QVariantMap and hands back a *copy*, so identity — which every
@@ -859,6 +882,24 @@ def _oec_hide_empty_columns(tree):
 def _oec_show_all_columns(tree):
     for col in range(tree.columnCount()):
         tree.setColumnHidden(col, False)
+
+
+def _oec_refresh_tree_cells(tree, ctx):
+    """Re-render every item's cells in place under new display state (Stage 6).
+
+    The items themselves are reused, so expansion, scroll position and the current
+    selection all survive a toolbar change — and the pane, which keys on node
+    identity (§B.3), keeps pointing at the same node."""
+    def walk(item):
+        node = _oec_item_node(item)
+        if node is not None:
+            for col, text in enumerate(_oec_tree_cells(node, ctx)):
+                item.setText(col, text)
+        for i in range(item.childCount()):
+            walk(item.child(i))
+
+    for i in range(tree.topLevelItemCount()):
+        walk(tree.topLevelItem(i))
 
 
 # ── Phase 2: Star-Databases parity (Hypatia + per-host diagrams) ──────────────
@@ -1087,7 +1128,8 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         # Stage 6 adds three more controls to this same dict.
         if not getattr(self, "_oec_view", None):
             self._oec_view = {"units": "auto", "errors": True, "derived": True,
-                              "hide_empty": True, "pane": "Right"}
+                              "hide_empty": True, "pane": "Right",
+                              "pin_host": True}
         # §B.3 — the ONE selection attribute the tree, the map, the host combo
         # and (Stage 5) the pinned band all converge on.
         self._oec_sel = None
@@ -1177,6 +1219,15 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         ctx["parent_derived"] = (self._oec_derived_for(parent)
                                  if parent is not None
                                  and parent.get("tag") == "binary" else {})
+        # Stage 5 — the pinned host band. `_oec_host_of` is the SAME resolver the
+        # planet's own derived layer uses, so the band can never describe a
+        # different host than the numbers beside it were computed from (a
+        # circumbinary planet's host is the pair, not its primary component).
+        host = _oec_host_of(node, ctx) if node.get("tag") == "planet" else None
+        ctx["host_node"] = host
+        ctx["host_derived"] = (self._oec_derived_for(host)
+                               if host is not None else {})
+        ctx["on_select_host"] = self._set_oec_selection
         ctx["on_lookup"] = self._open_oec_star_lookup
         return ctx
 
@@ -1277,8 +1328,10 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
 
     def _build_oec_tree(self, system):
         """The 10-column Data tree (Stage 1). Star rows carry M/R/T in the same
-        columns as planets; §B.5 keeps alternating rows and drops the fixed
-        column-0 width in favour of Stretch + ResizeToContents."""
+        columns as planets; §B.5 keeps alternating rows. Sizing is
+        ResizeToContents on the numeric columns and **Interactive at
+        `_OEC_NODE_COL_WIDTH`** on the name column — §B.5's Stretch starved it
+        beside the detail pane (see the comment below)."""
         tree = QTreeWidget()
         tree.setHeaderLabels(_OEC_COLUMNS)
         tree.setAlternatingRowColors(True)
@@ -1288,7 +1341,14 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         _oec_expand_tree(tree, root, _oec_node_count(system))
 
         hdr = tree.header()
-        hdr.setSectionResizeMode(_OEC_COL_NODE, QHeaderView.ResizeMode.Stretch)
+        # §B.5 dropped the old fixed 340 px column-0 width in favour of Stretch —
+        # but Stretch only gets what the ResizeToContents columns leave over, and
+        # beside the Stage-2 detail pane that was ~95 px: every tau Ceti planet
+        # rendered as "t…" (found by the V6 visual pass). Interactive with a
+        # readable default restores Stage 1's acceptance line and still lets the
+        # user drag; the numeric columns keep sizing to their content.
+        hdr.setSectionResizeMode(_OEC_COL_NODE, QHeaderView.ResizeMode.Interactive)
+        tree.setColumnWidth(_OEC_COL_NODE, _OEC_NODE_COL_WIDTH)
         for col in range(1, len(_OEC_COLUMNS)):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         tree.setMinimumHeight(240)
@@ -1328,6 +1388,22 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         bar = QWidget()
         h = QHBoxLayout(bar)
         h.setContentsMargins(4, 2, 4, 0)
+
+        # Stage 6 toolbar. Session-only state (D6 — no QSettings), no "Columns…"
+        # button (D8) and no Copy/Export (D12): the mockup shows those three, and
+        # shipping a dead button is worse than shipping none.
+        h.addWidget(QLabel("Units:"))
+        units = QComboBox()
+        units.addItems(list(_OEC_UNIT_LABELS))
+        units.setCurrentText(_OEC_UNIT_LABEL_OF.get(
+            self._oec_view.get("units", "auto"), "Auto"))
+        units.setToolTip("Catalogued planet mass/radius only (D1). Auto picks M⊕ "
+                         "below 0.1 M♃, per node; derived values keep their own "
+                         "fixed units.")
+        units.currentTextChanged.connect(self._on_oec_units)
+        self._oec_units_combo = units
+        h.addWidget(units)
+
         h.addWidget(QLabel("Detail pane:"))
         combo = QComboBox()
         combo.addItems(["Right", "Below", "Hidden"])
@@ -1335,14 +1411,21 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         combo.currentTextChanged.connect(self._on_oec_pane_position)
         self._oec_pane_combo = combo
         h.addWidget(combo)
-        # Hide-empty needs its own control from the moment it exists: without one
-        # a column hidden as empty can never be re-shown for the session. The rest
-        # of the toolbar (units / errors / derived) arrives in Stage 6.
-        hide = QCheckBox("Hide empty columns")
-        hide.setChecked(self._oec_view.get("hide_empty", True))
-        hide.toggled.connect(self._on_oec_hide_empty)
-        self._oec_hide_empty_box = hide
-        h.addWidget(hide)
+
+        # Hide-empty needed its own control from the moment it existed (Stage 2):
+        # without one, a column hidden as empty could never be re-shown.
+        for attr, text, key, slot in (
+                ("_oec_errors_box", "Errors", "errors", self._on_oec_errors),
+                ("_oec_derived_box", "Derived", "derived", self._on_oec_derived),
+                ("_oec_hide_empty_box", "Hide empty columns", "hide_empty",
+                 self._on_oec_hide_empty),
+                ("_oec_pin_host_box", "Pin host star", "pin_host",
+                 self._on_oec_pin_host)):
+            box = QCheckBox(text)
+            box.setChecked(self._oec_view.get(key, True))
+            box.toggled.connect(slot)
+            setattr(self, attr, box)
+            h.addWidget(box)
         h.addStretch()
         v.addWidget(bar)
         v.addWidget(splitter, 1)
@@ -1358,13 +1441,52 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
     def _on_oec_hide_empty(self, checked):
         """Toggle the empty-column filter without rebuilding the tree."""
         self._oec_view["hide_empty"] = bool(checked)
+        self._apply_oec_column_visibility()
+
+    def _apply_oec_column_visibility(self):
         tree = getattr(self, "_oec_tree", None)
         if tree is None:
             return
-        if checked:
+        if self._oec_view.get("hide_empty", True):
             _oec_hide_empty_columns(tree)
         else:
             _oec_show_all_columns(tree)
+
+    # ── Stage 6 — the rest of the toolbar ──
+
+    def _on_oec_units(self, label):
+        """D1 tri-state — Auto / M⊕ / M♃, catalogued planet mass+radius only."""
+        self._oec_view["units"] = _OEC_UNIT_LABELS.get(label, "auto")
+        self._refresh_oec_view()
+
+    def _on_oec_errors(self, checked):
+        self._oec_view["errors"] = bool(checked)
+        self._refresh_oec_view()
+
+    def _on_oec_derived(self, checked):
+        self._oec_view["derived"] = bool(checked)
+        self._refresh_oec_view()
+
+    def _on_oec_pin_host(self, checked):
+        """The pinned host band is a pane-only concern — no tree cell moves."""
+        self._oec_view["pin_host"] = bool(checked)
+        self._refresh_oec_view(tree=False)
+
+    def _refresh_oec_view(self, tree=True):
+        """Re-render tree cells + the pane under the current view state.
+
+        The tree is NEVER rebuilt: `_oec_refresh_tree_cells` re-texts the existing
+        items, so expansion, scroll position and the selection all survive
+        (T12a asserts `topLevelItem(0)` identity). Column visibility is re-applied
+        afterwards because a toggle can empty a column — turning Derived off
+        empties L and HZ — and with hide-empty on those columns should go."""
+        widget = getattr(self, "_oec_tree", None)
+        if tree and widget is not None:
+            _oec_refresh_tree_cells(widget, self._oec_tree_ctx())
+            self._apply_oec_column_visibility()
+        sel = getattr(self, "_oec_sel", None)
+        if sel:
+            self._render_oec_detail(sel[0])
 
     def _on_oec_pane_position(self, text):
         """Detail pane Right (default) / Below / Hidden — session-only (D2, D6)."""

@@ -41,9 +41,11 @@ class DerivedContractTests(unittest.TestCase):
         self.assertEqual(oec_derived.derive("system", {}), {})
 
     def test_satellites_are_not_routed_through_the_planet_path(self):
-        """A `<satellite>` catalogues mass/radius in EARTH units while
-        `_derive_planet` reads JUPITER units — reusing it would be wrong by
-        317×/11× with no error anywhere."""
+        """A `<satellite>`'s `semimajoraxis` is **planet-centric**, so the planet
+        derivation's Kepler recovery, insolation, Hill radius and RV amplitude —
+        all of which assume a star at the focus — would answer a different
+        question. (Not a unit problem: OEC catalogues satellite mass/radius in
+        Jupiter units, exactly like a planet's — R3, 2026-08-02.)"""
         self.assertEqual(oec_derived.derive("satellite", {"mass": 0.01,
                                                           "radius": 0.3}), {})
 

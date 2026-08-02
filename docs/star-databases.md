@@ -200,9 +200,17 @@ satellite` hierarchy — not a flat table like options 1–6** — so a resolved
   `field["value"]` directly), `oec_format_field` (`value ±err unit`; bound-only fields render `<= N`/`>= N`
   from the attribute), `oec_statuses` (all `<list>` statuses), `oec_binary_label` (synthesized "Binary
   (A + B)" for unnamed binaries). CLI prints an indented tree; **GUI (`OecPanel`)** renders a
-  `QTreeWidget` (◆ system · ⋔ binary · ★ star · ● planet · ☾ moon) with a per-node property column,
-  `M·sin i` labels, and multiple status badges. Spectral types (incl. white/brown dwarfs `DA…`/`T…`) are
-  shown verbatim — not routed through the OBAFGKM parser.
+  `QTreeWidget` (◆ system · ⋔ binary · ★ star · ● planet · ☾ moon) with `M·sin i` labels and multiple
+  status badges. Spectral types (incl. white/brown dwarfs `DA…`/`T…`) are shown verbatim — not routed
+  through the OBAFGKM parser.
+  - **Superseded 2026-08-02 for the GUI only:** the single "per-node property column" this bullet
+    described is now **ten columns beside a detail pane** — see the System View bullet below. The CLI
+    tree and these `core.databases` formatters are unchanged; the GUI's own value formatting moved to
+    `gui/panels/oec_detail.py` (`oec_value_cell`), which the tree and the pane share.
+  - **A `<satellite>`'s mass/radius are catalogued in JUPITER units, like a planet's** (the Moon is
+    `0.000039` M♃ = 0.0124 M⊕, `0.024847` R♃). The GUI converts them to Earth units at both render
+    sites; a `query.py` consumer gets the OEC-native value and must convert. This corrects a claim
+    that stood in `docs/integration.md` until 2026-08-02.
 - **`query.py`:** `oec-system --name` (full tree) and `oec-planet --name` (planet node + host chain +
   `attached_to` ∈ `star|binary|system`) — offline direct-alias resolution (`allow_simbad=False`), the same
   node dict serialized as JSON. **Phase 4** adds three catalogue-wide readers (no name, offline over the whole
@@ -259,6 +267,36 @@ satellite` hierarchy — not a flat table like options 1–6** — so a resolved
     click-planet dialog. Each planet dict from `prepare_oec_architecture` carries its full `node` for this;
     the pick handler dispatches planet (→ `on_planet_click`, dialog) vs star/◆ (→ `on_select`, recenter).
   See `docs/gui-architecture.md` (OEC System Architecture map) and `completed_plans/PHASE_OEC_PLAN.md` §C Phase 3.
+- **System View — star-first master/detail (built 2026-08-02, `completed_plans/OEC_SYSTEM_VIEW_PLAN.md`).**
+  The **Data** tab is no longer a tree of crammed property strings: it is a **10-column tree**
+  (`Node · Type · M · R · P (d) · a (AU) · e · T (K) · L / S⊕ · HZ`) beside a **detail
+  pane**, with a toolbar above (**Units** `Auto / M⊕ / M♃` — Auto decided per node, catalogued
+  planet mass+radius only · **Detail pane** Right / Below / Hidden · **Errors** · **Derived** ·
+  **Hide empty columns** · **Pin host star**; session-only, nothing persisted).
+  - **Star-first:** a star row populates M/R/T in the *same* columns as a planet, plus a derived
+    **luminosity** and **HZ range**; a planet row adds insolation S⊕ and its HZ verdict.
+  - **Detail pane** for all five tags. A star gets an eight-block dossier (Identity with every
+    alias · Position & distance · Physical · Photometry · Habitable zone & ice lines · Planets
+    hosted · Companions & hierarchy · Cross-references, the last a "Look up this star in SIMBAD →"
+    button opening a `SimbadPanel` — which carries Hypatia, GCNS and Gould). Every tag ends with an
+    alphabetical **"Other catalogued fields"** fallback, so a field OEC adds later cannot go
+    missing (measured: exactly three keys reach it — `star.discoveryyear`, `system.videolink`,
+    `system.spectraltype`).
+  - **Selecting a planet keeps its host on screen:** a **pinned host band** above the planet's
+    record carries the host's L, HZ bounds, snow line and distance, and clicking it returns to the
+    full dossier. A **circumbinary** planet pins the **pair** and shows the pair's *combined* light
+    — the same values its own insolation was computed from. Rogue planets have no band.
+  - **Derived values** (`core/oec_derived.py` — pure, no I/O) are **violet, badged ◇ and tooltipped
+    with their source**, never merged into the catalogue rows, and removable with one toggle. A
+    value that cannot be computed still renders, carrying the reason ("no catalogued radius",
+    "Teff outside Kopparapu validity (2600–7200 K)"), so an absence is never a silent gap — and
+    never a zero. Numbers come from the repo's own `core/` functions (Kopparapu HZ, ice lines,
+    Kepler III, `compute_habitable_zone_sma`, Holman & Wiegert, Domingos 2006, …), so the panel
+    cannot disagree with `query.py`.
+  - Two caveats that are correct, not bugs: an OEC planet's `periastron` is the **argument of
+    periastron in degrees** and is labelled as such (the derived *distances* are separate rows);
+    and the HZ **Diagram** tab still uses the primary component's light for a circumbinary system,
+    which the pane's circumbinary HZ block says explicitly.
 - **Phase status:** All phases built — 1 (core + tree + Tier-1 query.py), 2 (Hypatia + per-host diagrams), 3a
   (static Architecture map), 3b (interactive map — click-to-recenter + circumbinary rings + zoom/hover +
   click-a-planet dialog), 4 (`oec-search`/`oec-census`/`oec-status` structural readers), and 5 (the app-wide HZ

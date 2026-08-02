@@ -345,8 +345,26 @@ class OecTreeWidgetTests(OecTestBase):
         _, tree = self._tree("Single Star")
         self.assertEqual(tree.columnCount(), len(_OEC_COLUMNS))
         self.assertTrue(tree.alternatingRowColors())
+        # Interactive, not Stretch: Stretch only receives what the
+        # ResizeToContents numeric columns leave over, which beside the detail
+        # pane was ~95 px — every tau Ceti planet rendered as "t…" (V6 finding).
         self.assertEqual(tree.header().sectionResizeMode(_OEC_COL_NODE),
-                         QHeaderView.ResizeMode.Stretch)
+                         QHeaderView.ResizeMode.Interactive)
+        self.assertGreaterEqual(tree.columnWidth(_OEC_COL_NODE), 240)
+
+    def test_the_node_column_stays_readable_beside_the_detail_pane(self):
+        """A planet name must survive the default split, not elide to 't…'."""
+        panel, tree = self._tree("Hierarchy")
+        panel.resize(1100, 700)
+        panel.show()
+        try:
+            self.app.processEvents()
+            metrics = tree.fontMetrics()
+            longest = max(metrics.horizontalAdvance(item)
+                          for item in ("● Inner A b  [Confirmed planets]",))
+            self.assertGreaterEqual(tree.columnWidth(0), longest)
+        finally:
+            panel.hide()
 
     def test_every_item_carries_its_node(self):
         from gui.panels.catalogs import _oec_item_node
@@ -1323,6 +1341,430 @@ class R2bRegressionTests(OecViewFixtureBase):
         self.assertAlmostEqual(k(0.0), 0.0, places=9)
         self.assertGreater(k(90.0), 0.0)
         self.assertAlmostEqual(k(None), k(90.0), places=9)   # absent → edge-on
+
+
+# ── Stage 5 — the pinned host band (T11) ─────────────────────────────────────
+@unittest.skipUnless(qt_available(), "PySide6 / matplotlib not available")
+class HostBandTests(OecViewFixtureBase):
+    """T11 — present for a star-hosted planet, absent everywhere else, and a click
+    returns the pane to the host's full dossier."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self, name="Photometric"):
+        from gui.panels.catalogs import OecPanel
+        from tests.test_oec import _FakeWindow
+        panel = OecPanel(_FakeWindow())
+        system = self._system(name)
+        panel._on_oec_result({"system": system, "_hypatia": {}})
+        return panel, system
+
+    def _band(self, panel, node):
+        from gui.panels.oec_detail import detail_model
+        return detail_model(node, panel._oec_detail_ctx(node))["host_band"]
+
+    def test_a_star_hosted_planet_pins_its_host(self):
+        panel, system = self._panel()
+        band = self._band(panel, self._find(system, "planet")[0])
+        self.assertIsNotNone(band)
+        self.assertIs(band["node"], self._find(system, "star")[0])
+        self.assertIn("Photometric A", band["title"])
+        self.assertIn("G8.5 V", band["subtitle"])
+
+    def test_the_band_carries_l_hz_snow_line_and_distance(self):
+        panel, system = self._panel()
+        band = self._band(panel, self._find(system, "planet")[0])
+        joined = " · ".join(band["derived"])
+        # The mockup's own numbers for this star: L 0.460, HZ 0.66–1.18, 1.82, 11.9
+        self.assertIn("0.4602 L☉", joined)
+        self.assertIn("0.661–1.18 AU", joined)
+        self.assertIn("snow line 1.82 AU", joined)
+        self.assertIn("11.91 ly", joined)
+        cat = " · ".join(band["catalogued"])
+        for bit in ("0.783 M☉", "0.793 R☉", "5344 K"):
+            self.assertIn(bit, cat)
+
+    def test_no_band_for_a_rogue_planet(self):
+        # A rogue planet's parent is the <system>: nothing to pin.
+        import xml.etree.ElementTree as ET
+        import core.databases as databases
+        from tests.test_oec import _FIXTURE
+        databases._oec_get_root = lambda force_refresh=False: ET.fromstring(_FIXTURE)
+        databases._OEC_DATA = None
+        panel, system = self._panel("Rogue One")
+        planet = self._find(system, "planet")[0]
+        self.assertIsNone(self._band(panel, planet))
+        self.assertIsNone(panel._oec_pane.widget()._oec_host_band)
+
+    def test_no_band_for_star_system_binary_or_satellite(self):
+        panel, system = self._panel()
+        for node in (system,
+                     self._find(system, "star")[0],
+                     self._find(system, "satellite")[0]):
+            self.assertIsNone(self._band(panel, node), node.get("tag"))
+        cb_panel, cb_system = self._panel("Full Circumbinary")
+        self.assertIsNone(self._band(cb_panel, self._find(cb_system, "binary")[0]))
+
+    def test_clicking_the_band_selects_the_host_star(self):
+        panel, system = self._panel()
+        planet = self._find(system, "planet")[0]
+        star = self._find(system, "star")[0]
+        panel._set_oec_selection(planet)
+        self.app.processEvents()
+        band_widget = panel._oec_pane.widget()._oec_host_band
+        self.assertIsNotNone(band_widget)
+        band_widget._oec_click()
+        self.app.processEvents()
+        self.assertIs(panel._oec_sel[0], star)
+        self.assertEqual(panel._oec_pane.widget()._oec_model["tag"], "star")
+        # the tree cursor followed, like every other selector (§B.3)
+        from gui.panels.catalogs import _oec_item_node
+        self.assertIs(_oec_item_node(panel._oec_tree.currentItem()), star)
+
+    def test_a_circumbinary_planet_pins_the_pair_not_the_primary(self):
+        """The R2b class of bug, in the band: the numbers a P-type planet is judged
+        against are the PAIR's combined light, and must match the planet's own
+        derived rows rather than one component's."""
+        panel, system = self._panel("Full Circumbinary")
+        planet = self._find(system, "planet")[0]
+        band = self._band(panel, planet)
+        self.assertIs(band["node"], self._find(system, "binary")[0])
+        self.assertIn("host pair", band["subtitle"])
+        joined = " · ".join(band["derived"])
+        self.assertIn("combined", joined)
+        self.assertIn("circumbinary", joined)
+        # the band's L is the same combined luminosity the planet's insolation used
+        from gui.panels.catalogs import _oec_host_values, _oec_host_of
+        host = _oec_host_values(planet, panel._oec_ctx)
+        self.assertIn(f"{host['luminosity']:.4g} L☉", joined)
+        self.assertIsNot(host, _oec_host_of(planet, panel._oec_ctx))
+
+    def test_derived_off_keeps_the_band_but_drops_its_derived_bits(self):
+        panel, system = self._panel()
+        panel._oec_view["derived"] = False
+        band = self._band(panel, self._find(system, "planet")[0])
+        self.assertIsNotNone(band)
+        self.assertEqual(band["derived"], [])
+        self.assertTrue(band["catalogued"])
+
+    def test_pin_host_off_removes_the_band(self):
+        panel, system = self._panel()
+        panel._oec_view["pin_host"] = False
+        planet = self._find(system, "planet")[0]
+        self.assertIsNone(self._band(panel, planet))
+        panel._set_oec_selection(planet)
+        self.app.processEvents()
+        self.assertIsNone(panel._oec_pane.widget()._oec_host_band)
+
+    def test_a_failing_band_does_not_blank_the_pane(self):
+        """The band is built inside its own try/except: it may cost the planet its
+        context line, never its record."""
+        from gui.panels import oec_detail
+        panel, system = self._panel()
+        planet = self._find(system, "planet")[0]
+        original = oec_detail.host_band_model
+        oec_detail.host_band_model = lambda *a, **k: (_ for _ in ()).throw(
+            RuntimeError("boom"))
+        try:
+            model = oec_detail.detail_model(planet, panel._oec_detail_ctx(planet))
+        finally:
+            oec_detail.host_band_model = original
+        self.assertIsNone(model["host_band"])
+        self.assertTrue(any(s["rows"] for s in model["sections"]))
+
+
+# ── Stage 6 — the toolbar (T12a / T12b / T12c) ───────────────────────────────
+@unittest.skipUnless(qt_available(), "PySide6 / matplotlib not available")
+class ToolbarTests(OecViewFixtureBase):
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self, name="Photometric"):
+        from gui.panels.catalogs import OecPanel
+        from tests.test_oec import _FakeWindow
+        panel = OecPanel(_FakeWindow())
+        system = self._system(name)
+        panel._on_oec_result({"system": system, "_hypatia": {}})
+        return panel, system
+
+    def _cell(self, panel, node, col):
+        from gui.panels.catalogs import _oec_item_node
+
+        def walk(item):
+            if _oec_item_node(item) is node:
+                return item.text(col)
+            for i in range(item.childCount()):
+                hit = walk(item.child(i))
+                if hit is not None:
+                    return hit
+            return None
+
+        return walk(panel._oec_tree.topLevelItem(0))
+
+    def test_the_toolbar_carries_every_stage_6_control(self):
+        panel, _ = self._panel()
+        for attr in ("_oec_units_combo", "_oec_errors_box", "_oec_derived_box",
+                     "_oec_hide_empty_box", "_oec_pin_host_box", "_oec_pane_combo"):
+            self.assertTrue(hasattr(panel, attr), attr)
+        self.assertEqual([panel._oec_units_combo.itemText(i)
+                          for i in range(panel._oec_units_combo.count())],
+                         ["Auto", "M⊕ / R⊕", "M♃ / R♃"])
+
+    # ── T12a — tri-state units, per node, without rebuilding the tree ──
+    def test_units_are_tri_state_and_change_the_unit_shown(self):
+        from gui.panels.catalogs import _OEC_COL_M
+        panel, system = self._panel()
+        planet = self._find(system, "planet")[0]     # 0.00629 M♃ → Auto picks M⊕
+        self.assertIn("M⊕", self._cell(panel, planet, _OEC_COL_M))
+        panel._oec_units_combo.setCurrentText("M♃ / R♃")
+        self.assertIn("M♃", self._cell(panel, planet, _OEC_COL_M))
+        self.assertIn("0.00629", self._cell(panel, planet, _OEC_COL_M))
+        panel._oec_units_combo.setCurrentText("M⊕ / R⊕")
+        cell = self._cell(panel, planet, _OEC_COL_M)
+        self.assertIn("M⊕", cell)
+        self.assertIn("1.999", cell)                 # 0.00629 × 317.828 ≈ 2.00
+        panel._oec_units_combo.setCurrentText("Auto")
+        self.assertIn("M⊕", self._cell(panel, planet, _OEC_COL_M))
+
+    def test_auto_units_are_decided_per_node(self):
+        from gui.panels.catalogs import _OEC_COL_M
+        panel, system = self._panel("Full Circumbinary")
+        big = self._find(system, "planet")[0]        # 0.3 M♃ → stays Jupiter
+        self.assertIn("M♃", self._cell(panel, big, _OEC_COL_M))
+        small_panel, small_system = self._panel()
+        small = self._find(small_system, "planet")[0]
+        self.assertIn("M⊕", self._cell(small_panel, small, _OEC_COL_M))
+
+    def test_changing_units_does_not_rebuild_the_tree(self):
+        panel, system = self._panel()
+        root = panel._oec_tree.topLevelItem(0)
+        selected = panel._oec_sel[0]
+        panel._oec_tree.topLevelItem(0).setExpanded(True)
+        panel._oec_units_combo.setCurrentText("M♃ / R♃")
+        self.assertIs(panel._oec_tree.topLevelItem(0), root)
+        self.assertIs(panel._oec_sel[0], selected)
+        self.assertTrue(root.isExpanded())
+
+    def test_the_units_toggle_reaches_the_detail_pane(self):
+        panel, system = self._panel()
+        planet = self._find(system, "planet")[0]
+        panel._set_oec_selection(planet)
+        self.app.processEvents()
+
+        def mass_row():
+            model = panel._oec_pane.widget()._oec_model
+            for sec in model["sections"]:
+                for row in sec["rows"]:
+                    if row["label"] in ("Mass", "M·sin i"):
+                        return row["value"]
+            return ""
+
+        self.assertIn("M⊕", mass_row())
+        panel._oec_units_combo.setCurrentText("M♃ / R♃")
+        self.app.processEvents()
+        self.assertIn("M♃", mass_row())
+
+    # ── T12b — errors / derived / hide-empty ──
+    def test_errors_toggle_removes_the_error_terms(self):
+        from gui.panels.catalogs import _OEC_COL_M
+        panel, system = self._panel()
+        star = self._find(system, "star")[0]
+        self.assertIn("±", self._cell(panel, star, _OEC_COL_M))
+        panel._oec_errors_box.setChecked(False)
+        self.assertNotIn("±", self._cell(panel, star, _OEC_COL_M))
+        panel._oec_errors_box.setChecked(True)
+        self.assertIn("±", self._cell(panel, star, _OEC_COL_M))
+
+    def test_derived_toggle_removes_every_derived_row_and_cell(self):
+        from gui.panels.catalogs import _OEC_COL_L
+        panel, system = self._panel()
+        star = self._find(system, "star")[0]
+        panel._set_oec_selection(star)
+        self.app.processEvents()
+        self.assertIn("L☉", self._cell(panel, star, _OEC_COL_L))
+        rows = [r for s in panel._oec_pane.widget()._oec_model["sections"]
+                for r in s["rows"] if r.get("derived")]
+        self.assertTrue(rows, "no derived rows to remove")
+
+        panel._oec_derived_box.setChecked(False)
+        self.app.processEvents()
+        self.assertEqual(self._cell(panel, star, _OEC_COL_L), "")
+        self.assertEqual([r for s in panel._oec_pane.widget()._oec_model["sections"]
+                          for r in s["rows"] if r.get("derived")], [])
+        panel._oec_derived_box.setChecked(True)
+        self.app.processEvents()
+        self.assertIn("L☉", self._cell(panel, star, _OEC_COL_L))
+
+    def test_derived_off_hides_the_now_empty_derived_columns(self):
+        """A toggle can empty a column; with hide-empty on it should then go."""
+        from gui.panels.catalogs import _OEC_COL_L
+        panel, _ = self._panel()
+        self.assertFalse(panel._oec_tree.isColumnHidden(_OEC_COL_L))
+        panel._oec_derived_box.setChecked(False)
+        self.assertTrue(panel._oec_tree.isColumnHidden(_OEC_COL_L))
+        panel._oec_derived_box.setChecked(True)
+        self.assertFalse(panel._oec_tree.isColumnHidden(_OEC_COL_L))
+
+    def test_hide_empty_toggle_shows_an_unpopulated_column(self):
+        from gui.panels.catalogs import _OEC_COL_A
+        # Hot Host: one star + one planet with a period, no `a` anywhere.
+        panel, _ = self._panel("Hot Host")
+        self.assertTrue(panel._oec_tree.isColumnHidden(_OEC_COL_A))
+        panel._oec_hide_empty_box.setChecked(False)
+        self.assertFalse(panel._oec_tree.isColumnHidden(_OEC_COL_A))
+        panel._oec_hide_empty_box.setChecked(True)
+        self.assertTrue(panel._oec_tree.isColumnHidden(_OEC_COL_A))
+
+    def test_pin_host_toggle_drives_the_band(self):
+        panel, system = self._panel()
+        planet = self._find(system, "planet")[0]
+        panel._set_oec_selection(planet)
+        self.app.processEvents()
+        self.assertIsNotNone(panel._oec_pane.widget()._oec_host_band)
+        panel._oec_pin_host_box.setChecked(False)
+        self.app.processEvents()
+        self.assertIsNone(panel._oec_pane.widget()._oec_host_band)
+        panel._oec_pin_host_box.setChecked(True)
+        self.app.processEvents()
+        self.assertIsNotNone(panel._oec_pane.widget()._oec_host_band)
+
+    def test_toolbar_state_survives_a_new_search(self):
+        """The view dict is initialised once per panel, not per result (R2a)."""
+        panel, _ = self._panel()
+        panel._oec_units_combo.setCurrentText("M♃ / R♃")
+        panel._oec_pin_host_box.setChecked(False)
+        panel._on_oec_result({"system": self._system("Hot Host"), "_hypatia": {}})
+        self.assertEqual(panel._oec_view["units"], "jupiter")
+        self.assertFalse(panel._oec_view["pin_host"])
+        self.assertEqual(panel._oec_units_combo.currentText(), "M♃ / R♃")
+        self.assertFalse(panel._oec_pin_host_box.isChecked())
+
+    # ── D8 / D12 — no dead buttons ──
+    def test_no_columns_or_export_button_ships(self):
+        from PySide6.QtWidgets import QPushButton
+        panel, _ = self._panel()
+        labels = [b.text() for b in panel.findChildren(QPushButton)]
+        for dead in ("Columns…", "Columns...", "Copy TSV", "Export CSV"):
+            self.assertNotIn(dead, labels)
+
+
+# ── R3 review findings — regression pins ─────────────────────────────────────
+@unittest.skipUnless(qt_available(), "PySide6 / matplotlib not available")
+class R3RegressionTests(OecViewFixtureBase):
+    """Each test here fails against the code as it stood at the R3 review."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self, name="Photometric"):
+        from gui.panels.catalogs import OecPanel
+        from tests.test_oec import _FakeWindow
+        panel = OecPanel(_FakeWindow())
+        system = self._system(name)
+        panel._on_oec_result({"system": system, "_hypatia": {}})
+        return panel, system
+
+    def _release(self, widget, button=None, pos=None):
+        from PySide6.QtCore import QEvent, QPointF
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtCore import Qt
+        button = button or Qt.MouseButton.LeftButton
+        pos = QPointF(*(pos or (5, 5)))
+        ev = QMouseEvent(QEvent.Type.MouseButtonRelease, pos, pos, button, button,
+                         Qt.KeyboardModifier.NoModifier)
+        widget.mouseReleaseEvent(ev)
+
+    def _band(self, panel, system):
+        planet = self._find(system, "planet")[0]
+        panel._set_oec_selection(planet)
+        self.app.processEvents()
+        band = panel._oec_pane.widget()._oec_host_band
+        self.assertIsNotNone(band)
+        return band
+
+    # R3-1 — a real mouse release deleted the band inside its own handler
+    def test_a_real_click_on_the_band_does_not_use_a_deleted_widget(self):
+        """Selecting the host rebuilds the pane, and `QScrollArea.setWidget()`
+        deletes the old one synchronously — including the band being clicked."""
+        panel, system = self._panel()
+        band = self._band(panel, system)
+        self._release(band)                      # raised RuntimeError before the fix
+        self.app.processEvents()                 # let the deferred click run
+        self.assertIs(panel._oec_sel[0], self._find(system, "star")[0])
+        self.assertEqual(panel._oec_pane.widget()._oec_model["tag"], "star")
+
+    # R3-2 — any button, any release position navigated
+    def test_only_a_left_release_inside_the_band_navigates(self):
+        from PySide6.QtCore import Qt
+        panel, system = self._panel()
+        planet = self._find(system, "planet")[0]
+        band = self._band(panel, system)
+        self._release(band, button=Qt.MouseButton.RightButton)
+        self.app.processEvents()
+        self.assertIs(panel._oec_sel[0], planet, "a right-click navigated")
+
+        band = self._band(panel, system)
+        # Qt delivers the release to whoever took the press: dragging off the band
+        # and letting go must not count as a click.
+        outside = (band.width() + 50, band.height() + 50)
+        self._release(band, pos=outside)
+        self.app.processEvents()
+        self.assertIs(panel._oec_sel[0], planet, "a release outside the band navigated")
+
+    # R3-3 — `QFrame {...}` also matched the child QLabels (QLabel IS-A QFrame)
+    def test_the_band_stylesheet_does_not_paint_its_child_labels(self):
+        panel, system = self._panel()
+        band = self._band(panel, system)
+        sheet = band.styleSheet()
+        self.assertNotIn("QFrame {", sheet)
+        self.assertIn("#oecHostBand", sheet)
+        self.assertEqual(band.objectName(), "oecHostBand")
+
+    # R3-4 — the HZ bit formatted an outer bound it had not checked
+    def test_a_half_present_hz_costs_one_bit_not_the_whole_band(self):
+        from gui.panels.oec_detail import _host_band_derived
+        half = {"hz_bounds": {"value": {"conservative_inner_au": 0.7,
+                                        "conservative_outer_au": None}},
+                "luminosity_lsun": {"value": 0.46}}
+        bits = _host_band_derived(half)          # raised TypeError before the fix
+        self.assertTrue(any("L 0.46" in b for b in bits))
+        self.assertFalse(any(b.startswith("HZ") for b in bits))
+
+    # R3-5 — satellite mass/radius are JUPITER units, labelled M⊕/R⊕ unconverted
+    def test_satellite_mass_and_radius_are_converted_from_jupiter_units(self):
+        """OEC catalogues a moon like a planet: the Moon is 0.000039 M♃, not M⊕."""
+        from gui.panels.catalogs import _oec_tree_cells, _OEC_COL_M, _OEC_COL_R
+        from gui.panels.oec_detail import detail_model
+        panel, system = self._panel()
+        moon = self._find(system, "satellite")[0]     # 0.01 M♃ / 0.3 R♃
+        cells = _oec_tree_cells(moon, panel._oec_tree_ctx())
+        self.assertIn("M⊕", cells[_OEC_COL_M])
+        self.assertIn("3.17", cells[_OEC_COL_M])      # 0.01 × 317.828
+        self.assertIn("3.36", cells[_OEC_COL_R])      # 0.3 × 11.209
+        rows = {r["label"]: r["value"]
+                for s in detail_model(moon, panel._oec_detail_ctx(moon))["sections"]
+                for r in s["rows"]}
+        self.assertIn("3.17", rows["Mass"])
+        self.assertIn("M⊕", rows["Mass"])
+        self.assertIn("3.36", rows["Radius"])
+
+    def test_the_real_moon_reads_as_earth_masses(self):
+        """A hand-checked anchor: 7.35e22 kg / 1.898e27 = 3.87e-5 M♃ = 0.0123 M⊕,
+        and 1737 km is 0.2725 R⊕ — the numbers a reader can sanity-check."""
+        from gui.panels.catalogs import _oec_tree_cells, _OEC_COL_M, _OEC_COL_R
+        moon = {"tag": "satellite", "names": ["Moon"], "children": [],
+                "fields": {"mass": {"value": "0.000039"},
+                           "radius": {"value": "0.024847"}}}
+        cells = _oec_tree_cells(moon)
+        self.assertIn("0.0124", cells[_OEC_COL_M])
+        self.assertIn("0.2785", cells[_OEC_COL_R])
 
 
 # ── R1 review findings — regression pins ─────────────────────────────────────

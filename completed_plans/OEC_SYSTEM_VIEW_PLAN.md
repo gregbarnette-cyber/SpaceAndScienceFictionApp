@@ -34,9 +34,18 @@ Progress ledger — tick a box only when that stage is complete *and* the full s
 - [x] **Stage 4b** — Planet-side derived ▲ **review R2b** (T8, T9, T17, T19) — built
       2026-08-01; **R2b run, all eight findings fixed**; suite **2555 passed, 1 skipped**
       (2026-08-02).
-- [ ] **Stage 5** — Pinned host band (T11)
-- [ ] **Stage 6** — Toolbar (T12a, T12b, T12c)
-- [ ] **Stage 7** — Validation sweeps V1–V6 + §L docs ▲ **review R3 (full diff)**
+- [x] **Stage 5** — Pinned host band (T11) — done 2026-08-02; suite **2564 passed,
+      1 skipped** (9 new in `HostBandTests`).
+- [x] **Stage 6** — Toolbar (T12a, T12b, T12c) — done 2026-08-02 (12 new in `ToolbarTests`).
+- [x] **Stage 7** — Validation sweeps V1–V6 + §L docs — done 2026-08-02; actuals in §G;
+      suite **2571 passed, 7 skipped, 484 subtests** (the 6 extra skips vs Stage 4b are the
+      `_netcheck`-gated `*_live.py` tests, which pass 24/24 when run on their own —
+      the gate tripping under a 9-minute run, not a regression).
+      ▲ **R3 run 2026-08-02 — seven findings, all fixed** (see the Stage-7 entry);
+      suite after the fixes **2583 passed, 1 skipped, 484 subtests**, and V1 re-run
+      clean (14,037 nodes, 0 exceptions, 0 failed sections).
+
+**All stages complete.** Nothing is committed — the user commits.
 
 **Before writing code, read in this order:** §0 (posture) → §B (seams — §B.4 is the highest-risk
 integration point) → §E (locked decisions, D1–D12) → the stage's own §C entry → its tests in §F.
@@ -196,8 +205,22 @@ def derive(kind, node_values, host_values=None, system_values=None) -> dict
 
 ### D.0 Input units (OEC, verified)
 
-planet mass/radius **Jupiter** · star mass/radius **Solar** · satellite mass/radius **Earth** ·
-sma **AU** · period **days** · distance **parsecs** · temperature **K**.
+planet mass/radius **Jupiter** · star mass/radius **Solar** · satellite mass/radius **Jupiter**
+*(corrected at R3 — see below)* · sma **AU** · period **days** · distance **parsecs** ·
+temperature **K**.
+
+> **§D.0 was wrong about satellites, and it propagated (R3, 2026-08-02).** This line read
+> "satellite mass/radius **Earth**". It is not: OEC catalogues a `<satellite>` exactly like a
+> planet, in **Jupiter** units — the Moon is `mass 0.000039` (= 7.35e22 kg / 1.898e27 = 3.87e-5 M♃)
+> and `radius 0.024847` (= 1737 km / 71 492 km). Because the plan asserted otherwise, **both**
+> render sites labelled the raw number `M⊕`/`R⊕` with no conversion, so every one of the 18
+> catalogued moons was shown **318× / 11× too small** from Stage 1 through Stage 7 — and no test
+> caught it, because the tests asserted the *unit string* the plan specified. Both sites now
+> convert (`@sat_mass`/`@sat_radius` in the registry, `_MJUP_MEARTH`/`_RJUP_REARTH` in the tree),
+> always to Earth units — a moon is unreadable in Jupiter units and D1's toolbar scope stays
+> planets-only. Anchored by a hand-checkable Moon test (0.0124 M⊕ / 0.2785 R⊕).
+> **The lesson:** T8-style anchors were required of the *derived* layer but not of *catalogued*
+> rendering, so a wrong premise in the plan passed straight through to the screen.
 
 ### D.1 The value table
 
@@ -457,9 +480,11 @@ at 0.5432 is not testing the eccentricity path), tau Cet g recovered a = **0.132
 gives μ = 0.4519 and S-type critical 2.795 AU, matching the mockup's 0.452 / 2.78.
 
 Five things found by running real data, not by tests:
-- **A `<satellite>` must NOT be routed through `_derive_planet`.** OEC catalogues satellite
-  mass/radius in **Earth** units and planet mass/radius in **Jupiter** units (§D.0), so reuse would
-  be wrong by 317×/11× with nothing raising. `satellite` is deliberately absent from `_DISPATCH`.
+- **A `<satellite>` must NOT be routed through `_derive_planet`.** *(Rationale corrected at R3:
+  this said the two use different mass units — they do not, both are Jupiter, see §D.0. The
+  conclusion stands for a better reason: a moon's `semimajoraxis` is **planet-centric**, so Kepler
+  recovery against a stellar mass, the insolation, the Hill radius and the RV amplitude would all
+  be answering a question nobody asked.)* `satellite` is deliberately absent from `_DISPATCH`.
 - **A binary's `separation` must be selected by its `unit` attribute** (`_oec_field_by_unit`), not
   by `oec_fv`'s first value: the same pair is catalogued in AU *and* arcsec, and Binary S would
   have taken "80" (arcsec) as 80 AU. An arcsec-only separation is **not** converted — that needs
@@ -517,13 +542,79 @@ feeds it. Then `hz_verdict` 4,400 · transit depth/probability 3,923 · RV K / H
 Absent for non-planet selections and for rogue planets with no host star.
 **Tests:** T11.
 
+**Built 2026-08-02.** `oec_detail.host_band_model(node, ctx)` → the model's new
+`host_band` key; `_HostBandWidget` renders it **above** the planet's own title, and the
+panel supplies `host_node` / `host_derived` / `on_select_host` through `_oec_detail_ctx`.
+tau-Ceti-shaped fixture reproduces the mockup band exactly: `L 0.4602 L☉ · HZ
+0.661–1.18 AU · snow line 1.82 AU · 11.91 ly`. Four things worth keeping:
+- **The band resolves its host with `_oec_host_of`** — the same resolver the planet's own
+  derived layer uses — so a circumbinary planet pins the **pair** and the band's combined
+  L is by construction the value its insolation was computed from. Naming the host twice
+  through two code paths is exactly how R2b's −20% bug happened; a test asserts the band's
+  L equals `_oec_host_values(planet, ctx)["luminosity"]`.
+- **A `<binary>` host has no `light_years`** (the distance block is built in `_derive_star`
+  from the system node), so a circumbinary band shows L + HZ and no distance. Absence with
+  no wrong number — extending `_derive_binary` with a distance block would be a change to a
+  reviewed pure module for one display line, so it is deliberately not done here.
+- The band honours **`derived`** (bits drop, band stays — it still carries the catalogued
+  M/R/T line) and a new **`pin_host`** view key, default True; Stage 6 gives it a checkbox.
+- Built inside its own `try/except` in `detail_model`: a band that cannot be assembled
+  costs the planet its context line, never its record.
+
 ### Stage 6 — Toolbar *(~½ day)*
 Tri-state units (D1), errors, derived, pin. *(No "Columns…" button — D8. No Copy/Export — §K.)*
 **Tests:** T12a, T12b, T12c.
 
+**Built 2026-08-02.** Units combo (`Auto / M⊕ R⊕ / M♃ R♃`) + Errors · Derived · Hide empty
+columns · Pin host star, beside the Stage-2 pane-position combo. Three notes:
+- **`_oec_tree_cells` was split out of `_oec_tree_item`** so a toggle re-*texts* the existing
+  items (`_oec_refresh_tree_cells`) instead of rebuilding the tree. A rebuild would silently
+  drop expansion state, scroll position and the selection — and the pane keys on node
+  **identity** (§B.3), so it would also detach. T12a pins `topLevelItem(0)` identity, the
+  selection and the expansion across a units change.
+- **Column visibility is re-applied after every refresh**, not just on the hide-empty toggle:
+  turning Derived off empties L and HZ, and with hide-empty on those columns should then go
+  (and come back). Own test.
+- Toolbar state is read back out of `_oec_view` when a new result rebuilds the bar, so a
+  search does not silently reset the user's choices (the R2a finding, now pinned by
+  `test_toolbar_state_survives_a_new_search`).
+
 ### Stage 7 — Validation sweeps + docs *(~1 day)* — **new** *(r2 #1)*
 V1–V6; record actuals in §G; the five §L doc updates.
 **Gate:** ▲ **code review R3** (full diff).
+
+**Run 2026-08-02.** All six sweeps recorded in §G — V1/V2/V4 clean, V3 re-measured, V5 inside
+budget, **V6 found and fixed the starved Node column**. Docs updated: `docs/gui-architecture.md`
+(an OEC System View note beside the Architecture-map note, the `OecPanel` viz-tab row, and a phase
+row), `docs/testing.md` (`test_oec_derived.py`, `test_oec_view.py`, `_oeccheck.py`),
+`docs/star-databases.md` (a System View bullet under opt 7), `completed_plans/PHASE_OEC_PLAN.md`
+(a follow-up pointer). **`tests/test_oec.py` was never edited — §M stays empty**, so the §0
+tripwire never fired in seven stages.
+**R3 (2026-08-02) — seven findings, all fixed, the five code ones each pinned by a test verified
+to fail against the reviewed code (`R3RegressionTests`).** The two that mattered:
+- **Clicking the pinned band destroyed the band inside its own event handler.** `_oec_click` →
+  `_set_oec_selection` → `_render_oec_detail` → `QScrollArea.setWidget()`, which deletes the
+  previous pane **synchronously** — including the widget being clicked; the following
+  `super().mouseReleaseEvent(event)` then ran on a freed C++ object
+  (`RuntimeError: Internal C++ object (_HostBandWidget) already deleted`, reproduced). **Every
+  real click on Stage 5's headline interaction hit this**, and the test did not: it called
+  `band._oec_click()` directly, skipping the event path entirely. Fixed with
+  `QTimer.singleShot(0, …)` — the idiom the Architecture map already uses for exactly this reason,
+  which the plan quotes in §C Phase 3b and I did not apply. *Lesson: when a handler's callback can
+  rebuild the widget tree, test the **event**, not the callback.*
+- **Satellite mass/radius were wrong by 318×/11×** — the §D.0 error, written up above.
+
+The other five: the release handler fired on any mouse button and on a press-drag-off-and-release
+(Qt delivers a release to whichever widget took the press); the band's `QFrame {…}` stylesheet also
+matched its child labels (**QLabel subclasses QFrame**), drawing a second rounded box round the
+title — now an `#oecHostBand` object-name selector; the band's HZ bit checked only the *inner*
+bound then formatted the outer, so an absent outer would have cost the planet its whole context
+line via `detail_model`'s blanket guard; three docs linked to `completed_plans/OEC_SYSTEM_VIEW_PLAN.md`
+while the file was still at the repo root (fixed by this move); and `_build_oec_tree`'s docstring
+still described the Stretch sizing the V6 fix had replaced.
+
+**Remaining:** nothing — R3 is run and this file has moved to `completed_plans/`. **Not committed**
+(the user commits).
 
 **Total: 7–9 days** *(r1's 5 was not credible — r2 #9)*.
 
@@ -598,6 +689,17 @@ no `data/oec/systems.xml.gz` skips cleanly rather than failing.
 
 **Edge shapes:** planetless · rogue (no band, no insolation) · circumbinary (D9) · no spectral type ·
 non-OBAFGKM host · msini mass · bound-only field (`e ≤ 0.35`) · `periastron` present as degrees.
+
+### Measured actuals — Stage 7, 2026-08-02 (real cache, pure path)
+
+| # | Result |
+|---|---|
+| **V1** | **PASS.** 14,037 nodes (4,081 system · 4,300 star · 5,414 planet · 224 binary · 18 satellite): **0 exceptions, 0 failed sections, 0 nodes with no rendered row.** |
+| **V2** | **PASS.** Exactly three keys reach the fallback — `star.discoveryyear` (45), `system.videolink` (30), `system.spectraltype` (1) — unchanged since Stage 3b; the fallback doing its job, not a gap. |
+| **V3** | Recovered `sma_au` **5151** · `insolation_searth` 4447 · `hz_verdict` 4399 · `light_years`/`parallax_mas` 4089 · `ms_lifetime_gyr` 4052 · transit depth/prob 3923 · `log_g`/`mean_density_gcc` 3513 · `luminosity_lsun`/`ice_lines` 3437 · `angular_diameter_mas` 3422 · `hz_bounds` 3390 · RV K / Hill / moon limit 2584 · peri/apo 2165 · `abs_mag_v` 2134 · `v_minus_k` 1844 · density + gravity 1554 · `b_minus_v` 1104 · escape + retention 1042 · `stage` 444 · S/P-type + μ 156 · `hz_circumbinary` 27. **Stage 5 band:** 5,370 planets pin a star · 39 pin a pair · **5 rogue planets correctly get none**; 5,343 bands carry derived bits. |
+| **V4** | **PASS — byte-identical** against `f2b91e4` (the pre-Stage-1 commit) in a worktree sharing `data/`: `oec-system` (α Cen, tau Ceti), `oec-planet` (tau Cet e, Kepler-16 b), `oec-search`, `oec-census`, and **`rv-semi-amplitude`** (two forms, exercising the B.2 constant move). `oec-status` differs in one field only — `cache_path`, which echoes the worktree's own path; an artifact of how the comparison was run, not of the change. |
+| **V5** | **PASS.** Tree build, warm: tau Ceti **0.77 ms** · α Cen **1.34 ms** · TRAPPIST-1 **0.97 ms** (Stage-1 baseline 0.80 / 0.93 / 0.90; ceiling 2×). Detail pane: model 0.38 ms, full widget **13.7 ms** for the 53-row tau Ceti dossier — well inside the 50 ms budget. Toolbar refresh (re-text, no rebuild) 0.5–1.4 ms. **Measure warm:** the first figures taken in a cold process read 4–5× high (Qt/font/import warm-up), the same caveat the Stage-1 baseline records. |
+| **V6** | **PASS with one defect found and fixed.** All seven shapes build with 0 failed sections: α Cen (depth-2, 3 stars/5 planets) · tau Ceti (7 planets incl. retracted) · Kepler-16 (band on the **pair**) · 61 Cygni (planetless binary, no band) · PSO J318.5-22 (rogue → no band) · TRAPPIST-1 (2559 K → snow line but **no HZ**, the D.2 gate visible in the band) · Fomalhaut (A-type 8590 K → same). **The defect:** with the Stage-2 detail pane taking its share of the width, the Node column's `Stretch` mode received only ~95 px and every tau Ceti planet rendered as `t…` — Stage 1's own acceptance line, broken by a later stage. Fixed by making the Node column **Interactive at 300 px** (§B.5's "drop the fixed width" was right about the *numeric* columns, wrong about column 0); pinned by two tests. |
 
 ### How to run V1 — the PURE path, never a panel per system
 
@@ -699,4 +801,6 @@ table) · `docs/testing.md` (two new test files + `_oeccheck.py`) ·
 
 ## §M — Permitted `tests/test_oec.py` edits
 
-*(none yet — record any display-string edit here with its review sign-off, per §0)*
+**None, across all seven stages.** The §0 tripwire never fired: `tests/test_oec.py` is
+byte-unchanged, and every new assertion went into `tests/test_oec_view.py` /
+`tests/test_oec_derived.py`.

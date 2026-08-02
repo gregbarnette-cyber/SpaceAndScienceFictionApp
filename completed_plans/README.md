@@ -24,7 +24,7 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (50 files)
+## Index (51 files)
 
 | File | Title |
 |---|---|
@@ -52,6 +52,7 @@ in here too, with the same history (moved with `git mv`).
 | [PHASE_L_PLAN.md](PHASE_L_PLAN.md) | Phase L — Exoplanet Comparison Dashboard — Implementation Plan |
 | [PHASE_M_PLAN.md](PHASE_M_PLAN.md) | Phase M — GCNS Interactive Surfacing · Implementation Plan |
 | [PHASE_N_PLAN.md](PHASE_N_PLAN.md) | PHASE N — query.py Integration Expansion · Implementation Plan |
+| [OEC_SYSTEM_VIEW_PLAN.md](OEC_SYSTEM_VIEW_PLAN.md) | OEC System View — Star-First Master/Detail (option 7 Data tab) — built 2026-08-02 (all seven stages; review gates R1/R2a/R2b/R3 run, 25 findings recorded with their fixes) |
 | [PHASE_OEC_PLAN.md](PHASE_OEC_PLAN.md) | Phase OEC — Open Exoplanet Catalogue Rebuild (menu option 7) |
 | [PHASE_O_PLAN.md](PHASE_O_PLAN.md) | PHASE O — Visualization Expansion · Implementation Plan |
 | [PHASE_P_PLAN.md](PHASE_P_PLAN.md) | PHASE P — Snow Lines & Alternative-Solvent Habitable Zones · Implementation Plan |

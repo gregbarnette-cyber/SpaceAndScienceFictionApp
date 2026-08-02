@@ -21,7 +21,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel, QFrame, QPushButton,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from core.databases import (oec_fv as _fv, oec_statuses as _statuses,
                             oec_binary_label as _binary_label)
@@ -230,8 +230,13 @@ _REGISTRY = {
     ],
     "satellite": [
         ("Physical", [
-            ("mass", "Mass", "M⊕"),
-            ("radius", "Radius", "R⊕"),
+            # `@sat_mass`/`@sat_radius` CONVERT: OEC catalogues satellite mass and
+            # radius in JUPITER units like a planet's (the Moon is 0.000039 =
+            # 3.87e-5 M♃, 0.024847 = 1737 km / R♃), so labelling the raw number
+            # M⊕/R⊕ was wrong by 318× / 11×. Always Earth here — a moon is never
+            # legible in Jupiter units, and D1's toolbar scope stays planets-only.
+            ("mass", "Mass", "@sat_mass"),
+            ("radius", "Radius", "@sat_radius"),
         ]),
         ("Orbit", _ORBIT_COMMON + [("tilt", "Axial tilt", _ANGLE)]),
     ],
@@ -304,6 +309,10 @@ def _registry_section(node, ctx, spec):
             factor, unit = mf, mu
         elif unit == "@radius":
             factor, unit = rf, ru
+        elif unit == "@sat_mass":
+            factor, unit = M_JUP_EARTH, "M⊕"
+        elif unit == "@sat_radius":
+            factor, unit = R_JUP_EARTH, "R⊕"
         if label == "@mass":
             label = oec_mass_label(node)
         text = oec_value_cell(fields[key], unit, factor, show_errors=errs, repeats=True)
@@ -739,6 +748,143 @@ def _fmt_fraction(value, unit):
     return f"{value * 100:.3g}%"
 
 
+# ── Stage 5: the pinned host band ────────────────────────────────────────────
+
+def _host_band_derived(derived, want_derived=True):
+    """The four numbers a planet is judged against — L, HZ, snow line, distance.
+
+    Falls back to the circumbinary keys for a `<binary>` host, whose derived entry
+    carries no single-star `luminosity_lsun`/`hz_bounds`: the pair's combined light
+    and P-type HZ are exactly the values that planet's OWN derived rows were
+    computed from (`_oec_pair_host_values`), so the band cannot contradict them."""
+    if not want_derived:
+        return []
+    bits = []
+    lum = (derived.get("luminosity_lsun") or {}).get("value")
+    cb = (derived.get("hz_circumbinary") or {}).get("value")
+    if lum is not None:
+        bits.append(f"L {lum:.4g} L☉")
+    elif cb and cb.get("combined_lum") is not None:
+        bits.append(f"L {cb['combined_lum']:.4g} L☉ (combined)")
+
+    hz = (derived.get("hz_bounds") or {}).get("value")
+    suffix = ""
+    if hz is None and cb:
+        hz, suffix = cb, " (circumbinary)"
+    # BOTH bounds, not just the inner one: formatting a None outer raises, and
+    # `detail_model`'s blanket guard would then cost the planet its whole context
+    # line rather than one bit of it. Matches the tree's star-branch check.
+    if hz and (hz.get("conservative_inner_au") is not None
+               and hz.get("conservative_outer_au") is not None):
+        bits.append(f"HZ {hz['conservative_inner_au']:.3g}–"
+                    f"{hz['conservative_outer_au']:.3g} AU{suffix}")
+
+    for line in ((derived.get("ice_lines") or {}).get("value") or []):
+        if line.get("kind") == "snow_line" and line.get("au") is not None:
+            bits.append(f"snow line {line['au']:.3g} AU")
+            break
+
+    ly = (derived.get("light_years") or {}).get("value")
+    if ly is not None:
+        bits.append(f"{ly:.4g} ly")
+    return bits
+
+
+def host_band_model(node, ctx):
+    """The compact host record pinned above a **planet's** pane (T11), or None.
+
+    None for every non-planet selection, and for a rogue planet — whose parent is
+    the `<system>`, so there is no host to pin. A circumbinary planet's host is the
+    PAIR, not its primary component, which is what `ctx["host_node"]` carries."""
+    if node.get("tag") != "planet" or not ctx.get("pin_host", True):
+        return None
+    host = ctx.get("host_node")
+    if not isinstance(host, dict) or host.get("tag") not in ("star", "binary"):
+        return None
+    fields = host.get("fields") or {}
+    catalogued = []
+    for key, unit in (("mass", "M☉"), ("radius", "R☉"), ("temperature", "K"),
+                      ("metallicity", "[Fe/H]"), ("age", "Gyr"), ("magV", "V")):
+        cell = oec_value_cell(fields.get(key), "", show_errors=False)
+        if not cell:
+            continue
+        catalogued.append(f"{cell} {unit}" if unit not in ("[Fe/H]", "V")
+                          else f"{unit} {cell}")
+    sp = oec_value_cell(fields.get("spectraltype"))
+    kind = "host pair" if host.get("tag") == "binary" else "host"
+    return {
+        "node": host,
+        "title": f"{OEC_PREFIX.get(host.get('tag'), '')} "
+                 f"{oec_node_title(host)}".strip(),
+        "subtitle": f"{sp} · {kind}" if sp else kind,
+        "catalogued": catalogued,
+        "derived": _host_band_derived(ctx.get("host_derived") or {},
+                                      ctx.get("derived", True)),
+    }
+
+
+class _HostBandWidget(QFrame):
+    """The rendered band. Clicking it selects the host node, restoring the full
+    star dossier in the same pane (T11) — the mockup's "click to expand"."""
+
+    def __init__(self, band, on_click=None):
+        super().__init__()
+        self._oec_host_node = band["node"]
+        self._oec_on_click = on_click
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        # Object-name selector, NOT `QFrame {...}`: QLabel subclasses QFrame, so a
+        # type selector paints a second 1 px rounded box around every child label.
+        self.setObjectName("oecHostBand")
+        self.setStyleSheet("#oecHostBand { background: #f4f2fb; border: 1px solid "
+                           "#cfc7e6; border-radius: 6px; }")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(8, 5, 8, 6)
+        lay.setSpacing(1)
+
+        head = QLabel(f"<b>{band['title']}</b> &nbsp;"
+                      f"<span style='color:#777'>{band['subtitle']}</span>"
+                      + ("&nbsp; <span style='color:#999'>click to open the full "
+                         "dossier ▾</span>" if on_click else ""))
+        head.setTextFormat(Qt.TextFormat.RichText)
+        head.setWordWrap(True)
+        lay.addWidget(head)
+
+        if band["catalogued"]:
+            cat = QLabel(" · ".join(band["catalogued"]))
+            cat.setStyleSheet("color: #555;")
+            cat.setWordWrap(True)
+            lay.addWidget(cat)
+        if band["derived"]:
+            der = QLabel("◇ " + " · ".join(band["derived"]))
+            der.setStyleSheet("color: #6a3fa0;")
+            der.setWordWrap(True)
+            lay.addWidget(der)
+
+        if on_click:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("Show the full record for this host")
+
+    def _oec_click(self):
+        if self._oec_on_click is not None:
+            self._oec_on_click(self._oec_host_node)
+
+    def mouseReleaseEvent(self, event):        # noqa: N802 (Qt naming)
+        """Selecting the host **destroys this widget**: the callback rebuilds the
+        pane, and `QScrollArea.setWidget()` deletes the previous one synchronously
+        — so calling it inline leaves Qt dispatching the rest of this event through
+        a freed C++ object (`RuntimeError: Internal C++ object already deleted`).
+        Deferred with `QTimer.singleShot(0, …)`, the same idiom the Architecture
+        map uses so its canvas is not torn down inside its own pick-event.
+
+        Gated on a left button released *inside* the band: Qt delivers a release to
+        whichever widget took the press, so a press-drag-off-and-release — and a
+        right- or middle-click — would otherwise navigate."""
+        super().mouseReleaseEvent(event)
+        if (event.button() == Qt.MouseButton.LeftButton
+                and self.rect().contains(event.position().toPoint())):
+            QTimer.singleShot(0, self._oec_click)
+
+
 def oec_hz_short(verdict):
     """`compute_habitable_zone_sma`'s verdict is a sentence; the tree column needs
     a token. Matches on the zone words, and falls back to the RAW verdict rather
@@ -833,7 +979,15 @@ def detail_model(node, ctx=None):
         "badges": _statuses(fields),
         "sections": [],
         "fallback_keys": [],
+        "host_band": None,
     }
+
+    # Stage 5 — pinned above everything else, and built defensively: a band that
+    # cannot be assembled must cost the planet its context line, not its pane.
+    try:
+        model["host_band"] = host_band_model(node, ctx)
+    except Exception:
+        log_viz_error("OEC host band")
 
     plan, consumed = _section_plan(node, ctx)
 
@@ -911,6 +1065,15 @@ def build_detail_pane(node, ctx=None):
     lay.setContentsMargins(10, 8, 10, 10)
     lay.setSpacing(4)
     lay.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    # The pinned host band (Stage 5) sits ABOVE the planet's own title: selecting a
+    # planet replaces the star's record in the pane, and this is what keeps L, HZ,
+    # snow line and distance on screen while you read the planet.
+    w._oec_host_band = None
+    if model.get("host_band"):
+        w._oec_host_band = _HostBandWidget(model["host_band"],
+                                           (ctx or {}).get("on_select_host"))
+        lay.addWidget(w._oec_host_band)
 
     head = QLabel(f"<span style='font-size:15px'><b>{model['title']}</b></span>"
                   + (f" &nbsp;<span style='color:#777'>{model['subtitle']}</span>"

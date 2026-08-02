@@ -13,6 +13,13 @@
 > model that could not represent the data. This plan is built on a full structural evaluation (below)
 > **before** any code.
 
+> **Follow-up, built 2026-08-02 — `completed_plans/OEC_SYSTEM_VIEW_PLAN.md`.** The Data tab this plan
+> shipped (a `QTreeWidget` with a crammed per-node property string) was rebuilt as a **star-first
+> master/detail**: a 10-column tree beside a per-node detail pane, a pinned host band on planet panes,
+> a session-only toolbar, and a new pure derived layer (`core/oec_derived.py`). Nothing in this plan's
+> parser, cache, resolution or `query.py` contract changed. Read that plan before touching
+> `OecPanel`'s Data tab.
+
 ## Build posture
 
 - **Surfaces: CLI + GUI + `query.py`** (all three), unlike the pure-`query.py` calculator phases.

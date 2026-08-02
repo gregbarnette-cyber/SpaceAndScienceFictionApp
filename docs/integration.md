@@ -372,8 +372,17 @@ bound in the attribute (the `value` is then usually `""`).
   `children` (so siblings aren't dumped).
 
 Field units are **not** encoded in the JSON where OEC leaves them implicit: planet `mass`/`radius` are in
-**Jupiter** units, star mass/radius in **Solar** units, satellite in **Earth** units (a consumer feeding
-Earth-unit tools must convert).
+**Jupiter** units, star mass/radius in **Solar** units, and a **`satellite`'s `mass`/`radius` are in
+Jupiter units too** — exactly like a planet's (a consumer feeding Earth-unit tools must convert; multiply
+by 317.828 / 11.209).
+
+> **Correction, 2026-08-02.** This line previously said satellite mass/radius were in **Earth** units.
+> They are not, and the JSON never changed — only this description was wrong. Verified against the
+> catalogue: the Moon is `mass 0.000039` (= 7.35×10²² kg / 1.898×10²⁷ = 3.87×10⁻⁵ M♃, i.e. **0.0124 M⊕**)
+> and `radius 0.024847` (= 1737 km / 71 492 km). **A consumer that trusted the old wording has been
+> reading every moon 318× / 11× too small.** Affects the 18 satellites the catalogue carries (the Galilean
+> moons, Titan, Triton, Charon, the major Uranian and Saturnian moons and Luna) — `oec-system` and
+> `oec-planet` are the only subcommands that emit them.
 
 #### `oec-search` / `oec-census` / `oec-status` (structural search + census — Phase 4)
 Catalogue-wide readers over the **whole** parsed catalogue (same offline local cache ‡; no SIMBAD). All
