@@ -1,4 +1,13 @@
 # gui/visualizations/hz_diagram.py — HabZoneDiagramPanel (Phase E)
+#
+# RETAINED DELIBERATELY — not in the nav tree, but do NOT delete without asking.
+# Verified 2026-08-02: zero instantiation/import sites repo-wide. That is a
+# measurement, not a verdict — the docs record these panels' status but have
+# never recorded why they were kept, so "nothing calls it" is not evidence that
+# nothing needs it. Note the class is exported through a module-level
+# __getattr__ in gui/panels/__init__.py (a real circular-import fix), so a
+# consumer would resolve it at RUNTIME and leave no static reference for grep
+# to find. See docs/gui-architecture.md, the note under the panel-class table.
 
 from PySide6.QtWidgets import QFormLayout, QLineEdit, QPushButton, QLabel, QVBoxLayout
 

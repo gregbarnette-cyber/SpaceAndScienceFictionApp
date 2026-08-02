@@ -150,6 +150,38 @@ def _identity_data_sol():
     }
 
 
+# The dossier is a rendered document (markdown / HTML / a static PNG export), so
+# it cannot page or scroll: every asteroid row lands in the output. The JPL
+# expansion took that table from 22 rows to 250+, which is unreadable in a
+# report. Cap it the same way the opt-11 orbital diagram caps its plot.
+_DOSSIER_MAX_ASTEROIDS = 25
+
+
+def _dossier_asteroids(asteroids):
+    """Trim the asteroid list for the dossier → {rows, shown, total}.
+
+    Keeps the `_DOSSIER_MAX_ASTEROIDS` largest by diameter **plus every body with
+    no published diameter**. That second clause is load-bearing: nine rows
+    (Sedna, Quaoar, Orcus, Gonggong, Ixion, Chaos, 2012 VP113, 2018 VG18,
+    2018 AG37) carry a literal ``"N/A"`` diameter, so a plain size ranking would
+    silently delete exactly the outer-system bodies a Sol dossier most wants.
+    Table order is preserved. Uses `core.viz._ss_diameter_km` rather than a local
+    parser so the "N/A" rule has a single implementation (`core.viz` imports no
+    matplotlib at module level, so this stays a cheap pure-core import).
+    """
+    from core.viz import _ss_diameter_km
+
+    total = len(asteroids)
+    if total <= _DOSSIER_MAX_ASTEROIDS:
+        return {"rows": list(asteroids), "shown": total, "total": total}
+    unranked = [a for a in asteroids if _ss_diameter_km(a) is None]
+    ranked = sorted((a for a in asteroids if _ss_diameter_km(a) is not None),
+                    key=lambda a: -_ss_diameter_km(a))[:_DOSSIER_MAX_ASTEROIDS]
+    keep = {id(a) for a in unranked} | {id(a) for a in ranked}
+    rows = [a for a in asteroids if id(a) in keep]
+    return {"rows": rows, "shown": len(rows), "total": total}
+
+
 def _planets_data_sol(ss):
     """Real Solar System bodies (compute_solar_system_tables) under a 'sol' discriminator
     so _blocks_planets can tell them from the NASA/HWC exoplanet shape."""
@@ -379,15 +411,23 @@ def _blocks_planets_sol(ss):
                  _n(p.get("Eccentricity"), 4), _n(p.get("Period"), 3)] for p in dw]
         blocks.append(("table", ["Name", "Mass (M⊕)", "Periastron (AU)", "Semi-major axis (AU)",
                                  "Apastron (AU)", "Eccentricity", "Period (yr)"], rows))
-    ast = ss.get("asteroids", [])
-    if ast:
-        blocks.append(("h3", f"Major Asteroids · {len(ast)}"))
+    ast = _dossier_asteroids(ss.get("asteroids", []))
+    if ast["rows"]:
+        heading = f"Major Asteroids · {ast['shown']}"
+        if ast["shown"] < ast["total"]:
+            heading += f" of {ast['total']}"
+        blocks.append(("h3", heading))
         rows = [[p.get("Name") or "—", _n(p.get("Diameter"), 1), _n(p.get("Periastron"), 4),
                  _n(p.get("Semimajor Axis"), 4), _n(p.get("Apastron"), 4),
-                 _n(p.get("Eccentricity"), 4), _n(p.get("Period"), 3)] for p in ast]
+                 _n(p.get("Eccentricity"), 4), _n(p.get("Period"), 3)] for p in ast["rows"]]
         blocks.append(("table", ["Asteroid", "Diameter (km)", "Periastron (AU)",
                                  "Semi-major axis (AU)", "Apastron (AU)", "Eccentricity",
                                  "Period (yr)"], rows))
+        if ast["shown"] < ast["total"]:
+            blocks.append(("p", f"Showing the {_DOSSIER_MAX_ASTEROIDS} largest by diameter plus "
+                                f"every body with no published diameter — "
+                                f"{ast['shown']} of {ast['total']} in the catalogue. "
+                                f"The full list is in the Solar System Bodies table (option 11)."))
     return _SECTION_TITLES["planets"], blocks
 
 

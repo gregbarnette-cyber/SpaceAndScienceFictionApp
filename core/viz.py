@@ -216,8 +216,28 @@ def prepare_system_orbits(planets: list) -> dict:
 # km per AU — converts moon SMA (km) → AU for the O7 orbital diagrams.
 _KM_PER_AU_SS = 1.496e8
 
+# Readability cap for the opt-11 "Dwarf Planets + Asteroids" diagram. The DB holds
+# ~250 asteroids after the 2026-08-02 JPL expansion; drawing one 361-point ellipse
+# each collapses the 2-3.5 AU main belt into an unreadable band and makes the panel
+# visibly slow. The TABLES still show every row — this caps the PLOT only.
+_SS_DIAGRAM_MAX_ASTEROIDS = 25
 
-def prepare_solar_system_orbits(kind: str = "planets") -> dict:
+
+def _ss_diameter_km(body: dict):
+    """Diameter in km from a solar-system row's 'Diameter' cell, or None.
+
+    The cell is a string carrying its unit ('939.4 km') and is literally 'N/A'
+    for bodies with no published diameter.
+    """
+    raw = (body.get("Diameter") or "").replace("km", "").strip()
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def prepare_solar_system_orbits(kind: str = "planets",
+                                max_asteroids: int = _SS_DIAGRAM_MAX_ASTEROIDS) -> dict:
     """Solar-system orbital-ellipse data for opt 11 (Phase O · O7).
 
     kind ∈ {"planets", "dwarfs_asteroids", "moons:<planet>"} — planet/dwarf/
@@ -225,18 +245,38 @@ def prepare_solar_system_orbits(kind: str = "planets") -> dict:
     as ``prepare_system_orbits`` ({name, sma, peri, apo, ecc, x_pts, y_pts,
     color}) plus {hz_zones: [], max_au, star_name} (no HZ — these bodies orbit
     the Sun / their planet) or {"error": str}.
+
+    ``max_asteroids`` caps how many asteroids the **dwarfs_asteroids** diagram
+    draws (``None`` = no cap; other kinds ignore it). Selection keeps the largest
+    by diameter, and ALWAYS keeps every dwarf planet plus every asteroid with no
+    published diameter — the nine curated TNOs (Sedna, Quaoar, Orcus, …) carry
+    ``Diameter = "N/A"``, so ranking by size would silently delete them. The
+    result always carries ``asteroids_total``/``asteroids_shown`` so a caller can
+    say the view is truncated rather than implying it is the whole catalogue.
     """
     import core.science
     data = core.science.compute_solar_system_tables()
 
     km_to_au = 1.0
+    asteroids_total = asteroids_shown = 0
     if kind == "planets":
         rows = [(p.get("Planet"), p.get("Semimajor Axis"), p.get("Eccentricity"))
                 for p in data["planets"]]
         star_name = "Sun"
-    elif kind == "dwarfs_asteroids":
+    elif kind in ("dwarfs_asteroids", "dwarfs_asteroids:all"):
+        if kind.endswith(":all"):
+            max_asteroids = None      # explicit "show everything" view
+        asteroids = data["asteroids"]
+        asteroids_total = len(asteroids)
+        if max_asteroids is not None and asteroids_total > max_asteroids:
+            unranked = [b for b in asteroids if _ss_diameter_km(b) is None]
+            ranked = sorted((b for b in asteroids if _ss_diameter_km(b) is not None),
+                            key=lambda b: -_ss_diameter_km(b))[:max_asteroids]
+            keep = {id(b) for b in unranked} | {id(b) for b in ranked}
+            asteroids = [b for b in asteroids if id(b) in keep]  # keep table order
+        asteroids_shown = len(asteroids)
         rows = [(b.get("Name"), b.get("Semimajor Axis"), b.get("Eccentricity"))
-                for b in data["dwarf_planets"] + data["asteroids"]]
+                for b in data["dwarf_planets"] + asteroids]
         star_name = "Sun"
     elif kind.startswith("moons:"):
         planet = kind.split(":", 1)[1]
@@ -285,7 +325,8 @@ def prepare_solar_system_orbits(kind: str = "planets") -> dict:
     if not orbits:
         return {"error": "No valid orbital data found."}
     return {"orbits": orbits, "hz_zones": [], "max_au": max_au * 1.25,
-            "star_name": star_name}
+            "star_name": star_name,
+            "asteroids_total": asteroids_total, "asteroids_shown": asteroids_shown}
 
 
 def prepare_hyper_limits() -> dict:

@@ -7,11 +7,128 @@ Options 11–16. All features here display data from local CSV files or hardcode
 ## Science Features
 
 ### Option 11: Solar System Planet/Dwarf Planets/Asteroids — `solar_system_data_tables()`
-- Displays four sequential data tables from CSV files in the project directory.
-- **Solar System Planets Data** — from `planetInfo.csv`; sorted ascending by Semimajor Axis; columns: Planet Name, Mass (J), Diameter (J), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity, Moons. AU values formatted as `{v:g} ({v × 8.3167:.3f} LM)`.
-- **Moon Data tables** — from `moonInfo.csv`; grouped by planet in order: Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto; each planet's moons sorted ascending by SemiMajor Axis (km); columns: Satellite Name, Diameter (km), Mass (kg), Perigee (km), Apogee (km), SemiMajor Axis (km), Eccentricity, Period (days), Gravity (m/s^2), Escape Velocity (km/s).
-- **Solar System Dwarf Planets Data** — from `dwarfPlanetInfo.csv`; sorted ascending by Semimajor Axis; same columns as planets table but header row says "Dwarf Planet Name" and Mass is in Earth masses.
-- **Solar System Major Asteroids Data** — from `asteroidsInfo.csv`; sorted ascending by Semimajor Axis; columns: Asteroid Name, Diameter (KM), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity.
+
+**Data source: the SQLite tables `planets` / `moons` / `dwarf_planets` / `asteroids`, not the CSVs.**
+`core.science.compute_solar_system_tables()` is pure SQL, and it is what the GUI panel,
+`query.py solar-system`, `core.viz.prepare_solar_system_orbits` and the Phase Q dossier all read.
+The four CSVs are the **seed/import source only** — auto-seeded on first `get_conn()` via
+`_STATIC_TABLES` (`core/db.py`), or replaced wholesale by option 55. *(`main.py`'s CLI copy still
+reads the CSVs directly; it was never migrated and the CLI menu is deprecated — see the K0-style
+note under option 16.)*
+
+- Displays four sequential data tables, each sorted ascending by Semimajor Axis.
+- **Solar System Planets Data** — `planets` (8 rows); columns: Planet Name, Mass (J), Diameter (J), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity, Moons. AU values formatted as `{v:g} ({v × 8.3167:.3f} LM)`.
+- **Moon Data tables** — `moons` (**43 rows**); grouped by planet in order: Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto; each planet's moons sorted ascending by SemiMajor Axis (km); columns: Satellite Name, Diameter (km), Mass (kg), Perigee (km), Apogee (km), SemiMajor Axis (km), Eccentricity, Period (days), Gravity (m/s^2), Escape Velocity (km/s).
+- **Solar System Dwarf Planets Data** — `dwarf_planets` (5 rows); same columns as planets table but header row says "Dwarf Planet Name" and Mass is in Earth masses.
+- **Solar System Major Asteroids Data** — `asteroids` (**259 rows**); columns: Asteroid Name, Diameter (KM), Period, Periastron (AU), Semimajor Axis (AU), Apastron (AU), Eccentricity. Despite the name the table also carries TNOs/centaurs (Sedna, Quaoar, Orcus, Gonggong, Varuna, Ixion, Chaos…) — it is "notable small bodies", not main-belt only. Nine of those TNO rows carry `Diameter = "N/A"` (a literal string, not a blank): no diameter has been published for them, **which is why the table is not size-ranked** — see the curation note below.
+  - **The table shows all 259; the Orbital Diagram's "(major)" view plots ~39.** The cap is a *display* concern only, and the combo's **"(all)"** entry plots every one — see `prepare_solar_system_orbits` under the JPL expansion below.
+
+#### JPL expansion (2026-08-02)
+
+The four CSVs were hand-built and incomplete. They were **appended to** (never rewritten — every
+pre-existing row is byte-identical) from JPL machine-readable sources:
+
+| table | was | now | source |
+|---|---|---|---|
+| `moons` | 21 | **43** | JPL SSD [`/sats/elem/`](https://ssd.jpl.nasa.gov/sats/elem/) mean elements + [`/sats/phys_par/`](https://ssd.jpl.nasa.gov/sats/phys_par/) GM/radius |
+| `asteroids` | 22 | **259** | SBDB Query API, `diameter >= 100 km` (250) + 9 named spacecraft targets |
+| `planets` / `dwarf_planets` | 8 / 5 | unchanged | JPL adds nothing — see below |
+
+**Completeness rule: a body is only added if every column can be filled.** For a moon that means JPL
+must publish **both** GM and mean radius, from which mass (`GM/G`), gravity (`GM/R²`), escape velocity
+(`√(2GM/R)`), diameter (`2R`) and perigee/apogee (`a(1∓e)`) are derived. There are **0 blank cells**
+across all 43 moons and all 259 asteroids. JPL lists mean elements for 459 satellites, but the other
+~413 have no measured physical data and are deliberately **not** emitted as sparse rows.
+
+Three moons are excluded for the same reason and must not be "fixed" by inventing a value:
+**Nereid** (GM published as `0.00000`) and **Kerberos** / **Styx** (`<0.0002` / `<0.0003` — upper
+limits, not measurements).
+
+**Asteroid curation: keep-all-22 + a 100 km size cutoff, NOT a top-N ranking.** Two rules constrain
+any future re-cut:
+
+1. **Never rank the table by diameter.** Nine of the original rows (Sedna, Quaoar, Orcus, Gonggong,
+   Ixion, Chaos, 2012 VP113, 2018 VG18, 2018 AG37) have `Diameter = "N/A"` — no published value — so
+   a size ranking silently *deletes* them. A pure "top 30 by diameter" drops **15 of the 22**
+   originals. Always keep the existing rows and filter only the candidates being added.
+2. **Watch the `dwarf_planets` overlap.** A 100 km cutoff pulled **Ceres** into `asteroids` while it
+   was already a `dwarf_planets` row, so option 11 listed it twice and the orbital diagram drew its
+   orbit twice. Ceres is legitimately both, but the duplicate was an accident; it was removed from
+   `asteroidsInfo.csv`. Re-check `set(asteroids) & set(dwarf_planets)` after any re-cut.
+
+**The 259 rows made the Orbital Diagram unreadable and slow — that was fixed in the VIEW, not by
+shrinking the data.** `core.viz.prepare_solar_system_orbits` draws one 361-point ellipse per body, so
+264 orbits collapsed the 2–3.5 AU main belt into a solid band. It now takes a
+`max_asteroids=_SS_DIAGRAM_MAX_ASTEROIDS` (25) kwarg that caps the **`dwarfs_asteroids` plot only**:
+it keeps the largest by diameter **plus every asteroid with no published diameter** (rule 1 again —
+size-ranking would delete the nine TNOs), always keeps all 5 dwarf planets, and returns
+`asteroids_shown`/`asteroids_total` so the caller can label the view. `SolarSystemPanel` appends
+`"(34 of 259 asteroids — largest, plus all TNOs)"` to the diagram title. Net: **~39 orbits plotted,
+all 259 rows still listed in the table**. `max_asteroids=None` disables the cap; the `planets` and
+`moons:<planet>` kinds ignore it entirely. Pinned by `tests/test_viz_phase_o.py`
+(`test_dwarfs_asteroids_plot_is_capped_but_the_table_is_not`,
+`test_capped_plot_never_drops_a_body_that_has_no_diameter`).
+
+**Nothing the cap hides is unreachable, and the diagrams now zoom.** The Orbital Diagram combo carries
+three entries — Planets · Dwarf Planets + Asteroids **(major)** · Dwarf Planets + Asteroids **(all)** —
+the last mapping to the `dwarfs_asteroids:all` kind, which plots all 259. And `make_orbits_canvas`
+gained **scroll-wheel zoom** the same day (it previously had only the toolbar's rectangle-zoom, which is
+far too coarse here): wheel-zoom around the cursor, both axes scaled together to preserve the equal
+aspect, with the nav stack seeded so **Home** restores the initial frame. This matters because these
+diagrams span ~3 orders of magnitude — Sedna's ~1180 AU apastron sets the frame while the main belt sits
+at 2–3.5 AU, so the inner system is a smudge until you magnify it. For a jump that large the toolbar's
+rectangle-zoom is still the quicker tool; the wheel is for fine adjustment.
+
+**The Phase Q Sol dossier caps the asteroid table too, for a different reason.** A dossier is a
+*rendered document* (markdown / HTML / a static PNG export) — it cannot page or scroll, so every row
+lands in the output. The expansion silently took its "Major Asteroids" section from 22 rows to 259
+(**269 markdown table rows in the planets section alone**). `core.report._dossier_asteroids` now trims
+it to the `_DOSSIER_MAX_ASTEROIDS` (25) largest **plus every no-published-diameter body** — rule 1
+again — heads it `Major Asteroids · 34 of 259`, and adds a line saying what was dropped and where the
+full list lives. It reuses `core.viz._ss_diameter_km` rather than growing a second `"N/A"` parser
+(`core.viz` imports no matplotlib at module level, so that stays a cheap pure-core import). Measured:
+269 → 53 table rows. Pinned by `tests/test_report.py::SolAsteroidCap`.
+
+**Bodies are labelled on the plot, not just in the legend.** Each orbit carries a name label pinned to
+its topmost point, shown while at most `_ORBIT_LABEL_MAX_IN_VIEW` (40) label anchors are in frame and
+hidden above that — the orbital-diagram analogue of the opt-18/19 star charts' 15 ly gate (an absolute
+AU threshold cannot work across diagrams spanning four orders of magnitude). In practice: **Planets (8),
+Moon Systems (≤16) and Dwarf Planets + Asteroids (major) (39) are all labelled immediately**; the
+**(all)** view stays unlabelled until you zoom to roughly 0.5 AU across, since 259 names cannot share a
+frame. `_ORBIT_LABEL_MAX_IN_VIEW` in `gui/visualizations/plot_helpers.py` is the dial.
+
+**Nine bodies are in the table by NAME, not by the cutoff — do not drop them in a re-cut.** A size
+threshold cannot reach the famous *small* bodies, so **Lutetia** (98 km — it missed the 100 km cutoff
+by 2 km), **Mathilde** (52.8), **Ida** (32), **Gaspra** (12.2), **Steins** (5.16), **Ryugu** (0.90),
+**Bennu** (0.48), **Apophis** (0.34) and **Itokawa** (0.33) were appended individually (2026-08-02),
+taking the table from 250 to **259**. All nine are spacecraft targets or well-known NEOs, all carry
+complete SBDB rows, and all nine were already in `_HORIZONS_ID_MAP` — so opts 22/23 could fly to them
+while the reference table did not list them. They are **invisible to the "(major)" orbital diagram** by
+design (every one ranks out of the top-25 by diameter), and four are NEOs at `a < 1.4 AU`, so they plot
+inside Mercury's orbit on the "(all)" view. Re-running the ≥100 km SBDB query alone will **not**
+reproduce them.
+
+**Why planets and dwarf planets gained nothing.** JPL's satellite count is *lower* than the CSV's
+`Moons` column (72 vs 80 for Jupiter, 66 vs 83 for Saturn) because it only lists moons with
+ephemerides — so adopting it would be a regression. For dwarf planets the IAU recognises exactly 5
+and all 5 are already present; the usual "candidates" (Sedna, Quaoar, Gonggong, Orcus…) are already
+rows in the **asteroid** table. Critically, **SBDB publishes no diameter or GM for the TNO dwarfs**
+(Pluto, Eris, Haumea, Makemake — only Ceres has both; verified against `sbdb.api` and
+`astroquery.jplsbdb`), so those CSV diameters are hand-curated literature values that JPL cannot
+replace. Do not "refresh" them from JPL — the data is not there.
+
+**Two transcription errors corrected in the original rows** (the only non-additive change): the
+Moon's `Period (days)` `37.322 → 27.322` (the sidereal month; a digit transposition), and **Ariel**'s
+`Diameter`/`Mean Radius` `2324`/`1162.2 → 1157.8`/`578.9` (both were exactly doubled — its mass,
+gravity and escape velocity were already correct, and neighbouring Umbriel was unaffected).
+Eccentricities that differ from JPL were **left alone deliberately**: the `/sats/elem/` page rounds
+`e` to 3 decimals, so the CSV values (`0.0041` vs `0.004`) are the more precise ones.
+
+> **Syncing another machine:** `data/space_app.db` is **gitignored**, so pulling the repo brings the
+> CSVs but *not* the rebuilt tables — and `_auto_seed` only fires on an **empty** table, so an
+> existing DB will not pick the new rows up on its own. Run **option 55 / Utilities → Import Solar
+> System Data** after pulling; `import_solar_system_csvs` does `DELETE` + bulk `INSERT` for all four
+> tables in one transaction.
 - **GUI (`SolarSystemPanel`)**: the four data tabs (Planets, Moons, Dwarf Planets, Asteroids) are unchanged. **Phase O O7** makes it a `DiagramToggleMixin` with a **Show Diagrams** toggle adding two orbital-diagram tabs via `core.viz.prepare_solar_system_orbits` → `make_orbits_canvas`: **Orbital Diagram** (a `QComboBox` over *Planets* / *Dwarf Planets + Asteroids*) and **Moon Systems** (a `QComboBox` per planet; moon SMAs km→AU via ÷1.496e8, with a secondary km top axis). No new menu option, no CLI change.
 
 ### Option 12: Main Sequence Star Properties — `main_sequence_star_properties()`

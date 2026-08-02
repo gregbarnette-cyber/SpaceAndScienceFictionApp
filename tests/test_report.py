@@ -349,6 +349,61 @@ class HardErrors(unittest.TestCase):
         self.assertIn("error", report.build_system_dossier("   "))
 
 
+class SolAsteroidCap(unittest.TestCase):
+    """The dossier is a rendered document — it cannot page — so the asteroid table
+    is capped. Before this, the JPL expansion (22 -> 259 rows) put every asteroid
+    in the output: 269 markdown table rows for the planets section alone.
+    """
+
+    @staticmethod
+    def _solar_with(n_sized, n_unsized=0):
+        ss = _solar_fixture()
+        ss["asteroids"] = [
+            {"Name": f"big{i}", "Diameter": f"{500 - i} km", "Periastron": 2.1,
+             "Semimajor Axis": 2.4, "Apastron": 2.7, "Eccentricity": 0.1, "Period": 3.7}
+            for i in range(n_sized)
+        ] + [
+            {"Name": f"tno{i}", "Diameter": "N/A", "Periastron": 30.0,
+             "Semimajor Axis": 45.0, "Apastron": 60.0, "Eccentricity": 0.2, "Period": 300.0}
+            for i in range(n_unsized)
+        ]
+        return ss
+
+    def _doc(self, ss):
+        with _patched_sol(ss):
+            return report.build_system_dossier("Sol", sections=["planets"])["document"]
+
+    def test_a_short_list_is_not_capped_and_carries_no_note(self):
+        doc = self._doc(self._solar_with(report._DOSSIER_MAX_ASTEROIDS))
+        self.assertIn(f"Major Asteroids · {report._DOSSIER_MAX_ASTEROIDS}", doc)
+        self.assertNotIn("Showing the", doc)
+        self.assertNotIn(" of ", doc.split("Major Asteroids")[1].splitlines()[0])
+
+    def test_a_long_list_is_capped_and_says_so(self):
+        total = report._DOSSIER_MAX_ASTEROIDS + 40
+        doc = self._doc(self._solar_with(total))
+        self.assertIn(f"Major Asteroids · {report._DOSSIER_MAX_ASTEROIDS} of {total}", doc)
+        self.assertIn("Showing the", doc)
+        self.assertIn(f"of {total} in the catalogue", doc)
+
+    def test_the_cap_keeps_the_largest(self):
+        doc = self._doc(self._solar_with(report._DOSSIER_MAX_ASTEROIDS + 40))
+        self.assertIn("big0", doc)            # 500 km — largest
+        self.assertNotIn("big60", doc)        # 440 km — ranked out
+
+    def test_no_diameter_bodies_always_survive_the_cap(self):
+        """A plain size ranking silently deletes every 'N/A'-diameter TNO."""
+        ss = self._solar_with(report._DOSSIER_MAX_ASTEROIDS + 40, n_unsized=9)
+        doc = self._doc(ss)
+        for i in range(9):
+            self.assertIn(f"tno{i}", doc)
+
+    def test_capped_output_is_far_smaller_than_the_full_table(self):
+        big = self._solar_with(250)
+        rows = sum(1 for l in self._doc(big).splitlines() if l.startswith("|"))
+        self.assertLess(rows, 80, "planets section should not render 250 asteroid rows")
+
+
 class SolPath(unittest.TestCase):
     def test_offline_no_simbad(self):
         with _patched_sol() as sb:

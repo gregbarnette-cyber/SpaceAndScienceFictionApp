@@ -206,5 +206,44 @@ class DistanceAtAccelerationTest(unittest.TestCase):
         self.assertAlmostEqual(p3["distance_au"], p1["distance_au"], places=9)
 
 
+class HorizonsIdMapTest(unittest.TestCase):
+    """A numbered small body must carry the trailing ';' small-body designator.
+
+    Horizons reads a bare integer as a *major-body* id first, and ids 1-9 are the
+    planet barycenters — so "ceres": "1" silently resolved to Mercury Barycenter,
+    "vesta": "4" to Mars Barycenter, "pallas": "2" to Venus and "juno": "3" to the
+    Earth-Moon barycenter. Offline guard: no network, it pins the map's shape.
+    """
+
+    # Major bodies keep bare ids: Sun 10, planets N99, moons NMM.
+    _MAJOR = {"sun", "mercury", "venus", "earth", "mars", "jupiter", "saturn",
+              "uranus", "neptune", "pluto"}
+
+    def test_the_four_barycenter_collisions_stay_fixed(self):
+        for name in ("ceres", "pallas", "juno", "vesta"):
+            with self.subTest(name):
+                self.assertEqual(calc._HORIZONS_ID_MAP[name][-1], ";")
+                self.assertEqual(calc._resolve_horizons_id(name.title())[-1], ";")
+
+    def test_every_numbered_small_body_carries_the_designator(self):
+        for name, hid in calc._HORIZONS_ID_MAP.items():
+            if name in self._MAJOR:
+                self.assertTrue(hid.isdigit(), f"{name}: major body should be bare")
+                continue
+            if hid.isdigit():
+                # A bare integer is only safe in the major-body satellite range
+                # (1xx-9xx, the moons) — anything else is a small body.
+                self.assertTrue(
+                    100 < int(hid) < 1000,
+                    f"{name!r} -> {hid!r}: bare small-body id collides with a "
+                    f"major body; use the '{hid};' small-body form")
+
+    def test_comet_ids_are_left_alone(self):
+        # Comet designations are already unambiguous and must NOT gain a ';'.
+        for name in ("halley", "encke", "churyumov", "hale-bopp"):
+            with self.subTest(name):
+                self.assertFalse(calc._HORIZONS_ID_MAP[name].endswith(";"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -398,7 +398,8 @@ Report is a static PNG export, so it keeps Rings. See `docs/gui-architecture.md`
 
 ## Import Solar System Data Feature (opt 55)
 
-- Menu option 55: `import_solar_system_data()` — loads `planetInfo.csv`, `moonInfo.csv`, `dwarfPlanetInfo.csv`, and `asteroidsInfo.csv` from the project directory into their respective DB tables, replacing all existing rows.
+- Menu option 55: `import_solar_system_data()` — loads `planetInfo.csv`, `moonInfo.csv`, `dwarfPlanetInfo.csv`, and `asteroidsInfo.csv` from the project directory into their respective DB tables, replacing all existing rows (`DELETE` + bulk `INSERT`, all four tables in one transaction).
+  - **This is the cross-machine sync path for option 11.** `data/space_app.db` is gitignored, so a `git pull` brings the CSVs but not the tables, and `_auto_seed` only fires on an **empty** table — an existing DB will not pick up changed CSV rows by itself. Run option 55 after pulling. See `docs/science-and-scifi.md` (option 11, JPL expansion) for what the CSVs now carry.
 - Core function: `core.databases.import_solar_system_csvs(data_dir)` → `{"planets": int, "moons": int, "dwarf_planets": int, "asteroids": int}` or `{"error": ...}`.
 - GUI panel: `ImportSolarSystemPanel` in `gui/panels/csv_utility.py`.
 

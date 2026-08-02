@@ -3220,11 +3220,29 @@ query.py main-sequence
 Core function: `science.compute_main_sequence_table()`.
 
 #### `solar-system`
-Solar-system reference data. Output `{planets[], moons[], dwarf_planets[], asteroids[]}` (raw CSV columns per body).
+Solar-system reference data, read from the local SQLite tables (`planets`/`moons`/`dwarf_planets`/`asteroids`) — **not**
+from the CSVs, which are only the seed/import source. Output `{planets[], moons[], dwarf_planets[], asteroids[]}`; keys
+within each body dict are the original CSV header strings (`"Semimajor Axis"`, `"Mean Radius (km)"`, …), which the SQL
+aliases back, so the shape is unchanged. All values are **strings** (every column is TEXT), including numerics.
+`moons` is a **dict keyed by parent planet** (`Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto`), not a flat list;
+the other three are lists sorted ascending by semi-major axis.
 ```bash
 query.py solar-system
 ```
 Core function: `science.compute_solar_system_tables()`.
+
+**Row counts grew on 2026-08-02** (JPL expansion — see `docs/science-and-scifi.md` option 11): `moons` **21 → 43**,
+`asteroids` **22 → 259**; `planets` (8) and `dwarf_planets` (5) unchanged. Purely additive — every pre-existing row is
+byte-identical apart from two corrected transcription errors (the Moon's period `37.322 → 27.322` d, Ariel's
+diameter/radius `2324`/`1162.2 → 1157.8`/`578.9` km). Every row is complete: there are **no empty-string cells** in
+`moons` or `asteroids`, so a consumer need not guard for blanks. **But "complete" is not "numeric":** nine `asteroids`
+rows (Sedna, Quaoar, Orcus, Gonggong, Ixion, Chaos, 2012 VP113, 2018 VG18, 2018 AG37) carry the literal string
+`"N/A"` in `Diameter` — no diameter has ever been published for them — so `float(row["Diameter"].replace(" km",""))`
+raises on those. Guard the cast. The same rows are why nothing in this table may be sorted or filtered by diameter:
+a size ranking silently drops every one of them. Note `asteroids` includes TNOs/centaurs despite the table name.
+
+> A consumer reads whatever the **local DB** holds. Counts differ between machines until each one runs option 55
+> (`data/space_app.db` is gitignored and `_auto_seed` only fires on an empty table).
 
 #### `sol-regions`
 Sol's full system-regions computation from hardcoded solar constants (the opt-13 calculation). Output is the same flat

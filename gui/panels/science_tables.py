@@ -43,6 +43,11 @@ def _orbit_diagram_tab(choices, km_axis=False):
             return
         title = (f"{data['star_name']}'s Moons" if km_axis
                  else f"Solar System — {label}")
+        # The Dwarf Planets + Asteroids plot is capped for readability (the table
+        # still lists every row) — say so rather than implying it is the full set.
+        shown, total = data.get("asteroids_shown", 0), data.get("asteroids_total", 0)
+        if total and shown < total:
+            title += f"  ({shown} of {total} asteroids — largest, plus all TNOs)"
         canvas, toolbar = make_orbits_canvas(
             None, data["orbits"], data["hz_zones"], data["max_au"],
             star_name=data["star_name"], title=title, km_axis=km_axis)
@@ -199,7 +204,8 @@ class SolarSystemPanel(DiagramToggleMixin, ResultPanel):
         if mpl_available():
             self._viz_tabs_widget.addTab(
                 _orbit_diagram_tab([("Planets", "planets"),
-                                    ("Dwarf Planets + Asteroids", "dwarfs_asteroids")]),
+                                    ("Dwarf Planets + Asteroids (major)", "dwarfs_asteroids"),
+                                    ("Dwarf Planets + Asteroids (all)", "dwarfs_asteroids:all")]),
                 "Orbital Diagram")
             moon_planets = list(data["moons"].keys())
             if moon_planets:

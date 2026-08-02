@@ -1,4 +1,21 @@
 # gui/visualizations/system_orbits.py — SystemOrbitsPanel (Phase E)
+#
+# RETAINED DELIBERATELY — not in the nav tree, but do NOT delete without asking.
+# Verified 2026-08-02: zero instantiation/import sites repo-wide. That is a
+# measurement, not a verdict — the docs record these panels' status but have
+# never recorded why they were kept, so "nothing calls it" is not evidence that
+# nothing needs it. Note the class is exported through a module-level
+# __getattr__ in gui/panels/__init__.py (a real circular-import fix), so a
+# consumer would resolve it at RUNTIME and leave no static reference for grep
+# to find. See docs/gui-architecture.md, the note under the panel-class table.
+#
+# KNOWN BUG, deliberately unfixed: the orbits are drawn at zorder 3 beneath a
+# DATA-SPACE star Circle(radius=max_au * 0.015) at zorder 10, so an inner
+# planet whose apoapsis falls inside that radius is invisible at every zoom.
+# This is the same defect fixed in plot_helpers.make_orbits_canvas on
+# 2026-08-02 (it was burying Mercury on the opt-11 Planets diagram). Left as
+# is because nothing can open this panel. If it is ever wired into the nav,
+# port that fix first: a fixed screen-size marker + an offset-points label.
 
 from PySide6.QtWidgets import QFormLayout, QLineEdit, QPushButton, QLabel
 

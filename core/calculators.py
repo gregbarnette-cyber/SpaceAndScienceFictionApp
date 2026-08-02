@@ -723,12 +723,21 @@ def compute_relativistic_brachistochrone(accel_g, distance_ly):
     }
 
 # ── Horizons ID map (options 32, 33) ──────────────────────────────────────────
+#
+# Numbered small bodies MUST carry the trailing ";" (Horizons' small-body
+# designator). A bare integer is read as a *major-body* id first, and ids 1-9
+# are the planet barycenters — so "ceres": "1" silently resolved to Mercury
+# Barycenter (199), "vesta": "4" to Mars Barycenter, and likewise Pallas ->
+# Venus and Juno -> Earth-Moon. The ";" form is unambiguous on both call paths
+# (astroquery elements()/vectors() and the OBJ_DATA text endpoint) and it also
+# makes fetch_body_properties() take its "Asteroid physical parameters" branch.
+# Comet ids (1P, 67P, C/1995 O1) are already unambiguous and take no ";".
 _HORIZONS_ID_MAP = {
     "sun": "10",
     "mercury": "199", "venus": "299", "earth": "399", "mars": "499",
     "jupiter": "599", "saturn": "699", "uranus": "799", "neptune": "899",
-    "pluto": "999", "ceres": "1", "vesta": "4", "pallas": "2", "juno": "3",
-    "eris": "136199", "makemake": "136472", "haumea": "136108", "sedna": "90377",
+    "pluto": "999", "ceres": "1;", "vesta": "4;", "pallas": "2;", "juno": "3;",
+    "eris": "136199;", "makemake": "136472;", "haumea": "136108;", "sedna": "90377;",
     "moon": "301", "luna": "301",
     "phobos": "401", "deimos": "402",
     "io": "501", "europa": "502", "ganymede": "503", "callisto": "504",
@@ -748,9 +757,9 @@ _HORIZONS_ID_MAP = {
     "triton": "801", "nereid": "802", "proteus": "808", "larissa": "807",
     "galatea": "806", "despina": "805", "thalassa": "804", "naiad": "803",
     "charon": "901", "nix": "902", "hydra": "903", "kerberos": "904", "styx": "905",
-    "eros": "433", "ida": "243", "gaspra": "951", "mathilde": "253",
-    "itokawa": "25143", "ryugu": "162173", "bennu": "101955", "apophis": "99942",
-    "lutetia": "21", "steins": "2867", "churyumov": "67P",
+    "eros": "433;", "ida": "243;", "gaspra": "951;", "mathilde": "253;",
+    "itokawa": "25143;", "ryugu": "162173;", "bennu": "101955;", "apophis": "99942;",
+    "lutetia": "21;", "steins": "2867;", "churyumov": "67P",
     "halley": "1P", "encke": "2P", "hale-bopp": "C/1995 O1",
     "tempel 1": "9P", "wild 2": "81P",
 }

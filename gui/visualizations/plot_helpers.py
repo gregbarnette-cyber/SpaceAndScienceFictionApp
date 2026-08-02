@@ -25,6 +25,15 @@ _SPACE_BG  = "#f5f5f5"
 _LABEL_CLR = "#333333"
 _GRID_CLR  = "#cccccc"
 
+# make_orbits_canvas: label every orbit while at most this many are in view,
+# otherwise hide them all until the user zooms in far enough. The orbital
+# diagrams' analogue of the opt-18/19 star charts' 15 ly half-range gate — see
+# the _refresh_orbit_labels comment for why a fixed AU threshold cannot work.
+# Sized so the opt-11 Planets (8), Moon Systems (<=16) and "Dwarf Planets +
+# Asteroids (major)" (39) views all label immediately; the "(all)" view (255)
+# resolves progressively on zoom.
+_ORBIT_LABEL_MAX_IN_VIEW = 40
+
 
 def mpl_available() -> bool:
     return _MPL_OK
@@ -714,11 +723,27 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                         zorder=2.5)
 
     # Planet orbits
+    orbit_labels = []          # [(orbit, Annotation)] — visibility driven by zoom
     for orb in orbits:
         ax.plot(orb["x_pts"], orb["y_pts"],
                 color=orb["color"], linewidth=1.2, zorder=3,
                 label=f"{orb['name']}  (a={orb['sma']:.3f} AU)")
         ax.scatter([orb["peri"]], [0], color=orb["color"], s=18, zorder=4)
+
+        # On-plot name label, anchored to the orbit's topmost vertex (works for
+        # any eccentricity — concentric orbits then stack up the +y axis in
+        # radial order, which reads cleanly). Fixed PIXEL offset so it stays
+        # glued to the curve at any zoom, like the opt-18/19 star labels.
+        ys, xs = orb.get("y_pts") or [], orb.get("x_pts") or []
+        if not ys:
+            continue
+        top = max(range(len(ys)), key=ys.__getitem__)
+        lbl = ax.annotate(orb["name"], (xs[top], ys[top]),
+                          textcoords="offset points", xytext=(0, 3),
+                          color=orb["color"], fontsize=6.5, ha="center",
+                          va="bottom", zorder=7, annotation_clip=True)
+        lbl.set_visible(False)          # _refresh_orbit_labels decides below
+        orbit_labels.append((orb, lbl, xs[top], ys[top]))
 
     # Honorverse hyper-limit ring (Phase O O10b) — dashed red, clearly fiction.
     if hyper_au and hyper_au > 0:
@@ -739,23 +764,29 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
                 f"Water snow line\n{snow_au:.2f} AU",
                 color="#1188aa", fontsize=6.5, ha="left", va="top", zorder=5.5)
 
-    # Star
-    star_r = max_au * 0.015
-    ax.add_patch(Circle((0, 0), star_r, color="#FFEE55", zorder=10))
+    # Star — a fixed-size SCREEN marker, never a data-space circle (2026-08-02).
+    #
+    # This was `Circle(radius=max_au * 0.015)`, sized as a fraction of the frame.
+    # On the Solar-System planets diagram (max_au ≈ 38 AU) that made the Sun a
+    # 0.569 AU blob, which:
+    #   * swallowed Mercury's entire orbit (apo 0.466 AU) — it was drawn at
+    #     zorder 3, under the star at zorder 10, so it simply vanished; and
+    #   * placed the "Sun" label at star_r × 1.8 = 1.025 AU — sitting exactly on
+    #     Earth's 1.000 AU orbit.
+    # Because both lived in DATA space they zoomed *with* the orbits, so no
+    # amount of zooming could ever reveal what the star covered. In points the
+    # marker keeps its screen size and zooming behaves as expected.
+    ax.plot([0], [0], marker="o", markersize=9, color="#FFEE55",
+            markeredgecolor="none", linestyle="none", zorder=10)
     if star_name:
-        ax.text(0, star_r * 1.8, star_name,
-                color="#CC8800", fontsize=7, ha="center", va="bottom",
-                alpha=0.85, zorder=11)
-
-    # Note any planets whose entire orbit falls inside the star circle
-    hidden = [orb for orb in orbits if orb["apo"] < star_r]
-    if hidden:
-        lines = ["Not shown (inside star circle at this scale):"]
-        lines += [f"  {o['name']}  (a = {o['sma']:.4f} AU)" for o in hidden]
-        ax.text(0.02, 0.02, "\n".join(lines), transform=ax.transAxes,
-                color="#FFAA44", fontsize=7, va="bottom", ha="left",
-                bbox=dict(facecolor="#1a1a1a", alpha=0.75,
-                          edgecolor="#FFAA44", boxstyle="round,pad=3"))
+        # Fixed PIXEL offset — a data-space offset drifts across the inner orbits
+        # as the view scales, which is how the label landed on Earth.
+        ax.annotate(star_name, (0, 0), textcoords="offset points",
+                    xytext=(0, 9), color="#CC8800", fontsize=7,
+                    ha="center", va="bottom", alpha=0.85, zorder=11)
+    # (The old "Not shown (inside star circle at this scale)" note is gone with
+    # the oversized circle — nothing is permanently hidden now that the star is
+    # screen-sized and the canvas scroll-zooms.)
 
     _style_ax(ax, max_au, title or "Planetary Orbits")
 
@@ -936,8 +967,76 @@ def make_orbits_canvas(parent, orbits: list, hz_zones: list,
 
     canvas.mpl_connect("button_press_event", _on_orb_click)
 
+    # Scroll-wheel zoom around the cursor (2026-08-02). These diagrams routinely
+    # span three orders of magnitude — Sedna's ~1180 AU apastron sets the frame
+    # while the main belt sits at 2-3.5 AU — so at the default extent the inner
+    # system is an unreadable smudge and the toolbar's rectangle-zoom is far too
+    # coarse to pick it apart. Same handler as the star charts. Scaling both axes
+    # by the SAME factor preserves the `aspect="equal"` circular geometry; a
+    # single-axis zoom would render the orbits as ellipses they are not.
+    # Safe because no caller wraps this canvas in `wrap_scrollable` (which would
+    # swallow the wheel events — see the note on that function).
+    def _on_orb_scroll(event):
+        if event.inaxes is not ax or event.xdata is None:
+            return
+        scale = 0.9 if event.button == "up" else 1.0 / 0.9
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        cx, cy = event.xdata, event.ydata
+        ax.set_xlim(cx + (x0 - cx) * scale, cx + (x1 - cx) * scale)
+        ax.set_ylim(cy + (y0 - cy) * scale, cy + (y1 - cy) * scale)
+        canvas.draw_idle()
+
+    canvas.mpl_connect("scroll_event", _on_orb_scroll)
+
+    # ── Zoom-driven orbit-label visibility ────────────────────────────────────
+    # The opt-18/19 star charts gate labels on an absolute visible half-range
+    # (15 ly). That cannot work here: these diagrams span four orders of
+    # magnitude (a moon system is ~0.003 AU across, the dwarf/asteroid view
+    # ~1180 AU), so any fixed AU threshold is either always-on or always-off.
+    # The equivalent quantity is HOW MANY orbits are currently in view — which
+    # falls as you zoom in, exactly as the star chart's half-range does. So:
+    # label everything while at most `_ORBIT_LABEL_MAX_IN_VIEW` orbits are in
+    # frame, otherwise hide the lot and let the user zoom in to reveal them.
+    #
+    # "In view" is tested against each label's own ANCHOR POINT, not the orbit's
+    # radial band. A band test cannot work for a dense belt: the ~250 asteroids
+    # are overlapping *eccentric* rings spanning 2-3.5 AU, so every annulus you
+    # could zoom to is crossed by well over a hundred of them and the labels
+    # would never appear at any magnification. Anchors are single points spread
+    # along the +y axis in radial order, so zooming there separates them
+    # naturally — and it matches what `annotation_clip` already draws.
+    _orbit_label_state = {"shown": None}
+
+    def _refresh_orbit_labels(_event_ax=None):
+        if not orbit_labels:
+            return
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        lo_x, hi_x = min(x0, x1), max(x0, x1)
+        lo_y, hi_y = min(y0, y1), max(y0, y1)
+        in_view = [t for t in orbit_labels
+                   if lo_x <= t[2] <= hi_x and lo_y <= t[3] <= hi_y]
+        show = len(in_view) <= _ORBIT_LABEL_MAX_IN_VIEW
+        key = (show, len(in_view))
+        if key == _orbit_label_state["shown"]:
+            return                      # nothing changed — skip the redraw
+        _orbit_label_state["shown"] = key
+        visible = {id(t[1]) for t in in_view} if show else set()
+        for _o, l, _lx, _ly in orbit_labels:
+            l.set_visible(id(l) in visible)
+        canvas.draw_idle()
+
+    ax.callbacks.connect("xlim_changed", _refresh_orbit_labels)
+    ax.callbacks.connect("ylim_changed", _refresh_orbit_labels)
+    _refresh_orbit_labels()             # seed the initial state
+
     fig.tight_layout(pad=1.0)
     toolbar = NavToolbar(canvas, parent)
+    # Seed the nav stack so the toolbar's Home button restores this initial frame
+    # after a scroll-zoom (scroll bypasses the toolbar, so without this Home has
+    # no view to return to and the diagram stays stuck at whatever zoom it ended on).
+    toolbar.push_current()
     return canvas, toolbar
 
 

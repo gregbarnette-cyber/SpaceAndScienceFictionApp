@@ -103,10 +103,12 @@ The following CSV files must be present in the project directory. They are auto-
 | `spTypeHyperLM.csv` | Option 14 — Honorverse Hyper Limits |
 | `missionExocat.csv` | Options 2, 5 — Mission Exocat Stars |
 | `hwc.csv` | Option 6 — Habitable Worlds Catalog |
-| `planetInfo.csv` | Option 11 — Solar System Planets |
-| `moonInfo.csv` | Option 11 — Moon Data |
-| `dwarfPlanetInfo.csv` | Option 11 — Dwarf Planets |
-| `asteroidsInfo.csv` | Option 11 — Major Asteroids |
+| `planetInfo.csv` | Seeds the `planets` table → Option 11 — Solar System Planets |
+| `moonInfo.csv` | Seeds the `moons` table → Option 11 — Moon Data |
+| `dwarfPlanetInfo.csv` | Seeds the `dwarf_planets` table → Option 11 — Dwarf Planets |
+| `asteroidsInfo.csv` | Seeds the `asteroids` table → Option 11 — Major Asteroids |
+
+> These four are the **seed source only**. Option 11 (and `query.py solar-system`) read the SQLite tables, not the CSVs — see the auto-seed caveat under *Migrating to a New Machine* below. *(`main.py`'s CLI copy of option 11 still reads the CSVs directly; it was never migrated and the CLI menu is deprecated.)*
 
 > **Note:** The `star_systems` database table is populated by running **Option 50 (Star Systems DB Query)** from the menu. Options 18 and 19 (Stars within a Distance) require this table to have data. Option 51 can export the table to `starSystems.csv` if needed.
 
@@ -128,6 +130,20 @@ mkdir -p data
 ```
 
 The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** travel with the repo and auto-seed on first run, so only the three network-built tables above are worth migrating. If you don't copy the DB, the app still works — you just re-run opts 50/58 and the Hypatia import when you need those features.
+
+> **Auto-seed only fires on an EMPTY table.** `_auto_seed` (`core/db.py`) skips any table where `COUNT(*) > 0`, so on a machine whose DB already exists, a `git pull` that **changes** a reference CSV has no effect — the new rows are ignored silently, with no error. This is not the fresh-clone case (which seeds correctly); it is the *already-set-up second machine* case.
+>
+> After pulling a commit that touches a reference CSV, run the matching import utility to force the replace:
+>
+> | changed CSV | run |
+> |---|---|
+> | `planetInfo.csv`, `moonInfo.csv`, `dwarfPlanetInfo.csv`, `asteroidsInfo.csv` | **Option 55** — Import Solar System Data |
+> | `hwc.csv` | **Option 52** — Import HWC Data |
+> | `missionExocat.csv` | **Option 53** — Import Mission Exocat Data |
+> | `propertiesOfMainSequenceStars.csv` | **Option 54** — Import Main Sequence Star Props |
+> | `spTypeHyperLM.csv` | **Option 56** — Import Honorverse Hyper Limits |
+>
+> Each does `DELETE` + bulk `INSERT` in one transaction, so it picks up appended rows *and* corrected cells. (`gouldDesignations.csv` has no import option — it is frozen 1879 data; drop the `gould_designations` table to re-seed it.)
 
 ## Notes
 

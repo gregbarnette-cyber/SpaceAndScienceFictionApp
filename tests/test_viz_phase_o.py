@@ -1411,6 +1411,195 @@ def _simple_orbit(sma=1.0, name="b", color="#4fc3f7"):
 
 
 @unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class OrbitsCanvasScrollZoomTest(unittest.TestCase):
+    """make_orbits_canvas scroll-wheel zoom (2026-08-02).
+
+    These diagrams span ~3 orders of magnitude, so without a wheel zoom the inner
+    system is unreadable. Only the toolbar's rectangle-zoom existed before.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _build():
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        orbits = [_simple_orbit(sma=s, name=f"b{s}") for s in (1.0, 5.0, 30.0)]
+        return make_orbits_canvas(None, orbits, [], 40.0)
+
+    @staticmethod
+    def _scroll(canvas, ax, button, n=1):
+        from matplotlib.backend_bases import MouseEvent
+        px, py = ax.transData.transform((1.0, 0.0))
+        for _ in range(n):
+            MouseEvent("scroll_event", canvas, px, py, button=button)._process()
+
+    def _span(self, ax):
+        x0, x1 = ax.get_xlim()
+        return x1 - x0
+
+    def test_scroll_up_zooms_in_and_down_zooms_back_out(self):
+        canvas, _ = self._build()
+        ax = canvas.figure.axes[0]
+        start = self._span(ax)
+        self._scroll(canvas, ax, "up", 5)
+        zoomed = self._span(ax)
+        self.assertLess(zoomed, start)
+        self._scroll(canvas, ax, "down", 5)
+        self.assertAlmostEqual(self._span(ax), start, places=6)
+
+    def test_zoom_scales_both_axes_equally(self):
+        """aspect='equal' — a single-axis zoom would draw circular orbits as ellipses."""
+        canvas, _ = self._build()
+        ax = canvas.figure.axes[0]
+        self._scroll(canvas, ax, "up", 3)
+        y0, y1 = ax.get_ylim()
+        self.assertAlmostEqual(self._span(ax), y1 - y0, places=6)
+
+    def test_home_can_restore_the_initial_frame_after_a_scroll_zoom(self):
+        """Scroll bypasses the toolbar, so the nav stack must be pre-seeded."""
+        canvas, toolbar = self._build()
+        ax = canvas.figure.axes[0]
+        start = self._span(ax)
+        self._scroll(canvas, ax, "up", 6)
+        self.assertLess(self._span(ax), start)
+        toolbar.home()
+        self.assertAlmostEqual(self._span(ax), start, places=6)
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class OrbitsLabelVisibilityTest(unittest.TestCase):
+    """Per-orbit name labels with zoom-driven visibility (2026-08-02).
+
+    The orbital diagrams previously named bodies only in the legend. This is the
+    opt-18/19 star-chart idiom adapted: those gate on an absolute 15 ly visible
+    half-range, which cannot work across diagrams spanning 0.003 AU (a moon
+    system) to 1180 AU, so the gate is instead "how many labels are in frame".
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _canvas(n_orbits, max_au=40.0):
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        orbits = [_simple_orbit(sma=1.0 + i, name=f"body{i}") for i in range(n_orbits)]
+        c, _tb = make_orbits_canvas(None, orbits, [], max_au)
+        return c, c.figure.axes[0], {o["name"] for o in orbits}
+
+    @staticmethod
+    def _visible(ax, names):
+        return [t.get_text() for t in ax.texts
+                if t.get_text() in names and t.get_visible()]
+
+    def test_a_small_set_is_labelled_immediately(self):
+        from gui.visualizations import plot_helpers as ph
+        n = min(8, ph._ORBIT_LABEL_MAX_IN_VIEW)
+        _c, ax, names = self._canvas(n)
+        self.assertEqual(len(self._visible(ax, names)), n)
+
+    def test_labels_are_offset_annotations_glued_to_their_orbit(self):
+        """A data-space offset would drift off the curve as the view scales."""
+        _c, ax, names = self._canvas(3)
+        lbl = [t for t in ax.texts if t.get_text() == "body0"][0]
+        self.assertEqual(lbl.get_anncoords(), "offset points")
+        self.assertNotEqual(tuple(lbl.xy), (0, 0))   # anchored on the orbit, not the star
+
+    def test_an_overcrowded_view_hides_them_all_then_zoom_reveals(self):
+        from matplotlib.backend_bases import MouseEvent
+        from gui.visualizations import plot_helpers as ph
+        n = ph._ORBIT_LABEL_MAX_IN_VIEW + 10
+        c, ax, names = self._canvas(n, max_au=float(n) * 1.5)
+        self.assertEqual(self._visible(ax, names), [], "too many in frame — expect none")
+        # Zoom onto the innermost orbits until few enough anchors remain in frame.
+        px, py = ax.transData.transform((0.0, 1.0))
+        for _ in range(40):
+            MouseEvent("scroll_event", c, px, py, button="up")._process()
+            if self._visible(ax, names):
+                break
+        shown = self._visible(ax, names)
+        self.assertTrue(shown, "labels never appeared on zoom-in")
+        self.assertLessEqual(len(shown), ph._ORBIT_LABEL_MAX_IN_VIEW)
+
+    def test_home_restores_the_hidden_state(self):
+        from matplotlib.backend_bases import MouseEvent
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        from gui.visualizations import plot_helpers as ph
+        n = ph._ORBIT_LABEL_MAX_IN_VIEW + 10
+        orbits = [_simple_orbit(sma=1.0 + i, name=f"body{i}") for i in range(n)]
+        names = {o["name"] for o in orbits}
+        c, tb = make_orbits_canvas(None, orbits, [], float(n) * 1.5)
+        ax = c.figure.axes[0]
+        px, py = ax.transData.transform((0.0, 1.0))
+        for _ in range(40):
+            MouseEvent("scroll_event", c, px, py, button="up")._process()
+            if self._visible(ax, names):
+                break
+        self.assertTrue(self._visible(ax, names))
+        tb.home()
+        self.assertEqual(self._visible(ax, names), [])
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class OrbitsStarMarkerTest(unittest.TestCase):
+    """The star is a fixed-size SCREEN marker, not a data-space circle (2026-08-02).
+
+    It used to be ``Circle(radius=max_au * 0.015)``. On the Solar-System planets
+    diagram (max_au ~38 AU) that was a 0.569 AU blob which buried Mercury's whole
+    orbit (apo 0.466 AU) and put the "Sun" label at 1.025 AU — on Earth's orbit.
+    Both scaled with the data, so zooming could never reveal what was covered.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    # Mercury-like inner orbit inside an outer-planet-sized frame.
+    _INNER_APO = 0.466
+    _MAX_AU = 37.96
+
+    def _build(self):
+        from gui.visualizations.plot_helpers import make_orbits_canvas
+        orbits = [_simple_orbit(sma=0.387, name="Mercury"),
+                  _simple_orbit(sma=1.0, name="Earth"),
+                  _simple_orbit(sma=30.1, name="Neptune")]
+        orbits[0]["apo"] = self._INNER_APO
+        return make_orbits_canvas(None, orbits, [], self._MAX_AU, star_name="Sun")
+
+    def test_no_data_space_blob_can_swallow_an_inner_orbit(self):
+        from matplotlib.patches import Circle
+        canvas, _ = self._build()
+        ax = canvas.figure.axes[0]
+        covering = [p for p in ax.patches
+                    if isinstance(p, Circle) and p.get_radius() >= self._INNER_APO]
+        self.assertEqual(covering, [], "a data-space star circle is hiding inner orbits")
+
+    def test_inner_orbit_is_still_drawn_with_real_geometry(self):
+        canvas, _ = self._build()
+        ax = canvas.figure.axes[0]
+        merc = [l for l in ax.lines if l.get_label().startswith("Mercury")]
+        self.assertTrue(merc)
+        xs, _ys = merc[0].get_data()
+        self.assertGreater(max(xs) - min(xs), 0.0)
+
+    def test_star_label_is_pinned_to_the_origin_by_a_pixel_offset(self):
+        """A data-space y-offset is what walked the label onto Earth's orbit."""
+        canvas, _ = self._build()
+        ax = canvas.figure.axes[0]
+        label = [t for t in ax.texts if t.get_text() == "Sun"]
+        self.assertTrue(label, "star label missing")
+        anchor = getattr(label[0], "xy", None)
+        self.assertIsNotNone(anchor, "star label must be an offset Annotation")
+        self.assertEqual(tuple(anchor), (0, 0))
+        self.assertEqual(label[0].get_anncoords(), "offset points")
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
 class O4SolarOverlayCanvasTest(unittest.TestCase):
     """make_orbits_canvas solar_overlay: default-off additivity + overlay circles."""
 
@@ -2326,6 +2515,40 @@ class O7SolarSystemOrbitsPrepTest(unittest.TestCase):
         res = viz.prepare_solar_system_orbits("dwarfs_asteroids")
         self.assertNotIn("error", res)
         self.assertGreater(len(res["orbits"]), 0)
+
+    def test_dwarfs_asteroids_plot_is_capped_but_the_table_is_not(self):
+        """The diagram caps asteroids for readability; the DB table keeps them all."""
+        import core.science
+        total = len(core.science.compute_solar_system_tables()["asteroids"])
+        res = viz.prepare_solar_system_orbits("dwarfs_asteroids")
+        self.assertEqual(res["asteroids_total"], total)
+        self.assertLessEqual(res["asteroids_shown"], total)
+        # ...and the cap is reported, so a caller can label the view as truncated.
+        if total > viz._SS_DIAGRAM_MAX_ASTEROIDS:
+            self.assertLess(res["asteroids_shown"], total)
+        uncapped = viz.prepare_solar_system_orbits("dwarfs_asteroids", max_asteroids=None)
+        self.assertEqual(uncapped["asteroids_shown"], total)
+        self.assertGreaterEqual(len(uncapped["orbits"]), len(res["orbits"]))
+
+    def test_capped_plot_never_drops_a_body_that_has_no_diameter(self):
+        """Ranking by size would silently delete the curated no-diameter TNOs."""
+        import core.science
+        asteroids = core.science.compute_solar_system_tables()["asteroids"]
+        unranked = [a["Name"] for a in asteroids if viz._ss_diameter_km(a) is None]
+        self.assertTrue(unranked, "fixture expects some 'N/A'-diameter rows")
+        plotted = {o["name"] for o in
+                   viz.prepare_solar_system_orbits("dwarfs_asteroids",
+                                                   max_asteroids=1)["orbits"]}
+        for name in unranked:
+            self.assertIn(name, plotted)
+
+    def test_cap_applies_only_to_the_dwarfs_asteroids_kind(self):
+        for kind in ("planets", "moons:Earth"):
+            with self.subTest(kind):
+                a = viz.prepare_solar_system_orbits(kind)
+                b = viz.prepare_solar_system_orbits(kind, max_asteroids=1)
+                self.assertEqual(len(a["orbits"]), len(b["orbits"]))
+                self.assertEqual(a["asteroids_total"], 0)
 
     def test_moon_km_to_au_anchor(self):
         res = viz.prepare_solar_system_orbits("moons:Earth")
