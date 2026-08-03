@@ -17,8 +17,10 @@ drift; the F3 coefficient tables live in ``core.shielding_tables`` (isolated, li
 
 import math
 
-from core.equations import _STEFAN_BOLTZMANN
+from core.equations import _STEFAN_BOLTZMANN, _K_B
 from core import shielding_tables
+
+_LN2 = math.log(2.0)
 
 
 # ── F1 — waste-heat budget (with Carnot ceiling) ─────────────────────────────
@@ -544,3 +546,50 @@ def compute_shielding_attenuation(areal_density_gcm2=None, thickness_cm=None,
 
     out["notes"] = notes
     return out
+
+
+# ── U1 (Phase AR, Group U) — Landauer irreversible-compute energy floor (Pkt 29) ──
+
+def compute_landauer_limit(temp_k=300.0, bits=None, power_w=None, bit_rate_hz=None,
+                           reversible=False):
+    """Landauer floor: the minimum energy to erase one irreversible bit, ``E_bit = k_B·T·ln2``.
+
+    The compute-energy companion to ``bekenstein-bound``'s info-density ceiling. Optionally one of:
+    --bits N (→ total floor energy), --power-w P (→ max irreversible bit-erasure rate P/E_bit), or
+    --bit-rate-hz (→ min dissipated power rate·E_bit). --reversible only annotates that
+    reversible/adiabatic computing can go below the floor in principle (at other costs).
+    """
+    if temp_k is None or temp_k <= 0:
+        return {"error": "temp_k must be > 0."}
+    given = [bits is not None, power_w is not None, bit_rate_hz is not None]
+    if sum(given) > 1:
+        return {"error": "Provide at most one of --bits, --power-w, or --bit-rate-hz."}
+    if bits is not None and bits <= 0:
+        return {"error": "bits must be > 0."}
+    if power_w is not None and power_w <= 0:
+        return {"error": "power_w must be > 0."}
+    if bit_rate_hz is not None and bit_rate_hz <= 0:
+        return {"error": "bit_rate_hz must be > 0."}
+
+    e_bit = _K_B * temp_k * _LN2
+    total_energy = bits * e_bit if bits is not None else None
+    max_erasure_rate = power_w / e_bit if power_w is not None else None
+    min_power = bit_rate_hz * e_bit if bit_rate_hz is not None else None
+
+    note = ("Irreversible (Landauer 1961) floor E_bit = k_B·T·ln2 — the minimum energy dissipated to "
+            "erase one bit. Reversible/adiabatic computing can dissipate less in principle, at a cost "
+            "in speed / complexity / error rate. The ultimate information CEILING (bits per unit "
+            "mass-energy in a region) is bekenstein-bound; compute THERMAL load is "
+            "waste-heat/radiator-area. Cooler compute lowers the floor linearly in T.")
+    if reversible:
+        note += (" --reversible: this floor applies to irreversible bit erasure only; a fully "
+                 "reversible logic path can approach zero dissipation asymptotically.")
+    return {
+        "energy_per_bit_j": e_bit,
+        "temp_k": temp_k,
+        "total_energy_j": total_energy,
+        "max_erasure_rate_hz": max_erasure_rate,
+        "min_power_w": min_power,
+        "reversible": reversible,
+        "model_note": note,
+    }

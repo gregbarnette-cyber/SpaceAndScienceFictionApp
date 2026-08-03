@@ -24,6 +24,7 @@ from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retri
                      _designation_ids_from_rows, _NARROW_DESIG_KEYS,
                      # B.2: the one Jupiter→Earth mass constant (OEC_SYSTEM_VIEW_PLAN)
                      M_JUP_EARTH as _M_JUP_EARTH_SHARED)
+from .sensing import _rayleigh_theta  # S2 shared kernel (Phase AP) — direct-imaging IWA (1·λ/D)
 
 HOURS_PER_JULIAN_YEAR = 8765.8128  # 365.2422 × 24 (tropical year) — legacy ly/hr↔×c anchor; NOT 365.25×24 (=8766.0).
                                    # Golden pins and the downstream consumer depend on this exact value; see IMPROVEMENT_PLAN D1.
@@ -680,7 +681,9 @@ def compute_direct_imaging(sma_au, distance_pc, planet_radius_earth, albedo=0.3,
     if has_d and has_w:
         if telescope_diameter_m <= 0 or wavelength_um <= 0:
             return {"error": "Telescope diameter and wavelength must be positive."}
-        iwa_rad = (wavelength_um * 1e-6) / telescope_diameter_m
+        # Rayleigh/IWA kernel shared with S2 (Phase AP); coefficient 1.0 = the 1·λ/D IWA
+        # convention this function has always used (behavior-preserving DRY refactor).
+        iwa_rad = _rayleigh_theta(wavelength_um * 1e-6, telescope_diameter_m, coefficient=1.0)
         iwa_arcsec = iwa_rad * _ARCSEC_PER_RAD
         resolvable = angular_sep_arcsec >= iwa_arcsec
 

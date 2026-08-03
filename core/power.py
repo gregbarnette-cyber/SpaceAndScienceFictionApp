@@ -18,7 +18,7 @@ first-principles constants MTA-movable / caller-overridable.
 
 import math
 
-from core.equations import _C_MS, _MP_C2_MEV, _EPSILON_0
+from core.equations import _C_MS, _MP_C2_MEV, _EPSILON_0, _LY_M
 
 
 # ── R1 — annihilation power train (directed / γ / ν partition) ───────────────
@@ -319,4 +319,66 @@ def compute_fusion_lawson(fuel=None, density_m3=None, temp_kev=None, confinement
                        "which no confinement changes). Thresholds are [pin @ open] illustrative "
                        "anchors (Lawson 1957; Wesson Tokamaks); p-B11 aneutronic ~10³× harder. "
                        + _LAWSON_IGNITION[fuel]["note"]),
+    }
+
+
+# ── U2 (Phase AR, Group U) — beamrider relay-node spacing (Pkt 33) ────────────
+
+def compute_beamrider_relay_spacing(wavelength_m=None, frequency_hz=None, tx_aperture_m=None,
+                                    rx_aperture_m=None, delivered_fraction_threshold=0.5,
+                                    total_range_ly=None, total_range_m=None):
+    """Diffraction-limited beamrider relay-node spacing — the inverse of ``beamed-power-delivery``.
+
+    Full-capture (transition) range ``L_t = D_t·D_r/(2.44·λ)`` (spot = collector); beyond it the
+    delivered fraction falls as ``η ≈ (L_t/L)²``, so the relay spacing at a delivered-fraction
+    threshold is ``L_relay = L_t/√threshold``. Optional --total-range → node count ceil(total/spacing).
+    The relay nodes are the canon STL-waystation skeleton; this sizes their spacing.
+    """
+    if (wavelength_m is None) == (frequency_hz is None):
+        return {"error": "Provide exactly one of wavelength_m or frequency_hz."}
+    if wavelength_m is not None:
+        if wavelength_m <= 0:
+            return {"error": "wavelength_m must be > 0."}
+        lam = float(wavelength_m)
+    else:
+        if frequency_hz <= 0:
+            return {"error": "frequency_hz must be > 0."}
+        lam = _C_MS / frequency_hz
+    if tx_aperture_m is None or tx_aperture_m <= 0:
+        return {"error": "tx_aperture_m must be > 0."}
+    if rx_aperture_m is None or rx_aperture_m <= 0:
+        return {"error": "rx_aperture_m must be > 0."}
+    if not (0.0 < delivered_fraction_threshold <= 1.0):
+        return {"error": "delivered_fraction_threshold must be in (0, 1]."}
+    if total_range_ly is not None and total_range_m is not None:
+        return {"error": "Provide at most one of total_range_ly or total_range_m."}
+    if total_range_ly is not None and total_range_ly <= 0:
+        return {"error": "total_range_ly must be > 0."}
+    if total_range_m is not None and total_range_m <= 0:
+        return {"error": "total_range_m must be > 0."}
+
+    transition_range = tx_aperture_m * rx_aperture_m / (2.44 * lam)
+    relay_spacing = transition_range / math.sqrt(delivered_fraction_threshold)
+
+    n_relays = None
+    if total_range_ly is not None or total_range_m is not None:
+        total_m = total_range_m if total_range_m is not None else total_range_ly * _LY_M
+        n_relays = math.ceil(total_m / relay_spacing)
+
+    return {
+        "transition_range_m": transition_range,
+        "relay_spacing_m": relay_spacing,
+        "relay_spacing_ly": relay_spacing / _LY_M,
+        "delivered_fraction_threshold": delivered_fraction_threshold,
+        "n_relays": n_relays,
+        "wavelength_m": lam,
+        "tx_aperture_m": tx_aperture_m,
+        "rx_aperture_m": rx_aperture_m,
+        "model_note": ("Inverts beamed-power-delivery's diffraction wall: transition range "
+                       "L_t = D_t·D_r/(2.44·λ) (spot = collector); beyond it delivered fraction "
+                       "≈ (L_t/L)², so relay spacing at a threshold = L_t/√threshold. A relay may "
+                       "REGENERATE (receive → re-emit; this spacing) or REFOCUS (a passive "
+                       "lens/mirror re-collimates — can extend spacing). Big optics / short λ extend "
+                       "spacing (L ∝ D_t·D_r/λ). Composes beamed-power-delivery as an inverse solve, "
+                       "not a new law."),
     }

@@ -41,7 +41,9 @@ import core.propulsion as propulsion
 import core.regions as regions
 import core.report as report
 import core.science as science
+import core.sensing as sensing
 import core.spin as spin
+import core.strategic_geography as strategic_geography
 import core.terraforming as terraforming
 import core.thermal as thermal
 import core.volatile_delivery as volatile_delivery
@@ -581,6 +583,73 @@ def cmd_reactor_power(args):
     _out(power_tables.compute_reactor_power(
         class_name=args.reactor_class, override_kw_kg=args.override_kw_kg,
         gross_power_w=args.gross_power_w))
+
+
+# ── Phase AP (Group S) — sensing / detection (Pkt 30) ─────────────────────────
+
+def cmd_angular_resolution(args):
+    _out(sensing.compute_angular_resolution(
+        aperture_m=args.aperture_m, wavelength_m=args.wavelength_m, frequency_hz=args.frequency_hz,
+        range_m=args.range_m, separation_m=args.separation_m, object_size_m=args.object_size_m,
+        criterion=args.criterion, coefficient=args.coefficient))
+
+
+def cmd_point_source_detection(args):
+    _out(sensing.compute_point_source_detection(
+        source_power_w=args.source_power_w, source_temp_k=args.source_temp_k,
+        source_area_m2=args.source_area_m2, emissivity=args.emissivity,
+        rx_aperture_m=args.rx_aperture_m, optical_efficiency=args.optical_efficiency,
+        range_m=args.range_m, integration_s=args.integration_s,
+        quantum_efficiency=args.quantum_efficiency,
+        band=args.band, wavelength_m=args.wavelength_m,
+        band_min_m=args.band_min_m, band_max_m=args.band_max_m, source_size_m=args.source_size_m,
+        nep_w_rthz=args.nep_w_rthz, background=args.background,
+        background_intensity_w_m2_sr_m=args.background_intensity_w_m2_sr_m,
+        background_temp_k=args.background_temp_k, background_dilution=args.background_dilution,
+        flux_floor_w_m2=args.flux_floor_w_m2, snr_threshold=args.snr_threshold))
+
+
+def cmd_radar_range(args):
+    _out(sensing.compute_radar_range(
+        tx_power_w=args.tx_power_w, tx_aperture_m=args.tx_aperture_m,
+        rx_aperture_m=args.rx_aperture_m, wavelength_m=args.wavelength_m,
+        frequency_hz=args.frequency_hz, target_rcs_m2=args.target_rcs_m2,
+        range_m=args.range_m, min_detectable_power_w=args.min_detectable_power_w,
+        integration_s=args.integration_s, system_noise_temp_k=args.system_noise_temp_k,
+        tx_gain=args.tx_gain, rx_gain=args.rx_gain, snr_threshold=args.snr_threshold))
+
+
+# ── Phase AQ (Group T) — strategic-geography graph analytics (Pkt 32/38) ──────
+
+def cmd_network_centrality(args):
+    _out(strategic_geography.compute_network_centrality(
+        stars=args.stars, within_ly=args.within_ly, of=args.of, catalog=args.catalog,
+        max_jump_ly=args.max_jump, weight=args.weight,
+        from_star=args.from_star, to_star=args.to_star, top=args.top,
+        dust_map=args.map, dust_step_pc=args.dust_step_pc))
+
+
+def cmd_arrival_corridors(args):
+    _out(strategic_geography.compute_arrival_corridors(
+        system=args.system, within_ly=args.within_ly, origins=args.origins,
+        corridor_halfwidth_deg=args.corridor_halfwidth_deg, cluster_deg=args.cluster_deg,
+        min_jump=args.min_jump, max_jump=args.max_jump))
+
+
+# ── Phase AR (Group U) — compute / beamrider utilities (Pkt 29/33) ────────────
+
+def cmd_landauer_limit(args):
+    _out(thermal.compute_landauer_limit(
+        temp_k=args.temp_k, bits=args.bits, power_w=args.power_w,
+        bit_rate_hz=args.bit_rate_hz, reversible=args.reversible))
+
+
+def cmd_beamrider_relay_spacing(args):
+    _out(power.compute_beamrider_relay_spacing(
+        wavelength_m=args.wavelength_m, frequency_hz=args.frequency_hz,
+        tx_aperture_m=args.tx_aperture_m, rx_aperture_m=args.rx_aperture_m,
+        delivered_fraction_threshold=args.delivered_fraction_threshold,
+        total_range_ly=args.total_range_ly, total_range_m=args.total_range_m))
 
 
 def _resolve_star_mass_lum(name):
@@ -2925,6 +2994,142 @@ def main(argv=None):
     p.add_argument("--override-kw-kg", type=float, help="Override the row's specific power, kW/kg")
     p.add_argument("--gross-power-w", type=float, help="Gross power, W (→ implied core_mass_kg = P/α)")
     p.set_defaults(func=cmd_reactor_power)
+
+    # ── Phase AP (Group S) — sensing / detection (Pkt 30) ─────────────────────
+
+    # angular-resolution (S2)
+    p = sub.add_parser("angular-resolution",
+                       help="Diffraction resolution θ = k·λ/D (Rayleigh/Dawes/Sparrow)")
+    p.add_argument("--aperture-m", type=float, required=True, help="Aperture diameter D, m")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--wavelength-m", type=float, help="Wavelength λ, m")
+    g.add_argument("--frequency-hz", type=float, help="Frequency, Hz (alt to wavelength)")
+    p.add_argument("--range-m", type=float, help="Range R, m (→ linear resolution θ·R)")
+    p.add_argument("--separation-m", type=float, help="Two-object separation s, m (→ resolvable)")
+    p.add_argument("--object-size-m", type=float, help="Object size d, m (→ resolved-or-point)")
+    p.add_argument("--criterion", choices=["rayleigh", "dawes", "sparrow"], default="rayleigh",
+                   help="Resolution criterion (default rayleigh, k=1.22)")
+    p.add_argument("--coefficient", type=float, help="Override the criterion coefficient k")
+    p.set_defaults(func=cmd_angular_resolution)
+
+    # point-source-detection (S1)
+    p = sub.add_parser("point-source-detection",
+                       help="Unresolved point-source detection: SNR / max range (no-stealth-in-space)")
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--source-power-w", type=float, help="Source radiant power L, W")
+    src.add_argument("--source-temp-k", type=float, help="Source temperature T, K (with --source-area-m2)")
+    p.add_argument("--source-area-m2", type=float, help="Source radiating area A, m² (with --source-temp-k)")
+    p.add_argument("--emissivity", type=float, default=1.0, help="Source emissivity ε (0<ε≤1, default 1)")
+    p.add_argument("--rx-aperture-m", type=float, required=True, help="Receiver aperture D, m")
+    p.add_argument("--optical-efficiency", type=float, default=0.8, help="Optical efficiency (default 0.8)")
+    p.add_argument("--range-m", type=float, help="Range R, m (→ SNR at range; omit → solve max range)")
+    p.add_argument("--integration-s", type=float, default=1.0, help="Integration time t, s (default 1)")
+    p.add_argument("--quantum-efficiency", type=float, default=0.8, help="Detector QE (default 0.8)")
+    p.add_argument("--band", choices=["thermal-ir", "optical", "gamma", "radio"],
+                   help="Band preset (→ representative λ + Δλ)")
+    p.add_argument("--wavelength-m", type=float, help="Monochromatic wavelength λ, m (no Δλ)")
+    p.add_argument("--band-min-m", type=float, help="Band lower edge, m (with --band-max-m)")
+    p.add_argument("--band-max-m", type=float, help="Band upper edge, m (with --band-min-m)")
+    p.add_argument("--source-size-m", type=float, help="Source physical size, m (→ resolved-or-point)")
+    p.add_argument("--nep-w-rthz", type=float, help="Detector noise-equivalent power, W/√Hz (detector-limited)")
+    p.add_argument("--background", choices=["cmb", "zodiacal", "stellar", "none"],
+                   help="Background preset (background/shot-limited; needs a band)")
+    p.add_argument("--background-intensity-w-m2-sr-m", type=float,
+                   help="Explicit background spectral radiance, W·m⁻²·sr⁻¹·m⁻¹ (overrides preset)")
+    p.add_argument("--background-temp-k", type=float, default=5772.0,
+                   help="Stellar-background temperature, K (default 5772)")
+    p.add_argument("--background-dilution", type=float, default=1.0,
+                   help="Stellar-background dilution factor (0<f≤1, default 1 = undiluted upper bound)")
+    p.add_argument("--flux-floor-w-m2", type=float,
+                   help="Irradiance sensitivity floor, W/m² (→ aperture-independent max range)")
+    p.add_argument("--snr-threshold", type=float, default=5.0, help="SNR detection threshold (default 5)")
+    p.set_defaults(func=cmd_point_source_detection)
+
+    # radar-range (S3)
+    p = sub.add_parser("radar-range",
+                       help="Active radar range equation (R⁻⁴): received power / max range")
+    p.add_argument("--tx-power-w", type=float, required=True, help="Transmit power, W")
+    p.add_argument("--tx-aperture-m", type=float, required=True, help="Transmit dish diameter, m")
+    p.add_argument("--rx-aperture-m", type=float, help="Receive dish diameter, m (default = tx, monostatic)")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--wavelength-m", type=float, help="Wavelength λ, m")
+    g.add_argument("--frequency-hz", type=float, help="Frequency, Hz (alt to wavelength)")
+    p.add_argument("--target-rcs-m2", type=float, required=True, help="Target radar cross-section σ, m²")
+    rg = p.add_mutually_exclusive_group(required=True)
+    rg.add_argument("--range-m", type=float, help="Range R, m (→ received power / SNR)")
+    rg.add_argument("--min-detectable-power-w", type=float, help="Min detectable power, W (→ max range)")
+    p.add_argument("--integration-s", type=float, default=1.0, help="Integration time t, s (default 1)")
+    p.add_argument("--system-noise-temp-k", type=float, help="System noise temperature T_sys, K (→ SNR)")
+    p.add_argument("--tx-gain", type=float, help="Override transmit gain (else (πD/λ)²)")
+    p.add_argument("--rx-gain", type=float, help="Override receive gain (else (πD/λ)²)")
+    p.add_argument("--snr-threshold", type=float, default=5.0, help="SNR detection threshold (default 5)")
+    p.set_defaults(func=cmd_radar_range)
+
+    # ── Phase AQ (Group T) — strategic-geography graph analytics (Pkt 32/38) ──
+
+    # network-centrality (T1)
+    p = sub.add_parser("network-centrality",
+                       help="Route value / chokepoints: betweenness + articulation points + bridges")
+    ns = p.add_mutually_exclusive_group(required=True)
+    ns.add_argument("--stars", nargs="+", help="Explicit node set (≥2 star names)")
+    ns.add_argument("--within-ly", type=float, help="Bounding-volume radius, ly (with --of)")
+    ns.add_argument("--catalog", action="store_true", help="Use the whole star_systems catalog")
+    p.add_argument("--of", help="Centre star for --within-ly")
+    p.add_argument("--max-jump", type=float, required=True, help="Edge threshold, ly (as jump-network)")
+    p.add_argument("--weight", choices=["hops", "distance", "dust"], default="hops",
+                   help="Betweenness metric: hops (default), distance (3D ly), or dust (integrated A_V)")
+    p.add_argument("--map", choices=["near-field", "edenhofer", "auto"], default="auto",
+                   help="Dust map when --weight dust (default auto; needs the WSL/Linux dust extra)")
+    p.add_argument("--dust-step-pc", dest="dust_step_pc", type=float, default=5.0,
+                   help="Dust integration step in pc when --weight dust (default 5)")
+    p.add_argument("--from", dest="from_star", help="Min-cut source star (with --to)")
+    p.add_argument("--to", dest="to_star", help="Min-cut sink star (with --from)")
+    p.add_argument("--top", type=int, help="Report the N highest-centrality nodes (default 25)")
+    p.set_defaults(func=cmd_network_centrality)
+
+    # arrival-corridors (T2)
+    p = sub.add_parser("arrival-corridors",
+                       help="FTL emergence / picket geometry: origin bearings → corridors + sky coverage")
+    p.add_argument("--system", required=True, help="The defended system")
+    og = p.add_mutually_exclusive_group(required=True)
+    og.add_argument("--within-ly", type=float, help="All systems within N ly are candidate origins")
+    og.add_argument("--origins", nargs="+", help="Explicit candidate origin star names")
+    p.add_argument("--corridor-halfwidth-deg", type=float, default=5.0,
+                   help="Defender picket cone half-width, deg (default 5)")
+    p.add_argument("--cluster-deg", type=float, default=5.0,
+                   help="Merge origins whose bearings differ by less than this, deg (default 5)")
+    p.add_argument("--min-jump", type=float, help="Restrict origins to distance ≥ this, ly")
+    p.add_argument("--max-jump", type=float, help="Restrict origins to distance ≤ this, ly")
+    p.set_defaults(func=cmd_arrival_corridors)
+
+    # ── Phase AR (Group U) — compute / beamrider utilities (Pkt 29/33) ────────
+
+    # landauer-limit (U1)
+    p = sub.add_parser("landauer-limit",
+                       help="Landauer irreversible-compute energy floor E_bit = k_B·T·ln2")
+    p.add_argument("--temp-k", type=float, default=300.0, help="Temperature T, K (default 300)")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--bits", type=float, help="Bit count (→ total floor energy)")
+    g.add_argument("--power-w", type=float, help="Power budget, W (→ max erasure rate)")
+    g.add_argument("--bit-rate-hz", type=float, help="Erasure rate, Hz (→ min dissipated power)")
+    p.add_argument("--reversible", action="store_true",
+                   help="Annotate that reversible/adiabatic computing can go below the floor")
+    p.set_defaults(func=cmd_landauer_limit)
+
+    # beamrider-relay-spacing (U2)
+    p = sub.add_parser("beamrider-relay-spacing",
+                       help="Diffraction-limited beamrider relay-node spacing (inverts beamed-power-delivery)")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--wavelength-m", type=float, help="Beam wavelength λ, m")
+    g.add_argument("--frequency-hz", type=float, help="Beam frequency, Hz (alt to wavelength)")
+    p.add_argument("--tx-aperture-m", type=float, required=True, help="Transmit aperture D_t, m")
+    p.add_argument("--rx-aperture-m", type=float, required=True, help="Receive/collector aperture D_r, m")
+    p.add_argument("--delivered-fraction-threshold", type=float, default=0.5,
+                   help="Delivered-fraction threshold for a relay hop (0<f≤1, default 0.5)")
+    tg = p.add_mutually_exclusive_group()
+    tg.add_argument("--total-range-ly", type=float, help="Total lane length, ly (→ node count)")
+    tg.add_argument("--total-range-m", type=float, help="Total lane length, m (→ node count)")
+    p.set_defaults(func=cmd_beamrider_relay_spacing)
 
     # ── Phase T1c — census-filter presets ────────────────────────────────────
 

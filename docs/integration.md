@@ -1903,6 +1903,152 @@ carries `thermal_pointer`** — the real high-P ceiling is thermal (compose `rea
 `radiator-area`), not core mass. **Validation:** unknown class → curated error listing valid keys; gross ≤ 0,
 override ≤ 0 → exit 1.
 
+### Sensing & detection (Phase AP — Group S, no network)
+
+Three `query.py`-only, pure-math, self-validating calculators for the sibling repo's **Packet 30**
+(Sensing, Navigation, Mapping, Surveillance) — the **receiver side** query.py lacked: turning a
+*source* term (a drive/plume/radiator power) into a **detection range / SNR**. Module: `core/sensing.py`
+(imports only `core.equations` constants, so `core.calculators` can call its Rayleigh kernel without a
+cycle). Every calc self-validates (curated `{"error"}` exit 1 / argparse exit 2) and carries a
+`model_note`; bundled background/band presets are transcribed + overridable. Composes with `waste-heat`
+/ `radiator-area` / `metric-drive-power` / `annihilation-power-train` (source terms) and `distance` /
+`gcns-distance` (range = light-lag).
+
+#### `angular-resolution` (S2)
+Diffraction-limited resolution `θ = k·λ/D` (the shared kernel; `direct-imaging` calls it for its IWA).
+```bash
+query.py angular-resolution --aperture-m 1 --wavelength-m 10e-6 --range-m 1.496e11   # θ=1.22e-5 rad=2.516″; x_res≈1825 km
+query.py angular-resolution --aperture-m 6.5 --wavelength-m 2e-6                      # JWST-class: 0.0774″
+```
+Core: `sensing.compute_angular_resolution(aperture_m, wavelength_m|frequency_hz, range_m, separation_m,
+object_size_m, criterion, coefficient)`. `--criterion {rayleigh,dawes,sparrow}` (k = 1.22/1.02/0.94) or
+`--coefficient` override; `--range-m` → `linear_resolution_m`; `--separation-m` → `resolvable`;
+`--object-size-m` → `resolved_or_point`. Output: `{angular_resolution_rad, angular_resolution_arcsec,
+linear_resolution_m|null, resolvable|null, resolved_or_point|null, criterion, coefficient, …}`.
+**Validation:** aperture ≤ 0, both/neither λ/f, bad criterion, coefficient ≤ 0, non-positive range/sep/size → exit 1.
+
+#### `point-source-detection` (S1)
+The "no-stealth-in-space" core: an unresolved source of power `L` at range `R`, aperture `D`.
+```bash
+query.py point-source-detection --source-temp-k 300 --source-area-m2 1000 --rx-aperture-m 1 --flux-floor-w-m2 1e-19
+      # L=4.593e5 W; max_detection_range 6.05e11 m ≈ 4.04 AU (aperture-INDEPENDENT flux-floor solve)
+query.py point-source-detection --source-power-w 4.593e5 --rx-aperture-m 1 --range-m 1.496e11 --wavelength-m 10e-6 --nep-w-rthz 1e-19
+      # E=1.633e-18 W/m², P_rx=1.026e-18 W, n=51.7 photon/s, detector-limited SNR
+query.py point-source-detection --source-power-w 4.593e5 --rx-aperture-m 1 --range-m 1.496e11 --band thermal-ir --background cmb
+```
+Core: `sensing.compute_point_source_detection(source_power_w | source_temp_k+source_area_m2, emissivity,
+rx_aperture_m, optical_efficiency, range_m, integration_s, quantum_efficiency, band | wavelength_m |
+band_min_m+band_max_m, source_size_m, nep_w_rthz | background(+background_intensity_w_m2_sr_m,
+background_temp_k, background_dilution) | flux_floor_w_m2, snr_threshold)`. Laws: `E = L/(4πR²)`,
+`P_rx = E·A_rx·η_opt`, `n = P_rx·λ/hc`; detector-limited `SNR = P_rx/(NEP·√(1/2t))`; background/shot-limited
+`SNR = S/√(S+B)` over the PSF solid angle (the S2 kernel at 1.22). Output: `{source_luminosity_w,
+irradiance_w_m2, received_power_w, photon_rate_hz, angular_size_rad|null, resolved_or_point, snr|null,
+max_detection_range_m|null, detection_regime, background_used, …}`.
+**`--flux-floor-w-m2` is an IRRADIANCE floor** → `max_detection_range_m = √(L/(4π·floor))`,
+**aperture-independent** (`--rx-aperture-m`/`--optical-efficiency`/`--quantum-efficiency` are inert for
+*that* solve; they still drive `received_power_w`/`photon_rate_hz`/`snr` and the SNR-path solve — for an
+aperture-dependent range use the `--nep`/`--background` SNR path). **`--background` modes need a band**
+(`--band` or `--band-min-m`/`--band-max-m`) — a bare `--wavelength-m` has no Δλ. The `model_note` states
+this is the classical EM/thermal envelope (no exotic gravimetric/GW drive-wake sensing). Background presets
+(`cmb`/`stellar`/`zodiacal`/`none`) are order-of-magnitude + look-direction-dependent; override with
+`--background-intensity-w-m2-sr-m`. With `--source-size-m`, `resolved_or_point` is `resolved` when
+`θ_s = size/R ≥ θ_res`, and the `model_note` then flags the point-source irradiance/SNR figures as a
+**lower bound** (a resolved source spreads flux over multiple resolution elements). The `photon_rate_hz`
+is a **band-centre (narrow-band) conversion of the bolometric `P_rx`** — not an in-band Planck integral —
+consistent with the bolometric `E`/`P_rx` by construction (degrades as Δλ/λ grows). **Validation:**
+both/neither source, rx ≤ 0, ε/η ∉ (0,1], >1 floor, solve-mode with no floor, background with no band → exit 1.
+
+#### `radar-range` (S3)
+Active radar range equation (the `R⁻⁴` counterpart to S1's passive `R⁻²`).
+```bash
+query.py radar-range --tx-power-w 1e9 --tx-aperture-m 10 --wavelength-m 0.03 --target-rcs-m2 100 --range-m 1e9          # P_rx=5.45e-20 W
+query.py radar-range --tx-power-w 1e9 --tx-aperture-m 10 --wavelength-m 0.03 --target-rcs-m2 100 --min-detectable-power-w 1e-18  # R_max≈4.83e8 m
+```
+Core: `sensing.compute_radar_range(tx_power_w, tx_aperture_m, rx_aperture_m, wavelength_m|frequency_hz,
+target_rcs_m2, range_m | min_detectable_power_w, integration_s, system_noise_temp_k, tx_gain, rx_gain,
+snr_threshold)`. `P_rx = P_tx·A_tx·A_rx·σ/(4π·λ²·R⁴)`; `--rx-aperture-m` defaults to tx (monostatic);
+gains default `(πD/λ)²`, overridable; `--system-noise-temp-k` → SNR vs `P_n = k_B·T_sys·Δf`. Output:
+`{received_power_w|null, max_range_m|null, snr|null, tx_gain, rx_gain, …}`. **Validation:** non-positive
+tx-power/aperture/rcs, both/neither λ/f, both/neither range/P_min → exit 1.
+
+### Strategic-geography graph analytics (Phase AQ — Group T, local DB, no network unless a name needs SIMBAD)
+
+Two `query.py`-only calculators adding an **analytic layer** over the same jump graph the routing group
+builds (`core/strategic_geography.py`), for the sibling repo's **Packets 32 / 38**. Reads the
+`star_systems` catalog through the routing helpers (`_resolve_star_position` / `_load_star_systems_positions`
+/ `_SpatialGrid`) — same read path as `jump-network`, **no new dataset**. A star given by name resolves
+DB-first then SIMBAD (network only on a DB miss); `"Sol"`/`"Sun"` and Gaia/DB names stay offline. Graph
+algorithms are iterative (survive the ~256k-row catalog). Self-validating; each result carries a `model_note`.
+
+#### `network-centrality` (T1)
+Route value / chokepoints: degree + Freeman betweenness, Hopcroft–Tarjan articulation points + bridges,
+optional Menger min-cut.
+```bash
+query.py network-centrality --within-ly 15 --of Sol --max-jump 6            # neighbourhood chokepoints
+query.py network-centrality --stars Sol "Alpha Cen" "Barnard's star" --max-jump 6 --from Sol --to "Alpha Cen"
+query.py network-centrality --within-ly 15 --of Sol --max-jump 6 --weight dust   # least-extinction chokepoints (WSL/Linux dust extra)
+```
+Core: `strategic_geography.compute_network_centrality(stars | within_ly+of | catalog, max_jump_ly, weight,
+from_star, to_star, top, dust_map, dust_step_pc)`. Node set: `--stars <list>` | `--within-ly N --of <star>` |
+`--catalog`. Edges = pairs within `--max-jump` ly. **`--weight {hops,distance,dust}`** selects the
+**betweenness** shortest-path metric — `dust` minimises the integrated extinction **A_V** per edge (composes
+the dust-routing edge cost; `--map {near-field,edenhofer,auto}` + `--dust-step-pc`, default 5; **needs the
+WSL/Linux `dustmaps` extra** — a curated `{"error"}` otherwise; a sightline the map can't integrate is routed
+around and listed in `dust_errors`, still counted for the topological metrics). `--from`/`--to` → a pairwise
+edge **min-cut** (topological — fewest edges, weight-independent; endpoints resolve **local-first** against the
+node set before any SIMBAD call); `--top N` caps the reported highest-centrality nodes (default 25). Output:
+`{nodes[]{name,degree,betweenness}, articulation_points[], bridges[], min_cut{value,cut_set}|null,
+graph{n_nodes,n_edges,connected,components}, node_set, weight, betweenness_capped, [dust_map, dust_step_pc,
+dust_errors], …}`. **Scale guard:**
+degree/articulation/bridges/components run on any size; **betweenness + min-cut are capped at 2000 nodes**
+— above it they return `null` with a note (narrow `--within-ly` or use `--stars`). Models the STL/lane era;
+for FTL free-emergence picketing use `arrival-corridors`. **Validation:** no/two selectors, max-jump ≤ 0,
+bad weight, `--from` without `--to`, `--within-ly` without `--of`, < 2 nodes → exit 1.
+
+#### `arrival-corridors` (T2)
+FTL-emergence / picket geometry: cluster the origin bearings into corridors and size the picket solid angle.
+```bash
+query.py arrival-corridors --system Sol --within-ly 12 --corridor-halfwidth-deg 5 --cluster-deg 5
+query.py arrival-corridors --system Sol --origins "Alpha Cen" "Barnard's star" Sirius
+```
+Core: `strategic_geography.compute_arrival_corridors(system, within_ly | origins, corridor_halfwidth_deg,
+cluster_deg, min_jump, max_jump)`. Bearings = unit vectors system→origin as galactic `(l,b)` (J2000
+equatorial→galactic rotation); `light_lag_yr = distance_ly`; cluster by angular separation `< --cluster-deg`;
+`angular_coverage_fraction = Σ Ω_cone/4π`, `Ω_cone = 2π(1−cos halfwidth)`. Output: `{system, corridors[]
+{origin, distance_ly, bearing_lb{l,b}, light_lag_yr, cluster_id}, n_origins, n_distinct_corridors,
+corridor_halfwidth_deg, cluster_deg, angular_coverage_fraction, …}`. Geometry only — interdiction *doctrine*
+is Pkt 38. **Validation:** no system, no/both origin selectors, halfwidth/cluster ∉ (0,180], min ≥ max,
+no candidates after filters → exit 1.
+
+### Compute & beamrider utilities (Phase AR — Group U, no network)
+
+Two thin `query.py`-only derivations for the sibling repo's **Packets 29 / 33** — a clean CLI for two
+recurring worldbuilding numbers. `landauer-limit` lives in `core/thermal.py` (a thermodynamic floor beside
+`heat-pump`); `beamrider-relay-spacing` in `core/power.py` (it inverts `beamed-power-delivery`). Self-validating.
+
+#### `landauer-limit` (U1)
+Irreversible-compute energy floor `E_bit = k_B·T·ln2` — the compute-energy companion to `bekenstein-bound`.
+```bash
+query.py landauer-limit --temp-k 300 --power-w 1        # E_bit=2.871e-21 J; max erasure rate 3.483e20 bit/s
+query.py landauer-limit --temp-k 2.725                  # CMB-cold: E_bit=2.608e-23 J
+```
+Core: `thermal.compute_landauer_limit(temp_k, bits | power_w | bit_rate_hz, reversible)`. Output:
+`{energy_per_bit_j, temp_k, total_energy_j|null, max_erasure_rate_hz|null, min_power_w|null, reversible,
+model_note}`. `--reversible` only annotates that reversible/adiabatic computing can go below the floor.
+**Validation:** temp ≤ 0, >1 of bits/power/bit-rate, non-positive value → exit 1.
+
+#### `beamrider-relay-spacing` (U2)
+Diffraction-limited relay-node spacing — inverts `beamed-power-delivery` for the STL-waystation skeleton.
+```bash
+query.py beamrider-relay-spacing --wavelength-m 1e-6 --tx-aperture-m 1000 --rx-aperture-m 1000 --total-range-ly 4
+      # L_t=4.10e11 m; relay spacing 5.80e11 m ≈ 3.87 AU; 4 ly lane → 65,292 relays
+```
+Core: `power.compute_beamrider_relay_spacing(wavelength_m|frequency_hz, tx_aperture_m, rx_aperture_m,
+delivered_fraction_threshold, total_range_ly | total_range_m)`. `L_t = D_t·D_r/(2.44·λ)` (full-capture
+range); `L_relay = L_t/√threshold`. Output: `{transition_range_m, relay_spacing_m, relay_spacing_ly,
+delivered_fraction_threshold, n_relays|null, …}`. **Validation:** both/neither λ/f, non-positive aperture,
+threshold ∉ (0,1], both total-range units → exit 1.
+
 ### Megastructure scale (Phase Z — pure math + bundled material/body tables, no network)
 
 Three `query.py`-only calculators for the sibling repo's Packet 17 (Settlement / Megastructure).

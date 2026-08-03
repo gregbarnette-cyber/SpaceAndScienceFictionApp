@@ -414,5 +414,41 @@ class DeterminismTest(unittest.TestCase):
             self.assertEqual(fn(**kw), fn(**kw))
 
 
+class LandauerLimitTest(unittest.TestCase):
+    """U1 (Phase AR, Group U) — landauer-limit E_bit = k_B·T·ln2."""
+
+    def test_energy_per_bit_300k(self):
+        r = thermal.compute_landauer_limit(temp_k=300)
+        self.assertAlmostEqual(r["energy_per_bit_j"], 2.870978885e-21, places=27)
+
+    def test_cmb_cold(self):
+        r = thermal.compute_landauer_limit(temp_k=2.725)
+        self.assertAlmostEqual(r["energy_per_bit_j"], 2.6078058e-23, places=29)
+
+    def test_power_to_max_erasure_rate(self):
+        r = thermal.compute_landauer_limit(temp_k=300, power_w=1.0)
+        self.assertAlmostEqual(r["max_erasure_rate_hz"], 3.4831325e20, delta=1e14)
+        self.assertIsNone(r["total_energy_j"])
+        self.assertIsNone(r["min_power_w"])
+
+    def test_bits_to_total_energy(self):
+        r = thermal.compute_landauer_limit(temp_k=300, bits=1e9)
+        self.assertAlmostEqual(r["total_energy_j"], 1e9 * 2.870978885e-21, places=18)
+
+    def test_bit_rate_to_min_power(self):
+        r = thermal.compute_landauer_limit(temp_k=300, bit_rate_hz=1e12)
+        self.assertAlmostEqual(r["min_power_w"], 1e12 * 2.870978885e-21, places=15)
+
+    def test_reversible_flag_annotates(self):
+        r = thermal.compute_landauer_limit(temp_k=300, reversible=True)
+        self.assertTrue(r["reversible"])
+        self.assertIn("reversible", r["model_note"].lower())
+
+    def test_errors(self):
+        self.assertIn("error", thermal.compute_landauer_limit(temp_k=0))
+        self.assertIn("error", thermal.compute_landauer_limit(temp_k=300, bits=1, power_w=1))
+        self.assertIn("error", thermal.compute_landauer_limit(temp_k=300, bits=-1))
+
+
 if __name__ == "__main__":
     unittest.main()

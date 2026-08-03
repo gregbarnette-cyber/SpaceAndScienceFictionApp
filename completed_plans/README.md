@@ -73,6 +73,7 @@ in here too, with the same history (moved with `git mv`).
 | [PHASE_W_PLAN.md](PHASE_W_PLAN.md) | Phase W — Rotating-Habitat Comfort Calculator (`spin-comfort`) |
 | [PHASE_X_PLAN.md](PHASE_X_PLAN.md) | PHASE_X_PLAN.md — Closed-Loop Life-Support & Bioregenerative Calculators |
 | [PHASE_Y_PLAN.md](PHASE_Y_PLAN.md) | Phase Y — STL Mission Energetics (`rocket-equation`, `beam-sail`) |
+| [PHASE_AP_AQ_AR_PLAN.md](PHASE_AP_AQ_AR_PLAN.md) | Phases AP/AQ/AR — Sensing (S) · Strategic-Geography graph analytics (T) · Compute/Beamrider utilities (U) |
 | [PHASE_Z_PLAN.md](PHASE_Z_PLAN.md) | Phase Z — Rotating-Structure & Megastructure Scale (`spin-stress`, `tether-taper`, `dyso |
 | [ROUTE_FIND_PLAN.md](ROUTE_FIND_PLAN.md) | Route-Find — the O18 Find-Star box moved to the shared builder and wired to all 7 Route Planning panels |
 | [ROUTE_CHART_REFACTOR_PLAN.md](ROUTE_CHART_REFACTOR_PLAN.md) | Route-Chart Refactor — the 7 Route Planning maps onto the shared builder (Phases 1–2) + the one-palette unification (Phase 3) |

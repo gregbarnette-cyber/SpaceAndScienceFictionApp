@@ -129,5 +129,29 @@ class ExitCodeMatrixTest(unittest.TestCase):
             self.assertEqual(rc, 2, args)
 
 
+class LandauerQueryTest(unittest.TestCase):
+    """U1 (Phase AR) landauer-limit query.py contract."""
+
+    def test_happy(self):
+        rc, d, _ = _run("landauer-limit", "--temp-k", "300", "--power-w", "1")
+        self.assertEqual(rc, 0)
+        self.assertAlmostEqual(d["energy_per_bit_j"], 2.870978885e-21, places=27)
+        self.assertAlmostEqual(d["max_erasure_rate_hz"], 3.4831325e20, delta=1e14)
+
+    def test_default_temp(self):
+        rc, d, _ = _run("landauer-limit")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["temp_k"], 300.0)
+
+    def test_curated_error_exit_1(self):
+        rc, d, _ = _run("landauer-limit", "--temp-k", "0")
+        self.assertEqual(rc, 1)
+        self.assertIn("error", d)
+
+    def test_mutually_exclusive_exit_2(self):
+        rc, _d, _ = _run("landauer-limit", "--bits", "1", "--power-w", "1")
+        self.assertEqual(rc, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

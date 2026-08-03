@@ -133,5 +133,28 @@ class ExitCodeMatrixTest(unittest.TestCase):
             self.assertEqual(rc, 2, args)
 
 
+class BeamriderQueryTest(unittest.TestCase):
+    """U2 (Phase AR) beamrider-relay-spacing query.py contract."""
+
+    def test_happy(self):
+        rc, d, _ = _run("beamrider-relay-spacing", "--wavelength-m", "1e-6",
+                        "--tx-aperture-m", "1000", "--rx-aperture-m", "1000",
+                        "--total-range-ly", "4")
+        self.assertEqual(rc, 0)
+        self.assertAlmostEqual(d["relay_spacing_m"], 5.79595722e11, delta=1e5)
+        self.assertEqual(d["n_relays"], 65292)
+
+    def test_curated_error_exit_1(self):
+        rc, d, _ = _run("beamrider-relay-spacing", "--wavelength-m", "1e-6",
+                        "--tx-aperture-m", "0", "--rx-aperture-m", "1000")
+        self.assertEqual(rc, 1)
+        self.assertIn("error", d)
+
+    def test_argparse_exit_2(self):
+        rc, _d, _ = _run("beamrider-relay-spacing", "--tx-aperture-m", "1000",
+                         "--rx-aperture-m", "1000")   # no λ/f (required group)
+        self.assertEqual(rc, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

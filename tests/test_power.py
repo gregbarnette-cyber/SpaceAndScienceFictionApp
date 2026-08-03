@@ -197,5 +197,53 @@ class ModelNoteTest(unittest.TestCase):
             self.assertIn("model_note", r)
 
 
+class BeamriderRelaySpacingTest(unittest.TestCase):
+    """U2 (Phase AR, Group U) — beamrider-relay-spacing (inverts beamed-power-delivery)."""
+
+    def test_anchor(self):
+        r = power.compute_beamrider_relay_spacing(wavelength_m=1e-6, tx_aperture_m=1000,
+                                                  rx_aperture_m=1000,
+                                                  delivered_fraction_threshold=0.5,
+                                                  total_range_ly=4)
+        self.assertAlmostEqual(r["transition_range_m"], 4.098360656e11, delta=1e5)
+        self.assertAlmostEqual(r["relay_spacing_m"], 5.79595722e11, delta=1e5)
+        self.assertAlmostEqual(r["relay_spacing_m"] / 1.496e11, 3.874, places=2)
+        self.assertEqual(r["n_relays"], 65292)
+
+    def test_frequency_equivalent(self):
+        rf = power.compute_beamrider_relay_spacing(frequency_hz=_C_MS / 1e-6, tx_aperture_m=1000,
+                                                   rx_aperture_m=1000)
+        rw = power.compute_beamrider_relay_spacing(wavelength_m=1e-6, tx_aperture_m=1000,
+                                                   rx_aperture_m=1000)
+        self.assertAlmostEqual(rf["relay_spacing_m"], rw["relay_spacing_m"], places=3)
+
+    def test_no_total_range_gives_null_count(self):
+        r = power.compute_beamrider_relay_spacing(wavelength_m=1e-6, tx_aperture_m=1000,
+                                                  rx_aperture_m=1000)
+        self.assertIsNone(r["n_relays"])
+
+    def test_threshold_scaling(self):
+        # lower delivered-fraction threshold → longer relay spacing (L_relay = L_t/√thr).
+        loose = power.compute_beamrider_relay_spacing(wavelength_m=1e-6, tx_aperture_m=1000,
+                                                      rx_aperture_m=1000,
+                                                      delivered_fraction_threshold=0.25)
+        tight = power.compute_beamrider_relay_spacing(wavelength_m=1e-6, tx_aperture_m=1000,
+                                                      rx_aperture_m=1000,
+                                                      delivered_fraction_threshold=1.0)
+        self.assertGreater(loose["relay_spacing_m"], tight["relay_spacing_m"])
+        self.assertAlmostEqual(tight["relay_spacing_m"], tight["transition_range_m"], places=3)
+
+    def test_errors(self):
+        f = power.compute_beamrider_relay_spacing
+        self.assertIn("error", f(tx_aperture_m=1000, rx_aperture_m=1000))              # no λ/f
+        self.assertIn("error", f(wavelength_m=1e-6, frequency_hz=1e9, tx_aperture_m=1,
+                                 rx_aperture_m=1))                                     # both
+        self.assertIn("error", f(wavelength_m=1e-6, tx_aperture_m=0, rx_aperture_m=1))
+        self.assertIn("error", f(wavelength_m=1e-6, tx_aperture_m=1, rx_aperture_m=1,
+                                 delivered_fraction_threshold=1.5))
+        self.assertIn("error", f(wavelength_m=1e-6, tx_aperture_m=1, rx_aperture_m=1,
+                                 total_range_ly=4, total_range_m=1e16))
+
+
 if __name__ == "__main__":
     unittest.main()

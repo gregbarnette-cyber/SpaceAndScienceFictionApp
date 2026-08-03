@@ -27,7 +27,7 @@ from unittest import mock
 import numpy as np
 
 import core.dust as dust
-from tests._dustcheck import dustmaps_importable, maps_fetched
+from tests._dustcheck import dustmaps_importable, maps_fetched, heavy_dust_enabled
 
 from tests._queryharness import make_env, run_query, run_query_inproc
 
@@ -273,11 +273,16 @@ class DustValidationContractTest(unittest.TestCase):
         self.assertIn("not fetched", err["error"])
 
 
-@unittest.skipUnless(dustmaps_importable() and maps_fetched(),
-                     "dust maps not fetched (run CLI option 59)")
+@unittest.skipUnless(heavy_dust_enabled(),
+                     "opt-in only: set SPACE_APP_RUN_HEAVY_DUST=1 (loads the full multi-GB Leike map "
+                     "— kept out of routine sweeps so an 8 GB WSL box doesn't OOM; run CLI option 59 "
+                     "to fetch maps first)")
 class DustRealAnchorTest(unittest.TestCase):
     """Real-data sightline against the fetched Leike map. A high-latitude, short
-    sightline through the Local Bubble cavity should carry only modest A_V."""
+    sightline through the Local Bubble cavity should carry only modest A_V.
+
+    Loads the full 3D dust cube → gated opt-in (heavy_dust_enabled) to keep it out of a routine
+    `pytest -q`; the dust integration math is covered map-free by DustEngineMathTest (mocked)."""
 
     def test_local_sightline(self):
         dust._MAP_CACHE.clear()
