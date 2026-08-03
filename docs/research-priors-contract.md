@@ -208,7 +208,14 @@ dissolves — no invented weight), slope γ₁ −1.55 → γ₂ −2.07 (disk).
 over-production** (the log-normal ran shallower than the measured −0.60 slope out to ~3000 AU); M-dwarf
 centres are steeper and left unthinned (err safe). The `a_half` coefficient is **primary-verified** (an
 earlier ~4% slack, carried while the paper was known only via a secondary source, was **retracted** once it
-was opened). The `domain_overextension` flag in the dataset is **not** a
+was opened). Per WB canon `multiple-star-systems.md` §13 (the X9 a_half domain amendment, 2026-08-02 — a
+**disclosure only**, the coefficient is unchanged), the 1.212 form is typed **stars-only**,
+**environment-indexed** (normalized to the local *stellar-mass* density — Bahcall & Soneira 1980 — **not** a
+stellar *number* density) and **orientation-blind**; the generator applies it inside its own
+solar-neighbourhood census domain, so the normalization is correct-by-domain, not a hidden assumption. A
+second-order interaction is recorded, not corrected: v2.11.0 Q5's thin/thick/halo age draws mean a
+halo-aged host uses the disk-density-normalized coefficient — no corrected multiplier exists to apply. The
+`domain_overextension` flag in the dataset is **not** a
 misuse by the sampler: Winters' σ = 1.16 is a whole-range *untruncated* fit out to a 7500 AU horizon, so the
 flag records a source-vs-source model disagreement (D&K's two components vs Winters' one), which the modern
 Gaia data do not settle in D&K's favour.

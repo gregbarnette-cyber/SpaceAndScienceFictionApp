@@ -2543,7 +2543,11 @@ Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=
   **replacing the old hard truncation**: ~half the pairs at `a_half` survive and the source
   finds "no evidence of breaks or cutoffs", so the tail is thinned by separation, not walled
   off. `a_half`/the roll-off are `null`/inert without an age axis (the scale moves with mass
-  and age).
+  and age). The `a_half` coefficient is **stars-only, solar-neighbourhood-normalized and
+  orientation-blind** (WB canon `multiple-star-systems.md` §13, the X9 amendment — a scope
+  disclosure, the value is unchanged); the generator applies it inside its own
+  solar-neighbourhood census domain, so read `a_half` as a decay *scale* typed to that domain,
+  never a hard outer cutoff.
   **A two-break power-law tail IS now added** (v2.11.0 Q4), beyond a **continuity splice** at
   ~1000 AU: the tail's PDF is set equal to the log-normal at the splice (Tian 2020 recipe →
   normalization with zero free parameters, no invented join weight), slope γ₁ −1.55 → γ₂ −2.07

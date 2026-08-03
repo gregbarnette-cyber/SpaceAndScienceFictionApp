@@ -558,6 +558,23 @@ def _metallicity_count_items(priors, derived):
 # understood by considering encounters with stars and clouds individually" — so this
 # under-describes the combined stellar + GMC erosion by construction.
 #
+# FULL DOMAIN TYPING (WB canon multiple-star-systems.md §13, the X9 a_half amendment,
+# 2026-08-02 — a DISCLOSURE only: 1.212 is unchanged and stays correct for its case). Beyond
+# stars-only, the naive form is scoped three more ways, and applying it here is right because
+# the generator lives in the one domain it is normalized to — the solar neighbourhood:
+#   • ENVIRONMENT-INDEXED — normalized to the local STELLAR-MASS density (Bahcall & Soneira
+#     1980, ~0.045 M☉ pc⁻³ represented as a 1-M☉ perturber field), NOT a stellar NUMBER
+#     density. Correct-by-domain for a solar-neighbourhood census, not a hidden knob to remove.
+#   • ORIENTATION-BLIND — averages over eccentricity and phase under an isotropic encounter
+#     field; orientation only matters once the tide is added (parallel-to-plane orbits outlive
+#     perpendicular ones, Hut 1984). We draw no orbit orientation → inert here.
+#   • METHOD FAMILY — diffusive Coulomb-log (carries a (ln Λ)⁻¹); a one-shot analysis
+#     (Heggie 1975) hints it may run somewhat short of the true stars-only lifetime — a flagged
+#     direction, not a resolved offset; no corrected multiplier exists to apply.
+# SECOND-ORDER, recorded not fixed: Q5 draws host ages from thin/thick/halo SFHs, so a
+# halo-aged host uses the disk-density-normalized coefficient. No corrected multiplier + no
+# perturber-environment axis → a documented simplification, not a value change.
+#
 # WE DO NOT ADD AN ÖPIK / POWER-LAW TAIL. The measured index is −1.6 in dN/ds (NOT Öpik's
 # −1), but a two-component mixture needs a JOIN NORMALIZATION, and the source lineage
 # declares that unknown: "it remains unclear whether and how these two distributions are
@@ -886,7 +903,8 @@ def _draw_multiplicity(rng, priors, mass_solar, age_gyr=None):
     if a_max is not None and not use_close:
         note += (f" Wide separations follow the (M_tot, age) survival roll-off "
                  f"S(a) = 0.5^((a/a_half)^{_WIDE_SURVIVAL_P}) with a_half = {a_max:,.0f} AU "
-                 f"(1.212 × M_tot/t pc, Weinberg 1987 eq. 28) — v2.11.0 Q3, replacing the "
+                 f"(1.212 × M_tot/t pc, Weinberg 1987 eq. 28, a stars-only / "
+                 f"solar-neighbourhood-normalized scale) — v2.11.0 Q3, replacing the "
                  f"hard cut: ~half the pairs AT a_half survive and the sources report no "
                  f"cutoff, so the tail is thinned smoothly rather than walled off (p is a "
                  f"tunable convenience, not a pinned exponent).")
