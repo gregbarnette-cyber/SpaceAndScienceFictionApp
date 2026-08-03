@@ -26,6 +26,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests._netcheck import live_enabled
 from tests._queryharness import make_env, run_query, run_query_inproc
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -41,6 +42,10 @@ def _run(*cmd_args):
 
 
 def _horizons_reachable(host="ssd.jpl.nasa.gov", port=443, timeout=3.0) -> bool:
+    # Opt-in: the JPL Horizons live tests skip unless SPACE_APP_RUN_LIVE=1
+    # (see tests/_netcheck.live_enabled) so a routine `pytest -q` opens no network socket.
+    if not live_enabled():
+        return False
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True

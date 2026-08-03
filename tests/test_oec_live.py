@@ -7,10 +7,10 @@
 
 import unittest
 
-from tests._netcheck import reachable
+from tests._netcheck import live_enabled, reachable
 import core.databases as databases
 
-_ONLINE = reachable("github.com")
+_ONLINE = live_enabled() and reachable("github.com")
 
 
 @unittest.skipUnless(_ONLINE, "GitHub unreachable — skipping OEC live test")

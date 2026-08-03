@@ -24,10 +24,10 @@
 
 import unittest
 
-from tests._netcheck import simbad_reachable
+from tests._netcheck import live_enabled, simbad_reachable
 from core.shared import _classify_star_id, _match_designations, _CSV_DESIG_KEYS
 
-_ONLINE = simbad_reachable()
+_ONLINE = live_enabled() and simbad_reachable()
 
 # AN1 wrote this as `_CSV_DESIG_KEYS + ["Bayer", "Flamsteed"]` because the shipped key
 # set did not yet carry them. AN2 added both, so the concatenation would now merely

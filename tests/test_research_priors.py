@@ -11,6 +11,8 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from core.research_priors import (
     validate_priors_contract,
@@ -757,6 +759,48 @@ class TestV2Superset(unittest.TestCase):
         self.addCleanup(shutil.rmtree, cache, ignore_errors=True)
         compute_research_priors_ingest(path=_IDENTITY, cache_dir=cache)
         self.assertEqual(get_research_priors_status(cache_dir=cache)["v2_blocks"], [])
+
+
+class TestSisterContractDiscovery(unittest.TestCase):
+    """default_priors_source() prefills the sister repo's live v2 contract when it sits beside
+    this repo (case-tolerant on the 'Claude' sibling directory name), else the sample. The core
+    importer default is deliberately NOT changed — only the GUI prefill consults this."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _make_sibling(self, dir_name):
+        parent = Path(self.tmp)
+        repo = parent / "SpaceAndScienceFictionApp"
+        repo.mkdir(parents=True, exist_ok=True)
+        f = (parent / dir_name / "design-lab" / "star-system-generation-priors"
+             / "research_priors_v2.json")
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("{}", encoding="utf-8")
+        return repo, f
+
+    def test_discovers_capital_C_claude_sibling(self):
+        import core.research_priors as rp
+        repo, f = self._make_sibling("scifiWorldBuilding-Claude")
+        with mock.patch.object(rp, "_REPO_ROOT", repo):
+            self.assertEqual(rp._discover_sister_contract(), f)
+            self.assertEqual(rp.default_priors_source(), f)
+
+    def test_discovers_lowercase_c_claude_sibling(self):
+        # The whole point: some checkouts capitalise "Claude" differently.
+        import core.research_priors as rp
+        repo, f = self._make_sibling("scifiWorldBuilding-claude")
+        with mock.patch.object(rp, "_REPO_ROOT", repo):
+            self.assertEqual(rp._discover_sister_contract(), f)
+
+    def test_falls_back_to_sample_when_no_sibling(self):
+        import core.research_priors as rp
+        repo = Path(self.tmp) / "SpaceAndScienceFictionApp"
+        repo.mkdir(parents=True, exist_ok=True)
+        with mock.patch.object(rp, "_REPO_ROOT", repo):
+            self.assertIsNone(rp._discover_sister_contract())
+            self.assertEqual(rp.default_priors_source(), rp._SAMPLE_CONTRACT_PATH)
 
 
 if __name__ == "__main__":

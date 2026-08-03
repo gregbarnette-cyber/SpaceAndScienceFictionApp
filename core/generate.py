@@ -40,6 +40,7 @@ from core.databases import (
     compute_simbad_lookup,
     compute_planetary_systems_composite,
     compute_hwc,
+    compute_mission_exocat,
     compute_hypatia_data,
 )
 from core.regions import compute_star_system_regions_from_simbad
@@ -434,6 +435,32 @@ def _resolve_anchor_feh(simbad):
     return None, None
 
 
+def _resolve_anchor_age(simbad):
+    """Real-anchor host age (Gyr) → (value, source). **HWC S_AGE → Mission Exocat st_age.**
+
+    The age mirror of ``_resolve_anchor_feh``: an observed star's age is *read from an
+    observed catalogue*, never drawn from the synthetic ``age_dist`` SFH (an observed star
+    must not inherit a modelled age). Both catalogues report stellar age in **Gyr** — HWC
+    ``S_AGE`` spans 0.001–14.9 (median ≈ 4.0), Mission Exocat ``st_age`` 0.4–15.0 (median
+    ≈ 6.0), both verified 2026-08-03 — and both readers are *local CSV lookups* (no network;
+    ``compute_hwc`` is already read for the anchor's planet rows in ``_collect_observed``).
+    HWC wins where both list an age (larger, more homogeneous catalogue); Mission Exocat is
+    the fallback. A non-positive value is treated as absent. Returns ``(None, None)`` when
+    neither catalogue has an age — the normal case (most stars carry no measured age).
+    """
+    hwc = compute_hwc(simbad)
+    if isinstance(hwc, dict) and "error" not in hwc:
+        age = _f((hwc.get("star_row") or {}).get("S_AGE"))
+        if age is not None and age > 0:
+            return age, "hwc"
+    exo = compute_mission_exocat(simbad)
+    if isinstance(exo, dict) and "error" not in exo:
+        age = _f((exo.get("exocat") or {}).get("st_age"))
+        if age is not None and age > 0:
+            return age, "mission_exocat"
+    return None, None
+
+
 def _draw_feh(rng, priors):
     """Synthetic host [Fe/H] from the feh_dist axis (Gaussian mean/sigma + optional
     clamp), or None when the dataset omits feh_dist (→ F2 conditioning inert)."""
@@ -565,12 +592,34 @@ def _metallicity_count_items(priors, derived):
 
 _DISRUPTION_COEFF = 1.212        # pc per (M☉ / Gyr) — Weinberg 1987 eq. 28 (primary-verified)
 _PC_AU = 206264.806              # AU per parsec
+# Q3 (v2.11.0) — smooth wide-pair survival S(a) = 0.5^((a/a_half)^p): 0.5 at a_half, smooth,
+# NO cutoff (Weinberg / Tian — the hard cut is confirmed wrong). p ∈ 1.2–1.5 is a TUNABLE
+# modelling convenience (the true WSW curve is non-exponential, no closed form is pinnable).
+_WIDE_SURVIVAL_P     = 1.35
+# Q4 (v2.11.0) — the continuity splice for the two-break power-law tail. The tail's PDF is set
+# EQUAL to the log-normal PDF at s_join (Tian 2020 recipe → normalization with zero free
+# parameters, dissolving the old "unknown join weight" blocker). s_join is the mid of the
+# sister's stated ~500–2000 AU window (below break_1, in the γ1 regime).
+_WIDE_TAIL_S_JOIN_AU = 1000.0
 _MULT_TRUNC_TRIES     = 64      # wide-component truncation resampling bound
 _MULT_ECC_FLOOR       = 0.001   # "NEVER e == 0 identically"
-_MULT_ECC_MAX         = 0.9     # the block's stated tail limit
-_MULT_ECC_BROAD_SIGMA = 0.21    # Rayleigh σ → median ≈ 0.247
+_MULT_ECC_MAX         = 0.9     # the block's stated tail limit (e_max fallback)
 _MULT_ECC_NEAR_SIGMA  = 0.01    # half-normal σ below the fully-circular envelope
 _DAYS_PER_JULIAN_YEAR = 365.25
+
+# Q2 (v2.11.0) — companion eccentricity f(e) ∝ e^η above the circularization boundary
+# (Moe & Di Stefano 2017, ApJS 230, 15 §§8.7/9.2), replacing the fixed Rayleigh(σ=0.21)
+# placeholder. η is period- AND primary-mass-dependent; drawn by inverse-CDF on [0, e_max]:
+# e = e_max·u^(1/(η+1)). Coefficients are hardcoded from the dataset's `f_e_functional_form`
+# formula STRINGS (like _TAU_RELATION), with a drift test asserting the strings still match so
+# a sister-side change fails loudly. Late-type (0.8–3 M☉) is the workhorse (census ~90% M+K+G);
+# early-type (>7 M☉) reaches thermal (η→1); 3–7 M☉ interpolates. Below the ~6 d boundary η is
+# ill-defined (→−∞) and the near-circular envelope owns that zone.
+_ECC_ETA_LATE    = (0.6, 0.7)   # η = 0.6 − 0.7/(logP−0.5),  M1 = 0.8–3 M☉
+_ECC_ETA_EARLY   = (0.9, 0.2)   # η = 0.9 − 0.2/(logP−0.5),  M1 > 7 M☉
+_ECC_ETA_M_LATE  = 3.0          # ≤ → late-type; ≥ _ECC_ETA_M_EARLY → early-type; between → interp
+_ECC_ETA_M_EARLY = 7.0
+_ECC_ETA_FLOOR   = -0.9         # keep e^η normalizable on [0, e_max] (η+1 ≥ 0.1)
 
 
 def _interp_log10_mass(grid, values, mass_solar):
@@ -627,15 +676,43 @@ def _draw_mass_ratio(rng, mrd):
     return _inv_cdf(q_twin, q_hi, rng.random())
 
 
-def _draw_companion_ecc(rng, ecc_dist, period_days):
+def _companion_ecc_eta(log_p, mass_solar):
+    """Q2 — MDS17 η(logP, M1) for f(e) ∝ e^η: late-type (≤ 3 M☉) / early-type (≥ 7 M☉),
+    linear in M1 across 3–7 M☉, floored at _ECC_ETA_FLOOR so the power law stays
+    normalizable on [0, e_max]. η has a pole at logP = 0.5; the e^η branch only fires above
+    the ~6 d boundary (logP ≳ 0.78) so the guard never bites there."""
+    denom = log_p - 0.5
+    if denom <= 0:
+        return _ECC_ETA_FLOOR
+    eta_late = _ECC_ETA_LATE[0] - _ECC_ETA_LATE[1] / denom
+    eta_early = _ECC_ETA_EARLY[0] - _ECC_ETA_EARLY[1] / denom
+    if mass_solar <= _ECC_ETA_M_LATE:
+        eta = eta_late
+    elif mass_solar >= _ECC_ETA_M_EARLY:
+        eta = eta_early
+    else:
+        f = (mass_solar - _ECC_ETA_M_LATE) / (_ECC_ETA_M_EARLY - _ECC_ETA_M_LATE)
+        eta = (1.0 - f) * eta_late + f * eta_early
+    return max(eta, _ECC_ETA_FLOOR)
+
+
+def _draw_companion_ecc(rng, ecc_dist, period_days, mass_solar):
     """Eccentricity under the ``ecc_dist`` statistical boundary (never a hard cut, never 0).
 
-    All three variates are drawn unconditionally so rng consumption does not depend on
-    which branch the period lands in — the branch changes the value, not the stream.
+    Above the ~6 d circularization boundary the value is the Q2 (v2.11.0) f(e) ∝ e^η power
+    law (MDS17, period+primary-mass-dependent); below the fully-circular envelope it stays
+    near-circular-not-zero; between, a ramp. All three variates are drawn unconditionally so
+    rng consumption does not depend on which branch the period lands in — the branch changes
+    the value, not the stream.
     """
-    u_broad, z_near, u_mix = rng.random(), rng.gauss(0.0, 1.0), rng.random()
-    broad = _MULT_ECC_BROAD_SIGMA * math.sqrt(-2.0 * math.log(1.0 - u_broad))
+    u_pl, z_near, u_mix = rng.random(), rng.gauss(0.0, 1.0), rng.random()
+    e_max = float(ecc_dist.get("e_max") or _MULT_ECC_MAX)
     near = abs(z_near) * _MULT_ECC_NEAR_SIGMA
+    if period_days and period_days > 0:
+        eta = _companion_ecc_eta(math.log10(period_days), mass_solar)
+        broad = e_max * u_pl ** (1.0 / (eta + 1.0))     # inverse-CDF of f(e) ∝ e^η
+    else:
+        broad = near
     p_circ = float(ecc_dist.get("circularization_period_days") or 6.0)
     p_full = float(ecc_dist.get("fully_circular_envelope_days") or 0.0)
     if period_days <= p_full:
@@ -663,6 +740,57 @@ def _wide_disruption_half_life_au(m_total_solar, age_gyr):
     if not age_gyr or age_gyr <= 0 or not m_total_solar or m_total_solar <= 0:
         return None
     return _DISRUPTION_COEFF * (m_total_solar / age_gyr) * _PC_AU
+
+
+def _wide_survival(sma, a_half):
+    """Q3 — smooth wide-pair survival fraction S(a) = 0.5^((a/a_half)^p): 0.5 at the
+    half-life scale, monotone, no cutoff. Returns 1.0 when there is no age scale to key it to
+    (``a_half`` None), i.e. the roll-off is inert without an age axis (as the hard cut was)."""
+    if not a_half or a_half <= 0 or sma <= 0:
+        return 1.0
+    return 0.5 ** ((sma / a_half) ** _WIDE_SURVIVAL_P)
+
+
+def _lognormal_pdf_s(sma, log10_centre, sigma):
+    """PDF in linear s of a variable whose log10 is N(log10_centre, σ) — the density the
+    power-law tail is spliced against (both are dN/ds, so the ratio is well-defined)."""
+    if sma <= 0 or sigma <= 0:
+        return 0.0
+    z = (math.log10(sma) - log10_centre) / sigma
+    return math.exp(-0.5 * z * z) / (sma * math.log(10.0) * sigma * math.sqrt(2.0 * math.pi))
+
+
+def _broken_powerlaw_factor(sma, s_join, g1, b1, gmid, b2, g2):
+    """Two-break dN/ds power law relative to its value at ``s_join`` (= 1 there), continuous
+    at each break: slope g1 to b1, gmid (the gradual steepening) to b2, g2 beyond."""
+    factor, lo = 1.0, s_join
+    for hi, g in ((b1, g1), (b2, gmid), (float("inf"), g2)):
+        if sma <= hi:
+            return factor * (sma / lo) ** g
+        factor *= (hi / lo) ** g
+        lo = hi
+    return factor
+
+
+def _wide_tail_thinning(sma, s_join, log10_centre, sigma, tail):
+    """Q4 — beyond the splice s_join, accept a log-normal draw with probability
+    min(1, PL(s)/LN(s)), thinning the LN's tail down to the continuity-spliced two-break power
+    law (PL(s_join) = LN(s_join), so no invented join weight). Below s_join → 1.0. Where the LN
+    already runs steeper than the tail (M-dwarf centres) the ratio is ≥ 1 → no thinning (safe);
+    where it runs shallower (solar centres) it thins the over-produced wide companions."""
+    if sma <= s_join or not tail:
+        return 1.0
+    ln_here = _lognormal_pdf_s(sma, log10_centre, sigma)
+    ln_join = _lognormal_pdf_s(s_join, log10_centre, sigma)
+    if ln_here <= 0 or ln_join <= 0:
+        return 1.0
+    g1 = float(tail.get("gamma_1") or -1.55)
+    b1 = 10.0 ** float(tail.get("break_1_log10_au") or 3.8)
+    b2 = 10.0 ** float(tail.get("break_2_log10_au") or 4.5)
+    g2 = float(tail.get("gamma_2_disk") or -2.07)
+    gmid = 0.5 * (g1 + g2)         # gradual steepening between the two breaks (not pinned)
+    pl_here = ln_join * _broken_powerlaw_factor(sma, s_join, g1, b1, gmid, b2, g2)
+    return min(1.0, pl_here / ln_here)
 
 
 def _draw_multiplicity(rng, priors, mass_solar, age_gyr=None):
@@ -710,37 +838,45 @@ def _draw_multiplicity(rng, priors, mass_solar, age_gyr=None):
         centre = _interp_log10_mass(wide.get("center_au_mass_grid") or [],
                                     wide.get("center_au") or [], mass_solar)
         sigma = float(wide.get("log10_sigma_au") or 0.0)
+        log10_centre = math.log10(centre)
         p_cut = wide.get("truncate_period_days_min")
+        tail = wide.get("wide_powerlaw_tail")     # Q4 spec; None on a v2.10 dataset → inert
         sma = period = None
         for _ in range(_MULT_TRUNC_TRIES):
-            sma = 10.0 ** rng.normalvariate(math.log10(centre), sigma)
+            sma = 10.0 ** rng.normalvariate(log10_centre, sigma)
             period = _kepler_period_days(total, sma)
             below_cut = bool(p_cut) and period <= float(p_cut)
-            beyond_bound = a_max is not None and sma > a_max
-            if beyond_bound:
-                # B3: past the (M_tot, age) survival half-life scale. Redraw rather than
-                # clamp — clamping would pile probability onto the cut, manufacturing an
-                # excess exactly where the sources say pairs become gradually rare. (The
-                # cut itself is a modelling convenience: ~half the pairs AT this scale
-                # really survive, and the source finds no cutoff at all.)
-                disrupted = True
-            if not below_cut and not beyond_bound:
+            # Q3: smooth survival S(a) = 0.5^((a/a_half)^p) REPLACES B3's hard a_half cut —
+            # ~half the pairs AT the half-life scale really survive, and the sources find no
+            # cutoff, so the draw is thinned smoothly by separation rather than walled off.
+            # Q4: beyond the splice, thin the log-normal's shallow tail to the continuity-
+            # spliced two-break power law (fixes the recorded solar-host over-production).
+            accept = (1.0 if below_cut else
+                      _wide_survival(sma, a_max)
+                      * _wide_tail_thinning(sma, _WIDE_TAIL_S_JOIN_AU, log10_centre, sigma, tail))
+            if not below_cut and rng.random() <= accept:
                 break
+            if a_max is not None and sma > a_max:
+                disrupted = True     # a redraw driven by the survival roll-off
         else:
             # F-2 disjointness is load-bearing: the close-pair rate is 0.087 BY
             # CONSTRUCTION only while this component stays truncated above the window.
             # Place at the boundary rather than emit an overlapping draw — and say so.
-            period = float(p_cut)
-            sma = _kepler_sma_au(total, period)
+            if p_cut:
+                period = float(p_cut)
+                sma = _kepler_sma_au(total, period)
+            else:                                 # no period floor → fall back to the median
+                sma = min(centre, a_max) if a_max else centre
+                period = _kepler_period_days(total, sma)
             truncation_fallback = True
 
-    ecc = _draw_companion_ecc(rng, sm.get("ecc_dist") or {}, period)
+    ecc = _draw_companion_ecc(rng, sm.get("ecc_dist") or {}, period, mass_solar)
     note = (f"Companion drawn from the stellar_multiplicity prior "
             f"({'close-pair' if use_close else 'wide log-normal'} component; "
             f"q = {q:.3f} against a {frac:.3f} multiplicity fraction). "
             "Eccentricity uses the circularization period as a STATISTICAL boundary, not a "
-            "cut, and is never identically zero; the f(e) shape is an app-side modelling "
-            "choice (the block states it in prose).")
+            "cut, and is never identically zero; above it the f(e) ∝ e^η form is source-pinned "
+            "(Moe & Di Stefano 2017, v2.11.0 Q2) with η period+primary-mass-dependent.")
     if n_comp > 2:
         note += (f" Higher-order system ({n_comp} components) — the additional component is "
                  "counted but not placed; only the primary companion is modelled.")
@@ -748,16 +884,20 @@ def _draw_multiplicity(rng, priors, mass_solar, age_gyr=None):
         note += (" Wide-component truncation floor hit — companion placed at the truncation "
                  "boundary to keep the mixture components disjoint.")
     if a_max is not None and not use_close:
-        note += (f" Wide separations are truncated at the (M_tot, age) survival HALF-LIFE "
-                 f"scale a_half = {a_max:,.0f} AU (1.212 × M_tot/t pc, Weinberg 1987 eq. 28). "
-                 f"This is where ~half the population has been disrupted, NOT a physical "
-                 f"boundary — the source reports no breaks or cutoffs — so the truncation is "
-                 f"a labelled modelling convenience, and the scale moves with mass and age "
-                 f"rather than being a fixed cutoff. No power-law tail is added beyond it: "
-                 f"the measured index is −1.6 in dN/ds (disk-dominated, 500–50,000 AU), but "
-                 f"the join normalization between the log-normal and the tail is declared "
-                 f"UNKNOWN by the source lineage, so a mixture would need an invented weight.")
-        if mass_solar >= 0.7:
+        note += (f" Wide separations follow the (M_tot, age) survival roll-off "
+                 f"S(a) = 0.5^((a/a_half)^{_WIDE_SURVIVAL_P}) with a_half = {a_max:,.0f} AU "
+                 f"(1.212 × M_tot/t pc, Weinberg 1987 eq. 28) — v2.11.0 Q3, replacing the "
+                 f"hard cut: ~half the pairs AT a_half survive and the sources report no "
+                 f"cutoff, so the tail is thinned smoothly rather than walled off (p is a "
+                 f"tunable convenience, not a pinned exponent).")
+        if wide.get("wide_powerlaw_tail"):
+            note += (" Beyond a continuity splice at "
+                     f"{_WIDE_TAIL_S_JOIN_AU:,.0f} AU the log-normal tail is thinned to a "
+                     "two-break power law (γ₁ −1.55 → γ₂ −2.07, Tian 2020; normalization set "
+                     "by continuity, no invented join weight) — v2.11.0 Q4, correcting the "
+                     "solar-host over-production; M-dwarf centres (steeper log-normal) are "
+                     "left unthinned and stay safe.")
+        elif mass_solar >= 0.7:
             note += (" Shape caveat for a solar-type host: this single log-normal runs "
                      "SHALLOWER than the measured −0.60 tail slope out to ~3000 AU, so wide "
                      "companions are over-produced in that range.")
@@ -860,14 +1000,94 @@ def _ms_end_gyr(mass_solar):
     return ev.get("ms_end_gyr")
 
 
-def _draw_age(rng, priors, mass_solar):
-    """Host age (Gyr) from the v2.10 ``age_dist`` block, MS-lifetime-truncated.
+# Q5 (v2.11.0) — per-population star-formation histories. Draw the Galactic population
+# (thin/thick/halo) by its local mix weight, THEN the age from that population's own SFH,
+# instead of one blended histogram. thin = the smoothed blended histogram restricted to
+# ≤ its upper age (the blended SFH IS ~88% thin, so this reuses it); thick/halo = truncated
+# Gaussians. σ is stated only in the dataset's `shape` PROSE (peak_gyr/age_range_gyr are
+# numeric), so it is hardcoded here like _TAU_RELATION and drift-guarded by a test. The
+# queued BGM per-population pull would replace only the thick/halo shapes. Gated on the
+# `populations` sub-block, so a v2.10 dataset (no split) uses the blended path byte-identically.
+_POP_ORDER = ("thin", "thick", "halo")   # deterministic population-draw order
+_POP_GAUSS_SIGMA = {"thick": 1.3, "halo": 0.7}   # Gyr — from the block's `shape` strings
 
+
+def _draw_truncated_gaussian(rng, peak, sigma, lo, hi):
+    """A Gaussian(peak, σ) rejected to [lo, hi]; clamps to the peak (in range) after the
+    resampling bound so it always returns a value in range."""
+    if sigma <= 0:
+        return min(max(peak, lo), hi)
+    for _ in range(_AGE_TRUNC_TRIES):
+        a = rng.gauss(peak, sigma)
+        if lo <= a <= hi:
+            return a
+    return min(max(peak, lo), hi)
+
+
+def _draw_thin_age(rng, age_dist, hi_cut):
+    """Thin-disk age: the smoothed blended SFH restricted to bins at or below ``hi_cut`` Gyr
+    (the 3-bin kernel in _smoothed_sfh already flattens the BGM thick-disk pile-up), sampled
+    the same way as the blended path. None when no bin survives the cut."""
+    bins = [(lo, hi, w) for lo, hi, w in _smoothed_sfh(age_dist) if hi <= hi_cut + 1e-9]
+    if not bins:
+        return None
+    total = sum(w for _, _, w in bins)
+    u = rng.random() * total
+    acc = 0.0
+    lo, hi = bins[-1][0], bins[-1][1]
+    for b_lo, b_hi, w in bins:
+        acc += w
+        if u <= acc:
+            lo, hi = b_lo, b_hi
+            break
+    return rng.uniform(lo, hi)
+
+
+def _draw_age_by_population(rng, age_dist, pops, mass_solar):
+    """Q5 — population (thin/thick/halo) by local mix weight, then age from that population's
+    SFH, MS-lifetime-truncated exactly like the blended path. Returns None (so the caller
+    falls back to the blended path) when the sub-block carries no usable population weight."""
+    weights = [(p, float((pops.get(p) or {}).get("weight") or 0.0))
+               for p in _POP_ORDER if isinstance(pops.get(p), dict)]
+    weights = [(p, w) for p, w in weights if w > 0]
+    if not weights:
+        return None
+    pop = _weighted_choice(rng, weights)
+    spec = pops[pop]
+    rng_pair = spec.get("age_range_gyr") or []
+    lo, hi = ((float(rng_pair[0]), float(rng_pair[1])) if len(rng_pair) == 2
+              else (0.0, 13.8))
+    ms_end = _ms_end_gyr(mass_solar)
+    age = None
+    for _ in range(_AGE_TRUNC_TRIES):
+        if pop == "thin":
+            age = _draw_thin_age(rng, age_dist, hi)
+            if age is None:                       # no bins → fall back to the blended path
+                return None
+        else:
+            peak = float(spec.get("peak_gyr") or spec.get("mean_age_gyr") or (lo + hi) / 2)
+            age = _draw_truncated_gaussian(rng, peak, _POP_GAUSS_SIGMA.get(pop, 1.0), lo, hi)
+        if ms_end is None or age <= ms_end:
+            return age
+    return min(age, ms_end) if ms_end else age
+
+
+def _draw_age(rng, priors, mass_solar):
+    """Host age (Gyr) from the ``age_dist`` block, MS-lifetime-truncated.
+
+    v2.11.0 (Q5): when the block carries a ``populations`` sub-block, draw population →
+    age from that population's SFH; otherwise (v2.10 / no split) use the blended histogram.
     Returns ``None`` — consuming **no** rng — when the dataset omits the block.
     """
     ad = getattr(priors, "age_dist", None)
     if not ad:
         return None
+    pops = ad.get("populations")
+    if pops:
+        age = _draw_age_by_population(rng, ad, pops, mass_solar)
+        if age is not None:
+            return age
+        # malformed populations sub-block → fall through to the blended path below.
     bins = _smoothed_sfh(ad)
     if not bins:
         return None
@@ -974,6 +1194,11 @@ def _draw_activity(rng, priors, mass_solar, luminosity, age_gyr, companion):
         "age_gyr": _round(age_gyr, 3) if age_gyr is not None else None,
         "p_rot_days": _round(p_rot, 4),
         "p_rot_branch": branch,
+        # P_rot is ALWAYS modelled — drawn or derived, never an observed period, in either
+        # generation mode. This constant contract marker (1a prerequisite #2) guarantees a
+        # consumer can never read a modelled p_rot_days as observed, even on a REAL anchor
+        # whose age IS observed; a future observed-rotation source would set it otherwise.
+        "p_rot_source": "modelled",
         "tau_days": _round(tau, 4),
         "rossby": _round(rossby, 4),
         "log_lx_lbol": _round(log_rx, 4),
@@ -1168,6 +1393,11 @@ def _place_cold_giants(rng, priors, star_name, derived, start_idx):
 # ("hot_zone_below_0p1au" / "warm_zone_0p1au_to_snowline"); the sub-objects are selected
 # by name below so a renamed zone key still resolves.
 _INNER_GIANT_HOT_ZONE_AU = 0.1
+# Q1 (v2.11.0) — a HOT giant's "loneliness" radius (~50 d ≈ 0.25 AU): hot Jupiters have no
+# companions inside it, WASP-47 aside (Huang, Wu & Triaud 2016). WARM giants coexist with
+# inner small planets at the normal peas-in-a-pod floor, so they get NO suppression.
+_INNER_GIANT_HOT_LONELY_AU = 0.25
+_SMALL_PLANET_TYPES = frozenset(("rocky", "super_earth", "ice"))
 # Channel names implying an EXCITED (high-e) history. Only the CLASSIFICATION is fixed
 # here — the mix fractions stay data (gotcha 4: they are tunable knobs, not constants).
 _INNER_GIANT_EXCITED_MARKERS = ("scattering", "high_e")
@@ -1331,6 +1561,34 @@ def _place_inner_giants(rng, priors, star_name, derived, start_idx):
         "formation_channel": channel, "giant_zone": "hot" if hot else "warm",
         "_a_raw": a, "_mass_raw": mass, "_ecc_raw": ecc, "_radius_raw": radius,
     }]
+
+
+def _apply_hot_giant_loneliness(planets):
+    """Q1 (v2.11.0) — enforce hot-Jupiter loneliness. When a synthetic HOT inner giant is
+    present, drop the *synthetic* small planets interior to ``_INNER_GIANT_HOT_LONELY_AU``:
+    hot Jupiters have no detectable companions inward of ~50 d down to ~1–2 R⊕, with WASP-47
+    the single exception (Huang, Wu & Triaud 2016, ApJ 825, 98). WARM giants are untouched —
+    they coexist with inner small planets at the normal peas-in-a-pod floor (the giant is a
+    large pod member), which is the empirical answer to the 1b spacing-floor question.
+
+    Never removes an OBSERVED planet (real data — this is also where a real WASP-47's
+    companions correctly survive), the giant itself, or an in-HZ planet (so a synthetic
+    system built under ``require_habitable`` keeps its habitable world). No rng — a pure
+    filter, so the draw stream is unchanged. Returns ``(kept, n_suppressed)``."""
+    if not any(p.get("giant_zone") == "hot" for p in planets):
+        return planets, 0
+    kept, removed = [], 0
+    for p in planets:
+        interior = (p.get("a_au") or 1e9) < _INNER_GIANT_HOT_LONELY_AU
+        suppressible = (p.get("source") == "synthetic"
+                        and p.get("giant_zone") is None
+                        and p.get("type") in _SMALL_PLANET_TYPES
+                        and not p.get("in_hz"))
+        if interior and suppressible:
+            removed += 1
+            continue
+        kept.append(p)
+    return kept, removed
 
 
 def _mass_model_draw(rng, priors, a, derived):
@@ -1536,6 +1794,9 @@ def _synth_planets(rng, priors, star_name, derived):
     planets += _place_cold_giants(rng, priors, star_name, derived, 0)
     # v2.3: decoupled inner-giant population, after the cold block (shares host [Fe/H]).
     planets += _place_inner_giants(rng, priors, star_name, derived, 0)
+    # Q1 (v2.11.0): a hot giant suppresses interior synthetic small planets (a pure filter,
+    # no rng); count is surfaced to the caller via `derived` for the provenance note.
+    planets, derived["_hot_lonely_suppressed"] = _apply_hot_giant_loneliness(planets)
     # Emit in ORBITAL order, as the real-anchor path already does (_generate_real_anchor).
     # The two decoupled populations are appended after the grid, and an inner giant lands
     # interior to it — so without this the list is not monotonic in a_au. Sorting here does
@@ -1619,11 +1880,16 @@ def _v2_blocks_note(priors, star):
     metallicity path drove it), or None when no v2 block is active. Surfaces the v2
     physics in the CLI / query.py notes and the GUI."""
     active = [b for b in _V2_SAMPLING_BLOCKS if getattr(priors, b, None)]
-    # B1/B2 are sampled in SYNTHETIC mode only — under a real anchor the multiplicity is
-    # GCNS-derived and no age/activity is drawn, so claiming these are "in effect" there
-    # would be false.
+    # stellar_multiplicity + age_dist are sampled in SYNTHETIC mode only — under a real
+    # anchor the multiplicity is GCNS-derived and the age is OBSERVED (HWC/Exocat, not
+    # age_dist), so claiming either is "in effect" there would be false.
     if star.get("source") == "synthetic":
         active += [b for b in _V2_SYNTHETIC_ONLY_BLOCKS if getattr(priors, b, None)]
+    # 1a — stellar_activity is the exception: an anchor's activity IS reconstructed from its
+    # observed age when the block is present and a P_rot branch applied. Claim it only when
+    # it actually produced an environment (star["activity"] set), never merely present.
+    elif getattr(priors, "stellar_activity", None) and star.get("activity"):
+        active.append("stellar_activity")
     if not active:
         return None
     note = "v2 physics in effect: " + ", ".join(active) + "."
@@ -1674,6 +1940,12 @@ def _generate_synthetic(seed, spectral_class, n_planets, require_habitable,
     _attach_moons(rng, priors, star, planets)
 
     notes = [f"All bodies are synthetic; realism priors = {_priors_note_fragment(priors)}."]
+    _n_lonely = derived.get("_hot_lonely_suppressed") or 0
+    if _n_lonely:
+        notes.append(
+            f"Hot-giant loneliness (v2.11.0 Q1, Huang+2016): {_n_lonely} synthetic small "
+            "planet(s) interior to 0.25 AU were suppressed around the hot giant — hot Jupiters "
+            "have no close companions (WASP-47 aside). Warm giants coexist at the normal floor.")
     _v2note = _v2_blocks_note(priors, star)
     if _v2note:
         notes.append(_v2note)
@@ -1853,6 +2125,11 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
         _sfeh = _f(simbad.get("fe_h"))
         anchor_feh, anchor_feh_source = (_sfeh, "simbad" if _sfeh is not None else None)
 
+    # 1a — real-anchor host age from an observed catalogue (HWC S_AGE → Mission Exocat
+    # st_age, both Gyr), which seeds the activity chain reconstructed post-infill below.
+    # None when neither catalogue lists an age (the common case); no network, no rng.
+    anchor_age, anchor_age_source = _resolve_anchor_age(simbad)
+
     warnings, notes = [], []
 
     # Multiplicity: detect via the M5 GCNS n_components block (GCNS-only — the
@@ -1884,13 +2161,15 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
         "snow_line_au": _round(snow_line, 5),
         "feh": _round(anchor_feh, 3),
         "feh_source": anchor_feh_source,
-        # B2 keys are present in BOTH modes so the star shape is one shape, but a real
-        # anchor draws no age and no activity: an observed star's age would have to come
-        # from an observed catalogue (HWC S_AGE / Mission Exocat st_age — not yet wired),
-        # never from the synthetic SFH.
-        "age_gyr": None,
-        "age_source": None,
-        "activity": None,
+        # B2 keys are one shape across both modes. On a real anchor the AGE is *read* from
+        # an observed catalogue (HWC S_AGE → Mission Exocat st_age, both Gyr — 1a), never
+        # drawn from the synthetic SFH; ACTIVITY is then reconstructed from that observed age
+        # AFTER planet/moon infill (see the _draw_activity call near the return, placed there
+        # so the synthetic-body rng stream is byte-identical to before). P_rot stays modelled
+        # and is tagged p_rot_source="modelled" so it can never be read as observed.
+        "age_gyr": _round(anchor_age, 3) if anchor_age is not None else None,
+        "age_source": anchor_age_source,
+        "activity": None,   # reconstructed post-infill; see the _draw_activity call below
         "source": "observed",
         "grounding": "observed",
         "multiplicity": {"is_multiple": is_multiple, "n_components": n_comp, "note": mult_note},
@@ -1945,8 +2224,24 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
     # v2.2 (L2): decoupled cold-giant population around the real star (synthetic).
     synth += _place_cold_giants(rng, priors, star_name, derived, len(synth))
     synth += _place_inner_giants(rng, priors, star_name, derived, len(synth))
+    # Q1 (v2.11.0): a synthetic hot giant suppresses interior synthetic small planets
+    # (observed planets — incl. a real WASP-47's companions — are never touched).
+    synth, _n_lonely = _apply_hot_giant_loneliness(synth)
+    if _n_lonely:
+        notes.append(
+            f"Hot-giant loneliness (v2.11.0 Q1, Huang+2016): {_n_lonely} synthetic small "
+            "planet(s) interior to 0.25 AU were suppressed around the hot giant — hot Jupiters "
+            "have no close companions (WASP-47 aside). Warm giants coexist at the normal floor.")
 
     _attach_moons(rng, priors, star, synth)
+
+    # 1a — reconstruct the rotation-activity environment from the OBSERVED age, here at the
+    # end so every synthetic draw above is untouched: without a stellar_activity block (v1 /
+    # permissive) _draw_activity is None and consumes no rng, and with one it draws last, so
+    # the planet/moon stream is byte-identical to before regardless of policy. The anchor
+    # builds no companion dict, so only the single-star P_rot branches (Skumanich FGK /
+    # bimodal M-dwarf) can apply — the tidally-locked branch needs a companion P_orb.
+    star["activity"] = _draw_activity(rng, priors, mass_solar, luminosity, anchor_age, None)
 
     planets = observed + _strip_private(synth)
     planets.sort(key=lambda p: (p["a_au"] is None, p["a_au"]))

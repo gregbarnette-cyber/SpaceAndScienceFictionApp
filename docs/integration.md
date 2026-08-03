@@ -2498,23 +2498,35 @@ Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=
   decoupled giant populations are placed after the grid, so the list is sorted before it is
   returned.
 - **`star.age_gyr` / `star.age_source` / `star.activity`** — all `null` under `permissive` / a v1
-  dataset. Under `strict` with a v2.10 dataset, **synthetic** mode draws the host age from the
+  dataset. Under `strict` with a v2.10+ dataset, **synthetic** mode draws the host age from the
   `age_dist` block (Phase R3-V2 B2) — a population-weighted **SFH histogram**, not a Gaussian —
   and **MS-lifetime-truncated**: no star is ever older than its own main sequence (rejection
   against the Phase-L3 `compute_stellar_evolution`). `age_source` is `"age_dist"` or `null`.
+  **v2.11.0 Q5:** when the block carries a `populations` sub-block, age is drawn **per Galactic
+  population** — draw thin/thick/halo by its local mix weight (≈ 0.88/0.10/0.01), then the age
+  from that population's own SFH (thin = the smoothed blended histogram restricted to ≤ 11 Gyr;
+  thick/halo = truncated Gaussians peaked ~10.5/~12.5 Gyr); without the sub-block the blended
+  histogram is used, unchanged.
   The histogram's known BGM discrete-age-bin artifact (a zeroed 7–8 Gyr bin) is **smoothed**,
   because the dataset ships an `sfh_smoothing_note` declaring that intended.
   `activity` is the `stellar_activity` chain it unblocks: `{age_gyr, p_rot_days, p_rot_branch,
-  tau_days, rossby, log_lx_lbol, regime, out_of_fitted_domain[], band, log_l_x_erg_s,
+  p_rot_source, tau_days, rossby, log_lx_lbol, regime, out_of_fitted_domain[], band, log_l_x_erg_s,
   log_l_euv_erg_s, log_l_xuv_erg_s, euv_fraction, xray_to_euv_relation, xray_to_euv_grade,
   xray_to_euv_alternatives[], circumbinary_component_scaling?}`. `p_rot_branch` is one of
   `tidally_locked` (a B1 close pair — `P_rot = P_orb`, saturated for life, and the **only branch
   that needs no age**), `skumanich_fgk` (0.6–1.36 M☉), `m_dwarf_fast` / `m_dwarf_slow` (0.08–0.6 M☉,
   bimodal and deliberately **not** interpolated across the gap). Out-of-domain values are
   **flagged, never clamped**. The X-ray→EUV conversion is **contested in the dataset** — the applied
-  relation is named and its alternative listed rather than averaged. **Real-anchor mode draws
-  neither**: an observed star's age would have to come from an observed catalogue, so all three keys
-  stay `null` there.
+  relation is named and its alternative listed rather than averaged. `p_rot_source` is the constant
+  `"modelled"` — a contract marker so a modelled `p_rot_days` can never be read as an observed
+  rotation period, even on a real anchor whose age *is* observed; it is `"modelled"` in both modes.
+  **Real-anchor mode (1a, 2026-08-03) now reads the host age from an observed catalogue** — HWC
+  `S_AGE` → Mission Exocat `st_age`, both **Gyr** — and reconstructs `activity` from it, so under
+  `strict` `age_source` there is `"hwc"` or `"mission_exocat"` (never `"age_dist"`) and `activity`
+  is a full chain (single-star P_rot branches only — the anchor builds no companion, so
+  `tidally_locked` cannot apply). When neither catalogue lists an age (the common case) all three
+  keys stay `null`; under `permissive` / a v1 dataset the activity chain is inert regardless, so
+  only `age_gyr` / `age_source` can be populated.
 - **`star.multiplicity`** — `null` under `permissive` / a v1 dataset (unchanged). Under
   `strict` with a v2.4+ dataset, **synthetic** mode now draws it from the
   `stellar_multiplicity` block (Phase R3-V2 B1): `{is_multiple, n_components, mass_ratio_q,
@@ -2525,24 +2537,26 @@ Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=
   one. **Real-anchor** mode is unchanged: its `multiplicity` stays GCNS-derived
   (`{is_multiple, n_components, note}`, no `companion`) and is never overwritten by a draw.
   The companion block also carries **`wide_disruption_half_life_au`** and
-  **`wide_redrawn_for_disruption`** (Phase R3-V2 B3): wide separations are truncated at
-  `a_half ≈ 1.212 × (M_tot / t)` pc (Weinberg 1987 eq. 28, primary-verified). **Read the name
-  literally — this is a survival HALF-LIFE scale, not a boundary**: it is where roughly *half*
-  the population has been disrupted by age *t*, and the source's headline finding is "no
-  evidence of breaks or cutoffs". Truncating there is therefore a **labelled modelling
-  convenience**, not a physical wall; the scale **moves** with mass and age, and is `null`
-  without an age axis (a constant stand-in would be exactly the cutoff the sources deny).
-  One caveat is recorded rather than smoothed over: for **solar-type hosts** the single
-  log-normal runs shallower than the measured −0.60 tail slope out to ~3000 AU, so wide
-  companions are **over-produced** there.
-  **No power-law tail is added** beyond the bound: the measured index is −1.6 in `dN/ds`, but
-  the join normalization between log-normal and tail is declared *unknown* by the source
-  lineage, so a mixture would need an invented weight.
+  **`wide_redrawn_for_disruption`** (Phase R3-V2 B3 + v2.11.0 Q3): the wide separation follows
+  a **smooth survival roll-off** `S(a) = 0.5^((a/a_half)^p)` (p ≈ 1.35, a tunable convenience)
+  around the moving half-life scale `a_half ≈ 1.212 × (M_tot / t)` pc (Weinberg 1987 eq. 28) —
+  **replacing the old hard truncation**: ~half the pairs at `a_half` survive and the source
+  finds "no evidence of breaks or cutoffs", so the tail is thinned by separation, not walled
+  off. `a_half`/the roll-off are `null`/inert without an age axis (the scale moves with mass
+  and age).
+  **A two-break power-law tail IS now added** (v2.11.0 Q4), beyond a **continuity splice** at
+  ~1000 AU: the tail's PDF is set equal to the log-normal at the splice (Tian 2020 recipe →
+  normalization with zero free parameters, no invented join weight), slope γ₁ −1.55 → γ₂ −2.07
+  (disk). This thins the previously over-produced solar-host wide companions (the log-normal
+  ran shallower than the −0.60 tail slope); M-dwarf centres (steeper log-normal) stay unthinned
+  and safe.
   Two guarantees worth relying on: `ecc` is **never identically zero** (a silent `e = 0`
   makes every drawn binary maximally planet-friendly), and the circularization period is a
   **statistical boundary, not a cut** — eccentric short-period pairs are drawable (BY Dra is
-  `e = 0.300` at `P = 5.98 d`). The `f(e)` shape is an app-side modelling choice (the dataset
-  states it in prose) and says so in `note`.
+  `e = 0.300` at `P = 5.98 d`). Above the boundary `ecc` is drawn from the **`f(e) ∝ e^η`**
+  power law (Moe & Di Stefano 2017, period + primary-mass-dependent — v2.11.0 Q2, replacing the
+  Rayleigh(0.21) placeholder; η rises with `logP` toward sub-thermal for solar-type, thermal
+  for early-type), and `note` names the source.
 
 > **v2 research-priors sampling (Phase R3-V2, under `--research-policy strict` with a v2
 > dataset).** When the ingested dataset is a `schema_version` "2.0"+ contract carrying the

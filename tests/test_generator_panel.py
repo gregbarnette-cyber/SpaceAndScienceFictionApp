@@ -279,9 +279,20 @@ class ImportResearchPriorsPanelSmoke(unittest.TestCase):
         from gui.panels.csv_utility import ImportResearchPriorsPanel
         return ImportResearchPriorsPanel(_FakeWindow())
 
-    def test_constructs_with_sample_default_path(self):
+    def test_prefills_the_discovered_default_contract_path(self):
+        # v2.11.0: the panel prefills default_priors_source() — the sister repo's live
+        # research_priors_v2.json when it sits beside this repo, else the committed sample.
+        import core.research_priors as rp
         p = self._panel()
-        self.assertTrue(p._path_edit.text().endswith("research_priors_sample.json"))
+        self.assertEqual(p._path_edit.text(), str(rp.default_priors_source()))
+        self.assertTrue(p._path_edit.text().endswith(".json"))
+
+    def test_prefill_falls_back_to_sample_without_a_sibling(self):
+        from unittest import mock
+        import core.research_priors as rp
+        with mock.patch.object(rp, "_discover_sister_contract", return_value=None):
+            p = self._panel()
+            self.assertTrue(p._path_edit.text().endswith("research_priors_sample.json"))
 
     def test_on_done_summary(self):
         p = self._panel()

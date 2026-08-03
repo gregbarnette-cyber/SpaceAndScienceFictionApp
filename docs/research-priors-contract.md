@@ -192,21 +192,23 @@ The sampler was unblocked by dataset **v2.9.0**, which replaced the borrowed *so
 boundary with a source-backed **M-dwarf ~6 d** (Packet-4 C52: Zanazzi 2022 + EBLM XVII + the local 57-system
 e–P transition) — the gap that had held it. Two behaviours are contractual and tested: eccentricity is
 **never identically zero**, and the boundary is **statistical, never a cut** (BY Dra is `e = 0.300` at
-`P = 5.98 d`). The `f(e)` shape itself is an **app-side modelling choice** — the block states it in prose, so
-the sampler names it as ours in the emitted note rather than implying a pinned distribution.
+`P = 5.98 d`). Above the boundary the **`f(e) ∝ e^η`** shape is **source-pinned** (Moe & Di Stefano 2017; η period +
+primary-mass-dependent — v2.11.0 Q2, replacing the earlier app-side Rayleigh(σ = 0.21)); the emitted
+note names the source, and `p`/coefficients are drift-guarded against the dataset's formula strings.
 
-****Wide-companion survival half-life (B3).** The wide component is truncated at
-`a_half ≈ 1.212 × (M_tot / t)` pc (Weinberg 1987 eq. 28) — the scale at which roughly **half** the
-population has been disrupted by age *t*, **not** a boundary: the source reports "no evidence of breaks or
-cutoffs", so the truncation is a labelled modelling convenience. It moves with mass and age and is `null`
-without an age axis. **No Öpik / power-law tail is added**: the measured index is
-−1.6 in `dN/ds` (Öpik would be −1), but the join normalization is declared *unknown* by the source lineage
-("it remains unclear whether and how these two distributions are physically connected"), and inventing a
-join weight is the same class of defect as the F-2 close-pair double-count. The coefficient is **primary-verified** (an earlier ~4% slack, carried while the
-paper was known only via a secondary source, was **retracted** once it was opened). One caveat is emitted
-rather than hidden — a **solar-host shape caveat** (this log-normal
-runs shallower than the measured −0.60 slope out to ~3000 AU, over-producing wide companions there; for M
-hosts it is steeper throughout and errs safe). The `domain_overextension` flag in the dataset is **not** a
+****Wide-companion survival roll-off + tail (B3 + v2.11.0 Q3/Q4).** The wide component's outer behaviour is
+a **smooth survival roll-off** `S(a) = 0.5^((a/a_half)^p)` (p ≈ 1.35, a tunable convenience) around the
+half-life scale `a_half ≈ 1.212 × (M_tot / t)` pc (Weinberg 1987 eq. 28) — the scale at which roughly **half**
+the population has been disrupted by age *t*, **not** a wall: the source reports "no evidence of breaks or
+cutoffs", so **v2.11.0 Q3 replaced the old hard truncation** with this smooth thinning-by-separation (it
+moves with mass and age and is `null`/inert without an age axis). **A two-break power-law tail IS now added**
+(v2.11.0 Q4): beyond a **continuity splice** at ~1000 AU the tail's PDF is set equal to the log-normal at the
+splice (Tian 2020 recipe → normalization with **zero free parameters**, so the "unknown join weight" blocker
+dissolves — no invented weight), slope γ₁ −1.55 → γ₂ −2.07 (disk). This **corrects the recorded solar-host
+over-production** (the log-normal ran shallower than the measured −0.60 slope out to ~3000 AU); M-dwarf
+centres are steeper and left unthinned (err safe). The `a_half` coefficient is **primary-verified** (an
+earlier ~4% slack, carried while the paper was known only via a secondary source, was **retracted** once it
+was opened). The `domain_overextension` flag in the dataset is **not** a
 misuse by the sampler: Winters' σ = 1.16 is a whole-range *untruncated* fit out to a 7500 AU horizon, so the
 flag records a source-vs-source model disagreement (D&K's two components vs Winters' one), which the modern
 Gaia data do not settle in D&K's favour.
@@ -230,11 +232,13 @@ regression test here (M=1 at 4.57 Gyr → P_rot 25.4 d, τ 13.8 d, Ro 1.84, log 
 solar band), and `expected_locked_vs_single_delta` is asserted as an **emergent** property, never fed in
 (`is_prior_field: false`).
 
-**One app-side simplification, named:** the block recommends drawing population (thin/thick/halo) then age
-from *that population's* distribution, but supplies only the blended SFH — per-population age distributions
-are not in the dataset. The block sanctions the simplification for exactly this consumer ("for the
-stellar_activity chain ALONE a single blended distribution is adequate"), so the blended histogram is used.
-See `docs/research-priors-v2-open-work.md` §B2.
+**Per-population SFHs (v2.11.0 Q5):** the block's `populations` sub-block now supplies the thin/thick/halo
+split, so age is drawn **population → that population's SFH** (thin ≈ the blended histogram restricted to
+≤ 11 Gyr; thick/halo = truncated Gaussians peaked ~10.5/~12.5 Gyr) rather than one blended histogram. Without
+the sub-block (a v2.10 dataset) the blended histogram is used, as before — the block had sanctioned that
+simplification for the activity chain alone ("for the stellar_activity chain ALONE a single blended
+distribution is adequate"). The queued BGM per-population pull (which would refine thick/halo) timed out and
+is closed; the literature-anchored forms are final. See `docs/research-priors-v2-open-work.md` §B2.
 
 Their validators additionally **hard-enforce three structural guards**, so a future dataset edit cannot
 silently subvert them (each has a negative test): `ecc_dist.consumer_must_not_default_to_zero` must be **true**

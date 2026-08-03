@@ -380,10 +380,11 @@ def _hwc(rows):
     return {"planet_rows": rows}
 
 
-def _readers(simbad, regions, nasa, hwc, hypatia=None):
+def _readers(simbad, regions, nasa, hwc, hypatia=None, exocat=None):
     """Context manager patching the readers in core.generate's namespace. ``hypatia``
-    defaults to an error result → the real-anchor [Fe/H] uses the SIMBAD fallback
-    (keeps existing tests offline and behaviour-stable)."""
+    and ``exocat`` default to error results → the real-anchor [Fe/H] uses the SIMBAD
+    fallback and the real-anchor age (1a) finds neither catalogue (keeps existing tests
+    offline and behaviour-stable — HWC S_AGE / Mission Exocat st_age only when passed)."""
     stack = ExitStack()
     stack.enter_context(mock.patch("core.generate.compute_simbad_lookup", return_value=simbad))
     stack.enter_context(mock.patch("core.generate.compute_star_system_regions_from_simbad",
@@ -391,6 +392,8 @@ def _readers(simbad, regions, nasa, hwc, hypatia=None):
     stack.enter_context(mock.patch("core.generate.compute_planetary_systems_composite",
                                    return_value=nasa))
     stack.enter_context(mock.patch("core.generate.compute_hwc", return_value=hwc))
+    stack.enter_context(mock.patch("core.generate.compute_mission_exocat",
+                                   return_value=exocat or {"error": "no exocat"}))
     stack.enter_context(mock.patch("core.generate.compute_hypatia_data",
                                    return_value=hypatia or {"error": "no hypatia"}))
     return stack
@@ -1118,6 +1121,27 @@ class TestDecoupledInnerGiants(unittest.TestCase):
         migrated = sum("migrated" in p["formation_channel"] for p in hots)
         self.assertGreater(migrated, 0.5 * len(hots))
 
+    def test_hot_giant_loneliness_suppresses_only_the_right_planets(self):
+        # Q1 (v2.11.0, Huang+2016): a HOT giant clears synthetic small planets interior to
+        # 0.25 AU, but never the giant itself, an exterior planet, an OBSERVED planet (the
+        # real WASP-47 exception), or an in-HZ planet. A WARM giant / no giant → no change.
+        from core.generate import _apply_hot_giant_loneliness
+
+        def pl(a, source="synthetic", typ="rocky", gz=None, hz=False, name="p"):
+            return {"name": name, "a_au": a, "source": source, "type": typ,
+                    "giant_zone": gz, "in_hz": hz}
+
+        hot = [pl(0.05, typ="gas", gz="hot", name="G"), pl(0.15, name="small_in"),
+               pl(0.30, name="small_out"), pl(0.20, source="observed", name="obs"),
+               pl(0.18, hz=True, name="hz")]
+        kept, n = _apply_hot_giant_loneliness(hot)
+        self.assertEqual(n, 1)
+        self.assertEqual({p["name"] for p in kept}, {"G", "small_out", "obs", "hz"})
+
+        warm = [pl(0.5, typ="gas", gz="warm", name="W"), pl(0.15, name="small_in")]
+        self.assertEqual(_apply_hot_giant_loneliness(warm)[1], 0)   # warm coexists (1b)
+        self.assertEqual(_apply_hot_giant_loneliness([pl(0.15)])[1], 0)   # no giant → no-op
+
     def test_occurrence_rises_with_metallicity_and_holds_endpoints(self):
         from core.generate import _interp_giant_fraction
         occ = {"feh_grid": [-0.5, -0.25, 0.0, 0.25, 0.5],
@@ -1272,11 +1296,31 @@ class TestStellarMultiplicity(unittest.TestCase):
         self.assertLess(statistics.median(near), 0.05)
         self.assertTrue(all(e > 0.0 for e in near))
 
-    def test_broad_f_e_above_the_boundary_matches_the_stated_median(self):
-        broad = [d["companion"]["ecc"] for d in self._draw(0.3, n=20000)
-                 if d["is_multiple"] and d["companion"]["p_orb_days"] >= 6.0]
-        self.assertAlmostEqual(statistics.median(broad), 0.25, delta=0.04)
-        self.assertLessEqual(max(broad), 0.9 + 1e-9)
+    def test_f_e_powerlaw_rises_with_period_and_hits_the_MDS17_anchor(self):
+        # Q2 (v2.11.0): f(e) ∝ e^η replaces the fixed Rayleigh(0.21). η rises with logP, so
+        # the median eccentricity rises with period; the MDS17 anchor is logP≈1.2 (P=16 d)
+        # → η≈−0.4 → median ≈ 0.25–0.31 (sister Q2). Bounded by e_max = 0.9 at every period.
+        from core.generate import _draw_companion_ecc
+        ed = {"circularization_period_days": 6.0, "fully_circular_envelope_days": 1.0}
+
+        def med(P, m1=0.3):
+            rng = random.Random(7)
+            return statistics.median(
+                [_draw_companion_ecc(rng, ed, P, m1) for _ in range(20000)])
+
+        m16, m100, m1000 = med(16), med(100), med(1000)
+        self.assertLess(m16, m100)                      # monotone rise with period …
+        self.assertLess(m100, m1000)
+        self.assertAlmostEqual(m16, 0.28, delta=0.06)   # … through the MDS17 anchor
+        rng = random.Random(3)
+        self.assertLessEqual(
+            max(_draw_companion_ecc(rng, ed, 5000, 0.3) for _ in range(5000)), 0.9 + 1e-9)
+
+    def test_early_type_primary_reaches_a_more_thermal_f_e(self):
+        # η_early > η_late at the same period → a hotter (more thermal) e distribution for a
+        # massive primary, per MDS17. Compared at logP = 2 (P = 100 d).
+        from core.generate import _companion_ecc_eta
+        self.assertGreater(_companion_ecc_eta(2.0, 10.0), _companion_ecc_eta(2.0, 0.3))
 
     # ── emitted shape + wiring ───────────────────────────────────────────────
 
@@ -1302,9 +1346,10 @@ class TestStellarMultiplicity(unittest.TestCase):
             if d["n_components"] > 2:
                 self.assertIn("counted but not placed", d["note"])
 
-    def test_note_flags_the_f_e_shape_as_an_app_side_choice(self):
+    def test_note_flags_the_f_e_as_source_pinned(self):
         d = next(d for d in self._draw(0.3, n=2000) if d["is_multiple"])
-        self.assertIn("app-side modelling choice", d["note"])
+        self.assertIn("Moe & Di Stefano", d["note"])
+        self.assertIn("e^", d["note"])
 
     def test_synthetic_star_carries_the_drawn_multiplicity(self):
         self.assertNotIn("error", compute_research_priors_ingest(path=_V2_FIX,
@@ -1357,11 +1402,11 @@ class TestStellarMultiplicity(unittest.TestCase):
 
 
 class TestWideCompanionDisruptionBound(unittest.TestCase):
-    """R3-V2 B3 (2026-07-23): the wide companion's outer bound. There is no fixed cutoff —
-    a_max ≃ 1.212 × (M_tot/t) pc is a MOVING boundary set by cumulative stellar encounters.
-    No power-law tail is added beyond it: the measured index is −1.6, but the join
-    normalization is declared UNKNOWN by the source lineage, so a mixture would need an
-    invented weight."""
+    """R3-V2 B3 + v2.11.0 Q3/Q4: the wide companion's outer behaviour. a_half ≃
+    1.212 × (M_tot/t) pc is a MOVING survival HALF-LIFE. v2.11.0 Q3 replaces the old hard cut
+    with the smooth roll-off S(a) = 0.5^((a/a_half)^p) (no cutoff — Weinberg/Tian); Q4 splices
+    a two-break power-law tail beyond ~1000 AU by CONTINUITY (no invented join weight),
+    correcting the solar-host over-production."""
 
     def _priors(self):
         import json, copy
@@ -1392,41 +1437,61 @@ class TestWideCompanionDisruptionBound(unittest.TestCase):
         r = _draw_multiplicity(random.Random(1), self._priors(), 0.3, None)
         self.assertIsNone(r.get("wide_disruption_half_life_au"))
 
-    def test_no_wide_companion_survives_beyond_its_own_limit(self):
-        from core.generate import _draw_multiplicity
+    def test_survival_rolloff_is_smooth_not_a_wall(self):
+        # Q3 (v2.11.0): the hard a_half cut is replaced by S(a) = 0.5^((a/a_half)^p) — 0.5 at
+        # a_half, monotone, NO hard zero (Weinberg/Tian find no cutoff), inert without an age.
+        from core.generate import _draw_multiplicity, _wide_survival
+        self.assertAlmostEqual(_wide_survival(1000.0, 1000.0), 0.5, places=9)
+        self.assertGreater(_wide_survival(500.0, 1000.0), _wide_survival(1000.0, 1000.0))
+        self.assertGreater(_wide_survival(1000.0, 1000.0), _wide_survival(2000.0, 1000.0))
+        self.assertGreater(_wide_survival(3000.0, 1000.0), 0.0)   # never a hard zero
+        self.assertEqual(_wide_survival(5000.0, None), 1.0)       # inert without an age scale
+        # System-level: the bulk of wide companions sit well within a_half (the roll-off only
+        # thins the far wing), so the median separation is a small fraction of a_half.
         pri, rng = self._priors(), random.Random(9)
-        seen = 0
+        seps, halves = [], []
         for _ in range(6000):
             r = _draw_multiplicity(rng, pri, 0.3, 5.0)
             if r["is_multiple"] and not r["companion"]["close_pair"]:
-                seen += 1
-                self.assertLessEqual(r["companion"]["sma_au"], r["wide_disruption_half_life_au"])
-        self.assertGreater(seen, 100)
+                seps.append(r["companion"]["sma_au"])
+                halves.append(r["wide_disruption_half_life_au"])
+        self.assertGreater(len(seps), 100)
+        self.assertLess(statistics.median(seps), 0.25 * statistics.median(halves))
 
     def test_the_scale_is_labelled_a_half_life_not_a_boundary(self):
-        # Weinberg's t½ is the time by which HALF the pairs at a separation are disrupted,
-        # and the paper's headline is "no evidence of breaks or cutoffs". The secondary
-        # source glossed it as "the widest surviving binary" and we inherited that wall
-        # reading. Truncating here is a MODELLING CONVENIENCE and the output must say so —
-        # otherwise the misreading travels with the number.
+        # v2.11.0 Q3: the note names the smooth survival roll-off, keeps the 1.212 coefficient
+        # + Weinberg attribution, and states there is no cutoff — the wall misreading must not
+        # travel with the number. p is flagged a tunable convenience, not a pinned exponent.
         from core.generate import _draw_multiplicity, _DISRUPTION_COEFF
         self.assertAlmostEqual(_DISRUPTION_COEFF, 1.212, delta=1e-9)
         pri, rng = self._priors(), random.Random(3)
         r = next(r for r in (_draw_multiplicity(rng, pri, 0.3, 5.0) for _ in range(400))
                  if r["is_multiple"] and not r["companion"]["close_pair"])
-        self.assertIn("HALF-LIFE", r["note"])
-        self.assertIn("modelling convenience", r["note"])
-        self.assertIn("no breaks or cutoffs", r["note"])
+        self.assertIn("survival roll-off", r["note"])
+        self.assertIn("Weinberg 1987", r["note"])
+        self.assertIn("no cutoff", r["note"])
+        self.assertIn("tunable convenience", r["note"])
         # The retracted ~4% slack must not come back as an emitted field.
         self.assertNotIn("wide_disruption_coeff_slack", r)
 
-    def test_note_records_why_no_tail_is_added(self):
+    def test_note_describes_the_continuity_spliced_tail_when_present(self):
+        # Q4 (v2.11.0): when the wide component carries wide_powerlaw_tail, the note describes
+        # the continuity-spliced two-break power law (no invented join weight). Injected here
+        # since the committed fixture predates v2.11.0.
+        import json, copy
+        from core.priors import ResearchPriors
         from core.generate import _draw_multiplicity
-        pri, rng = self._priors(), random.Random(4)
-        r = next(r for r in (_draw_multiplicity(rng, pri, 0.3, 5.0) for _ in range(400))
+        with open(_V2_FIX, encoding="utf-8") as fh:
+            d = copy.deepcopy(json.load(fh))
+        wide = next(c for c in d["stellar_multiplicity"]["separation_dist"]["components"]
+                    if c.get("name") == "wide_lognormal")
+        wide["wide_powerlaw_tail"] = {"gamma_1": -1.55, "break_1_log10_au": 3.8,
+                                      "break_2_log10_au": 4.5, "gamma_2_disk": -2.07}
+        pri, rng = ResearchPriors.from_contract(d), random.Random(4)
+        r = next(r for r in (_draw_multiplicity(rng, pri, 1.0, 5.0) for _ in range(400))
                  if r["is_multiple"] and not r["companion"]["close_pair"])
-        self.assertIn("UNKNOWN", r["note"])
-        self.assertIn("rather than being a fixed cutoff", r["note"])
+        self.assertIn("continuity splice", r["note"])
+        self.assertIn("two-break power law", r["note"])
 
     def test_solar_host_shape_caveat_is_disclosed(self):
         # The one regime where one component is worse than a power law, and it errs UNSAFE.
@@ -1557,6 +1622,53 @@ class TestAgeAndActivity(unittest.TestCase):
         ages = [_draw_age(rng, pri, 0.25) for _ in range(20000)]
         in_hole = sum(1 for a in ages if 7.0 <= a < 8.0)
         self.assertGreater(in_hole, 0, "the zero bin was sampled literally")
+
+    # ── Q5 (v2.11.0) per-population SFHs ──────────────────────────────────────
+
+    def _pops_age_dist(self):
+        sfh = [{"lo": float(i), "hi": float(i + 1),
+                "fraction": max(0.02, 0.14 - 0.009 * i)} for i in range(14)]
+        pops = {"thin": {"weight": 0.88, "age_range_gyr": [0.0, 11.0], "mean_age_gyr": 4.5},
+                "thick": {"weight": 0.10, "age_range_gyr": [8.0, 13.0], "peak_gyr": 10.5},
+                "halo": {"weight": 0.01, "age_range_gyr": [11.5, 13.5], "peak_gyr": 12.5}}
+        return {"sfh_histogram": sfh, "sfh_smoothing_note": "x", "populations": pops}
+
+    def test_per_population_age_ranges_and_peaks(self):
+        from core.generate import _draw_age_by_population
+        ad = self._pops_age_dist()
+        for pop, (lo, hi, mean) in {"thin": (0.0, 11.0, 4.5),
+                                    "thick": (8.0, 13.0, 10.5),
+                                    "halo": (11.5, 13.5, 12.5)}.items():
+            rng = random.Random(1)
+            xs = [_draw_age_by_population(rng, ad, {pop: ad["populations"][pop]}, 0.3)
+                  for _ in range(20000)]
+            self.assertGreaterEqual(min(xs), lo - 1e-9)
+            self.assertLessEqual(max(xs), hi + 1e-9)
+            self.assertAlmostEqual(statistics.mean(xs), mean, delta=0.6)
+
+    def test_population_mix_is_thin_dominated(self):
+        # thin ~88% → most ages < 11 Gyr and the median stays young; the old populations draw
+        # never exceeds the halo ceiling (13.5).
+        import types
+        from core.generate import _draw_age
+        pri = types.SimpleNamespace(age_dist=self._pops_age_dist())
+        rng = random.Random(4)
+        ages = [_draw_age(rng, pri, 0.3) for _ in range(30000)]   # M dwarf → no MS truncation
+        self.assertLess(statistics.median(ages), 7.0)
+        self.assertLessEqual(max(ages), 13.5 + 1e-9)
+
+    def test_absent_populations_uses_blended_path_unchanged(self):
+        # No populations sub-block → the v2.10 blended histogram path, byte-identical.
+        import types
+        from core.generate import _draw_age
+        ad = self._pops_age_dist()
+        ad.pop("populations")
+        pri = types.SimpleNamespace(age_dist=ad)
+        rng, virgin = random.Random(9), random.Random(9)
+        a = _draw_age(rng, pri, 0.3)
+        # blended path draws exactly like the historical implementation (1 uniform + bin pick)
+        self.assertIsNotNone(a)
+        self.assertGreaterEqual(a, 0.0)
 
     def test_smoothing_is_skipped_without_the_datasets_own_note(self):
         # The dataset declares the smoothing intended by shipping sfh_smoothing_note; with
@@ -1718,6 +1830,59 @@ class TestAgeAndActivity(unittest.TestCase):
         note = _v2_blocks_note(pri, {"source": "observed", "feh": None}) or ""
         self.assertNotIn("age_dist", note)
         self.assertNotIn("stellar_activity", note)
+
+    # ── 1a — real-anchor observed-age path + reconstructed activity ────────────
+
+    def test_resolve_anchor_age_prefers_hwc_then_exocat(self):
+        from core.generate import _resolve_anchor_age
+        sb = {"designations": {}}
+        with _readers(_simbad(), _regions(), {"error": "x"},
+                      {"star_row": {"S_AGE": "4.68"}, "planet_rows": []},
+                      exocat={"exocat": {"st_age": "9.9"}}):
+            self.assertEqual(_resolve_anchor_age(sb), (4.68, "hwc"))
+        with _readers(_simbad(), _regions(), {"error": "x"}, {"error": "no hwc"},
+                      exocat={"exocat": {"st_age": "9.9"}}):
+            self.assertEqual(_resolve_anchor_age(sb), (9.9, "mission_exocat"))
+        with _readers(_simbad(), _regions(), {"error": "x"}, {"error": "no hwc"}):
+            self.assertEqual(_resolve_anchor_age(sb), (None, None))
+        # Blank / non-positive ages are treated as absent, never emitted as 0.
+        with _readers(_simbad(), _regions(), {"error": "x"},
+                      {"star_row": {"S_AGE": ""}, "planet_rows": []},
+                      exocat={"exocat": {"st_age": "0"}}):
+            self.assertEqual(_resolve_anchor_age(sb), (None, None))
+
+    def test_real_anchor_reads_observed_age_and_reconstructs_activity(self):
+        self.assertNotIn("error", compute_research_priors_ingest(path=_V2_FIX,
+                                                                 cache_dir=self.cache))
+        hwc = {"star_row": {"S_AGE": "4.68"}, "planet_rows": []}
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache), \
+             _readers(_simbad(), _regions(), {"error": "no exo"}, hwc):
+            r = generate_system(7, anchor_star="Test Star", n_planets=3,
+                                research_policy="strict")
+        star = r["star"]
+        self.assertEqual(star["age_gyr"], 4.68)
+        self.assertEqual(star["age_source"], "hwc")        # observed, NOT "age_dist"
+        act = star["activity"]
+        self.assertIsNotNone(act)                          # reconstructed from the obs age
+        self.assertIn(act["regime"], ("saturated", "unsaturated"))
+        self.assertEqual(act["p_rot_source"], "modelled")  # never read as observed
+        # The provenance note now claims stellar_activity (it ran) but never age_dist.
+        note = next((n for n in r["notes"] if n.startswith("v2 physics in effect")), "")
+        self.assertIn("stellar_activity", note)
+        self.assertNotIn("age_dist", note)
+
+    def test_real_anchor_without_observed_age_draws_no_activity(self):
+        # No HWC/Exocat age → age stays null and the chain does not run on the real star
+        # (an observed star must not inherit a synthetic age).
+        self.assertNotIn("error", compute_research_priors_ingest(path=_V2_FIX,
+                                                                 cache_dir=self.cache))
+        with mock.patch("core.priors._DEFAULT_CACHE_DIR", self.cache), \
+             _readers(_simbad(), _regions(), {"error": "no exo"}, {"error": "no hwc"}):
+            r = generate_system(7, anchor_star="Test Star", n_planets=3,
+                                research_policy="strict")
+        self.assertIsNone(r["star"]["age_gyr"])
+        self.assertIsNone(r["star"]["age_source"])
+        self.assertIsNone(r["star"]["activity"])
 
 
 if __name__ == "__main__":

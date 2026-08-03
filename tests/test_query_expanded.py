@@ -22,12 +22,17 @@ from pathlib import Path
 import core.db as db
 import core.databases as databases
 
+from tests._netcheck import live_enabled
 from tests._queryharness import run_query
 
 _REPO = Path(__file__).resolve().parent.parent
 
 
 def _reachable(host, port=443, timeout=3.0):
+    # Opt-in: the NASA/JPL live query-subprocess tests skip unless SPACE_APP_RUN_LIVE=1
+    # (see tests/_netcheck.live_enabled) so a routine `pytest -q` opens no network socket.
+    if not live_enabled():
+        return False
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True

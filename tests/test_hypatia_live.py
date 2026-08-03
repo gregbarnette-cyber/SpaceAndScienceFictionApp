@@ -3,10 +3,10 @@
 #   - end-to-end compute_hypatia_data returns the expanded set
 import unittest
 
-from tests._netcheck import hypatia_reachable
+from tests._netcheck import hypatia_reachable, live_enabled
 from core.hypatia_elements import HYPATIA_REQUEST_SYMBOLS, SPECIES_BY_SYMBOL
 
-_ONLINE = hypatia_reachable()
+_ONLINE = live_enabled() and hypatia_reachable()
 _BASE = "https://hypatiacatalog.com/hypatia/api/v2"
 
 

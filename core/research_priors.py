@@ -37,6 +37,46 @@ _CACHE_META_NAME = "meta.json"
 # contract passes their own path (GUI Browse / the importer's `path=` argument).
 _SAMPLE_CONTRACT_PATH = _REPO_ROOT / "tests" / "fixtures" / "research_priors_sample.json"
 
+# The sister worldbuilding repo ships the real v2 contract next door; auto-discover it so the
+# GUI importer PREFILLS the live dataset instead of the committed scaffold — the cache is
+# gitignored and silent about being stale, so a one-click re-ingest after a sister bump is the
+# guard against running stale priors. The sibling directory name carries "Claude", whose case
+# differs across checkouts (Windows vs case-sensitive Linux), so the lookup is case-tolerant.
+# It is taken RELATIVE to _REPO_ROOT, so the shared parent's own case (claude/Claude) never
+# enters into it. The core importer default stays the sample (test stability); only the GUI
+# prefill consults this.
+_SISTER_CONTRACT_REL = (Path("design-lab") / "star-system-generation-priors"
+                        / "research_priors_v2.json")
+_SISTER_DIR_CANONICAL = "scifiWorldBuilding-Claude"
+
+
+def _discover_sister_contract():
+    """Best-effort path to the sister repo's ``research_priors_v2.json`` beside this repo, or
+    ``None``. Case-tolerant on the sibling directory name (some checkouts capitalise "Claude"
+    differently); returns the file only when it actually exists."""
+    parent = _REPO_ROOT.parent
+    for name in (_SISTER_DIR_CANONICAL, _SISTER_DIR_CANONICAL.replace("Claude", "claude")):
+        cand = parent / name / _SISTER_CONTRACT_REL
+        if cand.is_file():
+            return cand
+    target = _SISTER_DIR_CANONICAL.lower()      # last resort: case-insensitive parent scan
+    try:
+        for child in parent.iterdir():
+            if child.is_dir() and child.name.lower() == target:
+                cand = child / _SISTER_CONTRACT_REL
+                if cand.is_file():
+                    return cand
+    except OSError:
+        pass
+    return None
+
+
+def default_priors_source():
+    """The GUI importer's default source: the sister repo's live v2 contract when present
+    beside this repo, else the committed scaffold sample. Always a ``Path``."""
+    return _discover_sister_contract() or _SAMPLE_CONTRACT_PATH
+
+
 # Contract vocabulary -------------------------------------------------------------
 # "1.x" = the v1.0 marginals contract (R3). "2.x" = the additive v2 superset
 # (Phase R3-V2): the same required axes plus the optional blocks in _V2_BLOCKS. A

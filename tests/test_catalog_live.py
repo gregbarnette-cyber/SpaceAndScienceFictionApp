@@ -11,11 +11,12 @@ census anchors (T1–T5) and gaia-astrophysical (T7) are added with those phases
 
 import unittest
 
-from tests._netcheck import cds_reachable, esa_gaia_reachable, reachable
+from tests._netcheck import cds_reachable, esa_gaia_reachable, live_enabled, reachable
 
-_CDS = cds_reachable()
-_GAIA = esa_gaia_reachable()
-_HEASARC = reachable("heasarc.gsfc.nasa.gov")
+_LIVE = live_enabled()
+_CDS = _LIVE and cds_reachable()
+_GAIA = _LIVE and esa_gaia_reachable()
+_HEASARC = _LIVE and reachable("heasarc.gsfc.nasa.gov")
 
 
 @unittest.skipUnless(_CDS, "CDS (VizieR) unreachable")

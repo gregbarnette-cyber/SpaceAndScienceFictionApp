@@ -7,10 +7,10 @@
 
 import unittest
 
-from tests._netcheck import gavo_reachable
+from tests._netcheck import gavo_reachable, live_enabled
 import core.databases as databases
 
-_ONLINE = gavo_reachable()
+_ONLINE = live_enabled() and gavo_reachable()
 
 _MAIN_COLS = {
     "source_id", "ra", "dec", "parallax", "parallax_error",

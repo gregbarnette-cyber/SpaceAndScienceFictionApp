@@ -961,8 +961,10 @@ class ImportResearchPriorsPanel(ResultPanel):
             "document) and stores it in the gitignored data/research_priors/ cache. "
             "Then System Generator / query.py generate-system with research policy "
             "'strict' draws research-calibrated priors from it (re-tagging emitted "
-            "fields grounding=research-calibrated). The default file is the committed "
-            "synthetic SAMPLE — Browse to a real contract when one exists. A malformed "
+            "fields grounding=research-calibrated). The path is prefilled with the sister "
+            "project's live research_priors_v2.json when it sits beside this repo, else the "
+            "committed synthetic SAMPLE — Browse to override. Re-run this after the sister "
+            "bumps the dataset (the cache is gitignored and won't update itself). A malformed "
             "contract is rejected and the existing cache is left intact."
         )
         info.setWordWrap(True)
@@ -972,7 +974,7 @@ class ImportResearchPriorsPanel(ResultPanel):
         path_row = QHBoxLayout(path_w)
         path_row.setContentsMargins(0, 0, 0, 0)
         path_row.addWidget(QLabel("Contract file:"))
-        self._path_edit = QLineEdit(str(core.research_priors._SAMPLE_CONTRACT_PATH))
+        self._path_edit = QLineEdit(str(core.research_priors.default_priors_source()))
         self._path_edit.setProperty("no_width_cap", True)
         path_row.addWidget(self._path_edit)
         browse = QPushButton("Browse…")
