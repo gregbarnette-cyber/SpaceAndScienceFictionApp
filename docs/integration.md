@@ -2428,6 +2428,16 @@ Core function: `report.build_system_dossier(star, sections=None, fmt="markdown")
   and **GCNS is not applicable** (a `notes[]` entry, not a warning). No SIMBAD/network call.
 - **Output envelope:** `{star, fmt, sections, warnings, notes}` plus `document` (md/html) or
   `data` (json). `sections` lists the sections actually rendered.
+- **`document` luminosity formatting (md/html only — consumer-parser note):** the rendered
+  `document`'s three `regions` luminosity rows — `Bolometric luminosity`, `Luminosity from mass`,
+  `Calculated luminosity` — are formatted to **3 significant figures** (`%.3g`), **not** fixed
+  decimals. Fixed 3-decimal rounding flattened every M/L dwarf to `0.001 L☉` (and ultracool
+  dwarfs to `0.000`), unusable for a downstream snow-line/HZ calc; `%.3g` keeps both ends usable
+  (`0.00141`, `0.000552`, `0.555`, `50`). **Values below ~1e-4 L☉ render in scientific notation**
+  (e.g. `6e-05 L☉`), so a parser extracting the numeric token from a `| <label> | <value> L☉ |`
+  row **must accept an `e±NN` exponent**. The row shape is unchanged. The **`json` `data`** payload
+  is unaffected — it carries full float precision (e.g. `bc_luminosity = 1.0867409911518908`), so
+  prefer `--fmt json` for numeric consumption.
 
 > **Validation (self-validating — Phase H contract):** a **SIMBAD-lookup failure** for a real
 > star, an unknown `--sections` value, or (via the core) a bad call → `{"error": str}` on

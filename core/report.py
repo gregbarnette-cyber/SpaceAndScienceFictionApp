@@ -342,9 +342,14 @@ def _blocks_regions(d):
             ("Effective temperature", f"{_n(s.get('teff'), 0)} K"),
             ("Stellar mass", f"{_n(s.get('stellar_mass'))} M☉"),
             ("Stellar radius", f"{_n(s.get('stellar_radius'))} R☉"),
-            ("Bolometric luminosity", f"{_n(s.get('bc_luminosity'))} L☉"),
-            ("Luminosity from mass", f"{_n(s.get('luminosity_from_mass'))} L☉"),
-            ("Calculated luminosity", f"{_n(s.get('calculated_luminosity'))} L☉"),
+            # Luminosity spans ~0.0005–50 L☉ across the spectral range; fixed 3-decimal
+            # rounding flattens every M/L dwarf to "0.001" (or "0.000"), which a downstream
+            # snow-line/HZ workflow then reads as a ~40% L error. Use 3 significant figures
+            # (%.3g) so both ends stay usable — faint values < 1e-4 fall back to scientific
+            # notation (e.g. "6e-05 L☉"), bright values read cleanly ("1.52", "50").
+            ("Bolometric luminosity", f"{_g(s.get('bc_luminosity'))} L☉"),
+            ("Luminosity from mass", f"{_g(s.get('luminosity_from_mass'))} L☉"),
+            ("Calculated luminosity", f"{_g(s.get('calculated_luminosity'))} L☉"),
             ("Main-sequence lifespan", f"{_g(s.get('main_seq_lifespan_yr'))} yr"),
         ]),
         ("table", ["System region", "Distance"], [
