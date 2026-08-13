@@ -2,6 +2,8 @@
 
 `query.py` is a thin JSON dispatcher at the repo root. It allows the `scifiWorldBuilding-Claude` repo (the current consumer — it sits alongside this checkout under `.../Claude/` and calls in through its `bin/sfq` wrapper; formerly the `ScienceFictionResearch-Claude` repo) and any other caller to invoke `core/` functions via a Bash command and receive structured JSON on stdout without needing a copy of the core code.
 
+> **Cross-repo coordination channel.** Spec/contract questions between this app repo and `scifiWorldBuilding-Claude` are handled asynchronously via the shared, append-only file **`/home/greg/claude/coordination-channel.md`** (parent dir of both repos; note the lowercase `claude`). It carries a protocol preamble at the top — newest entry on top, per-entry `STATUS`, and the file-ownership rule (**this repo owns code/tests/`docs/integration.md`; the research repo owns request/spec/canon files — each side edits only its own repo's files and requests changes to the other's in-channel**). Read it before acting on a cross-repo request; post a reply entry when you action one.
+
 ## Invocation
 
 ```bash
@@ -247,6 +249,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `radiator-area` | (`--heat-watts` \| `--input-power-watts --efficiency`) `--radiator-temp-k` [`--emissivity --sides --sink-temp-k --areal-mass-kgm2`] | none | `radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_mass_kg, scaling_note, model_note` |
 | `shielding-attenuation` | photon/gcr: (`--areal-density-gcm2` \| `--thickness-cm --density-gcm3`) + coeff (`--mass-atten-coeff-cm2g`\|`--attenuation-length-gcm2`\|`--material [--energy-mev]`) [`--mode {photon,gcr}`]; **charged (C6)** `--particle {proton,alpha,ion} --energy-mev` (`--material`\|`--csda-range-gcm2`); **stack (C7)** `--layers "mat:gcm2,…"` | none (bundled XCOM/PSTAR) | photon: `transmitted_fraction, half_value_layer_gcm2, tenth_value_layer_gcm2, …, is_order_of_magnitude`; csda: `mode:"csda", csda_range_gcm2, csda_range_cm, stops_primary, penetrates, residual_range_gcm2`; layers: `layers[], total_transmitted_fraction, total_attenuation` |
 | `active-shield` | `--shield-radius-m` + one field source (`--magnetic-moment-am2` \| `--coil-current-a --coil-radius-m` \| `--field-tesla --field-radius-m`) [`--spectrum-characteristic-rigidity-gv`] | none | `rigidity_cutoff_gv, rigidity_cutoff_v, magnetic_field_t, magnetic_moment_am2, field_source, deflected_fraction, is_order_of_magnitude, model_note` |
+| `radiation-ceiling` | exposure (`--absorbed-dose-gy`\|`--fluence`) + quality (`--let-kev-um`\|`--particle-type`) **or** self-contained `--let-spectrum "LET:flu,…"`; [`--profile {acute,chronic}` `--dose-rate --dose-rate-unit --duration`]; [`--clade {baseline-human,gene-mod,cyborg,upload,custom}` `--pharmacological-dmf --career-budget-policy {600,1000} --ddref`]; [`--lever {repair-fidelity,p53} --lever-m-a --lever-m-b --allow-p53-double-improve --allow-required-breakthrough`]; [SEU `--seu-cross-section-cm2 --memory-bits --ecc-margin`] | none | `clade, clade_note, clade_confidence, profile, exposure{}, axis_a_deterministic{}, axis_b_stochastic{}, clade_modifiers{}, seu_budget, flags{}, provenance_legend{}, is_order_of_magnitude, model_note` |
 | `annihilation-power-train` (AL R1) | (`--mass-flow-kgs`\|`--power-total-w`) [`--species {pp,ee}` · `--eta-dir`] | none | `power_total_w, power_directed_w, power_gamma_w, power_neutrino_w, eta_dir, species, model_note` |
 | `antimatter-production` (AL R2) | (`--stored-mass-kg`\|`--stored-energy-j`) `--production-efficiency` [`--trap-field-t`] | none | `energy_in_j, energy_stored_j, production_efficiency, threshold_floor_efficiency, energy_ratio_in_per_stored, storage_density_kg_m3, notes, model_note` |
 | `reactor-net-power` (AL R4) | `--gross-power-w --thermal-efficiency` [`--q-plasma --recirculating-fraction`] | none | `gross_power_w, electric_power_w, net_power_w, engineering_breakeven_q, thermal_efficiency, q_plasma, recirculating_fraction, model_note` |
@@ -848,6 +851,91 @@ field source (partial/none/double); non-positive moment/current/radius/field; `R
 `{"error"}` exit 1; a missing required `--shield-radius-m` / non-numeric → argparse exit 2. The dipole
 idealisation ignores real coil geometry, un-shielded polar cusps, and secondary production — a
 first-cut feasibility screen, not a transport simulation.
+
+### Radiation dose → per-clade biological ceiling (Phase AS / Packet 34 — no network)
+
+#### `radiation-ceiling`
+Converts a **physical radiation exposure** to a crew substrate's ("clade") standing on **two
+independent biological ceilings at once** — the number the sister repo computes per route × velocity
+× clade for its drive-canon dose policy and STL substrate ladder. Pure-math, self-validating,
+`query.py`-only; `core/radiation.py` + bundled `core/radiation_tables.py`. **The two axes never
+collapse to a scalar** and a clade carries a modifier **pair** `(m_A, m_B)`.
+- **Axis A — acute / deterministic (Gy, RBE-weighted):** `D_A = D_absorbed × RBE(LET)` vs a clade
+  acute ceiling (`LD50_ref 3.75 Gy × m_A × DMF`). Reports margin, fraction-of-ceiling, and an ARS
+  severity band (`none/mild/ars-onset/ld50-region/supralethal`). A **chronic** exposure does **not**
+  bind the acute ceiling (§2.1) — Axis A returns `applicable:false` + an optional tissue-reaction-rate
+  check.
+- **Axis B — stochastic / cancer (Sv, ICRP-Q-weighted):** `H = D_absorbed × Q(LET)` scored against a
+  career **REID budget**. REID% scales from the **600 mSv → 3% REID** science anchor (S5); the selected
+  budget (`600` default / `1000` mSv) is a **policy** knob, labelled as such. `--ddref` (default 1.0,
+  inert; the disputed ~2× is opt-in) reduces chronic stochastic effectiveness.
+- **RBE(LET) and Q(LET) are kept distinct** (§1.2): RBE is a bundled order-of-magnitude grid (peak
+  ~100–200 keV/µm, high-LET **uncertain** — S8); Q is the ICRP 60/103 relation (`Q=1 L≤10`;
+  `0.32L−2.2` 10–100; `300/√L` >100). Equal absorbed Gy of GCR/HZE exhausts the budget faster than
+  photons (Q≫1).
+- **Clade coupling (§2.3) is lever-tagged.** `--lever repair-fidelity` may improve **both** axes;
+  `--lever p53` forces the trade (acute↑ ⇒ cancer↑) and a p53 lever improving both is a **hard block**
+  unless `--allow-p53-double-improve` (S15 is abstract-only). `m_A` is **signed** — a lever factor < 1
+  lowers the ceiling below baseline (the S14 repair-disorder hypersensitivity, fatal ~3 Gy).
+- **`upload` (and the cyborg hardware fraction)** emit **no Gy/Sv** — both biological axes return
+  `applicable:false` and a **SEU / bit-error budget** (`upsets = fluence × cross-section × bits` vs an
+  ECC margin) is reported, explicitly labelled *a different physical quantity*.
+- **Provenance:** every number carries a tag ∈ `{physics-limit, present-datapoint, policy,
+  required-breakthrough, extrapolation}` (full `provenance_legend` in the response) — so a consumer sees
+  at a glance that **600 mSv is policy**, **LD50 is physics-limit**, **Dsup ×2 is extrapolation**, and
+  **upload is required-breakthrough**. A **policy/extrapolation number is never tagged `physics-limit`**
+  (MTA discipline): `reid_percent` is `extrapolation` (a linear LNT projection off the policy anchor,
+  sharpest at high acute dose where LNT is out of regime), `clade_adjusted_budget_sv` is `policy`
+  (= 600 mSv / m_b), and only `q_used` (the ICRP Q factor) among Axis-B numbers is `physics-limit`.
+  `--allow-required-breakthrough` is required to emit any Axis-A ceiling beyond the Deinococcus ~5000 Gy
+  existence proof; `--pharmacological-dmf` is clamped at 3× (S10).
+- **Two clarity notes ride the output** (additive): `axis_a_deterministic.ars_band_note` — the ARS band
+  is scored against **absolute baseline photon-equivalent** thresholds, so it can diverge from the
+  clade-relative `fraction_of_ceiling` (a radiosensitive clade at 100% of its own lowered ceiling may
+  still read a mild band — read the two together); `axis_b_stochastic.ddref_note` (present only when
+  `--ddref ≠ 1`) — because the 600 mSv @ 3% REID anchor already embeds low-dose-rate effectiveness,
+  `--ddref > 1` makes the reported REID **disagree with the NASA policy pairing** (a deliberate,
+  non-policy modeling choice, not "more correct").
+```bash
+query.py radiation-ceiling --clade baseline-human --profile acute --absorbed-dose-gy 4 --let-kev-um 0.3   # frac ≈ 1.067, ld50-region
+query.py radiation-ceiling --clade baseline-human --profile chronic --absorbed-dose-gy 0.6 --let-kev-um 0.3 # REID = 3.0% exactly
+query.py radiation-ceiling --absorbed-dose-gy 0.1 --let-kev-um 100    # HZE: Q ≈ 29.8 → REID ≈ 14.9% vs 0.5% for photons
+query.py radiation-ceiling --clade gene-mod --absorbed-dose-gy 4 --let-kev-um 0.3   # Dsup: ceiling 7.5 Gy (~2×), tag extrapolation
+query.py radiation-ceiling --clade upload --fluence 1e10 --memory-bits 1e12 --ecc-margin 1e6   # SEU path, no Gy/Sv
+query.py radiation-ceiling --let-spectrum "0.3:1e9, 100:1e7"   # composite GCR/HZE field (dose-weighted RBE & Q)
+```
+Core: `radiation.compute_radiation_ceiling(absorbed_dose_gy=None, fluence=None, let_kev_um=None,
+particle_type=None, energy_mev_amu=None, let_spectrum=None, profile="acute", dose_rate=None,
+dose_rate_unit="gy/day", duration=None, duration_unit="days", clade="baseline-human",
+pharmacological_dmf=None, career_budget_policy=None, ddref=None, lever=None, lever_m_a=None,
+lever_m_b=None, allow_p53_double_improve=False, allow_required_breakthrough=False,
+seu_cross_section_cm2=None, memory_bits=None, ecc_margin=None)`.
+- **Output shape.** Top level: `{clade, clade_note, clade_confidence, profile, is_order_of_magnitude,
+  model_note, provenance_legend, exposure, axis_a_deterministic, axis_b_stochastic, clade_modifiers,
+  seu_budget, flags}`. `axis_a_deterministic{applicable, clade_acute_ceiling_gy, acute_equivalent_dose_gy,
+  rbe_used, margin_gy, fraction_of_ceiling, ars_severity_band, ars_band_note, dmf_applied, provenance}`
+  (chronic: `{applicable:false, reason, clade_acute_ceiling_gy, tissue_reaction_rate_check, provenance}`);
+  `axis_b_stochastic{applicable, career_budget_sv, career_budget_policy, clade_adjusted_budget_sv,
+  cumulative_equivalent_dose_sv, q_used, w_r_note, reid_percent, fraction_of_budget, remaining_budget_sv,
+  ddref_used, ddref_note, provenance}` (`ddref_note` is `null` at the default DDREF 1.0, the source string
+  otherwise); `clade_modifiers{m_a, m_b, levers[], coupling_enforced}`; `seu_budget` (null for
+  pure-biological clades; `{applicable, different_physical_quantity:true, fluence_cm2, cross_section_cm2,
+  cross_section_is_default, seu_rate_per_bit, memory_bits, expected_upsets, ecc_margin, within_ecc_margin,
+  note, confidence, provenance}` for upload/cyborg); `flags{out_of_range_let, required_breakthrough,
+  dmf_capped, p53_double_improve_overridden}`; `exposure{absorbed_dose_gy, quality, rbe_effective,
+  q_effective, source_form}`. **Provenance tags** (`axis_b.provenance`): `career_budget_policy` +
+  `clade_adjusted_budget_sv` = `policy`, `reid_percent` + `ddref_used` = `extrapolation`, `q_used` =
+  `physics-limit` (a policy/projection number is never tagged `physics-limit`).
+- **Validation:** unknown clade/profile/lever/policy, a fluence with **no** quality (cannot weight),
+  both magnitude forms, non-positive dose/LET/DMF/DDREF/dose-rate, a malformed/non-exclusive
+  `--let-spectrum`, a blocked p53 double-improve, or an over-5000-Gy ceiling without the RB flag →
+  curated `{"error"}` exit 1; a bad `--clade`/`--profile` choice or non-numeric value → argparse exit 2.
+- **Order-of-magnitude & scope.** `is_order_of_magnitude:true`. The RBE grid and clade modifiers are
+  canon-labelled estimates, not a transport/dose-response simulation. Per §5 the tool does **not** compute
+  shielding (→ `shielding-attenuation`), trajectory dose accumulation (→ relativistic `travel-time`/flux +
+  `time-dilation`/`lorentz-factor`), a flight Sv/yr magnitude, or a dose→cruise-velocity mapping — it
+  converts a *given* exposure. Anchors, the RBE/Q sources, and the clade ladder are pinned in
+  `core/radiation_tables.py` (Packet-34 S-citations).
 
 ### Rotating-habitat comfort (Phase W — no network)
 

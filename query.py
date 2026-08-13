@@ -33,6 +33,7 @@ import core.life_support as life_support
 import core.megastructure as megastructure
 import core.par_flux as par_flux
 import core.power as power
+import core.radiation as radiation
 import core.power_tables as power_tables
 import core.energy_storage as energy_storage
 import core.projects as projects
@@ -832,6 +833,23 @@ def cmd_active_shield(args):
         magnetic_moment_am2=args.magnetic_moment_am2,
         field_tesla=args.field_tesla, field_radius_m=args.field_radius_m,
         spectrum_characteristic_rigidity_gv=args.spectrum_characteristic_rigidity_gv,
+    ))
+
+
+def cmd_radiation_ceiling(args):
+    _out(radiation.compute_radiation_ceiling(
+        absorbed_dose_gy=args.absorbed_dose_gy, fluence=args.fluence,
+        let_kev_um=args.let_kev_um, particle_type=args.particle_type,
+        energy_mev_amu=args.energy_mev_amu, let_spectrum=args.let_spectrum,
+        profile=args.profile, dose_rate=args.dose_rate, dose_rate_unit=args.dose_rate_unit,
+        duration=args.duration, duration_unit=args.duration_unit,
+        clade=args.clade, pharmacological_dmf=args.pharmacological_dmf,
+        career_budget_policy=args.career_budget_policy, ddref=args.ddref,
+        lever=args.lever, lever_m_a=args.lever_m_a, lever_m_b=args.lever_m_b,
+        allow_p53_double_improve=args.allow_p53_double_improve,
+        allow_required_breakthrough=args.allow_required_breakthrough,
+        seu_cross_section_cm2=args.seu_cross_section_cm2,
+        memory_bits=args.memory_bits, ecc_margin=args.ecc_margin,
     ))
 
 
@@ -2052,6 +2070,54 @@ def main(argv=None):
     p.add_argument("--spectrum-characteristic-rigidity-gv", type=float,
                    help="Characteristic rigidity R_s (GV) of the incident spectrum → deflected fraction")
     p.set_defaults(func=cmd_active_shield)
+
+    # radiation-ceiling (Phase AS / Packet 34 — physical dose → per-clade two-axis biological ceiling)
+    p = sub.add_parser("radiation-ceiling",
+                       help="Physical radiation dose → per-clade biological ceiling: Axis A "
+                            "(acute/deterministic, Gy) + Axis B (stochastic/cancer, Sv REID); "
+                            "upload → SEU/bit-error budget")
+    # Exposure magnitude (exactly one; or an --let-spectrum which is self-contained)
+    p.add_argument("--absorbed-dose-gy", type=float, help="Absorbed dose (Gy) — needs a quality input")
+    p.add_argument("--fluence", type=float, help="Particle fluence (cm⁻²) — with a quality, derives dose")
+    # Radiation quality
+    p.add_argument("--let-kev-um", type=float, help="Unrestricted LET (keV/µm) for the RBE/Q weighting")
+    p.add_argument("--particle-type", choices=radiation.t.particle_names(),
+                   help="Particle preset → representative LET (coarse; use --let-kev-um for precision)")
+    p.add_argument("--energy-mev-amu", type=float, help="Particle energy (MeV/amu) — echoed for provenance")
+    p.add_argument("--let-spectrum", help="Composite field 'LET:fluence, LET:fluence, …' (the GCR/HZE form)")
+    # Temporal profile
+    p.add_argument("--profile", choices=["acute", "chronic"], default="acute",
+                   help="acute (single delivery, drives Axis A) or chronic (Axis B + rate check)")
+    p.add_argument("--dose-rate", type=float, help="Chronic dose rate (with --dose-rate-unit)")
+    p.add_argument("--dose-rate-unit", choices=["gy/day", "sv/yr"], default="gy/day",
+                   help="Unit for --dose-rate (default gy/day)")
+    p.add_argument("--duration", type=float, help="Chronic exposure duration (with --duration-unit)")
+    p.add_argument("--duration-unit", choices=["days", "yr"], default="days",
+                   help="Unit for --duration (default days)")
+    # Clade + modifiers
+    p.add_argument("--clade", choices=radiation.t.CLADE_NAMES, default="baseline-human",
+                   help="Crew substrate: baseline-human / gene-mod / cyborg / upload / custom")
+    p.add_argument("--pharmacological-dmf", type=float,
+                   help="Pharmacological dose-modification factor (Axis A; clamped at 3× — S10)")
+    p.add_argument("--career-budget-policy", choices=list(radiation.t.CAREER_BUDGETS),
+                   help="Career REID budget policy in mSv (default 600; policy, not physics)")
+    p.add_argument("--ddref", type=float,
+                   help="Dose-and-dose-rate effectiveness factor (chronic Axis B; default 1.0 inert). "
+                        "Disputed; NOTE --ddref>1 makes REID disagree with the NASA 600 mSv@3%% policy pairing")
+    # Lever (custom-clade coupling; cases 5 & 7)
+    p.add_argument("--lever", choices=list(radiation.t.LEVER_TYPES),
+                   help="Add a lever: repair-fidelity (may improve both) or p53 (acute↑ forces cancer↑)")
+    p.add_argument("--lever-m-a", type=float, help="Lever acute factor f_a (>1 raises, <1 lowers the ceiling)")
+    p.add_argument("--lever-m-b", type=float, help="Lever stochastic factor f_b (<1 improves, >1 worsens REID/Sv)")
+    p.add_argument("--allow-p53-double-improve", action="store_true",
+                   help="Override the p53 hard block (S15 abstract-only — re-open before canon)")
+    p.add_argument("--allow-required-breakthrough", action="store_true",
+                   help="Permit an organism-scale ceiling beyond the Deinococcus ~5000 Gy existence proof")
+    # SEU / bit-error budget (upload + cyborg hardware fraction)
+    p.add_argument("--seu-cross-section-cm2", type=float, help="Per-bit upset cross-section (default 1e-14)")
+    p.add_argument("--memory-bits", type=float, help="Memory size (bits) → expected upsets")
+    p.add_argument("--ecc-margin", type=float, help="Redundancy/ECC upset margin → within-margin flag")
+    p.set_defaults(func=cmd_radiation_ceiling)
 
     # rocket-equation (Phase Y — Tsiolkovsky classical + relativistic; complements the
     # brachistochrone-* kinematics with the mass/energy side of STL travel)
