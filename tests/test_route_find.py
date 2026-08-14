@@ -120,6 +120,26 @@ def _jump_route(reachable=True):
     }
 
 
+def _two_star_info(name, ra_deg, dec_deg, ly, sp):
+    return {"name": name, "desig_str": "", "ra_deg": ra_deg, "dec_deg": dec_deg,
+            "ly": ly, "sp_type": sp, "ra_hms": "", "dec_dms": ""}
+
+
+def _distance_two_star():
+    """Opt-17 (DistanceBetweenStarsPanel._render) result shape."""
+    return {"star1_info": _two_star_info("Sol", 0.0, 0.0, 0.0, "G2V"),
+            "star2_info": _two_star_info("Vega", 279.2, 38.8, 25.0, "A0V"),
+            "distance_ly": 25.0, "distance_au": None}
+
+
+def _travel_two_star():
+    """Opt-20/21 (TravelTimeStars*._render) result shape."""
+    return {"origin_info": _two_star_info("Sol", 0.0, 0.0, 0.0, "G2V"),
+            "dest_info": _two_star_info("Vega", 279.2, 38.8, 25.0, "A0V"),
+            "distance_ly": 25.0, "ly_hr": 1.0, "times_c": 8765.8128,
+            "total_hours": 25.0, "travel_time_str": "25 Hours"}
+
+
 def _jump_network(n_extra=0):
     """Tier-coloured nodes. `n_extra` pads the pool for the scale test."""
     stars = [_star("Sol", 0.0, 0.0, 0.0, "G2V", "#FFD700"),
@@ -638,6 +658,49 @@ class RouteFindScaleTest(_RouteFindBase):
         self.assertLess(elapsed, 0.5)
 
 
+class RouteResetButtonTest(_RouteFindBase):
+    """The '⟲ Reset Diagram' button on the 7 Route Planning panels + the two-star
+    charts (opts 17/20/21) — same control opts 18/19 got, wired through the shared
+    `_add_route_chart_tabs` / `add_two_star_chart_tabs` builders."""
+
+    def _reset_count(self, p):
+        row = getattr(p, "_viz_header_row", None)
+        if row is None:
+            return 0
+        return sum(1 for i in range(row.count())
+                   if row.itemAt(i).widget() is not None
+                   and row.itemAt(i).widget().text() == "⟲ Reset Diagram")
+
+    def test_every_route_panel_gets_exactly_one_reset_button(self):
+        for cls_name, factory in _CASES:
+            p = self._rendered(cls_name, factory())
+            self.assertEqual(self._reset_count(p), 1, cls_name)
+
+    def test_reset_restores_a_zoomed_route_chart(self):
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        p = self._rendered("NearestNeighborPanel", _chain())
+        ax = (p._viz_tabs_widget.currentWidget()
+              .findChildren(FigureCanvasQTAgg)[0].figure.axes[0])
+        home = ax.get_xlim()
+        ax.set_xlim(0.0, 0.25)
+        p._reset_diagram_btn.click()
+        self.assertAlmostEqual(ax.get_xlim()[0], home[0])
+        self.assertAlmostEqual(ax.get_xlim()[1], home[1])
+
+    def test_unreachable_jump_route_still_gets_the_button(self):
+        """Jump Route's `reachable=False` branch suppresses the Find box
+        (`find_box=False`) but still builds the two-endpoint chart — so it must
+        still carry a Reset button (the reset call sits outside that guard)."""
+        p = self._rendered("JumpRoutePanel", _jump_route(reachable=False))
+        self.assertEqual(self._reset_count(p), 1)
+
+    def test_two_star_panels_get_the_button(self):
+        p17 = self._rendered("DistanceBetweenStarsPanel", _distance_two_star())
+        self.assertEqual(self._reset_count(p17), 1)
+        p20 = self._rendered("TravelTimeStarsLyHrPanel", _travel_two_star())
+        self.assertEqual(self._reset_count(p20), 1)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Opts 18/19 — must come out byte-identical: the searchable set is now built from
 # the table via `_link_name_col`, which is 0 there (the hardcoded item(r, 0) /
@@ -765,6 +828,105 @@ class OptEighteenNineteenUnchangedTest(unittest.TestCase):
         p._find_input.setText("gj 699")
         _find_on_map(p)
         self.assertEqual(p._find_readout.text(), "Found: NAME Barnard's star")
+
+
+@unittest.skipUnless(_mpl_available(), "matplotlib/PySide6 not available")
+class OptEighteenNineteenResetTest(unittest.TestCase):
+    """The '⟲ Reset Diagram' button (opts 18/19) — restores the active tab's view
+    (zoom / pan / 3D rotation / O18 find-centering) to its build-time default."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self, cls_name="StarsWithinDistanceSolPanel"):
+        import gui.panels as panels
+        from gui.panels.distance_stars import _add_map_tabs
+        p = getattr(panels, cls_name)(_StubWindow())
+        view = p.make_table(
+            ["Star Name", "Star Designations", "Spectral Type", "Distance (LY)"],
+            [["Vega", "", "A0V", "25.0"]])
+        p._link_view = view
+        map_stars = [
+            {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
+             "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
+            {"name": "Vega", "desig": "", "sp_type": "A0V", "color": "#cad7ff",
+             "ly": 25.0, "x": 10.0, "y": 12.0, "z": 5.0},
+        ]
+        _add_map_tabs(p, map_stars, 30.0, "title", {"stars": []})
+        return p
+
+    def _header_reset_buttons(self, p):
+        row = p._viz_header_row
+        return [row.itemAt(i).widget() for i in range(row.count())
+                if row.itemAt(i).widget() is not None
+                and row.itemAt(i).widget().text() == "⟲ Reset Diagram"]
+
+    def test_button_is_added_next_to_show_tables(self):
+        for cls_name in ("StarsWithinDistanceSolPanel",
+                         "StarsWithinDistanceStarPanel"):
+            p = self._panel(cls_name)
+            self.assertEqual(len(self._header_reset_buttons(p)), 1, cls_name)
+            # Placed right after Show Tables (index 0), before the trailing stretch.
+            row = p._viz_header_row
+            self.assertEqual(row.itemAt(0).widget().text(), "Show Tables")
+            self.assertIs(row.itemAt(1).widget(), p._reset_diagram_btn)
+
+    def test_reset_restores_a_zoomed_2d_chart(self):
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        p = self._panel()
+        tab = p._viz_tabs_widget.currentWidget()   # Star Chart (index 0)
+        ax = tab.findChildren(FigureCanvasQTAgg)[0].figure.axes[0]
+        home = ax.get_xlim()
+        ax.set_xlim(0.0, 0.5)
+        self.assertNotEqual(ax.get_xlim(), home)
+        p._reset_diagram_btn.click()
+        self.assertAlmostEqual(ax.get_xlim()[0], home[0])
+        self.assertAlmostEqual(ax.get_xlim()[1], home[1])
+
+    def test_reset_undoes_find_centering(self):
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from gui.panels.diagram_tabs import _find_on_map
+        p = self._panel()
+        ax = (p._viz_tabs_widget.currentWidget()
+              .findChildren(FigureCanvasQTAgg)[0].figure.axes[0])
+        home = ax.get_xlim()
+        p._find_input.setText("Vega")
+        _find_on_map(p)                       # centres on Vega (x=10)
+        self.assertNotEqual(ax.get_xlim(), home)
+        p._reset_diagram_btn.click()
+        self.assertAlmostEqual(ax.get_xlim()[0], home[0])
+        self.assertAlmostEqual(ax.get_xlim()[1], home[1])
+
+    def test_reset_restores_3d_rotation(self):
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        p = self._panel()
+        p._viz_tabs_widget.setCurrentIndex(1)   # Star Chart 3D
+        ax = (p._viz_tabs_widget.currentWidget()
+              .findChildren(FigureCanvasQTAgg)[0].figure.axes[0])
+        elev0, azim0 = ax.elev, ax.azim
+        ax.view_init(elev=elev0 + 25, azim=azim0 + 40)
+        p._reset_diagram_btn.click()
+        self.assertAlmostEqual(ax.elev, elev0)
+        self.assertAlmostEqual(ax.azim, azim0)
+
+    def test_button_is_reused_across_renders(self):
+        import gui.panels as panels
+        from gui.panels.distance_stars import _add_map_tabs
+        p = self._panel()
+        first = p._reset_diagram_btn
+        _add_map_tabs(p, [
+            {"name": "Sol", "desig": "", "sp_type": "G2V", "color": "#fff4c2",
+             "ly": 0.0, "x": 0.0, "y": 0.0, "z": 0.0}], 30.0, "t", {"stars": []})
+        self.assertIs(p._reset_diagram_btn, first)
+        self.assertEqual(len(self._header_reset_buttons(p)), 1)
+
+    def test_reset_is_a_no_op_with_no_tab(self):
+        import gui.panels as panels
+        from gui.panels.diagram_tabs import _reset_active_diagram
+        p = panels.StarsWithinDistanceSolPanel(_StubWindow())
+        _reset_active_diagram(p)   # no _viz_tabs_widget content — must not raise
 
 
 def _hidden_classes(ax):

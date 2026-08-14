@@ -374,6 +374,10 @@ class DiagramToggleMixin:
         row.addWidget(self._show_tables_btn)
         row.addStretch()
         viz_layout.addLayout(row)
+        # The diagram header row (Show Tables + trailing stretch). Kept as a handle
+        # so a panel can add its own diagram-wide controls beside Show Tables — e.g.
+        # opts 18/19's "⟲ Reset Diagram" button (see diagram_tabs._add_reset_diagram_button).
+        self._viz_header_row = row
 
         self._viz_tabs_widget = QTabWidget()
         self._viz_tabs_widget.setSizePolicy(

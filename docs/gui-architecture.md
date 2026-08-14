@@ -239,6 +239,7 @@ Phase C adds `Worker(QObject)` and `run_in_background()` to support network call
 Call `self._setup_diagram_view()` at the end of `build_results_area()` to create:
 - `_viz_container` — hidden `QWidget` containing a "Show Tables" button bar + `_viz_tabs_widget`
 - `_viz_tabs_widget` — `QTabWidget` that receives diagram canvases during `_render()`
+- `_viz_header_row` — the `QHBoxLayout` of that button bar (Show Tables + trailing stretch), exposed so a panel can add diagram-wide controls beside Show Tables. Used by the opts-18/19 + two-star + Route Planning charts to host the **"⟲ Reset Diagram"** button (`diagram_tabs._add_reset_diagram_button` → `_reset_active_diagram`): it restores the currently-visible tab to its build-time default view — `canvas.reset_view()` (undoes O18 find-centering) + the tab toolbar's `home()` (undoes scroll/toolbar zoom, pan, 3D rotation, since each chart seeds its nav-stack home via `push_current()` at build). The button is created once and reused across renders; it reaches the active tab's live canvas/toolbar via `findChildren`, so it survives the isochrone tabs' Apply-time canvas swap. Mirrors the OEC Architecture map's `⟲ Reset diagram`.
 
 **MRO ordering**: Always declare as `(DiagramToggleMixin, SomeBasePanel)` so the mixin's `reset()` runs before the base class re-creates the container.
 
@@ -717,7 +718,7 @@ Added to `viz_widget` when `mpl_available()` — three always, plus Abundance Pr
 
 `_input_count` is updated **after** `build_results_area()` completes, so `clear_results()` never destroys the persistent `_tables_widget` or `_viz_container`.
 
-The diagram tabs are added to `_viz_tabs_widget` (visible only in diagram mode) in display order by `_add_map_tabs(panel, map_stars, limit, title, result)`: **Star Chart**, **Star Chart 3D**, **HR Diagram**, **Night Sky**, **Map X–Y (top-down)**, **Map X–Z (edge-on)**, **Map 3D** — with **Star Chart selected by default** (`setCurrentIndex(0)`). HR Diagram + Night Sky are built inside `_add_map_tabs` (it takes the raw `result`) so they slot between the star charts and the maps. The Map 3D tab includes three Qt viewpoint preset buttons (Top View, Side View, 3D Perspective) above the matplotlib toolbar; the three Map canvases use a light gray background (`bg="#ebebeb"`) rather than the default `#f5f5f5`.
+The diagram tabs are added to `_viz_tabs_widget` (visible only in diagram mode) in display order by `_add_map_tabs(panel, map_stars, limit, title, result)`: **Star Chart**, **Star Chart 3D**, **HR Diagram**, **Night Sky**, **Map X–Y (top-down)**, **Map X–Z (edge-on)**, **Map 3D** — with **Star Chart selected by default** (`setCurrentIndex(0)`). HR Diagram + Night Sky are built inside `_add_map_tabs` (it takes the raw `result`) so they slot between the star charts and the maps. The Map 3D tab includes three Qt viewpoint preset buttons (Top View, Side View, 3D Perspective) above the matplotlib toolbar; the three Map canvases use a light gray background (`bg="#ebebeb"`) rather than the default `#f5f5f5`. `_add_map_tabs` also calls `_add_reset_diagram_button(panel)`, adding the **"⟲ Reset Diagram"** button beside Show Tables (see `DiagramToggleMixin` above for what it resets).
 
 ### O18 — the Find-Star box (opts 18/19 **and all seven Route Planning panels**)
 
@@ -796,6 +797,30 @@ keeps `tests/test_viz_phase_o.py`'s imports working). Four things to know:
   whose stars all come from `_map_node` (always floats) and whose `limit_ly` is `1.1 × max radius`,
   so nothing is culled there either. Tests: `tests/test_route_find.py`,
   `tests/test_viz_phase_o.py::O18FindTest`.
+
+### ⟲ Reset Diagram button (opts 18/19, the two-star charts 17/20/21, **and all seven Route Planning panels**)
+
+A **"⟲ Reset Diagram"** button inserted at index 1 of `_viz_header_row` (right after "Show
+Tables", before the trailing stretch), so it sits in the diagram header. Clicking it restores the
+**currently-visible** tab to its build-time default view: `diagram_tabs._reset_active_diagram`
+finds the active tab's live canvas + toolbar via `findChildren` (so it survives the isochrone
+tabs' Apply-time canvas swap) and calls `canvas.reset_view()` (undoes any O18 find-centering — the
+`_attach_highlight_2d/_3d` seam, present on every star-chart / star-map canvas) then the toolbar's
+`home()` (undoes scroll-wheel / toolbar zoom, pan, and 3D rotation — each chart seeds its nav-stack
+home via `push_current()` at build, and scroll-zoom sets limits directly without pushing, so
+`home()` is a full reset). It is the discoverable, labelled equivalent of the per-tab toolbar Home,
+mirroring the OEC Architecture map's `⟲ Reset diagram`.
+
+**It lives in `gui/panels/diagram_tabs.py`** (`_reset_active_diagram`, `_add_reset_diagram_button`)
+and is wired in by each chart builder: `distance_stars._add_map_tabs` (opts 18/19),
+`route_planning.add_two_star_chart_tabs` (opts 17/20/21) and `route_planning._add_route_chart_tabs`
+(the seven route panels — the call sits **outside** the `find_box` guard, so Jump Route's
+`reachable=False` chart gets the button too). `_add_reset_diagram_button` creates the button **once
+per panel** and reuses it across renders (guarded against duplicates); it no-ops gracefully if a
+panel has no `_viz_header_row` (only `_setup_diagram_view` panels have one). The other diagram
+panels (NASA 3/4/5, HWC 6, Solar System 11, Star Regions 8–10, GCNS, Comparison…) build their tabs
+through different code paths and do **not** carry it. Tests:
+`tests/test_route_find.py::OptEighteenNineteenResetTest` + `RouteResetButtonTest`.
 
 ## Phase E Visualization Integration
 

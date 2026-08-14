@@ -21,7 +21,7 @@ from gui.panels.diagram_tabs import (
     # in-module use, kept so `tests/test_viz_phase_o.py::O18FindTest` can go on
     # importing them from this module. An "unused import" cleanup would silently
     # break those tests.
-    _add_find_box,
+    _add_find_box, _add_reset_diagram_button,
     _norm_find, _find_on_map, _clear_find,   # noqa: F401  (re-export)
 )
 from gui.panels.route_planning import add_two_star_chart_tabs
@@ -239,6 +239,7 @@ def _add_map_tabs(panel, map_stars, limit, title, result):
 
     _wire_row_map_linking(panel, panel._link_view, canvases)
     _add_find_box(panel)
+    _add_reset_diagram_button(panel)
     panel._viz_tabs_widget.setCurrentIndex(0)   # default to Star Chart
 
 

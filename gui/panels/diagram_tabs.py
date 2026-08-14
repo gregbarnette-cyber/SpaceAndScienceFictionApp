@@ -688,6 +688,71 @@ def _add_find_box(panel, rows=None):
     cont.layout().insertWidget(1, w)
 
 
+# ── ⟲ Reset Diagram button (opts 18/19) ──────────────────────────────────────
+# A single, discoverable control that restores the currently-visible diagram tab
+# to its default view — the same thing the tab's own matplotlib Home button does,
+# but surfaced as a labelled button (the OEC Architecture map has the sibling
+# "⟲ Reset diagram"). Placed next to "Show Tables" in the diagram header row.
+
+def _reset_active_diagram(panel):
+    """Restore the currently-visible diagram tab to its default view: undo any
+    scroll-wheel / toolbar zoom, pan, or 3D rotation, and drop any O18
+    find-centering. No-op when no tab is showing.
+
+    The active tab holds one matplotlib canvas + toolbar. The isochrone Star
+    Chart tabs swap that pair on Apply, but both stay descendants of the tab
+    widget, so ``findChildren`` always reaches the live pair. ``canvas.reset_view``
+    (present on every star-chart / star-map canvas) undoes find-centering; the
+    toolbar's ``home()`` restores the nav-stack seed captured at build time
+    (``push_current``), which scroll-zoom leaves untouched — so together they are
+    a full reset regardless of how the view was changed."""
+    tabs = getattr(panel, "_viz_tabs_widget", None)
+    if tabs is None:
+        return
+    w = tabs.currentWidget()
+    if w is None:
+        return
+    try:
+        from matplotlib.backends.backend_qtagg import (
+            FigureCanvasQTAgg as _Canvas, NavigationToolbar2QT as _Toolbar)
+    except Exception:
+        return
+    for cv in w.findChildren(_Canvas):
+        rv = getattr(cv, "reset_view", None)
+        if rv is not None:
+            try:
+                rv()
+            except Exception:
+                pass
+    for tb in w.findChildren(_Toolbar):
+        try:
+            tb.home()
+        except Exception:
+            pass
+
+
+def _add_reset_diagram_button(panel):
+    """Insert a '⟲ Reset Diagram' button into the diagram header row (once per
+    panel; reused across renders). Resets the active tab — see
+    `_reset_active_diagram`. Placed after 'Show Tables', before the trailing
+    stretch, mirroring the OEC Architecture map's reset control."""
+    row = getattr(panel, "_viz_header_row", None)
+    if row is None:
+        return
+    btn = getattr(panel, "_reset_diagram_btn", None)
+    if btn is not None:
+        try:
+            btn.show()
+            return
+        except RuntimeError:
+            pass          # C++ object freed — fall through and rebuild
+    btn = QPushButton("⟲ Reset Diagram")
+    btn.setToolTip("Restore the current diagram to its default zoom, pan, and rotation")
+    btn.clicked.connect(lambda: _reset_active_diagram(panel))
+    panel._reset_diagram_btn = btn
+    row.insertWidget(1, btn)   # after Show Tables (0), before the trailing stretch
+
+
 _ISO_HOURS_PER_JULIAN_YEAR = 8765.8128   # ×c → ly/hr (matches core + plot_helpers)
 
 

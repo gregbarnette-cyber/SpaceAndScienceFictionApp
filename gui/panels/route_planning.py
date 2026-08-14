@@ -44,6 +44,7 @@ from core.shared import sp_color   # the one app-wide spectral palette (Phase 3)
 from gui.visualizations.plot_helpers import mpl_available
 from gui.panels.diagram_tabs import (
     _build_iso_chart_tab, _wire_row_map_linking, _add_find_box,
+    _add_reset_diagram_button,
 )
 
 
@@ -255,6 +256,9 @@ def _add_route_chart_tabs(panel, result, link_view=None, name_col=1,
         _add_find_box(panel, [(s["name"], s.get("desig", ""))
                               for s in stars[1:] if s["name"] != start])
 
+    # ⟲ Reset Diagram — restore the active chart's default zoom/pan/rotation.
+    _add_reset_diagram_button(panel)
+
 
 # ── Phase O O8 — Two-Star Map (opts 17, 20, 21) ──────────────────────────────
 
@@ -352,6 +356,9 @@ def add_two_star_chart_tabs(panel, result: dict, kind: str, link_view=None):
         "Star Chart 3D")
     if link_view is not None:
         _wire_row_map_linking(panel, link_view, canvases)
+
+    # ⟲ Reset Diagram — restore the active chart's default zoom/pan/rotation.
+    _add_reset_diagram_button(panel)
 
 
 # ── I1: Multi-Stop Journey ───────────────────────────────────────────────────
