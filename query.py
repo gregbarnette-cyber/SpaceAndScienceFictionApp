@@ -41,6 +41,7 @@ import core.relativity as relativity
 import core.propulsion as propulsion
 import core.regions as regions
 import core.report as report
+import core.salvo as salvo
 import core.science as science
 import core.sensing as sensing
 import core.spin as spin
@@ -49,6 +50,7 @@ import core.terraforming as terraforming
 import core.thermal as thermal
 import core.volatile_delivery as volatile_delivery
 import core.warp as warp
+import core.weapons as weapons
 
 
 def _add_object_mass_args(p):
@@ -1678,6 +1680,61 @@ def cmd_generate_system(args):
 
 
 # ── Argument parser ───────────────────────────────────────────────────────────
+
+# ── Phase AT (Packet 38.1) — weapons / defenses / engagement physics ──────────
+
+def cmd_salvo_exchange(args):
+    _out(salvo.compute_salvo_exchange(
+        a_force=args.a_force, b_force=args.b_force,
+        alpha=args.alpha, beta=args.beta, a_salvo=args.a_salvo, b_salvo=args.b_salvo,
+        a_hitprob=args.a_hitprob, b_hitprob=args.b_hitprob,
+        a1_staying=args.a1_staying, b1_staying=args.b1_staying,
+        a3_defense=args.a3_defense, b3_defense=args.b3_defense,
+        sigma_a=args.sigma_a, sigma_b=args.sigma_b, delta_a=args.delta_a, delta_b=args.delta_b,
+        leak_a=args.leak_a, leak_b=args.leak_b,
+        mode=args.mode, first=args.first, wave_size=args.wave_size, n_waves=args.n_waves,
+        defender_magazine=args.defender_magazine, defender_preempts=args.defender_preempts,
+        target_delta=args.target_delta, target_frac_loss=args.target_frac_loss,
+        solve_for=args.solve_for, target_side=args.target_side, fire_fraction=args.fire_fraction,
+        rings=args.rings, inbound_salvo=args.inbound_salvo, scouting=args.scouting,
+        target_staying=args.target_staying,
+    ))
+
+
+def cmd_beam_weapon_engagement(args):
+    _out(weapons.compute_beam_weapon_engagement(
+        aperture_m=args.aperture_m, wavelength_m=args.wavelength_m, frequency_hz=args.frequency_hz,
+        power_w=args.power_w, beam_quality_m2=args.beam_quality_m2,
+        pointing_efficiency=args.pointing_efficiency, rayleigh_k=args.rayleigh_k,
+        target_size_m=args.target_size_m, range_m=args.range_m,
+        kill_fluence_jm2=args.kill_fluence_jm2,
+        target_material_enthalpy_jkg=args.target_material_enthalpy_jkg,
+        target_areal_density_kgm2=args.target_areal_density_kgm2, max_dwell_s=args.max_dwell_s,
+    ))
+
+
+def cmd_kinetic_kill(args):
+    _out(weapons.compute_kinetic_kill(
+        mass_kg=args.mass_kg, length_m=args.length_m, diameter_m=args.diameter_m,
+        density_kgm3=args.density_kgm3, velocity_kms=args.velocity_kms, beta=args.beta,
+        target_density_kgm3=args.target_density_kgm3, target_type=args.target_type,
+        armor_thickness_m=args.armor_thickness_m,
+        bumper_areal_density_kgm2=args.bumper_areal_density_kgm2, standoff_m=args.standoff_m,
+        rearwall_areal_density_kgm2=args.rearwall_areal_density_kgm2,
+        target_sound_speed_ms=args.target_sound_speed_ms, crater_exponent=args.crater_exponent,
+        debris_cone_half_angle_deg=args.debris_cone_half_angle_deg,
+    ))
+
+
+def cmd_warhead_effects(args):
+    _out(weapons.compute_warhead_effects(
+        yield_j=args.yield_j, yield_kt=args.yield_kt, warhead_type=args.warhead_type,
+        f_xray=args.f_xray, f_neutron=args.f_neutron, f_debris=args.f_debris, f_gamma=args.f_gamma,
+        standoff_m=args.standoff_m,
+        threshold_xray_jm2=args.threshold_xray_jm2, threshold_neutron_jm2=args.threshold_neutron_jm2,
+        threshold_debris_jm2=args.threshold_debris_jm2, threshold_gamma_jm2=args.threshold_gamma_jm2,
+    ))
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
@@ -3787,6 +3844,120 @@ def main(argv=None):
                    help="permissive (default; DefaultPriors) | strict (research-calibrated "
                         "priors — requires an ingested dataset, else a curated error)")
     p.set_defaults(func=cmd_generate_system)
+
+    # ── Phase AT (Packet 38.1) — weapons / defenses / engagement physics ─────
+
+    # salvo-exchange (W1 — Hughes salvo model)
+    p = sub.add_parser("salvo-exchange",
+                       help="Hughes salvo model: per-salvo losses, exchange ratio, first-strike, "
+                            "sequential-waves, break-even, solve-force, distribute, layered-defense")
+    p.add_argument("--a-force", type=float, help="Force size A (count; may be fractional)")
+    p.add_argument("--b-force", type=float, help="Force size B (count)")
+    p.add_argument("--alpha", type=float, help="A per-unit striking power α (good hits/unit/salvo)")
+    p.add_argument("--beta", type=float, help="B per-unit striking power β")
+    p.add_argument("--a-salvo", type=float, help="A missiles/unit (with --a-hitprob → α)")
+    p.add_argument("--b-salvo", type=float, help="B missiles/unit (with --b-hitprob → β)")
+    p.add_argument("--a-hitprob", type=float, help="A hit probability H (0–1)")
+    p.add_argument("--b-hitprob", type=float, help="B hit probability H (0–1)")
+    p.add_argument("--a1-staying", type=float, help="A staying power (hits to OOA, > 0)")
+    p.add_argument("--b1-staying", type=float, help="B staying power (hits to OOA, > 0)")
+    p.add_argument("--a3-defense", type=float, help="A defensive power (good shots defeated/unit)")
+    p.add_argument("--b3-defense", type=float, help="B defensive power")
+    p.add_argument("--sigma-a", type=float, default=1.0, help="A scouting effectiveness σ (0–1, default 1)")
+    p.add_argument("--sigma-b", type=float, default=1.0, help="B scouting effectiveness σ (0–1, default 1)")
+    p.add_argument("--delta-a", type=float, default=1.0, help="A defender alertness δ (0–1, default 1)")
+    p.add_argument("--delta-b", type=float, default=1.0, help="B defender alertness δ (0–1, default 1)")
+    p.add_argument("--leak-a", type=float, default=0.0, help="A leakage fraction L (0–1, default 0)")
+    p.add_argument("--leak-b", type=float, default=0.0, help="B leakage fraction L (0–1, default 0)")
+    p.add_argument("--mode", choices=list(salvo.MODES), default="simultaneous", help="engagement mode")
+    p.add_argument("--first", choices=["a", "b"],
+                   help="who strikes first (first-strike) / commits waves (sequential-waves) / attacks (distribute)")
+    p.add_argument("--wave-size", type=float, help="ships per wave (sequential-waves)")
+    p.add_argument("--n-waves", type=int, help="number of waves K (sequential-waves)")
+    p.add_argument("--defender-magazine", type=int,
+                   help="defender return salvos (sequential-waves; omit = unlimited/reloading)")
+    p.add_argument("--defender-preempts", action="store_true",
+                   help="sequential-waves out-ranging case: defender offence suppresses the wave's "
+                        "salvo (only offence-survivors deliver); default off = simultaneous exchange")
+    p.add_argument("--target-delta", type=float, help="target absolute Δ (solve-force)")
+    p.add_argument("--target-frac-loss", type=float, help="target fractional loss Δ/force (solve-force)")
+    p.add_argument("--solve-for", choices=["a", "b"], help="which force to solve for (solve-force)")
+    p.add_argument("--target-side", choices=["a", "b"], help="side the target loss applies to (solve-force)")
+    p.add_argument("--fire-fraction", type=float, help="fraction f of the enemy targeted (distribute)")
+    p.add_argument("--rings", help="layered-defense rings 'delta:b3:leak, …' (outermost first)")
+    p.add_argument("--inbound-salvo", type=float, help="inbound good-shot count (layered-defense)")
+    p.add_argument("--scouting", type=float, default=1.0,
+                   help="layered-defense inbound scouting σ (0–1, default 1)")
+    p.add_argument("--target-staying", type=float, help="target staying power a₁ (layered → delta_target)")
+    p.set_defaults(func=cmd_salvo_exchange)
+
+    # beam-weapon-engagement (W2)
+    p = sub.add_parser("beam-weapon-engagement",
+                       help="Directed-energy reach & lethality: spot size, fraction on target, "
+                            "intensity, dwell-to-kill, effective range (vacuum diffraction-limited)")
+    p.add_argument("--aperture-m", type=float, required=True, help="Aperture diameter D, m")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--wavelength-m", type=float, help="Wavelength λ, m")
+    g.add_argument("--frequency-hz", type=float, help="Frequency, Hz (alt to wavelength)")
+    p.add_argument("--power-w", type=float, required=True, help="Beam power P, W")
+    p.add_argument("--beam-quality-m2", type=float, default=1.0, help="Beam-quality factor M² (default 1)")
+    p.add_argument("--pointing-efficiency", type=float, default=1.0,
+                   help="Pointing efficiency η (0–1, default 1)")
+    p.add_argument("--rayleigh-k", type=float, default=1.22, help="Diffraction coefficient k (default 1.22)")
+    p.add_argument("--target-size-m", type=float, required=True, help="Target characteristic size s, m")
+    p.add_argument("--range-m", type=float, required=True, help="Range R, m")
+    p.add_argument("--kill-fluence-jm2", type=float, help="Areal kill fluence Φ_kill, J/m²")
+    p.add_argument("--target-material-enthalpy-jkg", type=float,
+                   help="Material vaporization/melt enthalpy, J/kg (→ Φ_kill with areal density)")
+    p.add_argument("--target-areal-density-kgm2", type=float,
+                   help="Target areal density, kg/m² (with enthalpy → Φ_kill)")
+    p.add_argument("--max-dwell-s", type=float, help="Max acceptable dwell, s (→ dwell-limited range)")
+    p.set_defaults(func=cmd_beam_weapon_engagement)
+
+    # kinetic-kill (W3)
+    p = sub.add_parser("kinetic-kill",
+                       help="Hypervelocity impactor vs armor: KE (classical+relativistic), "
+                            "TNT-equiv, penetration, monolithic/Whipple verdict")
+    p.add_argument("--mass-kg", type=float, help="Impactor mass, kg (or supply rod geometry)")
+    p.add_argument("--length-m", type=float, help="Rod length L, m (with --diameter-m + --density-kgm3)")
+    p.add_argument("--diameter-m", type=float, help="Rod diameter, m")
+    p.add_argument("--density-kgm3", type=float, help="Impactor density ρ_i, kg/m³")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--velocity-kms", type=float, help="Impact velocity, km/s")
+    g.add_argument("--beta", type=float, help="Impact velocity as a fraction of c (0<β<1)")
+    p.add_argument("--target-density-kgm3", type=float, required=True, help="Target density ρ_t, kg/m³")
+    p.add_argument("--target-type", choices=["monolithic", "whipple"], default="monolithic",
+                   help="armor type (default monolithic)")
+    p.add_argument("--armor-thickness-m", type=float, help="Monolithic armor thickness, m (→ perforates)")
+    p.add_argument("--bumper-areal-density-kgm2", type=float, help="Whipple bumper areal density, kg/m²")
+    p.add_argument("--standoff-m", type=float, help="Whipple bumper→wall standoff, m")
+    p.add_argument("--rearwall-areal-density-kgm2", type=float, help="Whipple rear-wall areal density, kg/m²")
+    p.add_argument("--target-sound-speed-ms", type=float,
+                   help="Target bulk sound speed, m/s (regime call + crater form)")
+    p.add_argument("--crater-exponent", type=float, help="Crater velocity exponent n (default 2/3)")
+    p.add_argument("--debris-cone-half-angle-deg", type=float,
+                   help="Whipple debris-cloud cone half-angle, deg (default 15)")
+    p.set_defaults(func=cmd_kinetic_kill)
+
+    # warhead-effects-at-standoff (W4)
+    p = sub.add_parser("warhead-effects-at-standoff",
+                       help="Warhead lethality radius in vacuum: per-channel inverse-square fluence "
+                            "+ kill radius (fission/fusion/antimatter/kinetic-plasma)")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--yield-j", type=float, help="Total yield Y, J")
+    g.add_argument("--yield-kt", type=float, help="Total yield, kt TNT (→ J)")
+    p.add_argument("--warhead-type", choices=list(weapons.wt.WARHEAD_TYPES), default="fusion",
+                   help="channel partition preset (illustrative defaults, overridable)")
+    p.add_argument("--f-xray", type=float, help="Override soft-x-ray yield fraction")
+    p.add_argument("--f-neutron", type=float, help="Override neutron yield fraction")
+    p.add_argument("--f-debris", type=float, help="Override debris/plasma yield fraction")
+    p.add_argument("--f-gamma", type=float, help="Override gamma yield fraction")
+    p.add_argument("--standoff-m", type=float, required=True, help="Detonation standoff range R, m")
+    p.add_argument("--threshold-xray-jm2", type=float, help="Target soft-x-ray kill threshold, J/m²")
+    p.add_argument("--threshold-neutron-jm2", type=float, help="Target neutron kill threshold, J/m²")
+    p.add_argument("--threshold-debris-jm2", type=float, help="Target debris/plasma kill threshold, J/m²")
+    p.add_argument("--threshold-gamma-jm2", type=float, help="Target gamma kill threshold, J/m²")
+    p.set_defaults(func=cmd_warhead_effects)
 
     args = parser.parse_args(argv)
     try:

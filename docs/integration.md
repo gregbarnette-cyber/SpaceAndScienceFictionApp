@@ -315,6 +315,10 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `close-binary-census` | `--dist-max-ly --period-max-d` [`--sep-max-au --include --parallax-source --keep-planets --separate-wide --exclude-known`] | **ESA Gaia + CDS (live)**¶ | `query, count, counts_by_class, dedup, census[], excluded_planets[], wide[], coverage, units` |
 | `gaia-astrophysical` | (`--star` \| `--source-id`) | **ESA Gaia (live)**¶ | `query, source_id, identity, parameters, caveats, units` |
 | `besancon-query` | (`--glon --glat` \| `--local`) [`--area --dist-max-pc --mag-max --sample-max --contact-email`] | **Besançon BGM (live; needs account)**¶ | `query, model_version, n_stars, columns, catalogue_sample[], catalogue_truncated, age_dist, coverage, units` |
+| `salvo-exchange` | (`--alpha --beta` \| `--a-salvo/--a-hitprob` + `--b-salvo/--b-hitprob`) `--a1-staying --b1-staying` [`--a-force --b-force --a3-defense --b3-defense --sigma-a/-b --delta-a/-b --leak-a/-b`]; `--mode {simultaneous,first-strike,sequential-waves,break-even,solve-force,distribute,layered-defense}` + mode args | none | `mode, delta_a, delta_b, frac_loss_a/b, overkill_a/b, exchange_ratio, survivors_a/b, resolved_inputs, model_note` (+ per-mode keys) |
+| `beam-weapon-engagement` | `--aperture-m` (`--wavelength-m`\|`--frequency-hz`) `--power-w --target-size-m --range-m` (`--kill-fluence-jm2` \| `--target-material-enthalpy-jkg` + `--target-areal-density-kgm2`) [`--beam-quality-m2 --pointing-efficiency --rayleigh-k --max-dwell-s`] | none | `spot_diameter_m, frac_power_on_target_tophat/encircled, intensity_on_target_wm2, peak_spot_intensity_wm2, spot_smaller_than_target, dwell_to_kill_s, effective_range_spot_m, effective_range_dwell_m, light_travel_time_s, kill_fluence_jm2, model_note` |
+| `kinetic-kill` | (`--mass-kg` \| `--length-m --diameter-m --density-kgm3`) (`--velocity-kms`\|`--beta`) `--target-density-kgm3` [`--target-type {monolithic,whipple}` (`--armor-thickness-m` \| `--bumper-areal-density-kgm2 --standoff-m --rearwall-areal-density-kgm2`) `--target-sound-speed-ms --crater-exponent --debris-cone-half-angle-deg`] | none | `ke_classical_j, ke_relativistic_j, ke_j, regime, tnt_equiv_t, specific_energy_jkg, momentum_kgms, penetration_depth_m, crater_penetration_m, perforates, whipple{}, model_note` |
+| `warhead-effects-at-standoff` | (`--yield-j`\|`--yield-kt`) `--standoff-m` [`--warhead-type {fission,fusion,antimatter,kinetic-plasma}` `--f-xray/--f-neutron/--f-debris/--f-gamma`; `--threshold-{xray,neutron,debris,gamma}-jm2`] | none | `yield_j, warhead_type, channels{<ch>{fraction,fluence_jm2,kill_radius_m,killed_at_range,note}}, partition_fractions, escaping_fraction, killed_at_range, binding_channel, model_note` |
 
 † `distance` and `travel-time` skip the SIMBAD call for an endpoint named `"Sol"`/`"Sun"` (treated as the origin at 0,0,0). The seven Route Planning subcommands (`optimal-tour`, `jump-route`, `jump-network`, `multi-stop`, `nearest-neighbor`, `farthest-first`, `trade-route`) likewise resolve each star **DB-first** (`star_systems.star_name`, offline) then **SIMBAD** for names not in the table; `"Sol"`/`"Sun"` → the origin with no lookup. They read the local `star_systems` table for intermediate/candidate stars (run option 50 to populate it).
 ‡ The `gcns-*` calculators (and `dust-between`) use SIMBAD **only** for `--star`/`--star1`/`--star2` endpoints (to resolve a name to a position/Gaia id); `--id`/`--id1`/`--id2` endpoints are fully offline. For the `gcns-*` calculators there is **no** `"Sol"`/`"Sun"` special case (Sol is not a GCNS row); `dust-between` **does** treat `Sol`/`Sun` as the origin.
@@ -3743,6 +3747,96 @@ For subcommands that run SIMBAD first (`star-regions`, `exoplanets`, `planetary-
 The `gcns-within-sol`, `gcns-source`, and `gcns-system` subcommands are **local DB reads** (no SIMBAD step). The `gcns-distance` / `gcns-travel-time` / `gcns-stars-within-star` calculators are local DB reads **except** for `--star…` endpoints, which add a SIMBAD name-resolution step (a SIMBAD error on any `--star…` endpoint is returned immediately). The DB path can be overridden with the `SPACE_APP_DB` environment variable (used by tests).
 
 `circumbinary-hz` (Phase T1a/T1b) is **offline in its numeric mode** (`--teff1/--lum1/--teff2/--lum2`); its `--star1/--star2` mode adds a SIMBAD lookup per star (→ `compute_star_system_regions_from_simbad` for teff/luminosity), returning a SIMBAD/regions error immediately. The two modes are mutually exclusive (both, or one star only, or a partial numeric set → argparse-style exit 2). All other Phase T1b calculators (`rv-semi-amplitude`, `transit-signal`, `astrometric-signal`, `direct-imaging`, `tidal-heating`, `kozai-lidov`, `relativistic-brachistochrone`) are pure-compute, no network.
+
+### Phase AT (Packet 38.1) — weapons / defenses / engagement physics
+
+Four `query.py`-only, pure-math, self-validating calculators (`core/salvo.py` W1 + `core/weapons.py`
+W2/W3/W4 + bundled `core/weapons_tables.py`). No network, DB, RNG, time, or numpy. Every mode/channel
+echoes its complete resolved input set including defaults (R3). Bundled defaults (W4 partition
+fractions, W3 Whipple Al thresholds + crater exponent) are **labelled-illustrative and overridable**
+(the `*-theoretical` convention). See `completed_plans/PHASE_AT_PLAN.md`.
+
+#### `salvo-exchange`  (W1)
+The Hughes Ch. 13 salvo model of missile combat: a discrete-pulse force-on-force exchange between
+forces A and B. Base engine (per-unit striking α/β, defence a₃/b₃, staying a₁/b₁; scouting σ,
+alertness δ, leaker floor L):
+`ΔB = clamp(max(σ_A·α·A − δ_B·b₃·B, L_A·σ_A·α·A)/b₁, 0, B)` and the mirror for ΔA. **α/β and a₃/b₃ are
+PER UNIT** (aggregate = ×force); losses may be fractional (aggregated task elements). Provide striking
+directly (`--alpha/--beta`) or as `--a-salvo × --a-hitprob` (`α = a₂·H`). The un-clamped surplus beyond
+annihilation is `overkill_*`; `exchange_ratio = ΔB/ΔA` (null when ΔA = 0).
+- `--mode simultaneous` (default) — both salvos vs pre-salvo forces.
+- `--mode first-strike --first {a,b}` — one side strikes; the loser's survivors return fire (two pulses
+  + `final_survivors_a/b`).
+- `--mode sequential-waves --first {a,b} --wave-size N --n-waves K [--defender-magazine M --defender-preempts]`
+  — **two-sided** wave attack (WB MSG 025 + 029): each wave is a **simultaneous** base-engine exchange between
+  the wave and the current defender — the wave's **full already-launched salvo** hits the defender, reduced only
+  by the defender's **defence a₃** (the defender's *offence* kills wave ships but does **not** suppress the salvo),
+  while defence **reloads every wave** and defender staying-power hits **accumulate**. `--defender-magazine` caps
+  the defender's *offensive* return salvos (a dry magazine still defends via a₃ and still takes wave damage — the
+  shot-your-bolt dynamic); omit for unlimited. `--defender-preempts` is the out-ranging case (defender offence
+  suppresses the salvo → only offence-survivors deliver; default off = simultaneous). Per-wave + cumulative output.
+- `--mode break-even` — the B:A count ratio for parity in fractional losses (Hughes' numerical-superiority
+  theorem: n× the numbers ⇒ each unit needs n× α, a₃, a₁).
+- `--mode solve-force --solve-for {a,b}` (`--target-delta X` \| `--target-frac-loss f`) `[--target-side {a,b}]`
+  — invert for the force achieving a target loss (absolute Δ or fractional Δ/force) on a side. Returns
+  `required_force_exact` + `integer_wave` (ceil). Default `--target-side` = the opposite side for an
+  absolute Δ, the solved side for a fractional loss.
+- `--mode distribute --fire-fraction f [--first {a,b}]` — concentration of fire: the attacker's whole
+  salvo onto a fraction f of the enemy; **only the targeted subset defends** (no mutual support — WB MSG
+  025 ruling A). Returns `delta_targeted`, `targeted_count`.
+- `--mode layered-defense --rings "δ:b₃:leak, …" (--inbound-salvo N | --alpha + --a-force) [--scouting σ --target-staying a₁]`
+  — one inbound salvo cascaded through K defensive rings (WB MSG 027, disjoint from sequential-waves):
+  `survivors_j = max(incoming_j − δ_j·b₃_j, L_j·incoming_j)`, outermost→inner. Returns a per-ring table,
+  `survivors_to_target`, and `delta_target` (leakers/a₁) when `--target-staying` is given.
+- `--leak-a/--leak-b > 0` applies the saturation floor to any mode. Validation is a **core** check →
+  curated `{"error"}` **exit 1** (bad `--mode` / choices → argparse **exit 2**).
+```bash
+query.py salvo-exchange --a-force 10 --b-force 10 --alpha 3 --beta 3 --a1-staying 2 --b1-staying 2 --a3-defense 2 --b3-defense 2   # ΔA=ΔB=5
+query.py salvo-exchange --mode solve-force --a-force 7 --a1-staying 1 --b1-staying 1 --a3-defense 1 --beta 3.88 --alpha 1 --solve-for b --target-delta 7 --target-side a   # 3.61 → 4
+query.py salvo-exchange --mode layered-defense --inbound-salvo 100 --rings "1:30:0.1, 1:30:0.1, 1:30:0.1"   # survivors_to_target=10
+```
+
+#### `beam-weapon-engagement`  (W2)
+Directed-energy reach & lethality in the vacuum diffraction-limited regime. `θ = k·M²·λ/D` (shared
+`angular-resolution` kernel; k=1.22 Rayleigh default), far-field spot **diameter** `d = 2θR`. Fraction on
+a target of size s: **top-hat** `η·min(1,(s/d)²)` (the headline for intensity/dwell) and a **Gaussian
+encircled-energy** `η·(1−exp(−2(s/d)²))` (the Airy figure would need Bessel; the Gaussian is the standard
+closed-form beam-weapon model, noted in `model_note`). `I = f_on·P/A_target`, `A_target = π(s/2)²`;
+`t_kill = Φ_kill/I`. `Φ_kill` supplied directly, or `--target-material-enthalpy-jkg × --target-areal-density-kgm2`.
+`effective_range_spot_m` (d = s) and, with `--max-dwell-s`, `effective_range_dwell_m` (t_kill scales ∝ R²
+beyond R_spot). Echoes `light_travel_time_s = R/c`. `intensity_on_target_wm2`/`dwell_to_kill_s` use the
+spec's **target-averaged** convention, so dwell is conservative when `spot_smaller_than_target` — the
+actual on-spot peak is `peak_spot_intensity_wm2` (= η·P/A_spot; equal to the target-averaged value in the
+spill regime). Vacuum only (no atmospheric blooming).
+
+#### `kinetic-kill`  (W3)
+Hypervelocity impactor vs armor. KE both **classical** ½mv² and **relativistic** (γ−1)mc² (composes
+`relativistic-energy-momentum`), regime flag at β>0.1 (`ke_j` = the regime pick). `tnt_equiv_t = KE/4.184e9`
+(tons); `specific_energy_jkg`; `momentum_kgms`. Penetration **headline** = hydrodynamic long-rod
+`P ≈ L·√(ρ_i/ρ_t)` (needs rod geometry — mass-only → `penetration_depth_m: null` + reason); the crater form
+`P/d ∝ (ρ_i/ρ_t)^0.5·(v/c_t)^n` is a **labelled order-of-magnitude** alternative (n = 2/3 default,
+spacecraft-shielding regime — Cour-Palais/MMOD; overridable, CP2 pins it). Strength-vs-hydrodynamic regime
+from v vs `--target-sound-speed-ms`. `--target-type monolithic` → `perforates` vs `--armor-thickness-m`;
+`--target-type whipple` → `impactor_shattered` (v vs the **present-day-Al reference** thresholds, override
+for advanced armor) + a crude areal-overmatch `rearwall_defeated` (compose `shielding-attenuation` for a
+real wall calc). At β>0.1 the penetration models are flagged non-relativistic / reference-only.
+
+#### `warhead-effects-at-standoff`  (W4)
+Warhead lethality radius in vacuum — **no blast wave**, kill is by radiated/particulate fluence.
+`Φ_i = f_i·Y/(4πR²)` per channel; `R_kill,i = √(f_i·Y/(4π·Φ_th,i))`; overall `killed_at_range` (any
+channel with `Φ_i ≥ Φ_th,i`); `binding_channel` (largest kill radius). Yield is an **input**
+(`metric-drive-power` / `annihilation-power-train` are the yield source). Partition fractions default by
+`--warhead-type` (**labelled-illustrative**, per-channel overridable via `--f-*`); they may sum to < 1
+(`escaping_fraction` leaves as non-lethal / neutrino radiation — notably antimatter). Kill thresholds are
+the target's per-channel hardness (`--threshold-*-jm2`). A channel with fraction 0 is omitted from
+`channels` — **unless** a kill threshold was supplied for it, in which case it is emitted **inactive**
+(fluence 0, `killed_at_range` false, a `note`) so a supplied input is never silently dropped.
+```bash
+query.py warhead-effects-at-standoff --yield-kt 1 --warhead-type fission --standoff-m 1000 --threshold-xray-jm2 1e6   # R_kill ≈ 500 m
+```
+
+All four Phase AT calculators are **pure-compute, no network**; core validation is a curated `{"error"}`
+(exit 1), argparse errors (bad choices, non-numeric, required mutually-exclusive groups) are exit 2.
 
 ## Implementation notes
 
