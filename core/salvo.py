@@ -370,7 +370,7 @@ def _mode_layered(rings_spec, inbound_salvo, inbound_from_alpha, scouting, targe
         return {"error": "layered-defense needs the inbound salvo: --inbound-salvo N, or --alpha + --a-force."}
     if base < 0:
         return {"error": "inbound salvo must be ≥ 0."}
-    if not (0.0 <= scouting <= 1.0):
+    if scouting is None or not (0.0 <= scouting <= 1.0):
         return {"error": "--scouting σ must be in [0, 1]."}
     if target_staying is not None and target_staying <= 0:
         return {"error": "--target-staying must be > 0."}

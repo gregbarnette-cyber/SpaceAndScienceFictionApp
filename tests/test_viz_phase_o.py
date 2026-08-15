@@ -739,11 +739,15 @@ class O16LegendFilterTest(unittest.TestCase):
              "color": "#cccccc", "ly": 9.0, "x": 2.0, "y": -3.0, "z": 1.0},
         ]
 
-    def test_map_filter_splits_classes_excludes_unknown(self):
+    def test_map_filter_splits_classes_including_unknown(self):
         from gui.visualizations.plot_helpers import make_star_map_canvas
         c, _ = make_star_map_canvas(None, self._stars(), legend_filter=True)
-        entries = {t.get_text() for t in c.figure.axes[0].get_legend().get_texts()}
-        self.assertEqual(entries, {"Class A", "Class M", "Class G", "Class K"})
+        texts = [t.get_text() for t in c.figure.axes[0].get_legend().get_texts()]
+        # The blank-type NoType star is filterable via an "Unknown" entry, shown
+        # last (so "clear all" empties the chart — see the Wolf 424 A/B fix).
+        self.assertEqual(set(texts),
+                         {"Class A", "Class M", "Class G", "Class K", "Unknown"})
+        self.assertEqual(texts[-1], "Unknown")
         # default path: single body scatter + center ★ = 2 collections.
         c2, _ = make_star_map_canvas(None, self._stars())
         self.assertEqual(len(c2.figure.axes[0].collections), 2)
@@ -753,11 +757,64 @@ class O16LegendFilterTest(unittest.TestCase):
         c, _ = make_star_chart_canvas(None, self._stars(), 15.0, legend_filter=True)
         leg = c.figure.axes[0].get_legend()
         self.assertIsNotNone(leg)
-        # body excludes the Sol (G) centre; ? excluded.
-        self.assertEqual({t.get_text() for t in leg.get_texts()},
-                         {"Class A", "Class M", "Class K"})
+        # body excludes the Sol (G) centre; the blank NoType star → "Unknown".
+        texts = [t.get_text() for t in leg.get_texts()]
+        self.assertEqual(set(texts), {"Class A", "Class M", "Class K", "Unknown"})
+        self.assertEqual(texts[-1], "Unknown")            # Unknown ordered last
         c2, _ = make_star_chart_canvas(None, self._stars(), 15.0)
         self.assertIsNone(c2.figure.axes[0].get_legend())
+
+    def test_unknown_class_is_filterable_and_reveal_restores(self):
+        # The regression this fixes: a blank-spectral-type star (Wolf 424 A/B in
+        # opt 18) must hide when its "Unknown" legend entry is de-selected, and
+        # the O18 find-box reveal("?") must bring it back.
+        from matplotlib.backend_bases import PickEvent, MouseEvent
+        from gui.visualizations.plot_helpers import make_star_chart_canvas
+        c, _ = make_star_chart_canvas(None, self._stars(), 15.0, legend_filter=True)
+        ax = c.figure.axes[0]; c.draw()
+        u_coll = next(coll for coll in ax.collections
+                      if len(coll.get_offsets()) and
+                      abs(coll.get_offsets()[0][0] - 2.0) < 1e-6)   # NoType @ x=2
+        self.assertTrue(u_coll.get_visible())
+        leg = ax.get_legend()
+        texts = [t.get_text() for t in leg.get_texts()]
+        u_handle = leg.legend_handles[texts.index("Unknown")]
+        me = MouseEvent("button_press_event", c, 0, 0)
+        c.callbacks.process("pick_event", PickEvent("pick_event", c, me, u_handle))
+        self.assertFalse(u_coll.get_visible())            # Unknown hidden
+        c._o16_reveal_class("?")                          # find-box reveal path
+        self.assertTrue(u_coll.get_visible())             # restored
+
+    def test_deselecting_every_class_empties_the_chart(self):
+        # The exact user scenario: with all legend entries off, no body dot stays.
+        from matplotlib.backend_bases import PickEvent, MouseEvent
+        from gui.visualizations.plot_helpers import make_star_chart_canvas
+        c, _ = make_star_chart_canvas(None, self._stars(), 15.0, legend_filter=True)
+        ax = c.figure.axes[0]; c.draw()
+        leg = ax.get_legend()
+        me = MouseEvent("button_press_event", c, 0, 0)
+        for h in list(leg.legend_handles):
+            c.callbacks.process("pick_event", PickEvent("pick_event", c, me, h))
+        # Every per-class body scatter is now hidden. The per-class body dots are
+        # size 12/60; the centre ★ overlay (size 90, a separate marker="*" artist)
+        # is never filtered and is excluded here.
+        body = [coll for coll in ax.collections
+                if coll.get_sizes().size and coll.get_sizes()[0] < 90.0]
+        self.assertTrue(body)                             # sanity: we found them
+        self.assertTrue(all(not coll.get_visible() for coll in body))
+
+    def test_static_map_legend_also_lists_unknown_last(self):
+        # The non-interactive (legend_filter=False) map legend must agree with
+        # the pickable one — blank-type stars get an "Unknown" entry shown last.
+        # Guards the two legend paths of make_star_map_canvas(_3d) against drift.
+        from gui.visualizations.plot_helpers import (
+            make_star_map_canvas, make_star_map_3d_canvas)
+        for fn in (make_star_map_canvas, make_star_map_3d_canvas):
+            c = fn(None, self._stars())[0]
+            texts = [t.get_text()
+                     for t in c.figure.axes[0].get_legend().get_texts()]
+            self.assertIn("Unknown", texts)
+            self.assertEqual(texts[-1], "Unknown")
 
     def test_hit_skips_hidden_class(self):
         from matplotlib.figure import Figure
@@ -853,13 +910,15 @@ class O16LegendFilter3DTest(unittest.TestCase):
              "color": "#cccccc", "ly": 9.0, "x": 2.0, "y": -3.0, "z": 1.0},
         ]
 
-    def test_map3d_filter_splits_classes_excludes_unknown(self):
+    def test_map3d_filter_splits_classes_including_unknown(self):
         from gui.visualizations.plot_helpers import make_star_map_3d_canvas
         # Body scatter includes the centre (index 0), so Sol's G is a togglable
-        # entry — matches the 2D Map.
+        # entry — matches the 2D Map. The blank NoType star → "Unknown", last.
         c = make_star_map_3d_canvas(None, self._stars(), legend_filter=True)[0]
-        entries = {t.get_text() for t in c.figure.axes[0].get_legend().get_texts()}
-        self.assertEqual(entries, {"Class A", "Class M", "Class G", "Class K"})
+        texts = [t.get_text() for t in c.figure.axes[0].get_legend().get_texts()]
+        self.assertEqual(set(texts),
+                         {"Class A", "Class M", "Class G", "Class K", "Unknown"})
+        self.assertEqual(texts[-1], "Unknown")
         # Default path: single body scatter + centre ★ = 2 collections.
         c2 = make_star_map_3d_canvas(None, self._stars())[0]
         self.assertEqual(len(c2.figure.axes[0].collections), 2)
@@ -869,11 +928,26 @@ class O16LegendFilter3DTest(unittest.TestCase):
         c = make_star_chart_3d_canvas(None, self._stars(), 15.0, legend_filter=True)[0]
         leg = c.figure.axes[0].get_legend()
         self.assertIsNotNone(leg)
-        # Body excludes the Sol (G) centre ★; ? excluded from the legend.
-        self.assertEqual({t.get_text() for t in leg.get_texts()},
-                         {"Class A", "Class M", "Class K"})
+        # Body excludes the Sol (G) centre ★; the blank NoType star → "Unknown".
+        texts = [t.get_text() for t in leg.get_texts()]
+        self.assertEqual(set(texts), {"Class A", "Class M", "Class K", "Unknown"})
+        self.assertEqual(texts[-1], "Unknown")
         c2 = make_star_chart_3d_canvas(None, self._stars(), 15.0)[0]
         self.assertIsNone(c2.figure.axes[0].get_legend())
+
+    def test_unknown_class_is_filterable_3d(self):
+        from matplotlib.backend_bases import PickEvent, MouseEvent
+        from gui.visualizations.plot_helpers import make_star_chart_3d_canvas
+        c = make_star_chart_3d_canvas(None, self._stars(), 15.0, legend_filter=True)[0]
+        ax = c.figure.axes[0]; c.draw()
+        leg = ax.get_legend()
+        texts = [t.get_text() for t in leg.get_texts()]
+        u_handle = leg.legend_handles[texts.index("Unknown")]
+        hidden_before = sum(1 for coll in ax.collections if not coll.get_visible())
+        me = MouseEvent("button_press_event", c, 0, 0)
+        c.callbacks.process("pick_event", PickEvent("pick_event", c, me, u_handle))
+        hidden_after = sum(1 for coll in ax.collections if not coll.get_visible())
+        self.assertEqual(hidden_after, hidden_before + 1)   # the "?" class hidden
 
     def test_legend_pick_toggles_class_and_labels_3d(self):
         # 3D Path3DCollection offsets are projected, not data-space, so identify

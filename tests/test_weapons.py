@@ -73,6 +73,13 @@ class BeamWeaponTest(unittest.TestCase):
             dict(aperture_m=10, wavelength_m=1e-6, power_w=1e9, target_size_m=1, range_m=1e9),    # no Φ_kill
             dict(aperture_m=10, wavelength_m=1e-6, power_w=1e9, target_size_m=1, range_m=1e9,
                  kill_fluence_jm2=1, target_material_enthalpy_jkg=1e7, target_areal_density_kgm2=10),  # both
+            # None on a defaulted optional → curated {"error"}, not a raw TypeError.
+            dict(aperture_m=10, wavelength_m=1e-6, power_w=1e9, target_size_m=1, range_m=1e9,
+                 kill_fluence_jm2=1, beam_quality_m2=None),
+            dict(aperture_m=10, wavelength_m=1e-6, power_w=1e9, target_size_m=1, range_m=1e9,
+                 kill_fluence_jm2=1, pointing_efficiency=None),
+            dict(aperture_m=10, wavelength_m=1e-6, power_w=1e9, target_size_m=1, range_m=1e9,
+                 kill_fluence_jm2=1, rayleigh_k=None),
         ):
             self.assertIn("error", BW(**kw), kw)
 

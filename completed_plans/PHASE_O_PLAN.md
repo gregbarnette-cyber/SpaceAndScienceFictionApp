@@ -396,8 +396,11 @@ Hardening list beyond the happy-path checkpoints — most fall out of the **real
   Cen A` + `* alf Cen B`, plus Sirius A/B and the G 272-61 triple, share a position.
   Hit-test returns the first index **deterministically**; **find `alf Cen` → 3 matches →
   must cycle**; highlight rings the matched name only.
-- **Null/empty `sp_type` → class `"?"`** has no legend entry → **unfilterable, always
-  visible** (decision: by design). **Null `x/y/z`** rows have a table row but no map point
+- **Null/empty `sp_type` → class `"?"`** ~~has no legend entry → **unfilterable, always
+  visible** (decision: by design)~~ **[SUPERSEDED 2026-08-14: the `"?"` bucket is now a
+  filterable "Unknown" legend entry, shown last — a blank-spectral-type star (e.g. Wolf 424
+  A/B) otherwise lingered in opt 18 when every class was de-selected. See `_legend_filter_2d`
+  /`_legend_filter_3d` docstrings.]** **Null `x/y/z`** rows have a table row but no map point
   → highlight/find/link **no-op gracefully** (same path as a clipped star).
 - **Clipped-from-2D stars.** The Star Chart excludes stars whose |x| or |y| exceeds the
   limit (projection-square rule) though they exist in 3D → highlight/find **no-op on the

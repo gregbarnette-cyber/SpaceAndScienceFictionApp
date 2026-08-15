@@ -57,11 +57,11 @@ def compute_beam_weapon_engagement(
         lam = _C_MS / frequency_hz
     if power_w is None or power_w <= 0:
         return {"error": "power_w must be > 0."}
-    if beam_quality_m2 <= 0:
+    if beam_quality_m2 is None or beam_quality_m2 <= 0:
         return {"error": "beam_quality_m2 must be > 0."}
-    if not (0.0 < pointing_efficiency <= 1.0):
+    if pointing_efficiency is None or not (0.0 < pointing_efficiency <= 1.0):
         return {"error": "pointing_efficiency must be in (0, 1]."}
-    if rayleigh_k <= 0:
+    if rayleigh_k is None or rayleigh_k <= 0:
         return {"error": "rayleigh_k must be > 0."}
     if target_size_m is None or target_size_m <= 0:
         return {"error": "target_size_m must be > 0."}

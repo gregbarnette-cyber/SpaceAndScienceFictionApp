@@ -1209,8 +1209,10 @@ def _legend_filter_2d(canvas, ax, xs, ys, colors, sp_types, sizes,
     """Draw per-class scatters + a pickable legend; return hit(event)->index|None.
 
     `hidden` is a shared set the caller's zoom/label logic also reads. The "?"
-    (unknown-type) class is drawn but gets no legend entry — it is never
-    filterable and stays visible, per the O-3 edge-case decisions."""
+    (unknown-type) class is filterable like any other, shown last as an
+    "Unknown" legend entry (so "clear all" empties the chart) — this reverses
+    the original O-3 decision that left blank-spectral-type stars unfilterable
+    (2026-08-14; e.g. Wolf 424 A/B lingered in opt 18 with every class off)."""
     from matplotlib.lines import Line2D
 
     groups = {}
@@ -1218,7 +1220,7 @@ def _legend_filter_2d(canvas, ax, xs, ys, colors, sp_types, sizes,
         cls = (_display_class(sp) or "?")
         groups.setdefault(cls, []).append(i)
 
-    all_colls, index_maps, toggle = {}, {}, []
+    all_colls, index_maps = {}, {}
     for cls in sorted(groups):
         idxs = groups[cls]
         coll = ax.scatter([xs[i] for i in idxs], [ys[i] for i in idxs],
@@ -1226,12 +1228,17 @@ def _legend_filter_2d(canvas, ax, xs, ys, colors, sp_types, sizes,
                           s=[sizes[i] for i in idxs], **scatter_kw)
         all_colls[cls] = coll
         index_maps[cls] = idxs
-        if cls != "?":
-            toggle.append(cls)
+
+    # Every class is filterable, incl. the unknown-type "?" bucket — labelled
+    # "Unknown" and placed last so a "clear all" empties the chart.
+    toggle = [c for c in sorted(groups) if c != "?"]
+    if "?" in groups:
+        toggle.append("?")
 
     handles = [Line2D([], [], marker="o", linestyle="", markersize=6,
                       markerfacecolor=colors[index_maps[cls][0]],
-                      markeredgecolor="none", label=f"Class {cls}")
+                      markeredgecolor="none",
+                      label=("Unknown" if cls == "?" else f"Class {cls}"))
                for cls in toggle]
     legend = ax.legend(handles=handles, **legend_kw) if handles else None
     art2cls = {}
@@ -1320,8 +1327,9 @@ def _legend_filter_3d(canvas, ax, xs, ys, zs, colors, sp_types, sizes,
     """Draw per-class 3D scatters + a pickable legend; return hit(event)->index|None.
 
     `hidden` is a shared set the caller's zoom/label logic also reads. The "?"
-    (unknown-type) class is drawn but gets no legend entry — never filterable,
-    always visible — matching the 2D helper and the O-3 edge-case decisions."""
+    (unknown-type) class is filterable like any other, shown last as an
+    "Unknown" legend entry — matching the 2D helper (2026-08-14; reverses the
+    original O-3 "unfilterable" decision)."""
     from matplotlib.lines import Line2D
 
     groups = {}
@@ -1329,7 +1337,7 @@ def _legend_filter_3d(canvas, ax, xs, ys, zs, colors, sp_types, sizes,
         cls = (_display_class(sp) or "?")
         groups.setdefault(cls, []).append(i)
 
-    all_colls, index_maps, toggle = {}, {}, []
+    all_colls, index_maps = {}, {}
     for cls in sorted(groups):
         idxs = groups[cls]
         coll = ax.scatter([xs[i] for i in idxs], [ys[i] for i in idxs],
@@ -1338,12 +1346,17 @@ def _legend_filter_3d(canvas, ax, xs, ys, zs, colors, sp_types, sizes,
                           s=[sizes[i] for i in idxs], **scatter_kw)
         all_colls[cls] = coll
         index_maps[cls] = idxs
-        if cls != "?":
-            toggle.append(cls)
+
+    # Every class is filterable, incl. the unknown-type "?" bucket — labelled
+    # "Unknown" and placed last so a "clear all" empties the chart.
+    toggle = [c for c in sorted(groups) if c != "?"]
+    if "?" in groups:
+        toggle.append("?")
 
     handles = [Line2D([], [], marker="o", linestyle="", markersize=6,
                       markerfacecolor=colors[index_maps[cls][0]],
-                      markeredgecolor="none", label=f"Class {cls}")
+                      markeredgecolor="none",
+                      label=("Unknown" if cls == "?" else f"Class {cls}"))
                for cls in toggle]
     legend = ax.legend(handles=handles, **legend_kw) if handles else None
     art2cls = {}
@@ -1519,8 +1532,12 @@ def make_star_map_canvas(parent, stars: list, title: str = "",
             cls = (_display_class(s.get("sp_type")) or "?")
             if cls not in seen:
                 seen[cls] = s["color"]
-        handles = [mpatches.Patch(color=c, label=f"Class {k}")
-                   for k, c in sorted(seen.items()) if k != "?"]
+        order = [k for k in sorted(seen) if k != "?"]
+        if "?" in seen:
+            order.append("?")            # Unknown last, matching the pickable legend
+        handles = [mpatches.Patch(color=seen[k],
+                                  label=("Unknown" if k == "?" else f"Class {k}"))
+                   for k in order]
         if handles:
             ax.legend(handles=handles, loc="upper right", fontsize=7,
                       framealpha=0.85, labelcolor="#333333",
@@ -1682,8 +1699,12 @@ def make_star_map_3d_canvas(parent, stars: list, title: str = "",
             cls = (_display_class(s.get("sp_type")) or "?")
             if cls not in seen:
                 seen[cls] = s["color"]
-        handles = [mpatches.Patch(color=c, label=f"Class {k}")
-                   for k, c in sorted(seen.items()) if k != "?"]
+        order = [k for k in sorted(seen) if k != "?"]
+        if "?" in seen:
+            order.append("?")            # Unknown last, matching the pickable legend
+        handles = [mpatches.Patch(color=seen[k],
+                                  label=("Unknown" if k == "?" else f"Class {k}"))
+                   for k in order]
         if handles:
             ax.legend(handles=handles, loc="upper left", fontsize=7,
                       framealpha=0.85, labelcolor="#333333",

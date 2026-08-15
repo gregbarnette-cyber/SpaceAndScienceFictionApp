@@ -513,7 +513,7 @@ rows RECOLOURED by the fix: 5,717      rows that become GREY: 29
 paints them white-dwarf blue (wrong); the proposed set sends them to grey (honest,
 but they lose their dot colour *and* their legend filterability). `C`/`N` (6 rows)
 are real carbon-star classes that today have their own filterable legend entry and
-would collapse into the unfilterable `"?"` bucket.
+would collapse into the shared grey `"?"` bucket.
 
 **→ NEW OPEN QUESTION (Q7):** should the display set also carry the carbon/S-type
 classes `C N R S`, with palette entries, so `dC` → `C` rather than grey? That is the
@@ -685,7 +685,7 @@ as a separate visual-change ticket. *(Needs the user's sign-off — see §9.)*
 
 **Q2 (`Y`) → KEEP in the display set AND add a palette colour.** Dropping `Y` is a
 regression: 44 rows lead with `Y` today and already produce a *filterable* "Class Y"
-entry; dropping it collapses them into the unfilterable `"?"` bucket. Keeping `Y`
+entry; dropping it collapses them into the shared grey `"?"` bucket. Keeping `Y`
 without a colour preserves today exactly (grey but filterable); adding one is
 strictly better. Suggested continuation of the M→L→T ramp: `#8B4A32`.
 **Resolve BEFORE writing the constant** — the draft's prototype used a 12-letter set
@@ -793,7 +793,7 @@ fail **contrast < 3:1** against the dark navy chart — nearly invisible dots.
    route maps and opts 17/20/21. Full unification of the two palettes → separate
    visual-change ticket.
 2. **Q2 — APPROVED, colour revised.** `Y` stays in the display set (dropping it
-   would collapse 44 filterable rows into the unfilterable `"?"` bucket). Colour
+   would collapse 44 filterable rows into the shared grey `"?"` bucket). Colour
    `#A9746E`, **not** the originally-suggested `#8B4A32`, which the validator failed
    on both chroma floor and contrast (< 3:1 on the dark chart → near-invisible).
 3. **Q7 — APPROVED IN PRINCIPLE, scope reduced.** Add `C N R S` to the display set

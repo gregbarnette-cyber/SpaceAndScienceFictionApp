@@ -184,6 +184,12 @@ class SalvoValidationTest(unittest.TestCase):
     def test_layered_malformed_rings(self):
         self._err(mode="layered-defense", inbound_salvo=100, rings="junk")
 
+    def test_layered_scouting_none(self):
+        # A defaulted optional forwarded as None → curated {"error"}, not a raw
+        # TypeError (mirrors the beam-weapon-engagement None-guard fix).
+        self._err(mode="layered-defense", inbound_salvo=100, rings="1:30:0.1",
+                  scouting=None)
+
     def test_first_strike_needs_first(self):
         self._err(mode="first-strike", a_force=10, b_force=10, alpha=3, beta=3,
                   a1_staying=2, b1_staying=2)
