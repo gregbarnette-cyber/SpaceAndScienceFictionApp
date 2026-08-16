@@ -8,13 +8,15 @@ structure — the spec pins **inputs / what it computes / validation / output fo
 Everything is a `query.py`-only contract for the sibling `scifiWorldBuilding-Claude` consumer (no new GUI
 required; CR-2 and CR-5 touch shared readers whose GUI surfaces are additive-safe — see each CR).
 
-**Two coupling points with the WB project (both PINNED in the spec, both provisional-now / swap-later):**
+**Two coupling points with the WB project (both PINNED in the spec, both built provisional-then-swapped —
+✅ 3c FINAL *and* 3a FINAL `v1.1.0` are now BOTH DELIVERED + integrated; the "swap when … lands" notes below
+are DONE — see the BUILD STATE section):**
 - **Interface A — 3c fissile GCE model → CR-4 fissile output.** WB delivers a versioned static bundle;
   CR-4 implements the documented decay formula from it. Build now with a **provisional bundle**
-  (`nuclear_tables._GCE_MODEL_PROVISIONAL`) tuned so the solar anchor validates; swap when 3c lands.
+  (`nuclear_tables._GCE_MODEL_PROVISIONAL`) tuned so the solar anchor validates; swap when 3c lands. ✅ DONE (3c FINAL integrated).
 - **Interface B — 3a survey-completeness reference → CR-6 defaults.** WB delivers a static defaults
   table (survey capability by method + magnitude). Build now with a **provisional defaults table**;
-  swap when 3a lands.
+  swap when 3a lands. ✅ DONE (3a FINAL `v1.1.0` integrated + CR-6-AMEND).
 - **Neither gates the kickoff.** CR-1/2/3/5/7 are fully independent; CR-4/CR-6 build to full function on
   the provisional bundles and only their *finalized* default numbers wait on WB.
 
@@ -138,9 +140,9 @@ Mp at the astrometric floor), `compute_direct_imaging` (contrast∝Rp² + IWA=λ
 contrast-curve floor, gated on resolvable).
 
 **Files.** New `core/detection.py` (pure-math core; optional `--star` SIMBAD resolve is the only network) +
-bundled **provisional 3a defaults** in the pinned Interface-B shape (in `detection.py` or a
-`detection_tables.py`). Reuse `sensing._rayleigh_theta` for the IWA (as `compute_direct_imaging` already
-does).
+bundled 3a defaults in the pinned Interface-B shape in `detection_tables.py` (**built provisional; now the
+WB 3a FINAL `3a-v1.1.0` bundle — see BUILD STATE**). Reuse `sensing._rayleigh_theta` for the IWA (as
+`compute_direct_imaging` already does).
 
 **Core fn.** `detection.compute_detection_completeness(app_mag, distance_pc, sp_type=None,
 star_mass_solar=None, star_radius_solar=None, methods=None, survey_params=None, sma_grid=None)`:
@@ -355,8 +357,32 @@ offered for tighter tonnage at swap time. Likewise CR-6 defaults wait on WB **3a
 - **WB close-out (MSG 045):** all 7 CRs **independently verified** on WB's side; CR-3 resolved; "not zero-churn"
   acknowledged; formula authoritative (no re-round); Th renorm off. **"Nothing open between us."**
 - **Post-3c full offline suite: 2868 passed / 53 skipped / 0 failures.**
-- **Open (external):** CR-6 3a defaults on WB **3a** delivery (one-table swap); **Greg — FULFILLED sign-off +
-  commit**. **Nothing committed** (branch `star-analysis-crs`).
+- **CR-1…7 committed + pushed:** commit **`93f49cd` on `main`** (2026-08-15); branch `star-analysis-crs` deleted.
+- **3a FINAL integrated (MSG 048/050), 2026-08-15 — build done, PENDING commit + WB re-gate.** WB delivered "3a
+  FINAL" (MSG 048) + ruled 4 consumption calls APP routed (MSG 049→050), bumping the bundle to
+  **`3a-v1.1.0-2026-08-15`**. **NOT a one-table drop-in** (like 3c): `detection_tables._DETECTION_DEFAULTS` swapped
+  (internal `mag_max` shape mirrors WB's `mag_bin` strings) + `core/detection.py` wired 4 rulings — RV effective
+  floor `max(precision, sp_type-keyed jitter)` (O/B/A=5·F=3·G/K/M=1.5; Kraft-break bump); **TESS-only** transit
+  default (Kepler = per-star `--transit-precision-ppm` override); **noise-model-preferred faint tails** (TESS
+  Kunimoto σ(Tmag) for transit >12 mag, Gaia analytic σϖ(G) for astrometry >15 mag — the binned scalar over-stated
+  detection ~4× near G20); imaging **H-band self-luminous** `mechanism_caveat` (flagged, not reconciled — WB DV-7).
+  Also switched RV baseline to **per-bin** (15/15/12/8/4/2, per the bundle's base shape). +15 CR-6 tests; docs
+  updated (`detection*.py` docstrings, `docs/integration.md`, `CLAUDE.md`, `docs/testing.md`, this file).
+  `/code-review high` → fixed the transit-monotonicity string + a dead `_MAG_BIN_EDGES`; #1/#3/#6 deferred
+  (memory `code-review-deferred-findings`). **WB re-gate GREEN (MSG 052)** — 4 rulings + 2 readings independently
+  verified (noise-model hand-recomputes matched), **per-bin RV baseline ENDORSED (keep it)**.
+- **CR-6-AMEND — non-MS host guard (WB MSG 053, Greg's fix call), built 2026-08-15.** Code-review finding #2
+  (WD→A-star fake) escalated to a fix: `_host_class` (on the case-sensitive `spectral_leading_class`, so `DA2`→WD,
+  `dM6`→M-dwarf) detects **WD `D*` / hot-subdwarf `sdB·sdO` / giant-subgiant lum III·II·I·IV / brown-dwarf L·T·Y**
+  → sets `host_class` + `out_of_domain=True` and **stops faking MS mass/radius/jitter** (no first-OBAFGKM-letter
+  scan). Still computes on explicit `--star-mass-solar`/`--star-radius-solar` (flagged, **flat** RV jitter — the
+  sp_type map is MS-only), else flags/skips the methods with a note. Same MS-only domain-of-validity guard as
+  `exclusion-boundary`; **orthogonal to the 3a bundle** (no bundle change). +9 tests (5 WB validation cells + the
+  `_host_class` classifier + the partial-M/R guard); docs updated. Rides in the **same commit** as the 3a swap
+  (Greg's route 2a). **Full offline suite 2890 passed / 53 skipped / 0 failures** (+9 AMEND tests).
+- **Open (external):** WB to re-verify CR-6-AMEND (APP confirming with the validation cells green), then **Greg's
+  git commit** (held until WB confirms the AMEND) + **FULFILLED flip**. The 3a re-gate already stands GREEN.
+  Everything else closed.
 
 - **D1 — CR-1 debris-disk data source + how the per-star upper limit is computed.** *Not a scope choice*
   (the full ask — detections + real per-star upper limit — is built either way, per the no-defer directive).

@@ -3850,9 +3850,16 @@ returns an **upper limit / explicit empty, never a null**.
 **integrated 2026-08-15** (`provenance.gce_model_version = "3c-v1.0.0-2026-08-15"`, `confidence:"extrapolation"`).
 It is the **age-dependent** uniform-production survival integral (`g_i = (1−e^(−λ_i·D))/(λ_i·D)`,
 `D = max(0, D_eff−age)`, `D_eff=11.55`) — not the earlier constant-g provisional (they agree only at the solar
-anchor). `detection-completeness`'s defaults still consume a **provisional** 3a-shaped table
-(`assumptions.reference_version` carries a `provisional-0` tag) pending WB's "3a FINAL"; Interface B is pinned, so
-it is a one-table drop-in with no code churn, and CR-6's *values* may shift at the margins until then.
+anchor). `detection-completeness`'s fallback defaults consume the WB **3a FINAL** survey-completeness reference —
+**integrated 2026-08-15** (`assumptions.reference_version = "3a-v1.1.0-2026-08-15"`, `confidence:"extrapolation"`).
+Four WB consumption rulings (channel MSG 048/050) are wired: **RV effective floor = max(precision, sp_type-keyed
+jitter)** (O/B/A=5, F=3, G/K/M=1.5 m/s — the Kraft-break bump keeps a Neptune from reading detectable around an
+RV-hostile A star); **transit default = TESS-only** all-sky (Kepler's deeper fixed-field floor is a
+`--transit-precision-ppm` override, not an off-field default); the **transit >12-mag and astrometry >15-mag faint
+tails prefer the analytic noise model** (TESS Kunimoto 2022 σ₁ₕᵣ(Tmag) / ESA Gaia σϖ(G)) over the binned scalar,
+which was knowingly optimistic there (~4× near G20); and **imaging carries an H-band self-luminous
+`mechanism_caveat`** — its `min_radius_earth` inverts *reflected* contrast against a *thermal self-luminous* floor,
+flagged (not reconciled) so a consumer never reads it as a literal reflected-light limit (WB DV-7).
 
 #### `debris-disk` (CR-1 — LIVE)
 Observed IR-excess / debris disk for one star. Cross-matches **Chen et al. 2014** (`J/ApJS/211/25`, Spitzer,
@@ -3915,10 +3922,13 @@ xor `--eu-fe`); absent → `fissile.note` (not null). `fissile.{u_over_h,th_over
 **tonnage** (Eu-scaled), beyond the Eu-independent fraction keys. `provenance.domain_ok=false` flags a star
 outside the 3c fit domain (flag, never clamp). `--eu-h`/`--eu-fe` are an argparse mutually-exclusive group.
 
-#### `detection-completeness` (CR-6 — pure-math; defaults consume the WB 3a bundle)
+#### `detection-completeness` (CR-6 — pure-math; defaults consume the WB 3a FINAL v1.1.0 bundle)
 Per-method minimum detectable planet (mass M⊕ or radius R⊕) vs orbital SMA — a completeness map inverting the
 four detection-limit calculators. Survey capability from a per-star override or the 3a defaults keyed by
-apparent magnitude.
+apparent magnitude. Defaults: RV floor = max(precision, sp_type-keyed jitter); transit = TESS all-sky; the
+transit >12-mag / astrometry >15-mag faint tails use the analytic noise model (TESS Kunimoto / Gaia σϖ(G))
+instead of the bin scalar; imaging is an H-band self-luminous floor carrying a `mechanism_caveat` (see the
+CR-4/CR-6 WB-bundles note above).
 ```bash
 query.py detection-completeness --app-mag 4.83 --distance-pc 10 --sp-type G2V   # Earth@1AU below the floor
 query.py detection-completeness --star "Tau Ceti"                               # --star resolves mag/dist/sptype (live)
@@ -3926,12 +3936,19 @@ query.py detection-completeness --star "Tau Ceti"                               
 Core: `detection.compute_detection_completeness(app_mag, distance_pc, sp_type=None, star_mass_solar=None,
 star_radius_solar=None, methods=None, sma_grid=None, albedo=0.3, rv_precision_ms=None, rv_baseline_yr=None,
 transit_precision_ppm=None, transit_target=False, astrom_precision_uas=None, astrom_baseline_yr=None,
-star=None)`. Output: `{star, app_mag, distance_pc, sp_type, star_mass_solar, star_radius_solar, methods:
-[{method, applicable, detectable_vs_sma:[{sma_au, min_mass_earth?|min_radius_earth?, …}], floor_source,
-value_kind, baseline_yr?, note?}], assumptions:{reference_version, confidence, out_of_domain, …}}`.
-**Monotonicity is per-method** (RV/transit harden with SMA; astrometry/imaging ease, gated at P>baseline /
-inside the IWA). **Transit is `applicable:false` unless `--transit-target` / `--transit-precision-ppm`** is
-given (honest "not covered").
+star=None)`. Output: `{star, app_mag, distance_pc, sp_type, host_class, star_mass_solar, star_radius_solar,
+methods:[{method, applicable, detectable_vs_sma:[{sma_au, min_mass_earth?|min_radius_earth?, …}], floor_source,
+value_kind, baseline_yr?, contrast_band?, mechanism_caveat?, note?}], assumptions:{reference_version, confidence,
+out_of_domain, host_class, host_class_note, …}}`. `floor_source` names the basis per method (per-star override /
+binned 3a scalar / analytic noise-model σ at the actual mag). The imaging method dict carries `contrast_band:"H"`
++ `mechanism_caveat`. **Non-MS host guard (CR-6-AMEND):** when `sp_type` resolves to a **white dwarf / hot
+subdwarf / giant / subgiant / brown dwarf**, `host_class` is set, `out_of_domain:true`, and the MS mass/radius +
+sp_type→jitter defaults are **not faked** (`DA2` no longer → a 1.6 M☉ A star); it still computes on explicit
+`--star-mass-solar`/`--star-radius-solar` (flagged, flat RV jitter), else the methods are flagged/skipped with a
+`note`. A normal dwarf (`…V`) is unchanged (`host_class:null`, `out_of_domain:false`).
+**Monotonicity is per-method** (RV min-mass hardens with SMA; transit min-radius is SMA-independent;
+astrometry/imaging ease, gated at P>baseline / inside the IWA). **Transit is `applicable:false` unless
+`--transit-target` / `--transit-precision-ppm`** is given (honest "not covered").
 
 #### `population-classify` (CR-7 — pure-math; network only on --star)
 Thin-disk / thick-disk / halo verdict + membership probability from heliocentric U/V/W (Bensby TD/D/H velocity

@@ -5,22 +5,41 @@ Self-validating (Phase-H/P contract). Composes the four existing forward detecti
 ``compute_astrometric_signal`` / ``compute_direct_imaging``), **inverted**, into the minimum
 detectable planet (mass M⊕ or radius R⊕) vs orbital SMA per method — a completeness map.
 
-Survey capability comes from a per-star override or, absent that, the WB 3a survey-completeness
-reference (``detection_tables._DETECTION_DEFAULTS``, provisional now; swap when 3a lands).
+Survey capability comes from a per-star override or, absent that, the WB **3a FINAL** survey-
+completeness reference (``detection_tables._DETECTION_DEFAULTS``, ``3a-v1.1.0-2026-08-15``). The RV
+floor is ``max(precision, sp_type-keyed jitter)``; the transit default is TESS all-sky; the transit
+>12-mag and astrometry >15-mag faint tails prefer the analytic noise model over the binned scalar;
+imaging carries the H-band self-luminous ``mechanism_caveat`` (WB MSG 048/050).
 
-Monotonicity is **per-method** (domain review 2026-08-15): RV/transit get harder at wider SMA;
-astrometry & direct imaging get *easier* at wider SMA — astrometry until a period > baseline
-turnover (gated), imaging until the separation falls inside the contrast curve's inner edge (IWA).
+**Non-main-sequence host guard (CR-6-AMEND, WB MSG 053):** the MS mass/radius relation and the
+sp_type→jitter map are MS-only. When ``sp_type`` resolves to a **white dwarf / hot subdwarf / giant /
+subgiant / brown dwarf** (``_host_class``), the result sets ``out_of_domain=True`` + a ``host_class``
+field and **refuses to fake MS params** by scanning to the first OBAFGKM letter (which had turned
+``DA2`` → a 1.6 M☉ A star). It still computes on **explicit** ``--star-mass-solar``/``--star-radius-solar``
+(the four calculators are valid for any real M/R) — flagged, with the RV jitter falling back to the
+flat floor — else the methods are flagged/skipped with a note, never fabricated.
+
+Monotonicity is **per-method** (domain review 2026-08-15): RV min-mass gets harder (larger) at
+wider SMA; transit min-radius is **SMA-independent** (transit depth carries no SMA — the falling
+``transit_prob`` is what makes wide orbits rarely transit, not a rising min-radius); astrometry &
+direct imaging get *easier* at wider SMA — astrometry until a period > baseline turnover (gated),
+imaging until the separation falls inside the contrast curve's inner edge (IWA).
 Network only on the optional ``--star`` resolve path.
 """
 
 import math
+import re
 
 import core.calculators as calculators
 import core.detection_tables as dt
+import core.shared as shared
 
 _ALL_METHODS = ("rv", "transit", "astrometry", "imaging")
 _DEFAULT_SMA_GRID = (0.05, 0.1, 0.3, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0)
+
+# Luminosity class (Roman numeral) after the temperature subtype: III/II/I → giant, IV → subgiant,
+# V → dwarf (MS), VI → subdwarf, VII → white dwarf. Longest Roman alternatives first.
+_LUM_CLASS_RE = re.compile(r"[^A-Za-z](VII|VI|IV|V|III|II|I)(?:ab|a|b|0)?")
 
 
 def _bin_row(by_mag, app_mag):
@@ -29,6 +48,102 @@ def _bin_row(by_mag, app_mag):
         if app_mag <= row["mag_max"]:
             return row
     return by_mag[-1]
+
+
+def _sp_letter(sp_type):
+    """Leading OBAFGKM class letter of a spectral type (same scan as _resolve_star_mr), else None."""
+    if not sp_type:
+        return None
+    for ch in sp_type:
+        if ch.upper() in "OBAFGKM":
+            return ch.upper()
+    return None
+
+
+def _host_class(sp_type):
+    """Non-main-sequence host class of a spectral type, else None (MS dwarf, or not classifiable as
+    non-MS). CR-6-AMEND (WB MSG 053): the MS mass/radius relation and the sp_type→jitter map are
+    MS-only and must not transfer to a WD / subdwarf / giant / subgiant / brown dwarf. Uses the
+    app-wide, case-sensitive ``spectral_leading_class`` so the *degenerate* prefix ``D`` (DA2 → white
+    dwarf) is never confused with the *dwarf* luminosity prefix ``d`` (dM6 → an M dwarf)."""
+    if not sp_type:
+        return None
+    s = sp_type.strip()
+    lead = shared.spectral_leading_class(s, letters=shared._SP_DISPLAY_LETTERS)
+    if lead in ("L", "T", "Y"):
+        return "brown_dwarf"
+    if lead == "D":
+        return "white_dwarf"                        # DA/DB/DO/DQ/DZ/DC… (uppercase D = degenerate)
+    if s[:2] == "sd" and s[2:3] in ("B", "O"):      # hot subdwarf (sdB/sdO); cool sdM/esdM stay ~MS
+        return "subdwarf"
+    m = _LUM_CLASS_RE.search(s)                      # giants/subgiants via the luminosity class
+    if m:
+        lc = m.group(1)
+        if lc == "IV":
+            return "subgiant"
+        if lc == "VI":
+            return "subdwarf"
+        if lc == "VII":
+            return "white_dwarf"
+        if lc == "V":
+            return None                             # main-sequence dwarf
+        return "giant"                              # I/Ia/Iab/Ib/II/III
+    return None                                     # no luminosity class → treat as MS
+
+
+def _domain_note(mag_out, app_mag, dom, host_class):
+    """Human note for the out-of-domain flag — magnitude and/or non-MS-host reason(s), or None."""
+    parts = []
+    if mag_out:
+        parts.append(f"app_mag {app_mag} outside the 3a reference domain {dom} — "
+                     "floor is an extrapolation, flagged not clamped")
+    if host_class is not None:
+        parts.append(f"host is {host_class} (non-main-sequence) — the survey-floor defaults "
+                     "(sp_type→jitter map, MS mass/radius relation) are MS-calibrated and may not transfer")
+    return "; ".join(parts) if parts else None
+
+
+def _rv_jitter_floor(rv_defaults, row, sp_type):
+    """Astrophysical RV jitter floor: sp_type-keyed (Kraft-break bump) if the host letter is known,
+    else the flat per-bin value. Effective floor = max(precision, this) — WB 3a MSG 050."""
+    by_sp = rv_defaults.get("jitter_floor_by_sptype_m_s")
+    letter = _sp_letter(sp_type)
+    if by_sp and letter in by_sp:
+        return by_sp[letter]
+    return row.get("jitter_floor_m_s", 0.0)
+
+
+def _tess_sigma_1hr_ppm(tmag, nm):
+    """TESS 1-hr CDPP σ (ppm) at a Tmag — Kunimoto 2022 convex model (reproduces T=10 → 240.5 ppm)."""
+    return (nm["a"] + nm["b"] * 10.0 ** (0.2 * (tmag - 10.0))
+            + nm["c"] * 10.0 ** (0.4 * (tmag - 10.0)))
+
+
+def _gaia_sigma_pi_uas(g, nm):
+    """Gaia end-of-mission parallax σ (µas) at a G mag — ESA analytic model (valid 3 ≤ G < 20.7)."""
+    z = max(10.0 ** (0.4 * (nm.get("g_floor", 13.0) - 15.0)), 10.0 ** (0.4 * (g - 15.0)))
+    return nm["tfactor"] * math.sqrt(40.0 + 800.0 * z + 30.0 * z * z)
+
+
+def _transit_floor(transit_defaults, app_mag):
+    """(ppm, source) — TESS Kunimoto σ(Tmag) for the faint tail (app_mag > prefer_above_mag), else
+    the binned TESS scalar."""
+    nm = transit_defaults.get("noise_model")
+    if nm and app_mag > nm["prefer_above_mag"]:
+        floor = _tess_sigma_1hr_ppm(app_mag, nm)
+        return floor, f"3a noise-model TESS σ₁ₕᵣ(Tmag={app_mag}) = {floor:.0f} ppm"
+    row = _bin_row(transit_defaults["by_mag"], app_mag)
+    return row["phot_precision_ppm"], f"3a-default transit TESS (mag≤{row['mag_max']}): {row['phot_precision_ppm']} ppm"
+
+
+def _astrom_floor(astro_defaults, app_mag):
+    """(µas, source) — Gaia analytic σϖ(G) for G>prefer_above_mag, else the binned scalar."""
+    nm = astro_defaults.get("noise_model")
+    if nm and app_mag > nm["prefer_above_mag"]:
+        floor = _gaia_sigma_pi_uas(app_mag, nm)
+        return floor, f"3a noise-model Gaia σϖ(G={app_mag}) = {floor:.0f} µas"
+    row = _bin_row(astro_defaults["by_mag"], app_mag)
+    return row["astrom_precision_uas"], f"3a-default astrometry (mag≤{row['mag_max']}): {row['astrom_precision_uas']} µas"
 
 
 def _resolve_star_mr(sp_type, star_mass_solar, star_radius_solar):
@@ -138,12 +253,27 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
         return {"error": "rv_baseline_yr must be positive."}
     if astrom_baseline_yr is not None and astrom_baseline_yr <= 0:
         return {"error": "astrom_baseline_yr must be positive."}
-    mr = _resolve_star_mr(sp_type, star_mass_solar, star_radius_solar)
-    if mr is None:
-        return {"error": "Provide --sp-type, or --star-mass-solar and --star-radius-solar."}
-    m_star, r_star = mr
-    if m_star <= 0 or r_star <= 0:
-        return {"error": "star mass and radius must be positive."}
+    host_class = _host_class(sp_type)
+    if host_class is not None:
+        # Non-MS host (CR-6-AMEND, WB MSG 053): the MS mass/radius relation + the sp_type→jitter map
+        # do NOT transfer, so never fake MS params by scanning to the first OBAFGKM letter. Compute
+        # only on explicit real M/R; without it, the methods are flagged/skipped, not fabricated.
+        if star_mass_solar is not None and star_radius_solar is not None:
+            if star_mass_solar <= 0 or star_radius_solar <= 0:
+                return {"error": "star mass and radius must be positive."}
+            m_star, r_star = star_mass_solar, star_radius_solar
+        elif star_mass_solar is not None or star_radius_solar is not None:
+            return {"error": "Provide BOTH --star-mass-solar and --star-radius-solar for a "
+                             "non-main-sequence host."}
+        else:
+            m_star = r_star = None
+    else:
+        mr = _resolve_star_mr(sp_type, star_mass_solar, star_radius_solar)
+        if mr is None:
+            return {"error": "Provide --sp-type, or --star-mass-solar and --star-radius-solar."}
+        m_star, r_star = mr
+        if m_star <= 0 or r_star <= 0:
+            return {"error": "star mass and radius must be positive."}
     grid = tuple(sma_grid) if sma_grid else _DEFAULT_SMA_GRID
     if any(a <= 0 for a in grid):
         return {"error": "sma_grid values must be positive."}
@@ -154,30 +284,44 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
 
     defaults = dt._DETECTION_DEFAULTS
     dom = defaults["domain"]["mag_range"]
-    out_of_domain = not (dom[0] <= app_mag <= dom[1])
+    mag_out = not (dom[0] <= app_mag <= dom[1])
+    out_of_domain = mag_out or (host_class is not None)
+    # sp_type feeds the MS-only jitter map only for a main-sequence host; a non-MS host with explicit
+    # M/R falls back to the flat per-bin jitter (the sp_type map does not transfer — WB MSG 053).
+    jitter_sp = sp_type if host_class is None else None
+    non_ms_no_mr = host_class is not None and m_star is None
     out_methods = []
 
     for method in want:
+        if non_ms_no_mr:
+            out_methods.append({
+                "method": method, "applicable": False, "detectable_vs_sma": [], "floor_source": None,
+                "value_kind": "min_radius_earth" if method in ("transit", "imaging") else "min_mass_earth",
+                "note": (f"host is {host_class} (non-main-sequence) — not computed: the MS "
+                         "mass/radius/jitter defaults do not transfer. Supply --star-mass-solar and "
+                         "--star-radius-solar to run the four detection calculators on the real host M/R.")})
+            continue
         if method == "rv":
-            floor = rv_precision_ms
-            base = rv_baseline_yr if rv_baseline_yr is not None else defaults["methods"]["rv"]["baseline_yr"]
-            src = "per-star override" if floor is not None else None
-            if floor is None:
-                row = _bin_row(defaults["methods"]["rv"]["by_mag"], app_mag)
-                floor = row["precision_m_s"]
-                src = f"3a-default RV (mag≤{row['mag_max']}): {floor} m/s"
+            rv_def = defaults["methods"]["rv"]
+            row = _bin_row(rv_def["by_mag"], app_mag)
+            base = rv_baseline_yr if rv_baseline_yr is not None else row["baseline_yr"]
+            if rv_precision_ms is not None:
+                floor, src = rv_precision_ms, "per-star override"
+            else:
+                jitter = _rv_jitter_floor(rv_def, row, jitter_sp)
+                floor = max(row["precision_m_s"], jitter)
+                src = (f"3a-default RV (mag≤{row['mag_max']}): "
+                       f"max(precision {row['precision_m_s']}, jitter {jitter}) = {floor} m/s")
             out_methods.append({"method": "rv", "applicable": True,
                                 "detectable_vs_sma": _rv_curve(m_star, grid, floor, base),
                                 "floor_source": src, "value_kind": "min_mass_earth",
                                 "baseline_yr": base})
         elif method == "transit":
-            floor = transit_precision_ppm
             applicable = transit_target or (transit_precision_ppm is not None)
-            src = "per-star override" if transit_precision_ppm is not None else None
-            if floor is None:
-                row = _bin_row(defaults["methods"]["transit"]["by_mag"], app_mag)
-                floor = row["phot_precision_ppm"]
-                src = f"3a-default transit (mag≤{row['mag_max']}): {floor} ppm"
+            if transit_precision_ppm is not None:
+                floor, src = transit_precision_ppm, "per-star override"
+            else:
+                floor, src = _transit_floor(defaults["methods"]["transit"], app_mag)
             entry = {"method": "transit", "applicable": applicable,
                      "detectable_vs_sma": _transit_curve(r_star, grid, floor),
                      "floor_source": src, "value_kind": "min_radius_earth"}
@@ -187,32 +331,34 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
                                  "(pass --transit-target or --transit-precision-ppm)")
             out_methods.append(entry)
         elif method == "astrometry":
-            floor = astrom_precision_uas
-            base = (astrom_baseline_yr if astrom_baseline_yr is not None
-                    else defaults["methods"]["astrometry"]["baseline_yr"])
-            src = "per-star override" if floor is not None else None
-            if floor is None:
-                row = _bin_row(defaults["methods"]["astrometry"]["by_mag"], app_mag)
-                floor = row["astrom_precision_uas"]
-                src = f"3a-default astrometry (mag≤{row['mag_max']}): {floor} µas"
+            astro_def = defaults["methods"]["astrometry"]
+            base = astrom_baseline_yr if astrom_baseline_yr is not None else astro_def["baseline_yr"]
+            if astrom_precision_uas is not None:
+                floor, src = astrom_precision_uas, "per-star override"
+            else:
+                floor, src = _astrom_floor(astro_def, app_mag)
             out_methods.append({"method": "astrometry", "applicable": True,
                                 "detectable_vs_sma": _astrometry_curve(m_star, distance_pc, grid, floor, base),
                                 "floor_source": src, "value_kind": "min_mass_earth",
                                 "baseline_yr": base})
         elif method == "imaging":
-            curve = defaults["methods"]["imaging"]["contrast_curve"]
+            im = defaults["methods"]["imaging"]
+            band = im.get("contrast_band")
             out_methods.append({"method": "imaging", "applicable": True,
-                                "detectable_vs_sma": _imaging_curve(distance_pc, grid, curve, albedo),
+                                "detectable_vs_sma": _imaging_curve(distance_pc, grid, im["contrast_curve"], albedo),
                                 "floor_source": f"3a-default imaging contrast curve "
-                                                f"(anchored_to_star_mag="
-                                                f"{defaults['methods']['imaging']['anchored_to_star_mag']})",
-                                "value_kind": "min_radius_earth"})
+                                                f"({band}-band self-luminous; anchored_to_star_mag="
+                                                f"{im['anchored_to_star_mag']})",
+                                "value_kind": "min_radius_earth",
+                                "contrast_band": band,
+                                "mechanism_caveat": im.get("mechanism_caveat")})
 
     return {
         "star": star,
         "app_mag": app_mag,
         "distance_pc": distance_pc,
         "sp_type": sp_type,
+        "host_class": host_class,
         "star_mass_solar": m_star,
         "star_radius_solar": r_star,
         "methods": out_methods,
@@ -221,12 +367,17 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
             "confidence": defaults["confidence"],
             "out_of_domain": out_of_domain,
             "mag_domain": dom,
-            "domain_note": (None if not out_of_domain else
-                            f"app_mag {app_mag} outside the 3a reference domain {dom} — "
-                            "floor is an extrapolation, flagged not clamped"),
+            "host_class": host_class,
+            "host_class_note": (None if host_class is None else
+                                f"host is {host_class} (non-main-sequence) — MS mass/radius and the "
+                                "sp_type→jitter map were NOT applied; the survey-floor defaults are "
+                                "MS-calibrated and may not transfer. Pass explicit --star-mass-solar / "
+                                "--star-radius-solar to compute on the real host."),
+            "domain_note": _domain_note(mag_out, app_mag, dom, host_class),
             "sma_grid_au": list(grid),
             "albedo": albedo,
-            "monotonicity": "RV/transit min-planet increases with SMA; astrometry/imaging "
-                            "decreases with SMA (astrometry until P>baseline; imaging until IWA)",
+            "monotonicity": "RV min-mass increases with SMA; transit min-radius is SMA-independent "
+                            "(depth-driven — transit_prob falls with SMA instead); astrometry/imaging "
+                            "min-planet decreases with SMA (astrometry until P>baseline; imaging until IWA)",
         },
     }
