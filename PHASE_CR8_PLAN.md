@@ -1,10 +1,12 @@
 # PHASE CR-8 PLAN — Batch exoplanet-archive pull (`planetary-systems-batch`)
 
 **Source contract:** `scifiWorldBuilding-Claude/design-lab/star-system-analysis/spaceapp-change-request-CR8-batch-exoplanet-archive-pull.md`
-**Status:** ✅ BUILT & green (2026-08-16) — WB-endorsed (MSG 060); awaiting WB re-gate (§5). Suite
+**Status:** ✅ FULFILLED + SHIPPED (2026-08-16) — committed + pushed to `main` (`94784f1`). WB re-gate
+GREEN (independent field-by-field, MSG 063); Greg FULFILLED both sides (channel MSG 065/066). Suite
 **2913 passed / 55 skipped / 0 fail** offline; the 2 live anchors pass under `SPACE_APP_RUN_LIVE=1`.
 All §8 build-time items resolved live: `ps` cross-ID column is `gaia_dr3_id` (not `gaia_id`),
-`sy_gaiamag`/`pl_bmassprov` present; `IN(...)` chunked at 100 (no ceiling hit at 4 hosts). Uncommitted.
+`sy_gaiamag`/`pl_bmassprov` present; `IN(...)` chunked at 100 (no ceiling hit at 4 hosts). Only reactive
+reopen: a CR-8 gap surfacing when the 171-card audit runs at scale.
 **Coordination:** channel is **build-time open** (`/home/greg/Claude/coordination-channel.md`); the CR's own §8
 "no channel re-armed / queued for audit open" line is **superseded** (WB confirming the §8 edit on their side).
 Validation §5 remains the shared re-gate. **WB MSG 060 locked in:** (a) the three load-bearing calls (`ps`-table,
