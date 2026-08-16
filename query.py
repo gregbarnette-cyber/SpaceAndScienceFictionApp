@@ -22,6 +22,7 @@ import core.dust_impact as dust_impact   # pure-math (no astropy/numpy) — safe
 # non-dust query.py invocation ~0.5 s faster (matters for the sister repo's per-call cost
 # and the subprocess test suite). All dust references live inside cmd_* handlers.
 import core.equations as equations
+import core.exoplanet_batch as exoplanet_batch   # CR-8 batch ps pull (network lazy inside handlers)
 import core.exclusion_boundary as exclusion_boundary
 import core.exotic_physics as exotic_physics
 import core.feasibility as feasibility
@@ -134,6 +135,36 @@ def cmd_exoplanets(args):
 
 def cmd_planetary_systems(args):
     _out(_simbad_then(args.star, databases.compute_planetary_systems_composite))
+
+
+def cmd_planetary_systems_batch(args):
+    # Mode A host list: --hosts, or --host-file (one host per line; #-comments/blanks skipped).
+    hosts = None
+    if args.hosts:
+        hosts = list(args.hosts)
+    elif args.host_file:
+        try:
+            with open(args.host_file, encoding="utf-8") as fh:
+                hosts = [ln.strip() for ln in fh
+                         if ln.strip() and not ln.lstrip().startswith("#")]
+        except OSError as e:
+            _out({"error": f"Could not read --host-file '{args.host_file}': {e}",
+                  "route_tried": ["nasa-tap:ps"]})
+            return
+    # Mode B filter: property ranges (mirrors search-exoplanets) → ps columns.
+    filters = _build_filters(
+        args,
+        simple_keys=[("mass_min", "pl_bmasse_min"), ("mass_max", "pl_bmasse_max"),
+                     ("radius_min", "pl_rade_min"), ("radius_max", "pl_rade_max"),
+                     ("period_min", "pl_orbper_min"), ("period_max", "pl_orbper_max"),
+                     ("teff_min", "st_teff_min"), ("teff_max", "st_teff_max"),
+                     ("dist_max_pc", "sy_dist_max"), ("method", "discoverymethod"),
+                     ("spectral_refine", "spectral_refine")],
+        list_keys=[("spectral_classes", "spectral_classes")],
+    ) or None
+    _out(exoplanet_batch.compute_exoplanet_batch(
+        hosts=hosts, filters=filters, archive_query=args.archive_query,
+        solution_scope=args.solution_scope, field_scope=args.fields))
 
 
 def cmd_hwo_exep(args):
@@ -1927,6 +1958,31 @@ def main(argv=None):
     p = sub.add_parser("planetary-systems", help="NASA Exoplanet Archive — planetary systems composite")
     p.add_argument("--star", required=True)
     p.set_defaults(func=cmd_planetary_systems)
+
+    # planetary-systems-batch (CR-8 — batch ps pull; Mode A host list OR Mode B filter)
+    p = sub.add_parser("planetary-systems-batch",
+                       help="NASA Exoplanet Archive PS table, batched: many hosts or a filter, one call")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--hosts", nargs="+", help="Mode A: host designations (HD/HIP/GJ/TOI/common names/…)")
+    g.add_argument("--host-file", dest="host_file", help="Mode A: file, one host per line (#-comments ok)")
+    p.add_argument("--mass-min",   dest="mass_min",   type=float, help="Mode B: pl_bmasse (M⊕)")
+    p.add_argument("--mass-max",   dest="mass_max",   type=float)
+    p.add_argument("--radius-min", dest="radius_min", type=float, help="Mode B: pl_rade (R⊕)")
+    p.add_argument("--radius-max", dest="radius_max", type=float)
+    p.add_argument("--period-min", dest="period_min", type=float, help="Mode B: pl_orbper (days)")
+    p.add_argument("--period-max", dest="period_max", type=float)
+    p.add_argument("--teff-min",   dest="teff_min",   type=float, help="Mode B: st_teff (K)")
+    p.add_argument("--teff-max",   dest="teff_max",   type=float)
+    p.add_argument("--dist-max-pc", dest="dist_max_pc", type=float, help="Mode B: sy_dist (pc)")
+    p.add_argument("--method", dest="method", help="Mode B: discoverymethod (exact)")
+    p.add_argument("--spectral-classes", dest="spectral_classes", nargs="+")
+    p.add_argument("--spectral-refine",  dest="spectral_refine")
+    p.add_argument("--archive-query", dest="archive_query", help="Mode B: raw ADQL WHERE body over ps")
+    p.add_argument("--solution-scope", dest="solution_scope", choices=["default", "all"],
+                   default="default", help="default = preferred solution only; all = every published solution")
+    p.add_argument("--fields", choices=["core", "full"], default="core",
+                   help="core = CR-8 §4 field set; full = plus every raw ps column")
+    p.set_defaults(func=cmd_planetary_systems_batch)
 
     # hwo-exep
     p = sub.add_parser("hwo-exep", help="HWO ExEP precursor science stars")

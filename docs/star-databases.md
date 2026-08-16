@@ -89,6 +89,15 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 
 ## NASA Exoplanet Archive: Planetary Systems Composite Feature
 
+> **`pscomppars` vs `ps` (which table).** This feature — and its `query.py planetary-systems --star`
+> wrapper — uses **`pscomppars`** (Planetary Systems Composite Parameters: one blended row per planet).
+> The separate **CR-8 `query.py planetary-systems-batch`** reader (`core/exoplanet_batch.py`, batch/
+> many-hosts) instead uses the **`ps`** (Planetary Systems) table — one row *per published solution* —
+> because only `ps` carries `default_flag` (solution scope), per-solution `pl_refname`/`st_refname`
+> provenance, and preserved-per-solution null/0 values (un-fabricated null inclination; reported-0-vs-null
+> eccentricity). See `docs/integration.md` (CR-8) and `PHASE_CR8_PLAN.md`. The two paths are independent;
+> nothing here changed.
+
 - Menu option 3: `query_planetary_systems_composite()` — runs the same SIMBAD lookup as `query_exoplanets()`, then queries NASA Exoplanet Archive (`pscomppars`) and displays results. Does **not** query HWO ExEP or Mission Exocat archives.
 - Reuses `_get_archive_query_params()`, `_query_exoplanet_archive()`, and `_display_exoplanet_results()` from the All Tables feature.
 - `_display_exoplanet_results()` renders: SIMBAD star designations + info table, Star Name line, Star Properties table, Planet Properties table, and Calculated Habitable Zone (`_display_habitable_zone()`).

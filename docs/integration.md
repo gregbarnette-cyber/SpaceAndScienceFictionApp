@@ -204,6 +204,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `habitable-zone` | `--teff --luminosity` | none | **list** of 6 zone dicts (not a dict) |
 | `exoplanets` | `--star` | SIMBAD + archives | `simbad, planets[], hwo, exocat` |
 | `planetary-systems` | `--star` | SIMBAD + archive | `simbad, planets[]` |
+| `planetary-systems-batch` | Mode A: `--hosts N […]` \| `--host-file P`; Mode B: property filters (`--mass-min/max --radius-min/max --period-min/max --teff-min/max --dist-max-pc --method --spectral-classes/-refine`) \| `--archive-query "ADQL"`; both: `--solution-scope {default,all}` `--fields {core,full}` | **NASA TAP `ps` (live)** + SIMBAD (Mode A) | `mode, solution_scope, field_scope, coverage{}, hosts[]` — see CR-8 block below |
 | `hwo-exep` | `--star` | SIMBAD + archive | `simbad, hwo[]` |
 | `mission-exocat` | `--star` | SIMBAD (then local DB) | `simbad, exocat` |
 | `hwc` | `--star` | SIMBAD (then local DB) | `simbad, star_row, planet_rows[]` |
@@ -3970,6 +3971,56 @@ the six original sections, which drop to a `warnings[]` entry when absent) — a
 `disk` upper-limit and an `age_population` "not determined". Sol carries offline reference values (single
 star, ~4.567 Gyr thin-disk, zodiacal + Kuiper dust). `--sections multiplicity age_population disk` selects
 them; the section keys are additive to the envelope.
+
+## CR-8 — batch exoplanet-archive pull (`planetary-systems-batch`, LIVE)
+
+A separate, follow-up CR (CR-1…7 stay FULFILLED). One invocation returns the **full per-planet +
+per-system field set for many hosts at once** — the deep orbital architecture (per-planet inclination
++ eccentricity, with meaningful nulls + per-value provenance) that `planetary-systems --star` gives
+one host at a time. Core: `exoplanet_batch.compute_exoplanet_batch(hosts, filters, archive_query,
+solution_scope, field_scope)`. **Built on the NASA `ps` (Planetary Systems) table, NOT `pscomppars`** —
+`ps` has `default_flag` (solution scope), per-solution `pl_refname`/`st_refname` (provenance), and
+preserves the genuine null/0 per solution (un-fabricated null inclination; reported-0-vs-null
+eccentricity). The single-host `planetary-systems` (`pscomppars`) path is unchanged.
+
+**Two selection modes** (exactly one per invocation):
+- **Mode A — host list:** `--hosts N […]` or `--host-file P` (one host per line; `#`-comments/blanks
+  skipped). Each host is resolved through SIMBAD first (identity authority → canonical id + cross-IDs +
+  stellar fallbacks), then the archive round-trips are batched by name-column `IN(...)` lists.
+- **Mode B — filter:** the `search-exoplanets` property flags (`--mass-min/max` = `pl_bmasse`,
+  `--radius-min/max` = `pl_rade`, `--period-min/max` = `pl_orbper`, `--teff-min/max` = `st_teff`,
+  `--dist-max-pc` = `sy_dist`, `--method` = `discoverymethod`, `--spectral-classes/-refine` =
+  `st_spectype`) built into an ADQL WHERE over `ps`, **or** `--archive-query "ADQL"` (raw WHERE body).
+
+**Both modes:** `--solution-scope {default,all}` (default = `default_flag=1` only; all = every published
+solution, each carrying `default_solution`), `--fields {core,full}` (full = plus every raw `ps` column
+under a `raw` key on each host/planet).
+
+**Output:** `{mode ("hosts"|"filter"), solution_scope, field_scope, coverage{}, hosts[]}`, or the
+`{error, route_tried:["nasa-tap:ps"]}` shape on failure.
+- `coverage` (Mode A): `requested[], resolved_count, returned_host_count, unresolved[{input,reason}],
+  zero_planet[{input,resolved_host}], total_hosts, total_planets` — **an unresolvable designation or a
+  resolvable planet-less star is reported explicitly, never silently dropped.** (Mode B: `selection_echo,
+  total_hosts, total_planets`.)
+- each `hosts[]`: `resolved_host` (SIMBAD main_id, or hostname in Mode B), `hostname`, `cross_ids{}`,
+  `spectral_type, teff_k, mass_solar, radius_solar, fe_h_dex, distance_pc`, `magnitudes{}` (band-labelled
+  V/K/Gaia_G), `num_planets` (distinct planet names), `sy_pnum`, `provenance{}` (from `st_refname`),
+  `stellar_param_sources{}` (per-field `archive`|`simbad` — SIMBAD fills a null archive value and is
+  tagged), and `input` (Mode A), plus `planets[]`.
+- each `planets[]`: `name, discovery_method, period_days, sma_au, inclination_deg` (**null when
+  unmeasured — never defaulted to 90**), `eccentricity` (present `0` = reported fixed-circular,
+  distinguishable from `null`), `arg_periastron_deg, mass_earth, mass_jupiter`, **`mass_kind`** ∈
+  `{true_mass, msini, mass_radius_relation, unknown}` **+ `mass_prov_raw`** (the raw `pl_bmassprov`; the
+  `M-R relationship` third category is kept, not laundered as `true_mass`), `radius_earth` (null when
+  non-transiting), `transiting`, `default_solution`, `provenance{citation, refstr, href, raw}`.
+
+**Validation gate (WB re-gates, CR-8 §5):** batch≡single on `HD 136352` — b/c/d at inclination
+88.49/88.571/89.73 citing Delrez et al. 2021, identical to `planetary-systems --star "HD 136352"`;
+RV-only host (e.g. HD 10700) → inclination `null`; coverage manifest with no silent drops; units per
+CR §4. Live anchor: `tests/test_query_exoplanet_batch_live.py` (`SPACE_APP_RUN_LIVE=1`); offline logic:
+`tests/test_exoplanet_batch.py`. Gate-adjudication (WB MSG 060): a non-anchor host may diverge from
+`pscomppars` on a back-filled field → the `ps` default-flag value is authoritative (pass-with-note, not
+a fail).
 
 ## Implementation notes
 
