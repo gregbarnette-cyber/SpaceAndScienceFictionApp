@@ -125,19 +125,27 @@ def _hypatia_fixture():
 
 
 @contextmanager
-def _patched(simbad=None, regions_result=None, nasa=None, hwc=None, hypatia=None):
-    """Patch the five readers core.report calls. Any `*` may be an {"error": ...} dict
-    to exercise the warnings path."""
+def _patched(simbad=None, regions_result=None, nasa=None, hwc=None, hypatia=None,
+             stability=None, gaia_astro=None, disk=None):
+    """Patch the readers core.report calls. Any `*` may be an {"error": ...} dict to exercise the
+    warnings path. The three CR-5 live readers default to empty results (offline, no sockets)."""
     sb = simbad if simbad is not None else _simbad_fixture()
     rg = regions_result if regions_result is not None else _regions_fixture(sb)
     na = nasa if nasa is not None else _nasa_fixture()
     hw = hwc if hwc is not None else _hwc_fixture()
     hy = hypatia if hypatia is not None else _hypatia_fixture()
+    st = stability if stability is not None else {"elements": None}
+    ga = gaia_astro if gaia_astro is not None else {"parameters": None}
+    dk = disk if disk is not None else {"detection": "upper_limit", "components": [],
+                                        "upper_limit_L_IR_over_Lstar": 1e-4}
     with mock.patch("core.databases.compute_simbad_lookup", return_value=sb), \
          mock.patch("core.regions.compute_star_system_regions_from_simbad", return_value=rg), \
          mock.patch("core.databases.compute_planetary_systems_composite", return_value=na), \
          mock.patch("core.databases.compute_hwc", return_value=hw), \
-         mock.patch("core.databases.compute_hypatia_data", return_value=hy):
+         mock.patch("core.databases.compute_hypatia_data", return_value=hy), \
+         mock.patch("core.binary.binary_stability_auto", return_value=st), \
+         mock.patch("core.catalog.gaia_astrophysical", return_value=ga), \
+         mock.patch("core.debris_disk.debris_disk", return_value=dk):
         yield
 
 
@@ -177,8 +185,9 @@ def _patched_sol(solar=None):
         yield sb
 
 
-_ALL = ["identity", "regions", "habitable_zone", "planets", "hypatia", "gcns"]
-_SOL_SECTIONS = ["identity", "regions", "habitable_zone", "planets", "hypatia"]
+_CR5 = ["multiplicity", "age_population", "disk"]   # always-rendered explicit-empty sections (D2)
+_ALL = ["identity", "regions", "habitable_zone", "planets", "hypatia", "gcns"] + _CR5
+_SOL_SECTIONS = ["identity", "regions", "habitable_zone", "planets", "hypatia"] + _CR5
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
@@ -307,8 +316,8 @@ class SourceFailureIsolation(unittest.TestCase):
         with _patched(regions_result={"error": "Spectral type 'DA' is not a main-sequence class"},
                       hypatia={"error": "No Hypatia data for 'HD 10700'"}):
             r = report.build_system_dossier("Some WD")
-        # identity + planets + gcns still render; regions/HZ/hypatia degrade
-        self.assertEqual(r["sections"], ["identity", "planets", "gcns"])
+        # identity + planets + gcns still render; regions/HZ/hypatia degrade; CR-5 always renders
+        self.assertEqual(r["sections"], ["identity", "planets", "gcns"] + _CR5)
         joined = " ".join(r["warnings"])
         self.assertIn("regions:", joined)
         self.assertIn("habitable_zone:", joined)
@@ -402,6 +411,71 @@ class SolAsteroidCap(unittest.TestCase):
         big = self._solar_with(250)
         rows = sum(1 for l in self._doc(big).splitlines() if l.startswith("|"))
         self.assertLess(rows, 80, "planets section should not render 250 asteroid rows")
+
+
+class Cr5Sections(unittest.TestCase):
+    """CR-5 — multiplicity / age+population / debris-disk dossier sections."""
+
+    def test_binary_and_disk_populated(self):
+        sb = _simbad_fixture()
+        sb["multiplicity"] = {"is_multiple": True, "sb_flag": True,
+                              "basis": "spectroscopic", "otype": "SB*"}
+        stab = {"elements": {"m1_solar": 1.0, "m2_solar": 0.5, "sma_au": 20.0, "ecc": 0.3,
+                             "source": "sb9", "grade": 4, "mass_basis": "b", "a_basis": "k"},
+                "stype_critical_au": 3.5, "ptype_critical_au": 50.0, "e_out_of_hw_range": False}
+        disk = {"detection": "detected", "system_L_IR_over_Lstar": 6e-4,
+                "components": [{"type": "warm", "L_IR_over_Lstar": 4e-4, "T_dust_K": 300,
+                                "R_disk_au": 0.6, "ref": "Cotten & Song 2016"}]}
+        with _patched(simbad=sb, stability=stab, disk=disk):
+            r = report.build_system_dossier("Some Binary", fmt="json")
+            doc = report.build_system_dossier("Some Binary")["document"]
+        mp = r["data"]["multiplicity"]
+        self.assertTrue(mp["is_multiple"] and mp["sb_flag"])
+        self.assertEqual(mp["elements"]["m2_solar"], 0.5)
+        self.assertEqual(mp["stype_critical_au"], 3.5)
+        self.assertEqual(r["data"]["disk"]["detection"], "detected")
+        # md renders the new section headings
+        self.assertIn("## Multiplicity & Binary Stability", doc)
+        self.assertIn("## Debris Disk / IR Excess", doc)
+
+    def test_single_star_explicit_empties_not_omissions(self):
+        # A bare single star: the three CR-5 sections still render (D2 — explicit, never dropped).
+        with _patched():                       # default disk = upper_limit, no multiplicity, no age
+            r = report.build_system_dossier("Some Single", fmt="json")
+        self.assertIn("multiplicity", r["sections"])
+        self.assertIn("age_population", r["sections"])
+        self.assertIn("disk", r["sections"])
+        self.assertFalse(r["data"]["multiplicity"]["is_multiple"])
+        self.assertEqual(r["data"]["disk"]["detection"], "upper_limit")
+        # not dumped into warnings — they are "ok" explicit empties
+        self.assertNotIn("multiplicity:", " ".join(r["warnings"]))
+
+    def test_heavy_readers_gated_by_requested_sections(self):
+        # A dossier that doesn't request the CR-5 sections must not fire their live readers.
+        sb = _simbad_fixture()
+        with mock.patch("core.databases.compute_simbad_lookup", return_value=sb), \
+             mock.patch("core.regions.compute_star_system_regions_from_simbad",
+                        return_value=_regions_fixture(sb)), \
+             mock.patch("core.databases.compute_planetary_systems_composite", return_value=_nasa_fixture()), \
+             mock.patch("core.databases.compute_hwc", return_value=_hwc_fixture()), \
+             mock.patch("core.databases.compute_hypatia_data", return_value=_hypatia_fixture()), \
+             mock.patch("core.binary.binary_stability_auto") as m_bs, \
+             mock.patch("core.catalog.gaia_astrophysical") as m_ga, \
+             mock.patch("core.debris_disk.debris_disk") as m_disk:
+            r = report.build_system_dossier("X", sections=["identity"], fmt="json")
+        self.assertEqual(r["sections"], ["identity"])
+        m_bs.assert_not_called()
+        m_ga.assert_not_called()
+        m_disk.assert_not_called()
+
+    def test_sol_new_sections_reference_values(self):
+        with _patched_sol():
+            r = report.build_system_dossier("Sol", fmt="json")
+        self.assertFalse(r["data"]["multiplicity"]["is_multiple"])
+        self.assertEqual(r["data"]["age_population"]["population"], "thin")
+        self.assertAlmostEqual(r["data"]["age_population"]["age_gyr"], 4.567)
+        self.assertEqual(r["data"]["disk"]["detection"], "detected")
+        self.assertEqual(len(r["data"]["disk"]["components"]), 2)
 
 
 class SolPath(unittest.TestCase):

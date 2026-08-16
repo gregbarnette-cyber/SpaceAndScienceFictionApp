@@ -326,6 +326,107 @@ def _nss_two_body_solutions(source_id, sp_type, plx_fallback):
     return out, None
 
 
+def multiplicity_summary(star=None, source_id=None):
+    """CR-2: a multiplicity / spectroscopic-binary summary, composing the cheap SIMBAD otype hint,
+    the binary-orbit tool-split (per-component basis + SB1 lower-bound masses), and the offline
+    GCNS resolved-system count. Surfaces ``sb_flag`` (an unseen-RV / spectroscopic companion) so an
+    aggregator read can't miss a known binary.
+
+    Output: ``{star, is_multiple, n_components, components:[{basis, sb_flag, sep_au?,
+    m2_solar_lower?}], sb_flag, sources, note?}`` or ``{"error"}``. ``basis`` ∈ visual / astrometric
+    / SB1 / SB2 / eclipsing / spectroscopic; SB1 masses are always the sin i=1 **lower bound**."""
+    from core import databases
+    if not star and not source_id:
+        return _route_error("multiplicity requires --star or --source-id", ["multiplicity"])
+
+    otype_block, designations, star_label = None, None, star
+    if star:
+        sl = databases.compute_simbad_lookup(star)
+        if "error" in sl:
+            return {"error": sl["error"]}
+        otype_block = sl.get("multiplicity")
+        designations = sl.get("designations")
+        star_label = sl.get("main_id") or star
+    gaia_id = source_id or (gaia_source_id_from_designations(designations) if designations else None)
+    if star_label is None:
+        star_label = str(source_id) if source_id else None
+
+    # GCNS resolved-system multiplicity (offline, by Gaia source_id).
+    gcns_n, gcns_pairs = None, []
+    if gaia_id:
+        try:
+            gsys = databases.compute_gcns_system(int(gaia_id))
+        except (TypeError, ValueError):
+            gsys = {"error": "bad id"}
+        if "error" not in gsys and gsys.get("system"):
+            gcns_n = gsys["system"].get("n_components")
+            gcns_pairs = gsys["system"].get("pairs") or []
+
+    # binary-orbit tool-split → per-component basis.
+    bo = binary_orbit(star=star, source_id=source_id)
+    by_basis = {}                                          # dedupe: one component per detection basis
+
+    def _add(basis, sb, sep_au=None, m2_lower=None):
+        cur = by_basis.get(basis)
+        entry = cur or {"basis": basis, "sb_flag": sb}
+        if sep_au is not None and "sep_au" not in entry:
+            entry["sep_au"] = sep_au
+        if m2_lower is not None and "m2_solar_lower" not in entry:
+            entry["m2_solar_lower"] = m2_lower
+        by_basis[basis] = entry
+
+    for sol in bo.get("solutions", []) if isinstance(bo, dict) else []:
+        comp = sol.get("companion") or {}
+        method, src = comp.get("method"), sol.get("source") or ""
+        if method == "SB2":
+            basis = "SB2"
+        elif method == "spec-min":
+            basis = "SB1"
+        elif method == "astrom":
+            basis = "astrometric"
+        elif src in ("wds", "orb6"):
+            basis = "visual"
+        elif src.startswith("gaia-nss"):
+            basis = "astrometric"
+        else:
+            basis = "spectroscopic"
+        _add(basis, basis in ("SB1", "SB2"),
+             sep_au=sol.get("separation_au"),
+             m2_lower=(comp.get("m2_solar") if basis == "SB1" else None))
+
+    # Fold in the otype hint (eclipsing has no orbit route; spectroscopic when the split missed it).
+    if otype_block and otype_block.get("basis") == "eclipsing":
+        _add("eclipsing", False)
+    if otype_block and otype_block.get("sb_flag") and not any(
+            b in ("SB1", "SB2", "spectroscopic") for b in by_basis):
+        _add("spectroscopic", True)
+    # GCNS visual pairs (add a visual basis + projected separation when nothing visual yet).
+    if gcns_pairs and "visual" not in by_basis:
+        sep = next((p.get("proj_sep_au") for p in gcns_pairs if p.get("proj_sep_au") is not None), None)
+        _add("visual", False, sep_au=sep)
+
+    components = list(by_basis.values())
+    sb_flag = any(c["sb_flag"] for c in components) or bool(otype_block and otype_block.get("sb_flag"))
+    is_multiple = (bool(components)
+                   or bool(otype_block and otype_block.get("is_multiple"))
+                   or bool(gcns_n and gcns_n > 1))
+    if gcns_n and gcns_n > 1:
+        n_components = gcns_n
+    else:
+        n_components = 2 if is_multiple else 1
+
+    out = {
+        "star": star_label, "is_multiple": is_multiple, "n_components": n_components,
+        "components": components, "sb_flag": sb_flag,
+        "sources": {"simbad_otype": otype_block.get("otype") if otype_block else None,
+                    "gcns_n_components": gcns_n,
+                    "binary_orbit_routes": bo.get("route_tried") if isinstance(bo, dict) else None},
+    }
+    if isinstance(bo, dict) and bo.get("note"):
+        out["note"] = bo["note"]
+    return out
+
+
 def _sb9_solutions(ra, dec, sp_type):
     """SB9 orbits for the system at (ra, dec): cone B/sb9/main → Seq → B/sb9/orbits."""
     from core import catalog
@@ -452,6 +553,134 @@ def binary_orbit(star=None, ra=None, dec=None, source_id=None):
                           f"({', '.join(route_tried)}) — not-Gaia-resolved / not-in-SB9 does not "
                           "imply the star is single")
     return result
+
+
+# ── CR-3: auto-pipe binary-orbit → Holman-Wiegert stability ───────────────────
+
+_HW_ECC_MAX = 0.8               # Holman & Wiegert 1999 fit domain upper bound (e ≤ ~0.7–0.8)
+# WDS orb6 period-unit ('U') codes → years. NOTE 'm' is MINUTES, not months (orb6 convention);
+# 'c' centuries, 'd' days, 'h' hours, 'y' years.
+_ORB6_PERIOD_UNIT_YR = {"y": 1.0, "d": 1.0 / 365.25, "c": 100.0,
+                        "h": 1.0 / (365.25 * 24.0), "m": 1.0 / (365.25 * 24.0 * 60.0)}
+
+
+def _solution_period_yr(sol):
+    """Orbital period of a solution in years (period_d, or an orb6 visual_period × its unit)."""
+    if sol.get("period_d"):
+        return sol["period_d"] / 365.25
+    vp = sol.get("visual_period")
+    if vp:
+        unit = (sol.get("visual_period_unit") or "y").strip().lower()[:1]
+        return vp * _ORB6_PERIOD_UNIT_YR.get(unit, 1.0)
+    return None
+
+
+def _extract_stability_elements(solutions, ident):
+    """Pick the best solution + return (m1, m2, a_bin AU, ecc, source, grade, mass_basis, …).
+
+    Tiered so a visual pair without a companion classifier (the 36 Oph case) still resolves:
+      1. absolute companion masses + a period → a_bin via Kepler III (the clean NSS/SB9 path);
+      2. an SB2 mass ratio q=K1/K2 + a period + a primary spectral type → M₂ = M₁·q;
+      3. a period + a primary spectral type → equal-mass fallback (secondary mass unknown);
+      4. nothing usable → (None, honest note).
+    Returns (elements_dict | None, note | None)."""
+    sp_type = ident.get("sp_type")
+    m1_sp = m1_from_spectral_type(sp_type) if sp_type else None
+
+    def _elem(m1, m2, sol, mass_basis):
+        p_yr = _solution_period_yr(sol)
+        a_bin = ((m1 + m2) * p_yr ** 2) ** (1.0 / 3.0)
+        return {"m1_solar": m1, "m2_solar": m2, "sma_au": a_bin,
+                "ecc": sol.get("eccentricity") or 0.0,
+                "ecc_assumed": sol.get("eccentricity") is None,
+                "source": sol.get("source"), "grade": sol.get("grade"),
+                "mass_basis": mass_basis, "a_basis": "Kepler III (period + masses)"}
+
+    for sol in solutions:                                   # tier 1
+        comp = sol.get("companion") or {}
+        if comp.get("m1_solar") and comp.get("m2_solar") and _solution_period_yr(sol):
+            return _elem(comp["m1_solar"], comp["m2_solar"], sol,
+                         f"companion classifier ({comp.get('method')})"), None
+    if m1_sp:
+        for sol in solutions:                               # tier 2
+            comp = sol.get("companion") or {}
+            q = comp.get("mass_ratio_q")
+            if q and _solution_period_yr(sol):
+                return _elem(m1_sp, m1_sp * q, sol,
+                             "primary spectral type + SB2 mass ratio q=K1/K2"), None
+        for sol in solutions:                               # tier 3
+            if _solution_period_yr(sol):
+                return _elem(m1_sp, m1_sp, sol,
+                             "primary spectral type; equal-mass assumption "
+                             "(secondary mass unknown)"), None
+    if not solutions:
+        return None, ("no orbital solution found — stability not computable "
+                      "(not-Gaia-resolved / not-in-SB9 does not imply single)")
+    return None, ("orbital solution(s) found but none carries the masses + period needed for "
+                  "stability — an SB2/visual pair without a primary spectral type, or a "
+                  "projected-separation-only WDS row; re-run with a spectral type or masses")
+
+
+def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None):
+    """CR-3: fetch a binary's orbital elements (``binary_orbit``) and feed them straight into the
+    Holman-Wiegert stability calculator — no manual re-entry. Returns the S/P-type critical SMAs
+    and, when ``test_sma_au`` is given, a stability verdict for that orbit.
+
+    Output: ``{star, elements:{m1_solar, m2_solar, sma_au, ecc, source, grade, mass_basis, a_basis},
+    stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au, test_verdict, orbit_type,
+    e_out_of_hw_range, route_tried, note?}`` — or ``{"error"}`` on an unresolvable identity, or an
+    ``elements: None`` honest-empty when no usable orbit exists (never fabricated elements)."""
+    from core import equations
+    if test_sma_au is not None and test_sma_au <= 0:
+        return {"error": "test_sma_au must be positive."}
+    result = binary_orbit(star=star, ra=ra, dec=dec, source_id=source_id)
+    if "error" in result:
+        return result
+    ident = result.get("identity", {})
+    star_label = result.get("query")
+    elements, note = _extract_stability_elements(result.get("solutions", []), ident)
+    if elements is None:
+        return {"star": star_label, "elements": None,
+                "stype_critical_au": None, "ptype_critical_au": None, "mass_ratio": None,
+                "test_sma_au": test_sma_au, "test_verdict": None, "orbit_type": None,
+                "e_out_of_hw_range": None, "route_tried": result.get("route_tried"), "note": note}
+
+    m1, m2, a_bin, ecc = (elements["m1_solar"], elements["m2_solar"],
+                          elements["sma_au"], elements["ecc"])
+    hw = equations.compute_binary_orbit_stability(
+        m1, m2, a_bin, test_sma_au if test_sma_au is not None else a_bin, eccentricity=ecc)
+    if "error" in hw:
+        return {"star": star_label, "elements": elements,
+                "stype_critical_au": None, "ptype_critical_au": None, "mass_ratio": None,
+                "test_sma_au": test_sma_au, "test_verdict": None, "orbit_type": None,
+                "e_out_of_hw_range": ecc > _HW_ECC_MAX,
+                "route_tried": result.get("route_tried"),
+                "note": f"Holman-Wiegert rejected the elements: {hw['error']}"}
+
+    notes = []
+    if elements["ecc_assumed"]:
+        notes.append("eccentricity not catalogued — assumed circular")
+    if ecc > _HW_ECC_MAX:
+        notes.append(f"e={ecc:.2f} is outside the Holman-Wiegert 1999 fit domain (e≤{_HW_ECC_MAX}) — "
+                     "the verdict is robust but the exact critical SMA is an extrapolation")
+    out = {
+        "star": star_label,
+        "elements": {"m1_solar": m1, "m2_solar": m2, "sma_au": a_bin, "ecc": ecc,
+                     "source": elements["source"], "grade": elements["grade"],
+                     "mass_basis": elements["mass_basis"], "a_basis": elements["a_basis"]},
+        "stype_critical_au": hw["stype_critical_sma_au"],
+        "ptype_critical_au": hw["ptype_critical_sma_au"],
+        "mass_ratio": hw["mass_ratio"],
+        "test_sma_au": test_sma_au,
+        "test_verdict": (("stable" if hw["is_stable"] else "unstable")
+                         if test_sma_au is not None else None),
+        "orbit_type": hw["orbit_type"] if test_sma_au is not None else None,
+        "e_out_of_hw_range": ecc > _HW_ECC_MAX,
+        "route_tried": result.get("route_tried"),
+    }
+    if notes:
+        out["note"] = "; ".join(notes)
+    return out
 
 
 # ── Tier-2 orchestrator: close-binary-census (the population sweep, spec §3.2) ─

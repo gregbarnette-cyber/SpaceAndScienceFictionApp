@@ -238,7 +238,7 @@ def compute_simbad_lookup(star_name: str) -> dict:
             # add_votable_fields), so it must be inside the try — otherwise a
             # capabilities/connection failure escapes as a raw DALServiceError
             # instead of the friendly _network_error_msg classification.
-            custom_simbad = _make_simbad("sp_type", "plx_value", "V", "mesfe_h")
+            custom_simbad = _make_simbad("sp_type", "plx_value", "V", "mesfe_h", "otype")
             result     = _with_retries(custom_simbad.query_object, star_name)
             ids_result = _with_retries(Simbad.query_objectids, star_name)
     except Exception as e:
@@ -385,7 +385,44 @@ def compute_simbad_lookup(star_name: str) -> dict:
     # put a non-SIMBAD string into star_systems.designations semantics (AO3a).
     # Same free ride for query.py's simbad-lookup as the "gcns" key.
     result["gould"] = _simbad_gould_block(designations)
+    # CR-2: multiplicity flag surfaced in the standard lookup path. Cheap otype-derived hint
+    # (no extra network) — the authoritative per-component summary is the `multiplicity`
+    # subcommand (binary.multiplicity_summary, which composes this + binary-orbit + GCNS).
+    _ot = _safe("otype")
+    result["otype"] = str(_ot).strip() if _ot is not None else None
+    result["multiplicity"] = _simbad_multiplicity_block(result["otype"])
     return result
+
+
+# SIMBAD otype codes that imply multiplicity, mapped to a coarse basis hint. `**` is the generic
+# double/multiple; the SB*/eclipsing families carry a spectroscopic / eclipsing basis. This is a
+# HINT (SIMBAD lists a star's most-specific type, so a wide-binary member may show `PM*` not `**`);
+# the binary-orbit tool-split is the authoritative source (CR-2 Layer B).
+_OTYPE_SPECTROSCOPIC = {"SB*", "SB?", "RS*", "El*"}
+_OTYPE_ECLIPSING = {"EB*", "Al*", "bL*", "WU*", "EB?"}
+_OTYPE_VISUAL_MULTIPLE = {"**", "**?"}
+
+
+def _simbad_multiplicity_block(otype):
+    """Coarse otype-derived multiplicity hint for the standard lookup path (CR-2 Layer A).
+
+    Returns ``{is_multiple, sb_flag, basis, source:"simbad-otype", otype}`` — always present so the
+    lookup surfaces a multiplicity status either way (unlike the gcns/gould blocks, which are None
+    when absent). ``None`` only when SIMBAD returned no otype at all."""
+    if not otype:
+        return None
+    ot = str(otype).strip()
+    if ot in _OTYPE_SPECTROSCOPIC:
+        return {"is_multiple": True, "sb_flag": True, "basis": "spectroscopic",
+                "source": "simbad-otype", "otype": ot}
+    if ot in _OTYPE_ECLIPSING:
+        return {"is_multiple": True, "sb_flag": False, "basis": "eclipsing",
+                "source": "simbad-otype", "otype": ot}
+    if ot in _OTYPE_VISUAL_MULTIPLE:
+        return {"is_multiple": True, "sb_flag": False, "basis": "visual/multiple",
+                "source": "simbad-otype", "otype": ot}
+    return {"is_multiple": False, "sb_flag": False, "basis": None,
+            "source": "simbad-otype", "otype": ot}
 
 
 # ── NASA Exoplanet Archive helpers ────────────────────────────────────────────

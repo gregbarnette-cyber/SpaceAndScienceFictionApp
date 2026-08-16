@@ -29,8 +29,10 @@ _FORMATS = {"markdown", "html", "json"}
 
 # Section vocabulary. "moons" is a Sol-only opt-in section: valid to request, but never in
 # the default set (decision #13) — large, and meaningless for a single star.
-_SECTION_ORDER = ["identity", "regions", "habitable_zone", "planets", "hypatia", "gcns", "moons"]
-_ALL_SECTIONS = ["identity", "regions", "habitable_zone", "planets", "hypatia", "gcns"]
+_SECTION_ORDER = ["identity", "regions", "habitable_zone", "planets", "hypatia", "gcns",
+                  "multiplicity", "age_population", "disk", "moons"]
+_ALL_SECTIONS = ["identity", "regions", "habitable_zone", "planets", "hypatia", "gcns",
+                 "multiplicity", "age_population", "disk"]
 
 _SECTION_TITLES = {
     "identity":       "Identity",
@@ -39,8 +41,16 @@ _SECTION_TITLES = {
     "planets":        "Planets",
     "hypatia":        "Elemental Abundances (Hypatia Catalog · Lodders 2009)",
     "gcns":           "GCNS Cross-Reference (Gaia Catalogue of Nearby Stars)",
+    "multiplicity":   "Multiplicity & Binary Stability",
+    "age_population": "Age & Galactic Population",
+    "disk":           "Debris Disk / IR Excess",
     "moons":          "Moon Systems",
 }
+
+# CR-5 sections (multiplicity / age_population / disk) render as explicit empties / upper limits,
+# never omissions (decision D2 with WB) — so their status is always "ok" and the data carries an
+# explicit "not determined" / upper-limit value when a source is absent, rather than dropping to a
+# warning like the six original sections.
 
 # Curated identity designation subset (decision: common name + HD/HIP/GJ/HR/Gaia).
 _IDENTITY_DESIG_KEYS = ["HD", "HIP", "GJ", "HR", "Gaia EDR3"]
@@ -518,6 +528,145 @@ def _blocks_gcns(d):
     return _SECTION_TITLES["gcns"], [("kv", rows)]
 
 
+# ── CR-5: multiplicity / age+population / debris-disk (data + block builders) ──
+
+def _num_str(v, fmt="{:.3g}"):
+    return fmt.format(v) if isinstance(v, (int, float)) else "—"
+
+
+def _multiplicity_data_star(simbad, star):
+    """CR-2 flag (cheap otype block, already in `simbad`) + CR-3 stability — the stability call is
+    made only when the otype says multiple, so a single star's dossier skips the heavy tool-split."""
+    mult = simbad.get("multiplicity") or {}
+    data = {"is_multiple": bool(mult.get("is_multiple")), "sb_flag": bool(mult.get("sb_flag")),
+            "basis": mult.get("basis"), "otype": mult.get("otype")}
+    if mult.get("is_multiple") and star:
+        try:
+            from core import binary
+            stab = binary.binary_stability_auto(star=star)
+            if isinstance(stab, dict) and "error" not in stab and stab.get("elements"):
+                data.update({"elements": stab["elements"], "is_multiple": True,
+                             "stype_critical_au": stab.get("stype_critical_au"),
+                             "ptype_critical_au": stab.get("ptype_critical_au")})
+                if stab.get("e_out_of_hw_range"):
+                    data["note"] = ("eccentricity outside the Holman-Wiegert fit domain — the "
+                                    "critical SMA is an extrapolation")
+        except Exception:
+            pass
+    return data
+
+
+def _blocks_multiplicity(d):
+    rows = [("Multiple?", "yes" if d["is_multiple"] else "no"),
+            ("Spectroscopic (SB) flag", "yes" if d["sb_flag"] else "no"),
+            ("Basis", d.get("basis") or "—"), ("SIMBAD otype", d.get("otype") or "—")]
+    blocks = [("kv", rows)]
+    e = d.get("elements")
+    if e:
+        blocks.append(("kv", [
+            ("Component masses (M☉)", f"{_num_str(e.get('m1_solar'))} + {_num_str(e.get('m2_solar'))}"),
+            ("Binary semi-major axis (AU)", _num_str(e.get("sma_au"))),
+            ("Eccentricity", _num_str(e.get("ecc"))),
+            ("S-type: planet stable within (AU)", _num_str(d.get("stype_critical_au"))),
+            ("P-type: planet stable beyond (AU)", _num_str(d.get("ptype_critical_au"))),
+            ("Orbit source", str(e.get("source") or "—"))]))
+    if d.get("note"):
+        blocks.append(("em", d["note"]))
+    return _SECTION_TITLES["multiplicity"], blocks
+
+
+def _age_population_data_star(simbad, hyp, star):
+    """Gaia FLAME age (one query, model-dependent caveat) + CR-7 population from the Hypatia
+    U/V/W the dossier already fetched (no extra network for the classification)."""
+    data = {"age_gyr": None, "age_source": None, "age_caveat": None, "population": None,
+            "membership_prob": None, "toomre_velocity_kms": None,
+            "u_vel_kms": None, "v_vel_kms": None, "w_vel_kms": None}
+    try:
+        from core import catalog
+        ga = catalog.gaia_astrophysical(star=star)
+        params = ga.get("parameters") if isinstance(ga, dict) else None
+        if params and params.get("age_flame") is not None:
+            data["age_gyr"] = params["age_flame"]
+            data["age_source"] = "Gaia DR3 FLAME"
+            data["age_caveat"] = (ga.get("caveats") or {}).get("age_flame")
+    except Exception:
+        pass
+    props = (hyp or {}).get("properties") or {}
+    u, v, w = props.get("u_vel"), props.get("v_vel"), props.get("w_vel")
+    if None not in (u, v, w):
+        try:
+            from core import kinematics
+            pop = kinematics.classify_population(u=u, v=v, w=w)
+            if "error" not in pop:
+                data.update({"population": pop["population"], "membership_prob": pop["membership_prob"],
+                             "toomre_velocity_kms": pop["toomre_velocity_kms"],
+                             "u_vel_kms": u, "v_vel_kms": v, "w_vel_kms": w})
+        except Exception:
+            pass
+    return data
+
+
+def _blocks_age_population(d):
+    rows = [("Age (Gyr)", _num_str(d["age_gyr"], "{:.2f}") if d.get("age_gyr") is not None
+             else "not determined"),
+            ("Age source", d.get("age_source") or "—"),
+            ("Galactic population", d.get("population") or "not determined"),
+            ("Membership probability", _num_str(d.get("membership_prob"), "{:.2f}")),
+            ("Toomre velocity (km/s)", _num_str(d.get("toomre_velocity_kms"), "{:.1f}"))]
+    blocks = [("kv", rows)]
+    if d.get("age_caveat"):
+        blocks.append(("em", d["age_caveat"]))
+    return _SECTION_TITLES["age_population"], blocks
+
+
+def _disk_data_star(star):
+    """CR-1 debris-disk — detected components or a non-null upper limit (never an omission)."""
+    try:
+        from core import debris_disk
+        dd = debris_disk.debris_disk(star=star)
+        return {"detection": "unavailable", "reason": dd["error"]} if "error" in dd else dd
+    except Exception as e:
+        return {"detection": "unavailable", "reason": str(e)}
+
+
+def _blocks_disk(d):
+    det = d.get("detection")
+    if det == "detected":
+        blocks = [("kv", [("Detection", "detected"),
+                          ("System L_IR/L*", _num_str(d.get("system_L_IR_over_Lstar")))])]
+        headers = ["Type", "L_IR/L*", "T_dust (K)", "R_disk (AU)", "Reference"]
+        rows = [[c.get("type"), _num_str(c.get("L_IR_over_Lstar")),
+                 _num_str(c.get("T_dust_K"), "{:.0f}"), _num_str(c.get("R_disk_au"), "{:.1f}"),
+                 str(c.get("ref") or "")] for c in d.get("components", [])]
+        blocks.append(("table", headers, rows))
+    elif det == "upper_limit":
+        blocks = [("kv", [("Detection", "non-detection (upper limit)"),
+                          ("Upper limit L_IR/L*", _num_str(d.get("upper_limit_L_IR_over_Lstar"))),
+                          ("Basis", str(d.get("upper_limit_basis") or "—"))]),
+                  ("em", str(d.get("upper_limit_regime") or ""))]
+    else:
+        blocks = [("kv", [("Detection", "unavailable"), ("Reason", str(d.get("reason") or "—"))])]
+    return _SECTION_TITLES["disk"], blocks
+
+
+def _multiplicity_data_sol():
+    return {"is_multiple": False, "sb_flag": False, "basis": None, "otype": "G2V (single star)"}
+
+
+def _age_population_data_sol():
+    return {"age_gyr": 4.567, "age_source": "solar reference", "age_caveat": None,
+            "population": "thin", "membership_prob": None, "toomre_velocity_kms": 13.3,
+            "u_vel_kms": 0.0, "v_vel_kms": 0.0, "w_vel_kms": 0.0}
+
+
+def _disk_data_sol():
+    return {"detection": "detected", "system_L_IR_over_Lstar": 1.1e-6, "components": [
+        {"type": "warm", "L_IR_over_Lstar": 1e-7, "T_dust_K": 260, "R_disk_au": 1.0,
+         "ref": "Solar zodiacal cloud (reference)"},
+        {"type": "cold", "L_IR_over_Lstar": 1e-6, "T_dust_K": 40, "R_disk_au": 40.0,
+         "ref": "Kuiper belt (reference)"}]}
+
+
 _SECTION_BLOCKS = {
     "identity": _blocks_identity,
     "regions": _blocks_regions,
@@ -525,6 +674,9 @@ _SECTION_BLOCKS = {
     "planets": _blocks_planets,
     "hypatia": _blocks_hypatia,
     "gcns": _blocks_gcns,
+    "multiplicity": _blocks_multiplicity,
+    "age_population": _blocks_age_population,
+    "disk": _blocks_disk,
     "moons": _blocks_moons,
 }
 
@@ -642,13 +794,16 @@ def _render_html(star, rendered, data, warnings, notes):
 
 # ── assembly ──────────────────────────────────────────────────────────────────
 
-def _assemble_star(star):
+def _assemble_star(star, requested=None):
     """Run the readers for a real star. Returns {"error"} (hard) or {data, status}.
 
     `status` maps each section key → (state, reason) where state is "ok" (in data),
     "warn" (source failed/empty), or "note" (by-design). The caller decides which to
-    surface based on the requested section set.
+    surface based on the requested section set. `requested` (default: all) gates the three
+    CR-5 **live** readers so a cheap `--sections identity` dossier skips their network calls.
     """
+    if requested is None:
+        requested = list(_ALL_SECTIONS)
     simbad = databases.compute_simbad_lookup(star)
     if "error" in simbad:
         return {"error": simbad["error"]}
@@ -693,6 +848,20 @@ def _assemble_star(star):
         data["gcns"] = _gcns_data(gcns)
         status["gcns"] = ("ok", None)
 
+    # CR-5 sections — always rendered as explicit empties / upper limits (decision D2), so their
+    # status is "ok" even when a source is absent. Gated on `requested` because each fires a LIVE
+    # network reader (binary-orbit tool-split / Gaia FLAME / VizieR debris catalogues) — a dossier
+    # that does not ask for them should not pay for them.
+    if "multiplicity" in requested:
+        data["multiplicity"] = _multiplicity_data_star(simbad, star)
+        status["multiplicity"] = ("ok", None)
+    if "age_population" in requested:
+        data["age_population"] = _age_population_data_star(simbad, hyp, star)
+        status["age_population"] = ("ok", None)
+    if "disk" in requested:
+        data["disk"] = _disk_data_star(star)
+        status["disk"] = ("ok", None)
+
     return {"data": data, "status": status}
 
 
@@ -736,6 +905,15 @@ def _assemble_sol():
 
     status["gcns"] = ("note", "Sol is the reference-frame origin, not a GCNS catalog source "
                               "— section not applicable.")
+
+    # CR-5 sections (offline reference values for the Sun).
+    data["multiplicity"] = _multiplicity_data_sol()
+    status["multiplicity"] = ("ok", None)
+    data["age_population"] = _age_population_data_sol()
+    status["age_population"] = ("ok", None)
+    data["disk"] = _disk_data_sol()
+    status["disk"] = ("ok", None)
+
     return {"data": data, "status": status}
 
 
@@ -776,16 +954,16 @@ def build_system_dossier(star, sections=None, fmt="markdown"):
 
     # Sol / Sun is the reference-frame origin — it doesn't resolve in SIMBAD and its planets
     # are the real Solar System, so route to the offline reference-origin path.
+    # Resolve the requested set up front so the star path can skip the heavy CR-5 live readers
+    # for sections that were not requested (Sol's CR-5 data is offline constants — no gating needed).
+    requested = list(sections) if sections else list(_ALL_SECTIONS)
     if (star or "").strip().lower() in {"sol", "sun"}:
         assembled = _assemble_sol()
     else:
-        assembled = _assemble_star(star)
+        assembled = _assemble_star(star, requested)
         if "error" in assembled:
             return {"error": assembled["error"]}
     data, status = assembled["data"], assembled["status"]
-    default_sections = list(_ALL_SECTIONS)
-
-    requested = list(sections) if sections else default_sections
     warnings, notes = [], []
     rendered = []
     for key in _SECTION_ORDER:

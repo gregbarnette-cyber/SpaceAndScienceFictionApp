@@ -3838,6 +3838,122 @@ query.py warhead-effects-at-standoff --yield-kt 1 --warhead-type fission --stand
 All four Phase AT calculators are **pure-compute, no network**; core validation is a curated `{"error"}`
 (exit 1), argparse errors (bad choices, non-numeric, required mutually-exclusive groups) are exit 2.
 
+## Star-analysis change requests (CR-1 … CR-7 — for the star_analysis skill)
+
+Seven subcommands built from the `spaceapp-change-request-spec.md` contract. **CR-1/2/3** make **LIVE**
+VizieR/SIMBAD/Gaia queries (same network class as the Phase AM catalog tier — `{"error", route_tried}` on
+failure, an empty-but-valid result is not an error); **CR-4/6/7** are pure-math self-validating (curated
+`{"error"}` exit 1, argparse exit 2) with `network only on the optional --star path`. Every non-detection
+returns an **upper limit / explicit empty, never a null**.
+
+**CR-4/CR-6 WB bundles.** `nuclear-inventory`'s fissile output consumes the WB **3c FINAL** fissile-GCE model —
+**integrated 2026-08-15** (`provenance.gce_model_version = "3c-v1.0.0-2026-08-15"`, `confidence:"extrapolation"`).
+It is the **age-dependent** uniform-production survival integral (`g_i = (1−e^(−λ_i·D))/(λ_i·D)`,
+`D = max(0, D_eff−age)`, `D_eff=11.55`) — not the earlier constant-g provisional (they agree only at the solar
+anchor). `detection-completeness`'s defaults still consume a **provisional** 3a-shaped table
+(`assumptions.reference_version` carries a `provisional-0` tag) pending WB's "3a FINAL"; Interface B is pinned, so
+it is a one-table drop-in with no code churn, and CR-6's *values* may shift at the margins until then.
+
+#### `debris-disk` (CR-1 — LIVE)
+Observed IR-excess / debris disk for one star. Cross-matches **Chen et al. 2014** (`J/ApJS/211/25`, Spitzer,
+per-component L_IR/L*) + **Cotten & Song 2016** (`J/ApJS/225/15`, WISE + IRAS/MIPS + **Herschel** PACS/SPIRE
+far-IR; `Tau` is L_IR/L* in units of 1e-4). Both catalogues' components are reported, ref-tagged. Undetected
+→ a per-star **AllWISE W4** warm-dust upper limit (documented survey floor when W4 is absent).
+```bash
+query.py debris-disk --star Vega           # detected → components
+query.py debris-disk --star "18 Scorpii"   # non-detection → upper_limit (never null)
+```
+Core: `debris_disk.debris_disk(star=None, source_id=None, ra=None, dec=None)`. Output: `{star, components:
+[{type:warm|cold, L_IR_over_Lstar, T_dust_K, R_disk_au, band, ref}], detection: detected|upper_limit,
+upper_limit_L_IR_over_Lstar, system_L_IR_over_Lstar?, catalogs_matched?, upper_limit_basis?,
+upper_limit_regime?, route_tried}`. **Upper limits are warm-regime (WISE W4); cold Kuiper-analog dust needs
+the far-IR path** (carried by the Cotten cold components on a detection).
+
+#### `multiplicity` (CR-2 — LIVE)
+Multiplicity / spectroscopic-binary summary surfaced by default. Composes the cheap SIMBAD **otype** hint
+(also now on `simbad-lookup`'s new `otype`/`multiplicity` keys), the `binary-orbit` tool-split (per-component
+basis + SB1 lower-bound masses), and the offline GCNS resolved-system count.
+```bash
+query.py multiplicity --star "alpha Centauri"
+```
+Core: `binary.multiplicity_summary(star=None, source_id=None)`. Output: `{star, is_multiple, n_components,
+components:[{basis, sb_flag, sep_au?, m2_solar_lower?}], sb_flag, sources, note?}`. `basis` ∈ visual /
+astrometric / SB1 / SB2 / eclipsing / spectroscopic; **SB1 masses are always the sin i=1 lower bound**.
+
+#### `binary-stability-auto` (CR-3 — LIVE)
+Auto-pipes `binary-orbit` → Holman-Wiegert stability in one call (no manual re-entry). Picks the best
+solution, derives the binary relative semi-major axis via Kepler III (period + masses), and runs the S/P-type
+critical-SMA calc. A visual pair without a companion classifier falls to a primary-spectral-type equal-mass
+estimate. **`elements: null` + a `note` is a correct find≠fabricate result**, not a failure: a solution with no
+absolute masses AND no period (SB2-only / WDS-projected-separation / no period-bearing orbit in any route) can't
+yield a relative `a`. It resolves wherever the catalog carries masses+period (e.g. α Cen: SB9 masses → S-crit
+2.6 AU). **Note on 36 Oph:** the canonical anchor (M1=M2=0.85, e=0.92 → S-crit 0.30–0.47 AU, test 1 AU unstable)
+is only reproduced when a **period-bearing** orbit is supplied — 36 Oph itself is absent from orb6 (WDS-only, no
+period) so the *live* `--star "36 Ophiuchi"` returns the honest null; supply the elements to `binary-stability`
+to see the 0.30–0.47 AU numbers.
+```bash
+query.py binary-stability-auto --star "alpha Centauri" --test-sma-au 1.0   # SB9 masses → stability verdict
+query.py binary-stability-auto --star "36 Ophiuchi"    --test-sma-au 1.0   # honest null (36 Oph not in orb6)
+```
+Core: `binary.binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None)`. Output:
+`{star, elements:{m1_solar, m2_solar, sma_au, ecc, source, grade, mass_basis, a_basis}|null,
+stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au, test_verdict: stable|unstable|null,
+orbit_type, e_out_of_hw_range, route_tried, note?}`. **`e_out_of_hw_range`** flags an eccentricity past the
+Holman-Wiegert 1999 fit domain (e≤0.8) — the verdict stays robust, the exact critical SMA is an extrapolation.
+`--test-sma-au 0` (or negative) is a curated `{"error"}` before the network call.
+
+#### `nuclear-inventory` (CR-4 — pure-math; fissile consumes the WB 3c bundle)
+Fusion-fuel + fissile (U/Th) + radiogenic-heat inventory from stellar scalars.
+```bash
+query.py nuclear-inventory --fe-h 0 --age-gyr 4.567 --eu-h 0    # solar → U235/U238 ≈ 0.00726
+```
+Core: `nuclear.compute_nuclear_inventory(fe_h, age_gyr, eu_h=None, eu_fe=None, star_mass_solar=None,
+population=None)`. Output: `{fusion:{D_over_H, He3_est, Li6, Li7, B11}, fissile:{U235_frac, U238_frac,
+Th232_frac, U235_U238_ratio, u_over_h, th_over_h, a_u, a_th}|{note}, radiogenic_heat_W_per_kg,
+provenance:{gce_model_version, confidence, domain_ok, …}, inputs}`. **`fissile` needs a tracer** (`--eu-h`
+xor `--eu-fe`); absent → `fissile.note` (not null). `fissile.{u_over_h,th_over_h,a_u,a_th}` are the absolute
+**tonnage** (Eu-scaled), beyond the Eu-independent fraction keys. `provenance.domain_ok=false` flags a star
+outside the 3c fit domain (flag, never clamp). `--eu-h`/`--eu-fe` are an argparse mutually-exclusive group.
+
+#### `detection-completeness` (CR-6 — pure-math; defaults consume the WB 3a bundle)
+Per-method minimum detectable planet (mass M⊕ or radius R⊕) vs orbital SMA — a completeness map inverting the
+four detection-limit calculators. Survey capability from a per-star override or the 3a defaults keyed by
+apparent magnitude.
+```bash
+query.py detection-completeness --app-mag 4.83 --distance-pc 10 --sp-type G2V   # Earth@1AU below the floor
+query.py detection-completeness --star "Tau Ceti"                               # --star resolves mag/dist/sptype (live)
+```
+Core: `detection.compute_detection_completeness(app_mag, distance_pc, sp_type=None, star_mass_solar=None,
+star_radius_solar=None, methods=None, sma_grid=None, albedo=0.3, rv_precision_ms=None, rv_baseline_yr=None,
+transit_precision_ppm=None, transit_target=False, astrom_precision_uas=None, astrom_baseline_yr=None,
+star=None)`. Output: `{star, app_mag, distance_pc, sp_type, star_mass_solar, star_radius_solar, methods:
+[{method, applicable, detectable_vs_sma:[{sma_au, min_mass_earth?|min_radius_earth?, …}], floor_source,
+value_kind, baseline_yr?, note?}], assumptions:{reference_version, confidence, out_of_domain, …}}`.
+**Monotonicity is per-method** (RV/transit harden with SMA; astrometry/imaging ease, gated at P>baseline /
+inside the IWA). **Transit is `applicable:false` unless `--transit-target` / `--transit-precision-ppm`** is
+given (honest "not covered").
+
+#### `population-classify` (CR-7 — pure-math; network only on --star)
+Thin-disk / thick-disk / halo verdict + membership probability from heliocentric U/V/W (Bensby TD/D/H velocity
+ellipsoids on a Schönrich LSR). Feeds CR-4's population tag.
+```bash
+query.py population-classify --u 0 --v 0 --w 0            # Sun → thin
+query.py population-classify --star "HD 122563"          # SIMBAD → Hypatia U/V/W (live)
+```
+Core: `kinematics.classify_population(u=None, v=None, w=None, star=None)`. Output: `{star, u_vel_kms,
+v_vel_kms, w_vel_kms, toomre_velocity_kms, total_velocity_kms, population: thin|thick|halo, membership_prob,
+probabilities:{thin, thick, halo}, provenance}`. Supply all three of `--u/--v/--w` **or** `--star` (partial
+U/V/W → curated error; explicit velocities win over `--star`).
+
+#### `dossier` gains three sections (CR-5)
+`dossier` (Phase Q, above) now composes **`multiplicity`** (CR-2 flag + CR-3 stability), **`age_population`**
+(Gaia FLAME age + CR-7 population from the Hypatia U/V/W it already fetched) and **`disk`** (CR-1) into the
+default section set. These three **always render as explicit empties / upper limits, never omitted** (unlike
+the six original sections, which drop to a `warnings[]` entry when absent) — a bare single star still shows a
+`disk` upper-limit and an `age_population` "not determined". Sol carries offline reference values (single
+star, ~4.567 Gyr thin-disk, zodiacal + Kuiper dust). `--sections multiplicity age_population disk` selects
+them; the section keys are additive to the envelope.
+
 ## Implementation notes
 
 - No `sys.path` manipulation — Python prepends the script's own directory automatically when run directly, so `import core.X` works without changes.

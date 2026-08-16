@@ -15,6 +15,7 @@ import core.black_hole as black_hole
 import core.calculators as calculators
 import core.cooling as cooling
 import core.databases as databases
+import core.detection as detection
 import core.dust_impact as dust_impact   # pure-math (no astropy/numpy) — safe at module load
 # core.dust / core.dust_routing are imported lazily inside their handlers — they pull
 # astropy + numpy (dust coordinate math), so keeping them out of module load makes every
@@ -29,8 +30,10 @@ import core.metric_drive as metric_drive
 import core.gravitation as gravitation
 import core.generate as generate
 import core.ism_drag as ism_drag
+import core.kinematics as kinematics
 import core.life_support as life_support
 import core.megastructure as megastructure
+import core.nuclear as nuclear
 import core.par_flux as par_flux
 import core.power as power
 import core.radiation as radiation
@@ -1071,6 +1074,46 @@ def cmd_relativistic_brachistochrone(args):
     _out(calculators.compute_relativistic_brachistochrone(args.accel_g, args.distance_ly))
 
 
+# ── Star-analysis CR-7 — kinematics / population classification ────────────────
+# Network only on the --star path (SIMBAD → Hypatia); the --u/--v/--w path is pure-math.
+
+def cmd_population_classify(args):
+    _out(kinematics.classify_population(u=args.u, v=args.v, w=args.w, star=args.star))
+
+
+# ── Star-analysis CR-6 — detection-completeness (pure-math; network only on --star) ──
+def cmd_detection_completeness(args):
+    app_mag, distance_pc, sp_type = args.app_mag, args.distance_pc, args.sp_type
+    if args.star:
+        sl = databases.compute_simbad_lookup(args.star)
+        if "error" in sl:
+            _out(sl)
+            return
+        if app_mag is None:
+            app_mag = sl.get("vmag")
+        if distance_pc is None:
+            distance_pc = sl.get("parsecs")
+        if sp_type is None:
+            sp_type = sl.get("sp_type")
+    _out(detection.compute_detection_completeness(
+        app_mag=app_mag, distance_pc=distance_pc, sp_type=sp_type,
+        star_mass_solar=args.star_mass_solar, star_radius_solar=args.star_radius_solar,
+        methods=args.methods, sma_grid=args.sma_grid, albedo=args.albedo,
+        rv_precision_ms=args.rv_precision_ms, rv_baseline_yr=args.rv_baseline_yr,
+        transit_precision_ppm=args.transit_precision_ppm, transit_target=args.transit_target,
+        astrom_precision_uas=args.astrom_precision_uas, astrom_baseline_yr=args.astrom_baseline_yr,
+        star=args.star,
+    ))
+
+
+# ── Star-analysis CR-4 — nuclear-fuel & radiogenic inventory (pure-math) ───────
+def cmd_nuclear_inventory(args):
+    _out(nuclear.compute_nuclear_inventory(
+        fe_h=args.fe_h, age_gyr=args.age_gyr, eu_h=args.eu_h, eu_fe=args.eu_fe,
+        star_mass_solar=args.star_mass_solar, population=args.population,
+    ))
+
+
 # ── Phase T1c — census-filter presets ─────────────────────────────────────────
 
 def cmd_solar_analogs(args):
@@ -1139,6 +1182,25 @@ def cmd_binary_orbit(args):
     _out(binary.binary_orbit(
         star=args.star, ra=args.ra, dec=args.dec, source_id=args.source_id,
     ))
+
+
+def cmd_binary_stability_auto(args):
+    import core.binary as binary
+    _out(binary.binary_stability_auto(
+        star=args.star, ra=args.ra, dec=args.dec, source_id=args.source_id,
+        test_sma_au=args.test_sma_au,
+    ))
+
+
+def cmd_multiplicity(args):
+    import core.binary as binary
+    _out(binary.multiplicity_summary(star=args.star, source_id=args.source_id))
+
+
+def cmd_debris_disk(args):
+    import core.debris_disk as debris_disk
+    _out(debris_disk.debris_disk(
+        star=args.star, source_id=args.source_id, ra=args.ra, dec=args.dec))
 
 
 def cmd_close_binary_census(args):
@@ -2593,6 +2655,53 @@ def main(argv=None):
     p.add_argument("--distance-ly", required=True, type=float)
     p.set_defaults(func=cmd_relativistic_brachistochrone)
 
+    # ── Star-analysis CR-7 — kinematics / population classification ───────────
+    # population-classify: thin/thick/halo verdict from heliocentric U/V/W or a star id.
+    p = sub.add_parser("population-classify",
+                       help="Thin/thick/halo Galactic-population verdict from U/V/W or a star id")
+    p.add_argument("--star", help="Star identifier (SIMBAD → Hypatia; live network)")
+    p.add_argument("--u", type=float, help="Heliocentric U velocity, km/s (toward Galactic centre)")
+    p.add_argument("--v", type=float, help="Heliocentric V velocity, km/s (along Galactic rotation)")
+    p.add_argument("--w", type=float, help="Heliocentric W velocity, km/s (toward north Galactic pole)")
+    p.set_defaults(func=cmd_population_classify)
+
+    # ── Star-analysis CR-4 — nuclear-fuel & radiogenic inventory ──────────────
+    # nuclear-inventory: fusion + fissile (per-isotope GCE) + radiogenic heat from stellar scalars.
+    p = sub.add_parser("nuclear-inventory",
+                       help="Fusion-fuel + fissile (U/Th) + radiogenic-heat inventory from stellar scalars")
+    p.add_argument("--fe-h", required=True, type=float, help="[Fe/H] (dex)")
+    p.add_argument("--age-gyr", required=True, type=float, help="Stellar age (Gyr)")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--eu-h", type=float, help="r-process tracer [Eu/H] (dex)")
+    g.add_argument("--eu-fe", type=float, help="r-process tracer [Eu/Fe] (dex; → [Eu/H]=[Eu/Fe]+[Fe/H])")
+    p.add_argument("--star-mass-solar", type=float, help="Stellar mass (M☉, optional)")
+    p.add_argument("--population", choices=["thin", "thick", "halo"],
+                   help="Galactic population tag (CR-7 verdict; optional)")
+    p.set_defaults(func=cmd_nuclear_inventory)
+
+    # ── Star-analysis CR-6 — detection-completeness ───────────────────────────
+    # detection-completeness: min detectable planet vs SMA per method (RV/transit/astrometry/imaging).
+    p = sub.add_parser("detection-completeness",
+                       help="Per-method minimum detectable planet (mass/radius) vs orbital SMA")
+    p.add_argument("--star", help="Star identifier (SIMBAD → app mag / distance / sp-type; live network)")
+    p.add_argument("--app-mag", type=float, help="Apparent magnitude (method working band)")
+    p.add_argument("--distance-pc", type=float, help="Distance in parsecs")
+    p.add_argument("--sp-type", help="Spectral type (→ star mass/radius if not given)")
+    p.add_argument("--star-mass-solar", type=float)
+    p.add_argument("--star-radius-solar", type=float)
+    p.add_argument("--methods", nargs="+", choices=["rv", "transit", "astrometry", "imaging"],
+                   help="Subset of methods (default all)")
+    p.add_argument("--sma-grid", nargs="+", type=float, help="Orbital SMA grid in AU (default log grid)")
+    p.add_argument("--albedo", type=float, default=0.3)
+    p.add_argument("--rv-precision-ms", type=float, help="Per-star RV precision override (m/s)")
+    p.add_argument("--rv-baseline-yr", type=float)
+    p.add_argument("--transit-precision-ppm", type=float, help="Per-star transit photometric precision (ppm)")
+    p.add_argument("--transit-target", action="store_true",
+                   help="Treat the star as a covered transit target (else 'not applicable')")
+    p.add_argument("--astrom-precision-uas", type=float, help="Per-star astrometric precision override (µas)")
+    p.add_argument("--astrom-baseline-yr", type=float)
+    p.set_defaults(func=cmd_detection_completeness)
+
     # ── Phase AE (Group K) — arrival geometry & gravitation (Pkt 20) ──────────
 
     # escape-velocity (K1)
@@ -3372,6 +3481,39 @@ def main(argv=None):
     p.add_argument("--source-id", dest="source_id", default=None,
                    help="Gaia DR3 source_id (bare integer)")
     p.set_defaults(func=cmd_binary_orbit)
+
+    # binary-stability-auto (CR-3): auto-pipe binary-orbit elements → Holman-Wiegert stability.
+    p = sub.add_parser("binary-stability-auto",
+                       help="Fetch a binary's orbit and feed it into Holman-Wiegert stability in "
+                            "one call — S/P-type critical SMAs + a test-orbit verdict (LIVE network)")
+    p.add_argument("--star", default=None, help="Star name (resolved via SIMBAD)")
+    p.add_argument("--ra", type=float, default=None, help="ICRS RA (deg) — with --dec")
+    p.add_argument("--dec", type=float, default=None, help="ICRS Dec (deg) — with --ra")
+    p.add_argument("--source-id", dest="source_id", default=None,
+                   help="Gaia DR3 source_id (bare integer)")
+    p.add_argument("--test-sma-au", dest="test_sma_au", type=float, default=None,
+                   help="Test-orbit semi-major axis (AU) for the stability verdict")
+    p.set_defaults(func=cmd_binary_stability_auto)
+
+    # multiplicity (CR-2): SB flag + per-component multiplicity summary (otype + binary-orbit + GCNS).
+    p = sub.add_parser("multiplicity",
+                       help="Multiplicity / spectroscopic-binary summary surfaced by default "
+                            "(SIMBAD otype + binary-orbit tool-split + GCNS) (LIVE network)")
+    p.add_argument("--star", default=None, help="Star name (resolved via SIMBAD)")
+    p.add_argument("--source-id", dest="source_id", default=None,
+                   help="Gaia DR3 source_id (bare integer)")
+    p.set_defaults(func=cmd_multiplicity)
+
+    # debris-disk (CR-1): observed IR-excess / debris disk (Chen 2014 + Cotten&Song 2016 +
+    # Herschel far-IR; WISE upper limit on non-detection).
+    p = sub.add_parser("debris-disk",
+                       help="Observed debris-disk / IR-excess: L_IR/L*, warm/cold, T_dust, R_disk; "
+                            "WISE upper limit if undetected (never null) (LIVE network)")
+    p.add_argument("--star", default=None, help="Star name (resolved via SIMBAD)")
+    p.add_argument("--source-id", dest="source_id", default=None, help="Gaia DR3 source_id")
+    p.add_argument("--ra", type=float, default=None, help="ICRS RA (deg) — with --dec")
+    p.add_argument("--dec", type=float, default=None, help="ICRS Dec (deg) — with --ra")
+    p.set_defaults(func=cmd_debris_disk)
 
     # close-binary-census (Tier 2 — the systematic population sweep)
     p = sub.add_parser("close-binary-census",
