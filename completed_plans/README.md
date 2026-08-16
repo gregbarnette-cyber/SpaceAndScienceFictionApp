@@ -24,7 +24,7 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (51 files)
+## Index (52 files)
 
 | File | Title |
 |---|---|
@@ -80,5 +80,6 @@ in here too, with the same history (moved with `git mv`).
 | [ROUTE_FIND_PLAN.md](ROUTE_FIND_PLAN.md) | Route-Find — the O18 Find-Star box moved to the shared builder and wired to all 7 Route Planning panels |
 | [ROUTE_CHART_REFACTOR_PLAN.md](ROUTE_CHART_REFACTOR_PLAN.md) | Route-Chart Refactor — the 7 Route Planning maps onto the shared builder (Phases 1–2) + the one-palette unification (Phase 3) |
 | [SPECTRAL_CLASS_PLAN.md](SPECTRAL_CLASS_PLAN.md) | Spectral-Class Prefix Plan — search chips (Part 1) + colour/legend (Part 2) |
+| [STAR_ANALYSIS_CR_PLAN.md](STAR_ANALYSIS_CR_PLAN.md) | Star-Analysis CRs (CR-1…CR-7) — 6 `query.py` subcommands + 3 dossier sections for the WB `star_analysis` skill; incl. the 3c/3a FINAL WB bundles + CR-6-AMEND non-MS host guard |
 | [future_phases_archive.md](future_phases_archive.md) | Archived Phases — Space & Science Fiction App |
 | [hypatia_implementation.md](hypatia_implementation.md) | Hypatia Catalog Integration — Phase 1: Option 8 (Star System Regions Auto) |

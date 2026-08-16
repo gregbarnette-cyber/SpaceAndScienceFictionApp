@@ -358,7 +358,7 @@ offered for tighter tonnage at swap time. Likewise CR-6 defaults wait on WB **3a
   acknowledged; formula authoritative (no re-round); Th renorm off. **"Nothing open between us."**
 - **Post-3c full offline suite: 2868 passed / 53 skipped / 0 failures.**
 - **CR-1…7 committed + pushed:** commit **`93f49cd` on `main`** (2026-08-15); branch `star-analysis-crs` deleted.
-- **3a FINAL integrated (MSG 048/050), 2026-08-15 — build done, PENDING commit + WB re-gate.** WB delivered "3a
+- **3a FINAL integrated (MSG 048/050), 2026-08-15 — built, WB-re-gated GREEN (MSG 052), committed `37692c6`.** WB delivered "3a
   FINAL" (MSG 048) + ruled 4 consumption calls APP routed (MSG 049→050), bumping the bundle to
   **`3a-v1.1.0-2026-08-15`**. **NOT a one-table drop-in** (like 3c): `detection_tables._DETECTION_DEFAULTS` swapped
   (internal `mag_max` shape mirrors WB's `mag_bin` strings) + `core/detection.py` wired 4 rulings — RV effective
@@ -380,9 +380,11 @@ offered for tighter tonnage at swap time. Likewise CR-6 defaults wait on WB **3a
   `exclusion-boundary`; **orthogonal to the 3a bundle** (no bundle change). +9 tests (5 WB validation cells + the
   `_host_class` classifier + the partial-M/R guard); docs updated. Rides in the **same commit** as the 3a swap
   (Greg's route 2a). **Full offline suite 2890 passed / 53 skipped / 0 failures** (+9 AMEND tests).
-- **Open (external):** WB to re-verify CR-6-AMEND (APP confirming with the validation cells green), then **Greg's
-  git commit** (held until WB confirms the AMEND) + **FULFILLED flip**. The 3a re-gate already stands GREEN.
-  Everything else closed.
+- **✅ FULLY CLOSED (2026-08-15).** WB re-gated GREEN twice (3a MSG 052, CR-6-AMEND MSG 055) and flipped the CR spec
+  to **FULFILLED** (MSG 056); Greg signed off. The 3a swap + CR-6-AMEND are **committed + pushed to `main`
+  (`37692c6`)** in one commit (route 2a); the CR-1…7 base was `93f49cd`. Channel closed (APP MSG 057). Nothing open
+  either side. Deferred code-review items #1/#3/#6 (CR-1/CR-4 committed code) tracked in memory
+  `code-review-deferred-findings` — not part of this plan.
 
 - **D1 — CR-1 debris-disk data source + how the per-star upper limit is computed.** *Not a scope choice*
   (the full ask — detections + real per-star upper limit — is built either way, per the no-defer directive).
