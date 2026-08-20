@@ -1133,7 +1133,7 @@ def cmd_detection_completeness(args):
         rv_precision_ms=args.rv_precision_ms, rv_baseline_yr=args.rv_baseline_yr,
         transit_precision_ppm=args.transit_precision_ppm, transit_target=args.transit_target,
         astrom_precision_uas=args.astrom_precision_uas, astrom_baseline_yr=args.astrom_baseline_yr,
-        star=args.star,
+        star=args.star, activity=args.activity,
     ))
 
 
@@ -1142,6 +1142,7 @@ def cmd_nuclear_inventory(args):
     _out(nuclear.compute_nuclear_inventory(
         fe_h=args.fe_h, age_gyr=args.age_gyr, eu_h=args.eu_h, eu_fe=args.eu_fe,
         star_mass_solar=args.star_mass_solar, population=args.population,
+        ba_eu=args.ba_eu, age_soft=args.age_soft,
     ))
 
 
@@ -1981,7 +1982,8 @@ def main(argv=None):
     p.add_argument("--solution-scope", dest="solution_scope", choices=["default", "all"],
                    default="default", help="default = preferred solution only; all = every published solution")
     p.add_argument("--fields", choices=["core", "full"], default="core",
-                   help="core = CR-8 §4 field set; full = plus every raw ps column")
+                   help="core = CR-8 fields + CR-9 Tier-1 disposition/quality; "
+                        "full = + Tier-2 + composite (pscomppars) + OEC + raw ps")
     p.set_defaults(func=cmd_planetary_systems_batch)
 
     # hwo-exep
@@ -2733,6 +2735,10 @@ def main(argv=None):
     p.add_argument("--star-mass-solar", type=float, help="Stellar mass (M☉, optional)")
     p.add_argument("--population", choices=["thin", "thick", "halo"],
                    help="Galactic population tag (CR-7 verdict; optional)")
+    p.add_argument("--ba-eu", type=float,
+                   help="[Ba/Eu] (dex) — preferred DV-3 s-process discriminant (≳0 ⇒ s-dominance)")
+    p.add_argument("--age-soft", action="store_true",
+                   help="DV-1: the age is a population/[Fe/H] prior, not a measurement (order-of-magnitude flag)")
     p.set_defaults(func=cmd_nuclear_inventory)
 
     # ── Star-analysis CR-6 — detection-completeness ───────────────────────────
@@ -2756,6 +2762,9 @@ def main(argv=None):
                    help="Treat the star as a covered transit target (else 'not applicable')")
     p.add_argument("--astrom-precision-uas", type=float, help="Per-star astrometric precision override (µas)")
     p.add_argument("--astrom-baseline-yr", type=float)
+    p.add_argument("--activity", choices=["active", "young", "quiet"],
+                   help="Chromospheric activity/age hint (Companion CR#1: active/young cool-dwarf RV "
+                        "jitter bump — advisory placeholder magnitude)")
     p.set_defaults(func=cmd_detection_completeness)
 
     # ── Phase AE (Group K) — arrival geometry & gravitation (Pkt 20) ──────────

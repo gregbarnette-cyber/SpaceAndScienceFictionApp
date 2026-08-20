@@ -41,6 +41,19 @@ _DETECTION_DEFAULTS = {
             # jitter superseded by jitter_floor_by_sptype_m_s[letter] when the host letter is known.
             "jitter_floor_by_sptype_m_s": {"O": 5.0, "B": 5.0, "A": 5.0, "F": 3.0,
                                            "G": 1.5, "K": 1.5, "M": 1.5},
+            # Companion CR #1 (STRUCTURE only — advisory PLACEHOLDER). Two symmetric jitter floors
+            # beyond the MS Kraft-break map: an evolved-star (subgiant/giant p-mode + granulation)
+            # floor and an active/young cool-dwarf floor. The magnitudes are an UN-CLEARED LEAD — WB
+            # Phase 5 pins the jitter–L/M scaling — so these are rough literature order-of-magnitude
+            # ONLY, flagged advisory (subgiant ~few–10 m/s, red giant tens–hundreds; active/young
+            # K/M spot-jitter tens m/s). A per-star --rv-precision-ms override supersedes. DO NOT read
+            # these numbers as pinned; the consumer treats an un-pinned bump as advisory, not a hard floor.
+            "jitter_bumps": {
+                "advisory": True,
+                "basis": "un-cleared LEAD — rough literature ranges only; WB Phase 5 pins the jitter–L/M scaling",
+                "evolved": {"subgiant_m_s": 10.0, "giant_m_s": 50.0},    # PLACEHOLDER
+                "active_young_cool_dwarf_m_s": 10.0,                     # PLACEHOLDER
+            },
             "by_mag": [
                 {"mag_max": 6.0,  "precision_m_s": 0.3,  "jitter_floor_m_s": 1.5, "baseline_yr": 15.0},
                 {"mag_max": 8.0,  "precision_m_s": 0.5,  "jitter_floor_m_s": 1.5, "baseline_yr": 15.0},

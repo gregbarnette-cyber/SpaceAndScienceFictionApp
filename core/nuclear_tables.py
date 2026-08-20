@@ -87,30 +87,107 @@ def gce_enrichment_factor(isotope, age_gyr, population=None, feh=None, model=_GC
     return (1.0 - math.exp(-lam * d)) / (lam * d)
 
 
-def gce_domain_ok(age_gyr, feh, eu_fe=None, model=_GCE_MODEL):
-    """3c FINAL domain rules → ``(ok: bool, reason: str|None, bands: list[str])``.
+# ── §8 domain-guard screen thresholds (documented; fissile-fraction-gce-model.md §8) ──
+_DV2_EU_FE_ACTINIDE_BOOST = 0.7   # [Eu/Fe] ≳ +0.7 → r-II / actinide-boost: voids the RATIO *and* tonnage.
+_DV3_EU_FE_S_PROCESS = 0.4        # runbook Eu-artifact proxy: distrust [Eu/Fe] ≳ +0.4 …
+_DV3_FEH_MIN = -0.5               # … on a thin-disk, NOT metal-poor ([Fe/H] ≳ this) star ⇒ s-process, not r.
+_DV3_BA_EU_S_DOMINANCE = 0.5      # if [Ba/Eu] supplied: ≥ +0.5 ⇒ s-process dominance (CEMP-s cut, Beers &
+                                  # Christlieb 2005). Solar ≈ 0 and pure-r ≈ −0.7 are NOT flagged.
 
-    ``domain_ok=false`` when age is outside [0, 13.6] Gyr, [Fe/H] outside [-2.5, 0.5], or **[Eu/Fe]
-    ≳ +0.7** (actinide-boost / r-II star — the production ratio is event-class-dependent, so BOTH the
-    U-235/U-238 ratio AND the tonnage are unreliable, DV-2). ``bands`` flags reduced-reliability
-    regimes (young / ISM-mixing / old joint band, DV-4/DV-7) as additive metadata; central values are
-    still emitted (flag, never clamp)."""
+
+def gce_domain_ok(age_gyr, feh, eu_fe=None, population=None, ba_eu=None,
+                  age_soft=False, eu_available=True, model=_GCE_MODEL):
+    """3c FINAL domain rules → ``(ok, reason, bands, detail)``.
+
+    Implements all **four** §8 ``false_when`` guards (was 3 of 4 — DEFECT-2):
+    - **DV-5** age/[Fe/H] outside the fit domain ([0, 13.6] Gyr / [-2.5, 0.5]) → void the fissile model;
+    - **DV-2** [Eu/Fe] ≳ +0.7 (actinide-boost / r-II) → production ratio event-class-dependent, voids
+      BOTH the U-235/U-238 ratio AND the tonnage;
+    - **DV-3** [Eu/H] must be a genuine r-process tracer: s-process (AGB/Ba) pollution makes [Eu/H]
+      over-state the r-process → voids the *tonnage* (not the isotope ratio). Preferred discriminant
+      [Ba/Eu] ≳ 0; else the runbook proxy [Eu/Fe] ≳ +0.4 on a thin-disk, non-metal-poor star;
+    - **DV-1** ``age_soft`` — an *advisory* flag (order-of-magnitude, not a veto) when the age is a
+      population/[Fe/H] prior rather than a measurement.
+
+    ``ok`` is **tri-state** (CQ-7-3c-4): ``True`` in-domain, ``False`` on a veto, ``None`` when the
+    Eu-dependent guards (DV-2/DV-3) are **unevaluable** (no r-process tracer) so "ok" cannot be
+    asserted. ALL fired vetoes are collected — no ``elif`` shadowing (DEFECT-4). ``detail`` carries the
+    per-output severities (``isotope_ratio`` / ``tonnage`` / ``radiogenic_heat``) + the guard flags.
+    ``bands`` flags the DV-4/DV-7 reduced-reliability regimes (young / ISM-mixing / old) — central
+    values are still emitted (flag, never clamp)."""
     dom = model["gce_enrichment"]["domain"]
     lo_f, hi_f = dom["feh_range"]
     lo_a, hi_a = dom["age_range_gyr"]
-    reason = None
+    reasons = []
+    domain_out = actinide_boost = s_process = False
+
+    # DV-5 — fitted age / [Fe/H] domain (out → the whole fissile model is void).
     if not (lo_a <= age_gyr <= hi_a):
-        reason = f"age {age_gyr} Gyr outside the GCE fit domain {[lo_a, hi_a]}"
-    elif feh is not None and not (lo_f <= feh <= hi_f):
-        reason = f"[Fe/H] {feh} outside the GCE fit domain {[lo_f, hi_f]}"
-    elif eu_fe is not None and eu_fe >= 0.7:
-        reason = ("[Eu/Fe] ≳ +0.7 (actinide-boost / r-II): production ratio is event-class-dependent "
-                  "— BOTH the U-235/U-238 ratio and the tonnage are unreliable")
+        reasons.append(f"age {age_gyr} Gyr outside the GCE fit domain {[lo_a, hi_a]} (DV-5)")
+        domain_out = True
+    if feh is not None and not (lo_f <= feh <= hi_f):
+        reasons.append(f"[Fe/H] {feh} outside the GCE fit domain {[lo_f, hi_f]} (DV-5)")
+        domain_out = True
+
+    # DV-2 — actinide-boost / r-II: production ratio is event-class-dependent → ratio AND tonnage void.
+    if eu_fe is not None and eu_fe >= _DV2_EU_FE_ACTINIDE_BOOST:
+        reasons.append("[Eu/Fe] ≳ +0.7 (actinide-boost / r-II): production ratio is event-class-dependent "
+                       "— BOTH the U-235/U-238 ratio and the tonnage are unreliable (DV-2)")
+        actinide_boost = True
+
+    # DV-3 — [Eu/H] must be a genuine r-process tracer. Preferred: measured [Ba/Eu]; else the runbook
+    # proxy (a high [Eu/Fe] on a thin-disk, non-metal-poor star is likely s-process/Ba pollution → the
+    # Eu tracer over-states the r-process, so the [Eu/H]-scaled TONNAGE is unreliable; the ratio is not).
+    if ba_eu is not None:
+        if ba_eu >= _DV3_BA_EU_S_DOMINANCE:
+            reasons.append(f"[Ba/Eu] {ba_eu} ≳ {_DV3_BA_EU_S_DOMINANCE}: s-process dominance — [Eu/H] "
+                           "over-states the r-process → tonnage unreliable (DV-3)")
+            s_process = True
+    elif (eu_fe is not None and eu_fe >= _DV3_EU_FE_S_PROCESS
+          and population == "thin" and feh is not None and feh >= _DV3_FEH_MIN):
+        reasons.append(f"[Eu/Fe] ≳ +{_DV3_EU_FE_S_PROCESS} on a thin-disk [Fe/H]≳{_DV3_FEH_MIN} star: likely "
+                       "s-process (AGB/Ba) pollution, not r-process — [Eu/H] over-states the r-process → "
+                       "tonnage unreliable (DV-3 proxy; supply [Ba/Eu] to confirm)")
+        s_process = True
+
     bands = []
-    if age_gyr < 4.0:
+    # CQ-7-3c-3 (DEFECT-3): boundaries were strict-inequality-holed — age exactly 4.0/8.0 and the
+    # 11.5<A<11.55 sliver fell in NO band. Fixes: <= young edge, >= joint edge, ISM upper → D_eff (11.55).
+    if age_gyr <= 4.0:
         bands.append("age ≲4 Gyr: young band (uniform-ψ biased high ~1.4–2.5×)")
-    if 9.0 <= age_gyr <= 11.5:
-        bands.append("age ~9–11.5 Gyr: ISM-mixing band (~±60% per-star)")
-    if age_gyr > 8.0:
+    if 9.0 <= age_gyr <= 11.55:
+        bands.append("age ~9–11.55 Gyr: ISM-mixing band (~±60% per-star)")
+    if age_gyr >= 8.0:
         bands.append("age ≳8 Gyr: joint (P, D_eff) band, order-of-magnitude")
-    return (reason is None), reason, bands
+    # DV-1 — age_soft advisory (order-of-magnitude, NOT a veto).
+    if age_soft:
+        bands.append("age_soft: age is a population/[Fe/H] prior, not a measurement — the age-driven "
+                     "fissile axis is order-of-magnitude (DV-1)")
+
+    # Tri-state ok + per-output severities (CQ-7-3c-4). The radiogenic heat is an [Eu/H] abundance
+    # consumer (DV-6), so it inherits the tonnage severity.
+    if domain_out or actinide_boost:
+        ok = False
+    elif not eu_available:
+        ok = None                       # DV-2/DV-3 cannot be evaluated without an r-process tracer
+    elif s_process:
+        ok = False
+    else:
+        ok = True
+    ratio_sev = ("void" if (domain_out or actinide_boost)
+                 else "unevaluable" if not eu_available
+                 else "extrapolated" if bands else "ok")
+    tonnage_sev = ("void" if (domain_out or actinide_boost)
+                   else "unevaluable" if not eu_available
+                   else "unreliable" if s_process
+                   else "extrapolated" if bands else "ok")
+    detail = {
+        "domain_ok": ok,
+        "reasons": reasons,
+        "flags": {"age_soft": bool(age_soft), "s_process": s_process,
+                  "actinide_boost": actinide_boost, "domain_out": domain_out},
+        "per_output": {"isotope_ratio": ratio_sev, "tonnage": tonnage_sev,
+                       "radiogenic_heat": tonnage_sev},
+        "bands": bands,
+    }
+    return ok, ("; ".join(reasons) if reasons else None), bands, detail

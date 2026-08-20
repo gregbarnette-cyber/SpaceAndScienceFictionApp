@@ -39,6 +39,22 @@ class NuclearInventoryQueryTest(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("error", d)
 
+    def test_cq3c1_radiogenic_heat_withheld_without_eu(self):
+        # CQ-7-3c-1: no r-process tracer → the heat headline is JSON null, with the detail block.
+        rc, d, _ = _run("nuclear-inventory", "--fe-h", "0.3", "--age-gyr", "4.567")
+        self.assertEqual(rc, 0)
+        self.assertIsNone(d["radiogenic_heat_W_per_kg"])
+        self.assertFalse(d["radiogenic_heat"]["computable"])
+        self.assertIsNone(d["provenance"]["domain_ok"])   # tri-state: unevaluable
+
+    def test_cq3c2_dv3_ba_eu_and_age_soft_flags(self):
+        rc, d, _ = _run("nuclear-inventory", "--fe-h", "0", "--age-gyr", "5", "--eu-h", "0",
+                        "--ba-eu", "0.7", "--age-soft")
+        self.assertEqual(rc, 0)
+        self.assertTrue(d["provenance"]["flags"]["s_process"])
+        self.assertTrue(d["provenance"]["flags"]["age_soft"])
+        self.assertIn("per_output", d["provenance"])
+
 
 if __name__ == "__main__":
     unittest.main()

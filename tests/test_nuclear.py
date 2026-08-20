@@ -119,6 +119,14 @@ class Gce3cFinalTest(unittest.TestCase):
         self.assertTrue(any("ISM-mixing" in b for b in old["provenance"]["bands"]))
         self.assertTrue(any("joint" in b for b in old["provenance"]["bands"]))
 
+    def test_cq_7_3c_3_boundary_holes_closed(self):
+        # CQ-7-3c-3 (DEFECT-3): age exactly 4.0/8.0 and the 11.5<A<11.55 sliver previously fell in NO band.
+        from core import nuclear_tables as nt
+        self.assertTrue(nt.gce_domain_ok(4.0, 0.0, eu_fe=0.0)[2], "age 4.0 young-edge hole")
+        self.assertTrue(nt.gce_domain_ok(8.0, 0.0, eu_fe=0.0)[2], "age 8.0 joint-edge hole")
+        self.assertTrue(nt.gce_domain_ok(11.52, 0.0, eu_fe=0.0)[2], "11.5-11.55 ISM sliver hole")
+        self.assertEqual(nt.gce_domain_ok(7.9, 0.0, eu_fe=0.0)[2], [])   # a genuinely mid-age star: no band
+
     def test_bad_inputs_error(self):
         self.assertIn("error", nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=-1.0))
         self.assertIn("error", nuclear.compute_nuclear_inventory(fe_h=None, age_gyr=4.567))
@@ -126,6 +134,104 @@ class Gce3cFinalTest(unittest.TestCase):
             fe_h=0.0, age_gyr=4.567, eu_h=0.0, eu_fe=0.0))
         self.assertIn("error", nuclear.compute_nuclear_inventory(
             fe_h=0.0, age_gyr=4.567, population="disk"))
+
+
+class Cq73c1RadiogenicEuWiringTest(unittest.TestCase):
+    """CQ-7-3c-1 (WB MSG 079): the radiogenic-heat actinide channels track [Eu/H], not [Fe/H];
+    withheld when no r-process tracer (never the 10^[Fe/H] co-formation fallback)."""
+
+    def test_heat_tracks_eu_h_not_fe_h(self):
+        solar = _solar()["radiogenic_heat_W_per_kg"]
+        eu_rich = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=4.567, eu_h=0.5)
+        eu_poor = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=4.567, eu_h=-1.0)
+        self.assertGreater(eu_rich["radiogenic_heat_W_per_kg"], solar)   # more Eu → more actinide → hotter
+        self.assertLess(eu_poor["radiogenic_heat_W_per_kg"], solar)      # r-poor → cooler
+
+    def test_solar_anchor_unchanged_by_the_rewiring(self):
+        # The Eu-anchor rewiring must leave the solar BSE anchor byte-stable.
+        self.assertAlmostEqual(_solar()["radiogenic_heat_W_per_kg"], 5.03e-12, delta=0.3e-12)
+
+    def test_actinide_channels_use_eu_not_fe(self):
+        # At fixed [Eu/H]=0 the actinide comps are Fe-independent; only K-40 moves with [Fe/H].
+        a = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=4.567, eu_h=0.0)["radiogenic_heat"]
+        b = nuclear.compute_nuclear_inventory(fe_h=0.5, age_gyr=4.567, eu_h=0.0)["radiogenic_heat"]
+        self.assertAlmostEqual(a["components_W_per_kg"]["U238"], b["components_W_per_kg"]["U238"], places=20)
+        self.assertGreater(b["components_W_per_kg"]["K40"], a["components_W_per_kg"]["K40"])  # K40 ∝ 10^[Fe/H]
+        self.assertEqual(a["actinide_scaling"], "eu_h_gce_actinide_inventory")
+
+    def test_heat_withheld_without_eu_no_fe_fallback(self):
+        rh = nuclear.compute_nuclear_inventory(fe_h=0.3, age_gyr=4.567)["radiogenic_heat"]
+        self.assertIsNone(rh["value_W_per_kg"])              # withheld, NOT a 10^[Fe/H] number
+        self.assertFalse(rh["computable"])
+        self.assertIsNone(rh["components_W_per_kg"]["U238"])
+        self.assertIsNotNone(rh["components_W_per_kg"]["K40"])   # K-40 partial still shown for reference
+        self.assertEqual(rh["actinide_scaling"], "withheld")
+        # top-level headline mirrors the withhold
+        self.assertIsNone(nuclear.compute_nuclear_inventory(fe_h=0.3, age_gyr=4.567)["radiogenic_heat_W_per_kg"])
+
+    def test_heat_isotopic_split_is_the_stars_own(self):
+        # A young star's U-235/U-238 heat ratio must exceed the solar one (star's own age-dependent split).
+        young = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=1.0, eu_h=0.0)["radiogenic_heat"]
+        solar = _solar()["radiogenic_heat"]
+        y = young["components_W_per_kg"]["U235"] / young["components_W_per_kg"]["U238"]
+        s = solar["components_W_per_kg"]["U235"] / solar["components_W_per_kg"]["U238"]
+        self.assertGreater(y, s)
+
+
+class Cq73c24DomainGuardTest(unittest.TestCase):
+    """CQ-7-3c-2 (DV-1 age_soft + DV-3 s-process) and CQ-7-3c-4 (tri-state + per-output + multi-reason)."""
+
+    def test_dv3_s_process_proxy_flags_thin_disk_high_eu(self):
+        # The runbook's canonical distrust case (thin-disk, [Fe/H]0, [Eu/Fe]+0.5) previously → domain_ok=true.
+        d = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=5.0, eu_fe=0.5, population="thin")["provenance"]
+        self.assertFalse(d["domain_ok"])
+        self.assertTrue(d["flags"]["s_process"])
+        self.assertEqual(d["per_output"]["isotope_ratio"], "ok")        # ratio is Eu-independent → survives
+        self.assertEqual(d["per_output"]["tonnage"], "unreliable")
+        self.assertEqual(d["per_output"]["radiogenic_heat"], "unreliable")
+
+    def test_dv3_does_not_fire_for_metal_poor_halo(self):
+        # A metal-poor star with the same [Eu/Fe] is genuine r-process → not DV-3.
+        d = nuclear.compute_nuclear_inventory(fe_h=-1.5, age_gyr=11.0, eu_fe=0.5, population="halo")["provenance"]
+        self.assertFalse(d["flags"]["s_process"])
+
+    def test_dv3_ba_eu_preferred_discriminant(self):
+        s = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=5.0, eu_h=0.0, ba_eu=0.7)["provenance"]
+        r = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=5.0, eu_h=0.0, ba_eu=-0.6)["provenance"]
+        self.assertTrue(s["flags"]["s_process"])        # [Ba/Eu] ≥ +0.5 (CEMP-s) → s-dominance
+        self.assertFalse(r["flags"]["s_process"])       # [Ba/Eu] ≈ pure-r → clean
+
+    def test_dv3_ba_eu_solar_reference_not_flagged(self):
+        # Guard (Gate-B #1): a solar-composition star ([Ba/Eu]=0, the anchor) must NOT read s-process.
+        d = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=4.567, eu_h=0.0, ba_eu=0.0)["provenance"]
+        self.assertFalse(d["flags"]["s_process"])
+        self.assertTrue(d["domain_ok"])
+        self.assertEqual(d["per_output"]["tonnage"], "ok")
+
+    def test_dv1_age_soft_is_advisory_flag_not_veto(self):
+        d = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=5.0, eu_h=0.0, age_soft=True)["provenance"]
+        self.assertTrue(d["domain_ok"])                 # advisory (order-of-magnitude), NOT a veto
+        self.assertTrue(d["flags"]["age_soft"])
+        self.assertTrue(any("age_soft" in b for b in d["bands"]))
+
+    def test_cq_4_tri_state_unevaluable_without_eu(self):
+        # No r-process tracer → DV-2/DV-3 unevaluable → domain_ok is None, not a confident True.
+        d = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=5.0)["provenance"]
+        self.assertIsNone(d["domain_ok"])
+        self.assertEqual(d["per_output"]["radiogenic_heat"], "unevaluable")
+
+    def test_cq_4_multi_reason_no_shadowing(self):
+        # age out AND [Fe/H] out AND DV-2 all fire → three reasons collected (no elif shadow).
+        d = nuclear.compute_nuclear_inventory(fe_h=-3.0, age_gyr=14.0, eu_h=-2.0)["provenance"]
+        self.assertFalse(d["domain_ok"])
+        self.assertGreaterEqual(len(d["domain_reasons"]), 3)
+
+    def test_domain_detail_tuple_is_four_wide(self):
+        # gce_domain_ok grew a 4th (detail) element; bands stay at index [2] for the CQ-3 tests.
+        res = nt.gce_domain_ok(5.0, 0.0, eu_fe=0.0)
+        self.assertEqual(len(res), 4)
+        self.assertIsInstance(res[2], list)
+        self.assertIn("per_output", res[3])
 
 
 if __name__ == "__main__":

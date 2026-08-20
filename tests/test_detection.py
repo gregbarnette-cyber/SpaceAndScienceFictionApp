@@ -135,13 +135,15 @@ class RvJitterBySptypeTest(unittest.TestCase):
     # WB 3a v1.1.0 (MSG 050): effective RV floor = max(precision, sp_type-keyed jitter).
     # O/B/A=5, F=3, G/K/M=1.5 (Kraft-break bump); flat 1.5 when no host letter.
     def test_jitter_floor_by_letter(self):
+        # _rv_jitter_floor now returns (floor, advisory); the MS Kraft-break floors are unchanged and
+        # never advisory (no evolved host, no activity signal).
         rv_def = dt._DETECTION_DEFAULTS["methods"]["rv"]
         row = rv_def["by_mag"][0]
-        self.assertEqual(detection._rv_jitter_floor(rv_def, row, "A0V"), 5.0)
-        self.assertEqual(detection._rv_jitter_floor(rv_def, row, "F5V"), 3.0)
-        self.assertEqual(detection._rv_jitter_floor(rv_def, row, "G2V"), 1.5)
-        self.assertEqual(detection._rv_jitter_floor(rv_def, row, "M4V"), 1.5)
-        self.assertEqual(detection._rv_jitter_floor(rv_def, row, None), 1.5)   # flat fallback
+        self.assertEqual(detection._rv_jitter_floor(rv_def, row, "A0V"), (5.0, False))
+        self.assertEqual(detection._rv_jitter_floor(rv_def, row, "F5V"), (3.0, False))
+        self.assertEqual(detection._rv_jitter_floor(rv_def, row, "G2V"), (1.5, False))
+        self.assertEqual(detection._rv_jitter_floor(rv_def, row, "M4V"), (1.5, False))
+        self.assertEqual(detection._rv_jitter_floor(rv_def, row, None), (1.5, False))   # flat fallback
 
     def test_a_star_effective_floor_is_five(self):
         # Bright A star: photon precision 0.3 → effective floor = max(0.3, 5.0) = 5.0 m/s.
@@ -272,6 +274,67 @@ class NonMsHostGuardTest(unittest.TestCase):
         # a non-MS host needs BOTH explicit M/R (or neither) — a lone mass is a curated error
         self.assertIn("error", detection.compute_detection_completeness(
             app_mag=12, distance_pc=15, sp_type="DA2", star_mass_solar=0.6))
+
+
+class CompanionCr1JitterBumpTest(unittest.TestCase):
+    """Companion CR #1 (Phase-5 D3): STRUCTURE + advisory flag for the evolved / active-young jitter
+    floors. Asserts the structure and the advisory flag, NOT a specific placeholder magnitude."""
+    def _rv(self, res):
+        return [m for m in res["methods"] if m["method"] == "rv"][0]
+
+    def test_bumps_table_structure_present(self):
+        rv_def = dt._DETECTION_DEFAULTS["methods"]["rv"]
+        bumps = rv_def["jitter_bumps"]
+        self.assertTrue(bumps["advisory"])
+        self.assertIn("subgiant_m_s", bumps["evolved"])
+        self.assertIn("giant_m_s", bumps["evolved"])
+        self.assertIn("active_young_cool_dwarf_m_s", bumps)
+
+    def test_evolved_host_bump_is_advisory_and_larger(self):
+        # A giant with explicit M/R: the flat 1.5 floor is bumped upward, flagged advisory.
+        rv_def = dt._DETECTION_DEFAULTS["methods"]["rv"]
+        row = rv_def["by_mag"][0]
+        flat, adv0 = detection._rv_jitter_floor(rv_def, row, None)
+        bumped, adv1 = detection._rv_jitter_floor(rv_def, row, None, host_class="giant")
+        self.assertFalse(adv0)
+        self.assertTrue(adv1)
+        self.assertGreater(bumped, flat)
+
+    def test_giant_with_mr_surfaces_advisory_flag(self):
+        res = detection.compute_detection_completeness(
+            app_mag=6, distance_pc=100, sp_type="K0III", star_mass_solar=1.1, star_radius_solar=10.0,
+            methods=["rv"], sma_grid=[1.0])
+        rv = self._rv(res)
+        self.assertTrue(rv.get("jitter_advisory"))
+        self.assertIn("advisory", rv["jitter_note"].lower())
+
+    def test_active_young_cool_dwarf_bump_only_with_signal(self):
+        # Default (no activity) MS cool dwarf → unchanged, no advisory.
+        quiet = self._rv(detection.compute_detection_completeness(
+            app_mag=8, distance_pc=10, sp_type="K5V", methods=["rv"], sma_grid=[1.0]))
+        self.assertNotIn("jitter_advisory", quiet)
+        # With an activity signal → advisory bump.
+        active = self._rv(detection.compute_detection_completeness(
+            app_mag=8, distance_pc=10, sp_type="K5V", methods=["rv"], sma_grid=[1.0], activity="active"))
+        self.assertTrue(active.get("jitter_advisory"))
+
+    def test_ms_default_is_regression_stable(self):
+        # A normal MS star with no activity signal must be byte-identical to pre-CR#1 (no bump keys).
+        rv = self._rv(_sun10(methods=["rv"], sma_grid=[1.0]))
+        self.assertNotIn("jitter_advisory", rv)
+        self.assertNotIn("jitter_note", rv)
+
+    def test_activity_validation(self):
+        self.assertIn("error", detection.compute_detection_completeness(
+            app_mag=8, distance_pc=10, sp_type="K5V", activity="sizzling"))
+
+    def test_bump_that_does_not_raise_the_floor_is_not_advisory(self):
+        # Gate-B #3: advisory must be True ONLY when the placeholder actually raises the floor.
+        row = {"jitter_floor_m_s": 20.0}                       # base already above a tiny bump
+        rv_def = {"jitter_floor_by_sptype_m_s": {}, "jitter_bumps": {"evolved": {"giant_m_s": 5.0}}}
+        floor, advisory = detection._rv_jitter_floor(rv_def, row, None, host_class="giant")
+        self.assertEqual(floor, 20.0)
+        self.assertFalse(advisory)
 
 
 class ReferenceVersionTest(unittest.TestCase):

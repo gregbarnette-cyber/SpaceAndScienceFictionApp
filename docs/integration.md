@@ -204,7 +204,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `habitable-zone` | `--teff --luminosity` | none | **list** of 6 zone dicts (not a dict) |
 | `exoplanets` | `--star` | SIMBAD + archives | `simbad, planets[], hwo, exocat` |
 | `planetary-systems` | `--star` | SIMBAD + archive | `simbad, planets[]` |
-| `planetary-systems-batch` | Mode A: `--hosts N […]` \| `--host-file P`; Mode B: property filters (`--mass-min/max --radius-min/max --period-min/max --teff-min/max --dist-max-pc --method --spectral-classes/-refine`) \| `--archive-query "ADQL"`; both: `--solution-scope {default,all}` `--fields {core,full}` | **NASA TAP `ps` (live)** + SIMBAD (Mode A) | `mode, solution_scope, field_scope, coverage{}, hosts[]` — see CR-8 block below |
+| `planetary-systems-batch` | Mode A: `--hosts N […]` \| `--host-file P`; Mode B: property filters (`--mass-min/max --radius-min/max --period-min/max --teff-min/max --dist-max-pc --method --spectral-classes/-refine`) \| `--archive-query "ADQL"`; both: `--solution-scope {default,all}` `--fields {core,full}` | **NASA TAP `ps` (live)** + SIMBAD (Mode A) + pscomppars/OEC (full) | `mode, solution_scope, field_scope, coverage{}, hosts[]` (+ CR-9 disposition/quality fields) — see CR-8 + CR-9 blocks below |
 | `hwo-exep` | `--star` | SIMBAD + archive | `simbad, hwo[]` |
 | `mission-exocat` | `--star` | SIMBAD (then local DB) | `simbad, exocat` |
 | `hwc` | `--star` | SIMBAD (then local DB) | `simbad, star_row, planet_rows[]` |
@@ -3916,12 +3916,35 @@ Fusion-fuel + fissile (U/Th) + radiogenic-heat inventory from stellar scalars.
 query.py nuclear-inventory --fe-h 0 --age-gyr 4.567 --eu-h 0    # solar → U235/U238 ≈ 0.00726
 ```
 Core: `nuclear.compute_nuclear_inventory(fe_h, age_gyr, eu_h=None, eu_fe=None, star_mass_solar=None,
-population=None)`. Output: `{fusion:{D_over_H, He3_est, Li6, Li7, B11}, fissile:{U235_frac, U238_frac,
-Th232_frac, U235_U238_ratio, u_over_h, th_over_h, a_u, a_th}|{note}, radiogenic_heat_W_per_kg,
-provenance:{gce_model_version, confidence, domain_ok, …}, inputs}`. **`fissile` needs a tracer** (`--eu-h`
+population=None, ba_eu=None, age_soft=False)`. Output: `{fusion:{D_over_H, He3_est, Li6, Li7, B11},
+fissile:{U235_frac, U238_frac, Th232_frac, U235_U238_ratio, u_over_h, th_over_h, a_u, a_th}|{note},
+radiogenic_heat_W_per_kg, radiogenic_heat:{value_W_per_kg, computable, components_W_per_kg:{U235,U238,Th232,K40},
+actinide_scaling, note, provenance}, provenance:{gce_model_version, confidence, domain_ok, domain_note,
+domain_reasons, per_output, flags, bands, …}, inputs}`. **`fissile` needs a tracer** (`--eu-h`
 xor `--eu-fe`); absent → `fissile.note` (not null). `fissile.{u_over_h,th_over_h,a_u,a_th}` are the absolute
-**tonnage** (Eu-scaled), beyond the Eu-independent fraction keys. `provenance.domain_ok=false` flags a star
-outside the 3c fit domain (flag, never clamp). `--eu-h`/`--eu-fe` are an argparse mutually-exclusive group.
+**tonnage** (Eu-scaled), beyond the Eu-independent fraction keys. `--eu-h`/`--eu-fe` are an argparse
+mutually-exclusive group.
+
+**CR-9 riders — 3c defect fixes CQ-7-3c-1…4 (post-fulfilment CR-4 corrections; WB MSG 079 pin):**
+- **CQ-7-3c-1 (radiogenic-heat Eu-wiring).** The U/Th (r-process) heat channels now scale with the star's
+  **[Eu/H]-driven GCE actinide inventory** relative to the solar anchor (`g_i(A)/g_i(solar)·exp(λ_i(solar−A))·
+  10^[Eu/H]`), K-40 by a `10^[Fe/H]` proxy — no longer the Eu-blind co-formation form (which inverted DV-6).
+  With **no r-process tracer the heat is WITHHELD** (`radiogenic_heat_W_per_kg = null`,
+  `radiogenic_heat.computable = false`) — never back-filled with `10^[Fe/H]`; the K-40 partial is shown for
+  reference. `radiogenic_heat.provenance` inherits the domain flags (DV-2/DV-3/DV-4/DV-6). Solar anchor
+  (~5.0e-12 W/kg) is byte-stable.
+- **CQ-7-3c-2 (DV-1 + DV-3).** `--age-soft` sets the DV-1 *advisory* order-of-magnitude flag (`flags.age_soft`;
+  a band, **not** a veto). DV-3 s-process: `--ba-eu` ([Ba/Eu], preferred discriminant — ≥ +0.5, the CEMP-s cut, ⇒ s-dominance;
+  solar 0 / pure-r ≈ −0.7 stay clean) else the runbook proxy (a high [Eu/Fe] on a thin-disk, non-metal-poor
+  star ⇒ likely AGB/Ba pollution) → `flags.s_process`,
+  which voids the **tonnage/heat** but **not** the Eu-independent isotope ratio.
+- **CQ-7-3c-3 (band boundaries).** DV-4/DV-7 band edges are `>=`/`<=` (age exactly 4.0/8.0 and the 11.5–11.55
+  sliver now land in a band).
+- **CQ-7-3c-4 (tri-state + per-output + multi-reason).** `provenance.domain_ok` is **tri-state**:
+  `true` / `false` (a veto fired) / **`null`** (Eu-dependent guards unevaluable — no tracer). `provenance.per_output`
+  gives the severity per output (`isotope_ratio` / `tonnage` / `radiogenic_heat` ∈ ok/extrapolated/unreliable/
+  void/unevaluable). `provenance.domain_reasons` lists **all** fired vetoes (no `elif` shadowing);
+  `provenance.domain_note` joins them.
 
 #### `detection-completeness` (CR-6 — pure-math; defaults consume the WB 3a FINAL v1.1.0 bundle)
 Per-method minimum detectable planet (mass M⊕ or radius R⊕) vs orbital SMA — a completeness map inverting the
@@ -3937,10 +3960,10 @@ query.py detection-completeness --star "Tau Ceti"                               
 Core: `detection.compute_detection_completeness(app_mag, distance_pc, sp_type=None, star_mass_solar=None,
 star_radius_solar=None, methods=None, sma_grid=None, albedo=0.3, rv_precision_ms=None, rv_baseline_yr=None,
 transit_precision_ppm=None, transit_target=False, astrom_precision_uas=None, astrom_baseline_yr=None,
-star=None)`. Output: `{star, app_mag, distance_pc, sp_type, host_class, star_mass_solar, star_radius_solar,
-methods:[{method, applicable, detectable_vs_sma:[{sma_au, min_mass_earth?|min_radius_earth?, …}], floor_source,
-value_kind, baseline_yr?, contrast_band?, mechanism_caveat?, note?}], assumptions:{reference_version, confidence,
-out_of_domain, host_class, host_class_note, …}}`. `floor_source` names the basis per method (per-star override /
+star=None, activity=None)`. Output: `{star, app_mag, distance_pc, sp_type, host_class, star_mass_solar,
+star_radius_solar, methods:[{method, applicable, detectable_vs_sma:[{sma_au, min_mass_earth?|min_radius_earth?,
+…}], floor_source, value_kind, baseline_yr?, contrast_band?, mechanism_caveat?, jitter_advisory?, jitter_note?,
+note?}], assumptions:{reference_version, confidence, out_of_domain, host_class, host_class_note, …}}`. `floor_source` names the basis per method (per-star override /
 binned 3a scalar / analytic noise-model σ at the actual mag). The imaging method dict carries `contrast_band:"H"`
 + `mechanism_caveat`. **Non-MS host guard (CR-6-AMEND):** when `sp_type` resolves to a **white dwarf / hot
 subdwarf / giant / subgiant / brown dwarf**, `host_class` is set, `out_of_domain:true`, and the MS mass/radius +
@@ -3950,6 +3973,13 @@ sp_type→jitter defaults are **not faked** (`DA2` no longer → a 1.6 M☉ A st
 **Monotonicity is per-method** (RV min-mass hardens with SMA; transit min-radius is SMA-independent;
 astrometry/imaging ease, gated at P>baseline / inside the IWA). **Transit is `applicable:false` unless
 `--transit-target` / `--transit-precision-ppm`** is given (honest "not covered").
+**CR-9 rider — Companion CR#1 (RV jitter bumps, advisory placeholder).** Two symmetric jitter floors beyond
+the MS Kraft-break map: an **evolved-star** bump (subgiant/giant p-mode+granulation — fires for `host_class`
+subgiant/giant with explicit M/R) and an **active/young cool-dwarf** bump (fires when `--activity {active,young}`
+is given on a G/K/M host). When either applies, the RV method dict carries `jitter_advisory:true` + a
+`jitter_note`. **The bump magnitudes are an un-cleared LEAD — advisory PLACEHOLDER only** (WB pins the jitter–L/M
+scaling in Phase 5); the consumer treats an un-pinned bump as advisory (flag, not a hard `likely-absent`), and a
+`--rv-precision-ms` override supersedes. A normal MS star with no `--activity` is byte-identical to pre-CR#1.
 
 #### `population-classify` (CR-7 — pure-math; network only on --star)
 Thin-disk / thick-disk / halo verdict + membership probability from heliocentric U/V/W (Bensby TD/D/H velocity
@@ -4021,6 +4051,83 @@ CR §4. Live anchor: `tests/test_query_exoplanet_batch_live.py` (`SPACE_APP_RUN_
 `tests/test_exoplanet_batch.py`. Gate-adjudication (WB MSG 060): a non-anchor host may diverge from
 `pscomppars` on a back-filled field → the `ps` default-flag value is authoritative (pass-with-note, not
 a fail).
+
+## CR-9 — disposition & quality fields (additive to `planetary-systems-batch`)
+
+A **new, additive** CR extending CR-8 (CR-8 stays fulfilled/unchanged). Same tool, same inputs, same two
+modes — CR-9 only **adds output fields + two pull-behaviors**. Built on the same `ps` table (composite-only
+fields come from a second `pscomppars` query, always tagged). `core/exoplanet_batch.py`; contract
+`scifiWorldBuilding-Claude/.../spaceapp-change-request-CR9-disposition-quality-fields.md`; plan
+`PHASE_CR9_PLAN.md`.
+
+**Field tiering (`--fields`):** `core` = the CR-8 fields **+ CR-9 Tier-1 disposition/quality**; `full` = that
+**+ Tier-2 enrichment + the composite block + the OEC block + the raw `ps` row**. All built in one delivery —
+`full` is a verbosity superset, not a phase.
+
+**Load-bearing null rules (inherit CR-8):** never fabricate — a null stays null; a `*lim` flag is the **raw
+tri-state int** `+1 upper / 0 measurement / −1 lower / null` (NEVER collapsed to a bool — a consumer coding
+`if lim==1` must still see the `−1`); composite-only values are tagged `source:composite`; OEC values are
+`authority:"SECONDARY"` (verify-at-primary).
+
+**Per-planet — Tier-1 (core), archive-named keys:**
+- `disposition{}`: `soltype` (str), `pl_controv_flag` `ttv_flag` `cb_flag` (raw int 0/1/null),
+  `detection{}` (all 10 method flags `tran_flag`/`rv_flag`/`ima_flag`/`ast_flag`/`micro_flag`/`obm_flag`/
+  `etv_flag`/`ptv_flag`/`pul_flag`/`dkin_flag` as raw ints), and `detection_methods[]` (convenience: the
+  archive-stem of every flag set to 1, e.g. `["tran","rv"]`).
+- `limits{}`: the 11 tri-state limit flags `pl_bmasselim` `pl_masselim` `pl_msinielim` `pl_radelim`
+  `pl_orbeccenlim` `pl_orbincllim` `pl_orbsmaxlim` `pl_orbperlim` `pl_orblperlim` `pl_denslim` `pl_impparlim`.
+- `pl_dens` (g/cm³), `pl_imppar`, `pl_orbinclerr1` `pl_orbinclerr2` (deg; the W3 assumed-edge-on discriminator
+  — a genuinely-fitted `i` carries error bars, blank on an `inclination_deg==90.0`/`transiting:false` row ⇒
+  assumed default).
+
+**Per-planet — Tier-2 + composite + OEC (`--fields full` only):** `transit_geometry{}` (ratdor/ratror/
+trandep/trandur/tranmid + `*lim`), `environment{}` (insol/eqt), `obliquity{}` (proj/true), `ephemeris{}`
+(orbtper), `discovery{}` (year/facility/telescope/instrument/pubdate/refname), `record{}` (pubdate/rowupdate/
+releasedate + spectra/note counts); `composite{source:"composite", pl_angsep(+lim)/pl_tsm/pl_esm/
+pl_nobs_jwst_*}` (from pscomppars — `null` when no pscomppars row); `oec{source:"oec", authority:"SECONDARY",
+lists[], discoveryyear, lastupdate, description}` (`null` when no OEC match — the `lists` carry OEC's
+S-type/P-type/Controversial catalog tags).
+
+**Per-host — Tier-2 (`--fields full` only):** `stellar_extra{}` (st_rotp/vsin/age/dens + `*lim`),
+`coverage_counts{}` (st_nrvc/nphot/nspec), `system{}` (sy_snum/sy_mnum), `kinematics{}` (sy_pmra/pmdec/pm/plx
++ err + st_radv + err — Gaia-sourced; `st_radv` coverage patchy), `oec_structure{}` (the OEC binary-nesting
+tree, SECONDARY).
+
+**Behavior #2 — host name-resolution (always; a hard anchor).** Mode A now resolves each host through **all**
+archive-match arms — catalog ids (HD/HIP/TIC/Gaia) **then a `hostname` fallback** (bare input + main_id +
+common designations) for a host whose ps rows carry null catalog ids (the GJ 667 C false-drop). Two-phase:
+catalog arms first (byte-identical to CR-8 for a normally-catalogued host), hostname fallback only for a host
+phase 1 left empty. `coverage.resolution[]` records `{input, resolved_host, matched_on}` per returned host.
+
+**Behavior #3 — component enumeration (best-effort; WB MSG 073 = option A).** For every resolved Mode-A host,
+if OEC groups it with **planet-bearing non-primary components** (α Cen A → Proxima Cen b, even though α Cen A
+is planetless in ps), those planets are surfaced under **`coverage.component_planets[]`**
+(`{primary, component, source:"oec-tree", authority:"SECONDARY", note, planets:[records]}`), never merged into
+the primary's `planets`. **A wide *un-catalogued* companion (26 Dra → GJ 685) correctly yields nothing** — no
+offline catalog links them; the Gaia co-motion binding is the **consumer's** job (§7#3), not the pull's. No-op
+when OEC is unavailable.
+
+**Coverage manifest additions (Mode A):** `resolution[]` (behavior #2), `component_planets[]` (behavior #3),
+`archive_absence` (candidate-grade rows are carried — a `soltype='Candidate'` planet still has a
+`default_flag=1` row; FP/removed-targets triage is out of bulk-TAP reach), and best-effort error flags
+`composite_error` / `oec_error_hosts` when the full-scope enrichment can't complete.
+
+**Not carried (decisions, not gaps):** the archive **overview** disposition (`Confirmed:Controversial`) is
+**not a TAP column** and — verified live — **equals `pl_controv_flag`** (already delivered) for both cited
+cases; it is not fetched (WB MSG 074/075). Its genuinely-independent surface is **literature** (47 UMa d), the
+skill's LEAD, unreachable by any pull.
+
+**Validation gate — 16 anchors, all live-verified (WB re-gates independently).** The 12 §5 criteria (with two
+carrying a second pinned sub-case) + the two pull-behavior anchors:
+`GJ 667 C e/f/g→pl_controv_flag=1, b/c→0` · `LP 890-9 b/c→pl_bmasselim=1` · `TRAPPIST-1 b–h→ttv_flag=1` ·
+`LTT 1445 A c→pl_orbeccenlim=1` · `Kepler-16 b→cb_flag=1` · `GJ 367 b pl_dens≈6.9` **and** `GJ 1214 b≈2.26` ·
+`GJ 436 b→tran_flag=1 AND rv_flag=1` · `GJ 1214 b composite present + source:composite` (full) ·
+`GJ 667 C c OEC list ⊇ "Planets in binary systems, S-type"` (full) · `HD 136352 b/c/d` batch≡single
+inclinations 88.49/88.571/89.73 · `HD 219134 d & f→pl_bmasselim=−1` **and** `HD 128311 b→pl_orbincllim=−1`
+(the −1 sign) · `HD 192310 b/c→inclination_deg=90.0 + mass_prov_raw="Msin(i)/sin(i)"` · **behavior #2**
+`GJ 667 C→b/c/e/f/g present` · **behavior #3** `α Cen A→Proxima Cen b under component_planets` (26 Dra→nothing,
+a documented limitation). Offline logic: `tests/test_exoplanet_batch.py` (+8 CR-9 classes); live anchors reuse
+`tests/test_query_exoplanet_batch_live.py`.
 
 ## Implementation notes
 

@@ -103,14 +103,34 @@ def _domain_note(mag_out, app_mag, dom, host_class):
     return "; ".join(parts) if parts else None
 
 
-def _rv_jitter_floor(rv_defaults, row, sp_type):
-    """Astrophysical RV jitter floor: sp_type-keyed (Kraft-break bump) if the host letter is known,
-    else the flat per-bin value. Effective floor = max(precision, this) — WB 3a MSG 050."""
+def _rv_jitter_floor(rv_defaults, row, sp_type, host_class=None, activity=None):
+    """``(floor_m_s, advisory)`` — the astrophysical RV jitter floor. Base = the sp_type-keyed
+    Kraft-break bump when the host letter is known, else the flat per-bin value (WB 3a MSG 050;
+    effective floor upstream = max(precision, this)).
+
+    **Companion CR #1 (advisory PLACEHOLDER, WB Phase 5):** a larger floor for an **evolved** host
+    (subgiant/giant p-mode + granulation) or an **active/young cool dwarf**. Whenever such a placeholder
+    bump is applied, ``advisory=True`` — the *magnitude* is an un-cleared LEAD, so the caller flags the
+    result advisory rather than treating it as a hard floor. Default (no evolved host, no activity
+    signal) is byte-identical to the pre-CR#1 MS behaviour."""
     by_sp = rv_defaults.get("jitter_floor_by_sptype_m_s")
     letter = _sp_letter(sp_type)
-    if by_sp and letter in by_sp:
-        return by_sp[letter]
-    return row.get("jitter_floor_m_s", 0.0)
+    base = by_sp[letter] if (by_sp and letter in by_sp) else row.get("jitter_floor_m_s", 0.0)
+    bumps = rv_defaults.get("jitter_bumps")
+    advisory = False
+    if bumps:
+        ev = bumps.get("evolved", {})
+        cand = ev.get("subgiant_m_s") if host_class == "subgiant" else (
+            ev.get("giant_m_s") if host_class == "giant" else None)
+        # active/young bump is a cool-dwarf effect → gate on a G/K/M host letter (never an evolved host,
+        # whose letter is nulled upstream), and only when the caller supplies an activity signal.
+        if cand is None and activity in ("active", "young") and letter in ("G", "K", "M"):
+            cand = bumps.get("active_young_cool_dwarf_m_s")
+        # Flag advisory ONLY when the placeholder actually raises the floor (a bump that doesn't move
+        # the number is not a bump — don't claim one in the note).
+        if cand is not None and cand > base:
+            base, advisory = cand, True
+    return base, advisory
 
 
 def _tess_sigma_1hr_ppm(tmag, nm):
@@ -236,7 +256,7 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
                                    rv_precision_ms=None, rv_baseline_yr=None,
                                    transit_precision_ppm=None, transit_target=False,
                                    astrom_precision_uas=None, astrom_baseline_yr=None,
-                                   star=None):
+                                   star=None, activity=None):
     """Per-method minimum-detectable-planet vs SMA map. See module docstring.
 
     Returns ``{star, app_mag, distance_pc, sp_type, star_mass_solar, star_radius_solar,
@@ -253,6 +273,8 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
         return {"error": "rv_baseline_yr must be positive."}
     if astrom_baseline_yr is not None and astrom_baseline_yr <= 0:
         return {"error": "astrom_baseline_yr must be positive."}
+    if activity is not None and activity not in ("active", "young", "quiet"):
+        return {"error": "activity must be one of active / young / quiet."}
     host_class = _host_class(sp_type)
     if host_class is not None:
         # Non-MS host (CR-6-AMEND, WB MSG 053): the MS mass/radius relation + the sp_type→jitter map
@@ -305,17 +327,30 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
             rv_def = defaults["methods"]["rv"]
             row = _bin_row(rv_def["by_mag"], app_mag)
             base = rv_baseline_yr if rv_baseline_yr is not None else row["baseline_yr"]
+            jitter_advisory = False
             if rv_precision_ms is not None:
                 floor, src = rv_precision_ms, "per-star override"
             else:
-                jitter = _rv_jitter_floor(rv_def, row, jitter_sp)
+                jitter, jitter_advisory = _rv_jitter_floor(
+                    rv_def, row, jitter_sp, host_class=host_class, activity=activity)
                 floor = max(row["precision_m_s"], jitter)
                 src = (f"3a-default RV (mag≤{row['mag_max']}): "
                        f"max(precision {row['precision_m_s']}, jitter {jitter}) = {floor} m/s")
-            out_methods.append({"method": "rv", "applicable": True,
-                                "detectable_vs_sma": _rv_curve(m_star, grid, floor, base),
-                                "floor_source": src, "value_kind": "min_mass_earth",
-                                "baseline_yr": base})
+            rv_entry = {"method": "rv", "applicable": True,
+                        "detectable_vs_sma": _rv_curve(m_star, grid, floor, base),
+                        "floor_source": src, "value_kind": "min_mass_earth",
+                        "baseline_yr": base}
+            if jitter_advisory:
+                # Companion CR #1: an evolved / active-young jitter bump was applied from an ADVISORY
+                # PLACEHOLDER (magnitude un-cleared — WB Phase 5 pins the jitter–L/M scaling). Flag it
+                # so the consumer treats it as advisory (not a hard 'likely-absent'), overridable via
+                # --rv-precision-ms.
+                rv_entry["jitter_advisory"] = True
+                rv_entry["jitter_note"] = (
+                    "an evolved-star / active-young-dwarf jitter bump was applied from an ADVISORY "
+                    "PLACEHOLDER magnitude (un-cleared LEAD — WB Phase 5 pins the jitter–L/M scaling); "
+                    "treat as advisory, not a hard floor. Override with --rv-precision-ms.")
+            out_methods.append(rv_entry)
         elif method == "transit":
             applicable = transit_target or (transit_precision_ppm is not None)
             if transit_precision_ppm is not None:
