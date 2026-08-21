@@ -204,7 +204,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `habitable-zone` | `--teff --luminosity` | none | **list** of 6 zone dicts (not a dict) |
 | `exoplanets` | `--star` | SIMBAD + archives | `simbad, planets[], hwo, exocat` |
 | `planetary-systems` | `--star` | SIMBAD + archive | `simbad, planets[]` |
-| `planetary-systems-batch` | Mode A: `--hosts N […]` \| `--host-file P`; Mode B: property filters (`--mass-min/max --radius-min/max --period-min/max --teff-min/max --dist-max-pc --method --spectral-classes/-refine`) \| `--archive-query "ADQL"`; both: `--solution-scope {default,all}` `--fields {core,full}` | **NASA TAP `ps` (live)** + SIMBAD (Mode A) + pscomppars/OEC (full) | `mode, solution_scope, field_scope, coverage{}, hosts[]` (+ CR-9 disposition/quality fields) — see CR-8 + CR-9 blocks below |
+| `planetary-systems-batch` | Mode A: `--hosts N […]` \| `--host-file P`; Mode B: property filters (`--mass-min/max --radius-min/max --period-min/max --teff-min/max --dist-max-pc --method --spectral-classes/-refine`) \| `--archive-query "ADQL"`; both: `--solution-scope {default,all}` `--fields {core,full}` | **NASA TAP `ps` (live)** + SIMBAD (Mode A) + pscomppars/OEC (full) | `mode, solution_scope, field_scope, coverage{}, hosts[]` (+ CR-9 disposition/quality + CR-10.1 `survey_disposition`/`survey_siblings` fields) — see CR-8 + CR-9 + CR-10 blocks below |
 | `hwo-exep` | `--star` | SIMBAD + archive | `simbad, hwo[]` |
 | `mission-exocat` | `--star` | SIMBAD (then local DB) | `simbad, exocat` |
 | `hwc` | `--star` | SIMBAD (then local DB) | `simbad, star_row, planet_rows[]` |
@@ -3925,6 +3925,10 @@ xor `--eu-fe`); absent → `fissile.note` (not null). `fissile.{u_over_h,th_over
 **tonnage** (Eu-scaled), beyond the Eu-independent fraction keys. `--eu-h`/`--eu-fe` are an argparse
 mutually-exclusive group.
 
+**CR-10.2 rider — [Fe/H]-upper soft-flag (CQ-7-3c-6):** `[Fe/H] > +0.5` is now a soft `feh_extrapolation` flag on the
+K-40 `radiogenic_heat` channel (+ `provenance.per_output`), NOT a global void — the fissile fraction stays valid. See
+the CR-10 block below.
+
 **CR-9 riders — 3c defect fixes CQ-7-3c-1…4 (post-fulfilment CR-4 corrections; WB MSG 079 pin):**
 - **CQ-7-3c-1 (radiogenic-heat Eu-wiring).** The U/Th (r-process) heat channels now scale with the star's
   **[Eu/H]-driven GCE actinide inventory** relative to the solar anchor (`g_i(A)/g_i(solar)·exp(λ_i(solar−A))·
@@ -3973,6 +3977,10 @@ sp_type→jitter defaults are **not faked** (`DA2` no longer → a 1.6 M☉ A st
 **Monotonicity is per-method** (RV min-mass hardens with SMA; transit min-radius is SMA-independent;
 astrometry/imaging ease, gated at P>baseline / inside the IWA). **Transit is `applicable:false` unless
 `--transit-target` / `--transit-precision-ppm`** is given (honest "not covered").
+**CR-10.4 rider — archive-M★ preference.** On the `--star` path M★ prefers the archive `ps` value batch reports
+(precedence manual > archive > sp_type_estimate); a new `star_mass_provenance` field names the tier. See the CR-10
+block below.
+
 **CR-9 rider — Companion CR#1 (RV jitter bumps, advisory placeholder).** Two symmetric jitter floors beyond
 the MS Kraft-break map: an **evolved-star** bump (subgiant/giant p-mode+granulation — fires for `host_class`
 subgiant/giant with explicit M/R) and an **active/young cool-dwarf** bump (fires when `--activity {active,young}`
@@ -4128,6 +4136,50 @@ inclinations 88.49/88.571/89.73 · `HD 219134 d & f→pl_bmasselim=−1` **and**
 `GJ 667 C→b/c/e/f/g present` · **behavior #3** `α Cen A→Proxima Cen b under component_planets` (26 Dra→nothing,
 a documented limitation). Offline logic: `tests/test_exoplanet_batch.py` (+8 CR-9 classes); live anchors reuse
 `tests/test_query_exoplanet_batch_live.py`.
+
+## CR-10 — detection-floor & survey-disposition bundle (three items; additive, no fulfilled behavior moved)
+
+First fire = **CR-10.1 + CR-10.2 + CR-10.4** (CR-10.3 HELD, not built). All additive; each item is an enrichment.
+Coordination MSG 087–091; `PHASE_CR10_PLAN.md`; WB re-gates each independently on the sister venv.
+
+**CR-10.1 — native transit-survey FP/candidate disposition (`planetary-systems-batch`, LIVE, core-tier).**
+A **new per-planet `survey_disposition` block** (present-but-`null`, **never omitted** — CR-9 tri-state discipline):
+`{source_catalog: "toi"|"koi"|"k2pandc"|null, disposition_code, disposition_text, catalog_id, match_status:
+"matched"|"ambiguous"|null, match_note}`. Cross-match is schema-forced: **TESS** via the host `tic_id` +
+orbital-**period** bind (`toi.tfopwg_disp`, tolerance ≈1.5%); **Kepler** (`cumulative.koi_disposition`) and **K2**
+(`k2pandc.disposition`, incl. the `k2_name` alias) via an **exact planet-name join** (`ps` carries no KIC/EPIC).
+Precedence koi > k2pandc > toi. RV-only planets → `null` (expected, not an error) — the audit's RV FPs (GJ 832 c,
+HD 102365 b) stay `null`, so the Q9 absence-triage stays primary. **Faithful surfacing (WB MSG 091):** a survey `FP`
+is emitted verbatim **even when the planet is archive-confirmed** (TOI-1836 c is TFOPWG-`FP` yet confirmed → the tool
+reports `FP`, never suppresses); the FP-vs-confirmation reconciliation is the **consumer's** §6.7 job. Also adds a
+per-host **`survey_siblings`** list (present-but-empty) — unbound TESS TOIs + Kepler/K2 FP siblings found via a
+`kepid`/`epic_hostname` pivot (WB Q1a sweep) — and a `coverage.survey_disposition` summary
+(`{matched, ambiguous, hosts_with_siblings[, errors]}`). **Best-effort:** a survey-table failure degrades that arm to
+`null` + a `coverage.survey_disposition.errors` note; the primary `ps` pull is never broken. Scoped to
+`planetary-systems-batch` only (single-host `planetary-systems`/`pscomppars` has no disposition layer). Anchors:
+`HD 148193` → TOI-1836 c `disposition_code="FP"` `match_status="matched"` (validation #1, clean bind); `Kepler-10`
+b/c → `CONFIRMED`; `HD 69830` b/c/d → `null`. Offline `tests/test_exoplanet_batch.py::Cr10SurveyDispositionTest`;
+live `tests/test_query_exoplanet_batch_live.py::Cr10SurveyDispositionLiveTest`.
+
+**CR-10.2 — `nuclear-inventory` [Fe/H]-upper soft-flag (CQ-7-3c-6).** `[Fe/H] > +0.5` no longer **globally voids** the
+output. It becomes a **soft per-output `feh_extrapolation: true|false`** flag carried on the **`radiogenic_heat.provenance`**
+(the [Fe/H]-dependent K-40 channel) **and** mirrored in **`provenance.per_output`** (an additive key beside the severity
+strings; also in `provenance.flags`). The `[Fe/H]`-independent **fissile fraction stays computed and valid**
+(`--fe-h 0.55` ≡ `0.45`, byte-identical), and `domain_ok` is **no longer `false` from `[Fe/H] > +0.5` alone** (still
+`false`/`None` for a real out-of-domain per CQ-7-3c-4). **Age-out and the lower `[Fe/H] < −2.5` edge stay HARD.** The
+threshold is a named constant `_DV5_FEH_SOFT_UPPER = 0.5` (strict `>`). Tests: `tests/test_nuclear.py::Cr102FehSoftFlagTest`,
+`tests/test_query_nuclear.py`.
+
+**CR-10.4 — `detection-completeness` archive-M★ preference.** On the `--star` path the tool now prefers the
+**archive M★** (the *same* NASA `ps` + `default_flag=1` `st_mass` `planetary-systems-batch` reports — read through
+`exoplanet_batch.fetch_archive_stellar_mass`, so the two can never disagree; never hard-coded) over the sp-type→mass
+estimate for the RV/astrometry √M★ floors. Precedence **manual `--star-mass-solar` > archive > sp_type_estimate**. New
+output field **`star_mass_provenance ∈ {"manual","archive","sp_type_estimate", null}`** beside `star_mass_solar`.
+A **non-MS** host receives an archive mass **only if the archive radius is also present** (a mass-only injection would
+turn the CR-6-AMEND graceful-skip into an error). Anchor: `detection-completeness --star "HD 69830"` →
+`star_mass_solar ≈ 0.86`, `star_mass_provenance="archive"`, equal to batch's `mass_solar`. Tests:
+`tests/test_detection.py::Cr104MassProvenanceTest`, `tests/test_query_detection.py::Cr104WrapperTest` (the wrapper
+precedence + non-MS guard, mocked), `tests/test_query_detection_live.py` (live archive anchor).
 
 ## Implementation notes
 

@@ -93,6 +93,11 @@ _DV3_EU_FE_S_PROCESS = 0.4        # runbook Eu-artifact proxy: distrust [Eu/Fe] 
 _DV3_FEH_MIN = -0.5               # … on a thin-disk, NOT metal-poor ([Fe/H] ≳ this) star ⇒ s-process, not r.
 _DV3_BA_EU_S_DOMINANCE = 0.5      # if [Ba/Eu] supplied: ≥ +0.5 ⇒ s-process dominance (CEMP-s cut, Beers &
                                   # Christlieb 2005). Solar ≈ 0 and pure-r ≈ −0.7 are NOT flagged.
+_DV5_FEH_SOFT_UPPER = 0.5         # CR-10.2 / CQ-7-3c-6: [Fe/H] ABOVE this is a SOFT per-output flag
+                                  # (feh_extrapolation) on the [Fe/H]-dependent K-40 radiogenic-heat
+                                  # channel — NOT a hard void. Coincident with the model feh_range upper
+                                  # edge today, but a distinct soft-extrapolation threshold: the fissile
+                                  # FRACTION is [Fe/H]-independent, so it is never voided by [Fe/H].
 
 
 def gce_domain_ok(age_gyr, feh, eu_fe=None, population=None, ba_eu=None,
@@ -116,18 +121,25 @@ def gce_domain_ok(age_gyr, feh, eu_fe=None, population=None, ba_eu=None,
     ``bands`` flags the DV-4/DV-7 reduced-reliability regimes (young / ISM-mixing / old) — central
     values are still emitted (flag, never clamp)."""
     dom = model["gce_enrichment"]["domain"]
-    lo_f, hi_f = dom["feh_range"]
+    lo_f = dom["feh_range"][0]
     lo_a, hi_a = dom["age_range_gyr"]
     reasons = []
-    domain_out = actinide_boost = s_process = False
+    domain_out = actinide_boost = s_process = feh_extrapolation = False
 
-    # DV-5 — fitted age / [Fe/H] domain (out → the whole fissile model is void).
+    # DV-5 — fitted age / [Fe/H] domain. Age-out and the LOWER [Fe/H] edge stay HARD (they void the
+    # age-dependent GCE integral / a metal-poor extrapolation). The UPPER [Fe/H] edge is now a SOFT
+    # per-output flag (CR-10.2 / CQ-7-3c-6): the fissile FRACTION is [Fe/H]-independent, so [Fe/H] > +0.5
+    # must NOT void it — only the [Fe/H]-dependent K-40 radiogenic-heat channel is flagged extrapolated.
     if not (lo_a <= age_gyr <= hi_a):
         reasons.append(f"age {age_gyr} Gyr outside the GCE fit domain {[lo_a, hi_a]} (DV-5)")
         domain_out = True
-    if feh is not None and not (lo_f <= feh <= hi_f):
-        reasons.append(f"[Fe/H] {feh} outside the GCE fit domain {[lo_f, hi_f]} (DV-5)")
+    if feh is not None and feh < lo_f:
+        reasons.append(f"[Fe/H] {feh} below the GCE fit domain (< {lo_f}) (DV-5)")
         domain_out = True
+    if feh is not None and feh > _DV5_FEH_SOFT_UPPER:
+        # Soft flag ONLY: no reason appended (domain_note stays for hard/veto issues), no domain_out, no
+        # ratio/tonnage severity change, no bands entry (which would wrongly extrapolate-flag the ratio).
+        feh_extrapolation = True
 
     # DV-2 — actinide-boost / r-II: production ratio is event-class-dependent → ratio AND tonnage void.
     if eu_fe is not None and eu_fe >= _DV2_EU_FE_ACTINIDE_BOOST:
@@ -185,9 +197,13 @@ def gce_domain_ok(age_gyr, feh, eu_fe=None, population=None, ba_eu=None,
         "domain_ok": ok,
         "reasons": reasons,
         "flags": {"age_soft": bool(age_soft), "s_process": s_process,
-                  "actinide_boost": actinide_boost, "domain_out": domain_out},
+                  "actinide_boost": actinide_boost, "domain_out": domain_out,
+                  "feh_extrapolation": feh_extrapolation},
         "per_output": {"isotope_ratio": ratio_sev, "tonnage": tonnage_sev,
-                       "radiogenic_heat": tonnage_sev},
+                       "radiogenic_heat": tonnage_sev,
+                       # CR-10.2 / CQ-7-3c-6: additive boolean (NOT a severity-string overwrite) — the
+                       # [Fe/H]-dependent K-40 radiogenic-heat channel is extrapolated at [Fe/H] > +0.5.
+                       "feh_extrapolation": feh_extrapolation},
         "bands": bands,
     }
     return ok, ("; ".join(reasons) if reasons else None), bands, detail

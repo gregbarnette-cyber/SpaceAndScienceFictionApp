@@ -79,5 +79,48 @@ class Cr8BatchLiveTest(unittest.TestCase):
             self.assertAlmostEqual(batch_incl[name], single_incl[name], places=3)
 
 
+@unittest.skipUnless(_archive_reachable(),
+                     "NASA Exoplanet Archive not reachable (or SPACE_APP_RUN_LIVE unset)")
+class Cr10SurveyDispositionLiveTest(unittest.TestCase):
+    """CR-10.1 §5 live anchors (pinned with WB, coordination MSG 090/091).
+
+    FP clean-bind = TOI 1836.02 → TOI-1836 c on HD 148193; CONFIRMED KOI = Kepler-10 b/c;
+    RV-only null = HD 69830 b/c/d."""
+
+    def _planets(self, host):
+        rc, out, err = _run("planetary-systems-batch", "--hosts", host, "--fields", "core")
+        self.assertEqual(rc, 0, err)
+        return {p["name"]: p for p in out["hosts"][0]["planets"]}, out
+
+    def test_fp_clean_bind_hd148193(self):
+        # validation #1: TESS flagged TOI-1836 c FP, but it is archive-confirmed → the tool emits FP
+        # verbatim (faithful surfacing, MSG 091), per-planet, match_status matched.
+        planets, _ = self._planets("HD 148193")
+        sd = planets["TOI-1836 c"]["survey_disposition"]
+        self.assertEqual(sd["source_catalog"], "toi")
+        self.assertEqual(sd["disposition_code"], "FP")
+        self.assertEqual(sd["match_status"], "matched")
+        self.assertEqual(sd["catalog_id"], "TOI 1836.02")
+
+    def test_confirmed_koi_kepler10(self):
+        # validation #2: name-join → CONFIRMED for the two KOI planets.
+        planets, _ = self._planets("Kepler-10")
+        for name in ("Kepler-10 b", "Kepler-10 c"):
+            sd = planets[name]["survey_disposition"]
+            self.assertEqual(sd["source_catalog"], "koi")
+            self.assertEqual(sd["disposition_code"], "CONFIRMED")
+            self.assertEqual(sd["match_status"], "matched")
+
+    def test_rv_only_null_hd69830(self):
+        # validations #3/#4: RV-only host → survey_disposition present-but-null, no note.
+        planets, _ = self._planets("HD 69830")
+        for name in ("HD 69830 b", "HD 69830 c", "HD 69830 d"):
+            sd = planets[name]["survey_disposition"]
+            self.assertIsNone(sd["source_catalog"])
+            self.assertIsNone(sd["disposition_code"])
+            self.assertIsNone(sd["match_status"])
+            self.assertIsNone(sd["match_note"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -337,6 +337,36 @@ class CompanionCr1JitterBumpTest(unittest.TestCase):
         self.assertFalse(advisory)
 
 
+class Cr104MassProvenanceTest(unittest.TestCase):
+    """CR-10.4: star_mass_provenance in the core output — sp_type_estimate / manual / archive / None."""
+
+    def test_sp_type_estimate(self):
+        self.assertEqual(_sun10(methods=["rv"])["star_mass_provenance"], "sp_type_estimate")
+
+    def test_explicit_mass_defaults_manual(self):
+        res = detection.compute_detection_completeness(
+            app_mag=5, distance_pc=10, star_mass_solar=1.0, star_radius_solar=1.0, methods=["rv"])
+        self.assertEqual(res["star_mass_provenance"], "manual")
+
+    def test_archive_provenance_passed_through(self):
+        res = detection.compute_detection_completeness(
+            app_mag=5, distance_pc=10, sp_type="G2V", star_mass_solar=0.86,
+            star_mass_provenance="archive", methods=["rv"])
+        self.assertAlmostEqual(res["star_mass_solar"], 0.86)
+        self.assertEqual(res["star_mass_provenance"], "archive")
+
+    def test_non_ms_with_mr_reports_provenance(self):
+        res = detection.compute_detection_completeness(
+            app_mag=12, distance_pc=15, sp_type="DA2", star_mass_solar=0.6, star_radius_solar=0.013,
+            star_mass_provenance="archive", methods=["rv"])
+        self.assertEqual(res["star_mass_provenance"], "archive")
+
+    def test_non_ms_no_mr_provenance_none(self):
+        res = detection.compute_detection_completeness(app_mag=12, distance_pc=15, sp_type="DA2")
+        self.assertIsNone(res["star_mass_solar"])
+        self.assertIsNone(res["star_mass_provenance"])
+
+
 class ReferenceVersionTest(unittest.TestCase):
     def test_v1_1_0_and_domain(self):
         a = _sun10()["assumptions"]

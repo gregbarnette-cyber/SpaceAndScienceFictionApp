@@ -1115,6 +1115,8 @@ def cmd_population_classify(args):
 # ── Star-analysis CR-6 — detection-completeness (pure-math; network only on --star) ──
 def cmd_detection_completeness(args):
     app_mag, distance_pc, sp_type = args.app_mag, args.distance_pc, args.sp_type
+    star_mass, star_rad = args.star_mass_solar, args.star_radius_solar
+    mass_prov = "manual" if star_mass is not None else None
     if args.star:
         sl = databases.compute_simbad_lookup(args.star)
         if "error" in sl:
@@ -1126,14 +1128,26 @@ def cmd_detection_completeness(args):
             distance_pc = sl.get("parsecs")
         if sp_type is None:
             sp_type = sl.get("sp_type")
+        # CR-10.4: prefer the archive M★ (the same ps + default_flag=1 value planetary-systems-batch
+        # reports) over the sp_type→mass estimate. A manual --star-mass-solar still supersedes.
+        if star_mass is None:
+            arch = exoplanet_batch.fetch_archive_stellar_mass(args.star, simbad=sl)
+            if arch and arch.get("mass_solar") is not None:
+                if detection._host_class(sp_type) is None:          # MS host → mass from archive
+                    star_mass, mass_prov = arch["mass_solar"], "archive"
+                elif arch.get("radius_solar") is not None:          # non-MS: inject BOTH (a mass-only
+                    star_mass = arch["mass_solar"]                  # injection would turn the graceful
+                    if star_rad is None:                            # skip into an error — red-team #5)
+                        star_rad = arch["radius_solar"]
+                    mass_prov = "archive"
     _out(detection.compute_detection_completeness(
         app_mag=app_mag, distance_pc=distance_pc, sp_type=sp_type,
-        star_mass_solar=args.star_mass_solar, star_radius_solar=args.star_radius_solar,
+        star_mass_solar=star_mass, star_radius_solar=star_rad,
         methods=args.methods, sma_grid=args.sma_grid, albedo=args.albedo,
         rv_precision_ms=args.rv_precision_ms, rv_baseline_yr=args.rv_baseline_yr,
         transit_precision_ppm=args.transit_precision_ppm, transit_target=args.transit_target,
         astrom_precision_uas=args.astrom_precision_uas, astrom_baseline_yr=args.astrom_baseline_yr,
-        star=args.star, activity=args.activity,
+        star=args.star, activity=args.activity, star_mass_provenance=mass_prov,
     ))
 
 

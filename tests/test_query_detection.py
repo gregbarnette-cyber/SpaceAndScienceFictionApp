@@ -1,8 +1,11 @@
 # tests/test_query_detection.py — CR-6 detection-completeness query.py contract (offline).
 
+import types
 import unittest
+from unittest import mock
 
 import core.detection as detection
+import query
 from tests._queryharness import make_env, run_query
 
 _ENV = make_env("cr6_detection_throwaway.db")
@@ -77,6 +80,81 @@ class DetectionCompletenessQueryTest(unittest.TestCase):
         im = [m for m in d["methods"] if m["method"] == "imaging"][0]
         self.assertEqual(im["contrast_band"], "H")
         self.assertIn("self-luminous", im["mechanism_caveat"].lower())
+
+    def test_cr104_manual_provenance(self):
+        rc, d, _ = _run("detection-completeness", "--app-mag", "5", "--distance-pc", "10",
+                        "--sp-type", "G2V", "--star-mass-solar", "1.0", "--star-radius-solar", "1.0",
+                        "--methods", "rv")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["star_mass_provenance"], "manual")
+
+    def test_cr104_sp_type_estimate_provenance(self):
+        rc, d, _ = _run("detection-completeness", "--app-mag", "4.83", "--distance-pc", "10",
+                        "--sp-type", "G2V", "--methods", "rv")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["star_mass_provenance"], "sp_type_estimate")
+
+
+def _args(**kw):
+    base = dict(app_mag=None, distance_pc=None, sp_type=None, star=None, star_mass_solar=None,
+                star_radius_solar=None, methods=None, sma_grid=None, albedo=0.3, rv_precision_ms=None,
+                rv_baseline_yr=None, transit_precision_ppm=None, transit_target=False,
+                astrom_precision_uas=None, astrom_baseline_yr=None, activity=None)
+    base.update(kw)
+    return types.SimpleNamespace(**base)
+
+
+class Cr104WrapperTest(unittest.TestCase):
+    """CR-10.4 query.py --star wrapper: precedence (manual > archive > sp_type_estimate) + the
+    red-team #5 non-MS guard (never inject a mass-only archive value into a non-MS host). No network —
+    SIMBAD + the archive fetch are mocked, and compute_detection_completeness is captured."""
+
+    def _capture(self, args, simbad, archive):
+        captured = {}
+
+        def fake_compute(**kw):
+            captured.update(kw)
+            return {"ok": True}
+        with mock.patch.object(query.databases, "compute_simbad_lookup", return_value=simbad), \
+             mock.patch.object(query.exoplanet_batch, "fetch_archive_stellar_mass", return_value=archive), \
+             mock.patch.object(query.detection, "compute_detection_completeness", side_effect=fake_compute), \
+             mock.patch.object(query, "_out"):
+            query.cmd_detection_completeness(args)
+        return captured
+
+    def test_ms_prefers_archive(self):
+        c = self._capture(_args(star="HD 69830"),
+                          simbad={"sp_type": "G8V", "vmag": 6.0, "parsecs": 12.6},
+                          archive={"mass_solar": 0.86, "radius_solar": 0.9, "mass_provenance": "archive"})
+        self.assertEqual(c["star_mass_solar"], 0.86)
+        self.assertEqual(c["star_mass_provenance"], "archive")
+
+    def test_manual_overrides_archive(self):
+        c = self._capture(_args(star="HD 69830", star_mass_solar=0.5),
+                          simbad={"sp_type": "G8V"},
+                          archive={"mass_solar": 0.86, "radius_solar": 0.9, "mass_provenance": "archive"})
+        self.assertEqual(c["star_mass_solar"], 0.5)
+        self.assertEqual(c["star_mass_provenance"], "manual")
+
+    def test_no_archive_falls_through_to_sp_type(self):
+        c = self._capture(_args(star="SomeStar"), simbad={"sp_type": "G2V"}, archive=None)
+        self.assertIsNone(c["star_mass_solar"])            # → core resolves sp_type_estimate
+        self.assertIsNone(c["star_mass_provenance"])
+
+    def test_non_ms_mass_only_not_injected(self):
+        # red-team #5: a non-MS host with archive mass but NO archive radius must NOT get a mass-only
+        # injection (that would turn the graceful skip into a curated error).
+        c = self._capture(_args(star="SomeGiant"), simbad={"sp_type": "K0III"},
+                          archive={"mass_solar": 1.1, "radius_solar": None, "mass_provenance": "archive"})
+        self.assertIsNone(c["star_mass_solar"])
+        self.assertIsNone(c["star_mass_provenance"])
+
+    def test_non_ms_with_archive_mr_injects_both(self):
+        c = self._capture(_args(star="SomeGiant"), simbad={"sp_type": "K0III"},
+                          archive={"mass_solar": 1.1, "radius_solar": 10.0, "mass_provenance": "archive"})
+        self.assertEqual(c["star_mass_solar"], 1.1)
+        self.assertEqual(c["star_radius_solar"], 10.0)
+        self.assertEqual(c["star_mass_provenance"], "archive")
 
 
 if __name__ == "__main__":

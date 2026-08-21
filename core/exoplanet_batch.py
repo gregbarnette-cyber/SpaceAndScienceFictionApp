@@ -116,6 +116,15 @@ def _t2_block(row, pairs):
     return out
 
 
+# ── CR-10.1: transit-survey disposition — the present-but-null block (filled by the post-pass) ────
+_SURVEY_NULL = {"source_catalog": None, "disposition_code": None, "disposition_text": None,
+                "catalog_id": None, "match_status": None, "match_note": None}
+
+
+def _survey_null():
+    return dict(_SURVEY_NULL)
+
+
 def _parse_reflink(html):
     """Archive reflink HTML → {citation, refstr, href, raw}; None when absent."""
     if not html:
@@ -253,6 +262,7 @@ def _planet_record(row, field_scope):
         "detection_methods": [c[:-5] for c in _DETECTION_FLAG_COLS if _intval(row.get(c)) == 1],
     }
     rec["limits"] = {c: _intval(row.get(c)) for c in _LIMIT_COLS}   # +1 upper / 0 meas / -1 lower / null
+    rec["survey_disposition"] = _survey_null()   # CR-10.1: present-but-null; the post-pass fills it
     rec["pl_dens"] = _num(row.get("pl_dens"))
     rec["pl_imppar"] = _num(row.get("pl_imppar"))
     rec["pl_orbinclerr1"] = _num(row.get("pl_orbinclerr1"))         # W3 discriminator; null when blank
@@ -737,6 +747,230 @@ def _enrich_full(result):
         result["coverage"]["oec_error_hosts"] = oec_err
 
 
+# ── CR-10.1: native transit-survey FP/candidate disposition (toi / cumulative / k2pandc) ──────────
+# Per-planet survey_disposition (matched / ambiguous / null, present-but-null never omitted) + a
+# best-effort host-level sibling-FP sweep (WB Q1a). Cross-match is schema-forced: TESS via the host TIC
+# + orbital-period bind; Kepler/K2 via an exact planet-name join (ps carries no KIC/EPIC). See
+# PHASE_CR10_PLAN.md §3 + coordination MSG 087-091. Faithful surfacing (MSG 091): the raw survey
+# disposition is emitted verbatim even when it conflicts with the archive confirmation (an FP TOI on a
+# confirmed planet still reports FP) — the tool NEVER reconciles/downgrades; that is the consumer's job.
+_TESS_PERIOD_TOL = 0.015     # relative period tolerance for a ps-planet ↔ TOI bind (~1.5%; WB ~1–2%)
+_TFOPWG_TEXT = {"FP": "False Positive", "PC": "Planet Candidate", "CP": "Confirmed Planet",
+                "KP": "Known Planet", "FA": "False Alarm", "APC": "Ambiguous Planet Candidate"}
+_TOI_SELECT = "tid, toi, tfopwg_disp, pl_orbper"
+_KOI_SELECT = "kepler_name, koi_disposition, kepoi_name, koi_period, kepid"
+_KOI_PIVOT_SELECT = "kepid, kepler_name, kepoi_name, koi_disposition, koi_period"
+_K2_SELECT = "pl_name, k2_name, disposition, epic_candname, epic_hostname, pl_orbper"
+
+
+def _reldiff(a, b):
+    a, b = _num(a), _num(b)
+    if a is None or b is None or b == 0:
+        return None
+    return abs(a - b) / abs(b)
+
+
+def _period_match(toi_period, planet_period):
+    d = _reldiff(toi_period, planet_period)
+    return d is not None and d <= _TESS_PERIOD_TOL
+
+
+def _host_tid(host):
+    """Integer TESS Input Catalog id from a host's cross_ids ('TIC 12345' → 12345), or None."""
+    tic = (host.get("cross_ids") or {}).get("TIC")
+    if not tic:
+        return None
+    m = re.search(r"(\d+)", str(tic))
+    return int(m.group(1)) if m else None
+
+
+def _toi_num(catalog_id):
+    """'TOI 1836.02' → '1836.02' (the toi-number key), or None."""
+    if not catalog_id:
+        return None
+    return str(catalog_id).replace("TOI", "").strip() or None
+
+
+def _query_survey_num(table, col, values, select):
+    """Survey query for a NUMERIC ``col IN (...)`` (tid, kepid), chunked; concatenated rows."""
+    out = []
+    vals = sorted({int(v) for v in values if v is not None})
+    for i in range(0, len(vals), _IN_CHUNK):
+        joined = ", ".join(str(v) for v in vals[i:i + _IN_CHUNK])
+        out.extend(_query_tap(table, f"{col} IN ({joined})", select=select) or [])
+    return out
+
+
+def _query_survey_names(table, col, names, select, extra_col=None):
+    """Survey query for a STRING ``col IN (...)`` (optionally OR ``extra_col IN (...)``), chunked."""
+    out = []
+    names = sorted({n for n in names if n})
+    for i in range(0, len(names), _IN_CHUNK):
+        quoted = ", ".join(f"'{_adql_quote(n)}'" for n in names[i:i + _IN_CHUNK])
+        where = f"{col} IN ({quoted})"
+        if extra_col:
+            where = f"({where}) OR ({extra_col} IN ({quoted}))"
+        out.extend(_query_tap(table, where, select=select) or [])
+    return out
+
+
+def _bind_survey(planet, koi_by_name, k2_by_name, toi_by_tid, host_tid):
+    """Bind one ps planet to a survey candidate → the survey_disposition block, or None (no bind).
+    Precedence (red-team #3): Kepler name-join > K2 name-join > TESS TIC+period (name-joins are
+    per-planet exact; the TESS bind is period-based). Disposition returned verbatim (faithful, MSG 091)."""
+    name = planet.get("name")
+    koi = koi_by_name.get(name)
+    if koi:
+        disp = koi.get("koi_disposition")
+        return {"source_catalog": "koi", "disposition_code": disp, "disposition_text": disp,
+                "catalog_id": koi.get("kepoi_name"), "match_status": "matched",
+                "match_note": f"Kepler name-join: kepler_name='{name}' (kepid {koi.get('kepid')})."}
+    k2 = k2_by_name.get(name)
+    if k2:
+        disp = k2.get("disposition")
+        return {"source_catalog": "k2pandc", "disposition_code": disp, "disposition_text": disp,
+                "catalog_id": k2.get("epic_candname") or k2.get("pl_name"), "match_status": "matched",
+                "match_note": f"K2 name-join: '{name}'."}
+    if host_tid is not None:
+        tois = toi_by_tid.get(host_tid, [])
+        per = planet.get("period_days")
+        if tois and per:
+            cand = [t for t in tois if _period_match(t.get("pl_orbper"), per)]
+            if len(cand) == 1:
+                t = cand[0]
+                code = (t.get("tfopwg_disp") or "").strip() or None
+                return {"source_catalog": "toi", "disposition_code": code,
+                        "disposition_text": _TFOPWG_TEXT.get(code, code),
+                        "catalog_id": f"TOI {t.get('toi')}", "match_status": "matched",
+                        "match_note": (f"TESS TIC {host_tid} / TOI {t.get('toi')}; "
+                                       f"Δperiod {_reldiff(t.get('pl_orbper'), per):.2e}.")}
+            if len(cand) > 1:
+                listed = "; ".join(f"TOI {t.get('toi')} ({(t.get('tfopwg_disp') or '').strip() or '—'})"
+                                   for t in cand)
+                return {"source_catalog": "toi", "disposition_code": None, "disposition_text": None,
+                        "catalog_id": None, "match_status": "ambiguous",
+                        "match_note": (f"Multiple TOIs on TIC {host_tid} period-match this planet "
+                                       f"[{listed}] — no unique bind; informational, does not move a "
+                                       "per-planet reliability tier.")}
+    return None
+
+
+def _attach_survey_dispositions(result):
+    """CR-10.1 post-pass — runs for BOTH core and full (NOT via _enrich_full, which is full-only).
+    Fills each planet's survey_disposition (present-but-null init from _planet_record) and adds a
+    host-level ``survey_siblings`` list (unbound TESS TOIs + Kepler/K2 FP siblings via a kepid/epic
+    pivot — WB Q1a). Best-effort: any survey-table failure degrades that arm (recorded in a coverage
+    note); the primary ps pull is never touched."""
+    hosts = result.get("hosts", [])
+    coverage = result.setdefault("coverage", {})
+    comp_planets = [p for g in coverage.get("component_planets", []) for p in g.get("planets", [])]
+    if not hosts and not comp_planets:
+        return
+    errors = []
+
+    planet_names = [p.get("name") for h in hosts for p in h["planets"] if p.get("name")]
+    planet_names += [p.get("name") for p in comp_planets if p.get("name")]
+    tids = [t for t in (_host_tid(h) for h in hosts) if t is not None]
+
+    def _safe(fn, arm):
+        try:
+            return fn()
+        except Exception:                                    # best-effort: degrade this arm, note it
+            errors.append(arm)
+            return None
+
+    toi_rows = _safe(lambda: _query_survey_num("toi", "tid", tids, _TOI_SELECT), "toi") if tids else []
+    koi_rows = (_safe(lambda: _query_survey_names("cumulative", "kepler_name", planet_names, _KOI_SELECT),
+                      "cumulative") if planet_names else [])
+    k2_rows = (_safe(lambda: _query_survey_names("k2pandc", "pl_name", planet_names, _K2_SELECT,
+                                                 extra_col="k2_name"), "k2pandc") if planet_names else [])
+
+    toi_by_tid = {}
+    for r in (toi_rows or []):
+        t = _intval(r.get("tid"))
+        if t is not None:
+            toi_by_tid.setdefault(t, []).append(r)
+    koi_by_name = {r.get("kepler_name"): r for r in (koi_rows or []) if r.get("kepler_name")}
+    k2_by_name = {}
+    for r in (k2_rows or []):
+        for nm in (r.get("pl_name"), r.get("k2_name")):
+            if nm:
+                k2_by_name.setdefault(nm, r)
+
+    bound_toi = {}
+    for h in hosts:
+        tid = _host_tid(h)
+        for p in h["planets"]:
+            b = _bind_survey(p, koi_by_name, k2_by_name, toi_by_tid, tid)
+            if b:
+                p["survey_disposition"] = b
+                if b["source_catalog"] == "toi" and b["match_status"] == "matched":
+                    bound_toi.setdefault(tid, set()).add(_toi_num(b["catalog_id"]))
+    for p in comp_planets:                       # component planets: name-join only (no component TIC)
+        b = _bind_survey(p, koi_by_name, k2_by_name, {}, None)
+        if b:
+            p["survey_disposition"] = b
+
+    # ── host-level sibling-FP sweep (WB Q1a): unbound TESS TOIs + Kepler/K2 kepid/epic pivots ──
+    kepids = {_intval(koi_by_name.get(p.get("name"), {}).get("kepid"))
+              for h in hosts for p in h["planets"]} - {None}
+    epichosts = {(k2_by_name.get(p.get("name")) or {}).get("epic_hostname")
+                 for h in hosts for p in h["planets"]} - {None}
+    kepid_pivot, epic_pivot = {}, {}
+    if kepids:
+        for r in (_safe(lambda: _query_survey_num("cumulative", "kepid", kepids, _KOI_PIVOT_SELECT),
+                        "cumulative-pivot") or []):
+            k = _intval(r.get("kepid"))
+            if k is not None:
+                kepid_pivot.setdefault(k, []).append(r)
+    if epichosts:
+        for r in (_safe(lambda: _query_survey_names("k2pandc", "epic_hostname", list(epichosts), _K2_SELECT),
+                        "k2pandc-pivot") or []):
+            eh = r.get("epic_hostname")
+            if eh:
+                epic_pivot.setdefault(eh, []).append(r)
+
+    for h in hosts:
+        tid = _host_tid(h)
+        names_here = {p.get("name") for p in h["planets"]}
+        siblings = []
+        for t in toi_by_tid.get(tid, []):
+            if _toi_num(f"TOI {t.get('toi')}") not in bound_toi.get(tid, set()):
+                siblings.append({"source_catalog": "toi", "catalog_id": f"TOI {t.get('toi')}",
+                                 "disposition_code": (t.get("tfopwg_disp") or "").strip() or None,
+                                 "period_days": _num(t.get("pl_orbper"))})
+        host_kepids = {_intval(koi_by_name.get(p.get("name"), {}).get("kepid"))
+                       for p in h["planets"]} - {None}
+        for kid in host_kepids:
+            for r in kepid_pivot.get(kid, []):
+                if r.get("kepler_name") in names_here:
+                    continue                                 # already a per-planet bind
+                siblings.append({"source_catalog": "koi", "catalog_id": r.get("kepoi_name"),
+                                 "disposition_code": r.get("koi_disposition"),
+                                 "period_days": _num(r.get("koi_period"))})
+        host_epics = {(k2_by_name.get(p.get("name")) or {}).get("epic_hostname")
+                      for p in h["planets"]} - {None}
+        for eh in host_epics:
+            for r in epic_pivot.get(eh, []):
+                if r.get("pl_name") in names_here:
+                    continue
+                siblings.append({"source_catalog": "k2pandc",
+                                 "catalog_id": r.get("epic_candname") or r.get("pl_name"),
+                                 "disposition_code": r.get("disposition"),
+                                 "period_days": _num(r.get("pl_orbper"))})
+        h["survey_siblings"] = siblings                      # present-but-empty when none
+
+    # count host AND component planets (both are bound above — red-team fix); siblings are host-level.
+    counted = [p for h in hosts for p in h["planets"]] + comp_planets
+    coverage["survey_disposition"] = {
+        "matched": sum(1 for p in counted if p["survey_disposition"]["match_status"] == "matched"),
+        "ambiguous": sum(1 for p in counted if p["survey_disposition"]["match_status"] == "ambiguous"),
+        "hosts_with_siblings": sum(1 for h in hosts if h.get("survey_siblings")),
+    }
+    if errors:
+        coverage["survey_disposition"]["errors"] = sorted(set(errors))
+
+
 # ── public entry point ─────────────────────────────────────────────────────────────────────────
 
 def compute_exoplanet_batch(hosts=None, filters=None, archive_query=None,
@@ -772,8 +1006,48 @@ def compute_exoplanet_batch(hosts=None, filters=None, archive_query=None,
 
     if "error" in result:
         return result
+    _attach_survey_dispositions(result)                      # CR-10.1: survey disposition (core + full)
     if field_scope == "full":
         _enrich_full(result)                                 # composite (step 4) + OEC (step 5)
     # stable top-level key order
     return {"mode": result["mode"], "solution_scope": solution_scope, "field_scope": field_scope,
             "coverage": result["coverage"], "hosts": result["hosts"]}
+
+
+def fetch_archive_stellar_mass(host, simbad=None):
+    """CR-10.4: the archive M★ (and R★) for ONE host, read through the SAME ps + default_flag=1 +
+    first-row aggregation ``planetary-systems-batch`` uses — so ``detection-completeness`` and the batch
+    reader can never disagree on the value (WB Q5 nit; red-team #6, which is also why this lives HERE and
+    is not re-implemented against pscomppars in databases.py). Pass an already-resolved ``simbad`` result
+    to reuse it (the query.py --star path does, avoiding a second SIMBAD round-trip). LIVE network
+    (SIMBAD + ps). Returns ``{mass_solar, radius_solar, resolved_host, mass_provenance:"archive"}`` or
+    ``None`` (not resolvable / no archive row / no st_mass / network failure) — the caller degrades
+    ``None`` to the sp-type estimate. Best-effort: never raises."""
+    if isinstance(simbad, dict) and "error" not in simbad:
+        sl = simbad                                          # reuse the caller's resolve
+    else:
+        try:
+            sl = compute_simbad_lookup(host)
+        except Exception:
+            return None
+    if not isinstance(sl, dict) or "error" in sl:
+        return None
+    catalog_arms, hostname_arms = _host_arms(sl, host)
+    select = "st_mass, st_rad, hostname, hd_name, hip_name, tic_id, gaia_dr3_id"
+    rec = {"catalog_arms": catalog_arms, "hostname_arms": hostname_arms, "rows": [], "matched_on": []}
+    try:
+        if _fill_arm_rows([rec], "catalog_arms", select, "default_flag = 1"):
+            return None                                      # _fill_arm_rows → route-error dict on failure
+        if not rec["rows"] and _fill_arm_rows([rec], "hostname_arms", select, "default_flag = 1"):
+            return None
+    except Exception:
+        return None
+    if not rec["rows"]:
+        return None
+    r0 = rec["rows"][0]                                       # same first-row basis as _host_record
+    mass, _ = _stellar(r0.get("st_mass"), None)
+    if mass is None:
+        return None
+    rad, _ = _stellar(r0.get("st_rad"), None)
+    return {"mass_solar": mass, "radius_solar": rad,
+            "resolved_host": sl.get("main_id"), "mass_provenance": "archive"}

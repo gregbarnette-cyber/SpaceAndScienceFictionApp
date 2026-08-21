@@ -234,5 +234,55 @@ class Cq73c24DomainGuardTest(unittest.TestCase):
         self.assertIn("per_output", res[3])
 
 
+class Cr102FehSoftFlagTest(unittest.TestCase):
+    """CR-10.2 / CQ-7-3c-6: [Fe/H] > +0.5 is a SOFT per-output feh_extrapolation flag on the K-40
+    radiogenic-heat channel. The [Fe/H]-independent fissile fraction is never voided, domain_ok is not
+    False from [Fe/H] alone, and age-out / the lower [Fe/H] edge stay hard."""
+
+    def test_fraction_parity_scoped_to_fissile(self):
+        # The fissile block is [Fe/H]-independent → byte-identical at 0.45 vs 0.55. NOT the whole dict:
+        # provenance.feh_extrapolation differs by design (red-team #10).
+        a = nuclear.compute_nuclear_inventory(fe_h=0.45, age_gyr=5.0, eu_h=0.0)
+        b = nuclear.compute_nuclear_inventory(fe_h=0.55, age_gyr=5.0, eu_h=0.0)
+        self.assertEqual(a["fissile"], b["fissile"])
+        self.assertNotEqual(a["provenance"]["per_output"]["feh_extrapolation"],
+                            b["provenance"]["per_output"]["feh_extrapolation"])
+
+    def test_metal_rich_not_voided_flag_on_heat_only(self):
+        d = nuclear.compute_nuclear_inventory(fe_h=0.60, age_gyr=5.0, eu_fe=0.2)
+        self.assertIsNot(d["provenance"]["domain_ok"], False)       # not False from [Fe/H] alone
+        self.assertTrue(d["provenance"]["domain_ok"])               # metal-rich, in-age, Eu-traced → True
+        self.assertTrue(d["provenance"]["per_output"]["feh_extrapolation"])
+        self.assertTrue(d["radiogenic_heat"]["provenance"]["feh_extrapolation"])
+        self.assertEqual(d["provenance"]["per_output"]["isotope_ratio"], "ok")   # fraction NOT flagged
+        self.assertIsNotNone(d["fissile"]["U235_U238_ratio"])
+        self.assertTrue(d["radiogenic_heat"]["computable"])         # heat computed (flag, not void)
+
+    def test_strict_gt_boundary(self):
+        at = nuclear.compute_nuclear_inventory(fe_h=0.5, age_gyr=5.0, eu_h=0.0)["provenance"]
+        above = nuclear.compute_nuclear_inventory(fe_h=0.50001, age_gyr=5.0, eu_h=0.0)["provenance"]
+        self.assertFalse(at["per_output"]["feh_extrapolation"])     # exactly +0.5 → NOT flagged (strict >)
+        self.assertTrue(above["per_output"]["feh_extrapolation"])
+        self.assertIn("feh_extrapolation", at["per_output"])        # present-but-false, never absent
+        self.assertIn("feh_extrapolation", at["flags"])
+
+    def test_lower_edge_stays_hard(self):
+        # [Fe/H] < -2.5 (metal-poor extrapolation) is still a HARD void, not softened by the split.
+        d = nuclear.compute_nuclear_inventory(fe_h=-3.0, age_gyr=5.0, eu_h=-2.0)["provenance"]
+        self.assertFalse(d["domain_ok"])
+        self.assertTrue(d["flags"]["domain_out"])
+        self.assertFalse(d["flags"]["feh_extrapolation"])
+
+    def test_age_out_stays_hard(self):
+        d = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=15.0, eu_h=0.0)["provenance"]
+        self.assertFalse(d["domain_ok"])
+        self.assertTrue(d["flags"]["domain_out"])
+
+    def test_in_range_flag_present_false(self):
+        d = nuclear.compute_nuclear_inventory(fe_h=0.0, age_gyr=5.0, eu_h=0.0)["provenance"]
+        self.assertFalse(d["per_output"]["feh_extrapolation"])
+        self.assertFalse(d["flags"]["feh_extrapolation"])
+
+
 if __name__ == "__main__":
     unittest.main()

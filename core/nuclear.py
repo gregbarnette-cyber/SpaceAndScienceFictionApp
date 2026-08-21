@@ -89,6 +89,10 @@ def _radiogenic_provenance(domain_detail):
     return {
         "severity": domain_detail["per_output"]["radiogenic_heat"],
         "domain_ok": domain_detail["domain_ok"],
+        # CR-10.2 / CQ-7-3c-6: the K-40 (10^[Fe/H]) channel is [Fe/H]-dependent, so a soft extrapolation
+        # flag rides HERE (per-channel) when [Fe/H] > +0.5 — the [Fe/H]-independent fissile fraction is
+        # never flagged. Mirrored in provenance.per_output["feh_extrapolation"].
+        "feh_extrapolation": bool(domain_detail["flags"].get("feh_extrapolation", False)),
         "inherits": ["DV-2", "DV-3", "DV-4", "DV-6"],
         "flags": domain_detail["flags"],
     }
@@ -107,6 +111,10 @@ def _radiogenic_heat(age_gyr, fe_h, eu_h, population=None, domain_detail=None):
     back-filled with ``10^[Fe/H]`` (that fallback IS the original defect). Returns
     ``{value_W_per_kg, computable, components_W_per_kg, actinide_scaling, note, provenance}``."""
     solar = nt._SOLAR_AGE_GYR
+    # CR-10.2 / CQ-7-3c-6: the K-40 channel scales as 10^[Fe/H]; at [Fe/H] > +0.5 it is extrapolated.
+    feh_extrap = bool(domain_detail and domain_detail.get("flags", {}).get("feh_extrapolation"))
+    feh_note = (" [Fe/H] > +0.5: the K-40 (10^[Fe/H]) channel is extrapolated (feh_extrapolation soft "
+                "flag; the fissile fraction is [Fe/H]-independent and unaffected)." if feh_extrap else "")
     comp = {}
     # K-40 — metallicity proxy (not r-process; outside the actinide inventory). 10^[Fe/H] + own decay.
     k_massfrac = nt._BSE["K_mass_frac"] * nt._PRESENT_ISO_FRAC["K40"]
@@ -125,7 +133,7 @@ def _radiogenic_heat(age_gyr, fe_h, eu_h, population=None, domain_detail=None):
                      "actinide inventory is not computable; NOT back-filled with 10^[Fe/H] (that "
                      "co-formation fallback is the original Eu-blind defect — DV-6 / CQ-7-3c-1). "
                      f"K-40-only partial ≈ {comp['K40']:.3e} W/kg (the non-actinide channel, ~19% of the "
-                     "BSE budget at solar; U/Th withheld) shown for reference."),
+                     "BSE budget at solar; U/Th withheld) shown for reference." + feh_note),
             "provenance": _radiogenic_provenance(domain_detail),
         }
 
@@ -148,7 +156,8 @@ def _radiogenic_heat(age_gyr, fe_h, eu_h, population=None, domain_detail=None):
         "components_W_per_kg": comp,
         "actinide_scaling": "eu_h_gce_actinide_inventory",
         "note": ("U/Th scaled by the [Eu/H]-driven GCE actinide inventory vs the solar anchor "
-                 "(g_i(A)/g_i(solar)·exp(λ_i(solar−A))·10^[Eu/H]); K-40 by a 10^[Fe/H] proxy + own decay."),
+                 "(g_i(A)/g_i(solar)·exp(λ_i(solar−A))·10^[Eu/H]); K-40 by a 10^[Fe/H] proxy + own decay."
+                 + feh_note),
         "provenance": _radiogenic_provenance(domain_detail),
     }
 

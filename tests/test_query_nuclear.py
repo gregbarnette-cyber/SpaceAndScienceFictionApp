@@ -55,6 +55,22 @@ class NuclearInventoryQueryTest(unittest.TestCase):
         self.assertTrue(d["provenance"]["flags"]["age_soft"])
         self.assertIn("per_output", d["provenance"])
 
+    def test_cr102_feh_soft_flag_not_void(self):
+        # CR-10.2: [Fe/H] > +0.5 flags feh_extrapolation on the heat channel; fissile fraction stays
+        # valid; domain_ok not False from [Fe/H] alone.
+        rc, d, _ = _run("nuclear-inventory", "--fe-h", "0.60", "--age-gyr", "5", "--eu-fe", "0.2")
+        self.assertEqual(rc, 0)
+        self.assertTrue(d["provenance"]["per_output"]["feh_extrapolation"])
+        self.assertTrue(d["radiogenic_heat"]["provenance"]["feh_extrapolation"])
+        self.assertIsNotNone(d["fissile"]["U235_U238_ratio"])
+        self.assertNotEqual(d["provenance"]["domain_ok"], False)
+
+    def test_cr102_fraction_parity_045_055(self):
+        rc45, a, _ = _run("nuclear-inventory", "--fe-h", "0.45", "--age-gyr", "5", "--eu-h", "0")
+        rc55, b, _ = _run("nuclear-inventory", "--fe-h", "0.55", "--age-gyr", "5", "--eu-h", "0")
+        self.assertEqual((rc45, rc55), (0, 0))
+        self.assertEqual(a["fissile"], b["fissile"])   # [Fe/H]-independent fraction, not voided
+
 
 if __name__ == "__main__":
     unittest.main()

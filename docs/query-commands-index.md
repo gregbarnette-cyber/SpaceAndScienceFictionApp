@@ -5,7 +5,7 @@ remains the authoritative contract** — exact arguments, JSON output keys, `sou
 offline), exit-code behaviour, and worked anchors. This file is a navigation aid, not the contract;
 descriptions are condensed from integration.md's prose.
 
-**Total: 168 subcommands** (generated from `query.py` `add_parser` names; all 168 are documented in
+**Total: 180 subcommands** (generated from `query.py` `add_parser` names; all 180 are documented in
 `docs/integration.md`).
 
 ## Star databases & catalog lookup
@@ -283,3 +283,27 @@ descriptions are condensed from integration.md's prose.
 | `project-list` | List project workspaces (name, description, member count). |
 | `project-get` | A project workspace + its members (with `generated_spec` echoed parsed). |
 | `generate-system` | Deterministically generate a plausible planetary system (synthetic-from-seed or real-anchor). |
+
+## Star analysis (sister `star_analysis` skill — CR-1…10)
+| Command | Description |
+|---|---|
+| `debris-disk` | Observed IR-excess debris disk vs Chen 2014 + Cotten & Song 2016, else a per-star AllWISE-W4 warm-dust upper limit (never null). LIVE. |
+| `multiplicity` | Stellar-multiplicity summary — otype hint + `binary-orbit` tool-split + GCNS component count (SB1 masses = sin i=1 lower bound). LIVE. |
+| `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a tiered companion-mass extractor + `e_out_of_hw_range` flag. LIVE. |
+| `population-classify` | Thin/thick/halo Galactic-population verdict from U/V/W (Bensby velocity-ellipsoid on a Schönrich LSR). |
+| `nuclear-inventory` | Fusion + fissile (per-isotope GCE, WB 3c FINAL) + radiogenic-heat inventory from stellar [Fe/H]/age/[Eu/H]; CR-10.2 `[Fe/H]>+0.5` soft `feh_extrapolation` flag. |
+| `detection-completeness` | Per-method min-detectable-planet-vs-SMA map (RV/transit/astrometry/imaging), WB 3a FINAL defaults; CR-10.4 archive-M★ preference + `star_mass_provenance`. |
+| `planetary-systems-batch` | Batch NASA `ps` pull — full per-planet + per-system fields for many hosts; CR-9 disposition/quality + CR-10.1 `survey_disposition`/`survey_siblings` (live TOI/KOI/K2 FP/candidate cross-match). LIVE. |
+
+## Weapons & engagement physics (Phase AT)
+| Command | Description |
+|---|---|
+| `salvo-exchange` | Hughes *Fleet Tactics* salvo-combat model over seven modes (simultaneous / first-strike / sequential-waves / break-even / solve-force / distribute / layered-defense). |
+| `beam-weapon-engagement` | Diffraction-limited beam spot (top-hat + Gaussian), intensity, dwell-to-kill, and effective range. |
+| `kinetic-kill` | Kinetic-impactor energy (classical ½mv² + relativistic (γ−1)mc²), TNT-tons, long-rod penetration + crater OOM, monolithic/Whipple verdict. |
+| `warhead-effects-at-standoff` | Vacuum inverse-square warhead flux per channel → per-channel kill radius + the binding channel (yield is an input). |
+
+## Radiation dose ceiling (Phase AS)
+| Command | Description |
+|---|---|
+| `radiation-ceiling` | Per-clade radiation dose → two independent biological ceilings at once — acute/deterministic (Gy, RBE-weighted) + stochastic/cancer (Sv, ICRP-Q REID) — with lever-tagged clade modifiers and per-value provenance tags. |

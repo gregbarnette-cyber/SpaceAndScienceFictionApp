@@ -199,6 +199,8 @@ class ModeAFlowTest(unittest.TestCase):
     def test_default_scope_adds_flag_all_scope_omits(self):
         seen = {}
         def fake_query(table, where, order_by=None, timeout=60, top=None, select="*"):
+            if table != "ps":                                # ignore CR-10.1 survey-table queries
+                return []
             seen["where"] = where
             return [_planet_row(pl_name="HD 1 b")]
         with mock.patch.object(eb, "compute_simbad_lookup", side_effect=self._simbad), \
@@ -213,6 +215,8 @@ class ModeAFlowTest(unittest.TestCase):
 class ModeBFlowTest(unittest.TestCase):
     def test_groups_by_hostname_and_echoes_selection(self):
         def fake_query(table, where, order_by=None, timeout=60, top=None, select="*"):
+            if table != "ps":                                # CR-10.1 survey-table queries: ignore
+                return []
             self.assertIn("default_flag = 1", where)   # default scope wraps the filter
             return [_planet_row(hostname="HD 1", pl_name="HD 1 b"),
                     _planet_row(hostname="HD 2", pl_name="HD 2 b")]
@@ -224,6 +228,8 @@ class ModeBFlowTest(unittest.TestCase):
 
     def test_raw_archive_query_passthrough(self):
         def fake_query(table, where, order_by=None, timeout=60, top=None, select="*"):
+            if table != "ps":                                # CR-10.1 survey-table queries: ignore
+                return []
             self.assertIn("sy_dist < 10", where)
             return [_planet_row(hostname="HD 9")]
         with mock.patch.object(eb, "_query_tap", side_effect=fake_query):
@@ -369,6 +375,8 @@ class Cr9CompositeTest(unittest.TestCase):
     def _tap(self, table, where, order_by=None, timeout=60, top=None, select="*"):
         if table == "pscomppars":
             return [self.COMP]
+        if table != "ps":                                    # CR-10.1 survey tables: no rows here
+            return []
         return [_planet_row(hostname="HD 1", pl_name="HD 1 b")]
 
     def test_composite_merged_full_only(self):
@@ -387,6 +395,8 @@ class Cr9CompositeTest(unittest.TestCase):
         calls = []
         def tap(table, *a, **k):
             calls.append(table)
+            if table != "ps":                                # CR-10.1 survey tables: no rows here
+                return []
             return [_planet_row(hostname="HD 1", pl_name="HD 1 b")]
         with mock.patch.object(eb, "_query_tap", side_effect=tap):
             core = eb.compute_exoplanet_batch(filters={"pl_rade_min": 1}, field_scope="core")
@@ -397,6 +407,8 @@ class Cr9CompositeTest(unittest.TestCase):
         def tap(table, *a, **k):
             if table == "pscomppars":
                 raise ConnectionError("boom")
+            if table != "ps":                                # CR-10.1 survey tables: no rows here
+                return []
             return [_planet_row(hostname="HD 1", pl_name="HD 1 b")]
         with mock.patch.object(eb, "_query_tap", side_effect=tap), \
              mock.patch.object(eb, "compute_oec", return_value={"error": "no oec"}):
@@ -414,8 +426,8 @@ class Cr9OecEnrichTest(unittest.TestCase):
                 "discoveryyear": {"value": "2011"}}}]}]}
 
     def _tap(self, table, where, order_by=None, timeout=60, top=None, select="*"):
-        if table == "pscomppars":
-            return []
+        if table in ("pscomppars", "toi", "cumulative", "k2pandc"):
+            return []                                        # composite + CR-10.1 survey tables: no rows
         return [_planet_row(hostname="GJ 667 C", pl_name="GJ 667 C c")]
 
     def test_oec_list_and_structure(self):
@@ -492,6 +504,169 @@ class Cr9Behavior3Test(unittest.TestCase):
         self.assertEqual([p["name"] for p in comp_host["planets"]], ["COMP b"])
         cp_names = [p["name"] for b in r["coverage"]["component_planets"] for p in b["planets"]]
         self.assertNotIn("COMP b", cp_names)
+
+
+class Cr10SurveyDispositionTest(unittest.TestCase):
+    """CR-10.1 native transit-survey FP/candidate disposition (toi / cumulative / k2pandc).
+
+    Default ps rows keep hd_name='HD 1' (matches the SIMBAD HD arm) and tic_id='TIC 1'
+    (→ _host_tid 1, so TESS TOI rows use tid='1')."""
+
+    SIMBAD = {"main_id": "HOST", "designations": {"MAIN_ID": "HOST", "HD": "HD 1"}}
+
+    def _run(self, ps_rows, toi=None, koi=None, k2=None, field_scope="core", fail=None):
+        tables = {"ps": list(ps_rows), "toi": list(toi or []),
+                  "cumulative": list(koi or []), "k2pandc": list(k2 or [])}
+
+        def tap(table, where, order_by=None, timeout=60, top=None, select="*"):
+            if fail and table == fail:
+                raise ConnectionError("survey table down")
+            return tables.get(table, [])
+        with mock.patch.object(eb, "compute_simbad_lookup", side_effect=lambda n: self.SIMBAD), \
+             mock.patch.object(eb, "compute_oec", return_value={"error": "no oec"}), \
+             mock.patch.object(eb, "_query_tap", side_effect=tap):
+            return eb.compute_exoplanet_batch(hosts=["HOST"], field_scope=field_scope)
+
+    def _planet(self, out, name):
+        return next(p for p in out["hosts"][0]["planets"] if p["name"] == name)
+
+    def test_clean_tess_fp_bind(self):
+        # validation #1 — a confirmed ps planet whose period clean-binds an FP TOI → disposition_code FP.
+        ps = [_planet_row(pl_name="HOST b", hostname="HOST", pl_orbper="1.7727")]
+        toi = [{"tid": "1", "toi": "1836.02", "tfopwg_disp": "FP", "pl_orbper": "1.77274710"}]
+        sd = self._planet(self._run(ps, toi=toi), "HOST b")["survey_disposition"]
+        self.assertEqual(sd["source_catalog"], "toi")
+        self.assertEqual(sd["disposition_code"], "FP")
+        self.assertEqual(sd["disposition_text"], "False Positive")
+        self.assertEqual(sd["catalog_id"], "TOI 1836.02")
+        self.assertEqual(sd["match_status"], "matched")
+
+    def test_kepler_name_join_confirmed(self):
+        # validation #2
+        ps = [_planet_row(pl_name="Kepler-10 b", hostname="Kepler-10")]
+        koi = [{"kepler_name": "Kepler-10 b", "koi_disposition": "CONFIRMED",
+                "kepoi_name": "K00072.01", "koi_period": "0.837", "kepid": "11904151"}]
+        sd = self._planet(self._run(ps, koi=koi), "Kepler-10 b")["survey_disposition"]
+        self.assertEqual(sd["source_catalog"], "koi")
+        self.assertEqual(sd["disposition_code"], "CONFIRMED")
+        self.assertEqual(sd["catalog_id"], "K00072.01")
+        self.assertEqual(sd["match_status"], "matched")
+
+    def test_k2_name_join_alias(self):
+        # a ps name that matches the k2pandc k2_name alias (not pl_name)
+        ps = [_planet_row(pl_name="K2-40 b", hostname="WASP-75")]
+        k2 = [{"pl_name": "WASP-75 b", "k2_name": "K2-40 b", "disposition": "CONFIRMED",
+               "epic_candname": "EPIC 206154641.01", "epic_hostname": "EPIC 206154641", "pl_orbper": "2.484"}]
+        sd = self._planet(self._run(ps, k2=k2), "K2-40 b")["survey_disposition"]
+        self.assertEqual(sd["source_catalog"], "k2pandc")
+        self.assertEqual(sd["disposition_code"], "CONFIRMED")
+        self.assertEqual(sd["catalog_id"], "EPIC 206154641.01")
+
+    def test_refuted_passthrough(self):
+        ps = [_planet_row(pl_name="X b", hostname="X")]
+        k2 = [{"pl_name": "X b", "k2_name": None, "disposition": "REFUTED",
+               "epic_candname": "EPIC 1.01", "epic_hostname": "EPIC 1", "pl_orbper": "3.0"}]
+        self.assertEqual(self._planet(self._run(ps, k2=k2), "X b")["survey_disposition"]["disposition_code"],
+                         "REFUTED")
+
+    def test_rv_only_present_but_null_no_note(self):
+        # validations #3/#4 — RV-only planet (no survey entry) → present-but-null, no note.
+        ps = [_planet_row(pl_name="HD 69830 b", hostname="HD 69830")]
+        out = self._run(ps)
+        p = self._planet(out, "HD 69830 b")
+        self.assertIn("survey_disposition", p)               # present, never omitted
+        self.assertEqual(p["survey_disposition"], eb._survey_null())
+        self.assertIsNone(p["survey_disposition"]["match_status"])
+        self.assertIsNone(p["survey_disposition"]["match_note"])
+
+    def test_ambiguous_multiple_tois(self):
+        ps = [_planet_row(pl_name="A b", hostname="A", pl_orbper="5.0")]
+        toi = [{"tid": "1", "toi": "9.01", "tfopwg_disp": "PC", "pl_orbper": "5.02"},
+               {"tid": "1", "toi": "9.02", "tfopwg_disp": "FP", "pl_orbper": "4.98"}]
+        sd = self._planet(self._run(ps, toi=toi), "A b")["survey_disposition"]
+        self.assertEqual(sd["match_status"], "ambiguous")
+        self.assertIsNone(sd["disposition_code"])
+        self.assertIn("no unique bind", sd["match_note"])
+
+    def test_period_tolerance_boundary(self):
+        ps = [_planet_row(pl_name="B b", hostname="B", pl_orbper="10.0")]
+        far = [{"tid": "1", "toi": "1.01", "tfopwg_disp": "PC", "pl_orbper": "10.5"}]    # 5% off → no bind
+        near = [{"tid": "1", "toi": "1.01", "tfopwg_disp": "PC", "pl_orbper": "10.1"}]   # 1% off → bind
+        self.assertIsNone(self._planet(self._run(ps, toi=far), "B b")["survey_disposition"]["match_status"])
+        self.assertEqual(self._planet(self._run(ps, toi=near), "B b")["survey_disposition"]["match_status"],
+                         "matched")
+
+    def test_multi_catalog_precedence_koi_wins(self):
+        # a planet present in BOTH koi and toi → Kepler name-join wins (koi > k2 > toi).
+        ps = [_planet_row(pl_name="Kepler-X b", hostname="Kepler-X", pl_orbper="4.0")]
+        koi = [{"kepler_name": "Kepler-X b", "koi_disposition": "CONFIRMED", "kepoi_name": "K1.01",
+                "koi_period": "4.0", "kepid": "99"}]
+        toi = [{"tid": "1", "toi": "2.01", "tfopwg_disp": "FP", "pl_orbper": "4.0"}]
+        self.assertEqual(self._planet(self._run(ps, koi=koi, toi=toi),
+                                      "Kepler-X b")["survey_disposition"]["source_catalog"], "koi")
+
+    def test_unbound_tess_sibling_surfaced_host_level(self):
+        # a confirmed planet binds its own TOI; a sibling FP TOI on the same TIC → host survey_siblings.
+        ps = [_planet_row(pl_name="C b", hostname="C", pl_orbper="6.078")]
+        toi = [{"tid": "1", "toi": "2084.01", "tfopwg_disp": "CP", "pl_orbper": "6.078"},
+               {"tid": "1", "toi": "2084.02", "tfopwg_disp": "FP", "pl_orbper": "8.149"}]
+        out = self._run(ps, toi=toi)
+        self.assertEqual(self._planet(out, "C b")["survey_disposition"]["disposition_code"], "CP")
+        sibs = out["hosts"][0]["survey_siblings"]
+        self.assertEqual([s["catalog_id"] for s in sibs], ["TOI 2084.02"])
+        self.assertEqual(sibs[0]["disposition_code"], "FP")
+
+    def test_kepler_sibling_fp_via_pivot(self):
+        # host has a confirmed Kepler planet + a separate FP KOI (no kepler_name) → surfaced via kepid pivot.
+        ps = [_planet_row(pl_name="Kepler-Z b", hostname="Kepler-Z")]
+        koi = [{"kepler_name": "Kepler-Z b", "koi_disposition": "CONFIRMED", "kepoi_name": "K5.01",
+                "koi_period": "10.0", "kepid": "777"},
+               {"kepler_name": None, "koi_disposition": "FALSE POSITIVE", "kepoi_name": "K5.02",
+                "koi_period": "3.0", "kepid": "777"}]
+        out = self._run(ps, koi=koi)
+        self.assertEqual(self._planet(out, "Kepler-Z b")["survey_disposition"]["disposition_code"],
+                         "CONFIRMED")
+        sibs = {s["catalog_id"]: s for s in out["hosts"][0]["survey_siblings"]}
+        self.assertIn("K5.02", sibs)
+        self.assertEqual(sibs["K5.02"]["disposition_code"], "FALSE POSITIVE")
+
+    def test_blank_tfopwg_disp_is_null_code(self):
+        ps = [_planet_row(pl_name="D b", hostname="D", pl_orbper="2.0")]
+        toi = [{"tid": "1", "toi": "3.01", "tfopwg_disp": "", "pl_orbper": "2.0"}]
+        sd = self._planet(self._run(ps, toi=toi), "D b")["survey_disposition"]
+        self.assertEqual(sd["match_status"], "matched")
+        self.assertIsNone(sd["disposition_code"])            # blank → null code, not ""
+
+    def test_best_effort_degradation(self):
+        # a survey-table failure degrades that arm to null + a coverage note; the ps pull is intact.
+        ps = [_planet_row(pl_name="E b", hostname="E", pl_orbper="1.7727")]
+        toi = [{"tid": "1", "toi": "9.01", "tfopwg_disp": "FP", "pl_orbper": "1.7727"}]
+        out = self._run(ps, toi=toi, fail="toi")
+        self.assertNotIn("error", out)                       # primary ps pull survives
+        self.assertIsNone(self._planet(out, "E b")["survey_disposition"]["match_status"])
+        self.assertIn("toi", out["coverage"]["survey_disposition"]["errors"])
+
+    def test_coverage_summary_counts(self):
+        ps = [_planet_row(pl_name="F b", hostname="F", pl_orbper="1.7727")]
+        toi = [{"tid": "1", "toi": "1.01", "tfopwg_disp": "FP", "pl_orbper": "1.7727"}]
+        s = self._run(ps, toi=toi)["coverage"]["survey_disposition"]
+        self.assertEqual(s["matched"], 1)
+        self.assertEqual(s["ambiguous"], 0)
+
+    def test_present_in_full_scope_too(self):
+        ps = [_planet_row(pl_name="HOST b", hostname="HOST", pl_orbper="1.7727")]
+        toi = [{"tid": "1", "toi": "1.01", "tfopwg_disp": "FP", "pl_orbper": "1.7727"}]
+        out = self._run(ps, toi=toi, field_scope="full")
+        self.assertEqual(self._planet(out, "HOST b")["survey_disposition"]["disposition_code"], "FP")
+
+    def test_mode_b_present_but_null(self):
+        def tap(table, where, order_by=None, timeout=60, top=None, select="*"):
+            return [_planet_row(hostname="G", pl_name="G b", tic_id=None)] if table == "ps" else []
+        with mock.patch.object(eb, "_query_tap", side_effect=tap):
+            out = eb.compute_exoplanet_batch(filters={"pl_rade_min": 1})
+        p = out["hosts"][0]["planets"][0]
+        self.assertIn("survey_disposition", p)
+        self.assertEqual(p["survey_disposition"], eb._survey_null())
 
 
 if __name__ == "__main__":

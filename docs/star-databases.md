@@ -95,8 +95,11 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 > many-hosts) instead uses the **`ps`** (Planetary Systems) table — one row *per published solution* —
 > because only `ps` carries `default_flag` (solution scope), per-solution `pl_refname`/`st_refname`
 > provenance, and preserved-per-solution null/0 values (un-fabricated null inclination; reported-0-vs-null
-> eccentricity). See `docs/integration.md` (CR-8) and `PHASE_CR8_PLAN.md`. The two paths are independent;
-> nothing here changed.
+> eccentricity). The batch reader has since gained **additive** output fields — CR-9 per-planet
+> `disposition`/`limits` and **CR-10.1** `survey_disposition`/`survey_siblings` (live TOI/KOI/K2 FP/candidate
+> cross-match) — none of which touch this `pscomppars` single-host path. See `docs/integration.md`
+> (CR-8/CR-9/CR-10) and `PHASE_CR8_PLAN.md`/`PHASE_CR9_PLAN.md`/`PHASE_CR10_PLAN.md`. The two paths are
+> independent; nothing here changed.
 
 - Menu option 3: `query_planetary_systems_composite()` — runs the same SIMBAD lookup as `query_exoplanets()`, then queries NASA Exoplanet Archive (`pscomppars`) and displays results. Does **not** query HWO ExEP or Mission Exocat archives.
 - Reuses `_get_archive_query_params()`, `_query_exoplanet_archive()`, and `_display_exoplanet_results()` from the All Tables feature.

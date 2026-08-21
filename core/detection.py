@@ -256,7 +256,7 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
                                    rv_precision_ms=None, rv_baseline_yr=None,
                                    transit_precision_ppm=None, transit_target=False,
                                    astrom_precision_uas=None, astrom_baseline_yr=None,
-                                   star=None, activity=None):
+                                   star=None, activity=None, star_mass_provenance=None):
     """Per-method minimum-detectable-planet vs SMA map. See module docstring.
 
     Returns ``{star, app_mag, distance_pc, sp_type, star_mass_solar, star_radius_solar,
@@ -296,6 +296,15 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
         m_star, r_star = mr
         if m_star <= 0 or r_star <= 0:
             return {"error": "star mass and radius must be positive."}
+    # CR-10.4: which tier supplied M★ — an explicit value (manual or archive) vs the sp_type→mass
+    # estimate. The query.py --star wrapper passes "manual"/"archive"; a direct explicit mass with no
+    # provenance defaults to "manual"; a mass filled from the MS table is "sp_type_estimate".
+    if m_star is None:
+        mass_provenance = None
+    elif star_mass_solar is not None:
+        mass_provenance = star_mass_provenance or "manual"
+    else:
+        mass_provenance = "sp_type_estimate"
     grid = tuple(sma_grid) if sma_grid else _DEFAULT_SMA_GRID
     if any(a <= 0 for a in grid):
         return {"error": "sma_grid values must be positive."}
@@ -395,6 +404,7 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
         "sp_type": sp_type,
         "host_class": host_class,
         "star_mass_solar": m_star,
+        "star_mass_provenance": mass_provenance,
         "star_radius_solar": r_star,
         "methods": out_methods,
         "assumptions": {
