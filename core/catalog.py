@@ -9,6 +9,14 @@ JSON shape (``{"service", …, "count", "rows":[…]}``) on success and the
 exception. Successful, non-empty results are cached by (service + query-hash) with a TTL
 (``core.catalog_cache``); errors/empties are never cached.
 
+**`catalog_cache` is the single cache authority — astroquery's OWN HTTP cache is disabled** (``cache=False``
+on the Vizier / Heasarc.query_region / XMatch calls) because it caches *transiently-empty* / throttled
+responses for ~7 days, silently masking real rows and contradicting this layer's "never cache empties" rule
+(observed 2026-08-22: a throttled SB9 cone returned empty, got cached, and made a real orbit look absent).
+Simbad + Gaia are TAP-based with no astroquery HTTP cache (``cache_location`` is ``None``), so they need no
+change. ``core.catalog_cache.clear_all()`` (CLI: ``query.py catalog-cache-clear``) wipes both this layer and
+any residual astroquery cache dir.
+
 Row limits / async discipline (spec §5): VizieR defaults to a finite ROW_LIMIT (``--row-limit -1``
 lifts it); Gaia's synchronous ``launch_job`` caps at 2000 rows, so *population* pulls must pass
 ``use_async=True`` (``launch_job_async``, no cap) with a timeout + retry.
@@ -121,10 +129,13 @@ def vizier_query(catalog, columns=None, filters=None, cone=None, row_limit=2000,
         with _timeout_ctx(timeout + 10):
             if cone:
                 ra, dec, rad = _parse_cone(cone)
+                # cache=False: bypass astroquery's OWN 7-day HTTP cache (it caches throttle-induced
+                # empties, masking real rows for days — 2026-08-22). The app's catalog_cache layer is
+                # the single cache authority and never caches empties/errors.
                 res = _with_retries(v.query_region, SkyCoord(ra, dec, unit="deg"),
-                                    radius=rad * u.deg, catalog=catalog)
+                                    radius=rad * u.deg, catalog=catalog, cache=False)
             else:
-                res = _with_retries(v.query_constraints, catalog=catalog)
+                res = _with_retries(v.query_constraints, catalog=catalog, cache=False)
         if not res or len(res) == 0:
             return {"service": "vizier", "catalog": catalog, "count": 0,
                     "truncated": False, "rows": []}
@@ -217,7 +228,7 @@ def heasarc_query(catalog, cone=None, radius=0.1, adql=None, row_limit=2000, tim
                 ra, dec, rad = _parse_cone(cone) if len(str(cone).split()) == 3 else \
                     (*_parse_cone(f"{cone} {radius}")[:2], radius)
                 t = _with_retries(h.query_region, SkyCoord(ra, dec, unit="deg"),
-                                  catalog=catalog, radius=rad * u.deg)
+                                  catalog=catalog, radius=rad * u.deg, cache=False)  # bypass astroquery HTTP cache
             else:
                 raise ValueError("heasarc-query requires --cone or --adql")
         return {"service": "heasarc", "catalog": catalog or "(adql)", "count": len(t),
@@ -254,7 +265,7 @@ def xmatch_query(coords_rows, cat2="vizier:I/311/hip2", max_arcsec=5.0,
         with _timeout_ctx(timeout):
             xm = _with_retries(XMatch.query, cat1=tbl, cat2=cat2,
                                max_distance=max_arcsec * u.arcsec,
-                               colRA1=ra_key, colDec1=dec_key)
+                               colRA1=ra_key, colDec1=dec_key, cache=False)  # bypass astroquery HTTP cache
         return {"service": "xmatch", "cat2": cat2, "max_arcsec": max_arcsec,
                 "count": len(xm), "column_units": _column_units(xm),
                 "rows": _table_to_rows(xm)}

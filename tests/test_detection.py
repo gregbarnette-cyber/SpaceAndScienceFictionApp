@@ -375,5 +375,51 @@ class ReferenceVersionTest(unittest.TestCase):
         self.assertEqual(a["mag_domain"], [3.0, 20.7])
 
 
+class Cr103FloorProvenanceTest(unittest.TestCase):
+    """CR-10.3: per-method floor_provenance reflects the TRUE tier (WB MSG 097 Q1)."""
+
+    def test_generic_3a_on_every_method_by_default(self):
+        r = _sun10()
+        provs = {m["method"]: m.get("floor_provenance") for m in r["methods"]}
+        self.assertEqual(provs, {"rv": "generic-3a", "transit": "generic-3a",
+                                 "astrometry": "generic-3a", "imaging": "generic-3a"})
+
+    def test_manual_rv_override_is_manual(self):
+        rv = _method(_sun10(rv_precision_ms=0.5), "rv")
+        self.assertEqual(rv["floor_provenance"], "manual")
+        self.assertEqual(rv["floor_source"], "per-star override")   # consistent with transit/astrometry
+
+    def test_catalog_provenance_and_source_string(self):
+        row = {"id": "HD 69830", "rv_precision_ms": 0.81,
+               "floor_kind": "measured_residual_rms", "citation": "Lovis 2006"}
+        rv = _method(_sun10(rv_precision_ms=0.81, rv_precision_provenance="catalog",
+                            rv_precision_meta=row), "rv")
+        self.assertEqual(rv["floor_provenance"], "catalog")
+        self.assertEqual(rv["floor_source"],
+                         "per-star catalog: HD 69830 residual RMS 0.81 m/s [Lovis 2006]")
+
+    def test_transit_override_is_manual_but_never_catalog(self):
+        r = _sun10(transit_precision_ppm=50.0, transit_target=True)
+        t = _method(r, "transit")
+        self.assertEqual(t["floor_provenance"], "manual")   # true tier, not generic-3a
+        # catalog never appears off-rv
+        self.assertNotIn("catalog", [m.get("floor_provenance") for m in r["methods"]
+                                     if m["method"] != "rv"])
+
+    def test_astrometry_override_is_manual(self):
+        a = _method(_sun10(astrom_precision_uas=100.0), "astrometry")
+        self.assertEqual(a["floor_provenance"], "manual")
+
+    def test_imaging_always_generic_3a(self):
+        self.assertEqual(_method(_sun10(), "imaging")["floor_provenance"], "generic-3a")
+
+    def test_non_applicable_method_provenance_is_none(self):
+        # A non-MS host with no M/R skips the methods → floor_source None → floor_provenance None.
+        r = detection.compute_detection_completeness(app_mag=6.0, distance_pc=12.6, sp_type="DA2")
+        for m in r["methods"]:
+            self.assertIsNone(m["floor_source"])
+            self.assertIsNone(m["floor_provenance"])
+
+
 if __name__ == "__main__":
     unittest.main()

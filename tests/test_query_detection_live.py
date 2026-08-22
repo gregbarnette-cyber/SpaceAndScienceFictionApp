@@ -52,5 +52,32 @@ class Cr104ArchiveMassLiveTest(unittest.TestCase):
         self.assertEqual(det["star_mass_provenance"], "sp_type_estimate")
 
 
+@unittest.skipUnless(_archive_reachable(),
+                     "SIMBAD/NASA not reachable (or SPACE_APP_RUN_LIVE unset)")
+class Cr103RvCatalogLiveTest(unittest.TestCase):
+    """CR-10.3 §5: HD 69830 (in the internal seed at 0.81 m/s) → the tier-2 catalog floor, resolved
+    live via SIMBAD (main_id/aliases match). A star not in the catalog → generic-3a (no regression)."""
+
+    def test_hd69830_catalog_floor(self):
+        rc, det, err = _run("detection-completeness", "--star", "HD 69830", "--methods", "rv")
+        self.assertEqual(rc, 0, err)
+        rv = [m for m in det["methods"] if m["method"] == "rv"][0]
+        self.assertEqual(rv["floor_provenance"], "catalog")
+        self.assertIn("Lovis 2006", rv["floor_source"])
+
+    def test_non_catalog_star_generic_3a(self):
+        rc, det, err = _run("detection-completeness", "--star", "18 Sco", "--methods", "rv")
+        self.assertEqual(rc, 0, err)
+        rv = [m for m in det["methods"] if m["method"] == "rv"][0]
+        self.assertEqual(rv["floor_provenance"], "generic-3a")
+
+    def test_manual_supersedes_catalog(self):
+        rc, det, err = _run("detection-completeness", "--star", "HD 69830", "--methods", "rv",
+                            "--rv-precision-ms", "0.5")
+        self.assertEqual(rc, 0, err)
+        rv = [m for m in det["methods"] if m["method"] == "rv"][0]
+        self.assertEqual(rv["floor_provenance"], "manual")
+
+
 if __name__ == "__main__":
     unittest.main()

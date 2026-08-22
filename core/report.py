@@ -21,6 +21,7 @@
 import core.databases as databases
 import core.regions as regions
 import core.science as science
+import core.shared as shared
 from core.equations import compute_habitable_zone, implied_edge_temp
 from core.hypatia_elements import CATEGORIES, display_symbol
 
@@ -342,7 +343,30 @@ def _blocks_identity(d):
     return _SECTION_TITLES["identity"], [("kv", rows)]
 
 
+def _consistency_blocks(lc):
+    """Render the CR-10.5 luminosity_consistency block (calc_L vs Gaia FLAME L_bol). L_bol is null
+    when FLAME does not cover the star (e.g. a saturated supergiant) — reported, never fabricated."""
+    if not lc:
+        return []
+    cl, lb, r, fl = lc.get("calc_L"), lc.get("L_bol"), lc.get("ratio"), lc.get("flagged")
+    row = f"calc L = {_g(cl)} L☉"
+    if lb is None:
+        row += " · Gaia FLAME L_bol unavailable (no ratio)"
+    else:
+        row += f" · L_bol (Gaia FLAME) = {_g(lb)} L☉ · ratio = {_n(r, 1)}"
+        if fl:
+            row += " · ⚠ inconsistent (>2× — MS mass-inversion not trustworthy)"
+    return [("em", row)]
+
+
 def _blocks_regions(d):
+    # CR-10.5 Part 1 — evolved star whose MS mass-inversion was refused: no bogus number tables.
+    if d.get("ms_inversion_withheld"):
+        blocks = [("em", d.get("region_basis") or "MS mass-inversion refused (evolved star)."),
+                  ("kv", [("Luminosity class", d.get("luminosity_class") or "—"),
+                          ("Evolved star", "yes")])]
+        blocks += _consistency_blocks(d.get("luminosity_consistency"))
+        return _SECTION_TITLES["regions"], blocks
     s = d["stellar"]
     sr = d["system_regions"]
     blocks = [
@@ -396,6 +420,15 @@ def _blocks_regions(d):
         kind = il["kind"] + (" · disk-set" if il["disk_line"] else "")
         irows.append([il["species"], _n(il["t_cond_k"], 0), _n(il["au"]), kind])
     blocks.append(("table", ["Species", "Condensation T (K)", "Distance (AU)", "Kind"], irows))
+    # CR-10.5 Part 1 — a forced-inversion evolved star or a flagged inconsistency gets a caveat line;
+    # a clean MS star adds nothing (markdown stays byte-identical).
+    lc = d.get("luminosity_consistency")
+    if d.get("evolved_star_flag"):
+        blocks.append(("em", f"⚠ Evolved star (luminosity class {d.get('luminosity_class')}) — "
+                             "MS mass-inversion forced (--force-ms-inversion); values are unreliable."))
+        blocks += _consistency_blocks(lc)
+    elif lc and lc.get("flagged"):
+        blocks += _consistency_blocks(lc)
     return _SECTION_TITLES["regions"], blocks
 
 
@@ -534,25 +567,91 @@ def _num_str(v, fmt="{:.3g}"):
     return fmt.format(v) if isinstance(v, (int, float)) else "—"
 
 
+def _sol_period_days(sol):
+    """The solution's period in days — the spectroscopic `period_d`, else a visual `visual_period`."""
+    return sol.get("period_d") or sol.get("visual_period")
+
+
+def _multiplicity_basis_str(sol):
+    """A source string for a binary_orbit solution, e.g. "SB9 seq 766 (P=4.01 d, SB2)"."""
+    src = sol.get("source") or ""
+    label = {"sb9": "SB9", "orb6": "WDS-ORB6", "wds": "WDS"}.get(src)
+    if label is None:
+        label = "Gaia DR3 NSS" if src.startswith("gaia-nss") else (src or "orbit")
+    parts = [label]
+    if src == "sb9" and sol.get("seq") is not None:
+        parts.append(f"seq {sol['seq']}")
+    extras = []
+    p = sol.get("period_d")          # days only — a visual `visual_period` is in years/centuries
+    if p:
+        extras.append(f"P={p:.2f} d")
+    method = (sol.get("companion") or {}).get("method") or sol.get("solution_type")
+    if method:
+        extras.append(str(method))
+    s = " ".join(parts)
+    if extras:
+        s += " (" + ", ".join(extras) + ")"
+    return s
+
+
+def _pick_basis_solution(solutions):
+    """The solution to name in multiplicity_basis: prefer a spectroscopic / companion-bearing orbit
+    with a period, then any orbit with a period (spectroscopic or visual), else the first (same tier
+    spirit as binary._extract_stability_elements — do NOT rank by the scale-heterogeneous grade)."""
+    for s in solutions:
+        if _sol_period_days(s) and ((s.get("companion") or {}).get("method") or s.get("source") == "sb9"):
+            return s
+    for s in solutions:
+        if _sol_period_days(s):
+            return s
+    return solutions[0]
+
+
 def _multiplicity_data_star(simbad, star):
-    """CR-2 flag (cheap otype block, already in `simbad`) + CR-3 stability — the stability call is
-    made only when the otype says multiple, so a single star's dossier skips the heavy tool-split."""
+    """CR-2 otype hint + **CR-10.5 Part 2 catalog cross-check**: run `binary-orbit` (SB9 / WDS-ORB6 /
+    Gaia-DR3-NSS) ONCE regardless of otype, so a spectroscopic binary whose primary otype is a
+    variability class (Spica `bC*`) is still flagged. `is_multiple`/`sb_flag` reflect the cross-check;
+    `multiplicity_basis` names the catalog source. Stability reuses the same fetched result (one
+    network call, via binary.stability_from_solutions)."""
     mult = simbad.get("multiplicity") or {}
-    data = {"is_multiple": bool(mult.get("is_multiple")), "sb_flag": bool(mult.get("sb_flag")),
-            "basis": mult.get("basis"), "otype": mult.get("otype")}
-    if mult.get("is_multiple") and star:
-        try:
-            from core import binary
-            stab = binary.binary_stability_auto(star=star)
-            if isinstance(stab, dict) and "error" not in stab and stab.get("elements"):
-                data.update({"elements": stab["elements"], "is_multiple": True,
-                             "stype_critical_au": stab.get("stype_critical_au"),
-                             "ptype_critical_au": stab.get("ptype_critical_au")})
-                if stab.get("e_out_of_hw_range"):
-                    data["note"] = ("eccentricity outside the Holman-Wiegert fit domain — the "
-                                    "critical SMA is an extrapolation")
-        except Exception:
-            pass
+    otype_sb = bool(mult.get("sb_flag"))
+    data = {"is_multiple": bool(mult.get("is_multiple")), "sb_flag": otype_sb,
+            "basis": mult.get("basis"), "otype": mult.get("otype"), "multiplicity_basis": None}
+    if not star:
+        return data
+    try:
+        from core import binary
+        result = binary.binary_orbit(star=star)
+    except Exception:
+        return data
+    if not isinstance(result, dict) or "error" in result:
+        return data
+    solutions = result.get("solutions") or []
+    # Exclude planet-class companions from the STELLAR-multiplicity determination — a raw NSS/SB1 pull
+    # tags a sub-13-M_Jup companion as `planet` (§3.3), and a planet-only host (e.g. GJ 876's 61 d NSS
+    # "orbit") must NOT read as a stellar multiple. A companion with no class (a visual WDS pair) is a
+    # resolved stellar pair and still counts.
+    stellar = [s for s in solutions if (s.get("companion") or {}).get("class") != "planet"]
+    if not stellar:
+        return data
+    # A catalogued stellar orbit ⇒ multiple (even against a variability otype). SB flag if any is
+    # spectroscopic (SB9 source, an SB* NSS solution_type, or an SB1/SB2 companion classifier).
+    cross_sb = any(s.get("source") == "sb9"
+                   or (s.get("solution_type") or "").upper().startswith("SB")
+                   or ((s.get("companion") or {}).get("method") or "").upper().startswith("SB")
+                   for s in stellar)
+    data["is_multiple"] = True
+    data["sb_flag"] = otype_sb or cross_sb
+    data["multiplicity_basis"] = _multiplicity_basis_str(_pick_basis_solution(stellar))
+    stab = binary.stability_from_solutions(result.get("query"), result.get("identity", {}),
+                                           stellar, result.get("route_tried"))
+    if isinstance(stab, dict) and stab.get("elements"):
+        data.update({"elements": stab["elements"],
+                     "stype_critical_au": stab.get("stype_critical_au"),
+                     "ptype_critical_au": stab.get("ptype_critical_au")})
+        if stab.get("e_out_of_hw_range"):
+            data["note"] = ("eccentricity outside the Holman-Wiegert fit domain — the "
+                            "critical SMA is an extrapolation")
     return data
 
 
@@ -560,6 +659,8 @@ def _blocks_multiplicity(d):
     rows = [("Multiple?", "yes" if d["is_multiple"] else "no"),
             ("Spectroscopic (SB) flag", "yes" if d["sb_flag"] else "no"),
             ("Basis", d.get("basis") or "—"), ("SIMBAD otype", d.get("otype") or "—")]
+    if d.get("multiplicity_basis"):
+        rows.append(("Catalog orbit", d["multiplicity_basis"]))
     blocks = [("kv", rows)]
     e = d.get("elements")
     if e:
@@ -575,15 +676,32 @@ def _blocks_multiplicity(d):
     return _SECTION_TITLES["multiplicity"], blocks
 
 
-def _age_population_data_star(simbad, hyp, star):
-    """Gaia FLAME age (one query, model-dependent caveat) + CR-7 population from the Hypatia
-    U/V/W the dossier already fetched (no extra network for the classification)."""
+def _gaia_astro(simbad, memo):
+    """Gaia DR3 astrophysical parameters (FLAME), fetched **once per assemble** and cached on
+    `memo` — shared by the CR-10.5 luminosity_consistency block and _age_population_data_star, so a
+    full dossier makes one Gaia call, not two. Resolves the source_id from the SIMBAD designations
+    (no second SIMBAD round-trip). Returns the gaia_astrophysical result dict, or None."""
+    if "gaia_astro" in memo:
+        return memo["gaia_astro"]
+    result = None
+    try:
+        from core import catalog, binary
+        sid = binary.gaia_source_id_from_designations(simbad.get("designations"))
+        if sid:
+            result = catalog.gaia_astrophysical(source_id=sid)
+    except Exception:
+        result = None
+    memo["gaia_astro"] = result
+    return result
+
+
+def _age_population_data_star(simbad, hyp, star, ga=None):
+    """Gaia FLAME age (from the shared `ga` fetch — no extra network) + CR-7 population from the
+    Hypatia U/V/W the dossier already fetched (no extra network for the classification)."""
     data = {"age_gyr": None, "age_source": None, "age_caveat": None, "population": None,
             "membership_prob": None, "toomre_velocity_kms": None,
             "u_vel_kms": None, "v_vel_kms": None, "w_vel_kms": None}
     try:
-        from core import catalog
-        ga = catalog.gaia_astrophysical(star=star)
         params = ga.get("parameters") if isinstance(ga, dict) else None
         if params and params.get("age_flame") is not None:
             data["age_gyr"] = params["age_flame"]
@@ -794,7 +912,7 @@ def _render_html(star, rendered, data, warnings, notes):
 
 # ── assembly ──────────────────────────────────────────────────────────────────
 
-def _assemble_star(star, requested=None):
+def _assemble_star(star, requested=None, force_ms_inversion=False):
     """Run the readers for a real star. Returns {"error"} (hard) or {data, status}.
 
     `status` maps each section key → (state, reason) where state is "ok" (in data),
@@ -809,18 +927,71 @@ def _assemble_star(star, requested=None):
         return {"error": simbad["error"]}
 
     data, status = {}, {}
+    memo = {}  # per-assemble cache: one shared Gaia FLAME fetch (regions consistency + age_population)
     data["identity"] = _identity_data_star(simbad)
     status["identity"] = ("ok", None)
 
+    # CR-10.5 Part 1 — luminosity-class region guard. Refuse the MS mass-inversion for an evolved
+    # (giant/subgiant/supergiant) host unless --force-ms-inversion; emit luminosity_class /
+    # evolved_star_flag / region_basis / luminosity_consistency (Gaia FLAME L_bol, graceful-null when
+    # FLAME is absent, e.g. saturated supergiants). Guard lives HERE, not in regions.py, so opts 8/9
+    # and the GUI region features are byte-identical.
     reg = regions.compute_star_system_regions_from_simbad(simbad)
+    lum_token, evolved = shared.luminosity_class(simbad.get("sp_type"))
+    want_gaia = ("regions" in requested) or ("age_population" in requested)
     if "error" in reg:
-        status["regions"] = ("warn", reg["error"])
-        status["habitable_zone"] = ("warn", "depends on the regions computation (unavailable)")
+        if evolved:
+            # An evolved star whose regions can't compute (e.g. SIMBAD has no Teff for Pollux) STILL
+            # self-flags structurally — evolved recognition is a pure sp_type parse, no Teff needed.
+            # luminosity_consistency stays null (calc_L needs Teff → correctly null). This is the
+            # whole point of Part 1: the tool self-flags rather than relying on analyst discipline.
+            data["regions"] = {
+                "luminosity_class": lum_token, "evolved_star_flag": True,
+                "ms_inversion_withheld": True,
+                "region_basis": (f"MS-inversion refused: sp_type luminosity class {lum_token} → "
+                                 f"evolved star; regions unavailable ({reg['error']})"),
+                "luminosity_consistency": {"calc_L": None, "L_bol": None, "ratio": None, "flagged": None}}
+            status["regions"] = ("ok", None)
+            status["habitable_zone"] = ("note", f"evolved star; habitable zone withheld — regions "
+                                        f"require literature M/R/L and SIMBAD data is incomplete "
+                                        f"({reg['error']})")
+        else:
+            status["regions"] = ("warn", reg["error"])
+            status["habitable_zone"] = ("warn", "depends on the regions computation (unavailable)")
     else:
-        data["regions"] = _regions_data(reg)
-        status["regions"] = ("ok", None)
-        data["habitable_zone"] = _hz_data(reg)
-        status["habitable_zone"] = ("ok", None)
+        l_bol = None
+        if want_gaia:
+            ga = _gaia_astro(simbad, memo)
+            if isinstance(ga, dict):
+                l_bol = (ga.get("parameters") or {}).get("lum_flame")
+        teff, r_star = reg.get("temp"), reg.get("stellarRadius")
+        calc_l = (r_star ** 2 * (teff / 5772.0) ** 4) if (r_star and teff) else None
+        ratio = (calc_l / l_bol) if (calc_l is not None and l_bol not in (None, 0)) else None
+        consistency = {"calc_L": calc_l, "L_bol": l_bol, "ratio": ratio,
+                       "flagged": (bool(ratio > 2.0 or ratio < 0.5) if ratio is not None else None)}
+        if evolved and not force_ms_inversion:
+            data["regions"] = {
+                "luminosity_class": lum_token, "evolved_star_flag": True,
+                "ms_inversion_withheld": True,
+                "region_basis": (f"MS-inversion refused: sp_type luminosity class {lum_token} → "
+                                 "evolved star; MS mass/radius/regions withheld (require literature "
+                                 "M/R/L, not in the dossier's SIMBAD data)"),
+                "luminosity_consistency": consistency}
+            status["regions"] = ("ok", None)
+            status["habitable_zone"] = ("note", "MS-inversion refused for an evolved star; habitable "
+                                        "zone withheld (requires literature L). Use "
+                                        "--force-ms-inversion to override.")
+        else:
+            rd = _regions_data(reg)
+            rd["luminosity_class"] = lum_token
+            rd["evolved_star_flag"] = bool(evolved)
+            rd["region_basis"] = (f"MS-inversion forced (--force-ms-inversion) despite evolved class "
+                                  f"{lum_token}" if evolved else "MS mass-inversion (main-sequence)")
+            rd["luminosity_consistency"] = consistency
+            data["regions"] = rd
+            status["regions"] = ("ok", None)
+            data["habitable_zone"] = _hz_data(reg)
+            status["habitable_zone"] = ("ok", None)
 
     nasa = databases.compute_planetary_systems_composite(simbad)
     hwc = databases.compute_hwc(simbad)
@@ -856,7 +1027,7 @@ def _assemble_star(star, requested=None):
         data["multiplicity"] = _multiplicity_data_star(simbad, star)
         status["multiplicity"] = ("ok", None)
     if "age_population" in requested:
-        data["age_population"] = _age_population_data_star(simbad, hyp, star)
+        data["age_population"] = _age_population_data_star(simbad, hyp, star, _gaia_astro(simbad, memo))
         status["age_population"] = ("ok", None)
     if "disk" in requested:
         data["disk"] = _disk_data_star(star)
@@ -932,7 +1103,7 @@ def render_document(envelope, fmt):
                   envelope["warnings"], envelope["notes"])
 
 
-def build_system_dossier(star, sections=None, fmt="markdown"):
+def build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion=False):
     """Compose a full system dossier from the existing readers.
 
     Pure (no Qt / file I/O / new astronomy). Returns one of:
@@ -960,7 +1131,7 @@ def build_system_dossier(star, sections=None, fmt="markdown"):
     if (star or "").strip().lower() in {"sol", "sun"}:
         assembled = _assemble_sol()
     else:
-        assembled = _assemble_star(star, requested)
+        assembled = _assemble_star(star, requested, force_ms_inversion=force_ms_inversion)
         if "error" in assembled:
             return {"error": assembled["error"]}
     data, status = assembled["data"], assembled["status"]

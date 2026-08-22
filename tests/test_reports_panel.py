@@ -31,7 +31,13 @@ def _star_envelope():
          mock.patch("core.regions.compute_star_system_regions_from_simbad", return_value=rg), \
          mock.patch("core.databases.compute_planetary_systems_composite", return_value=na), \
          mock.patch("core.databases.compute_hwc", return_value=hw), \
-         mock.patch("core.databases.compute_hypatia_data", return_value=hy):
+         mock.patch("core.databases.compute_hypatia_data", return_value=hy), \
+         mock.patch("core.binary.binary_orbit",
+                    return_value={"query": "Tau Ceti", "identity": {}, "solutions": [], "route_tried": []}), \
+         mock.patch("core.catalog.gaia_astrophysical", return_value={"parameters": None}), \
+         mock.patch("core.debris_disk.debris_disk",
+                    return_value={"detection": "upper_limit", "components": [],
+                                  "upper_limit_L_IR_over_Lstar": 1e-4}):
         return report.build_system_dossier("Tau Ceti", fmt="json")
 
 

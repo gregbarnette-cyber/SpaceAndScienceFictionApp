@@ -39,6 +39,7 @@ import core.par_flux as par_flux
 import core.power as power
 import core.radiation as radiation
 import core.power_tables as power_tables
+import core.rv_precision_tables as rv_precision_tables   # CR-10.3 per-star RV-floor catalog
 import core.energy_storage as energy_storage
 import core.projects as projects
 import core.relativity as relativity
@@ -1140,11 +1141,31 @@ def cmd_detection_completeness(args):
                     if star_rad is None:                            # skip into an error — red-team #5)
                         star_rad = arch["radius_solar"]
                     mass_prov = "archive"
+    # CR-10.3: tier-2 per-star RV-precision catalog. Precedence manual --rv-precision-ms > catalog >
+    # generic-3a. A manual value short-circuits (no catalog load). A passed --rv-precision-catalog is
+    # validated even without --star (a bad path is loud, WB MSG 097 Q2); the match itself needs the
+    # SIMBAD-resolved main_id, so it fires only on the --star path (like CR-10.4's archive M★).
+    rv_prec = args.rv_precision_ms
+    rv_prov = "manual" if rv_prec is not None else None
+    rv_meta = None
+    # Load/validate the catalog when a path is passed (a bad path is LOUD even with a manual override
+    # or no --star, WB MSG 097 Q2) OR when we will actually match (no manual + --star → seed default).
+    need_match = rv_prec is None and args.star
+    if args.rv_precision_catalog is not None or need_match:
+        cat = rv_precision_tables.load_rv_precision_catalog(args.rv_precision_catalog)
+        if "error" in cat:
+            _out(cat)
+            return
+        if need_match:
+            row = rv_precision_tables.match_rv_precision(cat, sl.get("main_id"), sl.get("designations"))
+            if row:
+                rv_prec, rv_prov, rv_meta = row["rv_precision_ms"], "catalog", row
     _out(detection.compute_detection_completeness(
         app_mag=app_mag, distance_pc=distance_pc, sp_type=sp_type,
         star_mass_solar=star_mass, star_radius_solar=star_rad,
         methods=args.methods, sma_grid=args.sma_grid, albedo=args.albedo,
-        rv_precision_ms=args.rv_precision_ms, rv_baseline_yr=args.rv_baseline_yr,
+        rv_precision_ms=rv_prec, rv_baseline_yr=args.rv_baseline_yr,
+        rv_precision_provenance=rv_prov, rv_precision_meta=rv_meta,
         transit_precision_ppm=args.transit_precision_ppm, transit_target=args.transit_target,
         astrom_precision_uas=args.astrom_precision_uas, astrom_baseline_yr=args.astrom_baseline_yr,
         star=args.star, activity=args.activity, star_mass_provenance=mass_prov,
@@ -1205,6 +1226,11 @@ def cmd_vizier_query(args):
         catalog=args.catalog, columns=args.columns, filters=args.filters,
         cone=args.cone, row_limit=args.row_limit,
     ))
+
+
+def cmd_catalog_cache_clear(args):
+    import core.catalog_cache as catalog_cache
+    _out(catalog_cache.clear_all())
 
 
 def cmd_gaia_tap(args):
@@ -1311,7 +1337,8 @@ def cmd_ice_lines(args):
 # Markdown/HTML emit a `document`; JSON emits structured `data`. `--star Sol`/`Sun` is the
 # offline reference-origin path. Bad fmt/section or a SIMBAD-lookup failure → {"error"} exit 1.
 def cmd_dossier(args):
-    _out(report.build_system_dossier(args.star, sections=args.sections, fmt=args.fmt))
+    _out(report.build_system_dossier(args.star, sections=args.sections, fmt=args.fmt,
+                                     force_ms_inversion=args.force_ms_inversion))
 
 
 # Phase S — project workspaces (read-only; mutations are GUI-only). Local-DB reads,
@@ -2769,7 +2796,10 @@ def main(argv=None):
                    help="Subset of methods (default all)")
     p.add_argument("--sma-grid", nargs="+", type=float, help="Orbital SMA grid in AU (default log grid)")
     p.add_argument("--albedo", type=float, default=0.3)
-    p.add_argument("--rv-precision-ms", type=float, help="Per-star RV precision override (m/s)")
+    p.add_argument("--rv-precision-ms", type=float, help="Per-star RV precision override (m/s); "
+                   "tier-1, always supersedes the catalog and 3a default")
+    p.add_argument("--rv-precision-catalog", help="Path to a WB-owned per-star RV-precision catalog "
+                   "JSON (CR-10.3 tier-2 lookup). Replaces the internal seed wholesale.")
     p.add_argument("--rv-baseline-yr", type=float)
     p.add_argument("--transit-precision-ppm", type=float, help="Per-star transit photometric precision (ppm)")
     p.add_argument("--transit-target", action="store_true",
@@ -3522,6 +3552,11 @@ def main(argv=None):
                    help="Max rows (default 2000; -1 = unlimited)")
     p.set_defaults(func=cmd_vizier_query)
 
+    # catalog-cache-clear — maintenance: wipe the app catalog_cache + any residual astroquery HTTP cache
+    p = sub.add_parser("catalog-cache-clear",
+                       help="Clear the catalog caches (app data/catalog_cache/ + astroquery HTTP cache)")
+    p.set_defaults(func=cmd_catalog_cache_clear)
+
     # gaia-tap
     p = sub.add_parser("gaia-tap",
                        help="Any Gaia DR3 table by ADQL or structured filter (LIVE network)")
@@ -4023,8 +4058,12 @@ def main(argv=None):
     p.add_argument("--fmt", choices=["markdown", "html", "json"], default="markdown",
                    help="Output format (default markdown)")
     p.add_argument("--sections", nargs="+",
-                   help="Subset of: identity regions habitable_zone planets hypatia gcns moons "
-                        "(default: all available; 'moons' is Sol-only opt-in)")
+                   help="Subset of: identity regions habitable_zone planets hypatia gcns "
+                        "multiplicity age_population disk moons (default: all available; "
+                        "'moons' is Sol-only opt-in)")
+    p.add_argument("--force-ms-inversion", action="store_true",
+                   help="Override the CR-10.5 evolved-star guard and force the MS mass-inversion "
+                        "for a giant/subgiant/supergiant host (values are unreliable)")
     p.set_defaults(func=cmd_dossier)
 
     # project-list (Phase S — read-only)

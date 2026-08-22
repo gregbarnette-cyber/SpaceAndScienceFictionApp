@@ -118,3 +118,32 @@ def clear_cache() -> int:
     except Exception:
         pass
     return n
+
+
+def _astroquery_cache_dir():
+    """The astroquery HTTP-cache root (`<astropy cache>/astroquery/`), or None if unavailable."""
+    try:
+        from astropy.config import get_cache_dir
+        return pathlib.Path(get_cache_dir()) / "astroquery"
+    except Exception:
+        return None
+
+
+def clear_all() -> dict:
+    """Wipe BOTH cache layers: this app cache (`data/catalog_cache/`) AND **astroquery's own HTTP
+    cache** (`~/.astropy/cache/astroquery/`). astroquery's cache is normally disabled by the
+    `cache=False` calls in `core.catalog`, but a *residual* dir can persist from an earlier run (or
+    another astroquery caller) and serve stale throttle-induced empties for ~7 days — this is the
+    "dump the cache before working/testing" affordance. Returns
+    `{app_cache_files_removed, astroquery_cache_dir, astroquery_cache_removed}`.
+    """
+    import shutil
+    app_removed = clear_cache()
+    aq_dir = _astroquery_cache_dir()
+    aq_removed = False
+    if aq_dir is not None and aq_dir.is_dir():
+        shutil.rmtree(aq_dir, ignore_errors=True)
+        aq_removed = not aq_dir.exists()
+    return {"app_cache_files_removed": app_removed,
+            "astroquery_cache_dir": (str(aq_dir) if aq_dir is not None else None),
+            "astroquery_cache_removed": aq_removed}

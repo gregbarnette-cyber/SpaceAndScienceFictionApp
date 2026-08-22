@@ -923,6 +923,54 @@ def spectral_leading_class(sp_str, letters=_SPECTRAL_CHIP_LETTERS):
     return None
 
 
+# ── Luminosity class (Roman numeral) parser — CR-10.5 Part 1 (F1 / OQ-SA-LUM1) ──
+# A PURPOSE-BUILT parser, distinct from detection.py's single-token `_LUM_CLASS_RE`: it must
+# capture a hyphen/slash-joined COMPOUND span (`M1-M2Ia-Iab` → "Ia-Iab") that the single-token
+# regex cannot (that one stops at the first suffix, yielding "Ia"). It borrows the boundary-
+# anchoring idiom (`(?<![A-Za-z])`) that keeps the roman numeral from matching inside a spectral
+# letter and makes `IIIb` resolve to III (longest-first alternation), never Ib.
+#
+# A "unit" is one luminosity token: a roman core + optional sub-suffix (Ia/Iab/Ib/IIIb/…). A "span"
+# is the first boundary-anchored run of `[-/]`-joined units. Returned `token`:
+#   * compound span (has - or /) → returned verbatim (e.g. "Ia-Iab");
+#   * single unit with core I    → whole unit kept (Ia / Iab / Ib / I);
+#   * single unit core II–VII    → core only (IIIb → III), the sub-suffix dropped.
+# `evolved` is True iff any unit's core ∈ {I, II, III, IV} (supergiant / bright giant / giant /
+# subgiant) — the classes the dossier must NOT MS-invert. V / VI / VII / no-token → False.
+_LUM_UNIT = r"(?:VII|VI|IV|V|III|II|I)(?:ab|a|b|0)?"
+_LUM_SPAN_RE = re.compile(r"(?<![A-Za-z])(" + _LUM_UNIT + r"(?:[-/]" + _LUM_UNIT + r")*)")
+_LUM_UNIT_RE = re.compile(r"^(VII|VI|IV|V|III|II|I)(ab|a|b|0)?$")
+_LUM_EVOLVED_CORES = frozenset({"I", "II", "III", "IV"})
+
+
+def luminosity_class(sp_type):
+    """``(token, evolved)`` — the luminosity-class token of a spectral type, or ``(None, False)``.
+
+        luminosity_class("F8Ib")          -> ("Ib",     True)   # supergiant, suffix kept
+        luminosity_class("K0IIIb")        -> ("III",    True)   # giant, sub-suffix dropped
+        luminosity_class("M1-M2Ia-Iab")   -> ("Ia-Iab", True)   # compound span, verbatim
+        luminosity_class("K0III")         -> ("III",    True)
+        luminosity_class("G6V")           -> ("V",      False)  # MS dwarf
+        luminosity_class("G8:V")          -> ("V",      False)  # colon satisfies the boundary
+        luminosity_class("DA2") / "" / None -> (None,   False)
+    """
+    if not sp_type:
+        return None, False
+    m = _LUM_SPAN_RE.search(sp_type)
+    if not m:
+        return None, False
+    span = m.group(1)
+    units = re.split(r"[-/]", span)
+    cores = [um.group(1) for um in (_LUM_UNIT_RE.match(u) for u in units) if um]
+    evolved = any(c in _LUM_EVOLVED_CORES for c in cores)
+    if len(units) > 1:                       # compound / range span → verbatim
+        return span, evolved
+    um = _LUM_UNIT_RE.match(span)
+    core, sub = um.group(1), um.group(2)
+    token = span if core == "I" else core   # keep suffix for I-family; core only for II–VII
+    return token, evolved
+
+
 # ── The one spectral-class colour palette (completed_plans/ROUTE_CHART_REFACTOR_PLAN.md Phase 3) ──
 # Lives here, beside the `spectral_leading_class` rule it is keyed off, so the
 # colour and the bucketing can never drift. `core.viz` re-exports it as

@@ -5,7 +5,7 @@ remains the authoritative contract** — exact arguments, JSON output keys, `sou
 offline), exit-code behaviour, and worked anchors. This file is a navigation aid, not the contract;
 descriptions are condensed from integration.md's prose.
 
-**Total: 180 subcommands** (generated from `query.py` `add_parser` names; all 180 are documented in
+**Total: 181 subcommands** (generated from `query.py` `add_parser` names; all 181 are documented in
 `docs/integration.md`).
 
 ## Star databases & catalog lookup
@@ -269,6 +269,7 @@ descriptions are condensed from integration.md's prose.
 | Command | Description |
 |---|---|
 | `vizier-query` | Any VizieR catalog by id → JSON rows (live network). |
+| `catalog-cache-clear` | Wipe the catalog caches (app `data/catalog_cache/` + any residual astroquery HTTP cache). Offline maintenance. |
 | `gaia-tap` | Any Gaia DR3 table by raw ADQL or a structured filter (live network). |
 | `heasarc-query` | A HEASARC X-ray catalog by cone or raw TAP/ADQL (live network). |
 | `binary-orbit` | Every orbital solution for a star (Gaia NSS + SB9 + WDS/orb6) with companion-mass star/BD/planet classification (live). |
@@ -279,7 +280,7 @@ descriptions are condensed from integration.md's prose.
 ## Dossier, projects & generation (Q / R / S)
 | Command | Description |
 |---|---|
-| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). |
+| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). CR-10.5: self-flags evolved hosts (luminosity-class region guard, `--force-ms-inversion`) + cross-checks `binary-orbit` for multiplicity (`multiplicity_basis`). |
 | `project-list` | List project workspaces (name, description, member count). |
 | `project-get` | A project workspace + its members (with `generated_spec` echoed parsed). |
 | `generate-system` | Deterministically generate a plausible planetary system (synthetic-from-seed or real-anchor). |
@@ -292,7 +293,7 @@ descriptions are condensed from integration.md's prose.
 | `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a tiered companion-mass extractor + `e_out_of_hw_range` flag. LIVE. |
 | `population-classify` | Thin/thick/halo Galactic-population verdict from U/V/W (Bensby velocity-ellipsoid on a Schönrich LSR). |
 | `nuclear-inventory` | Fusion + fissile (per-isotope GCE, WB 3c FINAL) + radiogenic-heat inventory from stellar [Fe/H]/age/[Eu/H]; CR-10.2 `[Fe/H]>+0.5` soft `feh_extrapolation` flag. |
-| `detection-completeness` | Per-method min-detectable-planet-vs-SMA map (RV/transit/astrometry/imaging), WB 3a FINAL defaults; CR-10.4 archive-M★ preference + `star_mass_provenance`. |
+| `detection-completeness` | Per-method min-detectable-planet-vs-SMA map (RV/transit/astrometry/imaging), WB 3a FINAL defaults; CR-10.4 archive-M★ preference + `star_mass_provenance`; CR-10.3 per-star RV tier-2 catalog (`--rv-precision-catalog`) + per-method `floor_provenance`. |
 | `planetary-systems-batch` | Batch NASA `ps` pull — full per-planet + per-system fields for many hosts; CR-9 disposition/quality + CR-10.1 `survey_disposition`/`survey_siblings` (live TOI/KOI/K2 FP/candidate cross-match). LIVE. |
 
 ## Weapons & engagement physics (Phase AT)

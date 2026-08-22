@@ -438,7 +438,11 @@ def _sb9_solutions(ra, dec, sp_type):
     m0 = main["rows"][0]
     seq = m0.get("Seq")
     m1 = m1_from_spectral_type(sp_type or m0.get("Sp1"))
-    orbits = catalog.vizier_query(catalog="B/sb9/orbits", filters=[f"Seq = {seq}"])
+    # VizieR needs the leading "=" for an exact NUMERIC match ("=766"); a bare "766" matches nothing
+    # (verified 2026-08-22: `Seq = 766` → 0 rows, `Seq:=766` → Spica's orbit Per=4.0145). The `Seq:=…`
+    # passthrough form emits {"Seq": "=766"}. (`_parse_vizier_filters` drops the "=" for a plain `=`
+    # operator — fine for a text column like Name, latent-wrong for a numeric one; scoped-fixed here.)
+    orbits = catalog.vizier_query(catalog="B/sb9/orbits", filters=[f"Seq:={seq}"])
     if "error" in orbits:
         return [], orbits["error"]
     out = []
@@ -621,29 +625,19 @@ def _extract_stability_elements(solutions, ident):
                   "projected-separation-only WDS row; re-run with a spectral type or masses")
 
 
-def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None):
-    """CR-3: fetch a binary's orbital elements (``binary_orbit``) and feed them straight into the
-    Holman-Wiegert stability calculator — no manual re-entry. Returns the S/P-type critical SMAs
-    and, when ``test_sma_au`` is given, a stability verdict for that orbit.
-
-    Output: ``{star, elements:{m1_solar, m2_solar, sma_au, ecc, source, grade, mass_basis, a_basis},
-    stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au, test_verdict, orbit_type,
-    e_out_of_hw_range, route_tried, note?}`` — or ``{"error"}`` on an unresolvable identity, or an
-    ``elements: None`` honest-empty when no usable orbit exists (never fabricated elements)."""
+def stability_from_solutions(star_label, ident, solutions, route_tried, test_sma_au=None):
+    """Pure (no network): turn a ``binary_orbit`` result's ``solutions`` into the Holman-Wiegert
+    stability block. Extracted from ``binary_stability_auto`` (CR-10.5 Part 2) so the ``dossier``
+    multiplicity cross-check can reuse it on an already-fetched ``binary_orbit`` result — one network
+    call, not two. **Behavior-identical** to the CR-3 inline body it replaced (guarded by
+    ``tests/test_binary_stability_auto.py``, which patches ``binary_orbit``)."""
     from core import equations
-    if test_sma_au is not None and test_sma_au <= 0:
-        return {"error": "test_sma_au must be positive."}
-    result = binary_orbit(star=star, ra=ra, dec=dec, source_id=source_id)
-    if "error" in result:
-        return result
-    ident = result.get("identity", {})
-    star_label = result.get("query")
-    elements, note = _extract_stability_elements(result.get("solutions", []), ident)
+    elements, note = _extract_stability_elements(solutions, ident)
     if elements is None:
         return {"star": star_label, "elements": None,
                 "stype_critical_au": None, "ptype_critical_au": None, "mass_ratio": None,
                 "test_sma_au": test_sma_au, "test_verdict": None, "orbit_type": None,
-                "e_out_of_hw_range": None, "route_tried": result.get("route_tried"), "note": note}
+                "e_out_of_hw_range": None, "route_tried": route_tried, "note": note}
 
     m1, m2, a_bin, ecc = (elements["m1_solar"], elements["m2_solar"],
                           elements["sma_au"], elements["ecc"])
@@ -654,7 +648,7 @@ def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma
                 "stype_critical_au": None, "ptype_critical_au": None, "mass_ratio": None,
                 "test_sma_au": test_sma_au, "test_verdict": None, "orbit_type": None,
                 "e_out_of_hw_range": ecc > _HW_ECC_MAX,
-                "route_tried": result.get("route_tried"),
+                "route_tried": route_tried,
                 "note": f"Holman-Wiegert rejected the elements: {hw['error']}"}
 
     notes = []
@@ -676,11 +670,30 @@ def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma
                          if test_sma_au is not None else None),
         "orbit_type": hw["orbit_type"] if test_sma_au is not None else None,
         "e_out_of_hw_range": ecc > _HW_ECC_MAX,
-        "route_tried": result.get("route_tried"),
+        "route_tried": route_tried,
     }
     if notes:
         out["note"] = "; ".join(notes)
     return out
+
+
+def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None):
+    """CR-3: fetch a binary's orbital elements (``binary_orbit``) and feed them straight into the
+    Holman-Wiegert stability calculator — no manual re-entry. Returns the S/P-type critical SMAs
+    and, when ``test_sma_au`` is given, a stability verdict for that orbit.
+
+    Output: ``{star, elements:{m1_solar, m2_solar, sma_au, ecc, source, grade, mass_basis, a_basis},
+    stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au, test_verdict, orbit_type,
+    e_out_of_hw_range, route_tried, note?}`` — or ``{"error"}`` on an unresolvable identity, or an
+    ``elements: None`` honest-empty when no usable orbit exists (never fabricated elements)."""
+    if test_sma_au is not None and test_sma_au <= 0:
+        return {"error": "test_sma_au must be positive."}
+    result = binary_orbit(star=star, ra=ra, dec=dec, source_id=source_id)
+    if "error" in result:
+        return result
+    return stability_from_solutions(result.get("query"), result.get("identity", {}),
+                                    result.get("solutions", []), result.get("route_tried"),
+                                    test_sma_au=test_sma_au)
 
 
 # ── Tier-2 orchestrator: close-binary-census (the population sweep, spec §3.2) ─

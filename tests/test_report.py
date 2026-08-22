@@ -126,15 +126,20 @@ def _hypatia_fixture():
 
 @contextmanager
 def _patched(simbad=None, regions_result=None, nasa=None, hwc=None, hypatia=None,
-             stability=None, gaia_astro=None, disk=None):
+             binary_orbit_result=None, gaia_astro=None, disk=None):
     """Patch the readers core.report calls. Any `*` may be an {"error": ...} dict to exercise the
-    warnings path. The three CR-5 live readers default to empty results (offline, no sockets)."""
+    warnings path. The three CR-5 live readers default to empty results (offline, no sockets).
+
+    CR-10.5 Part 2: the dossier's multiplicity block now calls `binary.binary_orbit` directly (not
+    `binary_stability_auto`), so this harness MUST patch `binary_orbit` or offline tests would hit
+    the live network. The default is a no-solutions result (single star)."""
     sb = simbad if simbad is not None else _simbad_fixture()
     rg = regions_result if regions_result is not None else _regions_fixture(sb)
     na = nasa if nasa is not None else _nasa_fixture()
     hw = hwc if hwc is not None else _hwc_fixture()
     hy = hypatia if hypatia is not None else _hypatia_fixture()
-    st = stability if stability is not None else {"elements": None}
+    bo = binary_orbit_result if binary_orbit_result is not None else {
+        "query": "X", "identity": {}, "solutions": [], "route_tried": []}
     ga = gaia_astro if gaia_astro is not None else {"parameters": None}
     dk = disk if disk is not None else {"detection": "upper_limit", "components": [],
                                         "upper_limit_L_IR_over_Lstar": 1e-4}
@@ -143,7 +148,7 @@ def _patched(simbad=None, regions_result=None, nasa=None, hwc=None, hypatia=None
          mock.patch("core.databases.compute_planetary_systems_composite", return_value=na), \
          mock.patch("core.databases.compute_hwc", return_value=hw), \
          mock.patch("core.databases.compute_hypatia_data", return_value=hy), \
-         mock.patch("core.binary.binary_stability_auto", return_value=st), \
+         mock.patch("core.binary.binary_orbit", return_value=bo), \
          mock.patch("core.catalog.gaia_astrophysical", return_value=ga), \
          mock.patch("core.debris_disk.debris_disk", return_value=dk):
         yield
@@ -420,19 +425,23 @@ class Cr5Sections(unittest.TestCase):
         sb = _simbad_fixture()
         sb["multiplicity"] = {"is_multiple": True, "sb_flag": True,
                               "basis": "spectroscopic", "otype": "SB*"}
-        stab = {"elements": {"m1_solar": 1.0, "m2_solar": 0.5, "sma_au": 20.0, "ecc": 0.3,
-                             "source": "sb9", "grade": 4, "mass_basis": "b", "a_basis": "k"},
-                "stype_critical_au": 3.5, "ptype_critical_au": 50.0, "e_out_of_hw_range": False}
+        # CR-10.5 Part 2: stability now runs for real over the fetched binary_orbit solutions.
+        bo = {"query": "Some Binary", "identity": {"sp_type": "G0V"}, "route_tried": ["sb9"],
+              "solutions": [{"source": "sb9", "seq": 500, "period_d": 900.0, "eccentricity": 0.3,
+                             "grade": 4, "companion": {"method": "SB2", "m1_solar": 1.0,
+                                                       "m2_solar": 0.5, "mass_ratio_q": 0.5}}]}
         disk = {"detection": "detected", "system_L_IR_over_Lstar": 6e-4,
                 "components": [{"type": "warm", "L_IR_over_Lstar": 4e-4, "T_dust_K": 300,
                                 "R_disk_au": 0.6, "ref": "Cotten & Song 2016"}]}
-        with _patched(simbad=sb, stability=stab, disk=disk):
+        with _patched(simbad=sb, binary_orbit_result=bo, disk=disk):
             r = report.build_system_dossier("Some Binary", fmt="json")
             doc = report.build_system_dossier("Some Binary")["document"]
         mp = r["data"]["multiplicity"]
         self.assertTrue(mp["is_multiple"] and mp["sb_flag"])
         self.assertEqual(mp["elements"]["m2_solar"], 0.5)
-        self.assertEqual(mp["stype_critical_au"], 3.5)
+        self.assertIsInstance(mp["stype_critical_au"], float)
+        self.assertGreater(mp["stype_critical_au"], 0)
+        self.assertEqual(mp["multiplicity_basis"], "SB9 seq 500 (P=900.00 d, SB2)")
         self.assertEqual(r["data"]["disk"]["detection"], "detected")
         # md renders the new section headings
         self.assertIn("## Multiplicity & Binary Stability", doc)
@@ -459,12 +468,12 @@ class Cr5Sections(unittest.TestCase):
              mock.patch("core.databases.compute_planetary_systems_composite", return_value=_nasa_fixture()), \
              mock.patch("core.databases.compute_hwc", return_value=_hwc_fixture()), \
              mock.patch("core.databases.compute_hypatia_data", return_value=_hypatia_fixture()), \
-             mock.patch("core.binary.binary_stability_auto") as m_bs, \
+             mock.patch("core.binary.binary_orbit") as m_bo, \
              mock.patch("core.catalog.gaia_astrophysical") as m_ga, \
              mock.patch("core.debris_disk.debris_disk") as m_disk:
             r = report.build_system_dossier("X", sections=["identity"], fmt="json")
         self.assertEqual(r["sections"], ["identity"])
-        m_bs.assert_not_called()
+        m_bo.assert_not_called()
         m_ga.assert_not_called()
         m_disk.assert_not_called()
 
@@ -784,6 +793,149 @@ class BuildProjectDossier(unittest.TestCase):
     def test_unknown_project_and_bad_fmt(self):
         self.assertIn("error", report.build_project_dossier("Ghost"))
         self.assertIn("error", report.build_project_dossier("P", fmt="pdf"))
+
+
+class Cr105Part1RegionGuard(unittest.TestCase):
+    """CR-10.5 Part 1 — luminosity-class region guard + graceful-null luminosity_consistency."""
+
+    def _sb(self, sp):
+        sb = _simbad_fixture()
+        sb["sp_type"] = sp
+        return sb
+
+    def test_supergiant_refused_lbol_null(self):     # validation #1 + #4-iii (Polaris/Betelgeuse)
+        with _patched(simbad=self._sb("F8Ib"), gaia_astro={"parameters": None}):
+            r = report.build_system_dossier("Polaris", sections=["regions", "habitable_zone"], fmt="json")
+        reg = r["data"]["regions"]
+        self.assertTrue(reg["evolved_star_flag"])
+        self.assertEqual(reg["luminosity_class"], "Ib")
+        self.assertTrue(reg["ms_inversion_withheld"])
+        self.assertNotIn("stellar", reg)                       # bogus MS numbers withheld
+        self.assertIsNone(reg["luminosity_consistency"]["L_bol"])
+        self.assertIsNone(reg["luminosity_consistency"]["flagged"])
+        self.assertNotIn("habitable_zone", r["sections"])      # HZ withheld → a note, not rendered
+        self.assertTrue(any("habitable_zone" in n for n in r["notes"]))
+
+    def test_pollux_token_boundary_III_not_Ib(self):           # validation #2 (Teff present)
+        with _patched(simbad=self._sb("K0IIIb"), gaia_astro={"parameters": None}):
+            r = report.build_system_dossier("Pollux", sections=["regions"], fmt="json")
+        reg = r["data"]["regions"]
+        self.assertEqual(reg["luminosity_class"], "III")
+        self.assertTrue(reg["evolved_star_flag"])
+
+    def test_evolved_star_self_flags_even_with_null_teff(self):   # validation #2 — the real Pollux (WB MSG 099)
+        # SIMBAD has no Teff for Pollux → compute_star_system_regions_from_simbad errors; the evolved
+        # self-flag must STILL fire structurally (it's a pure sp_type parse). luminosity_consistency null.
+        with _patched(simbad=self._sb("K0IIIb"),
+                      regions_result={"error": "Temperature not available for this star"}):
+            r = report.build_system_dossier("Pollux", sections=["regions", "habitable_zone"], fmt="json")
+        self.assertIn("regions", r["sections"])                # structured, not just a warning string
+        reg = r["data"]["regions"]
+        self.assertEqual(reg["luminosity_class"], "III")
+        self.assertTrue(reg["evolved_star_flag"])
+        self.assertTrue(reg["ms_inversion_withheld"])
+        self.assertIsNone(reg["luminosity_consistency"]["calc_L"])
+        self.assertIsNone(reg["luminosity_consistency"]["flagged"])
+        self.assertNotIn("regions:", " ".join(r["warnings"]))  # no longer a warning
+        self.assertNotIn("habitable_zone", r["sections"])      # HZ withheld → note
+
+    def test_non_evolved_null_teff_still_warns_no_structured_block(self):
+        # A NON-evolved star that errors (e.g. missing Teff on an MS dwarf) keeps the warn path — no
+        # spurious evolved block.
+        with _patched(simbad=self._sb("G6V"),
+                      regions_result={"error": "Temperature not available for this star"}):
+            r = report.build_system_dossier("D", sections=["regions"], fmt="json")
+        self.assertNotIn("regions", r["sections"])
+        self.assertTrue(any("regions:" in w for w in r["warnings"]))
+
+    def test_ms_dwarf_region_values_byte_identical(self):      # validation #3
+        sb = self._sb("G6V")
+        with _patched(simbad=sb, gaia_astro={"parameters": {"lum_flame": None}}):
+            reg = report.build_system_dossier("D", sections=["regions"], fmt="json")["data"]["regions"]
+        self.assertFalse(reg["evolved_star_flag"])
+        self.assertEqual(reg["luminosity_class"], "V")
+        base = report._regions_data(_regions_fixture(sb))
+        self.assertEqual(reg["stellar"], base["stellar"])       # existing values untouched
+        self.assertEqual(reg["system_regions"], base["system_regions"])
+        self.assertEqual(reg["alt_solvent"], base["alt_solvent"])
+
+    def test_consistency_flag_trips_on_flame_covered_mismatch(self):   # validation #4-i (mechanism)
+        with _patched(simbad=self._sb("K0III"), gaia_astro={"parameters": {"lum_flame": 1e6}}):
+            reg = report.build_system_dossier("G", sections=["regions"], fmt="json")["data"]["regions"]
+        lc = reg["luminosity_consistency"]
+        self.assertIsNotNone(lc["L_bol"])
+        self.assertTrue(lc["flagged"])
+
+    def test_clean_ms_flagged_false_with_flame(self):          # validation #4-ii
+        sb = self._sb("G6V")
+        rg = _regions_fixture(sb)
+        calc_l = rg["stellarRadius"] ** 2 * (rg["temp"] / 5772.0) ** 4
+        with _patched(simbad=sb, gaia_astro={"parameters": {"lum_flame": calc_l}}):
+            reg = report.build_system_dossier("D", sections=["regions"], fmt="json")["data"]["regions"]
+        self.assertFalse(reg["luminosity_consistency"]["flagged"])
+
+    def test_force_ms_inversion_overrides(self):
+        with _patched(simbad=self._sb("F8Ib"), gaia_astro={"parameters": None}):
+            reg = report.build_system_dossier("Polaris", sections=["regions"], fmt="json",
+                                              force_ms_inversion=True)["data"]["regions"]
+        self.assertIn("stellar", reg)                          # numbers present (forced)
+        self.assertTrue(reg["evolved_star_flag"])
+        self.assertIsNone(reg.get("ms_inversion_withheld"))
+
+
+class Cr105Part2Multiplicity(unittest.TestCase):
+    """CR-10.5 Part 2 — multiplicity cross-check against binary-orbit catalogs, otype-independent."""
+
+    def _sb(self, otype, mult):
+        sb = _simbad_fixture()
+        sb["otype"] = otype
+        sb["multiplicity"] = mult
+        return sb
+
+    def test_variability_primary_sb_caught(self):              # validation #5 (Spica)
+        sb = self._sb("bC*", {"is_multiple": False, "sb_flag": False, "basis": None, "otype": "bC*"})
+        bo = {"query": "Spica", "identity": {"sp_type": "B1III-IV+B2V"}, "route_tried": ["sb9"],
+              "solutions": [{"source": "sb9", "seq": 766, "period_d": 4.0145, "eccentricity": 0.108,
+                             "grade": 4, "companion": {"method": "SB2", "m1_solar": 11.4,
+                                                       "m2_solar": 7.2, "mass_ratio_q": 0.63}}]}
+        with _patched(simbad=sb, binary_orbit_result=bo):
+            mp = report.build_system_dossier("Spica", sections=["multiplicity"],
+                                             fmt="json")["data"]["multiplicity"]
+        self.assertTrue(mp["is_multiple"] and mp["sb_flag"])
+        self.assertEqual(mp["multiplicity_basis"], "SB9 seq 766 (P=4.01 d, SB2)")
+
+    def test_single_star_no_regression(self):                  # validation #6
+        sb = self._sb("*", {"is_multiple": False, "sb_flag": False, "basis": None, "otype": "*"})
+        with _patched(simbad=sb):                               # default binary_orbit = no solutions
+            mp = report.build_system_dossier("D", sections=["multiplicity"],
+                                             fmt="json")["data"]["multiplicity"]
+        self.assertFalse(mp["is_multiple"])
+        self.assertIsNone(mp["multiplicity_basis"])
+
+    def test_planet_class_solution_not_a_stellar_multiple(self):
+        # /code-review Finding 1: a planet-class NSS/SB1 companion (e.g. GJ 876's 61 d NSS orbit) must
+        # NOT read as a stellar multiple — §3.3 "a raw NSS pull can't ingest planets".
+        sb = self._sb("PM*", {"is_multiple": False, "sb_flag": False, "basis": None, "otype": "PM*"})
+        bo = {"query": "GJ 876", "identity": {}, "route_tried": ["gaia-nss"],
+              "solutions": [{"source": "gaia-nss:two_body_orbit", "solution_type": "Orbital",
+                             "period_d": 61.0, "grade": 5,
+                             "companion": {"method": "astrometric", "class": "planet",
+                                           "m1_solar": 0.37, "m2_solar": 0.0025}}]}
+        with _patched(simbad=sb, binary_orbit_result=bo):
+            mp = report.build_system_dossier("GJ 876", sections=["multiplicity"],
+                                             fmt="json")["data"]["multiplicity"]
+        self.assertFalse(mp["is_multiple"])                    # planet-only host → not a stellar multiple
+        self.assertIsNone(mp["multiplicity_basis"])
+
+    def test_otype_multiple_verdict_unchanged(self):           # validation #7
+        sb = self._sb("**", {"is_multiple": True, "sb_flag": False, "basis": "visual", "otype": "**"})
+        bo = {"query": "X", "identity": {}, "route_tried": ["orb6"],
+              "solutions": [{"source": "orb6", "grade": "1", "period_d": None, "companion": None}]}
+        with _patched(simbad=sb, binary_orbit_result=bo):
+            mp = report.build_system_dossier("X", sections=["multiplicity"],
+                                             fmt="json")["data"]["multiplicity"]
+        self.assertTrue(mp["is_multiple"])                     # verdict unchanged
+        self.assertIsNotNone(mp["multiplicity_basis"])         # basis enriched (benign)
 
 
 if __name__ == "__main__":

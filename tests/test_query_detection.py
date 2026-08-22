@@ -35,6 +35,23 @@ class DetectionCompletenessQueryTest(unittest.TestCase):
         self.assertFalse(t["applicable"])
         self.assertIn("note", t)
 
+    def test_bad_catalog_path_curated_exit1(self):
+        # CR-10.3 Q2: a bad --rv-precision-catalog path is loud (curated error), even without --star,
+        # never a silent fallback to the internal seed. Offline (no --star → no network).
+        rc, d, _ = _run("detection-completeness", "--sp-type", "G2V", "--app-mag", "5",
+                        "--distance-pc", "10", "--rv-precision-catalog", "/nonexistent/xyz.json")
+        self.assertEqual(rc, 1)
+        self.assertIn("error", d)
+
+    def test_bad_catalog_path_loud_even_with_manual_override(self):
+        # Gate-B SHOULD-FIX: a bad --rv-precision-catalog path is validated (loud) even when a manual
+        # --rv-precision-ms would supersede it — never silently ignored (WB MSG 097 Q2).
+        rc, d, _ = _run("detection-completeness", "--sp-type", "G2V", "--app-mag", "5",
+                        "--distance-pc", "10", "--rv-precision-ms", "1.0",
+                        "--rv-precision-catalog", "/nonexistent/xyz.json")
+        self.assertEqual(rc, 1)
+        self.assertIn("error", d)
+
     def test_bad_distance_curated_exit1(self):
         rc, d, _ = _run("detection-completeness", "--app-mag", "5", "--distance-pc", "0", "--sp-type", "G2V")
         self.assertEqual(rc, 1)
@@ -98,6 +115,7 @@ class DetectionCompletenessQueryTest(unittest.TestCase):
 def _args(**kw):
     base = dict(app_mag=None, distance_pc=None, sp_type=None, star=None, star_mass_solar=None,
                 star_radius_solar=None, methods=None, sma_grid=None, albedo=0.3, rv_precision_ms=None,
+                rv_precision_catalog=None,
                 rv_baseline_yr=None, transit_precision_ppm=None, transit_target=False,
                 astrom_precision_uas=None, astrom_baseline_yr=None, activity=None)
     base.update(kw)
@@ -155,6 +173,29 @@ class Cr104WrapperTest(unittest.TestCase):
         self.assertEqual(c["star_mass_solar"], 1.1)
         self.assertEqual(c["star_radius_solar"], 10.0)
         self.assertEqual(c["star_mass_provenance"], "archive")
+
+    # ── CR-10.3 tier-2 catalog lookup (same capture harness) ──
+    def test_catalog_tier_matches_seed_and_sets_provenance(self):
+        c = self._capture(_args(star="HD 69830"),
+                          simbad={"main_id": "HD  69830", "designations": {"HD": "HD 69830"},
+                                  "sp_type": "G8V", "vmag": 6.0, "parsecs": 12.6}, archive=None)
+        self.assertEqual(c["rv_precision_ms"], 0.81)
+        self.assertEqual(c["rv_precision_provenance"], "catalog")
+        self.assertEqual(c["rv_precision_meta"]["id"], "HD 69830")
+
+    def test_manual_rv_supersedes_catalog(self):
+        c = self._capture(_args(star="HD 69830", rv_precision_ms=0.3),
+                          simbad={"main_id": "HD  69830", "designations": {"HD": "HD 69830"},
+                                  "sp_type": "G8V"}, archive=None)
+        self.assertEqual(c["rv_precision_ms"], 0.3)
+        self.assertEqual(c["rv_precision_provenance"], "manual")
+
+    def test_non_catalog_star_no_match(self):
+        c = self._capture(_args(star="Random"),
+                          simbad={"main_id": "Random", "designations": {}, "sp_type": "G2V"},
+                          archive=None)
+        self.assertIsNone(c["rv_precision_ms"])
+        self.assertIsNone(c["rv_precision_provenance"])
 
 
 if __name__ == "__main__":

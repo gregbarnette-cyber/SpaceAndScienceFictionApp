@@ -96,6 +96,53 @@ class CatalogCacheTest(unittest.TestCase):
         removed = catalog_cache.clear_cache()
         self.assertEqual(removed, 3)
 
+    def test_clear_all_wipes_both_layers(self):
+        # Populate the app cache; point the astroquery-dir helper at a throwaway dir so the real
+        # ~/.astropy cache is never touched.
+        for i in range(2):
+            catalog_cache.cache_put(catalog_cache.cache_key("s", {"i": i}), {"rows": [i]})
+        aq = pathlib.Path(self._tmp.name) / "astroquery"
+        (aq / "Vizier").mkdir(parents=True)
+        (aq / "Vizier" / "stale.pickle").write_text("x")
+        orig = catalog_cache._astroquery_cache_dir
+        catalog_cache._astroquery_cache_dir = lambda: aq
+        try:
+            r = catalog_cache.clear_all()
+        finally:
+            catalog_cache._astroquery_cache_dir = orig
+        self.assertEqual(r["app_cache_files_removed"], 2)
+        self.assertTrue(r["astroquery_cache_removed"])
+        self.assertFalse(aq.exists())                       # astroquery cache dir gone
+        self.assertEqual(catalog_cache.clear_cache(), 0)    # app cache empty afterward
+
+    def test_clear_all_graceful_when_no_astroquery_dir(self):
+        catalog_cache._astroquery_cache_dir  # exists
+        orig = catalog_cache._astroquery_cache_dir
+        catalog_cache._astroquery_cache_dir = lambda: None   # unavailable
+        try:
+            r = catalog_cache.clear_all()
+        finally:
+            catalog_cache._astroquery_cache_dir = orig
+        self.assertIsNone(r["astroquery_cache_dir"])
+        self.assertFalse(r["astroquery_cache_removed"])
+
+
+class AstroqueryCacheBypassTest(unittest.TestCase):
+    """catalog.vizier_query must pass cache=False so astroquery's OWN HTTP cache (which caches
+    throttle-induced empties) is bypassed — catalog_cache is the single cache authority."""
+
+    def test_vizier_query_passes_cache_false(self):
+        from unittest import mock
+        import core.catalog as catalog
+        fake_cls = mock.MagicMock()
+        fake_cls.return_value.query_region.return_value = []   # empty → early return, no table parse
+        with mock.patch.dict(os.environ, {"SPACE_APP_CATALOG_CACHE": "0"}), \
+             mock.patch("astroquery.vizier.Vizier", fake_cls):
+            out = catalog.vizier_query(catalog="B/sb9/main", cone="10 20 0.006")
+        self.assertEqual(out["count"], 0)
+        _, kwargs = fake_cls.return_value.query_region.call_args
+        self.assertIs(kwargs.get("cache"), False)              # cache bypassed
+
 
 if __name__ == "__main__":
     unittest.main()

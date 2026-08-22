@@ -32,6 +32,7 @@ import re
 
 import core.calculators as calculators
 import core.detection_tables as dt
+import core.rv_precision_tables as rvt
 import core.shared as shared
 
 _ALL_METHODS = ("rv", "transit", "astrometry", "imaging")
@@ -256,7 +257,8 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
                                    rv_precision_ms=None, rv_baseline_yr=None,
                                    transit_precision_ppm=None, transit_target=False,
                                    astrom_precision_uas=None, astrom_baseline_yr=None,
-                                   star=None, activity=None, star_mass_provenance=None):
+                                   star=None, activity=None, star_mass_provenance=None,
+                                   rv_precision_provenance=None, rv_precision_meta=None):
     """Per-method minimum-detectable-planet vs SMA map. See module docstring.
 
     Returns ``{star, app_mag, distance_pc, sp_type, star_mass_solar, star_radius_solar,
@@ -327,6 +329,7 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
         if non_ms_no_mr:
             out_methods.append({
                 "method": method, "applicable": False, "detectable_vs_sma": [], "floor_source": None,
+                "floor_provenance": None,
                 "value_kind": "min_radius_earth" if method in ("transit", "imaging") else "min_mass_earth",
                 "note": (f"host is {host_class} (non-main-sequence) — not computed: the MS "
                          "mass/radius/jitter defaults do not transfer. Supply --star-mass-solar and "
@@ -338,16 +341,25 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
             base = rv_baseline_yr if rv_baseline_yr is not None else row["baseline_yr"]
             jitter_advisory = False
             if rv_precision_ms is not None:
-                floor, src = rv_precision_ms, "per-star override"
+                # CR-10.3: tier-1 manual (--rv-precision-ms) or tier-2 catalog (query.py resolved a
+                # per-star row and passed provenance="catalog" + the row as rv_precision_meta).
+                floor = rv_precision_ms
+                floor_prov = rv_precision_provenance or "manual"
+                if floor_prov == "catalog" and rv_precision_meta:
+                    src = rvt.catalog_floor_source(rv_precision_meta)
+                else:
+                    src = "per-star override"   # same string as transit/astrometry manual overrides
             else:
                 jitter, jitter_advisory = _rv_jitter_floor(
                     rv_def, row, jitter_sp, host_class=host_class, activity=activity)
                 floor = max(row["precision_m_s"], jitter)
                 src = (f"3a-default RV (mag≤{row['mag_max']}): "
                        f"max(precision {row['precision_m_s']}, jitter {jitter}) = {floor} m/s")
+                floor_prov = "generic-3a"
             rv_entry = {"method": "rv", "applicable": True,
                         "detectable_vs_sma": _rv_curve(m_star, grid, floor, base),
-                        "floor_source": src, "value_kind": "min_mass_earth",
+                        "floor_source": src, "floor_provenance": floor_prov,
+                        "value_kind": "min_mass_earth",
                         "baseline_yr": base}
             if jitter_advisory:
                 # Companion CR #1: an evolved / active-young jitter bump was applied from an ADVISORY
@@ -368,7 +380,8 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
                 floor, src = _transit_floor(defaults["methods"]["transit"], app_mag)
             entry = {"method": "transit", "applicable": applicable,
                      "detectable_vs_sma": _transit_curve(r_star, grid, floor),
-                     "floor_source": src, "value_kind": "min_radius_earth"}
+                     "floor_source": src, "value_kind": "min_radius_earth",
+                     "floor_provenance": "manual" if transit_precision_ppm is not None else "generic-3a"}
             if not applicable:
                 entry["note"] = ("not a known transit target / not covered — depth floor is the "
                                  "physics, but transit detection needs a covering survey "
@@ -384,6 +397,7 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
             out_methods.append({"method": "astrometry", "applicable": True,
                                 "detectable_vs_sma": _astrometry_curve(m_star, distance_pc, grid, floor, base),
                                 "floor_source": src, "value_kind": "min_mass_earth",
+                                "floor_provenance": "manual" if astrom_precision_uas is not None else "generic-3a",
                                 "baseline_yr": base})
         elif method == "imaging":
             im = defaults["methods"]["imaging"]
@@ -393,6 +407,7 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
                                 "floor_source": f"3a-default imaging contrast curve "
                                                 f"({band}-band self-luminous; anchored_to_star_mag="
                                                 f"{im['anchored_to_star_mag']})",
+                                "floor_provenance": "generic-3a",  # imaging has no per-star override arg
                                 "value_kind": "min_radius_earth",
                                 "contrast_band": band,
                                 "mechanism_caveat": im.get("mechanism_caveat")})

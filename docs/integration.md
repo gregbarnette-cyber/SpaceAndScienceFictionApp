@@ -267,7 +267,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `population-capacity` | ≥1 budget of (`--crop-area-m2` \| `--power-w` \| `--water-kg-day` \| `--fixed-nitrogen-kg-yr` \| `--food-dry-kg-day`) [per-person `--per-person-*` overrides] | none (X1/X2 defaults) | `per_resource{…{budget,per_person,source,population}}, sustainable_population, binding_constraint, slack{…}` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
-| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …`] | SIMBAD + NASA + Hypatia (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json) |
+| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis` |
 | `generate-system` | `--seed` [`--anchor-star` `--spectral-class` `--planets` `--require-habitable` `--constraint…` `--companion` `--nbody` `--research-policy`] | none (synthetic) · SIMBAD + NASA + HWC (with `--anchor-star`) | `seed, mode, anchor_star, star, planets[], warnings, notes` — plus `feasible, constraints[]` with `--constraint` |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
@@ -310,6 +310,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `gravity-rpm` | `--accel-ms2 --radius-m` | none | `accel_ms2, radius_m, rpm` |
 | `travel-time-custom-thrust` | `--origin --destination --accel-g --burn-value` [`--burn-unit --v-cap-pct --date`] | **JPL Horizons (live)** | `origin, destination, distance_au, …, travel_time_str, …` |
 | `vizier-query` | `--catalog` [`--columns --filters --cone --row-limit`] | **CDS VizieR (live)**¶ | `service, catalog, count, row_limit, truncated, column_units, rows[]` |
+| `catalog-cache-clear` | (none) | local FS (offline) | `app_cache_files_removed, astroquery_cache_dir, astroquery_cache_removed` — wipes `data/catalog_cache/` + any residual astroquery HTTP cache |
 | `gaia-tap` | (`--adql` \| `--table`) [`--columns --where --cone --row-limit --async`] | **ESA Gaia TAP (live)**¶ | `service, query, count, async, truncated, column_units, rows[]` |
 | `heasarc-query` | (`--catalog --cone` \| `--adql`) [`--radius --row-limit`] | **HEASARC (live)**¶ | `service, catalog, count, column_units, rows[]` |
 | `binary-orbit` | (`--star` \| `--source-id` \| `--ra --dec`) | **CDS + ESA Gaia (live)**¶ | `query, identity, solutions[], route_tried[], units` (`note`/`route_errors` when relevant) |
@@ -326,7 +327,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 
 § A **local read of the fetched dust map cache** (`data/dust/`, populated by CLI **option 59** / the GUI Fetch Dust Map Data panel). Needs the optional `dustmaps` extra (WSL/Linux only) — see the **Dust / ISM** section below. No network for the map query itself.
 
-¶ The **Phase AM catalog-access tier** (`vizier-query`, `gaia-tap`, `heasarc-query`, `binary-orbit`, `close-binary-census`, `gaia-astrophysical`, `besancon-query`) makes live queries to CDS / ESA Gaia / HEASARC / Besançon. Failures return `{"error": …}` (often with `route_tried[]`); an **empty but valid** result is `count: 0` / an empty list, **not** an error. Successful non-empty results are **cached** (`data/catalog_cache/`, gitignored; `SPACE_APP_CATALOG_CACHE=0` disables). `besancon-query` additionally requires a BGM account via `BESANCON_USER`/`BESANCON_PASS`. See the **Catalog-access tier (Phase AM)** section below for the full per-subcommand contract.
+¶ The **Phase AM catalog-access tier** (`vizier-query`, `gaia-tap`, `heasarc-query`, `binary-orbit`, `close-binary-census`, `gaia-astrophysical`, `besancon-query`) makes live queries to CDS / ESA Gaia / HEASARC / Besançon. Failures return `{"error": …}` (often with `route_tried[]`); an **empty but valid** result is `count: 0` / an empty list, **not** an error. Successful non-empty results are **cached** (`data/catalog_cache/`, gitignored; `SPACE_APP_CATALOG_CACHE=0` disables); **errors/empties are never cached**, and **astroquery's own HTTP cache is disabled** (`cache=False` on the Vizier/Heasarc/XMatch calls) so a throttle-induced empty can't be served stale for ~7 days — `catalog_cache` is the single cache authority. **`catalog-cache-clear`** wipes both layers (the app cache + any residual astroquery cache dir). `besancon-query` additionally requires a BGM account via `BESANCON_USER`/`BESANCON_PASS`. See the **Catalog-access tier (Phase AM)** section below for the full per-subcommand contract.
 
 Shared shapes:
 - The `simbad` sub-dict embedded in `star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, and `hwc` has the **same shape as `simbad-lookup`'s output** (top-level keys above).
@@ -2495,7 +2496,8 @@ query.py dossier --star "Tau Ceti" --fmt html --sections identity regions planet
 query.py dossier --star Sol                       # fully offline (Solar System)
 query.py dossier --star Sol --sections planets moons
 ```
-Core function: `report.build_system_dossier(star, sections=None, fmt="markdown")`.
+Core function: `report.build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion=False)`
+(CR-10.5: `--force-ms-inversion` overrides the evolved-star region guard — see the CR-10 second-fire block below).
 
 - **`--fmt`** (default `markdown`): `markdown` / `html` emit a rendered **`document`** string
   (HTML is self-contained — inline `<style>`, no external assets, **text + tables only**: the
@@ -3960,16 +3962,21 @@ CR-4/CR-6 WB-bundles note above).
 ```bash
 query.py detection-completeness --app-mag 4.83 --distance-pc 10 --sp-type G2V   # Earth@1AU below the floor
 query.py detection-completeness --star "Tau Ceti"                               # --star resolves mag/dist/sptype (live)
+query.py detection-completeness --star "HD 69830"                               # CR-10.3: tier-2 RV catalog hit (seed) → floor_provenance="catalog"
+query.py detection-completeness --star "HD 69830" --rv-precision-catalog PATH   # WB-owned catalog file (replaces the internal seed)
 ```
 Core: `detection.compute_detection_completeness(app_mag, distance_pc, sp_type=None, star_mass_solar=None,
 star_radius_solar=None, methods=None, sma_grid=None, albedo=0.3, rv_precision_ms=None, rv_baseline_yr=None,
 transit_precision_ppm=None, transit_target=False, astrom_precision_uas=None, astrom_baseline_yr=None,
-star=None, activity=None)`. Output: `{star, app_mag, distance_pc, sp_type, host_class, star_mass_solar,
+star=None, activity=None, star_mass_provenance=None, rv_precision_provenance=None, rv_precision_meta=None)`.
+Output: `{star, app_mag, distance_pc, sp_type, host_class, star_mass_solar, star_mass_provenance,
 star_radius_solar, methods:[{method, applicable, detectable_vs_sma:[{sma_au, min_mass_earth?|min_radius_earth?,
-…}], floor_source, value_kind, baseline_yr?, contrast_band?, mechanism_caveat?, jitter_advisory?, jitter_note?,
-note?}], assumptions:{reference_version, confidence, out_of_domain, host_class, host_class_note, …}}`. `floor_source` names the basis per method (per-star override /
-binned 3a scalar / analytic noise-model σ at the actual mag). The imaging method dict carries `contrast_band:"H"`
-+ `mechanism_caveat`. **Non-MS host guard (CR-6-AMEND):** when `sp_type` resolves to a **white dwarf / hot
+…}], floor_source, floor_provenance, value_kind, baseline_yr?, contrast_band?, mechanism_caveat?, jitter_advisory?,
+jitter_note?, note?}], assumptions:{reference_version, confidence, out_of_domain, host_class, host_class_note, …}}`.
+`floor_source` names the basis per method (manual `per-star override` / **CR-10.3** per-star catalog string /
+binned 3a scalar / analytic noise-model σ at the actual mag); **`floor_provenance`** (CR-10.3) is the machine-readable
+tier per method (`manual`/`catalog`/`generic-3a`, or `null` on a non-applicable entry; `catalog` only ever on `rv`).
+The imaging method dict carries `contrast_band:"H"` + `mechanism_caveat`. **Non-MS host guard (CR-6-AMEND):** when `sp_type` resolves to a **white dwarf / hot
 subdwarf / giant / subgiant / brown dwarf**, `host_class` is set, `out_of_domain:true`, and the MS mass/radius +
 sp_type→jitter defaults are **not faked** (`DA2` no longer → a 1.6 M☉ A star); it still computes on explicit
 `--star-mass-solar`/`--star-radius-solar` (flagged, flat RV jitter), else the methods are flagged/skipped with a
@@ -3980,6 +3987,12 @@ astrometry/imaging ease, gated at P>baseline / inside the IWA). **Transit is `ap
 **CR-10.4 rider — archive-M★ preference.** On the `--star` path M★ prefers the archive `ps` value batch reports
 (precedence manual > archive > sp_type_estimate); a new `star_mass_provenance` field names the tier. See the CR-10
 block below.
+
+**CR-10.3 rider (second fire) — per-star RV-precision tier-2 catalog.** RV-floor precedence **manual
+`--rv-precision-ms` → per-star catalog → generic 3a**; `--rv-precision-catalog <path>` reads a WB-owned JSON that
+**replaces** the internal HD 69830 seed wholesale (bad path → curated `{"error"}`, loud even with a manual override).
+Per-method `floor_provenance` names the tier. Fires only on the `--star` path (SIMBAD supplies the match key). See
+the CR-10 second-fire block below.
 
 **CR-9 rider — Companion CR#1 (RV jitter bumps, advisory placeholder).** Two symmetric jitter floors beyond
 the MS Kraft-break map: an **evolved-star** bump (subgiant/giant p-mode+granulation — fires for `host_class`
@@ -4008,7 +4021,11 @@ default section set. These three **always render as explicit empties / upper lim
 the six original sections, which drop to a `warnings[]` entry when absent) — a bare single star still shows a
 `disk` upper-limit and an `age_population` "not determined". Sol carries offline reference values (single
 star, ~4.567 Gyr thin-disk, zodiacal + Kuiper dust). `--sections multiplicity age_population disk` selects
-them; the section keys are additive to the envelope.
+them; the section keys are additive to the envelope. **CR-10.5 (second fire) enriches two of these:** the
+`regions` section now self-flags an **evolved** host (luminosity-class guard — refuse the MS mass-inversion,
+`evolved_star_flag`/`luminosity_class`/`luminosity_consistency`, Teff-independent) and the `multiplicity`
+section now **cross-checks `binary-orbit` regardless of otype** (catches a variability-primary SB) with a
+`multiplicity_basis` — see the CR-10 second-fire block below.
 
 ## CR-8 — batch exoplanet-archive pull (`planetary-systems-batch`, LIVE)
 
@@ -4180,6 +4197,54 @@ turn the CR-6-AMEND graceful-skip into an error). Anchor: `detection-completenes
 `star_mass_solar ≈ 0.86`, `star_mass_provenance="archive"`, equal to batch's `mass_solar`. Tests:
 `tests/test_detection.py::Cr104MassProvenanceTest`, `tests/test_query_detection.py::Cr104WrapperTest` (the wrapper
 precedence + non-MS guard, mocked), `tests/test_query_detection_live.py` (live archive anchor).
+
+### CR-10 SECOND FIRE — CR-10.3 + CR-10.5 (additive; no fulfilled behavior moved)
+
+**CR-10.3 — `detection-completeness` per-star RV-precision auto-lookup.** A new **tier-2 catalog** in the RV-floor
+selection: precedence **manual `--rv-precision-ms` → per-star catalog → generic 3a default**. Every method entry now
+carries a **`floor_provenance ∈ {"manual","catalog","generic-3a", null}`** field — the *true tier per method* (`manual`
+when *that method's own* override is supplied; `catalog` only ever on `rv`; else `generic-3a`; `null` on a
+non-applicable entry). The catalog is a WB-owned JSON read via **`--rv-precision-catalog <path>`**, which **replaces**
+the internal seed wholesale (the APP ships a minimal seed = HD 69830 `0.81 m/s` [Lovis 2006] as the flag-less default);
+a bad/unreadable/invalid path → curated `{"error"}` (never a silent seed fallback); a malformed single row is skipped
+best-effort. Match key = the SIMBAD-resolved `main_id` + every `designations` value vs a row's `main_id` + `aliases`
+(whitespace-collapsed, case-insensitive); the catalog tier fires only on the `--star` path (like CR-10.4). `floor_source`
+for a catalog hit reads `"per-star catalog: HD 69830 residual RMS 0.81 m/s [Lovis 2006]"`. RV-only (transit/astrometry/
+imaging floors stay generic-3a; only `rv` can be `catalog`).
+```
+query.py detection-completeness --star "HD 69830"                                  # → rv floor_provenance="catalog", ~0.81 m/s
+query.py detection-completeness --star "HD 69830" --rv-precision-catalog PATH.json  # WB-owned file replaces the seed
+query.py detection-completeness --star "18 Sco"                                     # not in catalog → floor_provenance="generic-3a"
+```
+Tests: `tests/test_rv_precision.py` (loader/matcher/replace/malformed), `tests/test_detection.py::Cr103FloorProvenanceTest`,
+`tests/test_query_detection.py` (catalog wrapper + curated bad-path), `tests/test_query_detection_live.py::Cr103RvCatalogLiveTest`.
+
+**CR-10.5 — `dossier` robustness bundle** (edits the one `dossier` command; `regions.py`/`binary.py` core math unchanged).
+- **Part 1 — luminosity-class region guard.** The `regions` section parses the SIMBAD sp_type **luminosity-class token**
+  (token-boundary-aware: `K0IIIb`→`III`, never `Ib`; compound `M1-M2Ia-Iab`→`Ia-Iab`) and, for a giant/bright-giant/
+  supergiant/subgiant, **refuses the MS mass-inversion** (the bogus MS mass/radius/regions are **withheld**; the
+  `habitable_zone` section becomes a `note`), unless **`--force-ms-inversion`**. New `regions` keys (json):
+  `luminosity_class`, `evolved_star_flag`, `region_basis`, and `luminosity_consistency{calc_L, L_bol, ratio, flagged}`
+  where `L_bol` is Gaia FLAME `lum_flame` — **graceful-null** (`L_bol/ratio/flagged = null`) when FLAME does not cover the
+  star (e.g. saturated supergiants Polaris/Betelgeuse), never a fabricated ratio. `flagged=true` when `calc_L` vs `L_bol`
+  disagree by >2×. A clean MS dwarf keeps **byte-identical region values** plus these additive keys. **The evolved
+  self-flag is Teff-independent:** when SIMBAD has no Teff (so the region computation errors — e.g. Pollux `K0IIIb`), the
+  `regions` section still emits `luminosity_class`/`evolved_star_flag`/`ms_inversion_withheld` structurally (a pure
+  sp_type parse), with `luminosity_consistency` all-null (calc_L needs Teff); a non-evolved star that errors keeps the
+  plain `warnings[]` path.
+- **Part 2 — multiplicity-flag cross-check.** The `multiplicity` section now calls **`binary-orbit` once regardless of
+  otype**, so a spectroscopic binary whose primary otype is a *variability* class (Spica `bC*`) is still flagged.
+  `is_multiple`/`sb_flag` reflect the SB9/WDS-ORB6/Gaia-NSS cross-check; a new **`multiplicity_basis`** names the catalog
+  source, e.g. `"SB9 seq 766 (P=4.01 d, SB2)"`. Stability reuses the same fetched result (one network call, via the new
+  pure `binary.stability_from_solutions`).
+```
+query.py dossier --star Polaris --sections regions --fmt json      # evolved_star_flag=true, luminosity_class="Ib", MS-inversion withheld, L_bol null
+query.py dossier --star Pollux --sections regions --fmt json       # luminosity_class="III" (token boundary), evolved
+query.py dossier --star "HD 116658" --sections multiplicity --fmt json  # Spica: multiple/sb via SB9, multiplicity_basis names the orbit
+query.py dossier --star Polaris --sections regions --force-ms-inversion  # override the guard (values unreliable)
+```
+Tests: `tests/test_shared_luminosity_class.py`, `tests/test_report.py::Cr105Part1RegionGuard`/`Cr105Part2Multiplicity`,
+`tests/test_binary_stability_auto.py` (the refactor is byte-identical), `tests/test_query_dossier_live.py` (live anchors).
 
 ## Implementation notes
 
