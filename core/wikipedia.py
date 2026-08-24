@@ -3,7 +3,7 @@
 Pure resolution logic (offline-testable) plus a thin network layer that reuses the app's
 shared retry / timeout / error helpers. **No Qt** — the GUI ``WikipediaView`` calls this on a
 background thread. There is deliberately no ``query.py`` subcommand (this is presentation, not a
-calculator); the logic lives here only so it can be unit-tested. See WIKIPEDIA_TABS_PLAN.md.
+calculator); the logic lives here only so it can be unit-tested. See completed_plans/WIKIPEDIA_TABS_PLAN.md.
 
 Resolution strategy: build an ordered list of candidate article titles from a star's SIMBAD
 designations (proper name → spelled-out Bayer → Flamsteed → HR → HD → GJ/Gliese → HIP → main id),

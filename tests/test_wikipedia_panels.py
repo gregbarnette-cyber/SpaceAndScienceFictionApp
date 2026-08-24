@@ -1,7 +1,7 @@
 """Headless GUI tests for the Wikipedia tab (WikipediaView + open_or_focus_wiki_tab).
 
 Offline: core.wikipedia.resolve_and_fetch / fetch_thumbnail are monkeypatched. Includes the
-main-thread-delivery guard (WIKIPEDIA_TABS_PLAN.md §10 finding #9) — a real worker thread runs
+main-thread-delivery guard (completed_plans/WIKIPEDIA_TABS_PLAN.md §10 finding #9) — a real worker thread runs
 the fetch, and delivery of the result must land back on the main thread.
 """
 import os

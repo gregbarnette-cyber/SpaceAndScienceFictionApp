@@ -556,7 +556,7 @@ browser via `wslview` → PowerShell `Start-Process` → `cmd start`; Qt's opene
 QtWebEngine, no new dependency.** Core logic is `core/wikipedia.py` (pure + network, no Qt); the GUI
 piece is `gui/panels/wikipedia_tab.py` (`WikipediaView` + `WikipediaButtonMixin` +
 `open_or_focus_wiki_tab`). There is **no `query.py` subcommand** (presentation, not a calculator).
-See `WIKIPEDIA_TABS_PLAN.md` and `docs/gui-architecture.md`.
+See `completed_plans/WIKIPEDIA_TABS_PLAN.md` and `docs/gui-architecture.md`.
 
 - **Surfaces.** SIMBAD Lookup (opt 1), NASA opts 2/3/4/5 + the Planetary Systems Map, HWC (opt 6),
   OEC (opt 7) — the button opens a Wikipedia tab in the panel's existing data-tab strip (like the

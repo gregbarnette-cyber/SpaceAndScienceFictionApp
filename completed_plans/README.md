@@ -24,7 +24,7 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (52 files)
+## Index (56 files)
 
 | File | Title |
 |---|---|
@@ -83,3 +83,4 @@ in here too, with the same history (moved with `git mv`).
 | [STAR_ANALYSIS_CR_PLAN.md](STAR_ANALYSIS_CR_PLAN.md) | Star-Analysis CRs (CR-1…CR-7) — 6 `query.py` subcommands + 3 dossier sections for the WB `star_analysis` skill; incl. the 3c/3a FINAL WB bundles + CR-6-AMEND non-MS host guard |
 | [future_phases_archive.md](future_phases_archive.md) | Archived Phases — Space & Science Fiction App |
 | [hypatia_implementation.md](hypatia_implementation.md) | Hypatia Catalog Integration — Phase 1: Option 8 (Star System Regions Auto) |
+| [WIKIPEDIA_TABS_PLAN.md](WIKIPEDIA_TABS_PLAN.md) | Wikipedia Article Tab — in-app Wikipedia article on 6 star-facing GUI panels (SIMBAD / NASA 2-5+Map / HWC / OEC / Star Systems Search / opts 18-19); full article via MediaWiki `prop=extracts`, WSL-aware links, shared `run_in_thread`/`_BgDeliveryMixin` threading; built + shipped 2026-08-23 (both `/code-review` checkpoints, suite 3095/76) |

@@ -48,7 +48,7 @@ class Worker(QObject):
 # tab's WikipediaView) can reuse the SAME GC-safe, main-thread-delivery mechanism.
 # run_in_background is now a thin wrapper over run_in_thread that keeps the
 # ResultPanel-only behaviour (status bar + run_btn toggling + error/thread-done
-# callbacks). See WIKIPEDIA_TABS_PLAN.md §7.
+# callbacks). See completed_plans/WIKIPEDIA_TABS_PLAN.md §7.
 
 # Module-level registry: keeps (thread, worker) pairs alive until the OS thread has
 # fully exited (500 ms after thread.finished), preventing "QThread destroyed while

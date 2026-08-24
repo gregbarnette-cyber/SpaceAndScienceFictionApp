@@ -3,7 +3,7 @@
 `WikipediaView` is the tab body (a QTextBrowser rendering the article's lead section + thumbnail,
 fetched lazily on a background thread). `WikipediaButtonMixin` gives a panel a "📖 Wikipedia"
 button plus the open/focus logic, and `open_or_focus_wiki_tab` adds/re-focuses the tab in any
-QTabWidget. All six surfaces share this. See WIKIPEDIA_TABS_PLAN.md §6.
+QTabWidget. All six surfaces share this. See completed_plans/WIKIPEDIA_TABS_PLAN.md §6.
 """
 import html
 import os

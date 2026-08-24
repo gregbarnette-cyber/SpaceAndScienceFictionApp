@@ -999,7 +999,7 @@ Clicking any body (planet, origin, or destination) on the canvas calls `_show_bo
 ## Wikipedia Article Tab (star-facing panels)
 
 A `📖 Wikipedia` button that opens the star's Wikipedia article as a lazily-fetched tab (lead
-section + thumbnail + external link, rendered in a `QTextBrowser`). See `WIKIPEDIA_TABS_PLAN.md`
+section + thumbnail + external link, rendered in a `QTextBrowser`). See `completed_plans/WIKIPEDIA_TABS_PLAN.md`
 and the Wikipedia section of `docs/star-databases.md`. Core: `core/wikipedia.py` (pure + network,
 no Qt). GUI: `gui/panels/wikipedia_tab.py`.
 
