@@ -17,6 +17,7 @@ from gui.panels.base import (
     ResultPanel, DiagramToggleMixin, add_designation_names_line, add_gould_line,
 )
 from gui.panels.hypatia_tab import build_hypatia_tab
+from gui.panels.wikipedia_tab import WikipediaButtonMixin
 import core.databases
 import core.viz
 import core.science
@@ -69,7 +70,7 @@ def _add_hz(panel, layout, teff, lum_log=None, rad=None):
 
 # ── Shared base class for single-star-search panels ──────────────────────────
 
-class _StarSearchPanel(ResultPanel):
+class _StarSearchPanel(WikipediaButtonMixin, ResultPanel):
     """Base class for catalog panels that do a SIMBAD lookup then a data query."""
 
     _placeholder = "e.g. Star Name / Designation"
@@ -96,6 +97,11 @@ class _StarSearchPanel(ResultPanel):
         self._layout.addWidget(scroll, 1)
 
     def _clear_results(self):
+        # Disable the wiki button while results are cleared — its target tab widget is about
+        # to be deleted; a successful render re-arms it via _set_wiki_context.
+        btn = getattr(self, "_wiki_btn", None)
+        if btn is not None:
+            btn.setEnabled(False)
         while self._result_area.count():
             item = self._result_area.takeAt(0)
             w = item.widget()
@@ -162,6 +168,7 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         self._show_diagrams_btn.setVisible(False)
         btn_row.addWidget(self.run_btn)
         btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addWidget(self._make_wiki_button())
         btn_row.addStretch()
         form.addRow("", btn_widget)
 
@@ -346,6 +353,8 @@ class HwcPanel(DiagramToggleMixin, _StarSearchPanel):
         if hypatia is not None:
             data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
         self._result_area.addWidget(data_tabs)
+        self._set_wiki_context(data_tabs, designations=simbad.get("designations"),
+                               main_id=simbad.get("main_id"), star_label=simbad.get("main_id"))
 
         if not mpl_available():
             self._finish_render()
@@ -1080,6 +1089,7 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
         self._show_diagrams_btn.setVisible(False)
         btn_row.addWidget(self.run_btn)
         btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addWidget(self._make_wiki_button())
         btn_row.addStretch()
         form.addRow("", btn_widget)
 
@@ -1732,6 +1742,10 @@ class OecPanel(DiagramToggleMixin, _StarSearchPanel):
 
     def _render_host(self, idx):
         host = self._oec_hosts[idx]
+        # OEC carries no SIMBAD dict — resolve the Wikipedia article by the selected host name
+        # (WikipediaView does its own SIMBAD lookup). Follows host switches; a binary-pseudo-host
+        # or unresolvable host degrades to the not-found state.
+        self._set_wiki_context(self._data_tabs, name=host["name"], star_label=host["name"])
         hyp = self._oec_hypatia.get(host["name"])
 
         if hyp is not None:

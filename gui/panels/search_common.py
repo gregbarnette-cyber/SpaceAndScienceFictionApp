@@ -138,17 +138,29 @@ class SearchPanelBase(ResultPanel):
 
         sel_row = QHBoxLayout()
         self._on_open = None
+        self._on_wiki = None
         self._open_btn = QPushButton("Open in new tab →")
         self._open_btn.setVisible(False)
         self._open_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._open_btn.clicked.connect(self._open_clicked)
         sel_row.addWidget(self._open_btn)
+        # Sibling "Wikipedia" button — shown on row selection only when a subclass opts in by
+        # passing on_wiki to _render_table (so G2/G3/L4 stay unaffected until they wire it).
+        self._wiki_btn = QPushButton("📖 Open in Wikipedia →")
+        self._wiki_btn.setVisible(False)
+        self._wiki_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._wiki_btn.clicked.connect(self._wiki_clicked)
+        sel_row.addWidget(self._wiki_btn)
         sel_row.addStretch()
         layout.addLayout(sel_row)
 
     def _open_clicked(self):
         if self._on_open is not None and self._sel_record is not None:
             self._on_open(self._sel_record)
+
+    def _wiki_clicked(self):
+        if self._on_wiki is not None and self._sel_record is not None:
+            self._on_wiki(self._sel_record)
 
     def _clear_table(self):
         while self._table_layout.count():
@@ -157,12 +169,15 @@ class SearchPanelBase(ResultPanel):
             if w:
                 w.deleteLater()
 
-    def _render_table(self, headers, display_rows, records, open_label, on_open, noun):
-        """Populate the results table, wire row selection, and the Open button."""
+    def _render_table(self, headers, display_rows, records, open_label, on_open, noun,
+                      on_wiki=None):
+        """Populate the results table, wire row selection, and the Open button(s)."""
         self._sel_record = None
         self._on_open = on_open
+        self._on_wiki = on_wiki
         self._clear_table()
         self._open_btn.setVisible(False)
+        self._wiki_btn.setVisible(False)
 
         self._count_lbl.setStyleSheet("color: #222; font-weight: 600;")
         self._count_lbl.setText(f"{len(records)} {noun}{'' if len(records) == 1 else 's'} found.")
@@ -183,6 +198,8 @@ class SearchPanelBase(ResultPanel):
             self._sel_record = item.data(Qt.ItemDataRole.UserRole)
             self._open_btn.setText(open_label)
             self._open_btn.setVisible(True)
+            if self._on_wiki is not None:
+                self._wiki_btn.setVisible(True)
 
         view.selectionModel().selectionChanged.connect(_on_sel)
         self._table_layout.addWidget(view)
@@ -198,6 +215,7 @@ class SearchPanelBase(ResultPanel):
         self._sel_record = None
         self._clear_table()
         self._open_btn.setVisible(False)
+        self._wiki_btn.setVisible(False)
         self._footer_lbl.setVisible(False)
         self._count_lbl.setStyleSheet("color: #b03030; font-weight: 600;")
         self._count_lbl.setText(msg)

@@ -174,7 +174,8 @@ class StarSystemsSearchPanel(SearchPanelBase):
             for r in records
         ]
         self._render_table(headers, display_rows, records,
-                           "Open star in new tab →", self._open_star, "star")
+                           "Open star in new tab →", self._open_star, "star",
+                           on_wiki=self._open_wiki_star)
         self._set_footer(result.get("capped"), result.get("cap"))
 
     def _open_star(self, rec: dict):
@@ -184,6 +185,18 @@ class StarSystemsSearchPanel(SearchPanelBase):
         from gui.panels.simbad import SimbadPanel
         self.open_detail_tab(("g1", name), f"★ {name}",
                              lambda: self._make_detail(SimbadPanel, "_name_input", name))
+
+    def _open_wiki_star(self, rec: dict):
+        name = rec.get("star_name") or ""
+        if not name:
+            return
+        from gui.panels.wikipedia_tab import WikipediaView
+
+        def _factory():
+            view = WikipediaView()
+            view.load_for(name=name, star_label=name)
+            return view
+        self.open_detail_tab(("wiki", name), f"📖 {name} — Wikipedia", _factory)
 
 
 # ── G2: HWC Planet Search ────────────────────────────────────────────────────

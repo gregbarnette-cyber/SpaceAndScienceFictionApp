@@ -545,6 +545,40 @@ designation parsing can surface them.
   therefore show **both** "20 Crateris" and "289 G. Hydrae" for the same star. **This is
   correct and must not be "reconciled"** — each designation is right within its own epoch.
 
+## Wikipedia Article Tab (GUI-only)
+
+A **`📖 Wikipedia`** button on the star-facing panels opens the star's Wikipedia article as a tab,
+**fetched lazily on click** (never on every lookup) and rendered as formatted text — the **full
+article** (all sections, via the MediaWiki Action API `prop=extracts`) plus the lead thumbnail and a
+"Read the full article ↗" link — in a `QTextBrowser`, the same widget the Help/Report screens use.
+Links are opened **WSL-aware** (WSL's `xdg-open` has no browser, so clicks route to the Windows
+browser via `wslview` → PowerShell `Start-Process` → `cmd start`; Qt's opener elsewhere). **No
+QtWebEngine, no new dependency.** Core logic is `core/wikipedia.py` (pure + network, no Qt); the GUI
+piece is `gui/panels/wikipedia_tab.py` (`WikipediaView` + `WikipediaButtonMixin` +
+`open_or_focus_wiki_tab`). There is **no `query.py` subcommand** (presentation, not a calculator).
+See `WIKIPEDIA_TABS_PLAN.md` and `docs/gui-architecture.md`.
+
+- **Surfaces.** SIMBAD Lookup (opt 1), NASA opts 2/3/4/5 + the Planetary Systems Map, HWC (opt 6),
+  OEC (opt 7) — the button opens a Wikipedia tab in the panel's existing data-tab strip (like the
+  GCNS/Hypatia tabs; non-closable, replaced on the next search). Star Systems Search (G1) — a sibling
+  **`📖 Open in Wikipedia →`** button beside "Open star in new tab", opening a closable detail tab on
+  the selected row. Opts 18/19 — a row-selection button that opens a closable Wikipedia tab in a new
+  tabbed results area (see `docs/calculators.md`).
+- **Full article body.** After the summary resolves the article (guard + thumbnail + url), the whole
+  article text is fetched via the Action API `prop=extracts` (best-effort — falls back to the summary
+  lead if that call fails), so the tab shows the full article, not just the lead sentence.
+- **Title resolution (`core.wikipedia.resolve_and_fetch`).** Builds ordered candidate titles from the
+  SIMBAD `designations` — proper `NAME` → spelled-out Bayer (`τ Cet → "Tau Ceti"`, numbered
+  `τ¹ → "Tau1 Eridani"`) → Flamsteed → `HR` → `HD` → `GJ`/`Gliese` → `HIP` → `MAIN_ID` — queries the
+  Wikipedia REST summary for each (following redirects, so `HD 10700` resolves to Tau Ceti), and takes
+  the first that passes a **word-boundary star-ness guard** (a star-word in the short Wikidata
+  description accepts; a disqualifier word rejects a constellation/film/company even when its extract
+  says "star"; a generic description falls back to the lead extract). A bad candidate can never
+  surface the wrong page — resolution failure shows a calm **"No Wikipedia article found"** tab.
+  Panels that carry a SIMBAD result (opts 1–6) pass its `designations` directly (no extra lookup);
+  OEC (no SIMBAD dict) and the Search / opts-18/19 row paths resolve by star **name** (the resolver
+  does its own `compute_simbad_lookup`). English Wikipedia only.
+
 ## Phase G — Interactive Search & Filtering
 
 Three filter functions backing the GUI **Search & Filter** nav category. **No CLI

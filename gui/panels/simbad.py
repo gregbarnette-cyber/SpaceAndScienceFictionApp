@@ -1,14 +1,15 @@
 # gui/panels/simbad.py — Option 1: SIMBAD Lookup Query.
 
 from PySide6.QtWidgets import (
-    QFormLayout, QLineEdit, QPushButton, QLabel, QWidget, QVBoxLayout, QTabWidget,
-    QSizePolicy,
+    QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel, QWidget, QVBoxLayout,
+    QTabWidget, QSizePolicy,
 )
 from PySide6.QtCore import Qt
 
 from gui.panels.base import (
     ResultPanel, add_designation_names_line, add_gould_line,
 )
+from gui.panels.wikipedia_tab import WikipediaButtonMixin
 from gui.panels.hypatia_tab import build_hypatia_tab, fit_table_height
 from gui.visualizations.plot_helpers import mpl_available, make_abundance_canvas, log_viz_error, wrap_scrollable, make_kinematics_tab
 import core.databases
@@ -97,7 +98,7 @@ def _build_gcns_tab(gcns: dict, simbad: dict) -> QWidget:
     return w
 
 
-class SimbadPanel(ResultPanel):
+class SimbadPanel(WikipediaButtonMixin, ResultPanel):
     """SIMBAD star lookup panel (option 1).
 
     Input:  Star name / designation text field.
@@ -111,15 +112,27 @@ class SimbadPanel(ResultPanel):
         self._name_input.returnPressed.connect(self._search)
         form.addRow("Star Name / Designation:", self._name_input)
 
+        # All three actions on one row (Search · Wikipedia · Add to project) rather than stacked.
+        btn_widget = QWidget()
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+
         self.run_btn = QPushButton("Search")
         self.run_btn.clicked.connect(self._search)
-        form.addRow("", self.run_btn)
+
+        self._wiki_btn = self._make_wiki_button()
+        self._wiki_btn.setToolTip("Open this star's Wikipedia article in a new tab.")
 
         self._add_proj_btn = QPushButton("Add to project ▾")
         self._add_proj_btn.setEnabled(False)
         self._add_proj_btn.setToolTip("Add this star to a project workspace (Phase S).")
         self._add_proj_btn.clicked.connect(self._add_to_project)
-        form.addRow("", self._add_proj_btn)
+
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(self._wiki_btn)
+        btn_row.addWidget(self._add_proj_btn)
+        btn_row.addStretch()
+        form.addRow("", btn_widget)
 
         self._layout.addLayout(form)
         self._input_count = self._layout.count()
@@ -137,6 +150,10 @@ class SimbadPanel(ResultPanel):
         if not name:
             return
         self.clear_results()
+        # clear_results() deleted the tab widget the wiki button targets; disable it until the
+        # next successful render re-arms it (base clear_results, unlike the catalog panels', has
+        # no wiki-aware disable of its own).
+        self._wiki_btn.setEnabled(False)
         self.run_in_background(_simbad_with_hypatia, name)
 
     def render(self, result: dict):
@@ -144,6 +161,9 @@ class SimbadPanel(ResultPanel):
 
         if "error" in result:
             self._add_proj_btn.setEnabled(False)
+            # clear_results() above deleted the prior tabs; disable the button so a stale
+            # click can't reach a freed tab widget.
+            self._wiki_btn.setEnabled(False)
             self.show_error(result["error"])
             return
 
@@ -231,3 +251,11 @@ class SimbadPanel(ResultPanel):
                     log_viz_error("Kinematics")
 
         self.add_result_widget(tabs)
+
+        # Point the "📖 Wikipedia" button at this star's tab widget (rebuilt each render).
+        self._set_wiki_context(
+            tabs,
+            designations=result.get("designations"),
+            main_id=result.get("main_id"),
+            star_label=result.get("main_id") or self._last_star,
+        )

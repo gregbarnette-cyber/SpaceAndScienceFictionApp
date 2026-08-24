@@ -42,7 +42,88 @@ class Worker(QObject):
         self.finished.emit(result)
 
 
-class ResultPanel(QWidget):
+# ── Shared background-threading plumbing ─────────────────────────────────────
+#
+# Extracted from ResultPanel.run_in_background so a plain QWidget (e.g. the Wikipedia
+# tab's WikipediaView) can reuse the SAME GC-safe, main-thread-delivery mechanism.
+# run_in_background is now a thin wrapper over run_in_thread that keeps the
+# ResultPanel-only behaviour (status bar + run_btn toggling + error/thread-done
+# callbacks). See WIKIPEDIA_TABS_PLAN.md §7.
+
+# Module-level registry: keeps (thread, worker) pairs alive until the OS thread has
+# fully exited (500 ms after thread.finished), preventing "QThread destroyed while
+# running" GC crashes. ResultPanel._live_threads aliases this list for back-compat.
+_LIVE_THREADS: list = []
+
+
+class _BgDeliveryMixin:
+    """Provides `_deliver_bg_result`, a main-thread delivery slot.
+
+    Because it is a BOUND METHOD of a QObject living on the main thread, a queued
+    connection to worker.finished runs the callback on the main thread — the property
+    that lets a worker safely build QWidgets. A context-less free function / lambda has
+    no QObject affinity and Qt would run it on the *worker* thread instead (see the note
+    in run_in_thread). Both ResultPanel and WikipediaView inherit this.
+    """
+
+    def _deliver_bg_result(self, result):
+        worker = self.sender()
+        cb = getattr(worker, "_on_result_cb", None) if worker is not None else None
+        if cb is None:
+            cb = getattr(self, "render", None)   # ResultPanel default; None for a plain view
+        if cb is None:
+            return
+        # The receiver may have been reset()/deleted while the worker ran; delivering to
+        # a deleted Qt object raises RuntimeError — swallow rather than crash.
+        try:
+            cb(result)
+        except RuntimeError:
+            pass
+
+
+def run_in_thread(owner, fn, args=(), kwargs=None, *, on_result=None,
+                  on_progress=None, on_error=None, on_thread_done=None):
+    """Run fn(*args, **kwargs) in a QThread, delivering the result on the main thread.
+
+    `owner` must be a main-thread QObject that inherits `_BgDeliveryMixin` (for the
+    main-thread delivery slot). `on_result` is stashed on the worker and recovered in
+    `_deliver_bg_result` via sender(), so concurrent/chained workers never clobber each
+    other. `on_error` / `on_progress` / `on_thread_done` are wired only when provided —
+    the stock Worker never emits error/progress, so a plain owner passes neither.
+    Returns (thread, worker).
+    """
+    kwargs = kwargs or {}
+    thread = QThread()
+    worker = Worker(fn, *args, **kwargs)
+    worker.moveToThread(thread)
+
+    pair = (thread, worker)
+    _LIVE_THREADS.append(pair)
+    # Per-instance refs for callers that inspect them (belt-and-suspenders GC safety).
+    owner._thread = thread
+    owner._worker = worker
+    worker._on_result_cb = on_result
+
+    thread.started.connect(worker.run)
+    worker.finished.connect(owner._deliver_bg_result, Qt.ConnectionType.QueuedConnection)
+    worker.finished.connect(thread.quit)
+    if on_error is not None:
+        worker.error.connect(on_error, Qt.ConnectionType.QueuedConnection)
+    if on_progress is not None:
+        worker.progress.connect(on_progress, Qt.ConnectionType.QueuedConnection)
+    if on_thread_done is not None:
+        thread.finished.connect(on_thread_done)
+    thread.finished.connect(
+        lambda p=pair: QTimer.singleShot(
+            500,
+            lambda: (_LIVE_THREADS.remove(p) if p in _LIVE_THREADS else None)
+        )
+    )
+    thread.start()
+    return thread, worker
+
+
+class ResultPanel(_BgDeliveryMixin, QWidget):
     """Base class for all feature panels.
 
     Subclasses build their input form in build_inputs() and implement
@@ -60,10 +141,9 @@ class ResultPanel(QWidget):
           (panels that prefer QTableView override or supplement this)
     """
 
-    # Class-level registry: keeps thread wrappers alive across all instances.
-    # Entries are removed 500 ms after thread.finished, giving the OS thread
-    # time to fully exit before Python GC can call QThread::~QThread().
-    _live_threads: list = []
+    # Back-compat alias to the module-level registry (see run_in_thread). The list is
+    # shared, so any external reader of ResultPanel._live_threads sees live entries.
+    _live_threads = _LIVE_THREADS
 
     def __init__(self, window):
         super().__init__()
@@ -179,80 +259,19 @@ class ResultPanel(QWidget):
         if hasattr(self, "run_btn"):
             self.run_btn.setEnabled(False)
 
-        thread = QThread()
-        worker = Worker(fn, *args, **kwargs)
-        worker.moveToThread(thread)
-
-        # Class-level registry keeps BOTH thread and worker alive until the OS
-        # thread has fully exited.  Storing only thread is insufficient: if
-        # self._worker is overwritten before the thread finishes (e.g. chained
-        # SIMBAD → catalog calls), the worker's Python ref-count drops to zero
-        # and CPython destroys it.  Destroying the worker disconnects its
-        # finished signal, so thread.quit() is never called and the callback
-        # is never delivered — the thread idles forever and prints
-        # "QThread: Destroyed while thread is still running" on app exit.
-        pair = (thread, worker)
-        ResultPanel._live_threads.append(pair)
-
-        # Keep per-instance references for callers that inspect them.
-        self._thread = thread
-        self._worker = worker
-
         callback    = on_result   if on_result   is not None else self.render
         progress_cb = on_progress if on_progress is not None else self.set_status
 
-        # Stash the per-call callback on the worker so the delivery slot can
-        # recover it via self.sender() — this keeps chained/concurrent workers
-        # (e.g. SIMBAD → catalog) from clobbering one another.
-        worker._on_result_cb = callback
-
-        thread.started.connect(worker.run)
-        # Deliver the result through a BOUND METHOD of `self` (a QObject that
-        # lives on the main thread). A queued connection runs its slot in the
-        # receiver object's thread; a context-less free function has no QObject
-        # affinity and Qt would instead run it on the *worker* thread — building
-        # QWidgets / matplotlib canvases off the main thread, which triggers
-        # "QObject::setParent: ... different thread" warnings and can freeze the
-        # UI. Routing through self._deliver_bg_result guarantees main-thread
-        # delivery.
-        worker.finished.connect(self._deliver_bg_result, Qt.ConnectionType.QueuedConnection)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(self._on_error,    Qt.ConnectionType.QueuedConnection)
-        worker.progress.connect(progress_cb,    Qt.ConnectionType.QueuedConnection)
-        thread.finished.connect(self._on_thread_done)
-        # Remove pair from registry after a 500 ms grace period; by then the
-        # OS thread is guaranteed to have fully exited on all platforms.
-        thread.finished.connect(
-            lambda p=pair: QTimer.singleShot(
-                500,
-                lambda: (ResultPanel._live_threads.remove(p)
-                         if p in ResultPanel._live_threads else None)
-            )
+        # Delegate to the shared plumbing. Delivery is routed through
+        # self._deliver_bg_result (from _BgDeliveryMixin) so it lands on the main
+        # thread; the ResultPanel-only error/thread-done callbacks are passed through.
+        run_in_thread(
+            self, fn, args, kwargs,
+            on_result=callback,
+            on_progress=progress_cb,
+            on_error=self._on_error,
+            on_thread_done=self._on_thread_done,
         )
-
-        thread.start()
-
-    def _deliver_bg_result(self, result):
-        """Main-thread slot that runs the per-call callback for a finished worker.
-
-        Connected to worker.finished as a bound method of this panel so the queued
-        connection delivers here on the main thread (see run_in_background). The
-        callback is recovered from the emitting worker via sender(), so concurrent
-        workers don't clobber each other.
-        """
-        worker = self.sender()
-        cb = getattr(worker, "_on_result_cb", None) if worker is not None else None
-        if cb is None:
-            cb = getattr(self, "render", None)
-        if cb is None:
-            return
-        # The receiving panel (or an embedded detail panel) may have been
-        # reset()/deleted while the worker was still running; delivering to a
-        # deleted Qt object raises RuntimeError — swallow it rather than crash.
-        try:
-            cb(result)
-        except RuntimeError:
-            pass
 
     def _on_error(self, msg: str):
         self.set_status(f"Error: {msg}")

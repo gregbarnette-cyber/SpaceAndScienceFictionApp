@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt, QDate, QTimer
 from gui.panels.base import (
     ResultPanel, DiagramToggleMixin, add_designation_names_line, add_gould_line,
 )
+from gui.panels.wikipedia_tab import WikipediaButtonMixin
 from gui.panels.hypatia_tab import build_hypatia_tab
 import core.databases
 import core.viz
@@ -276,7 +277,7 @@ def _add_exocat_tables(panel, layout, row):
 
 # ── Shared base for single-star search panels ─────────────────────────────────
 
-class _StarSearchPanel(ResultPanel):
+class _StarSearchPanel(WikipediaButtonMixin, ResultPanel):
     """Base class for options 2–8: search form + scrollable results area."""
 
     _placeholder = "e.g. Star Name / Designation"
@@ -291,6 +292,7 @@ class _StarSearchPanel(ResultPanel):
         self.run_btn = QPushButton("Search")
         self.run_btn.clicked.connect(self._search)
         form.addRow("", self.run_btn)
+        form.addRow("", self._make_wiki_button())   # opt 2 (base build_inputs)
         self._layout.addLayout(form)
         self._input_count = self._layout.count()
 
@@ -304,6 +306,11 @@ class _StarSearchPanel(ResultPanel):
         self._layout.addWidget(scroll, 1)
 
     def _clear_results(self):
+        # A cleared result area deletes the tab widget the wiki button points at, so disable it
+        # until the next successful render re-arms it via _set_wiki_context.
+        btn = getattr(self, "_wiki_btn", None)
+        if btn is not None:
+            btn.setEnabled(False)
         while self._result_area.count():
             item = self._result_area.takeAt(0)
             w = item.widget()
@@ -400,6 +407,8 @@ class NasaAllTablesPanel(_StarSearchPanel):
         tabs.addTab(exo_w, "Mission Exocat")
 
         self._result_area.addWidget(tabs)
+        self._set_wiki_context(tabs, designations=simbad.get("designations"),
+                               main_id=simbad.get("main_id"), star_label=simbad.get("main_id"))
 
 
 # ── Option 3: Planetary Systems Composite ────────────────────────────────────
@@ -463,6 +472,7 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
         self._show_diagrams_btn.setVisible(False)
         btn_row.addWidget(self.run_btn)
         btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addWidget(self._make_wiki_button())
         btn_row.addStretch()
         form.addRow("", btn_widget)
 
@@ -569,6 +579,8 @@ class NasaPlanetarySystemsPanel(_StarSearchPanel):
             data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
 
         self._result_area.addWidget(data_tabs)
+        self._set_wiki_context(data_tabs, designations=simbad.get("designations"),
+                               main_id=simbad.get("main_id"), star_label=simbad.get("main_id"))
 
         # Viz tabs (shown only via Show Diagrams button)
         star_name = str(planets[0].get("hostname") or "") if planets else ""
@@ -639,6 +651,7 @@ class NasaHwoExepPanel(DiagramToggleMixin, _StarSearchPanel):
         self._show_diagrams_btn.setVisible(False)
         btn_row.addWidget(self.run_btn)
         btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addWidget(self._make_wiki_button())
         btn_row.addStretch()
         form.addRow("", btn_widget)
 
@@ -692,6 +705,8 @@ class NasaHwoExepPanel(DiagramToggleMixin, _StarSearchPanel):
             data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
 
         self._result_area.addWidget(data_tabs)
+        self._set_wiki_context(data_tabs, designations=simbad.get("designations"),
+                               main_id=simbad.get("main_id"), star_label=simbad.get("main_id"))
 
         hz_w = _make_hz_tab(self, hwo)
         if hz_w:
@@ -745,6 +760,7 @@ class NasaMissionExocatPanel(DiagramToggleMixin, _StarSearchPanel):
         self._show_diagrams_btn.setVisible(False)
         btn_row.addWidget(self.run_btn)
         btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addWidget(self._make_wiki_button())
         btn_row.addStretch()
         form.addRow("", btn_widget)
 
@@ -796,6 +812,8 @@ class NasaMissionExocatPanel(DiagramToggleMixin, _StarSearchPanel):
             data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
 
         self._result_area.addWidget(data_tabs)
+        self._set_wiki_context(data_tabs, designations=simbad.get("designations"),
+                               main_id=simbad.get("main_id"), star_label=simbad.get("main_id"))
 
         hz_w = _make_hz_tab_exocat(self, exocat)
         if hz_w:
@@ -1082,6 +1100,7 @@ class NasaPlanetarySystemsMapPanel(_StarSearchPanel):
         self._show_diagrams_btn.setVisible(False)
         btn_row.addWidget(self.run_btn)
         btn_row.addWidget(self._show_diagrams_btn)
+        btn_row.addWidget(self._make_wiki_button())
         btn_row.addStretch()
         form.addRow("", btn_widget)
 
@@ -1186,6 +1205,8 @@ class NasaPlanetarySystemsMapPanel(_StarSearchPanel):
             data_tabs.addTab(build_hypatia_tab(hypatia), "Hypatia")
 
         self._result_area.addWidget(data_tabs)
+        self._set_wiki_context(data_tabs, designations=simbad.get("designations"),
+                               main_id=simbad.get("main_id"), star_label=simbad.get("main_id"))
 
         star_name = str(planets[0].get("hostname") or "") if planets else ""
 

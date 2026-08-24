@@ -220,6 +220,8 @@ ResultPanel (QWidget)
 
 Phase C adds `Worker(QObject)` and `run_in_background()` to support network calls without freezing the UI. The pattern established in Phase C is reused by all subsequent network-bound panels (Phase D).
 
+**Shared threading extraction (2026-08-23).** The QThread / `Worker` / `_live_threads` plumbing inside `run_in_background` was factored into a module-level **`run_in_thread(owner, fn, args, kwargs, on_result=…, on_progress=…, on_error=…, on_thread_done=…)`** plus a small **`_BgDeliveryMixin`** that supplies the main-thread `_deliver_bg_result` slot (delivery is a queued connection to a bound method of a main-thread QObject — the property that guarantees the worker's result, and any QWidget it builds, lands on the main thread). `run_in_background` is now a thin wrapper that keeps the ResultPanel-only behaviour (status bar, `run_btn` toggle, `_on_error` / `_on_thread_done`). This lets a plain `QWidget` — the Wikipedia tab's `WikipediaView` — reuse the exact same GC-safe, main-thread delivery. See **Wikipedia Article Tab** below.
+
 **Reset safety**: `_on_error` and `_on_thread_done` wrap `run_btn.setEnabled()` in `try/except RuntimeError` because a background thread can complete after a `reset()` has deleted the old button widget.
 
 **`make_table` sort-indicator fix**: `QTableView::setSortingEnabled(True)` triggers an immediate sort using the header's default sort indicator (column 0, descending), which scrambles insertion order. `make_table` calls `horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)` first to reset the indicator to "no column", making `setSortingEnabled(True)` a no-op for the initial display. Rows are shown in the order passed in; users can still click any column header to interactively sort.
@@ -993,6 +995,57 @@ Clicking any body (planet, origin, or destination) on the canvas calls `_show_bo
 **`_fit_table_height(view)`**: Module-level helper in `system_travel.py` that sets a `QTableView` to a fixed height equal to its header plus all row heights. Fires once immediately and once via `QTimer.singleShot(0, …)` so the horizontal scrollbar's visibility is included in the final measurement. The shared twin is **`gui.panels.hypatia_tab.fit_table_height(view)`** (same idea, plus a `resizeRowsToContents` and a 50 ms re-apply).
 
 **Stacking several tables in one panel (`HonorverseSpeedPanel`, opt 16 — fixed 2026-07-27).** Two or more `QTableView`s added straight to a panel's `QVBoxLayout` **share the vertical space between them**, which is almost never what a stacked-tables panel wants: a short table gets padded with dead space while a long one is squeezed into its own scrollbar (opt 16 showed a 9-row table with a blank half and a 24-row table scrolling inside it). The pattern is: call `fit_table_height` on each view and put the whole stack inside one `QScrollArea` (`setWidgetResizable(True)`, `NoFrame`), with a trailing `addStretch()` so short content sits at the top — the panel then scrolls as a whole and each table shows all of its rows. Pinned by `tests/test_honorverse_speed_panel.py`.
+
+## Wikipedia Article Tab (star-facing panels)
+
+A `📖 Wikipedia` button that opens the star's Wikipedia article as a lazily-fetched tab (lead
+section + thumbnail + external link, rendered in a `QTextBrowser`). See `WIKIPEDIA_TABS_PLAN.md`
+and the Wikipedia section of `docs/star-databases.md`. Core: `core/wikipedia.py` (pure + network,
+no Qt). GUI: `gui/panels/wikipedia_tab.py`.
+
+**Shared threading (`gui/panels/base.py`).** `ResultPanel.run_in_background`'s QThread/`Worker`/
+`_live_threads` plumbing was extracted into a module-level **`run_in_thread(owner, fn, …)`**;
+`run_in_background` is now a thin wrapper that keeps the ResultPanel-only bits (status bar +
+`run_btn` toggle + the error/thread-done callbacks). The extraction lets a plain `QWidget`
+(`WikipediaView`) share the **exact same GC-safe, main-thread delivery**: delivery is routed
+through `_deliver_bg_result`, moved to a small **`_BgDeliveryMixin`** that both `ResultPanel` and
+`WikipediaView` inherit — a queued connection to a bound method of a main-thread QObject, which is
+what guarantees the worker's result (and any QWidget it builds) lands on the main thread. Pinned by
+`test_wikipedia_panels.py`'s main-thread-affinity test.
+
+**`WikipediaView`** (`_BgDeliveryMixin, QWidget`) holds a `QTextBrowser`, runs
+`core.wikipedia.resolve_and_fetch` via `run_in_thread` (which resolves the article via the REST
+summary and then fetches the **full body** via the Action API `prop=extracts`), renders
+found/loading/not-found/error, then best-effort fetches the thumbnail (`fetch_thumbnail`) and inserts
+it via `document().addResource(...)`. Links are handled manually (`setOpenLinks(False)` +
+`anchorClicked` → `_on_link` → module-level `_open_url_external`, which is **WSL-aware**: on WSL it
+shells to `wslview` / PowerShell `Start-Process` / `cmd start` because `xdg-open` finds no browser,
+and uses `QDesktopServices.openUrl` elsewhere; relative `/wiki/` links resolve against
+en.wikipedia.org, in-page `#` fragments are ignored). **`WikipediaButtonMixin`** gives a panel `_make_wiki_button()` /
+`_set_wiki_context(tabs, …)` / `_open_wikipedia()`; **`open_or_focus_wiki_tab(tabs, star_label, …)`**
+adds-or-focuses the `📖 {star} — Wikipedia` tab in a host QTabWidget (closability is the host's
+choice — see below).
+
+**Per-panel wiring.**
+- **SimbadPanel** (opt 1) mixes in `WikipediaButtonMixin`; the button sits in the form and
+  `render()` calls `_set_wiki_context(tabs, …)`; `_search` and the error path disable it (it uses
+  base `clear_results`, which is not wiki-aware).
+- **NASA opts 2/3/4/5 + Map** and **HWC/OEC** reach the mixin through their shared `_StarSearchPanel`
+  base (one in `nasa_exoplanet.py`, one in `catalogs.py`); the button joins the search/action row,
+  the base `_clear_results` disables it, and each `_render` calls `_set_wiki_context(data_tabs, …)`.
+  These data-tab strips are **not** `setTabsClosable`, so the article tab sits alongside Data/Hypatia
+  (non-closable) and is replaced on the next search. **OEC** carries no SIMBAD dict, so its context is
+  set by the selected **host name** in `_render_host` (the resolver does its own SIMBAD lookup).
+- **Star Systems Search (G1)** — `SearchPanelBase` gained a sibling `📖 Open in Wikipedia →` button
+  beside "Open in new tab", shown on row selection **only when a subclass passes `on_wiki`** (so
+  G2/G3/L4 are unaffected); G1's `_open_wiki_star` opens a closable `("wiki", name)` detail tab via
+  the existing `open_detail_tab`.
+- **Opts 18/19** — `_build_results_area_distance` now wraps the count+table in a `QTabWidget`
+  (permanent "Results" tab at index 0 with its close button stripped; `_tables_layout` kept as that
+  tab's inner layout so every existing `addWidget` still works) plus closable Wikipedia tabs; a
+  row-selection button opens them. `_clear_tables_layout` was made wiki-aware (closes wiki tabs +
+  disables the button) **only when `_results_tabs` exists**, so opt 17 (which has no `_results_tabs`)
+  is untouched. Show Diagrams / charts / the Find box / O15 row↔map linking are unchanged.
 
 ## Phase Completion Status
 

@@ -3,7 +3,7 @@
 
 from PySide6.QtWidgets import (
     QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel,
-    QSizePolicy, QWidget, QVBoxLayout,
+    QSizePolicy, QWidget, QVBoxLayout, QTabWidget, QTabBar,
 )
 from PySide6.QtCore import Qt
 
@@ -25,6 +25,7 @@ from gui.panels.diagram_tabs import (
     _norm_find, _find_on_map, _clear_find,   # noqa: F401  (re-export)
 )
 from gui.panels.route_planning import add_two_star_chart_tabs
+from gui.panels.wikipedia_tab import open_or_focus_wiki_tab
 
 
 # ── Option 17: Distance Between 2 Stars ──────────────────────────────────────
@@ -126,22 +127,106 @@ class DistanceBetweenStarsPanel(DiagramToggleMixin, ResultPanel):
 # ── Shared build helper for opts 18, 19 ──────────────────────────────────────
 
 def _build_results_area_distance(panel):
-    """Create _tables_widget + diagram view for distance-star panels."""
+    """Create the tabbed results area + diagram view for opts 18/19.
+
+    The results area is a QTabWidget: a permanent "Results" tab (index 0, no close button) whose
+    inner layout is kept as ``panel._tables_layout`` — so every existing
+    ``self._tables_layout.addWidget(...)`` in the two _render methods still works unchanged — plus
+    closable "📖 … — Wikipedia" tabs opened from the row-selection button below. Opt 17 does NOT
+    call this (it builds a flat ``_tables_layout``), so ``_clear_tables_layout`` stays valid there.
+    """
     panel._tables_widget = QWidget()
-    panel._tables_layout = QVBoxLayout(panel._tables_widget)
+    outer = QVBoxLayout(panel._tables_widget)
+    outer.setContentsMargins(0, 0, 0, 0)
+
+    panel._results_tabs = QTabWidget()
+    panel._results_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    panel._results_tabs.setTabsClosable(True)
+    panel._results_tabs.tabCloseRequested.connect(lambda i, p=panel: _close_results_tab(p, i))
+    outer.addWidget(panel._results_tabs, 1)
+
+    results_page = QWidget()
+    panel._tables_layout = QVBoxLayout(results_page)
     panel._tables_layout.setContentsMargins(0, 0, 0, 0)
+    panel._results_tabs.addTab(results_page, "Results")
+    # Strip the close button from the permanent Results tab (both sides — placement is
+    # platform-dependent), so only the Wikipedia detail tabs are closable.
+    bar = panel._results_tabs.tabBar()
+    bar.setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
+    bar.setTabButton(0, QTabBar.ButtonPosition.LeftSide, None)
+
+    # Row-selection "Open in Wikipedia" button (mirrors Star Systems Search's "Open in new tab").
+    wiki_row = QHBoxLayout()
+    panel._wiki_btn = QPushButton("📖 Open in Wikipedia →")
+    panel._wiki_btn.setEnabled(False)
+    panel._wiki_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+    panel._wiki_btn.clicked.connect(lambda _=False, p=panel: _open_results_wiki(p))
+    wiki_row.addWidget(panel._wiki_btn)
+    wiki_row.addStretch()
+    outer.addLayout(wiki_row)
+
     panel._layout.addWidget(panel._tables_widget, 1)
     panel._setup_diagram_view()
     panel._input_count = panel._layout.count()
 
 
 def _clear_tables_layout(panel):
+    # Opts 18/19 have a tabbed results area: also close any open Wikipedia tabs (keep Results at
+    # index 0) and disable the selection button. Opt 17 has no _results_tabs → a plain layout clear.
+    tabs = getattr(panel, "_results_tabs", None)
+    if tabs is not None:
+        while tabs.count() > 1:
+            w = tabs.widget(1)
+            tabs.removeTab(1)
+            if w:
+                w.deleteLater()
+        tabs.setCurrentIndex(0)
+        panel._results_table = None
+        if getattr(panel, "_wiki_btn", None) is not None:
+            panel._wiki_btn.setEnabled(False)
     lay = panel._tables_layout
     while lay.count():
         item = lay.takeAt(0)
         w = item.widget()
         if w:
             w.deleteLater()
+
+
+def _close_results_tab(panel, index):
+    """Close a Wikipedia detail tab; never the permanent Results tab at index 0."""
+    if index <= 0:
+        return
+    w = panel._results_tabs.widget(index)
+    panel._results_tabs.removeTab(index)
+    if w:
+        w.deleteLater()
+
+
+def _wire_results_wiki_selection(panel, view):
+    """Enable the '📖 Open in Wikipedia →' button whenever a results row is selected."""
+    panel._results_table = view
+
+    def _on_sel(*_):
+        panel._wiki_btn.setEnabled(bool(view.selectionModel().selectedRows()))
+
+    view.selectionModel().selectionChanged.connect(_on_sel)
+
+
+def _open_results_wiki(panel):
+    """Open (or focus) a Wikipedia tab for the selected results row's star."""
+    view = getattr(panel, "_results_table", None)
+    if view is None:
+        return
+    idxs = view.selectionModel().selectedRows()
+    if not idxs:
+        return
+    item = view.model().itemFromIndex(idxs[0].siblingAtColumn(0))
+    if item is None:
+        return
+    name = item.text()
+    if not name or name == "N/A":
+        return
+    open_or_focus_wiki_tab(panel._results_tabs, name, name=name)
 
 
 # ── O18 — Find-Star-on-Map box ───────────────────────────────────────────────
@@ -388,6 +473,7 @@ class StarsWithinDistanceSolPanel(DiagramToggleMixin, ResultPanel):
         view = self.make_table(headers, rows)
         view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._tables_layout.addWidget(view, 1)
+        _wire_results_wiki_selection(self, view)
 
         if mpl_available():
             map_data = core.viz.prepare_star_map_from_result(result)
@@ -492,6 +578,7 @@ class StarsWithinDistanceStarPanel(DiagramToggleMixin, ResultPanel):
         view = self.make_table(headers, rows)
         view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._tables_layout.addWidget(view, 1)
+        _wire_results_wiki_selection(self, view)
 
         if mpl_available():
             map_data = core.viz.prepare_star_map_from_result(result)
