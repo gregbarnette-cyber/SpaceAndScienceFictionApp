@@ -2,7 +2,7 @@
 # Each option has its own standalone panel.
 
 from PySide6.QtWidgets import (
-    QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel,
+    QAbstractItemView, QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel,
     QSizePolicy, QWidget, QVBoxLayout, QTabWidget, QTabBar,
 )
 from PySide6.QtCore import Qt
@@ -205,6 +205,10 @@ def _close_results_tab(panel, index):
 def _wire_results_wiki_selection(panel, view):
     """Enable the '📖 Open in Wikipedia →' button whenever a results row is selected."""
     panel._results_table = view
+    # base.make_table leaves the default SelectItems behaviour, under which selectedRows() is empty
+    # unless the *entire* row is selected — so a normal single-cell click would never enable the
+    # button (nor let _open_results_wiki find the row). Select whole rows so a cell click qualifies.
+    view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
     def _on_sel(*_):
         panel._wiki_btn.setEnabled(bool(view.selectionModel().selectedRows()))

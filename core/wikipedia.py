@@ -61,6 +61,12 @@ def _word_re(words):
 
 _STAR_RE = _word_re(_STAR_WORDS)
 _NON_STAR_RE = _word_re(_NON_STAR_DESC)
+# Disqualifiers safe to also apply to the LEAD EXTRACT (not just the short description): the ones
+# that essentially never appear in a real star's lead. "constellation" is deliberately excluded — a
+# star's extract routinely reads "a star in the constellation …", so matching it there would wrongly
+# reject real stars. This tightens the generic-description fallback against name collisions (a film /
+# company / genus page whose Wikidata description is generic but whose extract happens to say "star").
+_NON_STAR_EXTRACT_RE = _word_re(_NON_STAR_DESC - {"constellation"})
 
 # Greek abbreviation → English word. Wikipedia spells the Greek letter out in article titles
 # ("Tau Ceti", "Alpha Centauri"), whereas core.shared._GREEK_ABBREVIATIONS maps the same keys to
@@ -282,7 +288,13 @@ def _is_star_article(summary):
         if _NON_STAR_RE.search(desc):
             return False
         # generic description (no star word, no disqualifier) → consult the lead extract
-    return bool(_STAR_RE.search(summary.get("extract") or ""))
+    extract = summary.get("extract") or ""
+    # A hard non-astronomy disqualifier in the extract (film / genus / company / …) rejects a name
+    # collision even when the extract also contains a star word; "constellation" is not a hard
+    # disqualifier here (real stars mention it) — see _NON_STAR_EXTRACT_RE.
+    if _NON_STAR_EXTRACT_RE.search(extract):
+        return False
+    return bool(_STAR_RE.search(extract))
 
 
 def _found(summary, query, matched_on):
@@ -335,6 +347,7 @@ def resolve_and_fetch(designations=None, main_id=None, name=None):
     candidates = build_candidates(designations, main_id, name)
     tried = []
     last_error = None
+    reached_ok = False   # did at least one candidate reach Wikipedia and get a definitive answer?
     for query, matched_on in candidates:
         tried.append(query)
         try:
@@ -352,6 +365,7 @@ def resolve_and_fetch(designations=None, main_id=None, name=None):
                 pass
             last_error = _network_error_msg(e, "Wikipedia")
             continue
+        reached_ok = True   # a clean response (a 404 miss or a non-star page) — Wikipedia is up
         if summary is None or not _is_star_article(summary):
             continue
         result = _found(summary, query, matched_on)
@@ -361,7 +375,10 @@ def resolve_and_fetch(designations=None, main_id=None, name=None):
             result["extract_html"] = full
         return result
 
-    if last_error is not None:
+    # Surface the transient error only if we NEVER got a clean answer from Wikipedia. If some
+    # candidates cleanly 404'd (Wikipedia was reachable and said "no such article"), a transient
+    # error on one other candidate should not turn a genuine "no article" into a scary error.
+    if last_error is not None and not reached_ok:
         return {"error": last_error}
     return {"found": False, "tried": tried}
 

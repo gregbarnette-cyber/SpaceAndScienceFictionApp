@@ -115,7 +115,13 @@ class WikipediaView(_BgDeliveryMixin, QWidget):
         self._browser.document().addResource(
             QTextDocument.ResourceType.ImageResource, QUrl(_THUMB_RESOURCE), image
         )
+        # The thumbnail arrives on its own (later-completing) fetch, so the reader may already have
+        # scrolled into the (full) article. setHtml re-lays-out the whole document and would snap the
+        # view back to the top — so capture the scroll position and restore it after re-rendering.
+        sb = self._browser.verticalScrollBar()
+        pos = sb.value()
         self._browser.setHtml(self._html_found(self._article, with_image=True))
+        sb.setValue(min(pos, sb.maximum()))
 
     def _on_link(self, qurl):
         """Open a clicked link in the real browser (WSL-aware). Relative /wiki/ links from the

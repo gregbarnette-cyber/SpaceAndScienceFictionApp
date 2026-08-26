@@ -143,6 +143,25 @@ class IsStarArticleTest(unittest.TestCase):
             {"type": "standard", "description": "constellation in the northern sky",
              "extract": "Its brightest star is Deneb."}))
 
+    def test_generic_desc_hard_disqualifier_in_extract_rejected(self):
+        # Review-fix #4: a GENERIC/absent description that would fall through to the extract, whose
+        # extract carries a *non-astronomy* hard disqualifier (film/company/genus/…) AND a star word,
+        # is rejected — a name collision (e.g. a film "that stars an actor") no longer surfaces.
+        self.assertFalse(wiki._is_star_article(
+            {"type": "standard", "description": "",
+             "extract": "a 2019 film that stars an actor; a rising star of cinema"}))
+        self.assertFalse(wiki._is_star_article(
+            {"type": "standard", "description": "",
+             "extract": "a genus of moths; the type species; a star-shaped marking"}))
+
+    def test_generic_desc_star_with_constellation_still_accepted(self):
+        # But "constellation" is NOT a hard extract disqualifier (real stars mention it), so a star
+        # whose only description is generic and whose extract says "star in the constellation …"
+        # is still accepted — the fix must not over-reject real stars.
+        self.assertTrue(wiki._is_star_article(
+            {"type": "standard", "description": "",
+             "extract": "an orange dwarf star in the constellation Eridanus"}))
+
     def test_word_boundary_not_substring(self):
         # "star" inside "restart" / "stellar" inside "interstellar" must NOT match.
         self.assertFalse(wiki._is_star_article(
@@ -266,6 +285,22 @@ class ResolveAndFetchTest(unittest.TestCase):
                                side_effect=requests.exceptions.Timeout("slow")):
             res = wiki.resolve_and_fetch({"NAME": "NAME X", "HD": "HD 1"})
         self.assertIn("error", res)
+
+    def test_transient_error_then_clean_misses_is_calm_not_found(self):
+        # A transient error on the strongest candidate, then every other candidate cleanly 404s
+        # (Wikipedia reachable, no such article) → the calm "not found", NOT a scary error.
+        import requests
+        calls = {"n": 0}
+
+        def fake(title):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise requests.exceptions.Timeout("slow")   # transient on the strongest name
+            return None                                     # clean 404 miss on the rest
+        with mock.patch.object(wiki, "_fetch_summary", side_effect=fake):
+            res = wiki.resolve_and_fetch({"NAME": "NAME X", "HD": "HD 1", "HIP": "HIP 2"})
+        self.assertNotIn("error", res)
+        self.assertFalse(res["found"])
 
     def test_name_path_uses_simbad_designations(self):
         fake_simbad = {"designations": {"NAME": "NAME Tau Ceti", "HD": "HD 10700"},

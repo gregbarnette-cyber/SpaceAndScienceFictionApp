@@ -187,6 +187,27 @@ class PanelWiringTest(unittest.TestCase):
             self.assertIn("📖", panel._results_tabs.tabText(1))
         self.app.processEvents()
 
+    def test_opt18_single_cell_selection_enables_wiki_button(self):
+        # Review-fix #1: base.make_table defaults to SelectItems, under which selecting a single cell
+        # leaves selectedRows() empty and the button never enables on a real click.
+        # _wire_results_wiki_selection sets SelectRows, so selecting any cell selects the whole row →
+        # the button enables (the single-click interaction the selectRow(0) test above masks).
+        from gui.panels.distance_stars import StarsWithinDistanceSolPanel
+        from PySide6.QtWidgets import QAbstractItemView
+        panel = self._panel(StarsWithinDistanceSolPanel)
+        result = {"count": 1, "limit_ly": 15.0, "stars": [
+            {"Star Name": "Tau Ceti", "Star Designations": "HD 10700",
+             "Spectral Type": "G8V", "Light Years": 11.9, "x": 1.0, "y": 2.0, "z": 3.0}]}
+        panel._render(result)
+        self.app.processEvents()
+        view = panel._results_table
+        self.assertEqual(view.selectionBehavior(), QAbstractItemView.SelectionBehavior.SelectRows)
+        self.assertFalse(panel._wiki_btn.isEnabled())
+        view.setCurrentIndex(view.model().index(0, 1))   # a single cell in a non-zero column
+        self.app.processEvents()
+        self.assertTrue(panel._wiki_btn.isEnabled())
+        self.assertTrue(view.selectionModel().selectedRows())
+
     def test_g1_search_second_button_opens_detail_tab(self):
         from gui.panels.search import StarSystemsSearchPanel
         panel = self._panel(StarSystemsSearchPanel)
