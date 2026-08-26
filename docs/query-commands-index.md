@@ -132,12 +132,12 @@ descriptions are condensed from integration.md's prose.
 | `search-hwc` | Filter the local Habitable Worlds Catalog (no network). |
 | `search-exoplanets` | Filter the live NASA pscomppars archive via TAP. |
 | `search-hypatia` | Filter the local Hypatia abundance cache (no network). |
-| `compare-stars` | Side-by-side comparison of 2–4 stars (SIMBAD + NASA supplement + HZ + Hypatia). |
+| `compare-stars` | Side-by-side comparison of 2–4 stars (SIMBAD + NASA supplement + HZ + Hypatia). CR-11.2: per-star mass-provenance block + `--star-mass-catalog`; measured mass preferred → `mass`/`radius` track it. |
 
 ## Cooling, thermal, shielding & compute (U / V / AD / AR)
 | Command | Description |
 |---|---|
-| `cooling-hz` | HZ snapshot, residence time, or continuous-HZ band for a cooling white/brown-dwarf primary. |
+| `cooling-hz` | HZ snapshot, residence time, or continuous-HZ band for a cooling white/brown-dwarf primary. CR-11.1: WD grid extended to 1.30 M☉ (clamp 1.30–1.38 Chandrasekhar; refuse above). |
 | `waste-heat` | Waste heat a device must reject from a power figure + efficiency, with an optional Carnot ceiling. |
 | `radiator-area` | Radiating area (and optional mass) to reject a heat load (Stefan–Boltzmann). |
 | `shielding-attenuation` | Attenuation of penetrating radiation by shielding mass (photon Lambert–Beer / GCR / charged-particle). |
@@ -258,6 +258,7 @@ descriptions are condensed from integration.md's prose.
 |---|---|
 | `metric-drive-power` | Metric-drive field-rocket radiated power + fuel/mass bill (STL-mode law only). |
 | `exclusion-boundary` | FTL exclusion-boundary radius r_ex (the "Alcubierre Limit"); a Kuiper-calibrated in-universe dial. |
+| `exclusion-system` | CR-11.3: compose `exclusion-boundary` over a binary/multi-star system (`--star` or `--component`) into merge-grouped, phase-varying, asymmetric zones with per-component off-MS domain guards. |
 
 ## ISM dust / extinction (T2)
 | Command | Description |
@@ -280,7 +281,7 @@ descriptions are condensed from integration.md's prose.
 ## Dossier, projects & generation (Q / R / S)
 | Command | Description |
 |---|---|
-| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). CR-10.5: self-flags evolved hosts (luminosity-class region guard, `--force-ms-inversion`) + cross-checks `binary-orbit` for multiplicity (`multiplicity_basis`). |
+| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). CR-10.5: self-flags evolved hosts (luminosity-class region guard, `--force-ms-inversion`) + cross-checks `binary-orbit` for multiplicity (`multiplicity_basis`). CR-11.2: stellar-mass provenance block + `--star-mass-catalog`/`--mass-solar`; a preferred measured mass recomputes the mass-derived fields (radius/calc-L/limits) coherently. |
 | `project-list` | List project workspaces (name, description, member count). |
 | `project-get` | A project workspace + its members (with `generated_spec` echoed parsed). |
 | `generate-system` | Deterministically generate a plausible planetary system (synthetic-from-seed or real-anchor). |

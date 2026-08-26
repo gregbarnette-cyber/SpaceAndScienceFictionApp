@@ -22,6 +22,8 @@ import core.databases as databases
 import core.regions as regions
 import core.science as science
 import core.shared as shared
+import core.stellar_mass as stellar_mass
+import core.stellar_mass_tables as stellar_mass_tables
 from core.equations import compute_habitable_zone, implied_edge_temp
 from core.hypatia_elements import CATEGORIES, display_symbol
 
@@ -369,12 +371,15 @@ def _blocks_regions(d):
         return _SECTION_TITLES["regions"], blocks
     s = d["stellar"]
     sr = d["system_regions"]
+    mb = d.get("mass") or {}
+    _prov = mb.get("mass_provenance")
+    _mass_cell = f"{_n(s.get('stellar_mass'))} M☉" + (f" ({_prov})" if _prov else "")
     blocks = [
         ("em", f"Computed with sunlight intensity = {_n(d.get('sunlight_intensity'), 1)}, "
                f"bond albedo = {_n(d.get('bond_albedo'), 1)}."),
         ("kv", [
             ("Effective temperature", f"{_n(s.get('teff'), 0)} K"),
-            ("Stellar mass", f"{_n(s.get('stellar_mass'))} M☉"),
+            ("Stellar mass", _mass_cell),
             ("Stellar radius", f"{_n(s.get('stellar_radius'))} R☉"),
             # Luminosity spans ~0.0005–50 L☉ across the spectral range; fixed 3-decimal
             # rounding flattens every M/L dwarf to "0.001" (or "0.000"), which a downstream
@@ -429,6 +434,13 @@ def _blocks_regions(d):
         blocks += _consistency_blocks(lc)
     elif lc and lc.get("flagged"):
         blocks += _consistency_blocks(lc)
+    # CR-11.2 — stellar-mass provenance caveat. A caution / a note is surfaced; a clean MS star with a
+    # plain inversion and no caution adds nothing (markdown stays byte-identical for those).
+    if mb.get("massL_inversion_caution"):
+        blocks.append(("em", f"⚠ Stellar mass from the L^0.2632 inversion is unreliable here — "
+                             f"{mb.get('note') or 'known over-read regime'}."))
+    elif mb.get("note") and mb.get("mass_provenance") in ("catalog", "manual", "gaia_flame"):
+        blocks.append(("em", f"ℹ Stellar mass: {mb['note']}."))
     return _SECTION_TITLES["regions"], blocks
 
 
@@ -912,7 +924,53 @@ def _render_html(star, rendered, data, warnings, notes):
 
 # ── assembly ──────────────────────────────────────────────────────────────────
 
-def _assemble_star(star, requested=None, force_ms_inversion=False):
+def _resolve_star_mass_block(simbad, inversion_mass, mass_catalog, manual_mass, want_gaia, memo):
+    """CR-11.2: resolve the mass block (manual → catalog → Gaia FLAME → the L^0.2632 inversion).
+    FLAME is consulted only when manual + catalog both miss and a region-bearing dossier is requested
+    (`want_gaia`), keeping a cheap `--sections identity` dossier network-free. The catalog is matched
+    once here and passed to `resolve_mass` so it is not scanned twice."""
+    manual_hit = (isinstance(manual_mass, (int, float)) and not isinstance(manual_mass, bool)
+                  and manual_mass > 0)
+    cat_row = (stellar_mass_tables.match_mass(
+        mass_catalog, simbad.get("main_id"), simbad.get("designations")) if mass_catalog else None)
+    flame_mass = None
+    if not manual_hit and cat_row is None and want_gaia:
+        ga = _gaia_astro(simbad, memo)
+        if isinstance(ga, dict):
+            flame_mass = (ga.get("parameters") or {}).get("mass_flame")
+    return stellar_mass.resolve_mass(
+        inversion_mass, sp_type=simbad.get("sp_type"), main_id=simbad.get("main_id"),
+        designations=simbad.get("designations"), manual_mass=manual_mass, catalog=mass_catalog,
+        flame_mass=flame_mass, catalog_row=cat_row)
+
+
+def _patch_regions_for_mass(reg, m):
+    """CR-11.2 (WB decision B, MSG 006): recompute reg's **mass-derived** fields from the PREFERRED
+    mass so the dossier's stellar table AND the mass-derived HZ columns (Luminosity-from-mass,
+    Calculated-L → the secondary Calculated HZ) all correspond to it (mass ↔ radius coherent). Called
+    ONLY when a measured mass (manual/catalog/FLAME) is preferred over the L^0.2632 inversion; a star
+    still on the inversion mass is byte-unchanged. The bcLuminosity-based **primary** HZ / snow line /
+    ice lines never use mass and are left untouched. Mirrors the regions.py formulas exactly."""
+    reg["stellarMass"] = m
+    reg["stellarRadius"] = m ** 0.57 if m >= 1.0 else m ** 0.8
+    reg["luminosityFromMass"] = m ** 3.5
+    reg["mainSeqLifeSpan"] = (10.0 ** 10) * ((1.0 / m) ** 2.5)
+    reg["sysilGrav"] = 0.2 * m
+    reg["sysol"] = 40.0 * m
+    temp = reg.get("temp")
+    if temp:                                   # calculated_luminosity → the secondary Calculated HZ
+        reg["calculatedLuminosity"] = reg["stellarRadius"] ** 2 * (temp / 5778.0) ** 4
+
+
+def _attach_mass_block(data, mass_block):
+    """Attach the CR-11.2 provenance block to the regions section (metadata; the numeric recompute is
+    done on `reg` before the region tables are built)."""
+    if "regions" in data:
+        data["regions"]["mass"] = mass_block
+
+
+def _assemble_star(star, requested=None, force_ms_inversion=False,
+                   mass_catalog=None, manual_mass=None):
     """Run the readers for a real star. Returns {"error"} (hard) or {data, status}.
 
     `status` maps each section key → (state, reason) where state is "ok" (in data),
@@ -939,6 +997,23 @@ def _assemble_star(star, requested=None, force_ms_inversion=False):
     reg = regions.compute_star_system_regions_from_simbad(simbad)
     lum_token, evolved = shared.luminosity_class(simbad.get("sp_type"))
     want_gaia = ("regions" in requested) or ("age_population" in requested)
+
+    # CR-11.2 — resolve the preferred stellar mass BEFORE the region tables are built. When a measured
+    # mass (manual/catalog/FLAME) is preferred over the L^0.2632 inversion, patch reg's mass-derived
+    # fields (radius, luminosity-from-mass, calculated-L → the secondary Calculated HZ, MS-lifespan,
+    # 0.2·M / 40·M) so every downstream table corresponds to that mass (WB decision B, MSG 006). A star
+    # still on the inversion mass is byte-unchanged (patch skipped). The bcLuminosity-based primary HZ /
+    # snow line / ice lines never use mass and are untouched. The block is attached after the branch.
+    reg_ok = "error" not in reg
+    _withheld = evolved and not force_ms_inversion
+    _inversion_mass = reg.get("stellarMass") if (reg_ok and not _withheld) else None
+    _inversion_radius = reg.get("stellarRadius") if reg_ok else None   # pin the CR-10.5 consistency to it
+    mass_block = _resolve_star_mass_block(simbad, _inversion_mass, mass_catalog, manual_mass,
+                                          ("regions" in requested), memo)
+    if (reg_ok and not _withheld and mass_block["mass_solar"] is not None
+            and mass_block["mass_provenance"] != stellar_mass.MS_INVERSION):
+        _patch_regions_for_mass(reg, mass_block["mass_solar"])
+
     if "error" in reg:
         if evolved:
             # An evolved star whose regions can't compute (e.g. SIMBAD has no Teff for Pollux) STILL
@@ -964,7 +1039,9 @@ def _assemble_star(star, requested=None, force_ms_inversion=False):
             ga = _gaia_astro(simbad, memo)
             if isinstance(ga, dict):
                 l_bol = (ga.get("parameters") or {}).get("lum_flame")
-        teff, r_star = reg.get("temp"), reg.get("stellarRadius")
+        # CR-10.5 consistency is a diagnostic OF THE INVERSION (does the region-derived L match FLAME?),
+        # so it stays on the inversion radius even when B has patched reg to a preferred measured mass.
+        teff, r_star = reg.get("temp"), _inversion_radius
         calc_l = (r_star ** 2 * (teff / 5772.0) ** 4) if (r_star and teff) else None
         ratio = (calc_l / l_bol) if (calc_l is not None and l_bol not in (None, 0)) else None
         consistency = {"calc_L": calc_l, "L_bol": l_bol, "ratio": ratio,
@@ -992,6 +1069,10 @@ def _assemble_star(star, requested=None, force_ms_inversion=False):
             status["regions"] = ("ok", None)
             data["habitable_zone"] = _hz_data(reg)
             status["habitable_zone"] = ("ok", None)
+
+    # CR-11.2 — attach the stellar-mass provenance block to the regions section (the numeric recompute
+    # from the preferred mass was already applied to reg above, before the region tables were built).
+    _attach_mass_block(data, mass_block)
 
     nasa = databases.compute_planetary_systems_composite(simbad)
     hwc = databases.compute_hwc(simbad)
@@ -1036,7 +1117,7 @@ def _assemble_star(star, requested=None, force_ms_inversion=False):
     return {"data": data, "status": status}
 
 
-def _assemble_sol():
+def _assemble_sol(mass_catalog=None, manual_mass=None):
     """The Sol / Solar System reference-origin path — fully offline (local DB + constants).
 
     Maps each section to its Sol-special-case source: identity = solar constants, regions/HZ
@@ -1049,10 +1130,23 @@ def _assemble_sol():
     status["identity"] = ("ok", None)
 
     reg = regions.compute_sol_regions()
+
+    # CR-11.2 — resolve the mass block and, when a measured mass (--mass-solar / a catalog row) is
+    # preferred over the inversion, patch reg's mass-derived fields BEFORE the region tables are built
+    # so the Sol dossier is coherent (WB decision B). Sol is G2V and offline (no FLAME for the origin);
+    # by default the inversion is the source and nothing is patched.
+    mass_block = stellar_mass.resolve_mass(
+        reg.get("stellarMass"), sp_type="G2V", main_id="Sol",
+        designations={"NAME": "Sun", "MAIN_ID": "Sol"}, manual_mass=manual_mass,
+        catalog=mass_catalog, flame_mass=None)
+    if mass_block["mass_solar"] is not None and mass_block["mass_provenance"] != stellar_mass.MS_INVERSION:
+        _patch_regions_for_mass(reg, mass_block["mass_solar"])
+
     data["regions"] = _regions_data(reg)
     status["regions"] = ("ok", None)
     data["habitable_zone"] = _hz_data(reg)
     status["habitable_zone"] = ("ok", None)
+    _attach_mass_block(data, mass_block)
 
     ss = science.compute_solar_system_tables()
     if ss.get("planets") or ss.get("dwarf_planets") or ss.get("asteroids"):
@@ -1103,7 +1197,8 @@ def render_document(envelope, fmt):
                   envelope["warnings"], envelope["notes"])
 
 
-def build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion=False):
+def build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion=False,
+                         star_mass_catalog=None, mass_solar=None):
     """Compose a full system dossier from the existing readers.
 
     Pure (no Qt / file I/O / new astronomy). Returns one of:
@@ -1127,11 +1222,18 @@ def build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion
     # are the real Solar System, so route to the offline reference-origin path.
     # Resolve the requested set up front so the star path can skip the heavy CR-5 live readers
     # for sections that were not requested (Sol's CR-5 data is offline constants — no gating needed).
+    # CR-11.2 — load the tier-2 measured-mass catalog (REPLACE semantics; loud error on a bad path,
+    # never a silent fallback — mirrors CR-10.3). None → the internal seed (the four anchors).
+    mass_catalog = stellar_mass_tables.load_mass_catalog(star_mass_catalog)
+    if isinstance(mass_catalog, dict) and "error" in mass_catalog:
+        return {"error": mass_catalog["error"]}
+
     requested = list(sections) if sections else list(_ALL_SECTIONS)
     if (star or "").strip().lower() in {"sol", "sun"}:
-        assembled = _assemble_sol()
+        assembled = _assemble_sol(mass_catalog=mass_catalog, manual_mass=mass_solar)
     else:
-        assembled = _assemble_star(star, requested, force_ms_inversion=force_ms_inversion)
+        assembled = _assemble_star(star, requested, force_ms_inversion=force_ms_inversion,
+                                   mass_catalog=mass_catalog, manual_mass=mass_solar)
         if "error" in assembled:
             return {"error": assembled["error"]}
     data, status = assembled["data"], assembled["status"]

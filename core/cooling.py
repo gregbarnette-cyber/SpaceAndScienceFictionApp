@@ -35,6 +35,13 @@ _TEFF_SUN_K = 5772.0              # IAU nominal solar Teff (L↔Teff closure gua
 _WD_MASS_DEFAULT = 0.60           # M_sun
 _BD_MASS_DEFAULT_MJUP = 50.0      # M_Jup
 
+# CR-11.1: the stable-WD upper mass limit. The bundled WD grid tops out at 1.30 M_sun
+# (cooling_tables), but ordinary/ONe-core massive WDs exist up to the Chandrasekhar limit;
+# a WD mass in (1.30, _WD_CHANDRASEKHAR_MSUN] is served by clamping to the 1.30 sequence
+# (the mass–radius change over that narrow tail is small) rather than a grid-range error,
+# while a mass ABOVE Chandrasekhar refuses (no stable white dwarf exists — physically correct).
+_WD_CHANDRASEKHAR_MSUN = 1.38
+
 # ── Phase AD A0: ²²Ne distillation cooling pause ─────────────────────────────
 # A cooling WD whose C/O core is neon-rich undergoes ²²Ne "distillation" that releases
 # gravitational energy and *pauses* the cooling for several Gyr, greatly lengthening how
@@ -131,7 +138,16 @@ def _interp_track(track, grid_mass, age, pause=None):
     if not tracks:
         raise _OffGrid(f"no {track} cooling tracks are bundled yet")
     masses = sorted(tracks)
-    if grid_mass < masses[0] - 1e-6 or grid_mass > masses[-1] + 1e-6:
+    if grid_mass < masses[0] - 1e-6:
+        raise _OffGrid(f"mass {grid_mass:g} {unit} is below the bundled {track} "
+                       f"cooling grid (min {masses[0]:g})")
+    # Upper bound: BD refuses above the top bundled mass; WD (CR-11.1) allows the massive-WD
+    # tail up to the Chandrasekhar limit by clamping to the top sequence, refusing only above it.
+    hi_allowed = _WD_CHANDRASEKHAR_MSUN if track == "wd" else masses[-1]
+    if grid_mass > hi_allowed + 1e-6:
+        if track == "wd":
+            raise _OffGrid(f"mass {grid_mass:g} M_sun exceeds the Chandrasekhar limit "
+                           f"(~{_WD_CHANDRASEKHAR_MSUN:g} M_sun); no stable white dwarf exists")
         raise _OffGrid(f"mass {grid_mass:g} {unit} is outside the bundled {track} "
                        f"cooling grid (available: {masses})")
     if grid_mass in tracks or grid_mass <= masses[0] or grid_mass >= masses[-1]:
@@ -486,6 +502,13 @@ def _mode_snapshot(track, grid_mass, base, cooling_age_gyr, teff_in, pause=None)
     teff_k, lum, radius = _interp_track(track, grid_mass, age, pause)
     oor = _out_of_range(teff_k)
     notes = []
+    # CR-11.1 transparency (WB MSG 004, optional): young/hot cooling ages on the massive-WD extension
+    # (M > 1.0 M☉) are mildly inflated — an interpolation artifact of the frozen ≤1.0 anchor sequence
+    # (e.g. Sirius B ≈ 0.146 Gyr here vs the ~0.126 Gyr literature value, Bond et al. 2017). Gated on
+    # grid_mass > 1.0 (a regime that previously errored), so ≤1.0 M☉ output stays byte-identical.
+    if track == "wd" and grid_mass > 1.0 and teff_k > 12000.0:
+        notes.append("young_teff_cooling_age_inflation: massive-WD (>1.0 M☉) cooling ages at young/hot "
+                     "epochs are upper estimates (~0.146 vs ~0.126 Gyr for Sirius B; Bond 2017)")
     try:
         zones = compute_habitable_zone(teff_k, lum)
     except (ValueError, ZeroDivisionError):

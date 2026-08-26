@@ -4014,16 +4014,21 @@ def _sun_hypatia_baseline() -> dict:
     }
 
 
-def _sol_compare_entry() -> dict:
+def _sol_compare_entry(mass_catalog=None) -> dict:
     """Reference-constant comparison entry for the Sun.
 
     The Sun is not a SIMBAD catalog object — "Sol"/"Sun" don't resolve — so its
     textbook values are injected directly. The Hypatia block is the shared solar
-    zero-point baseline (_sun_hypatia_baseline).
+    zero-point baseline (_sun_hypatia_baseline). CR-11.2: a mass block resolved against
+    the catalog (G2V, no peculiarity / not hot-MS → no caution; 1.0 M☉ is the reference).
     """
     from core.equations import compute_habitable_zone
+    from core import stellar_mass
 
     zmap = {z["key"]: z["au"] for z in compute_habitable_zone(5778.0, 1.0)}
+    mblock = stellar_mass.resolve_mass(
+        1.0, sp_type="G2V", main_id="Sol", designations={"NAME": "Sun", "MAIN_ID": "Sol"},
+        manual_mass=None, catalog=mass_catalog, flame_mass=None)
     return {
         "name": "Sun", "sp_type": "G2V", "teff": 5778.0, "luminosity": 1.0,
         "mass": 1.0, "radius": 1.0,
@@ -4031,10 +4036,32 @@ def _sol_compare_entry() -> dict:
         "ly": 0.0, "app_magnitude": -26.74,
         "hypatia": _sun_hypatia_baseline(),
         "error": None,
+        "mass_solar": mblock["mass_solar"], "mass_provenance": mblock["mass_provenance"],
+        "massL_inversion_caution": mblock["massL_inversion_caution"],
+        "peculiar_star_flag": mblock["peculiar_star_flag"], "mass_note": mblock["note"],
     }
 
 
-def compare_stars(names: list) -> dict:
+def _flame_mass_for(sl) -> float:
+    """CR-11.2: the Gaia DR3 FLAME mass for a resolved star, or None. Best-effort (network);
+    any failure → None so the resolver falls through to the L-inversion."""
+    try:
+        from core import binary, catalog
+        sid = binary.gaia_source_id_from_designations(sl.get("designations"))
+        if not sid:
+            return None
+        ga = catalog.gaia_astrophysical(source_id=sid)
+        params = ga.get("parameters") if isinstance(ga, dict) else None
+        if params:
+            mf = params.get("mass_flame")
+            if isinstance(mf, (int, float)) and not isinstance(mf, bool) and mf > 0:
+                return mf
+    except Exception:
+        return None
+    return None
+
+
+def compare_stars(names: list, star_mass_catalog=None) -> dict:
     """Side-by-side comparison of 2–4 stars.
 
     Per star: a SIMBAD lookup, an optional NASA pscomppars supplement to fill
@@ -4045,10 +4072,26 @@ def compare_stars(names: list) -> dict:
     check. Reuses compute_simbad_lookup / compute_hypatia_data / the archive
     helpers / equations.compute_habitable_zone verbatim.
 
+    **CR-11.2** — each star additionally carries a stellar-mass provenance block
+    (`mass_solar`, `mass_provenance ∈ {manual|catalog|gaia_flame|ms_luminosity_inversion}`,
+    `massL_inversion_caution`, `peculiar_star_flag`, `mass_note`) resolved by the shared
+    `core.stellar_mass` resolver (precedence catalog → Gaia FLAME → the L^0.2632 inversion;
+    no per-star manual override on the multi-star command). **Decision B (WB MSG 008):** when a
+    measured mass is preferred over the inversion, the headline `mass` and `radius` (= `M^0.57`) track
+    it too, so mass ↔ radius are coherent and `dossier ≡ compare-stars` on `mass`/`radius` — not just
+    `mass_solar`. An inversion-sourced star is byte-unchanged; `luminosity` (bolometric/archive) and
+    the L-based `hz_inner/outer_au` are unaffected. `star_mass_catalog` is a `--star-mass-catalog` path
+    (REPLACE semantics, loud error on a bad path).
+
     Returns {"stars": [ {name, sp_type, teff, luminosity, mass, radius,
-    hz_inner_au, hz_outer_au, ly, app_magnitude, hypatia, error}, ... ]}
+    hz_inner_au, hz_outer_au, ly, app_magnitude, hypatia, error, mass_solar,
+    mass_provenance, massL_inversion_caution, peculiar_star_flag, mass_note}, ... ]}
     or {"error": str}.
     """
+    from core import stellar_mass, stellar_mass_tables
+    mass_catalog = stellar_mass_tables.load_mass_catalog(star_mass_catalog)
+    if isinstance(mass_catalog, dict) and "error" in mass_catalog:
+        return {"error": mass_catalog["error"]}
     from core.equations import compute_habitable_zone
 
     if not names or len([n for n in names if (n or "").strip()]) < 2:
@@ -4063,6 +4106,9 @@ def compare_stars(names: list) -> dict:
             "name": name, "sp_type": None, "teff": None, "luminosity": None,
             "mass": None, "radius": None, "hz_inner_au": None, "hz_outer_au": None,
             "ly": None, "app_magnitude": None, "hypatia": None, "error": None,
+            # CR-11.2 mass-provenance block (additive)
+            "mass_solar": None, "mass_provenance": None, "massL_inversion_caution": None,
+            "peculiar_star_flag": None, "mass_note": None,
         }
         if not name:
             entry["error"] = "Empty star name."
@@ -4070,7 +4116,7 @@ def compare_stars(names: list) -> dict:
             continue
 
         if name.lower() in ("sol", "sun"):
-            stars.append(_sol_compare_entry())
+            stars.append(_sol_compare_entry(mass_catalog))
             continue
 
         sl = compute_simbad_lookup(name)
@@ -4136,7 +4182,42 @@ def compare_stars(names: list) -> dict:
         entry["mass"]       = mass
         entry["luminosity"] = lum
 
-        # Conservative HZ inner (Runaway Greenhouse 'rg') / outer (Max Greenhouse 'mg').
+        # CR-11.2 — stellar-mass provenance block. inversion_mass = the L^0.2632 regions value (same
+        # input as dossier → parity). Precedence catalog → Gaia FLAME → inversion (no per-star manual
+        # override on the multi-star command).
+        inv_mass = None
+        try:
+            from core.regions import compute_star_system_regions_from_simbad
+            regc = compute_star_system_regions_from_simbad(sl)
+            if isinstance(regc, dict) and "error" not in regc:
+                inv_mass = regc.get("stellarMass")
+        except Exception:
+            pass
+        cat_row = (stellar_mass_tables.match_mass(mass_catalog, sl.get("main_id"),
+                                                  sl.get("designations")) if mass_catalog else None)
+        flame_mass = _flame_mass_for(sl) if cat_row is None else None
+        mblock = stellar_mass.resolve_mass(
+            inv_mass, sp_type=sl.get("sp_type"), main_id=sl.get("main_id"),
+            designations=sl.get("designations"), manual_mass=None,
+            catalog=mass_catalog, flame_mass=flame_mass, catalog_row=cat_row)   # reuse the match (#4)
+        entry["mass_solar"]              = mblock["mass_solar"]
+        entry["mass_provenance"]         = mblock["mass_provenance"]
+        entry["massL_inversion_caution"] = mblock["massL_inversion_caution"]
+        entry["peculiar_star_flag"]      = mblock["peculiar_star_flag"]
+        entry["mass_note"]               = mblock["note"]
+
+        # Decision-B parity (WB MSG 008): when a MEASURED mass (catalog/FLAME) is preferred over the
+        # inversion, the headline mass ↔ radius track it too (coherent, and `mass`/`radius`-equal to
+        # the dossier — not just `mass_solar`). ONLY then — an inversion-sourced star is byte-unchanged.
+        # `luminosity` is left as-is (it is the bolometric/archive value; the L-based HZ below uses the
+        # local `lum` and so does NOT shift).
+        if mblock["mass_solar"] is not None and mblock["mass_provenance"] != stellar_mass.MS_INVERSION:
+            _m = mblock["mass_solar"]
+            entry["mass"] = _m
+            entry["radius"] = _m ** 0.57 if _m >= 1.0 else _m ** 0.8
+
+        # Conservative HZ inner (Runaway Greenhouse 'rg') / outer (Max Greenhouse 'mg'). Uses the local
+        # `lum` (unaffected by the mass↔radius override above), so hz_inner/outer do not shift.
         if teff is not None and lum is not None and lum > 0:
             try:
                 zmap = {z["key"]: z["au"] for z in compute_habitable_zone(teff, lum)}

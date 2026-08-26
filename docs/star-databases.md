@@ -777,8 +777,24 @@ archive/regions value) → Conservative HZ inner (`rg`) / outer (`mg`) via
   expand the chart's element union (so a Sun column doesn't bloat it to all 104
   species).
 - Returns `{"stars": [ {name, sp_type, teff, luminosity, mass, radius, hz_inner_au,
-  hz_outer_au, ly, app_magnitude, hypatia, error}, … ]}` where `hypatia` is the raw
-  `compute_hypatia_data` result (or `{"error": …}`).
+  hz_outer_au, ly, app_magnitude, hypatia, error, mass_solar, mass_provenance,
+  massL_inversion_caution, peculiar_star_flag, mass_note}, … ]}` where `hypatia` is the
+  raw `compute_hypatia_data` result (or `{"error": …}`).
+- **CR-11.2 mass provenance (built 2026-08-26).** Each star also carries a
+  stellar-mass provenance block (`mass_solar`, `mass_provenance ∈
+  {manual|catalog|gaia_flame|ms_luminosity_inversion}`, `massL_inversion_caution`,
+  `peculiar_star_flag`, `mass_note`) via the shared `core.stellar_mass` resolver
+  (precedence catalog → Gaia FLAME → the `L^0.2632` inversion; `--star-mass-catalog
+  <path>` supplies a WB-owned tier-2 catalog, REPLACE semantics + loud bad-path
+  error). The resolution matches the `dossier`'s block for the same star (parity).
+  Under **decision B** (WB re-gate MSG 008), when a **measured** mass is preferred
+  the headline **`mass`** and **`radius`** (`= M^0.57`) track it too — so mass ↔
+  radius are coherent and `dossier ≡ compare-stars` on `mass`/`radius`, not just
+  `mass_solar`. An inversion-sourced star is byte-unchanged, and `luminosity`
+  (bolometric/archive) + the L-based `hz_inner/outer_au` are **unaffected** (the HZ is
+  computed from the pre-existing luminosity, not the recomputed radius). See
+  `docs/integration.md` (CR-11 block). The GUI `StarComparisonPanel` reads the same
+  `mass`/`radius`, so a cataloged bright star now shows the measured mass.
 - **GUI:** transposed `make_table` (properties as rows, stars as columns) + a
   second "Hypatia Catalog" table (log g, Disk, Fe/H, Mg/H, Si/H, O/H, U/V/W) when
   ≥1 star has Hypatia data; per-star error surfaced on the Spectral Type row. A

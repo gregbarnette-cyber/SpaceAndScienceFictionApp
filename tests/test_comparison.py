@@ -201,6 +201,26 @@ class CompareStarsTest(unittest.TestCase):
         self.assertEqual(ac["elements"], ["O", "Mg", "Si", "Fe"])
         self.assertEqual(len(ac["matrix"]), 4)
 
+    def test_cr112_decision_b_mass_radius_parity(self):
+        # WB MSG 008: a measured (catalog) mass preferred over the inversion makes the headline
+        # mass ↔ radius track it (mass == mass_solar, radius = M^0.57) — coherent with the dossier's
+        # decision B — while an inversion-sourced star stays byte-unchanged and the HZ does NOT shift.
+        r = databases.compare_stars(["Sirius", "Tau Ceti"])   # Sirius ("* alf CMa") is in the seed catalog
+        sir = next(e for e in r["stars"] if e["name"] == "* alf CMa")
+        self.assertEqual(sir["mass_provenance"], "catalog")
+        self.assertAlmostEqual(sir["mass_solar"], 2.063, places=3)
+        self.assertAlmostEqual(sir["mass"], sir["mass_solar"], places=6)     # headline == provenance mass
+        self.assertAlmostEqual(sir["radius"], 2.063 ** 0.57, places=4)       # radius ↔ preferred mass
+        # HZ unaffected: still computed from the original (pscomppars-radius 1.71) luminosity
+        from core.equations import compute_habitable_zone
+        lum_old = 1.71 ** 2 * (9940 / 5778.0) ** 4
+        z = {zz["key"]: zz["au"] for zz in compute_habitable_zone(9940, lum_old)}
+        self.assertAlmostEqual(sir["hz_inner_au"], z["rg"], places=4)
+        # a non-catalog / inversion-sourced star is byte-unchanged (mass stays the pscomppars value)
+        tau = next(e for e in r["stars"] if e["name"] == "* tau Cet")
+        self.assertEqual(tau["mass_provenance"], "ms_luminosity_inversion")
+        self.assertAlmostEqual(tau["mass"], 0.78, places=3)
+
     def test_sol_special_case(self):
         # "Sol"/"Sun" don't resolve in SIMBAD — they use injected reference values.
         for alias in ("Sol", "Sun"):

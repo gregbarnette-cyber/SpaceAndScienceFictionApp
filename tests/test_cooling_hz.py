@@ -187,6 +187,56 @@ class BrownDwarfTest(unittest.TestCase):
         self.assertIn("ATMO 2020", r["model_note"])
 
 
+class Cr111HighMassWDTest(unittest.TestCase):
+    """CR-11.1 — WD cooling grid extended to 1.30 M☉ (+ Chandrasekhar clamp to ~1.38)."""
+
+    def test_grid_extends_to_130(self):
+        masses = sorted(ct.get_wd_tracks())
+        self.assertEqual(masses[-1], 1.30)
+        for m in (1.05, 1.10, 1.15, 1.20, 1.25, 1.30):
+            self.assertIn(m, ct.get_wd_tracks())
+
+    def test_sirius_b_returns_without_error(self):
+        # 1.018 M☉ / 25970 K — previously errored ("outside the bundled wd cooling grid").
+        r = cooling.compute_cooling_hz("wd", mass_solar=1.018, teff=25970)
+        self.assertNotIn("error", r)
+        self.assertAlmostEqual(r["radius_rsun"], 0.008, delta=0.0006)   # ~0.008 R☉
+        self.assertLess(r["cooling_age_gyr"], 0.1514)                    # shorter than the M=1.0 grid value
+
+    def test_radius_monotone_decreasing_in_mass(self):
+        radii = [cooling.compute_cooling_hz("wd", mass_solar=m, teff=25970)["radius_rsun"]
+                 for m in (1.0, 1.05, 1.10, 1.20, 1.30)]
+        self.assertEqual(radii, sorted(radii, reverse=True))            # R ∝ M^-1/3
+
+    def test_high_masses_return_without_error(self):
+        for m in (1.20, 1.30):
+            self.assertNotIn("error", cooling.compute_cooling_hz("wd", mass_solar=m, teff=20000))
+
+    def test_chandrasekhar_clamp_and_refuse(self):
+        # 1.30 < M ≤ 1.38 clamps to the 1.30 sequence (no error); above Chandrasekhar refuses.
+        self.assertNotIn("error", cooling.compute_cooling_hz("wd", mass_solar=1.35, teff=20000))
+        self.assertNotIn("error", cooling.compute_cooling_hz("wd", mass_solar=1.38, teff=20000))
+        r = cooling.compute_cooling_hz("wd", mass_solar=1.45, teff=20000)
+        self.assertIn("error", r)
+        self.assertIn("Chandrasekhar", r["error"])
+
+    def test_no_regression_below_one_msun(self):
+        # ≤1.0 M☉ byte-identical to the pre-extension values (criterion 4).
+        r06 = cooling.compute_cooling_hz("wd", mass_solar=0.6, teff=25970)
+        self.assertAlmostEqual(r06["cooling_age_gyr"], 0.021342, places=5)
+        self.assertAlmostEqual(r06["radius_rsun"], 0.013901, places=6)
+        r10 = cooling.compute_cooling_hz("wd", mass_solar=1.0, teff=25970)
+        self.assertAlmostEqual(r10["cooling_age_gyr"], 0.151411, places=5)
+        self.assertAlmostEqual(r10["radius_rsun"], 0.008295, places=6)
+
+    def test_young_teff_note_gated_above_one_msun(self):
+        # The CR-11.1 transparency note appears only for M > 1.0 at young/hot epochs; never ≤1.0.
+        self.assertNotIn("young_teff_cooling_age_inflation",
+                         " ".join(cooling.compute_cooling_hz("wd", mass_solar=1.0, teff=25970)["notes"]))
+        note = " ".join(cooling.compute_cooling_hz("wd", mass_solar=1.018, teff=25970)["notes"])
+        self.assertIn("young_teff_cooling_age_inflation", note)
+
+
 class DistillationPauseTest(unittest.TestCase):
     """Phase AD A0 — the ²²Ne distillation cooling pause (--cooling-delay-gyr).
 

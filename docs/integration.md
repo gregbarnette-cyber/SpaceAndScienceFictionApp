@@ -223,7 +223,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `trojan-stability` | `--host-mass-earth --companion-mass-earth --star-mass-solar` | none | `mass_ratio, criterion, stable` |
 | `lorentz-factor` | `--velocity-c` | none | `velocity_c, lorentz_factor, time_dilation_pct` |
 | `circumbinary-hz` | (`--teff1 --lum1 --teff2 --lum2`) \| (`--star1 --star2`) | none \| SIMBAD (`--star`) | `combined_lum, eff_teff, out_of_range_teff, zones[]` |
-| `cooling-hz` | `--track {wd,bd}` [`--mass-solar`\|`--mass-mjup` · one of `--teff`\|`--cooling-age-gyr`\|`--sma-au` · `--chz-threshold-gyr --hz-edge --age-max-gyr --satellite-density` · `--cooling-delay-gyr --distillation-teff-k` (AD A0, WD-only ²²Ne pause)] | none (bundled cooling table) | mode 1: `teff_k, lum_lsun, radius_rsun, zones[], out_of_range_teff`; mode 2: `ever_habitable, entry/exit_age_gyr, residence_gyr`; mode 3: `chz_inner/outer_au, inner_edge_roche_limited, roche_limit_au`; all: `mode, model_note, any_out_of_range, hz_model_valid_teff_k`; +pause: `pause_teff_k, pause_hz_inner/outer_au, effective_age_max_gyr` |
+| `cooling-hz` | `--track {wd,bd}` [`--mass-solar`\|`--mass-mjup` · one of `--teff`\|`--cooling-age-gyr`\|`--sma-au` · `--chz-threshold-gyr --hz-edge --age-max-gyr --satellite-density` · `--cooling-delay-gyr --distillation-teff-k` (AD A0, WD-only ²²Ne pause)] | none (bundled cooling table) | mode 1: `teff_k, lum_lsun, radius_rsun, zones[], out_of_range_teff`; mode 2: `ever_habitable, entry/exit_age_gyr, residence_gyr`; mode 3: `chz_inner/outer_au, inner_edge_roche_limited, roche_limit_au`; all: `mode, model_note, any_out_of_range, hz_model_valid_teff_k`; +pause: `pause_teff_k, pause_hz_inner/outer_au, effective_age_max_gyr`. **CR-11.1:** WD `--mass-solar` accepts 0.40–1.30 M☉ (clamp 1.30–1.38 Chandrasekhar; refuse >1.38); ≤1.0 byte-identical |
 | `rv-semi-amplitude` | `--planet-mass-earth --star-mass-solar` (`--period-days`\|`--sma-au`) [`--ecc --inclination-deg`] | none | `k_ms, period_days, sma_au, ecc, inclination_deg` |
 | `transit-signal` | `--planet-radius-earth --star-radius-solar` (`--sma-au` \| `--period-days --star-mass-solar`) | none | `depth_ppm, depth_frac, transit_prob, duration_hours, sma_au, period_days` |
 | `astrometric-signal` | `--planet-mass-earth --star-mass-solar --sma-au --distance-pc` | none | `signal_microarcsec, signal_arcsec` |
@@ -267,7 +267,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `population-capacity` | ≥1 budget of (`--crop-area-m2` \| `--power-w` \| `--water-kg-day` \| `--fixed-nitrogen-kg-yr` \| `--food-dry-kg-day`) [per-person `--per-person-*` overrides] | none (X1/X2 defaults) | `per_resource{…{budget,per_person,source,population}}, sustainable_population, binding_constraint, slack{…}` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
-| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis` |
+| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion` `--star-mass-catalog <path>` `--mass-solar <M☉>`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis`; **CR-11.2** adds `regions.mass{mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,inversion_mass_solar,note}` (a preferred measured mass recomputes radius/calc-L/limits — decision B) |
 | `generate-system` | `--seed` [`--anchor-star` `--spectral-class` `--planets` `--require-habitable` `--constraint…` `--companion` `--nbody` `--research-policy`] | none (synthetic) · SIMBAD + NASA + HWC (with `--anchor-star`) | `seed, mode, anchor_star, star, planets[], warnings, notes` — plus `feasible, constraints[]` with `--constraint` |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
@@ -297,7 +297,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `substellar` | [`--ly-max --include-late-m --classes …`] | none (local DB) | `classes, ly_max, count, capped, cap, completeness_note, population, stars[]` |
 | `dust-sightline` | one of (`--l --b`)\|(`--ra --dec`)\|(`--star`\|`--id`) `--dist-end` [`--dist-start --steps`\|`--step-pc` `--map`] | none (local dust cache)§ | `map, frame, l, b, dist_start_pc, dist_end_pc, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
 | `dust-between` | (`--star1`\|`--id1`) (`--star2`\|`--id2`) [`--steps`\|`--step-pc` `--map`] | SIMBAD‡ (local dust cache)§ | `map, frame, star1_info, star2_info, separation_pc/ly, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
-| `compare-stars` | `--stars N [N …]` (2–4) | SIMBAD + NASA + Hypatia | `stars[]` (per-star error isolation) |
+| `compare-stars` | `--stars N [N …]` (2–4) [`--star-mass-catalog <path>`] | SIMBAD + NASA + Hypatia + Gaia FLAME | `stars[]` (per-star error isolation) + **CR-11.2** per-star `mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,mass_note` (measured mass preferred → `mass`/`radius` track it, decision B) |
 | `project-list` | _(none)_ | none (local DB) | `projects[]` (name, description, member_count, created_date) |
 | `project-get` | `--name` | none (local DB) | `project, members[]` (each member's `generated_spec` echoed parsed) |
 | `main-sequence` | _(none)_ | none (local DB) | **list** of 24 spectral-class rows |
@@ -2497,7 +2497,8 @@ query.py dossier --star Sol                       # fully offline (Solar System)
 query.py dossier --star Sol --sections planets moons
 ```
 Core function: `report.build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion=False)`
-(CR-10.5: `--force-ms-inversion` overrides the evolved-star region guard — see the CR-10 second-fire block below).
+(CR-10.5: `--force-ms-inversion` overrides the evolved-star region guard — see the CR-10 second-fire block below.
+CR-11.2: `--star-mass-catalog`/`--mass-solar` add stellar-mass provenance + measured-mass preference — see the CR-11 block below.)
 
 - **`--fmt`** (default `markdown`): `markdown` / `html` emit a rendered **`document`** string
   (HTML is self-contained — inline `<style>`, no external assets, **text + tables only**: the
@@ -4245,6 +4246,88 @@ query.py dossier --star Polaris --sections regions --force-ms-inversion  # overr
 ```
 Tests: `tests/test_shared_luminosity_class.py`, `tests/test_report.py::Cr105Part1RegionGuard`/`Cr105Part2Multiplicity`,
 `tests/test_binary_stability_auto.py` (the refactor is byte-identical), `tests/test_query_dossier_live.py` (live anchors).
+
+## CR-11 — WD cooling-grid extension, stellar-mass provenance & binary/multi-star exclusion composition (three items; additive, no fulfilled behavior moved)
+
+Built 2026-08-26. Additive to CR-8/9/10; edits no fulfilled spec. `completed_plans/PHASE_CR11_PLAN.md`.
+
+**CR-11.1 — `cooling-hz --track wd` high-mass extension.** The bundled WD cooling grid was extended **0.40 → 1.30 M☉**
+(the same Bedard 2020 / Montreal DA thick-H sequences `seq_105…130_thick.txt`, transcribed + closure-validated). A WD mass
+**`1.30 < M ≤ ~1.38`** (Chandrasekhar) now **clamps** to the 1.30 sequence (no grid-range error); **`M > ~1.38` refuses**
+(`{"error": "…exceeds the Chandrasekhar limit…"}`). **Unchanged JSON shape.** **≤ 1.0 M☉ is byte-identical** (no regression;
+the 0.151 Gyr M=1.0/25970 K reference stands). Snapshot mode gains one **advisory `notes` entry**
+`"young_teff_cooling_age_inflation…"` **only for M > 1.0 at young/hot epochs** (Teff > 12000 K) — the massive-WD young cooling
+age is a mild upper estimate (Sirius B ≈ 0.146 vs literature ~0.126 Gyr; Bond 2017), an interpolation artifact of the frozen
+≤1.0 anchor (WB decision A, MSG 004; the ≤1.0 re-sampling is a separate WB follow-up OQ-SA-WDAGE1). Anchors: `--mass-solar 1.018
+--teff 25970` → no error, `radius_rsun ≈ 0.008`, `cooling_age_gyr ≈ 0.146` (< 0.151); 1.20/1.30 no error, `radius_rsun`
+monotone-decreasing in mass.
+```
+query.py cooling-hz --track wd --mass-solar 1.018 --teff 25970    # Sirius B: was an error; now age ~0.146 Gyr, R ~0.008 R☉
+query.py cooling-hz --track wd --mass-solar 1.30 --teff 20000     # extended grid point
+query.py cooling-hz --track wd --mass-solar 1.45                  # error: exceeds Chandrasekhar
+```
+Tests: `tests/test_cooling_hz.py::Cr111HighMassWDTest`.
+
+**CR-11.2 — stellar-mass provenance on `dossier` + `compare-stars`.** Both now resolve stellar mass with an explicit
+**provenance** and two caution flags, mirroring CR-10.4/CR-10.5. **Precedence: manual `--mass-solar` (dossier only) → catalog
+row (`--star-mass-catalog <path>`) → Gaia DR3 FLAME → the `L^0.2632` inversion.** New fields — on `dossier` in the `regions`
+section as **`mass{mass_solar, mass_provenance ∈ {manual|catalog|gaia_flame|ms_luminosity_inversion}, massL_inversion_caution,
+peculiar_star_flag, inversion_mass_solar, note, catalog_citation?}`**; on `compare-stars` as flat per-star keys **`mass_solar,
+mass_provenance, massL_inversion_caution, peculiar_star_flag, mass_note`**. Under **decision B** (WB MSG 008) the
+headline `mass` and `radius` (= `M^0.57`) also track the preferred mass when a measured one is preferred — so mass ↔
+radius are coherent and `dossier ≡ compare-stars` on `mass`/`radius`, not just `mass_solar`; an inversion-sourced star is
+byte-unchanged, and `luminosity` (bolometric/archive) + the L-based `hz_inner/outer_au` are unaffected. `massL_inversion_caution=true` **iff** the provenance is `ms_luminosity_inversion`
+**AND** the star is in an over-read regime = **hot upper-MS** (leading MK class O/B/A) **or chemically-peculiar** (an Am `m` /
+Ap `p` token in `sp_type`); `peculiar_star_flag` is set from the `m`/`p` tokens **only**. The caution is **advisory — the mass is
+still returned, never null**. When a **measured** mass (manual/catalog/FLAME) is preferred over the inversion, the
+**mass-derived** dossier fields all recompute from it (WB decision B, MSG 006) so mass ↔ radius stay coherent:
+`stellar_radius` (`M^0.57`), `luminosity_from_mass` (`M^3.5`), `calculated_luminosity` (→ the **secondary Calculated-HZ**
+column), `main_seq_lifespan_yr`, and the `0.2·M` inner / `40·M` outer system limits. The **primary** HZ
+(`hz_inner/outer_au`), snow line and ice lines are `bcLuminosity`-based (never use mass) and are **unchanged**; the CR-10.5
+`luminosity_consistency` diagnostic stays pinned to the inversion radius (it is a check *of* the inversion). A star still
+on the inversion mass is **byte-unchanged**. **`--star-mass-catalog`** is a WB-owned JSON that **REPLACES** the internal seed wholesale (the seed = the four
+verified anchors: Sirius A 2.063 / Vega 2.135 / α Cen A 1.079 / α Cen B 0.909); a bad/unreadable/no-`stars`-array path →
+curated `{"error"}` (loud, never a silent fallback); a malformed row skipped best-effort (mirrors CR-10.3). Anchors: Sirius A
+(`A0mA1Va`) → default seed `catalog` 2.063 + `peculiar_star_flag=true`; with an empty/replacing catalog →
+`ms_luminosity_inversion` ≈ 2.59 + `massL_inversion_caution=true` (**the silent 2.59-with-no-flag must not persist**); Vega
+(`A0Va`) → caution via the hot-MS path, `peculiar_star_flag=false`; α Cen A `G2V` / B `K1V` → both flags false.
+```
+query.py dossier --star "Sirius A" --sections regions --fmt json                       # catalog 2.063, peculiar=true
+query.py dossier --star "Sirius A" --sections regions --fmt json --star-mass-catalog EMPTY.json  # inversion ~2.59, caution=true
+query.py dossier --star "Vega" --mass-solar 2.135 --sections regions --fmt json        # manual override
+query.py compare-stars --stars "Sirius A" "alf Cen A" Sol --star-mass-catalog WB.json   # per-star mass_provenance
+```
+Tests: `tests/test_stellar_mass.py` (resolver/catalog/flags/precedence/downstream + offline Sol dossier & bad-path),
+`tests/test_query_stellar_mass_live.py` (live SIMBAD anchors + dossier≡compare-stars parity). Reusable resolver:
+`core/stellar_mass.py` (+ `core/stellar_mass_tables.py`).
+
+**CR-11.3 — `exclusion-system` (new subcommand): binary / multi-star exclusion-boundary composition.** Composes the **FROZEN**
+single-body `exclusion-boundary` generator (no second calibration) over a resolved multi-star configuration into a set of
+**merge-grouped, phase-varying, asymmetric zones with per-component domain guards**. **Default `--alpha 0.4`** (mid of the canon
+[1/3,1/2] band — reproduces the hand-card anchors). Two input modes: **`--star "<name>"`** (best-effort live SIMBAD +
+`binary-orbit`/SB9 resolution of the primary orbit; a companion's WD/BD nature is confirmed by a `"<name> B"` otype lookup —
+**wide hierarchical companions with no catalogued orbit, e.g. Proxima, need `--component`**) and the deterministic
+**`--component "id=A,mass=2.063,lum=25,class=A0mA1Va,pair=AB,sma=19.8,ecc=0.59"`** (repeatable; keys id/name, mass, lum, class
+[sp_type or `wd`/`brown-dwarf`/`rogue`/`giant`], pair, sma, ecc, orbits, wind_state, mass_loss_msun_yr). Per-component mass = the
+**CR-11.2 chain** (manual `mass=` → `--star-mass-catalog` → FLAME → `L`-inversion from `lum`), which drives **both** the r_ex
+sphere **and** the barycentric offset. An **off-MS component** (WD/BD/rogue/giant) is `domain: out_of_domain`, `r_ex_au: null`
+(**no sphere**) — but its **real mass still sets the barycenter** (Sirius B). Merge-grouping = union-find over the periastron
+overlap test `d < r_ex,i + r_ex,j` (out-of-domain radius = 0). Output: `zones[]` (per zone `members`, `status ∈ {merged,
+separate}`, `long_axis_au{periastron,apastron}`, `minor_axis_au`, `barycenter`, `components[]{id, mass_solar, mass_provenance,
+r_ex_au|null, domain, class_note}`, `point_mass_r_ex_au` [**in-domain members only** — an out-of-domain mass is **never** summed
+in], `forcing_class`), plus `separations_au`, `n_components`, `n_zones`, `phase`, `alpha`/`dial`/`calibration_au`, `model_note`,
+`composition_note`. A **single-star** input reproduces `exclusion-boundary` on the same mass + `alpha`. Self-validating (curated
+`{"error"}` exit 1; argparse exit 2). Anchors (via `--component`): **Sirius** — one `merged` zone, A `r_ex ≈ 63.5` (measured
+2.063), B `out_of_domain`/`null` (WD guard), `long_axis ≈ {peri: 66, apo: 74}`, `point_mass ≈ 63.5` (A alone); **α Cen** — two
+zones, AB `merged` (A 49.0 / B 45.7, `long_axis ≈ {54, 65}`, `minor ≈ 49`, `point_mass ≈ 62.5`) + Proxima `separate` (≈ 20.5).
+```
+query.py exclusion-system --star "Sirius"                                              # live: merged, B WD-guarded
+query.py exclusion-system --component "id=A,mass=2.063,class=A0mA1Va,pair=AB,sma=19.8,ecc=0.59" \
+                          --component "id=B,mass=1.018,class=wd,pair=AB,sma=19.8,ecc=0.59"   # deterministic Sirius anchor
+```
+Tests: `tests/test_exclusion_system.py` (anchors/domain-guard/merge/envelope/point-mass/degenerate/validation),
+`tests/test_query_exclusion_system.py` (query contract), `tests/test_query_exclusion_system_live.py` (live `--star Sirius`).
+Core: `core/exclusion_system.py` (composes the frozen `core/exclusion_boundary.py`).
 
 ## Implementation notes
 

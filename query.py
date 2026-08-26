@@ -24,6 +24,7 @@ import core.dust_impact as dust_impact   # pure-math (no astropy/numpy) — safe
 import core.equations as equations
 import core.exoplanet_batch as exoplanet_batch   # CR-8 batch ps pull (network lazy inside handlers)
 import core.exclusion_boundary as exclusion_boundary
+import core.exclusion_system as exclusion_system
 import core.exotic_physics as exotic_physics
 import core.feasibility as feasibility
 import core.formation as formation
@@ -768,6 +769,15 @@ def cmd_exclusion_boundary(args):
         scan_alpha=args.scan_alpha, object_name=obj_name))
 
 
+# CR-11.3 — binary / multi-star exclusion-boundary composition.
+def cmd_exclusion_system(args):
+    _out(exclusion_system.compute_exclusion_system(
+        star=args.star, component_specs=args.component,
+        star_mass_catalog=args.star_mass_catalog, phase=args.phase,
+        alpha=args.alpha, calibration_au=args.calibration_au, dial=args.dial,
+        beta=args.beta, gamma=args.gamma))
+
+
 def _resolve_star_teff_lum(name):
     """Resolve a star name → (teff, bolometric luminosity) via SIMBAD + regions.
 
@@ -1338,7 +1348,9 @@ def cmd_ice_lines(args):
 # offline reference-origin path. Bad fmt/section or a SIMBAD-lookup failure → {"error"} exit 1.
 def cmd_dossier(args):
     _out(report.build_system_dossier(args.star, sections=args.sections, fmt=args.fmt,
-                                     force_ms_inversion=args.force_ms_inversion))
+                                     force_ms_inversion=args.force_ms_inversion,
+                                     star_mass_catalog=args.star_mass_catalog,
+                                     mass_solar=args.mass_solar))
 
 
 # Phase S — project workspaces (read-only; mutations are GUI-only). Local-DB reads,
@@ -1588,7 +1600,7 @@ def cmd_search_hypatia(args):
 
 
 def cmd_compare_stars(args):
-    _out(databases.compare_stars(args.stars))
+    _out(databases.compare_stars(args.stars, star_mass_catalog=args.star_mass_catalog))
 
 
 # ── Reference data ────────────────────────────────────────────────────────────
@@ -3215,6 +3227,32 @@ def main(argv=None):
                    help="Also emit r_ex at both alpha edges (1/3 and 1/2)")
     p.set_defaults(func=cmd_exclusion_boundary)
 
+    # exclusion-system (CR-11.3) — binary / multi-star composition of the frozen single-body generator
+    p = sub.add_parser("exclusion-system",
+                       help="CR-11.3: compose exclusion-boundary over a binary/multi-star system into "
+                            "merge-grouped, phase-varying, asymmetric zones (per-body domain guards)")
+    p.add_argument("--star", help="Resolve the whole system live (SIMBAD + binary-orbit). Wide "
+                                  "hierarchical companions with no catalogued orbit need --component.")
+    p.add_argument("--component", action="append",
+                   help="A component as comma-separated key=value: "
+                        "'id=A,mass=2.063,lum=25,class=A0mA1Va,pair=AB,sma=19.8,ecc=0.59'. "
+                        "Keys: id/name, mass, lum, class (sp_type or wd/brown-dwarf/rogue/giant), "
+                        "pair, sma, ecc, orbits, wind_state, mass_loss_msun_yr. Repeatable. "
+                        "The deterministic core — mass via manual > catalog > FLAME > L-inversion.")
+    p.add_argument("--star-mass-catalog",
+                   help="CR-11.2: path to a WB-owned measured-mass catalog JSON (per-component mass tier-2)")
+    p.add_argument("--phase", choices=["periastron", "apastron", "both"], default="both",
+                   help="Report the boundary at periastron, apastron, or both (default both)")
+    p.add_argument("--alpha", type=float, default=exclusion_system._DEFAULT_ALPHA,
+                   help="Mass exponent applied per component (canon [1/3, 1/2]; default 0.4)")
+    p.add_argument("--calibration-au", type=float, default=47.5,
+                   help="Kuiper-edge anchor r_ex(Sun) in AU (default 47.5)")
+    p.add_argument("--dial", type=float,
+                   help="Required-breakthrough calibration constant (default: auto to --calibration-au)")
+    p.add_argument("--beta", type=float, default=0.0, help="Luminosity exponent (default 0 = off)")
+    p.add_argument("--gamma", type=float, default=0.0, help="Wind exponent (default 0 = off)")
+    p.set_defaults(func=cmd_exclusion_system)
+
     # ── Phase AL (Group R) — power generation / storage / thermal (Pkt 27) ────
 
     # annihilation-power-train (R1)
@@ -3976,6 +4014,9 @@ def main(argv=None):
                        help="Side-by-side comparison of 2–4 stars (SIMBAD + NASA supplement + HZ + Hypatia)")
     p.add_argument("--stars", required=True, nargs="+",
                    help='2–4 star names (e.g. "Tau Ceti" Sol "18 Sco"); Sol/Sun use reference constants')
+    p.add_argument("--star-mass-catalog",
+                   help="CR-11.2: path to a WB-owned per-star measured-mass catalog JSON "
+                        "(tier-2, REPLACES the internal seed; loud error on a bad path)")
     p.set_defaults(func=cmd_compare_stars)
 
     # ── Reference data ───────────────────────────────────────────────────────
@@ -4064,6 +4105,12 @@ def main(argv=None):
     p.add_argument("--force-ms-inversion", action="store_true",
                    help="Override the CR-10.5 evolved-star guard and force the MS mass-inversion "
                         "for a giant/subgiant/supergiant host (values are unreliable)")
+    p.add_argument("--star-mass-catalog",
+                   help="CR-11.2: path to a WB-owned per-star measured-mass catalog JSON "
+                        "(tier-2, REPLACES the internal seed; loud error on a bad path)")
+    p.add_argument("--mass-solar", type=float,
+                   help="CR-11.2: manual stellar mass (M_sun) override — tier-1, supersedes "
+                        "catalog / FLAME / inversion")
     p.set_defaults(func=cmd_dossier)
 
     # project-list (Phase S — read-only)
