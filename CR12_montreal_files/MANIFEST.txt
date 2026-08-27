@@ -1,0 +1,23 @@
+# Bedard 2020 Montreal WD cooling sequences — md5 + model-count manifest
+# Source: https://www.astro.umontreal.ca/~bergeron/CoolingModels/CoolingModels/seq_XXX_thick.txt
+# Fetched: 2026-08-26 (CR-12). Thick-H (q_H=1e-4), equimassic CO core, 0.05 M_sun spacing.
+# columns: md5  file  models(rows)  bytes
+7870d99d7560fdf3028f2b94c9092fb8  seq_040_thick.txt  models=218  bytes=50734
+eb5b6fef7adce88d65fdc0890b4de082  seq_045_thick.txt  models=233  bytes=54199
+e31df4c89cfda1ccf48335eb746d2d8a  seq_050_thick.txt  models=245  bytes=56971
+228f05ad5ac05ced22b52ca7b9ab4b92  seq_055_thick.txt  models=255  bytes=59281
+daa54daeec753b50ac16acc2b22caad9  seq_060_thick.txt  models=258  bytes=59974
+3d7f74b65dad08167c2957dc5adb3e48  seq_065_thick.txt  models=265  bytes=61591
+f7f23d04e4c1c64260f9816c217b0955  seq_070_thick.txt  models=263  bytes=61129
+dccf78b86e14449cc7052fbb705ec6d1  seq_075_thick.txt  models=257  bytes=59743
+aa7a4b6c1ff509d358f55aa9e5683321  seq_080_thick.txt  models=241  bytes=56047
+667d397804607d11c8aa6885572c1fcb  seq_085_thick.txt  models=237  bytes=55123
+10323888c041fa5f307d0caae0dd52f4  seq_090_thick.txt  models=234  bytes=54430
+0b1adc73b94b9013a7a013e441bdec39  seq_095_thick.txt  models=232  bytes=53968
+fe05e3b2b5d4340219396f8793e9d6ca  seq_100_thick.txt  models=230  bytes=53506
+c7fd02ec264a9f2d4e6cf82c507e9ee4  seq_105_thick.txt  models=230  bytes=53506
+08c48cc4e3c69a81621b75d519906637  seq_110_thick.txt  models=228  bytes=53044
+dcc8fd7ff60b459974a9ed1a538ebe39  seq_115_thick.txt  models=230  bytes=53506
+4241ef863cd85bd97c30cc7796bd7acc  seq_120_thick.txt  models=225  bytes=52351
+142ba7ce81f81fd4954385b80751b9ad  seq_125_thick.txt  models=223  bytes=51889
+c6049069e0287c94def5cff608da0468  seq_130_thick.txt  models=224  bytes=52120

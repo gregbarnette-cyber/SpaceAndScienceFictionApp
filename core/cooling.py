@@ -42,6 +42,15 @@ _BD_MASS_DEFAULT_MJUP = 50.0      # M_Jup
 # while a mass ABOVE Chandrasekhar refuses (no stable white dwarf exists — physically correct).
 _WD_CHANDRASEKHAR_MSUN = 1.38
 
+# CR-12.4: the CO→ONe core-composition boundary. The bundled grid is Bedard 2020 CO-core; WDs
+# *exceeding* ~1.05 M_sun generally form O-Ne cores (progenitor/metallicity-dependent and uncertain),
+# whose cooling differs — ONe cores are more compact and cool faster, so the CO-grid age/residence for
+# such a mass is a model estimate that may not hold. The literature convention pairs CO (Bedard 2020,
+# ≤1.05 M_sun) with ONe (Camisassa et al. 2019, A&A 625, A87, >1.05 M_sun). A snapshot query above this
+# threshold gets an additive ``one_core_uncertain`` notes caveat (NO numeric change). Kept > 1.018 so
+# Sirius B (1.018 M_sun) is clean.
+_T_ONE_MSUN = 1.05
+
 # ── Phase AD A0: ²²Ne distillation cooling pause ─────────────────────────────
 # A cooling WD whose C/O core is neon-rich undergoes ²²Ne "distillation" that releases
 # gravitational energy and *pauses* the cooling for several Gyr, greatly lengthening how
@@ -494,6 +503,19 @@ def compute_cooling_hz(track, mass_solar=None, mass_mjup=None,
         return {"error": str(e)}
 
 
+def _one_core_notes(track, grid_mass):
+    """CR-12.4: the additive ONe-core caveat list for a high-mass WD, else empty. ONE source of truth for
+    the note string + threshold, shared by ALL modes (snapshot/residence/CHZ) so the text is byte-identical
+    across them (spec criterion 10). The CO-core Bedard 2020 grid does not resolve a possible O-Ne core
+    above ~1.05 M_sun (Camisassa et al. 2019); age/residence for such a mass is a model estimate that may
+    differ. NO numeric effect — a transparency note only."""
+    if track == "wd" and grid_mass > _T_ONE_MSUN:
+        return ["one_core_uncertain: cooling from CO-core Bedard 2020 sequences; an O-Ne core (possible "
+                "above ~1.05 M_sun; Camisassa et al. 2019) is not resolved — cooling age / residence for "
+                "this mass may differ."]
+    return []
+
+
 def _mode_snapshot(track, grid_mass, base, cooling_age_gyr, teff_in, pause=None):
     if teff_in is not None:
         age = _age_for_teff(track, grid_mass, teff_in, pause)
@@ -501,14 +523,13 @@ def _mode_snapshot(track, grid_mass, base, cooling_age_gyr, teff_in, pause=None)
         age = cooling_age_gyr
     teff_k, lum, radius = _interp_track(track, grid_mass, age, pause)
     oor = _out_of_range(teff_k)
-    notes = []
-    # CR-11.1 transparency (WB MSG 004, optional): young/hot cooling ages on the massive-WD extension
-    # (M > 1.0 M☉) are mildly inflated — an interpolation artifact of the frozen ≤1.0 anchor sequence
-    # (e.g. Sirius B ≈ 0.146 Gyr here vs the ~0.126 Gyr literature value, Bond et al. 2017). Gated on
-    # grid_mass > 1.0 (a regime that previously errored), so ≤1.0 M☉ output stays byte-identical.
-    if track == "wd" and grid_mass > 1.0 and teff_k > 12000.0:
-        notes.append("young_teff_cooling_age_inflation: massive-WD (>1.0 M☉) cooling ages at young/hot "
-                     "epochs are upper estimates (~0.146 vs ~0.126 Gyr for Sirius B; Bond 2017)")
+    # CR-12.4: seed notes with the ONe-core caveat (empty for M<=1.05); hz_undefined may append below.
+    notes = _one_core_notes(track, grid_mass)
+    # CR-12 (2026-08-26): the CR-11.1 ``young_teff_cooling_age_inflation`` advisory was REMOVED here.
+    # It flagged the massive-WD (>1.0 M☉) young/hot cooling-age over-read of the sparse ≤1.0 anchor
+    # sequence (Sirius B ≈0.146 vs ~0.126 Gyr). CR-12 re-derived the whole grid from the dense Bédard
+    # 2020 source, so that over-read is gone (Sirius B ≈0.118, source-faithful) and the note would now
+    # be false. See completed_plans/PHASE_CR12_PLAN.md (D-B).
     try:
         zones = compute_habitable_zone(teff_k, lum)
     except (ValueError, ZeroDivisionError):
@@ -535,6 +556,7 @@ def _mode_residence(track, grid_mass, base, sma_au, hz_edge, age_max_gyr, pause=
     out.update({"mode": "residence", "sma_au": sma_au})
     out.update(r)
     out["any_out_of_range"] = bool(r["entry_out_of_range"] or r["exit_out_of_range"])
+    out["notes"] = _one_core_notes(track, grid_mass)      # CR-12.4 Part 2 (same caveat, no numeric change)
     return out
 
 
@@ -576,4 +598,5 @@ def _mode_chz(track, grid_mass, base, threshold_gyr, hz_edge, age_max_gyr, satel
     out["chz_inner_out_of_range"] = ci
     out["chz_outer_out_of_range"] = co
     out["any_out_of_range"] = bool(ci or co)
+    out["notes"] = _one_core_notes(track, grid_mass)      # CR-12.4 Part 2 (same caveat, no numeric change)
     return out

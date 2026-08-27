@@ -7,6 +7,11 @@ Coordination: `/home/greg/claude/coordination-channel.md` (MSG 001–004; WB dec
 
 ## CR-11.1 — WD cooling-track high-mass extension
 
+> **⚠ SUPERSEDED BY CR-12 (2026-08-26).** CR-12 re-derived the whole 0.40–1.30 grid from the dense Bédard 2020
+> source. The ≤1.0 **"byte-identical" guarantee**, **criterion 1** ("more massive cools faster / shorter than
+> 0.151"), the **`young_teff_cooling_age_inflation` note**, and the **Sirius B ≈0.146** age below are all replaced
+> (Sirius B ≈0.118, *older*-with-mass; 0.151 retired; note removed). See `completed_plans/PHASE_CR12_PLAN.md`.
+
 - **`core/cooling_tables.py`** — the `_WD_COOLING` grid extended **0.40 → 1.30 M☉** by transcribing the same
   Bedard 2020 / Montreal DA thick-H sequences (`seq_105/110/115/120/125/130_thick.txt`). The transcription
   pipeline was validated to reproduce the bundled **1.00** rows **exactly** (max Teff diff 0.0000 K); every new

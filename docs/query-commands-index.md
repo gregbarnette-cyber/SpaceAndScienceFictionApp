@@ -137,7 +137,7 @@ descriptions are condensed from integration.md's prose.
 ## Cooling, thermal, shielding & compute (U / V / AD / AR)
 | Command | Description |
 |---|---|
-| `cooling-hz` | HZ snapshot, residence time, or continuous-HZ band for a cooling white/brown-dwarf primary. CR-11.1: WD grid extended to 1.30 M☉ (clamp 1.30–1.38 Chandrasekhar; refuse above). |
+| `cooling-hz` | HZ snapshot, residence time, or continuous-HZ band for a cooling white/brown-dwarf primary. WD grid 0.40–1.30 M☉, a dense Bédard-2020 re-derivation (CR-12; source-faithful cooling ages; clamp 1.30–1.38 Chandrasekhar, refuse above); high-mass WDs (M>1.05) carry an additive `one_core_uncertain` notes caveat in all modes (CR-12.4). |
 | `waste-heat` | Waste heat a device must reject from a power figure + efficiency, with an optional Carnot ceiling. |
 | `radiator-area` | Radiating area (and optional mass) to reject a heat load (Stefan–Boltzmann). |
 | `shielding-attenuation` | Attenuation of penetrating radiation by shielding mass (photon Lambert–Beer / GCR / charged-particle). |

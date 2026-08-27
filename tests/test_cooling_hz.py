@@ -139,6 +139,12 @@ class ModeChzTest(unittest.TestCase):
     def test_higher_threshold_narrows_band(self):
         lo = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=1.0)
         hi = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=5.0)
+        # CR-12 None-guard: both bands must be non-empty (0.6 M☉ conservative peak residence ~6.98 Gyr
+        # > 5.0, so thr-5 is reachable). Fail cleanly if a future shift empties a band rather than a
+        # None-None TypeError on the width subtraction.
+        for b in (lo, hi):
+            self.assertIsNotNone(b["chz_inner_au"])
+            self.assertIsNotNone(b["chz_outer_au"])
         lo_w = lo["chz_outer_au"] - lo["chz_inner_au"]
         hi_w = hi["chz_outer_au"] - hi["chz_inner_au"]
         self.assertGreater(lo_w, hi_w)
@@ -148,7 +154,9 @@ class ModeChzTest(unittest.TestCase):
         for m in (0.40, 0.50, 0.70, 0.80, 0.90):
             r = cooling.compute_cooling_hz("wd", mass_solar=m, chz_threshold_gyr=3.0)
             self.assertLess(r["chz_inner_au"], r["chz_outer_au"], m)
-            self.assertTrue(0.003 < r["chz_inner_au"] < 0.012, (m, r["chz_inner_au"]))
+            # CR-12: m=0.40's source-faithful CHZ inner edge is ~0.00287 AU (the old grid gave
+            # ~0.0053), so the shared floor is lowered 0.003 → 0.0025 (pinned with margin).
+            self.assertTrue(0.0025 < r["chz_inner_au"] < 0.012, (m, r["chz_inner_au"]))
             self.assertTrue(0.010 < r["chz_outer_au"] < 0.025, (m, r["chz_outer_au"]))
 
 
@@ -197,11 +205,15 @@ class Cr111HighMassWDTest(unittest.TestCase):
             self.assertIn(m, ct.get_wd_tracks())
 
     def test_sirius_b_returns_without_error(self):
-        # 1.018 M☉ / 25970 K — previously errored ("outside the bundled wd cooling grid").
+        # 1.018 M☉ / 25970 K. CR-12.2: at fixed Teff a more massive WD is OLDER (t_cool ∝ M^~1.19;
+        # the Bedard 2020 sequences are monotone in mass), so Sirius B is slightly older than a clean
+        # M=1.00 — NOT shorter. The retired backwards "shorter than 0.151" clause is gone.
         r = cooling.compute_cooling_hz("wd", mass_solar=1.018, teff=25970)
         self.assertNotIn("error", r)
-        self.assertAlmostEqual(r["radius_rsun"], 0.008, delta=0.0006)   # ~0.008 R☉
-        self.assertLess(r["cooling_age_gyr"], 0.1514)                    # shorter than the M=1.0 grid value
+        self.assertAlmostEqual(r["radius_rsun"], 0.008, delta=0.0006)      # ~0.008 R☉
+        self.assertAlmostEqual(r["cooling_age_gyr"], 0.118, delta=0.004)   # ~0.118 Gyr (Bond 2017 ~0.126)
+        a100 = cooling.compute_cooling_hz("wd", mass_solar=1.00, teff=25970)["cooling_age_gyr"]
+        self.assertGreater(r["cooling_age_gyr"], a100)                     # older than the clean M=1.00
 
     def test_radius_monotone_decreasing_in_mass(self):
         radii = [cooling.compute_cooling_hz("wd", mass_solar=m, teff=25970)["radius_rsun"]
@@ -220,21 +232,184 @@ class Cr111HighMassWDTest(unittest.TestCase):
         self.assertIn("error", r)
         self.assertIn("Chandrasekhar", r["error"])
 
-    def test_no_regression_below_one_msun(self):
-        # ≤1.0 M☉ byte-identical to the pre-extension values (criterion 4).
-        r06 = cooling.compute_cooling_hz("wd", mass_solar=0.6, teff=25970)
-        self.assertAlmostEqual(r06["cooling_age_gyr"], 0.021342, places=5)
-        self.assertAlmostEqual(r06["radius_rsun"], 0.013901, places=6)
-        r10 = cooling.compute_cooling_hz("wd", mass_solar=1.0, teff=25970)
-        self.assertAlmostEqual(r10["cooling_age_gyr"], 0.151411, places=5)
-        self.assertAlmostEqual(r10["radius_rsun"], 0.008295, places=6)
+    def test_young_teff_note_removed(self):
+        # CR-12 (D-B) removed the young_teff_cooling_age_inflation advisory BECAUSE the re-derived ages
+        # are source-faithful (no massive-WD over-read). Guard both facts: the note string is absent,
+        # AND the young/hot case it used to flag now returns a source-faithful age — Sirius B ~0.118,
+        # NOT the old inflated ~0.146 (a regression back to the sparse grid would re-inflate it).
+        sb = cooling.compute_cooling_hz("wd", mass_solar=1.018, teff=25970)
+        self.assertNotIn("young_teff_cooling_age_inflation", " ".join(sb.get("notes", [])))
+        self.assertLess(sb["cooling_age_gyr"], 0.13)      # ~0.118 source-faithful, not the old ~0.146
+        for m in (1.0, 1.30, 0.6):
+            note = " ".join(cooling.compute_cooling_hz("wd", mass_solar=m, teff=25970).get("notes", []))
+            self.assertNotIn("young_teff_cooling_age_inflation", note)
 
-    def test_young_teff_note_gated_above_one_msun(self):
-        # The CR-11.1 transparency note appears only for M > 1.0 at young/hot epochs; never ≤1.0.
-        self.assertNotIn("young_teff_cooling_age_inflation",
-                         " ".join(cooling.compute_cooling_hz("wd", mass_solar=1.0, teff=25970)["notes"]))
-        note = " ".join(cooling.compute_cooling_hz("wd", mass_solar=1.018, teff=25970)["notes"])
-        self.assertIn("young_teff_cooling_age_inflation", note)
+
+class Cr12AgeRederivationTest(unittest.TestCase):
+    """CR-12 — the ≤1.00 cooling-age re-derivation guard. Asserts the shipped table's cooling-age
+    matches the dense Bedard 2020 source (seq_0XX_thick.txt Age column) across the FULL 0.40-1.30 grid
+    at all four audited Teff — the check CR-11.1's radius-only closure identity lacked, which let the
+    sparse-age defect pass. Source ages are frozen literals (generated from the archived seq files;
+    WB re-derives them independently), so a regression in _WD_COOLING breaks this."""
+
+    # Dense-source cooling ages (Gyr) {Teff_K: {mass_Msun: age}} — every grid mass, all four Teff
+    # (25970 = Sirius B's regime; 15000 held the old worst error +86% @1.00; 6000 spans the turnover).
+    _SOURCE = {
+        25970: {0.40: 0.0085, 0.45: 0.0116, 0.50: 0.0132, 0.55: 0.0142, 0.60: 0.0154, 0.65: 0.0175, 0.70: 0.0218, 0.75: 0.0296, 0.80: 0.0411, 0.85: 0.0554, 0.90: 0.0716, 0.95: 0.0895, 1.00: 0.1095, 1.05: 0.1326, 1.10: 0.1609, 1.15: 0.1971, 1.20: 0.2452, 1.25: 0.3100, 1.30: 0.4675},
+        15000: {0.40: 0.0960, 0.45: 0.1160, 0.50: 0.1395, 0.55: 0.1662, 0.60: 0.1954, 0.65: 0.2266, 0.70: 0.2597, 0.75: 0.2951, 0.80: 0.3342, 0.85: 0.3790, 0.90: 0.4317, 0.95: 0.4949, 1.00: 0.5708, 1.05: 0.6609, 1.10: 0.8276, 1.15: 1.0623, 1.20: 1.2657, 1.25: 1.4102, 1.30: 1.4534},
+        10000: {0.40: 0.3909, 0.45: 0.4464, 0.50: 0.5051, 0.55: 0.5667, 0.60: 0.6329, 0.65: 0.7069, 0.70: 0.7931, 0.75: 0.8947, 0.80: 1.0134, 0.85: 1.1503, 0.90: 1.3508, 0.95: 1.6853, 1.00: 2.0158, 1.05: 2.2952, 1.10: 2.5242, 1.15: 2.6830, 1.20: 2.7457, 1.25: 2.6946, 1.30: 2.4440},
+        6000:  {0.40: 1.4694, 0.45: 1.6487, 0.50: 1.8629, 0.55: 2.1181, 0.60: 2.4190, 0.65: 2.9198, 0.70: 3.6172, 0.75: 4.2777, 0.80: 4.7817, 0.85: 5.2385, 0.90: 5.5940, 0.95: 5.8598, 1.00: 6.0777, 1.05: 6.1840, 1.10: 6.1496, 1.15: 6.0087, 1.20: 5.6855, 1.25: 5.1310, 1.30: 4.3117},
+    }
+
+    def test_source_faithful_below_one_msun(self):
+        # CR-12: the ≤1.0 M☉ cooling AGES are re-derived from the dense Bedard 2020 source. The CR-11.1
+        # "byte-identical ≤1.0" guarantee is deliberately SUPERSEDED (it protected the sparse-sampling
+        # over-read): ages drop ~28%. radius/Teff/L stay source-faithful — the radius differs from the
+        # old chord value by ~1e-6 (recomputed, not just loosened). Relative-ish tolerances (age places=4,
+        # radius places=5) rather than places=6 so a benign last-ULP interpolation change can't flake it.
+        r06 = cooling.compute_cooling_hz("wd", mass_solar=0.6, teff=25970)
+        self.assertAlmostEqual(r06["cooling_age_gyr"], 0.015389, places=4)   # was 0.021342
+        self.assertAlmostEqual(r06["radius_rsun"], 0.013900, places=5)
+        r10 = cooling.compute_cooling_hz("wd", mass_solar=1.0, teff=25970)
+        self.assertAlmostEqual(r10["cooling_age_gyr"], 0.109566, places=4)   # was 0.151411
+        self.assertAlmostEqual(r10["radius_rsun"], 0.008294, places=5)
+
+    def test_age_matches_source_at_anchors(self):
+        # Tolerance is 2% = the WB re-gate tolerance, NOT the <0.5% build-time TABLE fidelity: the tool's
+        # _age_for_teff bisection adds a ~1e-4 Gyr resolution floor (~1% at the youngest sub-0.01-Gyr
+        # epochs), so 2% is the tightest gate that holds across the whole grid via the tool. _SOURCE here
+        # is transcribe-pipeline-generated; test_age_matches_independent_verbatim_source_rows (below)
+        # breaks that circularity with raw verification-doc rows.
+        for teff, bymass in self._SOURCE.items():
+            for m, src in bymass.items():
+                got = cooling.compute_cooling_hz("wd", mass_solar=m, teff=teff)["cooling_age_gyr"]
+                self.assertLessEqual(abs(got - src) / src, 0.02,
+                                     f"{m} M☉ @ {teff} K: {got:.4f} vs source {src:.4f}")
+        # Sirius B (1.018) interpolates between the 1.00 and 1.05 nodes @25970 (monotonic older-with-mass).
+        sb = cooling.compute_cooling_hz("wd", mass_solar=1.018, teff=25970)["cooling_age_gyr"]
+        self.assertTrue(0.1095 < sb < 0.1326, sb)
+
+    def test_age_matches_independent_verbatim_source_rows(self):
+        # F4 guard (independent of the transcribe pipeline): _SOURCE above is generated by the SAME
+        # pipeline as _WD_COOLING, so a shared parse/units bug would corrupt both and still pass. These
+        # raw (Teff_K, Age_yr) bracketing rows are the wd-cooling-grid-verification.md §3.1 VERBATIM pins
+        # (cross-checked byte-for-byte against the seq files at build). The test does its OWN /1e9
+        # conversion + linear-in-Teff interp, so a table age-units error is independently caught.
+        def independent_gyr(lo, hi, teff):        # lo/hi = (Teff_K, Age_yr)
+            w = (teff - lo[0]) / (hi[0] - lo[0])
+            return (lo[1] + w * (hi[1] - lo[1])) / 1e9
+        cases = [
+            (1.00, 25970, (26239.5864, 1.054917e8), (25827.3842, 1.116121e8)),  # seq_100 -> ~0.1095 Gyr
+            (0.90, 10000, (10157.5197, 1.275791e9), (9994.1959, 1.353542e9)),   # seq_090 -> ~1.351 Gyr
+            (1.00, 10000, (10109.5634, 1.954125e9), (9934.1117, 2.052958e9)),   # seq_100 -> ~2.016 Gyr
+        ]
+        for m, teff, lo, hi in cases:
+            expected = independent_gyr(lo, hi, teff)
+            got = cooling.compute_cooling_hz("wd", mass_solar=m, teff=teff)["cooling_age_gyr"]
+            self.assertLessEqual(abs(got - expected) / expected, 0.02,
+                                 f"{m} M☉ @ {teff} K: {got:.4f} vs independent {expected:.4f}")
+
+    def test_age_monotonic_with_mass_below_turnover(self):
+        # At fixed Teff cooling age rises with mass up to the (Teff-dependent) crystallization turnover,
+        # then may fall — real physics, kept. Assert STRICTLY monotone below the turnover (a flattened
+        # age column must fail). Near-turnover steps are only ~1.7-2.3%, so this relies on the <0.5%
+        # build tolerance, not the 2% re-gate.
+        def age(m, teff):
+            return cooling.compute_cooling_hz("wd", mass_solar=m, teff=teff)["cooling_age_gyr"]
+        # 25970 K: no turnover through 1.30 — strictly increasing with mass.
+        a = [age(m, 25970) for m in (0.90, 0.95, 1.00, 1.05, 1.10, 1.20, 1.30)]
+        self.assertTrue(all(a[i] < a[i + 1] for i in range(len(a) - 1)), a)
+        # 10000 K: rises to the ~1.20 turnover, then falls by 1.25.
+        self.assertLess(age(1.15, 10000), age(1.20, 10000))
+        self.assertGreater(age(1.20, 10000), age(1.25, 10000))
+        # 6000 K: turnover near ~1.05 — 1.10 is younger than 1.05.
+        self.assertGreater(age(1.05, 6000), age(1.10, 6000))
+
+
+class Cr124OneCoreCaveatTest(unittest.TestCase):
+    """CR-12.4 — the additive ``one_core_uncertain`` notes caveat for high-mass WDs, in ALL three modes
+    (snapshot / residence / CHZ; Part 2 extended it beyond snapshot). The bundled grid is Bedard 2020
+    CO-core; WDs > 1.05 M☉ may host O-Ne cores it does not resolve (Camisassa et al. 2019). Transparency
+    flag only — NO numeric output changes; Sirius B (1.018) is below the threshold; text identical across modes."""
+
+    _FLAG = "one_core_uncertain"
+
+    def _notes(self, r):
+        return " ".join(r.get("notes", []))
+
+    def test_present_above_threshold(self):
+        # criterion 1: 1.10/25970 -> caveat present, cooling_age unchanged (~0.161).
+        r = cooling.compute_cooling_hz("wd", mass_solar=1.10, teff=25970)
+        self.assertIn(self._FLAG, self._notes(r))
+        self.assertAlmostEqual(r["cooling_age_gyr"], 0.161, delta=0.004)
+
+    def test_absent_at_and_below_threshold(self):
+        # criterion 2 (1.00) + the boundary (1.05, the top CO node — the gate is strictly >1.05).
+        r100 = cooling.compute_cooling_hz("wd", mass_solar=1.00, teff=25970)
+        self.assertNotIn(self._FLAG, self._notes(r100))
+        self.assertAlmostEqual(r100["cooling_age_gyr"], 0.1096, delta=0.003)
+        r105 = cooling.compute_cooling_hz("wd", mass_solar=1.05, teff=25970)
+        self.assertNotIn(self._FLAG, self._notes(r105))
+
+    def test_sirius_b_unaffected(self):
+        # criterion 3: Sirius B 1.018/25970 is below the threshold -> absent, value unchanged.
+        r = cooling.compute_cooling_hz("wd", mass_solar=1.018, teff=25970)
+        self.assertNotIn(self._FLAG, self._notes(r))
+        self.assertAlmostEqual(r["cooling_age_gyr"], 0.1178, delta=0.004)
+
+    def test_coexists_with_other_notes_no_numeric_drift(self):
+        # criterion 4: the caveat coexists with a pre-existing note and changes NO numeric field.
+        # A hot young >T_ONe snapshot carries BOTH one_core_uncertain and hz_undefined_extrapolation.
+        r_hot = cooling.compute_cooling_hz("wd", mass_solar=1.20, cooling_age_gyr=0.0001)
+        notes = " ".join(r_hot.get("notes", []))
+        self.assertIn(self._FLAG, notes)
+        self.assertIn("hz_undefined_extrapolation", notes)     # pre-existing note intact
+        # numerics untouched by the additive note: 1.20/25970 still the CR-12 source value.
+        r = cooling.compute_cooling_hz("wd", mass_solar=1.20, teff=25970)
+        self.assertAlmostEqual(r["cooling_age_gyr"], 0.245, delta=0.006)
+
+    def test_threshold_and_source_documented(self):
+        # criterion 5: T_ONe and its cited source are recorded in code + surfaced in the runtime note.
+        self.assertEqual(cooling._T_ONE_MSUN, 1.05)
+        note = self._notes(cooling.compute_cooling_hz("wd", mass_solar=1.10, teff=25970))
+        self.assertIn("Camisassa", note)          # cited source
+        self.assertIn("1.05", note)               # threshold
+
+    # ── CR-12.4 Part 2: residence + CHZ modes (criteria 6-10) ───────────────────────────────────
+    def test_residence_and_chz_modes_carry_caveat(self):
+        # criteria 6-8: residence + CHZ modes gain a `notes` array with the caveat >1.05, empty ≤1.05.
+        res_hi = cooling.compute_cooling_hz("wd", mass_solar=1.10, sma_au=0.01)
+        self.assertEqual(res_hi["mode"], "residence")
+        self.assertIn(self._FLAG, self._notes(res_hi))
+        self.assertEqual(cooling.compute_cooling_hz("wd", mass_solar=1.018, sma_au=0.01)["notes"], [])  # Sirius B
+        chz_hi = cooling.compute_cooling_hz("wd", mass_solar=1.10, chz_threshold_gyr=3.0)
+        self.assertEqual(chz_hi["mode"], "chz")
+        self.assertIn(self._FLAG, self._notes(chz_hi))
+        self.assertEqual(cooling.compute_cooling_hz("wd", mass_solar=1.00, chz_threshold_gyr=3.0)["notes"], [])
+
+    def test_identical_caveat_text_across_all_three_modes(self):
+        # criterion 10: byte-identical note string in snapshot / residence / CHZ (one source of truth).
+        def onecore(r):
+            return [n for n in r.get("notes", []) if self._FLAG in n]
+        snap = onecore(cooling.compute_cooling_hz("wd", mass_solar=1.10, teff=25970))
+        res = onecore(cooling.compute_cooling_hz("wd", mass_solar=1.10, sma_au=0.01))
+        chz = onecore(cooling.compute_cooling_hz("wd", mass_solar=1.10, chz_threshold_gyr=3.0))
+        self.assertEqual(len(snap), 1)
+        self.assertEqual(snap, res)
+        self.assertEqual(res, chz)
+
+    def test_bd_track_never_flagged(self):
+        # the CO->ONe caveat is a WD-core concept; the BD track never carries it, in any mode.
+        for kw in (dict(cooling_age_gyr=0.01), dict(sma_au=0.02), dict(chz_threshold_gyr=3.0)):
+            self.assertNotIn(self._FLAG,
+                             self._notes(cooling.compute_cooling_hz("bd", mass_mjup=60.0, **kw)))
+
+    def test_part2_no_numeric_drift(self):
+        # criteria 6-9: the caveat is a SEPARATE additive field, so residence/CHZ numerics are untouched.
+        # Regression pin at a >1.05 mass (these ARE the CR-12 values — Part 2 never touches the computation).
+        res = cooling.compute_cooling_hz("wd", mass_solar=1.10, sma_au=0.01)
+        self.assertAlmostEqual(res["residence_gyr"], 3.748, delta=0.02)
+        self.assertAlmostEqual(res["entry_age_gyr"], 4.575, delta=0.02)
 
 
 class DistillationPauseTest(unittest.TestCase):
@@ -306,6 +481,10 @@ class DistillationPauseTest(unittest.TestCase):
         b6 = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=6.0)
         p6 = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=6.0,
                                         cooling_delay_gyr=8.0)
+        # CR-12 None-guard: the no-pause thr-6.0 band must be non-empty (0.6 M☉ peak ~6.98 > 6.0);
+        # fail cleanly rather than assertGreater(number, None) → TypeError if a future shift empties it.
+        self.assertIsNotNone(b6["chz_outer_au"])
+        self.assertIsNotNone(p6["chz_outer_au"])
         self.assertGreater(p6["chz_outer_au"], b6["chz_outer_au"])
         # At 8 Gyr standard cooling yields NO CHZ, but the pause creates one.
         b8 = cooling.compute_cooling_hz("wd", mass_solar=0.6, chz_threshold_gyr=8.0)
@@ -347,7 +526,7 @@ class ValidationTest(unittest.TestCase):
     def test_error_matrix(self):
         cases = [
             dict(track="xx"),
-            dict(track="wd", mass_solar=2.0),                 # off-grid (WD grid 0.4-1.0)
+            dict(track="wd", mass_solar=2.0),                 # off-grid (WD grid 0.4-1.30; 2.0 > Chandrasekhar)
             dict(track="bd", mass_mjup=200),                  # off-grid (BD grid ~13-75)
             dict(track="wd", teff=-5),
             dict(track="wd", sma_au=0.0),

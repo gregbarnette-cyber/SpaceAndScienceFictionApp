@@ -4251,7 +4251,10 @@ Tests: `tests/test_shared_luminosity_class.py`, `tests/test_report.py::Cr105Part
 
 Built 2026-08-26. Additive to CR-8/9/10; edits no fulfilled spec. `completed_plans/PHASE_CR11_PLAN.md`.
 
-**CR-11.1 — `cooling-hz --track wd` high-mass extension.** The bundled WD cooling grid was extended **0.40 → 1.30 M☉**
+**CR-11.1 — `cooling-hz --track wd` high-mass extension.** *(⚠ **SUPERSEDED BY CR-12** — the ≤1.0 "byte-identical"
+guarantee, the `young_teff_cooling_age_inflation` note, and the `cooling_age_gyr ≈ 0.146` Sirius-B anchor described
+below are all replaced. The whole 0.40–1.30 grid is now a dense Bedard 2020 re-derivation; Sirius B ≈ 0.118. See the
+CR-12 block.)* The bundled WD cooling grid was extended **0.40 → 1.30 M☉**
 (the same Bedard 2020 / Montreal DA thick-H sequences `seq_105…130_thick.txt`, transcribed + closure-validated). A WD mass
 **`1.30 < M ≤ ~1.38`** (Chandrasekhar) now **clamps** to the 1.30 sequence (no grid-range error); **`M > ~1.38` refuses**
 (`{"error": "…exceeds the Chandrasekhar limit…"}`). **Unchanged JSON shape.** **≤ 1.0 M☉ is byte-identical** (no regression;
@@ -4328,6 +4331,57 @@ query.py exclusion-system --component "id=A,mass=2.063,class=A0mA1Va,pair=AB,sma
 Tests: `tests/test_exclusion_system.py` (anchors/domain-guard/merge/envelope/point-mass/degenerate/validation),
 `tests/test_query_exclusion_system.py` (query contract), `tests/test_query_exclusion_system_live.py` (live `--star Sirius`).
 Core: `core/exclusion_system.py` (composes the frozen `core/exclusion_boundary.py`).
+
+## CR-12 — WD cooling-grid ≤1.00 M☉ cooling-age re-derivation (Bedard 2020 unification) + criterion-1 correction
+
+Built 2026-08-26. A **correction** CR (not additive): it deliberately **supersedes** CR-11.1's "byte-identical ≤1.0"
+guarantee and **amends** CR-11.1's criterion 1. `completed_plans/PHASE_CR12_PLAN.md`; evidence
+`scifiWorldBuilding-Claude/design-lab/star-system-analysis/wd-cooling-grid-verification.md`.
+
+**The fix.** `cooling-hz --track wd`'s ≤1.00 M☉ **cooling-age** was erratically wrong (+2..+86%) vs the Bedard 2020
+Montreal `seq_XXX_thick.txt` sequences the `model_note` cites, while `radius_rsun`/`teff_k`/`lum_lsun` were
+source-exact — an **age-only** defect. Root cause: the ≤1.00 rows were **sparsely sampled** (~10 nodes/sequence,
+skipping the ~18k–30k K mid-track), so linear-in-Teff interpolation over-read the convex age(Teff) curve. CR-12
+re-derives the **whole 0.40–1.30 M☉ grid** as one dense adaptive resample of the source `Age` column (uniform
+0.05 M☉ spacing; ~77 nodes/mass; reproduced by `CR12_montreal_files/transcribe.py` + the archived seq files), so the
+cooling-age matches source to **~2%** (build target <0.5%) across all four §3.1 anchor Teff.
+
+**Contract impact (JSON shape unchanged).**
+- **Existing ≤1.00 cooling ages CHANGE** (up to ~86% — a correction). E.g. `1.00/25970` **0.1514 → 0.1096**;
+  `0.6/25970` **0.0213 → 0.0154**.
+- **Sirius B `1.018/25970` → `cooling_age_gyr ≈ 0.118`** (was 0.146), **≥ the clean M=1.00 (~0.110)** — monotonic
+  older-with-mass (criterion 1 corrected: at fixed Teff a more massive WD is *older*; the 0.151 reference is retired).
+- The **`young_teff_cooling_age_inflation` note is REMOVED** (D-B) — the ages are source-faithful, so it would be false.
+- **Age-axis re-parameterization:** any age-dependent output also shifts — snapshot state at `--cooling-age-gyr`,
+  residence time, the CHZ band, and the ²²Ne distillation-pause epochs — a correct consequence of the more accurate
+  age axis (WB re-checked: no production card blast beyond `cards/sirius.md`). **Teff-only outputs
+  (`radius_rsun`/`teff_k`/`lum_lsun` at a given Teff) are unchanged/source-faithful.**
+- `> 1.38` still refuses; the 1.30–1.38 Chandrasekhar clamp is intact. `_BD_COOLING` (BD track) untouched.
+
+```
+query.py cooling-hz --track wd --mass-solar 1.018 --teff 25970    # Sirius B: age ~0.118 Gyr (was 0.146), R ~0.008 R☉
+query.py cooling-hz --track wd --mass-solar 1.00  --teff 25970    # age ~0.110 Gyr (was 0.151)
+```
+Tests: `tests/test_cooling_hz.py::Cr12AgeRederivationTest` (age-vs-source anchors + turnover monotonicity),
+`::Cr111HighMassWDTest` (re-pinned: source-faithful ≤1.0, Sirius B older-with-mass, note removed). Source archive +
+regenerator: `CR12_montreal_files/` (19 seq files + md5 MANIFEST + `transcribe.py`).
+
+**CR-12.4 — `one_core_uncertain` runtime caveat for high-mass WDs (additive, 2026-08-26).** `cooling-hz --track wd`
+now carries an additive **`one_core_uncertain`** entry in the `notes` array — in **all three modes (snapshot /
+residence / CHZ)**, Part 2 having extended it beyond snapshot — when `--mass-solar` **> 1.05 M☉** (`_T_ONE_MSUN`): the
+bundled grid is CO-core (Bédard 2020), and WDs above ~1.05 M☉ may host **O-Ne cores** the
+CO grid does not resolve (ONe cores are more compact / cool faster; the literature pairs CO-Bédard ≤1.05 with
+**ONe-Camisassa et al. 2019, A&A 625, A87** >1.05). **No numeric output changes** —
+`cooling_age_gyr`/`radius_rsun`/`teff_k`/`lum_lsun`/zones and every residence/CHZ-band value are untouched; the caveat
+coexists with any existing note (e.g. `hz_undefined_extrapolation` in snapshot). The note **text is byte-identical
+across all three modes** (one source of truth, `core.cooling._one_core_notes`). **Sirius B (1.018 M☉) is below the
+threshold → caveat absent** in every mode; the BD track never carries it. No new flags; residence/CHZ gain an
+always-present `notes` array (empty `[]` ≤1.05). Tests: `tests/test_cooling_hz.py::Cr124OneCoreCaveatTest`.
+```
+query.py cooling-hz --track wd --mass-solar 1.10  --teff 25970    # snapshot: notes has one_core_uncertain; age 0.161
+query.py cooling-hz --track wd --mass-solar 1.10  --sma-au 0.01   # residence: same caveat; residence_gyr unchanged
+query.py cooling-hz --track wd --mass-solar 1.018 --teff 25970    # Sirius B: caveat absent; age 0.1178 unchanged
+```
 
 ## Implementation notes
 
