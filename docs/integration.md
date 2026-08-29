@@ -4468,13 +4468,18 @@ The standalone **`multiplicity`** subcommand exposes no per-component masses and
 `resolution_notes` on `binary-stability-auto` / the dossier `multiplicity` section; `degenerate` on a `binary-orbit`
 solution. Existing keys/shapes are unchanged.
 
-**Anchors** (WB re-gates live, both with and without the catalog): `binary-stability-auto --star "alpha Centauri"
-[--star-mass-catalog <cat>]` → A `1.079`/`catalog`, B `0.909`/`catalog`, sma/period from the real-ratio solution,
-stype/ptype from μ≈0.457; **equal to** `dossier --sections multiplicity --star "alpha Centauri"` and to
-`exclusion-system`'s per-component masses. `binary-stability-auto --star "Sirius"` (no seeded B) → Sirius B
-`0.458`/`binary_orbit_sb1_min`, matching `exclusion-system`. `binary-orbit --star "alpha Centauri"` → the degenerate
-`q=1.0` solution carries `degenerate: true`. Regression: standalone `multiplicity --star "alpha Centauri"`
-byte-identical; Sol / ε Eri unaffected; the CR-11/CR-13 exclusion anchors unchanged under the CR-14.4 filter. Cores:
+**Anchors** (WB re-gated live 2026-08-29, both with and without the catalog): `binary-stability-auto --star "alpha
+Centauri" [--star-mass-catalog <cat>]` → A `1.079`/`catalog`, B `0.909`/`catalog`, **sma `23.326`, stype_critical
+`2.749`, ptype_critical `86.652`** (μ=0.457; was the degenerate `2.596`/`87.005`), the real-ratio period `P≈29183`
+(not the degenerate `29650`); **equal to** `dossier --sections multiplicity --star "alpha Centauri"` (identical
+1.079/0.909, `multiplicity_basis` now the real-ratio P=29183) and to `exclusion-system`'s per-component masses.
+`binary-stability-auto --star "Sirius"` (no seeded B) → Sirius B `0.458`/`binary_orbit_sb1_min`, matching
+`exclusion-system`. `binary-orbit --star "alpha Centauri"` → the degenerate `q=1.0` solution carries
+`degenerate: true`, the real-ratio solutions after it. Regression: standalone `multiplicity --star "alpha Centauri"`
+byte-identical (classification only, sep 10.788); Sol / ε Eri unaffected. **CR-11/CR-13 exclusion anchors UNCHANGED
+under the CR-14.4 (b) filter (re-verified live, not asserted):** α Cen A `48.97` / B `45.72` / env `{54.10, 65.17}` /
+point-mass `62.53`; Sirius A `63.46` / B null-WD / env `{66.14, 73.84}`; Proxima `20.48`; Sirius B bare
+`unresolved_out_of_domain`; `--component` `48.967`; ε Eri `0.811`/`gaia_flame`/`43.69`. Cores:
 `core/binary.py` (the shared selector + `_extract_stability_elements_full` + `_mass_flags` hoist + the chain wiring +
 the `binary-orbit` marker), `core/stellar_mass.py` (the hoisted `resolve_component_mass` / `augment_designations` /
 `component_candidate_ids` + the `resolve_binary_components` orchestrator), `core/exclusion_system.py` (now delegates the
