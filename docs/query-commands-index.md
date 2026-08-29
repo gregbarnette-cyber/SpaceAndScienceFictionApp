@@ -291,7 +291,7 @@ descriptions are condensed from integration.md's prose.
 |---|---|
 | `debris-disk` | Observed IR-excess debris disk vs Chen 2014 + Cotten & Song 2016, else a per-star AllWISE-W4 warm-dust upper limit (never null). LIVE. |
 | `multiplicity` | Stellar-multiplicity summary — otype hint + `binary-orbit` tool-split + GCNS component count (SB1 masses = sin i=1 lower bound). LIVE. |
-| `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a tiered companion-mass extractor + `e_out_of_hw_range` flag. LIVE. |
+| `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a **catalog-aware per-component mass chain** (`--star-mass-catalog`; same masses as `exclusion-system`/dossier) + real-ratio solution selection + `e_out_of_hw_range` flag. LIVE. |
 | `population-classify` | Thin/thick/halo Galactic-population verdict from U/V/W (Bensby velocity-ellipsoid on a Schönrich LSR). |
 | `nuclear-inventory` | Fusion + fissile (per-isotope GCE, WB 3c FINAL) + radiogenic-heat inventory from stellar [Fe/H]/age/[Eu/H]; CR-10.2 `[Fe/H]>+0.5` soft `feh_extrapolation` flag. |
 | `detection-completeness` | Per-method min-detectable-planet-vs-SMA map (RV/transit/astrometry/imaging), WB 3a FINAL defaults; CR-10.4 archive-M★ preference + `star_mass_provenance`; CR-10.3 per-star RV tier-2 catalog (`--rv-precision-catalog`) + per-method `floor_provenance`. |

@@ -3643,7 +3643,7 @@ Core: `binary.binary_orbit(star=None, ra=None, dec=None, source_id=None)`. Outpu
 `{query, identity:{main_id, ra, dec, sp_type, parallax_mas, distance_ly, gaia_source_id, hip},
 solutions:[{source, solution_type|seq, period_d, eccentricity, grade, primary_ref,
 separation_arcsec, separation_au, component, companion:{method, m1_solar, m2_solar, m2_mjup, a0_mas,
-a1_au, mass_function, class, low_significance, caveat, mass_ratio_q?, binary_masses?}, verification}],
+a1_au, mass_function, class, low_significance, caveat, mass_ratio_q?, binary_masses?}, verification, degenerate?}],
 route_tried:[…], route_errors?, note?, units:{…}}`. The **`companion.binary_masses`** sub-block (§3.3)
 is the **independent Gaia `gaiadr3.binary_masses` cross-check**, present only when Gaia derived a mass
 for that source: `{m1_solar, m2_solar(+m2_lower/upper), fluxratio, combination_method, m1_ref,
@@ -3892,13 +3892,18 @@ components:[{basis, sb_flag, sep_au?, m2_solar_lower?}], sb_flag, sources, note?
 astrometric / SB1 / SB2 / eclipsing / spectroscopic; **SB1 masses are always the sin i=1 lower bound**.
 
 #### `binary-stability-auto` (CR-3 — LIVE)
-Auto-pipes `binary-orbit` → Holman-Wiegert stability in one call (no manual re-entry). Picks the best
-solution, derives the binary relative semi-major axis via Kepler III (period + masses), and runs the S/P-type
-critical-SMA calc. A visual pair without a companion classifier falls to a primary-spectral-type equal-mass
-estimate. **`elements: null` + a `note` is a correct find≠fabricate result**, not a failure: a solution with no
-absolute masses AND no period (SB2-only / WDS-projected-separation / no period-bearing orbit in any route) can't
-yield a relative `a`. It resolves wherever the catalog carries masses+period (e.g. α Cen: SB9 masses → S-crit
-2.6 AU). **Note on 36 Oph:** the canonical anchor (M1=M2=0.85, e=0.92 → S-crit 0.30–0.47 AU, test 1 AU unstable)
+Auto-pipes `binary-orbit` → Holman-Wiegert stability in one call (no manual re-entry). **CR-14.1** selects a
+real-ratio solution over a degenerate `q≈1.0` placeholder, derives the binary relative semi-major axis via
+Kepler III, and runs the S/P-type critical-SMA calc. **CR-14.3** routes the per-component **masses** through
+the shared CR-11.2/CR-13.2 chain (`manual > --star-mass-catalog / internal seed > Gaia FLAME > orbit-ratio /
+inversion`), so a measured catalog/FLAME mass wins over the orbit split and the masses match `exclusion-system`
+/ the dossier `multiplicity` section; a visual pair with no measured mass and no companion classifier falls to a
+primary-spectral-type equal-mass estimate (flagged). **`elements: null` + a `note` is a correct find≠fabricate
+result**, not a failure: a solution with no absolute masses AND no period (SB2-only / WDS-projected-separation /
+no period-bearing orbit in any route) can't yield a relative `a`. It resolves wherever a mass source + period
+exist (e.g. α Cen → stype_critical ≈ **2.75 AU** from the real-ratio solution, μ≈0.457, masses `1.079/0.909
+catalog` — **not** the superseded degenerate `1.02/1.02` / `2.6 AU`). **Note on 36 Oph:** the canonical anchor
+(M1=M2=0.85, e=0.92 → S-crit 0.30–0.47 AU, test 1 AU unstable)
 is only reproduced when a **period-bearing** orbit is supplied — 36 Oph itself is absent from orb6 (WDS-only, no
 period) so the *live* `--star "36 Ophiuchi"` returns the honest null; supply the elements to `binary-stability`
 to see the 0.30–0.47 AU numbers.
@@ -3906,10 +3911,14 @@ to see the 0.30–0.47 AU numbers.
 query.py binary-stability-auto --star "alpha Centauri" --test-sma-au 1.0   # SB9 masses → stability verdict
 query.py binary-stability-auto --star "36 Ophiuchi"    --test-sma-au 1.0   # honest null (36 Oph not in orb6)
 ```
-Core: `binary.binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None)`. Output:
-`{star, elements:{m1_solar, m2_solar, sma_au, ecc, source, grade, mass_basis, a_basis}|null,
-stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au, test_verdict: stable|unstable|null,
-orbit_type, e_out_of_hw_range, route_tried, note?}`. **`e_out_of_hw_range`** flags an eccentricity past the
+Core: `binary.binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None,
+star_mass_catalog=None)` — **CR-14.3** `--star-mass-catalog <path>` (WB-owned tier-2 catalog; REPLACE semantics,
+loud error on a bad path). Output:
+`{star, elements:{m1_solar, m2_solar, sma_au, ecc, source, grade, mass_basis, a_basis, mass_provenance_a,
+mass_provenance_b}|null, stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au, test_verdict:
+stable|unstable|null, orbit_type, e_out_of_hw_range, route_tried, selected_solution, note?, resolution_notes?}`
+(the per-component `mass_provenance_a/_b`, `selected_solution`, `resolution_notes` are **CR-14** additive).
+**`e_out_of_hw_range`** flags an eccentricity past the
 Holman-Wiegert 1999 fit domain (e≤0.8) — the verdict stays robust, the exact critical SMA is an extrapolation.
 `--test-sma-au 0` (or negative) is a curated `{"error"}` before the network call.
 
@@ -4235,9 +4244,12 @@ Tests: `tests/test_rv_precision.py` (loader/matcher/replace/malformed), `tests/t
   plain `warnings[]` path.
 - **Part 2 — multiplicity-flag cross-check.** The `multiplicity` section now calls **`binary-orbit` once regardless of
   otype**, so a spectroscopic binary whose primary otype is a *variability* class (Spica `bC*`) is still flagged.
-  `is_multiple`/`sb_flag` reflect the SB9/WDS-ORB6/Gaia-NSS cross-check; a new **`multiplicity_basis`** names the catalog
-  source, e.g. `"SB9 seq 766 (P=4.01 d, SB2)"`. Stability reuses the same fetched result (one network call, via the new
-  pure `binary.stability_from_solutions`).
+  `is_multiple`/`sb_flag` reflect the SB9/WDS-ORB6/Gaia-NSS cross-check; **`multiplicity_basis`** names the source —
+  **CR-14** the *selected* real-ratio solution, e.g. `"SB9 seq 766 (P=4.01 d, SB2)"` (no longer a degenerate SB9 pick).
+  Stability reuses the same fetched result (one network call, via `binary.stability_from_solutions`) — **CR-14** made it
+  select a real-ratio solution over a degenerate `q≈1.0` placeholder and route the per-component masses through the shared
+  catalog-aware chain, so the dossier `multiplicity` masses equal `exclusion-system` / `binary-stability-auto` (α Cen
+  `1.079/0.909 catalog`, not the degenerate `1.02/1.02`); it is no longer a pure orbit-mass pass-through.
 ```
 query.py dossier --star Polaris --sections regions --fmt json      # evolved_star_flag=true, luminosity_class="Ib", MS-inversion withheld, L_bol null
 query.py dossier --star Pollux --sections regions --fmt json       # luminosity_class="III" (token boundary), evolved
@@ -4245,7 +4257,7 @@ query.py dossier --star "HD 116658" --sections multiplicity --fmt json  # Spica:
 query.py dossier --star Polaris --sections regions --force-ms-inversion  # override the guard (values unreliable)
 ```
 Tests: `tests/test_shared_luminosity_class.py`, `tests/test_report.py::Cr105Part1RegionGuard`/`Cr105Part2Multiplicity`,
-`tests/test_binary_stability_auto.py` (the refactor is byte-identical), `tests/test_query_dossier_live.py` (live anchors).
+`tests/test_binary_stability_auto.py` (byte-identical **at CR-10.5**; CR-14 later changed `stability_from_solutions` — real-ratio selection + catalog masses — and added the `Cr14*` classes here), `tests/test_query_dossier_live.py` (live anchors).
 
 ## CR-11 — WD cooling-grid extension, stellar-mass provenance & binary/multi-star exclusion composition (three items; additive, no fulfilled behavior moved)
 

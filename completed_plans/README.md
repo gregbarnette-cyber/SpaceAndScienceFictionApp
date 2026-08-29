@@ -24,7 +24,7 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (56 files)
+## Index (59 files)
 
 | File | Title |
 |---|---|
@@ -81,6 +81,10 @@ in here too, with the same history (moved with `git mv`).
 | [ROUTE_CHART_REFACTOR_PLAN.md](ROUTE_CHART_REFACTOR_PLAN.md) | Route-Chart Refactor — the 7 Route Planning maps onto the shared builder (Phases 1–2) + the one-palette unification (Phase 3) |
 | [SPECTRAL_CLASS_PLAN.md](SPECTRAL_CLASS_PLAN.md) | Spectral-Class Prefix Plan — search chips (Part 1) + colour/legend (Part 2) |
 | [STAR_ANALYSIS_CR_PLAN.md](STAR_ANALYSIS_CR_PLAN.md) | Star-Analysis CRs (CR-1…CR-7) — 6 `query.py` subcommands + 3 dossier sections for the WB `star_analysis` skill; incl. the 3c/3a FINAL WB bundles + CR-6-AMEND non-MS host guard |
+| [PHASE_CR11_PLAN.md](PHASE_CR11_PLAN.md) | CR-11 — WD cooling-grid 0.40→1.30 M☉ extension + shared stellar-mass provenance resolver (`core/stellar_mass.py`) + `exclusion-system` binary/multi-star composition; built 2026-08-26 |
+| [PHASE_CR12_PLAN.md](PHASE_CR12_PLAN.md) | CR-12 — WD cooling-grid ≤1.00 M☉ cooling-age re-derivation (dense Bedard 2020 resample) + CR-12.4 `one_core_uncertain` ONe caveat (Camisassa 2019); built 2026-08-26 |
+| [PHASE_CR13_PLAN.md](PHASE_CR13_PLAN.md) | CR-13 — `exclusion-system --star` live-resolution robustness (secondary/wide-member/single-body routing, per-component mass chain, degenerate/SB1 flags, C1→A tolerance); built 2026-08-29 |
+| [PHASE_CR14_PLAN.md](PHASE_CR14_PLAN.md) | CR-14 — shared `_extract_stability_elements` correctness (real-ratio selection + catalog-aware mass chain hoisted to `core/stellar_mass.py` + (b) filter + `binary-orbit` `degenerate` marker) for `binary-stability-auto` / dossier-`multiplicity` / `binary-orbit`; built 2026-08-29 |
 | [future_phases_archive.md](future_phases_archive.md) | Archived Phases — Space & Science Fiction App |
 | [hypatia_implementation.md](hypatia_implementation.md) | Hypatia Catalog Integration — Phase 1: Option 8 (Star System Regions Auto) |
 | [WIKIPEDIA_TABS_PLAN.md](WIKIPEDIA_TABS_PLAN.md) | Wikipedia Article Tab — in-app Wikipedia article on 6 star-facing GUI panels (SIMBAD / NASA 2-5+Map / HWC / OEC / Star Systems Search / opts 18-19); full article via MediaWiki `prop=extracts`, WSL-aware links, shared `run_in_thread`/`_BgDeliveryMixin` threading; built + shipped 2026-08-23 (both `/code-review` checkpoints, suite 3095/76) |
