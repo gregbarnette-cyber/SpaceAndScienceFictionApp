@@ -4383,6 +4383,51 @@ query.py cooling-hz --track wd --mass-solar 1.10  --sma-au 0.01   # residence: s
 query.py cooling-hz --track wd --mass-solar 1.018 --teff 25970    # Sirius B: caveat absent; age 0.1178 unchanged
 ```
 
+## CR-13 — `exclusion-system --star` live-resolution robustness (additive to CR-11.3; new `mass_provenance` enum values)
+
+Built 2026-08-29. Hardens **only** the `--star` auto-resolve convenience layer of `exclusion-system` (CR-11.3). The
+`--component` deterministic core, the frozen single-body generator, the union/merge composition and the barycenter model
+are **unchanged** (their anchors are byte-identical). `completed_plans/PHASE_CR13_PLAN.md`.
+
+**What changed in the `--star` path.**
+- **Component / wide-member / secondary resolution (CR-13.1).** A directly-named **secondary** (`--star "Sirius B"` →
+  SIMBAD `* alf CMa B`) or any **off-MS** body (WD/BD/sdB/sdO/giant/subgiant) resolves to a **single component**, never
+  the old mangled `"Sirius B B"` / placeholder-1.0 / mislabeled-WD output. A **single star** or a **wide-hierarchical
+  member** whose only catalogued "orbit" is a wide bond with no usable component mass (`--star "Proxima Centauri"`, the
+  ~13 000 AU tie to α Cen AB) computes as a **single body** (no crash). A **primary**-named input (`--star "alpha Cen A"`)
+  is **not** caught by the secondary detector — it composes the system. A genuinely unresolvable target returns an error
+  **naming the resolved SIMBAD id + the remedy** (`--star-mass-catalog`, or `--component`).
+- **Per-component mass provenance (CR-13.2).** **Both** the primary and the companion now run the full CR-11.2 chain
+  (`manual → --star-mass-catalog → FLAME → inversion/orbit`); the catalog is matched on the resolved id **and** a
+  **per-component designation** (system id `* alf Cen` also tries `* alf Cen A`/`B`), so a measured catalog mass wins over
+  a binary-orbit split. For a single MS body with no manual/catalog/FLAME mass, the chain's `L`-inversion is fed the
+  bolometric luminosity (same value the dossier inverts), so a no-catalog Proxima resolves to the tool's `0.139` instead
+  of crashing.
+- **Binary-orbit mass quality (CR-13.3).** When the fallback is a `binary-orbit` mass, a **degenerate placeholder** orbit
+  solution (`mass_ratio_q` exactly 1.0) is filtered out in favour of a real-ratio solution; a mass that is only a
+  degenerate equal-split or an SB1 minimum-mass lower bound is **flagged**, never presented as a clean measured mass.
+
+**New additive `mass_provenance` values** (a consumer switching on `mass_provenance` should tolerate them; no existing
+value changes meaning): **`unresolved_out_of_domain`** (a lone out-of-domain body whose mass could not be resolved — the
+sphere is `null` and the mass is numerically inert, so it is emitted with `r_ex_au: null` rather than an error; the C1→A
+tolerance, which the `--component` path shares for a lone out-of-domain component with no `mass=`),
+**`binary_orbit_equal_split_unresolved`** (a placeholder `q=1.0` orbit **or** the no-secondary equal-mass fallback), and
+**`binary_orbit_sb1_min`** (an SB1 sin i=1 lower bound). Each carries a `resolution_notes` caution. Output JSON shape is
+otherwise unchanged.
+
+**Anchors** (WB re-gates live, both `--star` and `--component`; α=0.4, calibration 47.5): `--star "alpha Centauri"
+--star-mass-catalog <cat>` → A `1.079`/`catalog`/`49.0`, B `0.909`/`catalog`/`45.7`, merged `{54, 65}`, minor `≈49`,
+point-mass `62.5` (= the `--component` reference); `--star "Sirius" --star-mass-catalog <cat>` → A `2.063`/`catalog`/`63.5`,
+Sirius B `1.018`/`catalog` (WD guard, `r_ex null`), merged `{66, 74}`; `--star "Sirius B"` → a single WD component,
+`r_ex_au: null`, `class_note "white dwarf"`, **bare** `mass_provenance "unresolved_out_of_domain"` / **with catalog**
+`1.018`/`catalog`; `--star "Proxima Centauri" --alpha 0.4` → single body, **with catalog** `0.1221`/`catalog`/`20.48`,
+**bare** `0.139`/`ms_luminosity_inversion`/`21.57`; `--star "alpha Centauri"` (no catalog) → not a silent `1.02/1.02`
+(real-ratio or a flagged equal-split); `--star "Sirius"` (no B row) → B's `0.458` flagged `binary_orbit_sb1_min`.
+Regression anchors unchanged: `--star "Sol"`/`"epsilon Eridani"`, `--component` α Cen/Sirius/Proxima, `>1.38 M☉` WD
+refuse + out-of-domain guards. Tests: `tests/test_exclusion_system.py` (offline decision helpers + mocked resolver +
+C1→A), live `--star` anchors gated in `tests/test_query_exclusion_system_live.py`. Core: `core/exclusion_system.py` (the
+only file changed).
+
 ## Implementation notes
 
 - No `sys.path` manipulation — Python prepends the script's own directory automatically when run directly, so `import core.X` works without changes.

@@ -6,6 +6,7 @@
 # exclusion-boundary, and validation. The live --star path is gated in test_query_exclusion_system_live.py.
 
 import unittest
+from unittest import mock
 
 import core.exclusion_boundary as eb
 import core.exclusion_system as es
@@ -209,6 +210,281 @@ class ReviewFixTest(unittest.TestCase):
             {"id": "B", "mass_solar": 0.8, "luminosity_lsun": 0.4, "sp_type": "K2V",
              "mass_loss_msun_yr": 1e-14, "pair": "AB", "sma_au": 20, "ecc": 0.3}], gamma=0.5)
         self.assertIsNotNone(gamma["zones"][0]["point_mass_r_ex_au"])
+
+
+# ── CR-13: --star live-resolution robustness (offline; the live cases are gated in
+#    test_query_exclusion_system_live.py). These cover the pure decision helpers + the
+#    _resolve_system_from_star integration with compute_simbad_lookup / binary_orbit / regions mocked.
+_CR13_CAT = {"stars": [
+    {"main_id": "* alf Cen A", "aliases": ["HD 128620", "GJ 559 A"], "mass_solar": 1.079, "citation": "t"},
+    {"main_id": "* alf Cen B", "aliases": ["HD 128621", "GJ 559 B"], "mass_solar": 0.909, "citation": "t"},
+    {"main_id": "* alf CMa A", "aliases": ["HD 48915", "HD 48915A"], "mass_solar": 2.063, "citation": "t"},
+    {"main_id": "* alf CMa B", "aliases": ["HD 48915B", "GJ 244 B"], "mass_solar": 1.018, "citation": "Bond 2017"},
+    {"main_id": "NAME Proxima Centauri", "aliases": ["* alf Cen C", "GJ 551"], "mass_solar": 0.1221,
+     "citation": "Kervella 2017"},
+]}
+
+
+def _fake_simbad(mapping):
+    return lambda name: mapping.get(name, {"error": f"No results for '{name}'"})
+
+
+class Cr13SecondaryDetectorTest(unittest.TestCase):
+    def test_is_secondary_component(self):
+        self.assertTrue(es._is_secondary_component("* alf CMa B"))            # letter suffix
+        self.assertTrue(es._is_secondary_component("* alf Cen C"))            # Proxima component id
+        self.assertTrue(es._is_secondary_component("* alf CMa", otype="white dwarf"))  # off-MS otype
+        self.assertTrue(es._is_secondary_component("WD 0642-166", sp_type="DA2"))      # off-MS sp_type
+        self.assertFalse(es._is_secondary_component("* alf Cen A"))           # primary-named — NOT caught
+        self.assertFalse(es._is_secondary_component("* alf Cen"))             # system head
+        self.assertFalse(es._is_secondary_component("NAME Proxima Centauri"))
+        self.assertFalse(es._is_secondary_component("Sol"))
+        self.assertFalse(es._is_secondary_component(None))
+
+    def test_classify_off_ms(self):
+        self.assertEqual(es._classify_off_ms("white dwarf", None), "wd")
+        self.assertEqual(es._classify_off_ms(None, "DA2"), "wd")
+        self.assertEqual(es._classify_off_ms(None, "T6"), "brown-dwarf")
+        self.assertEqual(es._classify_off_ms("brown dwarf", None), "brown-dwarf")
+        self.assertIsNone(es._classify_off_ms(None, "G2V"))
+        self.assertIsNone(es._classify_off_ms(None, None))
+
+
+class Cr13CandidateIdsTest(unittest.TestCase):
+    def test_component_candidate_ids_strips_trailing_letter(self):   # WB plan-review M4
+        self.assertEqual(es._component_candidate_ids("* alf Cen", "A"), {"* alf Cen A"})
+        self.assertEqual(es._component_candidate_ids("* alf Cen", "B"), {"* alf Cen B"})
+        self.assertEqual(es._component_candidate_ids("* alf Cen A", "B"), {"* alf Cen B"})  # not "…A B"
+        self.assertEqual(es._component_candidate_ids("* alf CMa", "B"), {"* alf CMa B"})
+        self.assertEqual(es._component_candidate_ids("", "A"), set())
+        self.assertEqual(es._component_candidate_ids(None, "A"), set())
+
+    def test_augment_designations_injects_matchable_values(self):
+        d = es._augment_designations({"HD": "HD 128620"}, {"* alf Cen A"})
+        self.assertIn("* alf Cen A", d.values())
+        self.assertIn("HD 128620", d.values())
+        # match_mass sees the injected value → resolves the per-component row
+        import core.stellar_mass_tables as smt
+        row = smt.match_mass(_CR13_CAT, "* alf Cen", d)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["mass_solar"], 1.079)
+
+
+class Cr13SolutionSelectionTest(unittest.TestCase):
+    def _sb2(self, q, p_d=29174.0, e=0.52):
+        return {"companion": {"mass_ratio_q": q}, "period_d": p_d, "eccentricity": e,
+                "source": "sb9", "grade": "a"}
+
+    def _sb1(self, m1, m2, p_d=18300.0, e=0.59):
+        return {"companion": {"m1_solar": m1, "m2_solar": m2, "method": "spec-min",
+                              "caveat": "SB1 minimum mass (sin i = 1 lower bound); true M₂ ≥ this"},
+                "period_d": p_d, "eccentricity": e, "source": "sb9", "grade": "a"}
+
+    def test_degenerate_q_filtered_real_ratio_wins(self):
+        sel, _ = es._select_orbit_masses([self._sb2(1.0), self._sb2(0.84)], "G2V")
+        self.assertAlmostEqual(sel["m2_solar"] / sel["m1_solar"], 0.84, places=5)
+        self.assertEqual(sel["mass_prov_a"], "binary_orbit_m1")
+        self.assertEqual(sel["mass_prov_b"], "binary_orbit_m2")   # real ratio → clean
+
+    def test_all_degenerate_q_flagged(self):
+        sel, _ = es._select_orbit_masses([self._sb2(1.0)], "G2V")
+        self.assertEqual(sel["mass_prov_b"], "binary_orbit_equal_split_unresolved")
+        self.assertTrue(sel["notes"])
+
+    def test_sb1_minimum_flagged(self):
+        sel, _ = es._select_orbit_masses([self._sb1(2.06, 0.458)], "A1V")
+        self.assertEqual(sel["mass_prov_b"], "binary_orbit_sb1_min")
+
+    def test_competing_tier1_sb1_does_not_preempt_real_sb2(self):   # WB plan-review M2
+        # An SB1 (tier-1: carries both masses) alongside a real-ratio SB2 (tier-2): the filter must
+        # drop the tier-1 row so _extract lands on the real SB2, not the SB1 minimum.
+        sel, _ = es._select_orbit_masses([self._sb1(1.0, 0.5), self._sb2(0.84)], "G2V")
+        self.assertAlmostEqual(sel["m2_solar"] / sel["m1_solar"], 0.84, places=5)
+        self.assertEqual(sel["mass_prov_b"], "binary_orbit_m2")
+
+    def test_no_usable_orbit_returns_none(self):
+        sel, note = es._select_orbit_masses([], "G2V")
+        self.assertIsNone(sel)
+        self.assertTrue(note)
+
+    def test_mass_flags_tier3_equal_mass(self):
+        prov_a, prov_b, notes = es._mass_flags(
+            {"mass_basis": "primary spectral type; equal-mass assumption (secondary mass unknown)",
+             "m1_solar": 1.0, "m2_solar": 1.0})
+        self.assertEqual(prov_b, "binary_orbit_equal_split_unresolved")
+        self.assertTrue(any("equal-mass" in n for n in notes))
+
+
+class Cr13ComposeToleranceTest(unittest.TestCase):
+    """C1 → Option (A): a lone out-of-domain component with an unresolved mass is inert → r_ex null +
+    unresolved_out_of_domain, NOT an error."""
+
+    def test_lone_out_of_domain_unresolved_mass_ok(self):
+        r = es.compose_exclusion_system([{"id": "Sirius B", "class": "wd"}], alpha=0.4)
+        self.assertNotIn("error", r)
+        c = r["zones"][0]["components"][0]
+        self.assertIsNone(c["r_ex_au"])
+        self.assertIsNone(c["mass_solar"])
+        self.assertEqual(c["mass_provenance"], "unresolved_out_of_domain")
+        self.assertEqual(c["class_note"], "white dwarf")
+
+    def test_in_domain_unresolved_mass_still_errors(self):
+        r = es.compose_exclusion_system([{"id": "x", "sp_type": "G2V"}], alpha=0.4)   # MS, no mass
+        self.assertIn("error", r)
+
+    def test_multi_component_unresolved_mass_still_errors(self):
+        # the tolerance is for a LONE body only — a 2-body with an unresolved mass still errors
+        r = es.compose_exclusion_system(
+            [{"id": "A", "mass_solar": 1.0, "sp_type": "G2V", "pair": "AB", "sma_au": 20, "ecc": 0.3},
+             {"id": "B", "class": "wd", "pair": "AB", "sma_au": 20, "ecc": 0.3}], alpha=0.4)
+        self.assertIn("error", r)
+
+    def test_component_path_lone_out_of_domain_reaches_tolerance(self):   # plan-review F2 (parity)
+        r = es.compute_exclusion_system(component_specs=["id=B,class=wd"])   # no mass, lone WD
+        self.assertNotIn("error", r)
+        c = r["zones"][0]["components"][0]
+        self.assertIsNone(c["r_ex_au"])
+        self.assertEqual(c["mass_provenance"], "unresolved_out_of_domain")
+
+    def test_component_path_multi_missing_mass_still_errors(self):        # F2 must not over-reach
+        r = es.compute_exclusion_system(
+            component_specs=["id=A,mass=1.0,type=G2V,pair=AB,sma=20,ecc=0.3",
+                             "id=B,class=wd,pair=AB,sma=20,ecc=0.3"])   # B has no mass, but 2 bodies
+        self.assertIn("error", r)
+
+
+class Cr13ResolverTest(unittest.TestCase):
+    """_resolve_system_from_star with the network mocked (SIMBAD / binary_orbit / regions)."""
+
+    def _run(self, star, catalog, simbad_map, solutions=None, bclum=None, no_flame=False):
+        patches = [mock.patch("core.databases.compute_simbad_lookup", _fake_simbad(simbad_map)),
+                   mock.patch("core.binary.binary_orbit", lambda **k: {"solutions": solutions or []})]
+        if no_flame:
+            patches.append(mock.patch("core.binary.gaia_source_id_from_designations", lambda d: None))
+        if bclum is not None:
+            patches.append(mock.patch("core.regions.compute_star_system_regions_from_simbad",
+                                      lambda sl: {"bcLuminosity": bclum}))
+        for p in patches:
+            p.start()
+        try:
+            return es._resolve_system_from_star(star, catalog)
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+    def test_sirius_b_secondary_single_wd_with_catalog(self):   # CR-13.1 crit-2(a), no "Sirius B B"
+        m = {"Sirius B": {"main_id": "* alf CMa B", "sp_type": "DA2", "otype": "white dwarf",
+                          "designations": {"HD": "HD 48915B"}}}
+        comps, notes = self._run("Sirius B", _CR13_CAT, m)
+        self.assertEqual(len(comps), 1)
+        self.assertEqual(comps[0]["mass_solar"], 1.018)
+        self.assertEqual(comps[0]["mass_provenance"], "catalog")
+        r = es.compose_exclusion_system(comps, alpha=0.4)
+        self.assertIsNone(r["zones"][0]["components"][0]["r_ex_au"])
+        self.assertNotIn("* alf CMa B B", str(r["zones"][0]["members"]))
+        self.assertNotIn("Sirius B B", str(r["zones"][0]["members"]))
+
+    def test_sirius_b_secondary_bare_unresolved(self):          # CR-13.1 crit-2 bare (C1→A)
+        m = {"Sirius B": {"main_id": "* alf CMa B", "sp_type": "DA2", "otype": "white dwarf",
+                          "designations": {"HD": "HD 48915B"}}}
+        comps, notes = self._run("Sirius B", None, m, no_flame=True)
+        r = es.compose_exclusion_system(comps, alpha=0.4)
+        c = r["zones"][0]["components"][0]
+        self.assertIsNone(c["r_ex_au"])
+        self.assertEqual(c["mass_provenance"], "unresolved_out_of_domain")
+
+    def test_proxima_wide_member_single_body_catalog(self):     # CR-13.1/13.2 crit-1 with catalog
+        m = {"Proxima Centauri": {"main_id": "NAME Proxima Centauri", "sp_type": "M5.5Ve",
+                                  "otype": "high proper-motion Star", "designations": {"GJ": "GJ 551"}}}
+        comps, notes = self._run("Proxima Centauri", _CR13_CAT, m, solutions=[])
+        self.assertEqual(len(comps), 1)
+        self.assertEqual(comps[0]["mass_solar"], 0.1221)
+        self.assertEqual(comps[0]["mass_provenance"], "catalog")
+        r = es.compose_exclusion_system(comps, alpha=0.4)
+        self.assertAlmostEqual(r["zones"][0]["components"][0]["r_ex_au"], 20.4824, places=3)
+
+    def test_proxima_bare_uses_bolometric_inversion(self):      # CR-13.2 / Q2 no-catalog
+        m = {"Proxima Centauri": {"main_id": "NAME Proxima Centauri", "sp_type": "M5.5Ve",
+                                  "otype": "star", "designations": {"GJ": "GJ 551"}}}
+        bclum = 0.139 ** (1.0 / 0.2632)
+        comps, notes = self._run("Proxima Centauri", None, m, solutions=[], bclum=bclum, no_flame=True)
+        self.assertAlmostEqual(comps[0]["mass_solar"], 0.139, places=3)
+        self.assertEqual(comps[0]["mass_provenance"], "ms_luminosity_inversion")
+        r = es.compose_exclusion_system(comps, alpha=0.4)
+        self.assertAlmostEqual(r["zones"][0]["components"][0]["r_ex_au"], 21.5725, places=3)
+
+    def test_proxima_component_id_form_also_single_body(self):  # WB plan-review m7
+        m = {"Proxima Centauri": {"main_id": "* alf Cen C", "sp_type": "M5.5Ve", "otype": "star",
+                                  "designations": {"GJ": "GJ 551"}}}
+        comps, notes = self._run("Proxima Centauri", _CR13_CAT, m, solutions=[])
+        self.assertEqual(len(comps), 1)          # secondary-detector branch → still single body
+        self.assertEqual(comps[0]["mass_solar"], 0.1221)
+
+    def test_alpha_cen_binary_both_via_catalog(self):           # CR-13.2 crit-1
+        sols = [{"companion": {"mass_ratio_q": 1.0}, "period_d": 29174.0, "eccentricity": 0.524,
+                 "source": "sb9", "grade": "a"},
+                {"companion": {"mass_ratio_q": 0.84}, "period_d": 29174.0, "eccentricity": 0.524,
+                 "source": "sb9", "grade": "b"}]
+        m = {"alpha Centauri": {"main_id": "* alf Cen", "sp_type": "G2V", "designations": {"HD": "HD 128620"}},
+             "* alf Cen B": {"main_id": "* alf Cen B", "sp_type": "K1V", "otype": "star",
+                             "designations": {"HD": "HD 128621"}}}
+        comps, notes = self._run("alpha Centauri", _CR13_CAT, m, solutions=sols)
+        by = {c["id"]: c for c in comps}
+        self.assertEqual(by["* alf Cen"]["mass_solar"], 1.079)
+        self.assertEqual(by["* alf Cen"]["mass_provenance"], "catalog")
+        self.assertEqual(by["* alf Cen B"]["mass_solar"], 0.909)
+        self.assertEqual(by["* alf Cen B"]["mass_provenance"], "catalog")
+        r = es.compose_exclusion_system(comps, alpha=0.4)
+        z = r["zones"][0]
+        self.assertAlmostEqual(z["long_axis_au"]["periastron"], 54.0, delta=1.0)
+        self.assertAlmostEqual(z["long_axis_au"]["apastron"], 65.0, delta=1.0)
+        self.assertAlmostEqual(z["point_mass_r_ex_au"], 62.5, delta=1.0)
+
+    def test_sirius_binary_no_catalog_flags_sb1_min(self):      # CR-13.3 crit-2
+        sols = [{"companion": {"m1_solar": 2.06, "m2_solar": 0.458, "method": "spec-min",
+                               "caveat": "SB1 minimum mass (sin i = 1 lower bound); true M₂ ≥ this"},
+                 "period_d": 18300.0, "eccentricity": 0.59, "source": "sb9", "grade": "a"}]
+        m = {"Sirius": {"main_id": "* alf CMa", "sp_type": "A0mA1Va", "designations": {"HD": "HD 48915"}},
+             "* alf CMa B": {"main_id": "* alf CMa B", "sp_type": "DA2", "otype": "white dwarf",
+                             "designations": {"HD": "HD 48915B"}}}
+        comps, notes = self._run("Sirius", None, m, solutions=sols, no_flame=True)
+        b = [c for c in comps if c["id"] == "* alf CMa B"][0]
+        self.assertEqual(b["mass_provenance"], "binary_orbit_sb1_min")
+        self.assertTrue(any("SB1 minimum" in n for n in notes))
+
+    def test_primary_named_input_not_caught_as_secondary(self):  # WB MSG 126 regression watch
+        sols = [{"companion": {"mass_ratio_q": 0.84}, "period_d": 29174.0, "eccentricity": 0.52,
+                 "source": "sb9", "grade": "a"}]
+        m = {"alpha Cen A": {"main_id": "* alf Cen A", "sp_type": "G2V", "designations": {"HD": "HD 128620"}},
+             "* alf Cen B": {"main_id": "* alf Cen B", "sp_type": "K1V", "otype": "star",
+                             "designations": {"HD": "HD 128621"}}}
+        comps, notes = self._run("alpha Cen A", _CR13_CAT, m, solutions=sols)
+        # primary-named → NOT single-body-secondary; composes the system, A resolves from catalog
+        self.assertEqual(len(comps), 2)
+        by = {c["id"]: c for c in comps}
+        self.assertEqual(by["* alf Cen A"]["mass_solar"], 1.079)
+
+    def test_lone_hot_subdwarf_not_given_fabricated_inversion_mass(self):   # plan-review F1
+        # A parseable sdB (regions could invert it as a "B star"), but compose's guard flags it
+        # out-of-domain — so the single-body path must NOT hand it an ms_luminosity_inversion mass.
+        m = {"Feige X": {"main_id": "HD 900001", "sp_type": "sdB1", "otype": "hot subdwarf",
+                         "designations": {"HD": "HD 900001"}}}
+        bclum = 5.0   # a luminosity the OLD code would have inverted into a fabricated mass
+        comps, notes = self._run("Feige X", None, m, solutions=[], bclum=bclum, no_flame=True)
+        self.assertEqual(len(comps), 1)
+        self.assertNotIn("mass_solar", comps[0])          # no fabricated mass
+        r = es.compose_exclusion_system(comps, alpha=0.4)
+        c = r["zones"][0]["components"][0]
+        self.assertIsNone(c["r_ex_au"])
+        self.assertEqual(c["mass_provenance"], "unresolved_out_of_domain")
+
+    def test_unresolvable_ms_single_body_names_target_and_remedy(self):   # CR-13.1 crit-3
+        m = {"Wolf 9999": {"main_id": "GJ 9999", "sp_type": "M4V", "otype": "star", "designations": {}}}
+        out = self._run("Wolf 9999", None, m, solutions=[], no_flame=True)  # no catalog, regions absent
+        self.assertIsInstance(out, dict)
+        self.assertIn("error", out)
+        self.assertIn("GJ 9999", out["error"])
+        self.assertIn("--component", out["error"])
 
 
 if __name__ == "__main__":

@@ -36,10 +36,14 @@ resolves the system (SIMBAD + ``binary-orbit``/SB9) then hands the components he
 """
 
 import math
+import re
 
 from core import exclusion_boundary as eb
 from core import stellar_mass
 from core import stellar_mass_tables
+
+_Q_DEGEN_EPS = 1e-6          # a mass_ratio_q within this of exactly 1.0 = a placeholder equal-split
+_WIDE_SMA_AU = 1000.0        # a resolved "orbit" wider than this + an invented equal-mass = a wide member
 
 _DEFAULT_ALPHA = 0.4          # mid of the canon [1/3, 1/2] band; reproduces the hand-card anchors
 _OFF_MS_TAGS = {"wd", "white-dwarf", "white_dwarf", "brown-dwarf", "brown_dwarf", "bd",
@@ -218,14 +222,22 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         return {"error": "--alpha must be in the canon band [1/3, 1/2]."}
 
     comps = []
+    n_comp = len(components)
     for i, c in enumerate(components):
         cid = c.get("id") or f"component-{i + 1}"
         m = c.get("mass_solar")
-        if not (isinstance(m, (int, float)) and not isinstance(m, bool) and m > 0):
-            return {"error": f"component '{cid}' needs a positive mass_solar (got {m!r})."}
+        m_ok = isinstance(m, (int, float)) and not isinstance(m, bool) and m > 0
         domain, class_note = _component_domain(c.get("sp_type"), c.get("class"))
+        # CR-13 C1 → Option (A): a LONE out-of-domain component (WD/BD/rogue/giant) whose mass is
+        # unresolved is numerically inert (single-component barycenter = the star, no in-domain sphere,
+        # no point-mass sum), so it needs no mass — skip the guard and flag it, rather than erroring.
+        lone_ood_unresolved = (n_comp == 1 and domain == "out_of_domain" and not m_ok)
+        if not m_ok and not lone_ood_unresolved:
+            return {"error": f"component '{cid}' needs a positive mass_solar (got {m!r})."}
         comps.append({
-            "id": cid, "mass_solar": float(m), "mass_provenance": c.get("mass_provenance"),
+            "id": cid, "mass_solar": float(m) if m_ok else None,
+            "mass_provenance": c.get("mass_provenance") or (
+                "unresolved_out_of_domain" if lone_ood_unresolved else None),
             "luminosity_lsun": c.get("luminosity_lsun"), "sp_type": c.get("sp_type"),
             "domain": domain, "class_note": class_note,
             "pair": c.get("pair"), "sma_au": c.get("sma_au"), "ecc": c.get("ecc"),
@@ -404,65 +416,260 @@ def _parse_component_spec(s):
     return spec
 
 
-def _resolve_system_from_star(star, catalog):
-    """Best-effort LIVE resolution of a system name → component specs (SIMBAD + binary-orbit).
+# ── CR-13 --star resolution helpers (component / wide-member identity + mass quality) ────────────
+def _is_secondary_component(main_id, otype=None, sp_type=None):
+    """True if a resolved target names a SECONDARY component (must NOT be composed as a primary): a
+    ``main_id`` ending in a space + a non-``A`` component letter (``* alf CMa B``), OR an off-MS
+    otype/sp_type (a WD/BD, which resolves as its own single out-of-domain body). A primary/system head
+    (``* alf Cen A`` / ``* alf Cen``) → False, so a primary-named input is not caught (WB MSG 126)."""
+    if re.search(r"\s[B-Z]$", (main_id or "").strip()):
+        return True
+    return _classify_off_ms(otype, sp_type) is not None
 
-    Resolves the primary (sp_type / mass) and, from ``binary-orbit``, the orbit (sma/ecc) + companion
-    mass. The companion's **domain** (WD/BD) is not carried by binary-orbit, so it is confirmed
-    best-effort by a secondary ``'<name> B'`` SIMBAD lookup. Wide hierarchical companions with no
-    catalogued orbit (e.g. Proxima around α Cen AB) are NOT auto-added — use ``--component`` for those.
-    Returns ``(components, notes)`` or ``{"error": str}``.
-    """
-    from core import databases, binary
+
+def _classify_off_ms(otype=None, sp_type=None):
+    """The explicit off-MS class tag (``wd`` / ``brown-dwarf``) from a SIMBAD otype or spectral type,
+    else None. otype ("white dwarf"/"brown dwarf") is preferred; the degenerate ``D*`` / substellar
+    ``L``/``T``/``Y`` leading letter is the fallback."""
+    ot = (otype or "").lower()
+    sp = (sp_type or "").strip()
+    if "white dwarf" in ot or sp[:1] == "D":
+        return "wd"
+    if "brown dwarf" in ot or sp[:1] in ("L", "T", "Y"):
+        return "brown-dwarf"
+    return None
+
+
+def _component_candidate_ids(system_main_id, suffix):
+    """Per-component catalog-match candidate ids from a system/primary ``main_id`` + a component
+    ``suffix`` (``A``/``B``). Strips any existing trailing `` [A-Z]`` first, so ``* alf Cen A`` + ``B``
+    → ``* alf Cen B`` (NOT ``* alf Cen A B``) and ``* alf Cen`` + ``A`` → ``* alf Cen A`` (WB M4)."""
+    base = (system_main_id or "").strip()
+    if not base:
+        return set()
+    base = re.sub(r"\s+[A-Z]$", "", base)
+    return {f"{base} {suffix}"}
+
+
+def _augment_designations(designations, extra_ids):
+    """A copy of the SIMBAD ``designations`` dict with ``extra_ids`` injected as synthetic values, so
+    ``stellar_mass_tables.match_mass`` (which scans every ``designations`` value against a catalog
+    row's main_id + aliases) hits a per-component catalog row keyed on a designation the base dict
+    lacks (e.g. ``* alf Cen`` resolves the ``* alf Cen A`` row)."""
+    d = dict(designations) if isinstance(designations, dict) else {}
+    for i, x in enumerate(sorted(v for v in extra_ids if v)):
+        d[f"_component_id_{i}"] = x
+    return d
+
+
+def _mass_flags(elements):
+    """(mass_prov_a, mass_prov_b, notes) for a binary-orbit-derived mass pair (CR-13.3 transparency),
+    read entirely from what ``_extract_stability_elements`` already returns — no solution match-back,
+    no change to the frozen function. Flags a degenerate equal-split (a placeholder q≈1.0 orbit OR the
+    no-secondary ``m2=m1`` tier-3 fallback) and an SB1 minimum-mass lower bound; never a silent mass."""
+    basis = elements.get("mass_basis") or ""
+    m1, m2 = elements.get("m1_solar"), elements.get("m2_solar")
+    if "equal-mass assumption" in basis:
+        return ("binary_orbit_m1", "binary_orbit_equal_split_unresolved",
+                ["companion mass unresolved — equal-mass assumption (no secondary mass in the orbit "
+                 "solution); a placeholder, not a measured mass"])
+    if "spec-min" in basis:                        # tier-1 "companion classifier (spec-min)" = SB1
+        return ("binary_orbit_m1", "binary_orbit_sb1_min",
+                ["companion mass is an SB1 minimum (sin i = 1 lower bound); true M₂ ≥ this — a lower "
+                 "bound, not a measured mass"])
+    if ("SB2 mass ratio" in basis and m1 and m2 and abs(m2 / m1 - 1.0) < _Q_DEGEN_EPS):
+        return ("binary_orbit_m1", "binary_orbit_equal_split_unresolved",
+                ["orbit solution reports q exactly 1.0 (a placeholder equal split — a real measured "
+                 "ratio is never exactly unity); treated as unresolved, not a measured mass ratio"])
+    return ("binary_orbit_m1", "binary_orbit_m2", [])
+
+
+def _select_orbit_masses(solutions, sp_type):
+    """CR-13.3 solution selection over a ``binary-orbit`` result's ``solutions``: FILTER out degenerate
+    placeholders (a q≈1.0 SB2, and — where a real SB2 ratio exists — the competing tier-1 absolute-mass
+    rows that would preempt it) BEFORE the frozen ``_extract_stability_elements`` (a mere reorder can't
+    cross ``_extract``'s tier boundaries). Returns ``(sel_dict, None)`` with the winning
+    ``m1/m2/sma/ecc/mass_basis`` + per-side provenance flags, or ``(None, note)`` when no orbit is
+    usable."""
+    from core import binary
+    sols = solutions or []
+
+    def _q(s):
+        return (s.get("companion") or {}).get("mass_ratio_q")
+
+    def _degenerate_sb2(s):
+        q = _q(s)
+        return q is not None and abs(q - 1.0) < _Q_DEGEN_EPS
+
+    def _real_sb2(s):
+        q = _q(s)
+        return q is not None and abs(q - 1.0) >= _Q_DEGEN_EPS
+
+    def _abs_masses(s):
+        c = s.get("companion") or {}
+        return c.get("m1_solar") is not None and c.get("m2_solar") is not None
+
+    if any(_real_sb2(s) for s in sols):
+        pool = [s for s in sols if _real_sb2(s) or not (_degenerate_sb2(s) or _abs_masses(s))]
+    else:
+        pool = [s for s in sols if not _degenerate_sb2(s)]
+    if not pool:
+        pool = sols
+
+    elements, note = binary._extract_stability_elements(pool, {"sp_type": sp_type})
+    if elements is None and pool is not sols:
+        elements, note = binary._extract_stability_elements(sols, {"sp_type": sp_type})
+    if elements is None:
+        return None, note
+    prov_a, prov_b, notes = _mass_flags(elements)
+    return {
+        "m1_solar": elements["m1_solar"], "m2_solar": elements["m2_solar"],
+        "sma_au": elements["sma_au"], "ecc": elements["ecc"],
+        "ecc_assumed": elements.get("ecc_assumed"), "mass_basis": elements.get("mass_basis"),
+        "mass_prov_a": prov_a, "mass_prov_b": prov_b, "notes": notes,
+    }, None
+
+
+def _single_body_component(sl, catalog, star):
+    """Resolve a single / secondary / wide-member star to ONE component via the CR-11.2 mass chain,
+    wiring the bolometric-L inversion (CR-13.2 / Q2) when a **main-sequence** star has no
+    manual/catalog/FLAME mass, and leaving a lone **out-of-domain** body's mass unresolved for
+    compose's C1→(A) tolerance. The MS-vs-out-of-domain decision uses the SAME broad guard compose
+    applies (``_component_domain`` → ``detection._host_class``: WD/BD/sdB/sdO/giant/subgiant), so an
+    out-of-domain star is never given a fabricated inversion mass (plan-review F1). Returns
+    ``(component_dict, mass_or_None, domain, class_note)`` or ``{"error": str}``."""
+    name = sl.get("main_id") or star
+    sp = sl.get("sp_type")
+    class_tag = _classify_off_ms(sl.get("otype"), sp)
+    spec = {"name": sl.get("main_id"), "sp_type": sp, "class": class_tag,
+            "designations": _augment_designations(sl.get("designations"), {sl.get("main_id")})}
+    mass, prov, _n = _resolve_component_mass(spec, catalog)
+    domain, class_note = _component_domain(sp, class_tag)   # broad guard, matches compose
+    if mass is None and domain == "main_sequence":
+        # MS single body with no measured mass — reuse the dossier's bolometric-L inversion (Q2).
+        from core import regions
+        reg = regions.compute_star_system_regions_from_simbad(sl)
+        if isinstance(reg, dict) and "error" not in reg and reg.get("bcLuminosity"):
+            spec["luminosity_lsun"] = reg["bcLuminosity"]
+            # allow_flame=False (plan-review F4): FLAME already missed above; the retry only adds the
+            # L-inversion, so re-issuing the Gaia TAP call would be redundant network I/O.
+            mass, prov, _n = _resolve_component_mass(spec, catalog, allow_flame=False)
+        if mass is None:
+            return {"error": (f"could not resolve a mass for '{star}' (SIMBAD: {name}) — no catalogued "
+                              "mass, no Gaia FLAME, and no usable luminosity for the MS inversion; pass "
+                              "--star-mass-catalog or use --component with mass=<M☉>")}
+    comp = {"id": name, "name": sl.get("main_id"), "sp_type": sp, "class": class_tag,
+            "designations": sl.get("designations")}
+    if spec.get("luminosity_lsun") is not None:
+        comp["luminosity_lsun"] = spec["luminosity_lsun"]
+    if mass is not None:
+        comp["mass_solar"] = mass
+        comp["mass_provenance"] = prov
+    return comp, mass, domain, class_note
+
+
+def _resolve_system_from_star(star, catalog):
+    """CR-13 LIVE resolution of a ``--star`` name → component specs (SIMBAD + binary-orbit).
+
+    Routes a resolved target to the right shape: a directly-named SECONDARY (``Sirius B``) or an
+    off-MS body → a single out-of-domain component (CR-13.1); a single star or a wide-hierarchical
+    member whose only "orbit" is a wide bond → a single body via the mass chain incl. the bolometric-L
+    inversion (CR-13.1 / Q2); a close binary → primary + companion, BOTH through the per-component mass
+    chain (CR-13.2, catalog matched on the per-component designation), any binary-orbit fallback mass
+    flagged (CR-13.3). Never a doubled designation or a placeholder mass presented as real. Returns
+    ``(components, notes)`` or ``{"error": str}``."""
+    from core import databases
     sl = databases.compute_simbad_lookup(star)
     if isinstance(sl, dict) and "error" in sl:
         return {"error": sl["error"]}
+    main_id = sl.get("main_id")
     notes = []
+
+    # CR-13.1: a directly-named secondary (Sirius B → * alf CMa B) or an off-MS body → single body.
+    if _is_secondary_component(main_id, sl.get("otype"), sl.get("sp_type")):
+        built = _single_body_component(sl, catalog, star)
+        if isinstance(built, dict) and "error" in built:
+            return built
+        comp, mass, domain, class_note = built
+        if mass is None and domain == "out_of_domain":
+            notes.append(f"'{star}' is a lone {class_note or 'out-of-domain'} component with no "
+                         "resolvable mass (no catalog row, no Gaia FLAME) — out-of-domain guard gives "
+                         "r_ex=null; pass --star-mass-catalog for its mass")
+        else:
+            notes.append(f"'{star}' resolved to the single component {main_id}")
+        return [comp], notes
+
+    # binary-orbit → real-ratio-preferring stability elements (CR-13.3)
+    from core import binary
     bo = binary.binary_orbit(star=star)
     solutions = bo.get("solutions", []) if isinstance(bo, dict) else []
-    elements, note = binary._extract_stability_elements(solutions, {"sp_type": sl.get("sp_type")})
-    prim_mass, prim_prov, _n = _resolve_component_mass(
-        {"name": sl.get("main_id"), "sp_type": sl.get("sp_type"),
-         "designations": sl.get("designations")}, catalog)
-    if elements is None:
-        # single star (no resolved orbit) — one component
-        if prim_mass is None:
-            return {"error": f"could not resolve a mass for '{star}': {note or 'no data'}"}
-        notes.append(note or "no binary orbit resolved — treated as a single star")
-        return ([{"id": sl.get("main_id") or star, "name": sl.get("main_id"),
-                  "mass_solar": prim_mass, "mass_provenance": prim_prov,
-                  "sp_type": sl.get("sp_type"), "designations": sl.get("designations")}], notes)
-    # binary: primary A + companion B
+    sel, sel_note = _select_orbit_masses(solutions, sl.get("sp_type"))
+
+    # CR-13.1 (+ defensive wide-member guard): no usable orbit, OR a very-wide invented equal-mass
+    # "orbit" (a wide bond that gained a period) → single body.
+    wide_member = bool(sel and sel.get("sma_au") and sel["sma_au"] > _WIDE_SMA_AU
+                       and "equal-mass assumption" in (sel.get("mass_basis") or ""))
+    if sel is None or wide_member:
+        built = _single_body_component(sl, catalog, star)
+        if isinstance(built, dict) and "error" in built:
+            if sel is None and sel_note:
+                built = {"error": f"{built['error']} (no usable close-companion orbit: {sel_note})"}
+            return built
+        comp, _mass, _domain, _cn = built
+        notes.append(sel_note if sel is None else
+                     "only a wide hierarchical bond resolved (no close companion) — single body")
+        return [comp], notes
+
+    # binary: primary A + companion B, BOTH routed through the per-component mass chain (CR-13.2).
+    used_orbit = False
+
+    prim_spec = {"name": main_id, "sp_type": sl.get("sp_type"),
+                 "designations": _augment_designations(sl.get("designations"),
+                                                       _component_candidate_ids(main_id, "A"))}
+    prim_mass, prim_prov, _n = _resolve_component_mass(prim_spec, catalog)
     if prim_mass is None:
-        prim_mass, prim_prov = elements["m1_solar"], "binary_orbit_m1"
-    # companion domain: best-effort '<name> B' otype/sp_type lookup
-    comp_sp, comp_domain_tag = None, None
-    try:
-        slb = databases.compute_simbad_lookup(f"{star} B")
-        if isinstance(slb, dict) and "error" not in slb:
-            comp_sp = slb.get("sp_type")
-            otype = (slb.get("otype") or "").lower()
-            if "white dwarf" in otype or (comp_sp and comp_sp.strip()[:1] == "D"):
-                comp_domain_tag = "wd"
-            elif "brown dwarf" in otype or (comp_sp and comp_sp.strip()[:1] in ("L", "T", "Y")):
-                comp_domain_tag = "brown-dwarf"
-    except Exception:
-        pass
-    if comp_domain_tag is None:
-        notes.append(f"companion nature not confirmed (no '{star} B' WD/BD classification) — "
-                     "treated as main-sequence; pass --component with class=wd/brown-dwarf to override")
-    a_id = sl.get("main_id") or f"{star} A"
+        prim_mass, prim_prov, used_orbit = sel["m1_solar"], sel["mass_prov_a"], True
+
+    comp_id = next(iter(_component_candidate_ids(main_id, "B")), f"{star} B")
+    comp_sl = databases.compute_simbad_lookup(comp_id)
+    comp_ok = isinstance(comp_sl, dict) and "error" not in comp_sl
+    comp_sp = comp_sl.get("sp_type") if comp_ok else None
+    comp_otype = comp_sl.get("otype") if comp_ok else None
+    comp_desig = comp_sl.get("designations") if comp_ok else None
+    comp_class = _classify_off_ms(comp_otype, comp_sp)
+    if comp_class is None:
+        notes.append(f"companion nature not confirmed (no '{comp_id}' WD/BD classification) — treated "
+                     "as main-sequence; pass --component with class=wd/brown-dwarf to override")
+    comp_spec = {"name": comp_id, "sp_type": comp_sp, "class": comp_class,
+                 "designations": _augment_designations(comp_desig, {comp_id})}
+    comp_mass, comp_prov, _n = _resolve_component_mass(comp_spec, catalog)
+    if comp_mass is None:
+        comp_mass, comp_prov, used_orbit = sel["m2_solar"], sel["mass_prov_b"], True
+
+    if used_orbit and sel.get("notes"):
+        notes.extend(sel["notes"])
+    if sel.get("ecc_assumed"):
+        notes.append("companion eccentricity not catalogued — assumed circular")
+
+    # Kepler-III consistency: ``_extract`` derived the binary sma from the orbit's *spectral-type-
+    # estimated* masses; recompute it at the observed period from the PREFERRED (catalog/FLAME) masses
+    # so the separation, barycenter and offsets all use one mass set (a ∝ M_tot^(1/3) at fixed period).
+    # A no-op when both masses fell back to the orbit (pref_mtot == sel_mtot).
+    sma = sel["sma_au"]
+    sel_mtot = (sel.get("m1_solar") or 0.0) + (sel.get("m2_solar") or 0.0)
+    pref_mtot = (prim_mass or 0.0) + (comp_mass or 0.0)
+    if sma and sel_mtot > 0 and pref_mtot > 0:
+        sma = sma * (pref_mtot / sel_mtot) ** (1.0 / 3.0)
+
     comps = [
-        {"id": a_id, "name": sl.get("main_id"), "mass_solar": prim_mass,
+        {"id": main_id or f"{star} A", "name": main_id, "mass_solar": prim_mass,
          "mass_provenance": prim_prov, "sp_type": sl.get("sp_type"),
          "designations": sl.get("designations"), "pair": "AB",
-         "sma_au": elements["sma_au"], "ecc": elements["ecc"]},
-        {"id": f"{star} B", "name": f"{star} B", "mass_solar": elements["m2_solar"],
-         "mass_provenance": "binary_orbit_m2", "sp_type": comp_sp, "class": comp_domain_tag,
-         "pair": "AB", "sma_au": elements["sma_au"], "ecc": elements["ecc"]},
+         "sma_au": sma, "ecc": sel["ecc"]},
+        {"id": comp_id, "name": comp_id, "mass_solar": comp_mass, "mass_provenance": comp_prov,
+         "sp_type": comp_sp, "class": comp_class, "designations": comp_desig, "pair": "AB",
+         "sma_au": sma, "ecc": sel["ecc"]},
     ]
-    if elements.get("ecc_assumed"):
-        notes.append("companion eccentricity not catalogued — assumed circular")
     return comps, notes
 
 
@@ -493,9 +700,15 @@ def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=
                 return spec
             m, prov, mnote = _resolve_component_mass(spec, catalog)
             if m is None:
-                return {"error": mnote}
-            spec["mass_solar"] = m
-            spec["mass_provenance"] = prov
+                # C1 → (A) parity (plan-review F2): a LONE out-of-domain component is numerically inert
+                # and needs no mass — let compose's tolerance emit r_ex=null + unresolved_out_of_domain.
+                # Any mass-requiring component (MS, or one of several) still errors here.
+                domain, _cn = _component_domain(spec.get("sp_type"), spec.get("class"))
+                if not (len(component_specs) == 1 and domain == "out_of_domain"):
+                    return {"error": mnote}
+            else:
+                spec["mass_solar"] = m
+                spec["mass_provenance"] = prov
             components.append(spec)
     else:
         return {"error": "exclusion-system requires --star or at least one --component."}
