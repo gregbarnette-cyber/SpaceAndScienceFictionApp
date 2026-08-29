@@ -1271,6 +1271,7 @@ def cmd_binary_stability_auto(args):
     _out(binary.binary_stability_auto(
         star=args.star, ra=args.ra, dec=args.dec, source_id=args.source_id,
         test_sma_au=args.test_sma_au,
+        star_mass_catalog=args.star_mass_catalog,
     ))
 
 
@@ -3645,6 +3646,10 @@ def main(argv=None):
                    help="Gaia DR3 source_id (bare integer)")
     p.add_argument("--test-sma-au", dest="test_sma_au", type=float, default=None,
                    help="Test-orbit semi-major axis (AU) for the stability verdict")
+    p.add_argument("--star-mass-catalog", dest="star_mass_catalog", default=None,
+                   help="CR-14.3: path to a WB-owned per-star measured-mass catalog JSON (tier-2, "
+                        "REPLACES the internal seed; loud error on a bad path) — routes per-component "
+                        "masses through the same chain as exclusion-system / dossier")
     p.set_defaults(func=cmd_binary_stability_auto)
 
     # multiplicity (CR-2): SB flag + per-component multiplicity summary (otype + binary-orbit + GCNS).

@@ -302,13 +302,27 @@ class Cr13SolutionSelectionTest(unittest.TestCase):
         self.assertAlmostEqual(sel["m2_solar"] / sel["m1_solar"], 0.84, places=5)
         self.assertEqual(sel["mass_prov_b"], "binary_orbit_m2")
 
+    def test_cr14_4_clean_astrometric_abs_kept_over_sb2(self):   # CR-14.4 (b) — exclusion delegate
+        # A clean astrometric abs-mass row (method != "spec-min") alongside a real SB2: CR-14.4 keeps
+        # the clean measurement (tier-1) over the SB2-ratio estimate. This pins the ONE exclusion-path
+        # behavior change vs CR-13.3 OFFLINE (its live anchors don't carry this co-occurrence — the
+        # "anchors unchanged" claim needs an offline guard; code-review finding 4).
+        astrom = {"companion": {"m1_solar": 1.0, "m2_solar": 0.5, "method": "astrom"},
+                  "period_d": 9000.0, "eccentricity": 0.1, "source": "gaia-nss", "grade": 50.0}
+        sel, _ = es._select_orbit_masses([astrom, self._sb2(0.84)], "G2V")
+        self.assertAlmostEqual(sel["m2_solar"] / sel["m1_solar"], 0.5, places=5)   # clean abs wins
+        # And an α Cen-like set (degenerate q=1.0 + real SB2, NO clean abs) is UNCHANGED by (b):
+        sel2, _ = es._select_orbit_masses([self._sb2(1.0), self._sb2(0.84)], "G2V")
+        self.assertAlmostEqual(sel2["m2_solar"] / sel2["m1_solar"], 0.84, places=5)
+
     def test_no_usable_orbit_returns_none(self):
         sel, note = es._select_orbit_masses([], "G2V")
         self.assertIsNone(sel)
         self.assertTrue(note)
 
     def test_mass_flags_tier3_equal_mass(self):
-        prov_a, prov_b, notes = es._mass_flags(
+        import core.binary as binary   # CR-14: _mass_flags hoisted to core.binary (single copy)
+        prov_a, prov_b, notes = binary._mass_flags(
             {"mass_basis": "primary spectral type; equal-mass assumption (secondary mass unknown)",
              "m1_solar": 1.0, "m2_solar": 1.0})
         self.assertEqual(prov_b, "binary_orbit_equal_split_unresolved")

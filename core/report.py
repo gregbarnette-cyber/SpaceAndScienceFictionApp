@@ -619,7 +619,7 @@ def _pick_basis_solution(solutions):
     return solutions[0]
 
 
-def _multiplicity_data_star(simbad, star):
+def _multiplicity_data_star(simbad, star, mass_catalog=None, regions_mass_block=None):
     """CR-2 otype hint + **CR-10.5 Part 2 catalog cross-check**: run `binary-orbit` (SB9 / WDS-ORB6 /
     Gaia-DR3-NSS) ONCE regardless of otype, so a spectroscopic binary whose primary otype is a
     variability class (Spica `bC*`) is still flagged. `is_multiple`/`sb_flag` reflect the cross-check;
@@ -654,13 +654,40 @@ def _multiplicity_data_star(simbad, star):
                    for s in stellar)
     data["is_multiple"] = True
     data["sb_flag"] = otype_sb or cross_sb
-    data["multiplicity_basis"] = _multiplicity_basis_str(_pick_basis_solution(stellar))
-    stab = binary.stability_from_solutions(result.get("query"), result.get("identity", {}),
-                                           stellar, result.get("route_tried"))
+
+    # CR-14.3: route the per-component masses through the shared chain so the dossier multiplicity
+    # section reports the SAME masses as binary-stability-auto / exclusion-system (cross-path #3). H1
+    # guard: reuse the already-chain-resolved regions primary mass ONLY when it is a **measured** tier
+    # (never the L^0.2632 inversion — which under `--sections multiplicity` alone would not have consulted
+    # FLAME); otherwise resolve A through the full chain too (allow_flame). Both components route through
+    # the shared orchestrator (one "star B" derivation — M1).
+    ident = result.get("identity", {})
+    sel, sel_note = binary.select_stability_elements(stellar, simbad.get("sp_type"))
+    preferred = None
+    if sel is not None:
+        override = None
+        if (isinstance(regions_mass_block, dict) and regions_mass_block.get("mass_solar") is not None
+                and regions_mass_block.get("mass_provenance") in
+                (stellar_mass.MANUAL, stellar_mass.CATALOG, stellar_mass.GAIA_FLAME)):
+            override = (regions_mass_block["mass_solar"], regions_mass_block["mass_provenance"])
+        preferred = stellar_mass.resolve_binary_components(simbad, sel, mass_catalog,
+                                                           primary_override=override)
+    # Thread the SAME selection through (code-review findings 1/2) — the preferred masses and the
+    # sma/element recompute must come from one selection, not two off possibly-different sp_type sources.
+    stab = binary.stability_from_solutions(result.get("query"), ident, stellar,
+                                           result.get("route_tried"), preferred_masses=preferred,
+                                           selection=(sel, sel_note))
+    # M3: name the SELECTED solution as the multiplicity basis (not an independent spectroscopic-first
+    # pass, which would name the degenerate SB9), falling back to _pick_basis_solution only when no orbit
+    # was selected (honest-empty stability).
+    sel_sol = stab.get("selected_solution") if isinstance(stab, dict) else None
+    data["multiplicity_basis"] = _multiplicity_basis_str(sel_sol or _pick_basis_solution(stellar))
     if isinstance(stab, dict) and stab.get("elements"):
         data.update({"elements": stab["elements"],
                      "stype_critical_au": stab.get("stype_critical_au"),
                      "ptype_critical_au": stab.get("ptype_critical_au")})
+        if stab.get("resolution_notes"):
+            data["resolution_notes"] = stab["resolution_notes"]
         if stab.get("e_out_of_hw_range"):
             data["note"] = ("eccentricity outside the Holman-Wiegert fit domain — the "
                             "critical SMA is an extrapolation")
@@ -1105,7 +1132,8 @@ def _assemble_star(star, requested=None, force_ms_inversion=False,
     # network reader (binary-orbit tool-split / Gaia FLAME / VizieR debris catalogues) — a dossier
     # that does not ask for them should not pay for them.
     if "multiplicity" in requested:
-        data["multiplicity"] = _multiplicity_data_star(simbad, star)
+        data["multiplicity"] = _multiplicity_data_star(simbad, star, mass_catalog=mass_catalog,
+                                                       regions_mass_block=mass_block)
         status["multiplicity"] = ("ok", None)
     if "age_population" in requested:
         data["age_population"] = _age_population_data_star(simbad, hyp, star, _gaia_astro(simbad, memo))

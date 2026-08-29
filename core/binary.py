@@ -541,6 +541,14 @@ def binary_orbit(star=None, ra=None, dec=None, source_id=None):
                if ident.get("parallax_mas") and ident["parallax_mas"] > 0 else None)
     solutions.extend(_wds_orb6_solutions(ident["ra"], ident["dec"], dist_pc))
 
+    # CR-14.1 (Q3=(a)): mark — never reorder or drop — a degenerate placeholder `mass_ratio_q ≈ 1.0`
+    # solution, so a consumer taking solutions[0] can see it is not a real ratio. binary-orbit stays a
+    # raw-orbit reporter (no chain, no preferred mass); the real-ratio *selection* is done downstream in
+    # `select_stability_elements` (binary-stability-auto / dossier), not here.
+    for _sol in solutions:
+        if _degenerate_sb2(_sol):
+            _sol["degenerate"] = True
+
     result = {
         "query": star or (str(source_id) if source_id else f"{ra},{dec}"),
         "identity": ident,
@@ -579,15 +587,43 @@ def _solution_period_yr(sol):
     return None
 
 
-def _extract_stability_elements(solutions, ident):
-    """Pick the best solution + return (m1, m2, a_bin AU, ecc, source, grade, mass_basis, …).
+_Q_DEGEN_EPS = 1e-6          # a mass_ratio_q within this of exactly 1.0 = a placeholder equal-split
+
+
+def _degenerate_sb2(sol):
+    """True when a solution carries a degenerate/placeholder ``mass_ratio_q`` — exactly 1.0 with no
+    spectroscopic support (an equal-split placeholder a real measured ratio never lands on)."""
+    q = (sol.get("companion") or {}).get("mass_ratio_q")
+    return q is not None and abs(q - 1.0) < _Q_DEGEN_EPS
+
+
+def _real_sb2(sol):
+    """True when a solution carries a **real** (non-placeholder) SB2 mass ratio (|q−1| ≥ eps)."""
+    q = (sol.get("companion") or {}).get("mass_ratio_q")
+    return q is not None and abs(q - 1.0) >= _Q_DEGEN_EPS
+
+
+def _sb1_minimum(sol):
+    """True when a solution's companion masses are an **SB1 minimum** (sin i = 1 lower bound) — a
+    tier-1 abs-mass row whose classifier method is ``spec-min``. This is a lower bound, not a clean
+    measurement, so a real SB2 ratio legitimately preempts it (CR-13). A clean astrometric abs-mass
+    row (any other method) is NOT this and is never dropped (the CR-14.4 (b) improvement)."""
+    c = sol.get("companion") or {}
+    return (c.get("m1_solar") is not None and c.get("m2_solar") is not None
+            and c.get("method") == "spec-min")
+
+
+def _extract_stability_elements_full(solutions, ident):
+    """Implementation of the tiered element extraction that ALSO returns the selected ``sol`` object.
 
     Tiered so a visual pair without a companion classifier (the 36 Oph case) still resolves:
       1. absolute companion masses + a period → a_bin via Kepler III (the clean NSS/SB9 path);
       2. an SB2 mass ratio q=K1/K2 + a period + a primary spectral type → M₂ = M₁·q;
       3. a period + a primary spectral type → equal-mass fallback (secondary mass unknown);
-      4. nothing usable → (None, honest note).
-    Returns (elements_dict | None, note | None)."""
+      4. nothing usable → (None, honest note, None).
+    Returns ``(elements_dict | None, note | None, selected_sol | None)``. CR-14 (M3) exposes the picked
+    solution so a consumer can name it in ``multiplicity_basis``; the byte-identical 2-tuple
+    ``_extract_stability_elements`` below (its public contract) wraps this."""
     sp_type = ident.get("sp_type")
     m1_sp = m1_from_spectral_type(sp_type) if sp_type else None
 
@@ -603,56 +639,169 @@ def _extract_stability_elements(solutions, ident):
     for sol in solutions:                                   # tier 1
         comp = sol.get("companion") or {}
         if comp.get("m1_solar") and comp.get("m2_solar") and _solution_period_yr(sol):
-            return _elem(comp["m1_solar"], comp["m2_solar"], sol,
-                         f"companion classifier ({comp.get('method')})"), None
+            return (_elem(comp["m1_solar"], comp["m2_solar"], sol,
+                          f"companion classifier ({comp.get('method')})"), None, sol)
     if m1_sp:
         for sol in solutions:                               # tier 2
             comp = sol.get("companion") or {}
             q = comp.get("mass_ratio_q")
             if q and _solution_period_yr(sol):
-                return _elem(m1_sp, m1_sp * q, sol,
-                             "primary spectral type + SB2 mass ratio q=K1/K2"), None
+                return (_elem(m1_sp, m1_sp * q, sol,
+                              "primary spectral type + SB2 mass ratio q=K1/K2"), None, sol)
         for sol in solutions:                               # tier 3
             if _solution_period_yr(sol):
-                return _elem(m1_sp, m1_sp, sol,
-                             "primary spectral type; equal-mass assumption "
-                             "(secondary mass unknown)"), None
+                return (_elem(m1_sp, m1_sp, sol,
+                              "primary spectral type; equal-mass assumption "
+                              "(secondary mass unknown)"), None, sol)
     if not solutions:
         return None, ("no orbital solution found — stability not computable "
-                      "(not-Gaia-resolved / not-in-SB9 does not imply single)")
+                      "(not-Gaia-resolved / not-in-SB9 does not imply single)"), None
     return None, ("orbital solution(s) found but none carries the masses + period needed for "
                   "stability — an SB2/visual pair without a primary spectral type, or a "
-                  "projected-separation-only WDS row; re-run with a spectral type or masses")
+                  "projected-separation-only WDS row; re-run with a spectral type or masses"), None
 
 
-def stability_from_solutions(star_label, ident, solutions, route_tried, test_sma_au=None):
+def _extract_stability_elements(solutions, ident):
+    """Pick the best solution + return (m1, m2, a_bin AU, ecc, source, grade, mass_basis, …).
+
+    FROZEN public 2-tuple contract (unchanged output). CR-14 keeps the body in
+    ``_extract_stability_elements_full`` (which also returns the selected solution) and wraps it here so
+    every existing caller/test stays byte-identical. Returns (elements_dict | None, note | None)."""
+    elements, note, _sol = _extract_stability_elements_full(solutions, ident)
+    return elements, note
+
+
+def _mass_flags(elements):
+    """(mass_prov_a, mass_prov_b, notes) for a binary-orbit-derived mass pair (CR-14.2 transparency),
+    read entirely from what ``_extract_stability_elements`` already returns — no solution match-back.
+    Flags a degenerate equal-split (a placeholder q≈1.0 orbit OR the no-secondary ``m2=m1`` tier-3
+    fallback) and an SB1 minimum-mass lower bound; never a silent mass. CR-14 hoist from
+    ``exclusion_system._mass_flags`` (verbatim strings), now the single copy both paths use."""
+    basis = elements.get("mass_basis") or ""
+    m1, m2 = elements.get("m1_solar"), elements.get("m2_solar")
+    if "equal-mass assumption" in basis:
+        return ("binary_orbit_m1", "binary_orbit_equal_split_unresolved",
+                ["companion mass unresolved — equal-mass assumption (no secondary mass in the orbit "
+                 "solution); a placeholder, not a measured mass"])
+    if "spec-min" in basis:                        # tier-1 "companion classifier (spec-min)" = SB1
+        return ("binary_orbit_m1", "binary_orbit_sb1_min",
+                ["companion mass is an SB1 minimum (sin i = 1 lower bound); true M₂ ≥ this — a lower "
+                 "bound, not a measured mass"])
+    if ("SB2 mass ratio" in basis and m1 and m2 and abs(m2 / m1 - 1.0) < _Q_DEGEN_EPS):
+        return ("binary_orbit_m1", "binary_orbit_equal_split_unresolved",
+                ["orbit solution reports q exactly 1.0 (a placeholder equal split — a real measured "
+                 "ratio is never exactly unity); treated as unresolved, not a measured mass ratio"])
+    return ("binary_orbit_m1", "binary_orbit_m2", [])
+
+
+def select_stability_elements(solutions, sp_type):
+    """CR-14.1/.4 shared solution selection over a ``binary-orbit`` result's ``solutions``: FILTER the
+    degenerate ``q≈1.0`` placeholders BEFORE the frozen ``_extract_stability_elements``, so a real-ratio
+    solution wins over an equal-split placeholder. **CR-14.4 (the (b) narrowing):** the filter drops
+    ONLY degenerate rows — a clean absolute-mass row is never discarded, so ``_extract`` tier-1 (abs
+    masses) still wins over tier-2 (SB2 ratio × spectral type) when both are present.
+
+    Returns ``(sel_dict, None)`` — carrying the winning ``m1/m2/sma/ecc/mass_basis`` + per-side
+    provenance flags + ``source/grade/a_basis`` + the selected ``sol`` (``selected_solution``, for M3
+    ``multiplicity_basis``) — or ``(None, note)`` when no orbit is usable. Shared by
+    ``exclusion_system._select_orbit_masses`` (delegate) and ``stability_from_solutions``."""
+    sols = solutions or []
+    # CR-14.4 (the (b) narrowing): always drop the degenerate q≈1.0 placeholders; when a REAL SB2 ratio
+    # exists, also drop SB1-**minimum** rows (a real ratio beats a sin i=1 lower bound — CR-13), but keep
+    # a clean astrometric absolute-mass row so _extract tier-1 (a real measurement) wins over the SB2
+    # ratio × spectral-type estimate. (The old CR-13.3 filter dropped ALL abs-mass rows here, discarding
+    # clean astrometric masses too — the M4 corner this narrows.)
+    if any(_real_sb2(s) for s in sols):
+        pool = [s for s in sols if not (_degenerate_sb2(s) or _sb1_minimum(s))]
+    else:
+        pool = [s for s in sols if not _degenerate_sb2(s)]
+    if not pool:
+        pool = sols
+    elements, note, sel_sol = _extract_stability_elements_full(pool, {"sp_type": sp_type})
+    if elements is None and pool is not sols:
+        elements, note, sel_sol = _extract_stability_elements_full(sols, {"sp_type": sp_type})
+    if elements is None:
+        return None, note
+    prov_a, prov_b, notes = _mass_flags(elements)
+    return {
+        "m1_solar": elements["m1_solar"], "m2_solar": elements["m2_solar"],
+        "sma_au": elements["sma_au"], "ecc": elements["ecc"],
+        "ecc_assumed": elements.get("ecc_assumed"), "mass_basis": elements.get("mass_basis"),
+        "source": elements.get("source"), "grade": elements.get("grade"),
+        "a_basis": elements.get("a_basis"),
+        "mass_prov_a": prov_a, "mass_prov_b": prov_b, "notes": notes,
+        "selected_solution": sel_sol,
+    }, None
+
+
+def stability_from_solutions(star_label, ident, solutions, route_tried, test_sma_au=None,
+                             preferred_masses=None, selection=None):
     """Pure (no network): turn a ``binary_orbit`` result's ``solutions`` into the Holman-Wiegert
     stability block. Extracted from ``binary_stability_auto`` (CR-10.5 Part 2) so the ``dossier``
     multiplicity cross-check can reuse it on an already-fetched ``binary_orbit`` result — one network
-    call, not two. **Behavior-identical** to the CR-3 inline body it replaced (guarded by
-    ``tests/test_binary_stability_auto.py``, which patches ``binary_orbit``)."""
+    call, not two.
+
+    CR-14: selects a real-ratio solution over a degenerate ``q≈1.0`` placeholder (via
+    ``select_stability_elements``), surfaces per-component ``mass_provenance_a``/``_b`` +
+    ``resolution_notes`` (CR-14.2), returns the ``selected_solution`` (M3, for ``multiplicity_basis``),
+    and — when the network-bearing caller passes ``preferred_masses=(m1, prov_a, m2, prov_b, notes)`` (the
+    CR-14.3 catalog/FLAME chain) — uses those **measured** masses, recomputing the binary sma at the same
+    period via ``a ∝ M_tot^(1/3)`` (L3) so stype/ptype come off the preferred masses. **Stays PURE**: the
+    chain lives in the caller; ``preferred_masses=None`` is today's orbit-derived behavior (plus the
+    CR-14.1 selection + additive keys).
+
+    ``selection=(sel, note)`` lets a caller that ALREADY ran ``select_stability_elements`` (to build
+    ``preferred_masses``) thread its **single** selection through — so the preferred masses and the
+    sma/element recompute come from one selection, not two independent re-selections off possibly-different
+    ``sp_type`` sources (code-review CR-14 findings 1/2). Omit it → selects internally from
+    ``ident.sp_type`` (the test/legacy path)."""
     from core import equations
-    elements, note = _extract_stability_elements(solutions, ident)
-    if elements is None:
+    if selection is not None:
+        sel, note = selection
+    else:
+        sp_type = ident.get("sp_type") if isinstance(ident, dict) else None
+        sel, note = select_stability_elements(solutions, sp_type)
+    if sel is None:
         return {"star": star_label, "elements": None,
                 "stype_critical_au": None, "ptype_critical_au": None, "mass_ratio": None,
                 "test_sma_au": test_sma_au, "test_verdict": None, "orbit_type": None,
-                "e_out_of_hw_range": None, "route_tried": route_tried, "note": note}
+                "e_out_of_hw_range": None, "route_tried": route_tried, "note": note,
+                "selected_solution": None}
 
-    m1, m2, a_bin, ecc = (elements["m1_solar"], elements["m2_solar"],
-                          elements["sma_au"], elements["ecc"])
+    m1, m2 = sel["m1_solar"], sel["m2_solar"]
+    a_bin, ecc = sel["sma_au"], sel["ecc"]
+    prov_a, prov_b = sel["mass_prov_a"], sel["mass_prov_b"]
+    res_notes = list(sel.get("notes") or [])
+    # CR-14.3: a measured (catalog/FLAME/manual) mass from the caller's chain supersedes the orbit split;
+    # recompute the binary sma at the observed period from the preferred masses (a ∝ M_tot^(1/3)).
+    if preferred_masses is not None:
+        pm1, pprov_a, pm2, pprov_b, pnotes = preferred_masses
+        sel_mtot = (m1 or 0.0) + (m2 or 0.0)
+        m1 = pm1 if pm1 is not None else m1
+        m2 = pm2 if pm2 is not None else m2
+        pref_mtot = (m1 or 0.0) + (m2 or 0.0)
+        if a_bin and sel_mtot > 0 and pref_mtot > 0:
+            a_bin = a_bin * (pref_mtot / sel_mtot) ** (1.0 / 3.0)
+        prov_a = pprov_a if pprov_a is not None else prov_a
+        prov_b = pprov_b if pprov_b is not None else prov_b
+        res_notes = list(pnotes or [])
+
     hw = equations.compute_binary_orbit_stability(
         m1, m2, a_bin, test_sma_au if test_sma_au is not None else a_bin, eccentricity=ecc)
     if "error" in hw:
-        return {"star": star_label, "elements": elements,
+        return {"star": star_label,
+                "elements": {"m1_solar": m1, "m2_solar": m2, "sma_au": a_bin, "ecc": ecc,
+                             "source": sel["source"], "grade": sel["grade"],
+                             "mass_basis": sel["mass_basis"], "a_basis": sel["a_basis"],
+                             "mass_provenance_a": prov_a, "mass_provenance_b": prov_b},
                 "stype_critical_au": None, "ptype_critical_au": None, "mass_ratio": None,
                 "test_sma_au": test_sma_au, "test_verdict": None, "orbit_type": None,
                 "e_out_of_hw_range": ecc > _HW_ECC_MAX,
-                "route_tried": route_tried,
+                "route_tried": route_tried, "selected_solution": sel.get("selected_solution"),
                 "note": f"Holman-Wiegert rejected the elements: {hw['error']}"}
 
     notes = []
-    if elements["ecc_assumed"]:
+    if sel["ecc_assumed"]:
         notes.append("eccentricity not catalogued — assumed circular")
     if ecc > _HW_ECC_MAX:
         notes.append(f"e={ecc:.2f} is outside the Holman-Wiegert 1999 fit domain (e≤{_HW_ECC_MAX}) — "
@@ -660,8 +809,9 @@ def stability_from_solutions(star_label, ident, solutions, route_tried, test_sma
     out = {
         "star": star_label,
         "elements": {"m1_solar": m1, "m2_solar": m2, "sma_au": a_bin, "ecc": ecc,
-                     "source": elements["source"], "grade": elements["grade"],
-                     "mass_basis": elements["mass_basis"], "a_basis": elements["a_basis"]},
+                     "source": sel["source"], "grade": sel["grade"],
+                     "mass_basis": sel["mass_basis"], "a_basis": sel["a_basis"],
+                     "mass_provenance_a": prov_a, "mass_provenance_b": prov_b},
         "stype_critical_au": hw["stype_critical_sma_au"],
         "ptype_critical_au": hw["ptype_critical_sma_au"],
         "mass_ratio": hw["mass_ratio"],
@@ -671,29 +821,54 @@ def stability_from_solutions(star_label, ident, solutions, route_tried, test_sma
         "orbit_type": hw["orbit_type"] if test_sma_au is not None else None,
         "e_out_of_hw_range": ecc > _HW_ECC_MAX,
         "route_tried": route_tried,
+        "selected_solution": sel.get("selected_solution"),
     }
     if notes:
         out["note"] = "; ".join(notes)
+    if res_notes:
+        out["resolution_notes"] = res_notes
     return out
 
 
-def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None):
-    """CR-3: fetch a binary's orbital elements (``binary_orbit``) and feed them straight into the
-    Holman-Wiegert stability calculator — no manual re-entry. Returns the S/P-type critical SMAs
-    and, when ``test_sma_au`` is given, a stability verdict for that orbit.
+def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None,
+                          star_mass_catalog=None):
+    """CR-3 + CR-14.3: fetch a binary's orbital elements (``binary_orbit``) and feed them into the
+    Holman-Wiegert stability calculator — now routing the per-component **masses** through the shared
+    CR-11.2/CR-13.2 chain (manual > ``--star-mass-catalog`` / internal seed > Gaia FLAME > orbit-ratio /
+    inversion), so ``binary-stability-auto`` reports the **same** per-component masses as
+    ``exclusion-system`` / the dossier for a given star. Real-ratio solution selection (CR-14.1) +
+    degenerate/SB1 flags (CR-14.2) apply when a mass is orbit-derived.
 
-    Output: ``{star, elements:{m1_solar, m2_solar, sma_au, ecc, source, grade, mass_basis, a_basis},
-    stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au, test_verdict, orbit_type,
-    e_out_of_hw_range, route_tried, note?}`` — or ``{"error"}`` on an unresolvable identity, or an
-    ``elements: None`` honest-empty when no usable orbit exists (never fabricated elements)."""
+    Output: ``{star, elements:{m1_solar, m2_solar, sma_au, ecc, source, grade, mass_basis, a_basis,
+    mass_provenance_a, mass_provenance_b}, stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au,
+    test_verdict, orbit_type, e_out_of_hw_range, route_tried, selected_solution, note?, resolution_notes?}``
+    — or ``{"error"}`` on an unresolvable identity / bad catalog, or an ``elements: None`` honest-empty
+    when no usable orbit exists (never fabricated elements)."""
     if test_sma_au is not None and test_sma_au <= 0:
         return {"error": "test_sma_au must be positive."}
+    from core import stellar_mass, stellar_mass_tables, databases
+    catalog = stellar_mass_tables.load_mass_catalog(star_mass_catalog)
+    if isinstance(catalog, dict) and "error" in catalog:
+        return {"error": catalog["error"]}
     result = binary_orbit(star=star, ra=ra, dec=dec, source_id=source_id)
     if "error" in result:
         return result
-    return stability_from_solutions(result.get("query"), result.get("identity", {}),
-                                    result.get("solutions", []), result.get("route_tried"),
-                                    test_sma_au=test_sma_au)
+    ident = result.get("identity", {})
+    solutions = result.get("solutions", [])
+    # CR-14.3: per-component preferred masses via the shared chain. Needs a resolved main_id (the primary
+    # SIMBAD identity carries the designations the catalog/FLAME tiers match on); coordinate-only input
+    # (--ra/--dec/--source-id with no name) leaves main_id None → no catalog designations → the orbit
+    # masses stand (L3 graceful fallback).
+    preferred = None
+    sel, sel_note = select_stability_elements(solutions, ident.get("sp_type"))
+    if sel is not None and (star or ident.get("main_id")):
+        primary_sl = databases.compute_simbad_lookup(star or ident.get("main_id"))
+        if isinstance(primary_sl, dict) and "error" not in primary_sl:
+            preferred = stellar_mass.resolve_binary_components(primary_sl, sel, catalog)
+    # Thread the SAME selection through (code-review findings 1/2) — one select, not two.
+    return stability_from_solutions(result.get("query"), ident, solutions,
+                                    result.get("route_tried"), test_sma_au=test_sma_au,
+                                    preferred_masses=preferred, selection=(sel, sel_note))
 
 
 # ── Tier-2 orchestrator: close-binary-census (the population sweep, spec §3.2) ─

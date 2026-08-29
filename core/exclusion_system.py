@@ -42,7 +42,6 @@ from core import exclusion_boundary as eb
 from core import stellar_mass
 from core import stellar_mass_tables
 
-_Q_DEGEN_EPS = 1e-6          # a mass_ratio_q within this of exactly 1.0 = a placeholder equal-split
 _WIDE_SMA_AU = 1000.0        # a resolved "orbit" wider than this + an invented equal-mass = a wide member
 
 _DEFAULT_ALPHA = 0.4          # mid of the canon [1/3, 1/2] band; reproduces the hand-card anchors
@@ -347,42 +346,11 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
 
 # ── per-component mass resolution (CR-11.2 chain) ─────────────────────────────
 def _resolve_component_mass(spec, catalog, allow_flame=True):
-    """Resolve a component's preferred mass via the CR-11.2 chain. Returns
-    ``(mass_solar, mass_provenance, note)`` or ``(None, None, error_str)``.
-
-    manual ``mass`` → ``--star-mass-catalog`` (by name) → Gaia FLAME (by name, if allowed) → the
-    L^0.2632 inversion from an explicit ``lum``. A pure --component with only a ``mass`` resolves as
-    ``manual``; a name lets the catalog/FLAME tiers fire (so ``--star`` components carry ``catalog``).
-    """
-    lum = spec.get("luminosity_lsun")
-    inversion = (lum ** 0.2632) if (isinstance(lum, (int, float)) and not isinstance(lum, bool)
-                                    and lum > 0) else None
-    name = spec.get("name") or spec.get("id")
-    flame_mass = None
-    manual = spec.get("mass_solar")
-    manual_hit = isinstance(manual, (int, float)) and not isinstance(manual, bool) and manual > 0
-    cat_hit = bool(catalog) and stellar_mass_tables.match_mass(catalog, name, spec.get("designations")) is not None
-    if allow_flame and not manual_hit and not cat_hit and spec.get("designations"):
-        try:
-            from core import binary, catalog as catmod
-            sid = binary.gaia_source_id_from_designations(spec.get("designations"))
-            if sid:
-                ga = catmod.gaia_astrophysical(source_id=sid)
-                params = ga.get("parameters") if isinstance(ga, dict) else None
-                if params:
-                    mf = params.get("mass_flame")
-                    if isinstance(mf, (int, float)) and not isinstance(mf, bool) and mf > 0:
-                        flame_mass = mf
-        except Exception:
-            flame_mass = None
-    block = stellar_mass.resolve_mass(
-        inversion, sp_type=spec.get("sp_type") or spec.get("class"), main_id=name,
-        designations=spec.get("designations"), manual_mass=manual if manual_hit else None,
-        catalog=catalog, flame_mass=flame_mass)
-    if block["mass_solar"] is None:
-        return None, None, (f"component '{name or '?'}' has no resolvable mass "
-                            "(give mass=<M☉>, a catalogued name, or lum=<L☉>)")
-    return block["mass_solar"], block["mass_provenance"], block["note"]
+    """CR-14.3 (L7): thin delegate to the shared ``stellar_mass.resolve_component_mass`` — the single
+    per-component mass chain now used by ``exclusion-system``, ``binary-stability-auto`` and the dossier
+    ``multiplicity`` section (so they report the same masses for a given star). Behavior byte-identical
+    to the CR-11.2/CR-13.2 body it replaced."""
+    return stellar_mass.resolve_component_mass(spec, catalog, allow_flame)
 
 
 def _parse_component_spec(s):
@@ -441,93 +409,25 @@ def _classify_off_ms(otype=None, sp_type=None):
 
 
 def _component_candidate_ids(system_main_id, suffix):
-    """Per-component catalog-match candidate ids from a system/primary ``main_id`` + a component
-    ``suffix`` (``A``/``B``). Strips any existing trailing `` [A-Z]`` first, so ``* alf Cen A`` + ``B``
-    → ``* alf Cen B`` (NOT ``* alf Cen A B``) and ``* alf Cen`` + ``A`` → ``* alf Cen A`` (WB M4)."""
-    base = (system_main_id or "").strip()
-    if not base:
-        return set()
-    base = re.sub(r"\s+[A-Z]$", "", base)
-    return {f"{base} {suffix}"}
+    """CR-14.3 (L7/M1): delegate to the shared ``stellar_mass.component_candidate_ids`` (kept under this
+    name — ``test_exclusion_system.py`` calls it directly)."""
+    return stellar_mass.component_candidate_ids(system_main_id, suffix)
 
 
 def _augment_designations(designations, extra_ids):
-    """A copy of the SIMBAD ``designations`` dict with ``extra_ids`` injected as synthetic values, so
-    ``stellar_mass_tables.match_mass`` (which scans every ``designations`` value against a catalog
-    row's main_id + aliases) hits a per-component catalog row keyed on a designation the base dict
-    lacks (e.g. ``* alf Cen`` resolves the ``* alf Cen A`` row)."""
-    d = dict(designations) if isinstance(designations, dict) else {}
-    for i, x in enumerate(sorted(v for v in extra_ids if v)):
-        d[f"_component_id_{i}"] = x
-    return d
-
-
-def _mass_flags(elements):
-    """(mass_prov_a, mass_prov_b, notes) for a binary-orbit-derived mass pair (CR-13.3 transparency),
-    read entirely from what ``_extract_stability_elements`` already returns — no solution match-back,
-    no change to the frozen function. Flags a degenerate equal-split (a placeholder q≈1.0 orbit OR the
-    no-secondary ``m2=m1`` tier-3 fallback) and an SB1 minimum-mass lower bound; never a silent mass."""
-    basis = elements.get("mass_basis") or ""
-    m1, m2 = elements.get("m1_solar"), elements.get("m2_solar")
-    if "equal-mass assumption" in basis:
-        return ("binary_orbit_m1", "binary_orbit_equal_split_unresolved",
-                ["companion mass unresolved — equal-mass assumption (no secondary mass in the orbit "
-                 "solution); a placeholder, not a measured mass"])
-    if "spec-min" in basis:                        # tier-1 "companion classifier (spec-min)" = SB1
-        return ("binary_orbit_m1", "binary_orbit_sb1_min",
-                ["companion mass is an SB1 minimum (sin i = 1 lower bound); true M₂ ≥ this — a lower "
-                 "bound, not a measured mass"])
-    if ("SB2 mass ratio" in basis and m1 and m2 and abs(m2 / m1 - 1.0) < _Q_DEGEN_EPS):
-        return ("binary_orbit_m1", "binary_orbit_equal_split_unresolved",
-                ["orbit solution reports q exactly 1.0 (a placeholder equal split — a real measured "
-                 "ratio is never exactly unity); treated as unresolved, not a measured mass ratio"])
-    return ("binary_orbit_m1", "binary_orbit_m2", [])
+    """CR-14.3 (L7/M1): delegate to the shared ``stellar_mass.augment_designations``."""
+    return stellar_mass.augment_designations(designations, extra_ids)
 
 
 def _select_orbit_masses(solutions, sp_type):
-    """CR-13.3 solution selection over a ``binary-orbit`` result's ``solutions``: FILTER out degenerate
-    placeholders (a q≈1.0 SB2, and — where a real SB2 ratio exists — the competing tier-1 absolute-mass
-    rows that would preempt it) BEFORE the frozen ``_extract_stability_elements`` (a mere reorder can't
-    cross ``_extract``'s tier boundaries). Returns ``(sel_dict, None)`` with the winning
-    ``m1/m2/sma/ecc/mass_basis`` + per-side provenance flags, or ``(None, note)`` when no orbit is
-    usable."""
+    """CR-14 (L1/CR-14.4): delegate to the shared ``binary.select_stability_elements`` — the single
+    degenerate-q solution selector now used by the exclusion path AND ``stability_from_solutions``.
+    Under CR-14.4 the pool filter narrows to **degenerate-q-only** (a clean abs-mass row is never
+    dropped); the exclusion anchors are unchanged (none carries a real-SB2 + clean-abs co-occurrence).
+    Returns the same ``(sel_dict | None, note)`` shape the CR-13.3 body returned — a superset dict whose
+    extra ``source``/``grade``/``a_basis``/``selected_solution`` keys are additive and ignored here."""
     from core import binary
-    sols = solutions or []
-
-    def _q(s):
-        return (s.get("companion") or {}).get("mass_ratio_q")
-
-    def _degenerate_sb2(s):
-        q = _q(s)
-        return q is not None and abs(q - 1.0) < _Q_DEGEN_EPS
-
-    def _real_sb2(s):
-        q = _q(s)
-        return q is not None and abs(q - 1.0) >= _Q_DEGEN_EPS
-
-    def _abs_masses(s):
-        c = s.get("companion") or {}
-        return c.get("m1_solar") is not None and c.get("m2_solar") is not None
-
-    if any(_real_sb2(s) for s in sols):
-        pool = [s for s in sols if _real_sb2(s) or not (_degenerate_sb2(s) or _abs_masses(s))]
-    else:
-        pool = [s for s in sols if not _degenerate_sb2(s)]
-    if not pool:
-        pool = sols
-
-    elements, note = binary._extract_stability_elements(pool, {"sp_type": sp_type})
-    if elements is None and pool is not sols:
-        elements, note = binary._extract_stability_elements(sols, {"sp_type": sp_type})
-    if elements is None:
-        return None, note
-    prov_a, prov_b, notes = _mass_flags(elements)
-    return {
-        "m1_solar": elements["m1_solar"], "m2_solar": elements["m2_solar"],
-        "sma_au": elements["sma_au"], "ecc": elements["ecc"],
-        "ecc_assumed": elements.get("ecc_assumed"), "mass_basis": elements.get("mass_basis"),
-        "mass_prov_a": prov_a, "mass_prov_b": prov_b, "notes": notes,
-    }, None
+    return binary.select_stability_elements(solutions, sp_type)
 
 
 def _single_body_component(sl, catalog, star):

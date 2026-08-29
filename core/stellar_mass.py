@@ -145,6 +145,139 @@ def resolve_mass(inversion_mass, sp_type=None, main_id=None, designations=None,
     return out
 
 
+def component_candidate_ids(system_main_id, suffix):
+    """Per-component catalog-match candidate ids from a system/primary ``main_id`` + a component
+    ``suffix`` (``A``/``B``). Strips any existing trailing `` [A-Z]`` first, so ``* alf Cen A`` + ``B``
+    → ``* alf Cen B`` (NOT ``* alf Cen A B``) and ``* alf Cen`` + ``A`` → ``* alf Cen A``.
+
+    CR-14.3 (M1): hoisted here from ``exclusion_system`` so the exclusion path, ``binary-stability-auto``
+    and the dossier ``multiplicity`` section derive the **same** per-component designations → the same
+    catalog hits → the same masses (cross-path consistency). ``exclusion_system._component_candidate_ids``
+    delegates to this.
+    """
+    base = (system_main_id or "").strip()
+    if not base:
+        return set()
+    base = re.sub(r"\s+[A-Z]$", "", base)
+    return {f"{base} {suffix}"}
+
+
+def augment_designations(designations, extra_ids):
+    """A copy of the SIMBAD ``designations`` dict with ``extra_ids`` injected as synthetic values, so
+    ``stellar_mass_tables.match_mass`` (which scans every ``designations`` value against a catalog
+    row's main_id + aliases) hits a per-component catalog row keyed on a designation the base dict
+    lacks (e.g. ``* alf Cen`` resolves the ``* alf Cen A`` row). CR-14.3 (M1) hoist —
+    ``exclusion_system._augment_designations`` delegates to this."""
+    d = dict(designations) if isinstance(designations, dict) else {}
+    for i, x in enumerate(sorted(v for v in extra_ids if v)):
+        d[f"_component_id_{i}"] = x
+    return d
+
+
+def resolve_component_mass(spec, catalog, allow_flame=True):
+    """Resolve one component's preferred mass via the CR-11.2 chain. Returns
+    ``(mass_solar, mass_provenance, note)`` or ``(None, None, error_str)``.
+
+    manual ``mass_solar`` → ``--star-mass-catalog`` / internal seed (by name+designations) → Gaia FLAME
+    (by designations, if allowed) → the ``L^0.2632`` inversion from an explicit ``luminosity_lsun``. A
+    pure ``--component`` with only a ``mass_solar`` resolves as ``manual``; a name lets the catalog/FLAME
+    tiers fire (so ``--star`` components carry ``catalog``).
+
+    CR-14.3 (L7/M1): hoisted here from ``exclusion_system`` so ``binary-stability-auto`` / the dossier
+    ``multiplicity`` section / ``exclusion-system`` all route per-component mass through **one** chain.
+    ``exclusion_system._resolve_component_mass`` delegates to this (behavior byte-identical). The FLAME
+    imports stay **function-local** so ``stellar_mass`` keeps its clean module-top imports (no cycle).
+    """
+    lum = spec.get("luminosity_lsun")
+    inversion = (lum ** 0.2632) if (isinstance(lum, (int, float)) and not isinstance(lum, bool)
+                                    and lum > 0) else None
+    name = spec.get("name") or spec.get("id")
+    flame_mass = None
+    manual = spec.get("mass_solar")
+    manual_hit = isinstance(manual, (int, float)) and not isinstance(manual, bool) and manual > 0
+    cat_hit = bool(catalog) and smt.match_mass(catalog, name, spec.get("designations")) is not None
+    if allow_flame and not manual_hit and not cat_hit and spec.get("designations"):
+        try:
+            from core import binary, catalog as catmod
+            sid = binary.gaia_source_id_from_designations(spec.get("designations"))
+            if sid:
+                ga = catmod.gaia_astrophysical(source_id=sid)
+                params = ga.get("parameters") if isinstance(ga, dict) else None
+                if params:
+                    mf = params.get("mass_flame")
+                    if isinstance(mf, (int, float)) and not isinstance(mf, bool) and mf > 0:
+                        flame_mass = mf
+        except Exception:
+            flame_mass = None
+    block = resolve_mass(
+        inversion, sp_type=spec.get("sp_type") or spec.get("class"), main_id=name,
+        designations=spec.get("designations"), manual_mass=manual if manual_hit else None,
+        catalog=catalog, flame_mass=flame_mass)
+    if block["mass_solar"] is None:
+        return None, None, (f"component '{name or '?'}' has no resolvable mass "
+                            "(give mass=<M☉>, a catalogued name, or lum=<L☉>)")
+    return block["mass_solar"], block["mass_provenance"], block["note"]
+
+
+def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, primary_override=None):
+    """CR-14.3 orchestrator: resolve the **preferred** masses of a binary's two components (A + B)
+    through the shared chain, matching ``exclusion_system._resolve_system_from_star``'s per-component
+    derivation so ``binary-stability-auto`` / the dossier ``multiplicity`` section / ``exclusion-system``
+    all report the **same** masses for a given star (cross-path consistency #3).
+
+    Args:
+      primary_sl : the primary's SIMBAD result dict (``main_id`` / ``sp_type`` / ``designations``).
+      sel        : the selected-orbit dict from ``binary.select_stability_elements`` — supplies the
+                   orbit-mass fallback (``m1_solar``/``m2_solar``/``mass_prov_a``/``mass_prov_b``/``notes``)
+                   used when a component has no measured (manual/catalog/FLAME) mass.
+      catalog    : a loaded mass catalog (``load_mass_catalog`` result).
+      allow_flame: gate the network FLAME tier (kept True on both consumers per WB Q1).
+      primary_override : ``(mass, provenance)`` to reuse for component A instead of resolving it — the
+                   dossier's H1-safe optimization, passed ONLY when the already-chain-resolved regions
+                   primary mass is a **measured** tier (manual/catalog/gaia_flame), never the inversion.
+                   Avoids re-resolving A (a possible extra FLAME round-trip) while B still routes here.
+
+    Returns ``(m1, prov_a, m2, prov_b, notes)`` — the FINAL per-component masses (measured tier, else the
+    orbit fallback) + provenance + any orbit-flag notes. The secondary designation is derived with the
+    shared ``component_candidate_ids`` (the same "star B" derivation exclusion uses); one SIMBAD lookup
+    for the secondary. Class/sp_type never change the resolved mass *value* — only the caution flag — so
+    the values match exclusion's even though this orchestrator omits the WD/BD class tag.
+    """
+    main_id = primary_sl.get("main_id") if isinstance(primary_sl, dict) else None
+
+    if primary_override is not None:
+        m1, prov_a = primary_override
+    else:
+        prim_spec = {"name": main_id, "sp_type": primary_sl.get("sp_type"),
+                     "designations": augment_designations(primary_sl.get("designations"),
+                                                          component_candidate_ids(main_id, "A"))}
+        m1, prov_a, _n = resolve_component_mass(prim_spec, catalog, allow_flame=allow_flame)
+        if m1 is None:
+            m1, prov_a = sel.get("m1_solar"), sel.get("mass_prov_a")
+
+    comp_id = next(iter(component_candidate_ids(main_id, "B")), None)
+    comp_sp = comp_desig = None
+    if comp_id:
+        from core import databases
+        comp_sl = databases.compute_simbad_lookup(comp_id)
+        if isinstance(comp_sl, dict) and "error" not in comp_sl:
+            comp_sp = comp_sl.get("sp_type")
+            comp_desig = comp_sl.get("designations")
+    comp_spec = {"name": comp_id, "sp_type": comp_sp,
+                 "designations": augment_designations(comp_desig, {comp_id} if comp_id else set())}
+    b_orbit = False
+    m2, prov_b, _n = resolve_component_mass(comp_spec, catalog, allow_flame=allow_flame)
+    if m2 is None:
+        m2, prov_b, b_orbit = sel.get("m2_solar"), sel.get("mass_prov_b"), True
+
+    # The orbit-flag notes (from _mass_flags) describe the SECONDARY / the pair (they key off prov_b —
+    # equal-split / SB1-min), so attach them only when B itself is orbit-derived. When only A falls back
+    # (prov_a is the clean "binary_orbit_m1", which carries no caution) they would mislabel a measured B
+    # (code-review finding 3).
+    notes = list(sel.get("notes") or []) if b_orbit else []
+    return m1, prov_a, m2, prov_b, notes
+
+
 def mass_dependent_outputs(mass_solar):
     """Recompute the mass-dependent dossier outputs from the **preferred** mass.
 

@@ -19,7 +19,12 @@ def _fake(solutions, sp_type=None, query="X"):
 
 
 def _run(fake, **kw):
-    with patch("core.binary.binary_orbit", return_value=fake):
+    # CR-14.3: binary_stability_auto now resolves per-component masses through the chain, which does a
+    # SIMBAD lookup for the primary/secondary. These are offline stability-math unit tests, so stub the
+    # lookup to an offline miss → the chain finds no measured mass → the orbit masses stand (L3 fallback),
+    # which is exactly the path these assertions pin. (The catalog-aware chain has its own tests.)
+    with patch("core.binary.binary_orbit", return_value=fake), \
+         patch("core.databases.compute_simbad_lookup", return_value={"error": "offline (test stub)"}):
         return binary.binary_stability_auto(star="X", **kw)
 
 
@@ -120,6 +125,126 @@ class BinaryStabilityAutoLiveTest(unittest.TestCase):
         else:                                                  # if a period-bearing orbit is ever reached
             self.assertTrue(0.20 <= d["stype_critical_au"] <= 0.55)
             self.assertEqual(d["test_verdict"], "unstable")
+
+
+class Cr14SharedSelectorTest(unittest.TestCase):
+    """CR-14.1/.4 — the shared degenerate-q solution selector (binary.select_stability_elements)."""
+    _P = 29174.0
+
+    def _sb2(self, q):
+        return {"companion": {"method": "SB2", "mass_ratio_q": q}, "period_d": self._P,
+                "eccentricity": 0.52, "source": "sb9", "grade": "a"}
+
+    def _sb1(self, m1, m2):
+        return {"companion": {"m1_solar": m1, "m2_solar": m2, "method": "spec-min"},
+                "period_d": 18300.0, "eccentricity": 0.59, "source": "sb9", "grade": "a"}
+
+    def _abs(self, m1, m2):
+        return {"companion": {"m1_solar": m1, "m2_solar": m2, "method": "astrom"},
+                "period_d": 9000.0, "eccentricity": 0.1, "source": "gaia-nss", "grade": 50.0}
+
+    def test_real_ratio_wins_over_degenerate(self):     # CR-14.1
+        sel, _ = binary.select_stability_elements([self._sb2(1.0), self._sb2(0.84)], "G2V")
+        self.assertAlmostEqual(sel["m2_solar"] / sel["m1_solar"], 0.84, places=5)
+        self.assertEqual(sel["mass_prov_b"], "binary_orbit_m2")
+        # M3: the selected solution is exposed (real-ratio one), for multiplicity_basis
+        self.assertAlmostEqual(sel["selected_solution"]["companion"]["mass_ratio_q"], 0.84)
+
+    def test_clean_astrometric_abs_beats_sb2(self):     # CR-14.4 (b) improvement
+        sel, _ = binary.select_stability_elements([self._abs(1.0, 0.5), self._sb2(0.84)], "G2V")
+        self.assertAlmostEqual(sel["m2_solar"] / sel["m1_solar"], 0.5, places=5)  # tier-1 abs wins
+        self.assertIn("companion classifier", sel["mass_basis"])
+
+    def test_sb1_minimum_still_yields_to_real_sb2(self):  # CR-14.4 preserves CR-13
+        sel, _ = binary.select_stability_elements([self._sb1(1.0, 0.5), self._sb2(0.84)], "G2V")
+        self.assertAlmostEqual(sel["m2_solar"] / sel["m1_solar"], 0.84, places=5)
+
+    def test_filtered_empty_retry_falls_back_to_full(self):  # M5 retry fallback
+        # A lone degenerate solution: pool empties → retry on the full list → still resolves (flagged).
+        sel, _ = binary.select_stability_elements([self._sb2(1.0)], "G2V")
+        self.assertIsNotNone(sel)
+        self.assertEqual(sel["mass_prov_b"], "binary_orbit_equal_split_unresolved")
+
+
+class Cr14PreferredMassesTest(unittest.TestCase):
+    """CR-14.3 — stability_from_solutions honors caller-supplied preferred (chain) masses (pure)."""
+    def test_preferred_masses_override_and_recompute_sma(self):
+        sol = {"companion": {"method": "SB2", "mass_ratio_q": 0.84}, "period_d": 29174.0,
+               "eccentricity": 0.52, "source": "sb9", "grade": "a"}
+        base, _ = binary.select_stability_elements([sol], "G2V")
+        a0, mt0 = base["sma_au"], base["m1_solar"] + base["m2_solar"]
+        stab = binary.stability_from_solutions("X", {"sp_type": "G2V"}, [sol], ["sb9"],
+                                               preferred_masses=(1.079, "catalog", 0.909, "catalog", []))
+        self.assertAlmostEqual(stab["elements"]["m1_solar"], 1.079)
+        self.assertAlmostEqual(stab["elements"]["m2_solar"], 0.909)
+        self.assertEqual(stab["elements"]["mass_provenance_a"], "catalog")
+        self.assertAlmostEqual(stab["elements"]["sma_au"], a0 * ((1.079 + 0.909) / mt0) ** (1.0 / 3.0),
+                               places=6)  # a ∝ M_tot^(1/3) at fixed period (L3)
+
+    def test_no_preferred_masses_is_orbit_behavior(self):
+        sol = {"companion": {"method": "SB2", "mass_ratio_q": 0.84}, "period_d": 29174.0,
+               "eccentricity": 0.52, "source": "sb9", "grade": "a"}
+        stab = binary.stability_from_solutions("X", {"sp_type": "G2V"}, [sol], ["sb9"])
+        m1 = binary.m1_from_spectral_type("G2V")
+        self.assertAlmostEqual(stab["elements"]["m1_solar"], m1)         # orbit-derived
+        self.assertAlmostEqual(stab["elements"]["m2_solar"], m1 * 0.84)
+
+
+class Cr14ChainWiringTest(unittest.TestCase):
+    """CR-14.3 — binary_stability_auto routes per-component masses through the shared chain."""
+    def _orbit(self, main_id="* alf Cen", sp="G2V"):
+        sol = {"companion": {"method": "SB2", "mass_ratio_q": 0.84}, "period_d": 29174.0,
+               "eccentricity": 0.52, "source": "sb9", "grade": "a"}
+        return {"query": main_id, "identity": {"sp_type": sp, "main_id": main_id},
+                "solutions": [sol], "route_tried": ["sb9"]}
+
+    def test_catalog_mass_supersedes_orbit(self):        # seed has α Cen A/B
+        def fake_lookup(name):
+            # SIMBAD canonicalises "alpha Cen" → "* alf Cen"; the seed keys on the * alf Cen A/B rows.
+            mid = "* alf Cen" if name.lower() in ("alpha cen", "alpha centauri") else name
+            return {"main_id": mid, "sp_type": "G2V", "designations": {"MAIN_ID": mid}}
+        with patch("core.binary.binary_orbit", return_value=self._orbit()), \
+             patch("core.databases.compute_simbad_lookup", side_effect=fake_lookup):
+            d = binary.binary_stability_auto(star="alpha Cen")
+        self.assertAlmostEqual(d["elements"]["m1_solar"], 1.079)
+        self.assertAlmostEqual(d["elements"]["m2_solar"], 0.909)
+        self.assertEqual(d["elements"]["mass_provenance_a"], "catalog")
+        self.assertEqual(d["elements"]["mass_provenance_b"], "catalog")
+
+    def test_flame_tier_for_noncatalog_primary(self):    # CR-14.3 #4 generality
+        def fake_lookup(name):
+            return {"main_id": name, "sp_type": "G0V",
+                    "designations": {"MAIN_ID": name, "Gaia EDR3": "12345"}}
+        def fake_gaia(source_id=None):
+            return {"parameters": {"mass_flame": 1.2}}
+        with patch("core.binary.binary_orbit", return_value=self._orbit("HD 999999", "G0V")), \
+             patch("core.databases.compute_simbad_lookup", side_effect=fake_lookup), \
+             patch("core.catalog.gaia_astrophysical", side_effect=fake_gaia):
+            d = binary.binary_stability_auto(star="HD 999999")
+        self.assertEqual(d["elements"]["mass_provenance_a"], "gaia_flame")
+        self.assertAlmostEqual(d["elements"]["m1_solar"], 1.2)
+
+    def test_bad_catalog_path_is_curated_error(self):    # L6 loud bad-path
+        d = binary.binary_stability_auto(star="X", star_mass_catalog="/no/such/catalog.json")
+        self.assertIn("error", d)
+
+
+class Cr14BinaryOrbitMarkerTest(unittest.TestCase):
+    """CR-14.1 Q3=(a) — binary_orbit marks (never drops/reorders) a degenerate q≈1.0 solution."""
+    def test_degenerate_solution_marked(self):
+        deg = {"companion": {"method": "SB2", "mass_ratio_q": 1.0}, "period_d": 29650.0,
+               "eccentricity": 0.53, "source": "sb9", "grade": "a"}
+        real = {"companion": {"method": "SB2", "mass_ratio_q": 0.84}, "period_d": 29174.0,
+                "eccentricity": 0.52, "source": "sb9", "grade": "a"}
+        ident = {"ra": 1.0, "dec": 2.0, "sp_type": "G2V", "gaia_source_id": None,
+                 "parallax_mas": None, "main_id": "X"}
+        with patch("core.binary._resolve_binary_identity", return_value=(ident, None)), \
+             patch("core.binary._sb9_solutions", return_value=([deg, real], None)), \
+             patch("core.binary._wds_orb6_solutions", return_value=[]):
+            r = binary.binary_orbit(star="X")
+        self.assertTrue(r["solutions"][0].get("degenerate"))      # marked
+        self.assertIsNone(r["solutions"][1].get("degenerate"))    # real one not marked
+        self.assertEqual(len(r["solutions"]), 2)                  # neither dropped nor reordered
 
 
 if __name__ == "__main__":

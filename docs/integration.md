@@ -4428,6 +4428,60 @@ refuse + out-of-domain guards. Tests: `tests/test_exclusion_system.py` (offline 
 C1→A), live `--star` anchors gated in `tests/test_query_exclusion_system_live.py`. Core: `core/exclusion_system.py` (the
 only file changed).
 
+## CR-14 — shared `_extract_stability_elements` correctness (solution selection + catalog-aware mass + degenerate flagging)
+
+Built 2026-08-29. The general parallel to CR-13 for the OTHER consumers of the shared stability-element extraction —
+**`binary-stability-auto`** (CR-3), the dossier **`multiplicity`** section (CR-10.5), and **`binary-orbit`**. The CR-13.3
+degenerate-`q` solution selection + the CR-11.2/CR-13.2 mass chain now live at the shared root, so all these paths — and
+`exclusion-system` — report the **same** per-component masses for a given star. `completed_plans/PHASE_CR14_PLAN.md`.
+The standalone **`multiplicity`** subcommand exposes no per-component masses and is **unchanged** (not in scope).
+
+**Four parts.**
+- **CR-14.1 — solution selection.** A shared selector (`core.binary.select_stability_elements`) filters degenerate
+  placeholder solutions **before** the frozen `_extract_stability_elements`, so a real-ratio solution wins over a
+  degenerate `mass_ratio_q ≈ 1.0` equal-split (α Cen's `1.02/1.02` → the real `~0.84` ratio; sma/period from the
+  real-ratio solution, so the Holman-Wiegert `stype/ptype_critical_au` recompute from the true μ, not 0.5).
+- **CR-14.2 — degenerate/SB1 flagging.** `binary-stability-auto` / dossier-`multiplicity` `elements` blocks gain
+  **`mass_provenance_a`** / **`mass_provenance_b`** (per component) + a **`resolution_notes`** list. The CR-13.3 enum
+  values are reused verbatim — `binary_orbit_equal_split_unresolved` (placeholder `q≈1.0` or a no-secondary equal-mass
+  fallback) and `binary_orbit_sb1_min` (SB1 sin i=1 lower bound) — a flag appears only when a degenerate/lower-bound
+  value is genuinely the best available. Additive; a consumer switching on `mass_provenance` must tolerate the values.
+- **CR-14.3 — catalog-aware mass sourcing (general, all stars).** Per-component masses route through the shared CR-11.2
+  chain (`manual > --star-mass-catalog / internal seed > Gaia FLAME > orbit-ratio / MS L-inversion`), matched on the
+  resolved `main_id` + aliases + a per-component designation (the `* alf Cen` → `* alf Cen A`/`B` derivation). When a
+  measured mass is preferred, the binary sma is recomputed at the observed period from it (`a ∝ M_tot^⅓`), so mass + sma
+  + barycenter share one mass set. **`binary-stability-auto` gains `--star-mass-catalog <path>`** (REPLACE semantics,
+  loud error on a bad path; the dossier already had it). Cross-path: `binary-stability-auto` / dossier-`multiplicity` /
+  `exclusion-system` report the same masses for a star.
+- **CR-14.4 — abs-mass-drop filter narrowed.** The shared selector keeps a **clean astrometric** absolute-mass row
+  rather than discarding it for an SB2-ratio estimate; it still drops a degenerate `q≈1.0` placeholder always, and an
+  **SB1 minimum** (an abs-mass row whose classifier `method == "spec-min"`) when a real SB2 exists (a real ratio beats a
+  lower bound). The only behavior change vs CR-13.3 is the real-SB2 + clean-astrometric-abs corner. **This makes the
+  exclusion path no longer strictly byte-identical** (it adopts the same filter); the exclusion anchors are nonetheless
+  unchanged (none carries that co-occurrence).
+
+**`binary-orbit`** stays a raw-orbit reporter: it gains only an additive **`degenerate: true`** marker on a placeholder
+`q≈1.0` solution (never reordered, never dropped, no chain, no `--star-mass-catalog`).
+
+**New/changed output keys** (all additive): `elements.mass_provenance_a` / `elements.mass_provenance_b`, top-level
+`selected_solution` (the solution the selector picked — the dossier names it in `multiplicity_basis`), and
+`resolution_notes` on `binary-stability-auto` / the dossier `multiplicity` section; `degenerate` on a `binary-orbit`
+solution. Existing keys/shapes are unchanged.
+
+**Anchors** (WB re-gates live, both with and without the catalog): `binary-stability-auto --star "alpha Centauri"
+[--star-mass-catalog <cat>]` → A `1.079`/`catalog`, B `0.909`/`catalog`, sma/period from the real-ratio solution,
+stype/ptype from μ≈0.457; **equal to** `dossier --sections multiplicity --star "alpha Centauri"` and to
+`exclusion-system`'s per-component masses. `binary-stability-auto --star "Sirius"` (no seeded B) → Sirius B
+`0.458`/`binary_orbit_sb1_min`, matching `exclusion-system`. `binary-orbit --star "alpha Centauri"` → the degenerate
+`q=1.0` solution carries `degenerate: true`. Regression: standalone `multiplicity --star "alpha Centauri"`
+byte-identical; Sol / ε Eri unaffected; the CR-11/CR-13 exclusion anchors unchanged under the CR-14.4 filter. Cores:
+`core/binary.py` (the shared selector + `_extract_stability_elements_full` + `_mass_flags` hoist + the chain wiring +
+the `binary-orbit` marker), `core/stellar_mass.py` (the hoisted `resolve_component_mass` / `augment_designations` /
+`component_candidate_ids` + the `resolve_binary_components` orchestrator), `core/exclusion_system.py` (now delegates the
+hoisted helpers), `core/report.py` (the dossier `multiplicity` chain + H1 guard + M3 basis), `query.py`
+(`--star-mass-catalog` on `binary-stability-auto`). Tests: `tests/test_binary_stability_auto.py` (CR-14 classes),
+`tests/test_exclusion_system.py` (byte-identical delegation guard).
+
 ## Implementation notes
 
 - No `sys.path` manipulation — Python prepends the script's own directory automatically when run directly, so `import core.X` works without changes.
