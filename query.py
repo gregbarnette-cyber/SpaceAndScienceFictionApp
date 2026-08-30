@@ -1846,6 +1846,14 @@ def cmd_salvo_exchange(args):
         solve_for=args.solve_for, target_side=args.target_side, fire_fraction=args.fire_fraction,
         rings=args.rings, inbound_salvo=args.inbound_salvo, scouting=args.scouting,
         target_staying=args.target_staying,
+        arrival_rate=args.arrival_rate, stream_total=args.stream_total,
+        dwell_intervals=args.dwell_intervals, profile=args.profile, stream_rings=args.stream_rings,
+        light_lag=(args.light_lag == "on"), range_m=args.range_m,
+        range_a_m=args.range_a_m, range_b_m=args.range_b_m, ring_ranges=args.ring_ranges,
+        target_agility=args.target_agility, agility_ref=args.agility_ref,
+        sigma_decay=args.sigma_decay, delta_decay=args.delta_decay,
+        decay_scale=args.decay_scale, decay_exponent=args.decay_exponent,
+        sigma_floor=args.sigma_floor, delta_floor=args.delta_floor,
     ))
 
 
@@ -4162,7 +4170,8 @@ def main(argv=None):
     # salvo-exchange (W1 — Hughes salvo model)
     p = sub.add_parser("salvo-exchange",
                        help="Hughes salvo model: per-salvo losses, exchange ratio, first-strike, "
-                            "sequential-waves, break-even, solve-force, distribute, layered-defense")
+                            "sequential-waves, break-even, solve-force, distribute, layered-defense, "
+                            "saturation-stream (+ opt-in --light-lag σ/δ degradation)")
     p.add_argument("--a-force", type=float, help="Force size A (count; may be fractional)")
     p.add_argument("--b-force", type=float, help="Force size B (count)")
     p.add_argument("--alpha", type=float, help="A per-unit striking power α (good hits/unit/salvo)")
@@ -4200,7 +4209,38 @@ def main(argv=None):
     p.add_argument("--inbound-salvo", type=float, help="inbound good-shot count (layered-defense)")
     p.add_argument("--scouting", type=float, default=1.0,
                    help="layered-defense inbound scouting σ (0–1, default 1)")
-    p.add_argument("--target-staying", type=float, help="target staying power a₁ (layered → delta_target)")
+    p.add_argument("--target-staying", type=float,
+                   help="target staying power a₁ (layered-defense / saturation-stream → delta_target)")
+    # saturation-stream (CR-A)
+    p.add_argument("--stream-rings", help="saturation-stream rings 'cap:regen:leak, …' (outermost first)")
+    p.add_argument("--arrival-rate", type=float, help="saturation-stream inbound missiles per interval")
+    p.add_argument("--stream-total", type=float, help="saturation-stream total missiles over the dwell")
+    p.add_argument("--dwell-intervals", type=int, help="saturation-stream engagement intervals N (≥ 1)")
+    p.add_argument("--profile", choices=["flat", "front-loaded", "ramp"], default="flat",
+                   help="saturation-stream arrival shaping over the dwell (default flat)")
+    # light-lag σ/δ degradation (CR-B; opt-in, layered onto the mode)
+    p.add_argument("--light-lag", choices=["on", "off"], default="off",
+                   help="decay σ/δ with one-way light-lag τ=R/c (default off → constant σ/δ, byte-identical)")
+    p.add_argument("--range-m", type=float, help="engagement range R (m) → shared τ=R/c (light-lag σ pre-multiply)")
+    p.add_argument("--range-a-m", type=float, help="A engagement range (m); overrides --range-m for side A")
+    p.add_argument("--range-b-m", type=float, help="B engagement range (m); overrides --range-m for side B")
+    p.add_argument("--ring-ranges", help="per-ring ranges 'R1,R2,…' (m, outermost first; light-lag δ decay)")
+    p.add_argument("--target-agility", type=float,
+                   help="target lateral accel (m/s²); x_eff=τ·(agility/agility-ref) (default = --agility-ref)")
+    p.add_argument("--agility-ref", type=float, default=49.0,
+                   help="reference agility (m/s², default 49 ≈ 5 g redline)")
+    p.add_argument("--sigma-decay", choices=["linear", "exp", "power"], default="exp",
+                   help="σ decay law (light-lag; default exp)")
+    p.add_argument("--delta-decay", choices=["linear", "exp", "power"], default="exp",
+                   help="δ decay law (light-lag; default exp)")
+    p.add_argument("--decay-scale", type=float, default=1.0,
+                   help="decay scale (seconds; τ at which σ/δ fall to the law's fraction; default 1)")
+    p.add_argument("--decay-exponent", type=float, default=2.0,
+                   help="power-law exponent k (used when a decay law is 'power'; default 2)")
+    p.add_argument("--sigma-floor", type=float, default=0.0,
+                   help="residual σ at infinite lag (0–1, default 0)")
+    p.add_argument("--delta-floor", type=float, default=0.0,
+                   help="residual δ at infinite lag (0–1, default 0)")
     p.set_defaults(func=cmd_salvo_exchange)
 
     # beam-weapon-engagement (W2)

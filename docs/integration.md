@@ -317,7 +317,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `close-binary-census` | `--dist-max-ly --period-max-d` [`--sep-max-au --include --parallax-source --keep-planets --separate-wide --exclude-known`] | **ESA Gaia + CDS (live)**¶ | `query, count, counts_by_class, dedup, census[], excluded_planets[], wide[], coverage, units` |
 | `gaia-astrophysical` | (`--star` \| `--source-id`) | **ESA Gaia (live)**¶ | `query, source_id, identity, parameters, caveats, units` |
 | `besancon-query` | (`--glon --glat` \| `--local`) [`--area --dist-max-pc --mag-max --sample-max --contact-email`] | **Besançon BGM (live; needs account)**¶ | `query, model_version, n_stars, columns, catalogue_sample[], catalogue_truncated, age_dist, coverage, units` |
-| `salvo-exchange` | (`--alpha --beta` \| `--a-salvo/--a-hitprob` + `--b-salvo/--b-hitprob`) `--a1-staying --b1-staying` [`--a-force --b-force --a3-defense --b3-defense --sigma-a/-b --delta-a/-b --leak-a/-b`]; `--mode {simultaneous,first-strike,sequential-waves,break-even,solve-force,distribute,layered-defense}` + mode args | none | `mode, resolved_inputs, model_note` (always); the force-on-force modes (`simultaneous`/`first-strike`/`sequential-waves`) add `delta_a/_b, frac_loss_a/_b, overkill_a/_b, exchange_ratio` (or `final_survivors_a/_b`), `survivors_a/_b`, while `break-even`/`solve-force`/`distribute`/`layered-defense` return **only** their own per-mode keys (`break_even_force_ratio` · `required_force_exact`+`integer_wave` · `delta_targeted`+`targeted_count` · `survivors_to_target`+ring table) — see the W1 detail below |
+| `salvo-exchange` | (`--alpha --beta` \| `--a-salvo/--a-hitprob` + `--b-salvo/--b-hitprob`) `--a1-staying --b1-staying` [`--a-force --b-force --a3-defense --b3-defense --sigma-a/-b --delta-a/-b --leak-a/-b`]; `--mode {simultaneous,first-strike,sequential-waves,break-even,solve-force,distribute,layered-defense,saturation-stream}` + mode args; opt-in `--light-lag on` (+ `--range-m`/`--range-a-m`/`--range-b-m --ring-ranges --target-agility --agility-ref --sigma-decay/--delta-decay --decay-scale --decay-exponent --sigma-floor/--delta-floor`) | none | `mode, resolved_inputs, model_note` (always); the force-on-force modes (`simultaneous`/`first-strike`/`sequential-waves`) add `delta_a/_b, frac_loss_a/_b, overkill_a/_b, exchange_ratio` (or `final_survivors_a/_b`), `survivors_a/_b`, while `break-even`/`solve-force`/`distribute`/`layered-defense`/`saturation-stream` return **only** their own per-mode keys (`break_even_force_ratio` · `required_force_exact`+`integer_wave` · `delta_targeted`+`targeted_count` · `survivors_to_target`+ring table · `cumulative_leak`+`per_interval_leak`+`equivalent_pulse_leak`+`duration_advantage`); `--light-lag on` adds `sigma_effective, delta_effective, tau_s, light_travel_time_s, first_mover_advantage` (shape per mode-family — see the W1 detail below) — see the W1 detail below |
 | `beam-weapon-engagement` | `--aperture-m` (`--wavelength-m`\|`--frequency-hz`) `--power-w --target-size-m --range-m` (`--kill-fluence-jm2` \| `--target-material-enthalpy-jkg` + `--target-areal-density-kgm2`) [`--beam-quality-m2 --pointing-efficiency --rayleigh-k --max-dwell-s`] | none | `spot_diameter_m, frac_power_on_target_tophat/encircled, intensity_on_target_wm2, peak_spot_intensity_wm2, spot_smaller_than_target, dwell_to_kill_s, effective_range_spot_m, effective_range_dwell_m, light_travel_time_s, kill_fluence_jm2, model_note` |
 | `kinetic-kill` | (`--mass-kg` \| `--length-m --diameter-m --density-kgm3`) (`--velocity-kms`\|`--beta`) `--target-density-kgm3` [`--target-type {monolithic,whipple}` (`--armor-thickness-m` \| `--bumper-areal-density-kgm2 --standoff-m --rearwall-areal-density-kgm2`) `--target-sound-speed-ms --crater-exponent --debris-cone-half-angle-deg`] | none | `ke_classical_j, ke_relativistic_j, ke_j, regime, tnt_equiv_t, specific_energy_jkg, momentum_kgms, penetration_depth_m, crater_penetration_m, perforates, whipple{}, model_note` |
 | `warhead-effects-at-standoff` | (`--yield-j`\|`--yield-kt`) `--standoff-m` [`--warhead-type {fission,fusion,antimatter,kinetic-plasma}` `--f-xray/--f-neutron/--f-debris/--f-gamma`; `--threshold-{xray,neutron,debris,gamma}-jm2`] | none | `yield_j, warhead_type, channels{<ch>{fraction,fluence_jm2,kill_radius_m,killed_at_range,note}}, partition_fractions, escaping_fraction, killed_at_range, binding_channel, model_note` |
@@ -3792,12 +3792,45 @@ annihilation is `overkill_*`; `exchange_ratio = ΔB/ΔA` (null when ΔA = 0).
   — one inbound salvo cascaded through K defensive rings (WB MSG 027, disjoint from sequential-waves):
   `survivors_j = max(incoming_j − δ_j·b₃_j, L_j·incoming_j)`, outermost→inner. Returns a per-ring table,
   `survivors_to_target`, and `delta_target` (leakers/a₁) when `--target-staying` is given.
+- `--mode saturation-stream --stream-rings "cap:regen:leak, …" (--stream-total T | --arrival-rate r) --dwell-intervals N [--profile {flat,front-loaded,ramp}] [--target-staying a₁]`
+  — **CR-A (Packet 38.2):** a sustained missile **stream** over a dwell window vs a **per-interval-regenerating**
+  ring defense — the "duration beats density" trade the single-pulse `layered-defense` snapshot can't score.
+  Each ring holds a reservoir (init `cap`) firing up to `cap`/interval and regenerating `regen`/interval
+  (`regen ≥ cap` = full recovery, `regen = 0` = one-shot magazine; leak L = the saturation floor); the cascade is
+  outermost→inner, per interval, reservoirs carrying across intervals. Stream size = `--stream-total T` (shaped by
+  `--profile`: flat = T/N, ramp = increasing w_i=i, front-loaded = decreasing w_i=N+1−i) **or** `--arrival-rate r`
+  (⇒ T = r·N, forced flat — a non-flat `--profile` with `--arrival-rate` errors); `--dwell-intervals N` (integer
+  ≥ 1) is required in both forms. Returns `cumulative_leak`, `per_interval_leak[]` (len N), `per_interval_ring_state[]`
+  (each ring's reservoir per interval), `equivalent_pulse_leak` (the **same total** as ONE pulse, each ring
+  intercepting up to its full `cap`), and `duration_advantage = equivalent_pulse_leak − cumulative_leak`
+  (**positive = the pulse leaks more**). `--target-staying` adds `delta_target` (= cumulative_leak/a₁).
+  saturation-stream is **σ-free** (σ only via `--light-lag`); `--scouting` is rejected here.
+- `--light-lag {on,off}` (default **off** → constant σ/δ, **byte-identical**) — **CR-B (Packet 38.2):** an opt-in
+  option **layered onto** `simultaneous`/`first-strike`/`sequential-waves`/`layered-defense`/`saturation-stream`
+  (**rejected**, exit 1, on break-even/solve-force/distribute) that degrades **σ (scouting)** and **δ (alertness)**
+  with one-way light-lag `τ = R/c`. Effective decay variable `x_eff = τ·(--target-agility / --agility-ref)` (default
+  `--target-agility` = `--agility-ref` = 49 m/s² ≈ 5 g ⇒ x_eff = τ); the law is `f = floor + (σ₀−floor)·g(x_eff/--decay-scale)`
+  with `--sigma-decay/--delta-decay {linear,exp,power}` (default `exp`; `power` uses `--decay-exponent`, default 2),
+  `--decay-scale` in **seconds** (default 1; `→∞` reproduces constant σ/δ), `--sigma-floor/--delta-floor` (0–1, default
+  0, must be ≤ the base). **σ is a single pre-multiply** by the **engagement-range τ** (`--range-m`, or per-side
+  `--range-a-m/--range-b-m`); **δ decays per-ring** by `--ring-ranges "R1,R2,…"` (m, **outermost→inner**). Adds
+  `sigma_effective`, `delta_effective`, `tau_s`, `light_travel_time_s` (= the engagement-range τ: the shared
+  `--range-m` value, or the **max** of the per-side τ when only `--range-a-m/--range-b-m` are given), and
+  `first_mover_advantage` (= `Δ_second − Δ_first`; the shorter-effective-τ side is "first"; **null** under symmetric τ
+  and for the one-sided modes layered-defense/saturation-stream). **Output shape varies by mode-family** (as this
+  contract's per-mode keys already do): for the **force** modes `sigma_effective`/`delta_effective`/`tau_s` are
+  per-side `{"a":…,"b":…}` dicts; for **layered-defense** `sigma_effective` is a scalar and `delta_effective`/`tau_s`
+  are per-ring **lists**; for **saturation-stream** `sigma_effective` is a scalar, `delta_effective` is `null` (its
+  rings carry no δ), and `tau_s` is the per-ring list (or `null` when `--ring-ranges` is omitted). All CR-A/CR-B flags
+  are echoed in `resolved_inputs` **only when the new mode/option is active** (an off-run's dict is byte-identical).
 - `--leak-a/--leak-b > 0` applies the saturation floor to any mode. Validation is a **core** check →
   curated `{"error"}` **exit 1** (bad `--mode` / choices → argparse **exit 2**).
 ```bash
 query.py salvo-exchange --a-force 10 --b-force 10 --alpha 3 --beta 3 --a1-staying 2 --b1-staying 2 --a3-defense 2 --b3-defense 2   # ΔA=ΔB=5
 query.py salvo-exchange --mode solve-force --a-force 7 --a1-staying 1 --b1-staying 1 --a3-defense 1 --beta 3.88 --alpha 1 --solve-for b --target-delta 7 --target-side a   # 3.61 → 4
 query.py salvo-exchange --mode layered-defense --inbound-salvo 100 --rings "1:30:0.1, 1:30:0.1, 1:30:0.1"   # survivors_to_target=10
+query.py salvo-exchange --mode saturation-stream --stream-total 400 --dwell-intervals 4 --stream-rings "20:20:0"   # cumulative_leak=320, equivalent_pulse_leak=380, duration_advantage=60
+query.py salvo-exchange --mode simultaneous --a-force 1000 --b-force 1000 --alpha 1 --beta 1 --a1-staying 1 --b1-staying 1 --a3-defense 1 --b3-defense 1 --light-lag on --range-a-m 1e6 --range-b-m 2e9   # first_mover_advantage > 0 (B is second — longer lag)
 ```
 
 #### `beam-weapon-engagement`  (W2)
