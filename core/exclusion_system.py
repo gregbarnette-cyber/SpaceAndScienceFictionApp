@@ -558,8 +558,7 @@ def _resolve_system_from_star(star, catalog):
     sma = sel["sma_au"]
     sel_mtot = (sel.get("m1_solar") or 0.0) + (sel.get("m2_solar") or 0.0)
     pref_mtot = (prim_mass or 0.0) + (comp_mass or 0.0)
-    if sma and sel_mtot > 0 and pref_mtot > 0:
-        sma = sma * (pref_mtot / sel_mtot) ** (1.0 / 3.0)
+    sma = stellar_mass.recompute_sma_kepler3(sma, sel_mtot, pref_mtot)   # CR-15.3 shared helper
 
     comps = [
         {"id": main_id or f"{star} A", "name": main_id, "mass_solar": prim_mass,

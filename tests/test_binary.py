@@ -345,5 +345,20 @@ class TestCensusDedup(unittest.TestCase):
         self.assertEqual(r["dedup"]["possible_duplicates"], 0)
 
 
+class Cr154IdentityDesignationsTest(unittest.TestCase):
+    """CR-15.4: `_resolve_binary_identity` carries the primary's `designations` (additive key) so
+    `binary_stability_auto` reuses it instead of a redundant SIMBAD re-lookup."""
+
+    def test_identity_carries_designations(self):
+        sl = {"main_id": "* alf Cen", "sp_type": "G2V",
+              "designations": {"NAME": "* alf Cen A", "HIP": "71683"},
+              "ra": 219.9, "dec": -60.8, "plx_value": 750.0}
+        with mock.patch("core.databases.compute_simbad_lookup", return_value=sl):
+            ident, err = binary._resolve_binary_identity("alpha Cen", None, None, None)
+        self.assertIsNone(err)
+        self.assertEqual(ident["designations"], {"NAME": "* alf Cen A", "HIP": "71683"})  # additive key
+        self.assertEqual(ident["main_id"], "* alf Cen")
+
+
 if __name__ == "__main__":
     unittest.main()

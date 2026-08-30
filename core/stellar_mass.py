@@ -219,23 +219,37 @@ def resolve_component_mass(spec, catalog, allow_flame=True):
     return block["mass_solar"], block["mass_provenance"], block["note"]
 
 
-def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, primary_override=None):
+def recompute_sma_kepler3(sma, sel_mtot, pref_mtot):
+    """CR-15.3 (shared): recompute a binary sma at the SAME observed period from the PREFERRED masses
+    (``a ∝ M_tot^(1/3)``). Returns ``sma`` unchanged when any operand is falsy / non-positive — a no-op
+    when the preferred masses equal the orbit-selected masses, or when ``sma`` is None/0. The single copy
+    shared by ``binary.stability_from_solutions`` and ``exclusion_system._resolve_system_from_star``;
+    **byte-identical** to the two former inline copies (the truthiness guard on ``sma`` is preserved, so a
+    None/0 sma passes through rather than crashing)."""
+    if sma and sel_mtot > 0 and pref_mtot > 0:
+        return sma * (pref_mtot / sel_mtot) ** (1.0 / 3.0)
+    return sma
+
+
+def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system_name=None):
     """CR-14.3 orchestrator: resolve the **preferred** masses of a binary's two components (A + B)
     through the shared chain, matching ``exclusion_system._resolve_system_from_star``'s per-component
     derivation so ``binary-stability-auto`` / the dossier ``multiplicity`` section / ``exclusion-system``
     all report the **same** masses for a given star (cross-path consistency #3).
 
     Args:
-      primary_sl : the primary's SIMBAD result dict (``main_id`` / ``sp_type`` / ``designations``).
+      primary_sl : the primary's SIMBAD result dict. **Only ``main_id`` / ``sp_type`` / ``designations``
+                   are read**, so a reduced ``{main_id, sp_type, designations}`` dict is a valid input —
+                   ``binary_stability_auto`` passes exactly that, built from the orbit identity (CR-15.4).
+                   A future tier that reads another key (e.g. ``luminosity_lsun``) MUST widen every caller.
       sel        : the selected-orbit dict from ``binary.select_stability_elements`` — supplies the
                    orbit-mass fallback (``m1_solar``/``m2_solar``/``mass_prov_a``/``mass_prov_b``/``notes``)
                    used when a component has no measured (manual/catalog/FLAME) mass.
       catalog    : a loaded mass catalog (``load_mass_catalog`` result).
       allow_flame: gate the network FLAME tier (kept True on both consumers per WB Q1).
-      primary_override : ``(mass, provenance)`` to reuse for component A instead of resolving it — the
-                   dossier's H1-safe optimization, passed ONLY when the already-chain-resolved regions
-                   primary mass is a **measured** tier (manual/catalog/gaia_flame), never the inversion.
-                   Avoids re-resolving A (a possible extra FLAME round-trip) while B still routes here.
+      system_name: the raw star/system name for the empty-``main_id`` component-B fallback
+                   (``"{system_name} B"``), matching ``exclusion_system._resolve_system_from_star``'s
+                   fallback so both paths derive the identical component-B id (CR-15.2 cross-path consistency).
 
     Returns ``(m1, prov_a, m2, prov_b, notes)`` — the FINAL per-component masses (measured tier, else the
     orbit fallback) + provenance + any orbit-flag notes. The secondary designation is derived with the
@@ -245,17 +259,17 @@ def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, primar
     """
     main_id = primary_sl.get("main_id") if isinstance(primary_sl, dict) else None
 
-    if primary_override is not None:
-        m1, prov_a = primary_override
-    else:
-        prim_spec = {"name": main_id, "sp_type": primary_sl.get("sp_type"),
-                     "designations": augment_designations(primary_sl.get("designations"),
-                                                          component_candidate_ids(main_id, "A"))}
-        m1, prov_a, _n = resolve_component_mass(prim_spec, catalog, allow_flame=allow_flame)
-        if m1 is None:
-            m1, prov_a = sel.get("m1_solar"), sel.get("mass_prov_a")
+    prim_spec = {"name": main_id, "sp_type": primary_sl.get("sp_type"),
+                 "designations": augment_designations(primary_sl.get("designations"),
+                                                      component_candidate_ids(main_id, "A"))}
+    m1, prov_a, _n = resolve_component_mass(prim_spec, catalog, allow_flame=allow_flame)
+    if m1 is None:
+        m1, prov_a = sel.get("m1_solar"), sel.get("mass_prov_a")
 
-    comp_id = next(iter(component_candidate_ids(main_id, "B")), None)
+    # CR-15.2: on an empty/None main_id, fall back to "{system_name} B" (matching exclusion_system) so
+    # both paths derive the identical component-B id — not None (which skipped the B lookup → orbit split).
+    comp_id = next(iter(component_candidate_ids(main_id, "B")),
+                   (f"{system_name} B" if system_name else None))
     comp_sp = comp_desig = None
     if comp_id:
         from core import databases

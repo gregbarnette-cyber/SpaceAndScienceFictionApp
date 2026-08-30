@@ -229,6 +229,7 @@ def _resolve_binary_identity(star, ra, dec, source_id):
                 "sp_type": sl.get("sp_type"), "parallax_mas": sl.get("plx_value"),
                 "gaia_source_id": gaia_source_id_from_designations(desig),
                 "hip": desig.get("HIP"),
+                "designations": desig,   # CR-15.4: additive — lets consumers reuse the primary lookup
             })
     if ident["gaia_source_id"] is None and source_id:
         ident["gaia_source_id"] = str(source_id)
@@ -755,7 +756,7 @@ def stability_from_solutions(star_label, ident, solutions, route_tried, test_sma
     sma/element recompute come from one selection, not two independent re-selections off possibly-different
     ``sp_type`` sources (code-review CR-14 findings 1/2). Omit it → selects internally from
     ``ident.sp_type`` (the test/legacy path)."""
-    from core import equations
+    from core import equations, stellar_mass
     if selection is not None:
         sel, note = selection
     else:
@@ -780,8 +781,7 @@ def stability_from_solutions(star_label, ident, solutions, route_tried, test_sma
         m1 = pm1 if pm1 is not None else m1
         m2 = pm2 if pm2 is not None else m2
         pref_mtot = (m1 or 0.0) + (m2 or 0.0)
-        if a_bin and sel_mtot > 0 and pref_mtot > 0:
-            a_bin = a_bin * (pref_mtot / sel_mtot) ** (1.0 / 3.0)
+        a_bin = stellar_mass.recompute_sma_kepler3(a_bin, sel_mtot, pref_mtot)   # CR-15.3 shared helper
         prov_a = pprov_a if pprov_a is not None else prov_a
         prov_b = pprov_b if pprov_b is not None else prov_b
         res_notes = list(pnotes or [])
@@ -862,9 +862,17 @@ def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma
     preferred = None
     sel, sel_note = select_stability_elements(solutions, ident.get("sp_type"))
     if sel is not None and (star or ident.get("main_id")):
-        primary_sl = databases.compute_simbad_lookup(star or ident.get("main_id"))
+        # CR-15.4: reuse the primary identity binary_orbit already resolved (its identity now carries
+        # `designations` for name-based input — additive key) instead of a redundant SIMBAD re-lookup.
+        # Coordinate-/source_id-only input has no designations in the identity → fall back to the lookup.
+        if ident.get("designations") is not None:
+            primary_sl = {"main_id": ident.get("main_id"), "sp_type": ident.get("sp_type"),
+                          "designations": ident.get("designations")}
+        else:
+            primary_sl = databases.compute_simbad_lookup(star or ident.get("main_id"))
         if isinstance(primary_sl, dict) and "error" not in primary_sl:
-            preferred = stellar_mass.resolve_binary_components(primary_sl, sel, catalog)
+            preferred = stellar_mass.resolve_binary_components(primary_sl, sel, catalog,
+                                                               system_name=(star or ident.get("main_id")))
     # Thread the SAME selection through (code-review findings 1/2) — one select, not two.
     return stability_from_solutions(result.get("query"), ident, solutions,
                                     result.get("route_tried"), test_sma_au=test_sma_au,

@@ -95,5 +95,37 @@ class Cr105ConsistencyAnchorLive(unittest.TestCase):
         self.assertTrue(d["data"]["regions"]["evolved_star_flag"])
 
 
+@unittest.skipUnless(_reachable(), "network not reachable (or SPACE_APP_RUN_LIVE unset)")
+class Cr151SecondaryTargetDossierLive(unittest.TestCase):
+    """CR-15.1: the dossier multiplicity section drops the primary_override, so a SECONDARY-named target
+    resolves the correct per-component masses (matching binary-stability-auto), not the secondary's mass
+    forced into slot A. Was 0.909+0.909 (μ 0.5) for 'alpha Cen B'; now 1.079+0.909 (μ 0.457)."""
+
+    def _mult_elements(self, star):
+        rc, d, err = _run("dossier", "--star", star, "--sections", "multiplicity", "--fmt", "json")
+        self.assertEqual(rc, 0, err)
+        return d["data"]["multiplicity"]["elements"]
+
+    def test_alpha_cen_b_secondary_resolves_primary_mass(self):          # the fix
+        el = self._mult_elements("alpha Cen B")
+        self.assertAlmostEqual(el["m1_solar"], 1.079, places=2)          # A, not B's 0.909
+        self.assertAlmostEqual(el["m2_solar"], 0.909, places=2)
+
+    def test_alpha_cen_a_primary_unchanged(self):                        # regression: primary unchanged
+        el = self._mult_elements("alpha Cen A")
+        self.assertAlmostEqual(el["m1_solar"], 1.079, places=2)
+        self.assertAlmostEqual(el["m2_solar"], 0.909, places=2)
+
+    def test_sirius_b_cross_path_consistent(self):
+        # Option A: dossier "Sirius B" == binary-stability-auto "Sirius B" (both the orbit fallback);
+        # the letterless-primary correctness gap is parked to CR-16, not CR-15.
+        dm = self._mult_elements("Sirius B")
+        rc, bsa, err = _run("binary-stability-auto", "--star", "Sirius B")
+        self.assertEqual(rc, 0, err)
+        bel = bsa["elements"]
+        self.assertAlmostEqual(dm["m1_solar"], bel["m1_solar"], places=6)
+        self.assertAlmostEqual(dm["m2_solar"], bel["m2_solar"], places=6)
+
+
 if __name__ == "__main__":
     unittest.main()

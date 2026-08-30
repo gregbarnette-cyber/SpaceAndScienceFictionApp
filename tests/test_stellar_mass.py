@@ -225,5 +225,66 @@ class CatalogRowParamTest(unittest.TestCase):
         self.assertEqual(r2["mass_provenance"], "ms_luminosity_inversion")
 
 
+class Cr15Test(unittest.TestCase):
+    """CR-15.3 shared Kepler-III SMA helper + CR-15.2 empty-main_id fallback consistency."""
+
+    def test_recompute_sma_kepler3(self):
+        # a ∝ M_tot^(1/3): doubling M_tot scales a by 2^(1/3).
+        self.assertAlmostEqual(sm.recompute_sma_kepler3(10.0, 1.0, 2.0), 10.0 * 2.0 ** (1.0 / 3.0))
+        self.assertEqual(sm.recompute_sma_kepler3(10.0, 2.0, 2.0), 10.0)      # preferred == selected → no-op
+        # truthiness guard (Reviewer-2): None/0 sma passes through, no crash
+        self.assertIsNone(sm.recompute_sma_kepler3(None, 1.0, 2.0))
+        self.assertEqual(sm.recompute_sma_kepler3(0.0, 1.0, 2.0), 0.0)
+        self.assertEqual(sm.recompute_sma_kepler3(10.0, 0.0, 2.0), 10.0)      # zero mtot → no-op
+
+    def test_cr152_empty_main_id_fallback_uses_system_name_b(self):
+        # CR-15.2: on empty main_id, resolve_binary_components derives comp_id "{system_name} B" — matching
+        # exclusion_system._resolve_system_from_star's L533 `f"{star} B"` (unchanged) → identical component-B id.
+        from unittest import mock
+        sel = {"m1_solar": 1.0, "m2_solar": 0.5, "mass_prov_a": "binary_orbit_m1",
+               "mass_prov_b": "binary_orbit_m2", "notes": []}
+        seen = []
+
+        def fake_lookup(name):
+            seen.append(name)
+            return {"error": "not found"}
+
+        with mock.patch("core.databases.compute_simbad_lookup", side_effect=fake_lookup):
+            m1, pa, m2, pb, notes = sm.resolve_binary_components(
+                {"main_id": "", "sp_type": None, "designations": {}}, sel, None, system_name="Foo")
+        self.assertIn("Foo B", seen)          # the B fallback used "{system_name} B", not None (skip)
+        self.assertEqual(m2, 0.5)             # bad lookup + no catalog → B falls to the orbit split
+
+    def test_cr152_cross_path_empty_main_id_derives_same_comp_b(self):
+        # WB CR-15.2 acceptance: on empty main_id, resolve_binary_components AND
+        # exclusion_system._resolve_system_from_star derive the IDENTICAL component-B id ("{name} B") for
+        # the same input → the same B mass. (Edge case — not CLI-triggerable; unit-level parity.)
+        from unittest import mock
+        import core.exclusion_system as ex
+        sel = {"m1_solar": 1.0, "m2_solar": 0.5, "mass_prov_a": "binary_orbit_m1",
+               "mass_prov_b": "binary_orbit_m2", "sma_au": 23.0, "ecc": 0.5, "mass_basis": "sb2 ratio",
+               "notes": [], "ecc_assumed": False}
+        seen_rbc, seen_ex = [], []
+        with mock.patch("core.databases.compute_simbad_lookup",
+                        side_effect=lambda n: (seen_rbc.append(n) or {"error": "x"})):
+            r = sm.resolve_binary_components({"main_id": "", "sp_type": "G2V", "designations": {}},
+                                             sel, None, system_name="Foo")
+
+        def lk_ex(n):
+            seen_ex.append(n)
+            return ({"main_id": "", "otype": None, "sp_type": "G2V", "designations": {}}
+                    if n == "Foo" else {"error": "x"})
+        with mock.patch("core.databases.compute_simbad_lookup", side_effect=lk_ex), \
+                mock.patch("core.binary.binary_orbit", return_value={"solutions": [{"s": 1}]}), \
+                mock.patch.object(ex, "_select_orbit_masses", return_value=(sel, None)):
+            try:
+                ex._resolve_system_from_star("Foo", None)   # comp-B id is derived at L533-534 (before
+            except Exception:                                # any downstream composition) — that's all we assert
+                pass
+        self.assertIn("Foo B", seen_rbc)      # resolve_binary_components fallback
+        self.assertIn("Foo B", seen_ex)       # exclusion fallback — SAME comp-B id (cross-path parity)
+        self.assertEqual(r[2], 0.5)           # both fall to the orbit split (0.5) on the bad B lookup
+
+
 if __name__ == "__main__":
     unittest.main()

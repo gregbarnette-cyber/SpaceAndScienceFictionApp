@@ -619,7 +619,7 @@ def _pick_basis_solution(solutions):
     return solutions[0]
 
 
-def _multiplicity_data_star(simbad, star, mass_catalog=None, regions_mass_block=None):
+def _multiplicity_data_star(simbad, star, mass_catalog=None):
     """CR-2 otype hint + **CR-10.5 Part 2 catalog cross-check**: run `binary-orbit` (SB9 / WDS-ORB6 /
     Gaia-DR3-NSS) ONCE regardless of otype, so a spectroscopic binary whose primary otype is a
     variability class (Spica `bC*`) is still flagged. `is_multiple`/`sb_flag` reflect the cross-check;
@@ -655,23 +655,19 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None, regions_mass_block=
     data["is_multiple"] = True
     data["sb_flag"] = otype_sb or cross_sb
 
-    # CR-14.3: route the per-component masses through the shared chain so the dossier multiplicity
-    # section reports the SAME masses as binary-stability-auto / exclusion-system (cross-path #3). H1
-    # guard: reuse the already-chain-resolved regions primary mass ONLY when it is a **measured** tier
-    # (never the L^0.2632 inversion — which under `--sections multiplicity` alone would not have consulted
-    # FLAME); otherwise resolve A through the full chain too (allow_flame). Both components route through
-    # the shared orchestrator (one "star B" derivation — M1).
+    # CR-15.1: route BOTH components through the shared chain (NO primary_override). The former H1
+    # override short-circuited slot A with the target's regions mass — correct for a primary-named
+    # target, but for a SECONDARY-named target ("alpha Cen B") it forced A = B's mass. Dropping it lets
+    # A resolve via prim_spec (component_candidate_ids injects the primary designation), matching
+    # binary-stability-auto: alpha Cen B → 1.079/0.909, alpha Cen A unchanged. (The letterless-primary
+    # catalog-match gap, e.g. Sirius B, is a pre-existing binary-stability-auto defect parked to CR-16;
+    # CR-15 leaves component_candidate_ids/match_mass untouched, so Sirius B stays cross-path-consistent
+    # with binary-stability-auto rather than "correct".)
     ident = result.get("identity", {})
     sel, sel_note = binary.select_stability_elements(stellar, simbad.get("sp_type"))
     preferred = None
     if sel is not None:
-        override = None
-        if (isinstance(regions_mass_block, dict) and regions_mass_block.get("mass_solar") is not None
-                and regions_mass_block.get("mass_provenance") in
-                (stellar_mass.MANUAL, stellar_mass.CATALOG, stellar_mass.GAIA_FLAME)):
-            override = (regions_mass_block["mass_solar"], regions_mass_block["mass_provenance"])
-        preferred = stellar_mass.resolve_binary_components(simbad, sel, mass_catalog,
-                                                           primary_override=override)
+        preferred = stellar_mass.resolve_binary_components(simbad, sel, mass_catalog, system_name=star)
     # Thread the SAME selection through (code-review findings 1/2) — the preferred masses and the
     # sma/element recompute must come from one selection, not two off possibly-different sp_type sources.
     stab = binary.stability_from_solutions(result.get("query"), ident, stellar,
@@ -1132,8 +1128,7 @@ def _assemble_star(star, requested=None, force_ms_inversion=False,
     # network reader (binary-orbit tool-split / Gaia FLAME / VizieR debris catalogues) — a dossier
     # that does not ask for them should not pay for them.
     if "multiplicity" in requested:
-        data["multiplicity"] = _multiplicity_data_star(simbad, star, mass_catalog=mass_catalog,
-                                                       regions_mass_block=mass_block)
+        data["multiplicity"] = _multiplicity_data_star(simbad, star, mass_catalog=mass_catalog)
         status["multiplicity"] = ("ok", None)
     if "age_population" in requested:
         data["age_population"] = _age_population_data_star(simbad, hyp, star, _gaia_astro(simbad, memo))
