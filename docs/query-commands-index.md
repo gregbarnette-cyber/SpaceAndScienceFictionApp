@@ -300,7 +300,7 @@ descriptions are condensed from integration.md's prose.
 ## Weapons & engagement physics (Phase AT)
 | Command | Description |
 |---|---|
-| `salvo-exchange` | Hughes *Fleet Tactics* salvo-combat model over seven modes (simultaneous / first-strike / sequential-waves / break-even / solve-force / distribute / layered-defense). |
+| `salvo-exchange` | Hughes *Fleet Tactics* salvo-combat model over eight modes (simultaneous / first-strike / sequential-waves / break-even / solve-force / distribute / layered-defense / saturation-stream) + an opt-in `--light-lag` σ/δ one-way-lag degradation option (Packet 38.2 CR-A/CR-B). |
 | `beam-weapon-engagement` | Diffraction-limited beam spot (top-hat + Gaussian), intensity, dwell-to-kill, and effective range. |
 | `kinetic-kill` | Kinetic-impactor energy (classical ½mv² + relativistic (γ−1)mc²), TNT-tons, long-rod penetration + crater OOM, monolithic/Whipple verdict. |
 | `warhead-effects-at-standoff` | Vacuum inverse-square warhead flux per channel → per-channel kill radius + the binding channel (yield is an input). |

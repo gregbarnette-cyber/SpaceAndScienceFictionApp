@@ -267,7 +267,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `population-capacity` | ≥1 budget of (`--crop-area-m2` \| `--power-w` \| `--water-kg-day` \| `--fixed-nitrogen-kg-yr` \| `--food-dry-kg-day`) [per-person `--per-person-*` overrides] | none (X1/X2 defaults) | `per_resource{…{budget,per_person,source,population}}, sustainable_population, binding_constraint, slack{…}` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
-| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion` `--star-mass-catalog <path>` `--mass-solar <M☉>`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis`; **CR-11.2** adds `regions.mass{mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,inversion_mass_solar,note}` (a preferred measured mass recomputes radius/calc-L/limits — decision B) |
+| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion` `--star-mass-catalog <path>` `--mass-solar <M☉>`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis`; **CR-11.2** adds `regions.mass{mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,inversion_mass_solar,note}` (a preferred measured mass recomputes radius/calc-L/limits — decision B); **CR-15.1** a secondary-named target (e.g. `alpha Cen B`) now resolves the **correct** per-component masses in the `multiplicity` section — the H1 `primary_override` was dropped, so component A resolves via the shared chain (matching `binary-stability-auto`: `alpha Cen B` → 1.079/0.909, not the buggy 0.909/0.909); the letterless-primary catalog-match gap (Sirius B) is parked to CR-16 |
 | `generate-system` | `--seed` [`--anchor-star` `--spectral-class` `--planets` `--require-habitable` `--constraint…` `--companion` `--nbody` `--research-policy`] | none (synthetic) · SIMBAD + NASA + HWC (with `--anchor-star`) | `seed, mode, anchor_star, star, planets[], warnings, notes` — plus `feasible, constraints[]` with `--constraint` |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
@@ -3640,7 +3640,7 @@ query.py binary-orbit --star "delta Trianguli"
 query.py binary-orbit --star "GJ 876"          # 61.36 d solution → class "planet"
 ```
 Core: `binary.binary_orbit(star=None, ra=None, dec=None, source_id=None)`. Output:
-`{query, identity:{main_id, ra, dec, sp_type, parallax_mas, distance_ly, gaia_source_id, hip},
+`{query, identity:{main_id, ra, dec, sp_type, parallax_mas, distance_ly, gaia_source_id, hip, designations},
 solutions:[{source, solution_type|seq, period_d, eccentricity, grade, primary_ref,
 separation_arcsec, separation_au, component, companion:{method, m1_solar, m2_solar, m2_mjup, a0_mas,
 a1_au, mass_function, class, low_significance, caveat, mass_ratio_q?, binary_masses?}, verification, degenerate?}],
@@ -3650,6 +3650,9 @@ for that source: `{m1_solar, m2_solar(+m2_lower/upper), fluxratio, combination_m
 agreement_pct?}` (`agreement_pct` = |our m2 − Gaia m2| / Gaia m2 × 100, when both are numeric). Our
 Thiele-Innes/SB1 estimate stays the **primary** `m2_solar`; `binary_masses` cross-checks it, or — when
 our tool-split produced no mass but Gaia's `m2` is non-null — **fills** it (`method:"gaia-binary-masses"`).
+**CR-15.4:** `identity` also carries the primary's **`designations`** dict (additive — from the SIMBAD lookup
+`binary_orbit` already performs), so `binary-stability-auto` / consumers reuse the resolved primary identity
+instead of a redundant SIMBAD re-lookup. Additive-only — every prior `binary-orbit` field/value is unchanged.
 
 #### `close-binary-census`
 The systematic population sweep (Gaia NSS faint + SB9 bright with Hipparcos/Gaia parallax → X-Match
@@ -4528,7 +4531,7 @@ point-mass `62.53`; Sirius A `63.46` / B null-WD / env `{66.14, 73.84}`; Proxima
 `core/binary.py` (the shared selector + `_extract_stability_elements_full` + `_mass_flags` hoist + the chain wiring +
 the `binary-orbit` marker), `core/stellar_mass.py` (the hoisted `resolve_component_mass` / `augment_designations` /
 `component_candidate_ids` + the `resolve_binary_components` orchestrator), `core/exclusion_system.py` (now delegates the
-hoisted helpers), `core/report.py` (the dossier `multiplicity` chain + H1 guard + M3 basis), `query.py`
+hoisted helpers), `core/report.py` (the dossier `multiplicity` chain + M3 basis; the CR-14 H1 guard was **dropped by CR-15.1** — the override mis-set slot A for a secondary-named target), `query.py`
 (`--star-mass-catalog` on `binary-stability-auto`). Tests: `tests/test_binary_stability_auto.py` (CR-14 classes),
 `tests/test_exclusion_system.py` (byte-identical delegation guard).
 
