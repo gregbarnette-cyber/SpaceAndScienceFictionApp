@@ -664,10 +664,21 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
     # CR-15 leaves component_candidate_ids/match_mass untouched, so Sirius B stays cross-path-consistent
     # with binary-stability-auto rather than "correct".)
     ident = result.get("identity", {})
-    sel, sel_note = binary.select_stability_elements(stellar, simbad.get("sp_type"))
+    # CR-16: when binary_orbit redirected a degenerate secondary (e.g. dossier "Sirius B"), resolve the
+    # component masses via the PRIMARY's identity it attached — `binary.redirected_primary` yields the
+    # sp_type for the selection and the `primary_sl` for the catalog chain, so slot A hits the primary and
+    # slot B the secondary, cross-path-equal to the system-name dossier. Absent (letter-symmetric /
+    # primary-named), it returns (None, None, None) → falls back to `simbad`/`star` verbatim (byte-identical).
+    prim_sp, prim_sl, prim_name = binary.redirected_primary(ident)
+    if prim_name is not None:
+        data["mass_resolved_via_primary"] = prim_name   # CR-16 transparency (parity with binary-stability-auto)
+    sel, sel_note = binary.select_stability_elements(
+        stellar, prim_sp if prim_sp is not None else simbad.get("sp_type"))
     preferred = None
     if sel is not None:
-        preferred = stellar_mass.resolve_binary_components(simbad, sel, mass_catalog, system_name=star)
+        preferred = stellar_mass.resolve_binary_components(
+            (prim_sl if prim_sl is not None else simbad), sel, mass_catalog,
+            system_name=(prim_name if prim_name is not None else star))
     # Thread the SAME selection through (code-review findings 1/2) — the preferred masses and the
     # sma/element recompute must come from one selection, not two off possibly-different sp_type sources.
     stab = binary.stability_from_solutions(result.get("query"), ident, stellar,

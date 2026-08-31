@@ -509,6 +509,46 @@ def _wds_orb6_solutions(ra, dec, distance_pc):
     return out
 
 
+# ── CR-16: degenerate-secondary → primary-identity redirect (letterless-primary gap) ──
+_SECONDARY_RE = re.compile(r"\s+[B-Z]$")   # a trailing component letter B–Z; 'A' excluded (a primary)
+
+
+def _is_secondary_component(main_id):
+    """True when a resolved ``main_id`` ends in a trailing component letter B–Z (a named secondary,
+    e.g. ``* alf CMa B``). 'A' is excluded so a primary-named input (``* alf Cen A``) is not treated as a
+    secondary. Mirrors the trailing-letter idiom of ``exclusion_system._is_secondary_component`` (which
+    additionally classifies off-MS otypes — the two are NOT identical). ``_SECONDARY_RE`` single-sources
+    the ``\\s+[B-Z]$`` pattern within this module (this detector + the primary-id strip in ``binary_orbit``)."""
+    return bool(_SECONDARY_RE.search((main_id or "").strip()))
+
+
+def redirected_primary(ident):
+    """CR-16: the ``(sp_type, primary_sl, system_name)`` a mass consumer should use when ``binary_orbit``
+    redirected a degenerate secondary to its primary (it attached ``ident["primary"]``), else
+    ``(None, None, None)`` → the caller keeps its own fallback. Single-sources the ``ident["primary"]``
+    shape so ``binary_stability_auto`` and the dossier ``_multiplicity_data_star`` consume it identically
+    (avoids a three-site special case). ``primary_sl`` is the ``{main_id, sp_type, designations}`` dict
+    ``resolve_binary_components`` reads."""
+    prim = (ident or {}).get("primary")
+    if not prim:
+        return None, None, None
+    return prim.get("sp_type"), prim, prim.get("main_id")
+
+
+def _secondary_needs_primary_sp(ident):
+    """CR-16 trigger: the query resolved to a **secondary** whose spectral type carries **no OBAFGKM
+    class** (a white dwarf / degenerate / blank type — ``DA1.9``, ``DQZ``). Such a secondary cannot seed
+    the orbit's primary mass (``m1_from_spectral_type`` returns the default), so the mass/orbit derivation
+    must borrow the **primary's** spectral type + identity. Gated on the SECONDARY's degeneracy (NOT a
+    "letterless primary" check) so an MS secondary (α Cen B ``K1V``) never trips it → the letter-symmetric
+    CR-13/CR-14 battery runs unchanged code and stays byte-identical **by construction**. ``⚠``
+    ``_parse_spectral_class`` returns a 2-tuple ``(letter, subtype)`` that is ALWAYS truthy (``(None,
+    None)`` included) — test element ``[0]``, never the tuple itself."""
+    if not _is_secondary_component(ident.get("main_id")):
+        return False
+    return _parse_spectral_class(ident.get("sp_type") or "")[0] is None
+
+
 def binary_orbit(star=None, ra=None, dec=None, source_id=None):
     """Every orbital solution for one star across the tool-split (Gaia NSS → SB9 → WDS/orb6),
     each grade-tagged with a companion-mass estimate + star/BD/planet class + a paste-ready
@@ -521,18 +561,35 @@ def binary_orbit(star=None, ra=None, dec=None, source_id=None):
     if err and ident is None:
         return _route_error(err, ["simbad", "gaia_source"])
 
+    # CR-16: a degenerate/non-MS secondary (WD sp-type, no OBAFGKM class) of a letterless-primary pair
+    # cannot seed the orbit's primary mass. Resolve the PRIMARY's sp-type + identity and use them for the
+    # companion-mass derivation (`mass_sp`), keeping the queried star's identity echo (additive `primary`
+    # + `mass_resolved_via_primary` markers). Coordinates stay the queried secondary's, so the SAME orbit
+    # solutions are found — only the companion m1/m2 change. Stays a RAW reporter: no catalog, sp-type only.
+    mass_sp = ident.get("sp_type")
+    if _secondary_needs_primary_sp(ident):
+        from core import databases
+        bare = _SECONDARY_RE.sub("", ident["main_id"].strip())   # strip FIRST (trailing ws defeats $)
+        psl = databases.compute_simbad_lookup(bare)
+        if (isinstance(psl, dict) and "error" not in psl
+                and _parse_spectral_class(psl.get("sp_type") or "")[0] is not None):
+            ident["primary"] = {"main_id": psl.get("main_id"), "sp_type": psl.get("sp_type"),
+                                "designations": psl.get("designations") or {}}
+            ident["mass_resolved_via_primary"] = psl.get("main_id")
+            mass_sp = psl.get("sp_type")
+
     route_tried, solutions, route_errors = [], [], []
 
     if ident.get("gaia_source_id"):
         route_tried.append("gaia-nss:two_body_orbit")
         nss, nss_err = _nss_two_body_solutions(
-            ident["gaia_source_id"], ident.get("sp_type"), ident.get("parallax_mas"))
+            ident["gaia_source_id"], mass_sp, ident.get("parallax_mas"))
         solutions.extend(nss)
         if nss_err:
             route_errors.append(f"gaia-nss: {nss_err}")
 
     route_tried.append("sb9")
-    sb9, sb9_err = _sb9_solutions(ident["ra"], ident["dec"], ident.get("sp_type"))
+    sb9, sb9_err = _sb9_solutions(ident["ra"], ident["dec"], mass_sp)
     solutions.extend(sb9)
     if sb9_err:
         route_errors.append(f"sb9: {sb9_err}")
@@ -860,23 +917,38 @@ def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma
     # (--ra/--dec/--source-id with no name) leaves main_id None → no catalog designations → the orbit
     # masses stand (L3 graceful fallback).
     preferred = None
-    sel, sel_note = select_stability_elements(solutions, ident.get("sp_type"))
+    # CR-16: when binary_orbit redirected a degenerate secondary, resolve masses via the PRIMARY it
+    # attached (`redirected_primary` → sp_type + primary_sl + system_name); else keep the CR-15.4 fallback.
+    prim_sp, prim_sl, prim_name = redirected_primary(ident)
+    sel, sel_note = select_stability_elements(
+        solutions, prim_sp if prim_sp is not None else ident.get("sp_type"))
     if sel is not None and (star or ident.get("main_id")):
-        # CR-15.4: reuse the primary identity binary_orbit already resolved (its identity now carries
-        # `designations` for name-based input — additive key) instead of a redundant SIMBAD re-lookup.
-        # Coordinate-/source_id-only input has no designations in the identity → fall back to the lookup.
-        if ident.get("designations") is not None:
+        # A redirected primary makes slot A hit the primary catalog row and slot B the secondary
+        # (cross-path-equal to the system-name query; the queried secondary main_id is never in slot A's id
+        # set). CR-15.4 fallback: reuse the primary identity binary_orbit already resolved (its identity
+        # carries `designations` for name-based input) instead of a redundant SIMBAD re-lookup;
+        # coordinate-/source_id-only input has no designations → fall back to the lookup.
+        if prim_sl is not None:
+            primary_sl = prim_sl
+        elif ident.get("designations") is not None:
             primary_sl = {"main_id": ident.get("main_id"), "sp_type": ident.get("sp_type"),
                           "designations": ident.get("designations")}
         else:
             primary_sl = databases.compute_simbad_lookup(star or ident.get("main_id"))
         if isinstance(primary_sl, dict) and "error" not in primary_sl:
-            preferred = stellar_mass.resolve_binary_components(primary_sl, sel, catalog,
-                                                               system_name=(star or ident.get("main_id")))
+            preferred = stellar_mass.resolve_binary_components(
+                primary_sl, sel, catalog,
+                system_name=(prim_name if prim_name is not None else (star or ident.get("main_id"))))
     # Thread the SAME selection through (code-review findings 1/2) — one select, not two.
-    return stability_from_solutions(result.get("query"), ident, solutions,
-                                    result.get("route_tried"), test_sma_au=test_sma_au,
-                                    preferred_masses=preferred, selection=(sel, sel_note))
+    out = stability_from_solutions(result.get("query"), ident, solutions,
+                                   result.get("route_tried"), test_sma_au=test_sma_au,
+                                   preferred_masses=preferred, selection=(sel, sel_note))
+    # CR-16 transparency: when the masses resolved via a redirected primary, flag it additively so a
+    # consumer seeing the PRIMARY's m1 for a secondary-named query (`star` still echoes "Sirius B") knows
+    # why. Only present on the redirect path — absent (byte-identical) for every letter-symmetric/primary query.
+    if isinstance(out, dict) and ident.get("primary"):
+        out["mass_resolved_via_primary"] = ident["primary"].get("main_id")
+    return out
 
 
 # ── Tier-2 orchestrator: close-binary-census (the population sweep, spec §3.2) ─

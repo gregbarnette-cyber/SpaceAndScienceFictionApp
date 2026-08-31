@@ -247,5 +247,122 @@ class Cr14BinaryOrbitMarkerTest(unittest.TestCase):
         self.assertEqual(len(r["solutions"]), 2)                  # neither dropped nor reordered
 
 
+class Cr16TriggerTest(unittest.TestCase):
+    """CR-16: the degenerate-secondary → primary-identity redirect trigger + helpers (pure, offline)."""
+
+    def test_fires_for_degenerate_wd_secondary(self):
+        for mid, sp in [("* alf CMa B", "DA1.9"), ("* alf CMi B", "DQZ"), ("* xyz B", "")]:
+            self.assertTrue(binary._secondary_needs_primary_sp({"main_id": mid, "sp_type": sp}),
+                            f"{mid}/{sp} should fire")
+
+    def test_does_not_fire_for_ms_secondary_or_primary(self):
+        # α Cen B (MS secondary), α Cen A (trailing A excluded), Sirius primary (no letter), Proxima (MS).
+        # This is the OFFLINE guard that the frozen CR-13 exclusion + CR-14 α Cen anchors never get
+        # redirected (exclusion's own α Cen A/B queries flow through binary_orbit; the gate protects them).
+        for mid, sp in [("* alf Cen B", "K1V"), ("* alf Cen A", "G2V"),
+                        ("* alf CMa", "A0mA1Va"), ("* alf Cen C", "M5.5V")]:
+            self.assertFalse(binary._secondary_needs_primary_sp({"main_id": mid, "sp_type": sp}),
+                             f"{mid}/{sp} must NOT fire")
+
+    def test_parse_spectral_class_tuple_truthiness_guard(self):
+        # _parse_spectral_class returns an ALWAYS-truthy 2-tuple; the trigger must test [0], never the tuple.
+        self.assertIsNone(binary._parse_spectral_class("DA1.9")[0])
+        self.assertIsNone(binary._parse_spectral_class("")[0])
+        self.assertIsNotNone(binary._parse_spectral_class("K1V")[0])
+
+    def test_is_secondary_component_and_strip_whitespace_safe(self):
+        self.assertTrue(binary._is_secondary_component("* alf CMa B"))
+        self.assertFalse(binary._is_secondary_component("* alf Cen A"))    # A excluded
+        self.assertFalse(binary._is_secondary_component("* alf CMa"))
+        # the strip must run on the .strip()ed id (a trailing space would defeat the $-anchor)
+        self.assertEqual(binary._SECONDARY_RE.sub("", "* alf CMa B ".strip()), "* alf CMa")
+
+    def test_redirected_primary_helper(self):
+        self.assertEqual(binary.redirected_primary({"main_id": "x"}), (None, None, None))
+        self.assertEqual(binary.redirected_primary(None), (None, None, None))
+        prim = {"main_id": "* alf CMa", "sp_type": "A0mA1Va", "designations": {"HD": "HD 48915A"}}
+        self.assertEqual(binary.redirected_primary({"primary": prim}), ("A0mA1Va", prim, "* alf CMa"))
+
+
+class Cr16BinaryOrbitRedirectTest(unittest.TestCase):
+    """CR-16 change A: binary_orbit resolves the primary for a degenerate secondary + uses its sp-type."""
+
+    def _lookup(self, sec, pri):
+        def fn(name):
+            if name in ("Sirius B", sec["main_id"]):
+                return sec
+            if name == pri["main_id"]:
+                return pri
+            return {"error": "not-in-test"}
+        return fn
+
+    def test_wd_secondary_redirects_and_threads_primary_sp(self):
+        cap = {}
+        sec = {"main_id": "* alf CMa B", "sp_type": "DA1.9", "ra": 101.3, "dec": -16.7,
+               "designations": {"MAIN_ID": "* alf CMa B"}, "plx_value": 374.0}
+        pri = {"main_id": "* alf CMa", "sp_type": "A0mA1Va", "ra": 101.3, "dec": -16.7,
+               "designations": {"MAIN_ID": "* alf CMa", "HD": "HD 48915A"}, "plx_value": 374.0}
+        with patch("core.databases.compute_simbad_lookup", side_effect=self._lookup(sec, pri)), \
+             patch("core.binary._sb9_solutions",
+                   side_effect=lambda ra, dec, sp: (cap.__setitem__("sb9_sp", sp) or ([], None))), \
+             patch("core.binary._nss_two_body_solutions", return_value=([], None)), \
+             patch("core.binary._wds_orb6_solutions", return_value=[]):
+            res = binary.binary_orbit(star="Sirius B")
+        self.assertEqual(res["query"], "Sirius B")                          # query echo preserved
+        self.assertEqual(res["identity"]["main_id"], "* alf CMa B")         # identity echo = secondary
+        self.assertEqual(res["identity"]["primary"]["main_id"], "* alf CMa")
+        self.assertEqual(res["identity"]["mass_resolved_via_primary"], "* alf CMa")
+        self.assertEqual(cap["sb9_sp"], "A0mA1Va")                          # PRIMARY sp fed to companion mass
+
+    def test_ms_secondary_no_redirect_and_no_extra_lookup(self):
+        cap = {}
+        sec = {"main_id": "* alf Cen B", "sp_type": "K1V", "ra": 219.9, "dec": -60.8,
+               "designations": {"MAIN_ID": "* alf Cen B"}, "plx_value": 747.0}
+        with patch("core.databases.compute_simbad_lookup",
+                   return_value=sec) as m, \
+             patch("core.binary._sb9_solutions",
+                   side_effect=lambda ra, dec, sp: (cap.__setitem__("sb9_sp", sp) or ([], None))), \
+             patch("core.binary._nss_two_body_solutions", return_value=([], None)), \
+             patch("core.binary._wds_orb6_solutions", return_value=[]):
+            res = binary.binary_orbit(star="alpha Cen B")
+        self.assertNotIn("primary", res["identity"])          # no redirect
+        self.assertEqual(cap["sb9_sp"], "K1V")                # queried sp used, unchanged
+        self.assertEqual(m.call_count, 1)                     # only the queried lookup — no bare re-lookup
+
+
+class Cr16StabilityAutoConsumeTest(unittest.TestCase):
+    """CR-16 change B: binary_stability_auto consumes ident.primary → slot A = primary, slot B = secondary."""
+
+    def test_redirected_primary_resolves_slot_a_from_catalog(self):
+        # A binary_orbit result as change A would produce it: identity.primary attached, and the SB9
+        # spec-min companion already computed at the PRIMARY sp (m1=2.18, m2=0.4577). No --star-mass-catalog
+        # → the seed carries Sirius A (* alf CMa → 2.063) but NOT Sirius B, so slot A→catalog, slot B→orbit.
+        p_d = 18276.7
+        sol = {"source": "sb9", "period_d": p_d, "eccentricity": 0.59, "grade": 5,
+               "companion": {"m1_solar": 2.18, "m2_solar": 0.4577, "method": "spec-min"}}
+        fake = {"query": "Sirius B", "route_tried": ["sb9"], "solutions": [sol],
+                "identity": {"main_id": "* alf CMa B", "sp_type": "DA1.9", "ra": 101.3, "dec": -16.7,
+                             "designations": {"MAIN_ID": "* alf CMa B"},
+                             "primary": {"main_id": "* alf CMa", "sp_type": "A0mA1Va",
+                                         "designations": {"MAIN_ID": "* alf CMa", "HD": "HD 48915A"}}}}
+        with patch("core.binary.binary_orbit", return_value=fake), \
+             patch("core.databases.compute_simbad_lookup", return_value={"error": "offline"}):
+            d = binary.binary_stability_auto(star="Sirius B")
+        self.assertEqual(d["elements"]["m1_solar"], 2.063)                     # slot A → seed catalog primary
+        self.assertEqual(d["elements"]["mass_provenance_a"], "catalog")
+        self.assertAlmostEqual(d["elements"]["m2_solar"], 0.4577, places=4)    # slot B → orbit secondary
+        self.assertEqual(d["mass_resolved_via_primary"], "* alf CMa")          # CR-16 transparency marker
+
+    def test_absent_primary_is_unchanged(self):
+        # No identity.primary (letter-symmetric / primary-named) → the CR-15.4 path, no new marker.
+        sol = {"source": "sb9", "period_d": 400.0, "eccentricity": 0.1, "grade": 4,
+               "companion": {"method": "SB2", "mass_ratio_q": 0.8}}
+        with patch("core.binary.binary_orbit",
+                   return_value=_fake([sol], sp_type="G0V", query="X")), \
+             patch("core.databases.compute_simbad_lookup", return_value={"error": "offline"}):
+            d = binary.binary_stability_auto(star="X")
+        self.assertNotIn("mass_resolved_via_primary", d)
+
+
 if __name__ == "__main__":
     unittest.main()

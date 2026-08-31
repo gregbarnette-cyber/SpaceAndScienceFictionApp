@@ -267,7 +267,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `population-capacity` | ≥1 budget of (`--crop-area-m2` \| `--power-w` \| `--water-kg-day` \| `--fixed-nitrogen-kg-yr` \| `--food-dry-kg-day`) [per-person `--per-person-*` overrides] | none (X1/X2 defaults) | `per_resource{…{budget,per_person,source,population}}, sustainable_population, binding_constraint, slack{…}` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
-| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion` `--star-mass-catalog <path>` `--mass-solar <M☉>`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis`; **CR-11.2** adds `regions.mass{mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,inversion_mass_solar,note}` (a preferred measured mass recomputes radius/calc-L/limits — decision B); **CR-15.1** a secondary-named target (e.g. `alpha Cen B`) now resolves the **correct** per-component masses in the `multiplicity` section — the H1 `primary_override` was dropped, so component A resolves via the shared chain (matching `binary-stability-auto`: `alpha Cen B` → 1.079/0.909, not the buggy 0.909/0.909); the letterless-primary catalog-match gap (Sirius B) is parked to CR-16 |
+| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion` `--star-mass-catalog <path>` `--mass-solar <M☉>`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis`; **CR-11.2** adds `regions.mass{mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,inversion_mass_solar,note}` (a preferred measured mass recomputes radius/calc-L/limits — decision B); **CR-15.1** a secondary-named target (e.g. `alpha Cen B`) now resolves the **correct** per-component masses in the `multiplicity` section — the H1 `primary_override` was dropped, so component A resolves via the shared chain (matching `binary-stability-auto`: `alpha Cen B` → 1.079/0.909, not the buggy 0.909/0.909); **CR-16** resolves a **degenerate-secondary** letterless-primary target (`Sirius B` — a WD secondary) via the primary → **2.063/0.4577** (±catalog 1.018), matching the system-name dossier (see the CR-16 block below) |
 | `generate-system` | `--seed` [`--anchor-star` `--spectral-class` `--planets` `--require-habitable` `--constraint…` `--companion` `--nbody` `--research-policy`] | none (synthetic) · SIMBAD + NASA + HWC (with `--anchor-star`) | `seed, mode, anchor_star, star, planets[], warnings, notes` — plus `feasible, constraints[]` with `--constraint` |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
@@ -4534,6 +4534,39 @@ the `binary-orbit` marker), `core/stellar_mass.py` (the hoisted `resolve_compone
 hoisted helpers), `core/report.py` (the dossier `multiplicity` chain + M3 basis; the CR-14 H1 guard was **dropped by CR-15.1** — the override mis-set slot A for a secondary-named target), `query.py`
 (`--star-mass-catalog` on `binary-stability-auto`). Tests: `tests/test_binary_stability_auto.py` (CR-14 classes),
 `tests/test_exclusion_system.py` (byte-identical delegation guard).
+
+## CR-16 — letterless-primary component resolution (a secondary-named query resolves via the primary)
+
+**What changed.** A query resolving to a **secondary whose spectral type carries no OBAFGKM class** (a white dwarf /
+degenerate type — Sirius B `DA1.9`, Procyon B `DQZ`) now resolves the **primary's** identity + spectral type for the
+**mass/orbit derivation**, so a secondary-named query returns the **same** system masses as the system/primary-named
+query. Fixes the letterless-primary gap CR-15 Option A parked (Sirius A's SIMBAD main_id `* alf CMa` is letterless, so the
+old per-component derivation missed the seed and fell to the WD-mis-seeded orbit mass). **Scoped to degenerate
+secondaries**, so MS–MS letter-symmetric pairs (α Cen B `K1V`) never trip it and stay **byte-identical** — the whole
+CR-13 + CR-14 anchor battery is unchanged. The shared resolver (`component_candidate_ids` / `match_mass`) is **untouched**;
+the fix is at the `binary_orbit` identity layer (WB Q1→(A), MSG 183/185).
+
+- **`binary-orbit`** (raw reporter — no catalog): for a degenerate-secondary query, `identity` gains an additive
+  **`primary`** block (`{main_id, sp_type, designations}`) + **`mass_resolved_via_primary`** (the primary's main_id); the
+  queried star's `main_id`/`ra`/`dec`/`sp_type` + the `query` echo are unchanged. Companion masses are computed from the
+  **primary's** spectral type, so `binary-orbit --star "Sirius B"` → m1 **2.18** / m2 **0.4577** (= `binary-orbit "Sirius"`),
+  not 1.0/0.283. A non-degenerate-secondary / primary / system query is byte-identical (no `primary` key).
+- **`binary-stability-auto`**: a degenerate-secondary query resolves per-component masses via the primary → slot A the
+  primary catalog row, slot B the secondary. `--star "Sirius B"` → **2.063 / 0.4577 / stype 2.3136 / ptype 74.142**
+  (= `"Sirius"` byte-exact); with `--star-mass-catalog` → **2.063 / 1.018**. Additive **`mass_resolved_via_primary`** key on
+  the redirect path (absent otherwise). α Cen B unchanged (1.079/0.909/2.749/86.652).
+- **`dossier … --sections multiplicity`**: same — a secondary-named target (`"Sirius B"`) reports the system masses via the
+  primary (2.063/0.4577, ±catalog 1.018), matching the system-name dossier.
+- **`multiplicity`** (CR-2): a degenerate-secondary query's SB1 `m2_solar_lower` is now solved at the correct primary mass —
+  `multiplicity --star "Sirius B"` → **0.4577** (was the WD-mis-seeded 0.283). WB-signed-off (the standalone-`multiplicity`
+  byte-identity note is amended for this case); a letter-symmetric query is unchanged.
+
+**Not byte-identity by design:** (a) degenerate-secondary letterless-primary queries now correct; (b) every letter-symmetric
+case + every frozen CR-13/CR-14 anchor unchanged. Generality: `binary-stability-auto "Procyon B"` = `"Procyon"`. Cores:
+`core/binary.py` (`binary_orbit` redirect + `_is_secondary_component`/`_secondary_needs_primary_sp`/`redirected_primary`
+helpers + the `mass_resolved_via_primary` marker), `core/report.py` (the dossier `multiplicity` consumer). Tests:
+`tests/test_binary_stability_auto.py` (`Cr16*` classes), `tests/test_report.py` (`Cr16DossierSecondaryViaPrimary`).
+Coordination `/home/greg/Claude/coordination-channel.md` MSG 181–188 (WB re-gate GREEN + Greg-FULFILLED 2026-08-30).
 
 ## Implementation notes
 

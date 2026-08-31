@@ -938,5 +938,52 @@ class Cr105Part2Multiplicity(unittest.TestCase):
         self.assertIsNotNone(mp["multiplicity_basis"])         # basis enriched (benign)
 
 
+class Cr16DossierSecondaryViaPrimary(unittest.TestCase):
+    """CR-16 change C: a degenerate-secondary dossier (Sirius B) resolves its component masses via the
+    primary that binary_orbit attached (`identity.primary`) — slot A = primary catalog, slot B = secondary
+    — so `dossier "Sirius B" multiplicity` matches the system-name dossier (2.063 / 0.4577), not 1.0/0.283."""
+
+    def test_degenerate_secondary_resolves_primary_masses(self):
+        sb = _simbad_fixture()
+        sb["main_id"] = "* alf CMa B"
+        sb["sp_type"] = "DA1.9"
+        sb["designations"] = {"MAIN_ID": "* alf CMa B"}
+        sb["multiplicity"] = {"is_multiple": True, "sb_flag": True, "basis": None, "otype": "WD*"}
+        # binary_orbit as change A produces it: identity.primary attached, SB1 spec-min companion already
+        # computed at the PRIMARY sp (2.18 / 0.4577). Default seed catalog carries Sirius A (2.063), not B.
+        bo = {"query": "Sirius B", "route_tried": ["sb9"],
+              "identity": {"main_id": "* alf CMa B", "sp_type": "DA1.9", "ra": 101.3, "dec": -16.7,
+                           "designations": {"MAIN_ID": "* alf CMa B"},
+                           "primary": {"main_id": "* alf CMa", "sp_type": "A0mA1Va",
+                                       "designations": {"MAIN_ID": "* alf CMa", "HD": "HD 48915A"}}},
+              "solutions": [{"source": "sb9", "period_d": 18276.7, "eccentricity": 0.59, "grade": 5,
+                             "companion": {"m1_solar": 2.18, "m2_solar": 0.4577,
+                                           "method": "spec-min", "class": "stellar"}}]}
+        with _patched(simbad=sb, binary_orbit_result=bo):
+            mp = report.build_system_dossier("Sirius B", sections=["multiplicity"],
+                                             fmt="json")["data"]["multiplicity"]
+        self.assertEqual(mp["elements"]["m1_solar"], 2.063)                       # slot A → seed primary
+        self.assertEqual(mp["elements"]["mass_provenance_a"], "catalog")
+        self.assertAlmostEqual(mp["elements"]["m2_solar"], 0.4577, places=4)      # slot B → orbit secondary
+        self.assertEqual(mp["mass_resolved_via_primary"], "* alf CMa")            # CR-16 transparency (parity)
+
+    def test_letter_symmetric_dossier_unchanged(self):
+        # No identity.primary (MS secondary / primary-named) → resolve via `simbad` verbatim (byte-identical
+        # to the pre-CR-16 path). Uses the CR-10.5 SB2 shape, which resolves off the orbit ratio.
+        sb = _simbad_fixture()
+        sb["multiplicity"] = {"is_multiple": False, "sb_flag": False, "basis": None, "otype": "*"}
+        bo = {"query": "X", "identity": {"sp_type": "B1III-IV+B2V"}, "route_tried": ["sb9"],
+              "solutions": [{"source": "sb9", "seq": 766, "period_d": 4.0145, "eccentricity": 0.108,
+                             "grade": 4, "companion": {"method": "SB2", "m1_solar": 11.4,
+                                                       "m2_solar": 7.2, "mass_ratio_q": 0.63,
+                                                       "class": "stellar"}}]}
+        with _patched(simbad=sb, binary_orbit_result=bo):
+            mp = report.build_system_dossier("X", sections=["multiplicity"],
+                                             fmt="json")["data"]["multiplicity"]
+        # orbit SB2 masses stand (no redirect, no primary) — element block present, verdict multiple.
+        self.assertTrue(mp["is_multiple"])
+        self.assertIn("elements", mp)
+
+
 if __name__ == "__main__":
     unittest.main()
