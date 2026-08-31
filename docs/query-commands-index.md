@@ -273,7 +273,7 @@ descriptions are condensed from integration.md's prose.
 | `catalog-cache-clear` | Wipe the catalog caches (app `data/catalog_cache/` + any residual astroquery HTTP cache). Offline maintenance. |
 | `gaia-tap` | Any Gaia DR3 table by raw ADQL or a structured filter (live network). |
 | `heasarc-query` | A HEASARC X-ray catalog by cone or raw TAP/ADQL (live network). |
-| `binary-orbit` | Every orbital solution for a star (Gaia NSS + SB9 + WDS/orb6) with companion-mass star/BD/planet classification (live). |
+| `binary-orbit` | Every orbital solution for a star (Gaia NSS + SB9 + WDS/orb6) with companion-mass star/BD/planet classification (live). CR-16: a degenerate/WD-secondary query resolves the primary's sp-type for the companion masses (additive `identity.primary`/`mass_resolved_via_primary`; `binary-orbit "Sirius B"` → 2.18/0.4577 = `"Sirius"`), staying a raw reporter (no catalog). |
 | `close-binary-census` | A systematic close-binary population sweep (Gaia NSS + SB9, X-Match dedup, planet filter) (live). |
 | `gaia-astrophysical` | Gaia GSP-Phot + FLAME stellar parameters incl. age for one source (live). |
 | `besancon-query` | Besançon Galaxy Model (m1612) synthetic field population + derived age distribution (live; needs credentials). |
@@ -281,7 +281,7 @@ descriptions are condensed from integration.md's prose.
 ## Dossier, projects & generation (Q / R / S)
 | Command | Description |
 |---|---|
-| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). CR-10.5: self-flags evolved hosts (luminosity-class region guard, `--force-ms-inversion`) + cross-checks `binary-orbit` for multiplicity (`multiplicity_basis`). CR-11.2: stellar-mass provenance block + `--star-mass-catalog`/`--mass-solar`; a preferred measured mass recomputes the mass-derived fields (radius/calc-L/limits) coherently. |
+| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). CR-10.5: self-flags evolved hosts (luminosity-class region guard, `--force-ms-inversion`) + cross-checks `binary-orbit` for multiplicity (`multiplicity_basis`). CR-11.2: stellar-mass provenance block + `--star-mass-catalog`/`--mass-solar`; a preferred measured mass recomputes the mass-derived fields (radius/calc-L/limits) coherently. CR-16: a secondary-named target's `multiplicity` masses resolve via the primary (`"Sirius B"` → 2.063/0.4577, matching the system-name dossier). |
 | `project-list` | List project workspaces (name, description, member count). |
 | `project-get` | A project workspace + its members (with `generated_spec` echoed parsed). |
 | `generate-system` | Deterministically generate a plausible planetary system (synthetic-from-seed or real-anchor). |
@@ -290,8 +290,8 @@ descriptions are condensed from integration.md's prose.
 | Command | Description |
 |---|---|
 | `debris-disk` | Observed IR-excess debris disk vs Chen 2014 + Cotten & Song 2016, else a per-star AllWISE-W4 warm-dust upper limit (never null). LIVE. |
-| `multiplicity` | Stellar-multiplicity summary — otype hint + `binary-orbit` tool-split + GCNS component count (SB1 masses = sin i=1 lower bound). LIVE. |
-| `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a **catalog-aware per-component mass chain** (`--star-mass-catalog`; same masses as `exclusion-system`/dossier) + real-ratio solution selection + `e_out_of_hw_range` flag. LIVE. |
+| `multiplicity` | Stellar-multiplicity summary — otype hint + `binary-orbit` tool-split + GCNS component count (SB1 masses = sin i=1 lower bound). LIVE. CR-16: a degenerate/WD-secondary query's `m2_solar_lower` is now solved at the correct primary mass (`"Sirius B"` → 0.4577, not 0.283). |
+| `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a **catalog-aware per-component mass chain** (`--star-mass-catalog`; same masses as `exclusion-system`/dossier) + real-ratio solution selection + `e_out_of_hw_range` flag. LIVE. CR-16: a degenerate/WD-secondary query resolves via the primary → `"Sirius B"` = `"Sirius"` (2.063/0.4577; 2.063/1.018 w/ catalog). |
 | `population-classify` | Thin/thick/halo Galactic-population verdict from U/V/W (Bensby velocity-ellipsoid on a Schönrich LSR). |
 | `nuclear-inventory` | Fusion + fissile (per-isotope GCE, WB 3c FINAL) + radiogenic-heat inventory from stellar [Fe/H]/age/[Eu/H]; CR-10.2 `[Fe/H]>+0.5` soft `feh_extrapolation` flag. |
 | `detection-completeness` | Per-method min-detectable-planet-vs-SMA map (RV/transit/astrometry/imaging), WB 3a FINAL defaults; CR-10.4 archive-M★ preference + `star_mass_provenance`; CR-10.3 per-star RV tier-2 catalog (`--rv-precision-catalog`) + per-method `floor_provenance`. |

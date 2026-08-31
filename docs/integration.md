@@ -3653,6 +3653,12 @@ our tool-split produced no mass but Gaia's `m2` is non-null — **fills** it (`m
 **CR-15.4:** `identity` also carries the primary's **`designations`** dict (additive — from the SIMBAD lookup
 `binary_orbit` already performs), so `binary-stability-auto` / consumers reuse the resolved primary identity
 instead of a redundant SIMBAD re-lookup. Additive-only — every prior `binary-orbit` field/value is unchanged.
+**CR-16:** a query resolving to a **degenerate/WD secondary** (`DA1.9`/`DQZ`/blank sp — no OBAFGKM class) of a
+letterless-primary pair resolves the **primary's** sp-type for the companion masses; `identity` gains additive
+**`primary`** `{main_id,sp_type,designations}` + **`mass_resolved_via_primary`**, and the raw companion masses come
+from the primary (`binary-orbit "Sirius B"` → 2.18/0.4577 = `binary-orbit "Sirius"`), while the queried star's
+`main_id`/`ra`/`dec`/`sp_type` + the `query` echo stay unchanged. Still a **raw reporter** (no catalog); a
+non-degenerate-secondary / primary / system query is byte-identical (no `primary` key). See the **CR-16 block** below.
 
 #### `close-binary-census`
 The systematic population sweep (Gaia NSS faint + SB9 bright with Hipparcos/Gaia parallax → X-Match
@@ -3926,6 +3932,10 @@ query.py multiplicity --star "alpha Centauri"
 Core: `binary.multiplicity_summary(star=None, source_id=None)`. Output: `{star, is_multiple, n_components,
 components:[{basis, sb_flag, sep_au?, m2_solar_lower?}], sb_flag, sources, note?}`. `basis` ∈ visual /
 astrometric / SB1 / SB2 / eclipsing / spectroscopic; **SB1 masses are always the sin i=1 lower bound**.
+**CR-16:** for a **degenerate/WD-secondary** query of a letterless-primary pair, the SB1 `m2_solar_lower` is now
+solved at the correct **primary** mass (`multiplicity "Sirius B"` → **0.4577**, not the WD-mis-seeded 0.283) — the
+orbit companion masses inherit `binary_orbit`'s primary-sp-type redirect (see the CR-16 block); a letter-symmetric
+query is unchanged.
 
 #### `binary-stability-auto` (CR-3 — LIVE)
 Auto-pipes `binary-orbit` → Holman-Wiegert stability in one call (no manual re-entry). **CR-14.1** selects a
@@ -3954,6 +3964,11 @@ loud error on a bad path). Output:
 mass_provenance_b}|null, stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au, test_verdict:
 stable|unstable|null, orbit_type, e_out_of_hw_range, route_tried, selected_solution, note?, resolution_notes?}`
 (the per-component `mass_provenance_a/_b`, `selected_solution`, `resolution_notes` are **CR-14** additive).
+**CR-16:** a query resolving to a **degenerate/WD secondary** of a letterless-primary pair resolves per-component
+masses via the **primary** `binary_orbit` attached — `binary-stability-auto "Sirius B"` → **2.063 / 0.4577 /
+2.3136 / 74.142** (= `"Sirius"` byte-exact; **2.063 / 1.018** with `--star-mass-catalog`), and an additive
+**`mass_resolved_via_primary`** key marks the redirect path (absent, byte-identical, for a letter-symmetric /
+primary / system query — α Cen B unchanged). Generality: `"Procyon B"` = `"Procyon"`. See the **CR-16 block** below.
 **`e_out_of_hw_range`** flags an eccentricity past the
 Holman-Wiegert 1999 fit domain (e≤0.8) — the verdict stays robust, the exact critical SMA is an extrapolation.
 `--test-sma-au 0` (or negative) is a curated `{"error"}` before the network call.
@@ -4285,7 +4300,10 @@ Tests: `tests/test_rv_precision.py` (loader/matcher/replace/malformed), `tests/t
   Stability reuses the same fetched result (one network call, via `binary.stability_from_solutions`) — **CR-14** made it
   select a real-ratio solution over a degenerate `q≈1.0` placeholder and route the per-component masses through the shared
   catalog-aware chain, so the dossier `multiplicity` masses equal `exclusion-system` / `binary-stability-auto` (α Cen
-  `1.079/0.909 catalog`, not the degenerate `1.02/1.02`); it is no longer a pure orbit-mass pass-through.
+  `1.079/0.909 catalog`, not the degenerate `1.02/1.02`); it is no longer a pure orbit-mass pass-through. **CR-16:** a
+  **secondary-named** dossier target that is a degenerate/WD secondary of a letterless-primary pair (`dossier "Sirius B"
+  --sections multiplicity`) now resolves the component masses via the **primary** (`2.063/0.4577`, ±catalog `1.018`),
+  matching the system-name dossier, plus an additive `mass_resolved_via_primary` marker (the `star` echo stays `"Sirius B"`).
 ```
 query.py dossier --star Polaris --sections regions --fmt json      # evolved_star_flag=true, luminosity_class="Ib", MS-inversion withheld, L_bol null
 query.py dossier --star Pollux --sections regions --fmt json       # luminosity_class="III" (token boundary), evolved
