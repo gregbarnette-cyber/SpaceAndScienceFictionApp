@@ -619,6 +619,33 @@ def _pick_basis_solution(solutions):
     return solutions[0]
 
 
+def _augment_gcns_multiplicity(data, simbad):
+    """CR-18: additively fold the GCNS bound-companion signal into the dossier multiplicity data.
+    Called before EVERY star-bearing return of ``_multiplicity_data_star`` — the ζ¹ Ret path returns
+    early at ``if not stellar`` (no orbit), so a single trailing block would miss the exact anchor
+    CR-18 fixes. **Monotonic** (only ever sets ``is_multiple`` True — the Q4a co-membership gate) and a
+    **pure read + additive write**: it never computes a mass/stability NUMBER, so the numeric battery
+    stays byte-identical. Returns ``data`` (mutated)."""
+    from core import binary
+    gaia_id = binary.gaia_source_id_from_designations((simbad or {}).get("designations"))
+    gcns_n, comps = binary.gcns_bound_companions(gaia_id)
+    if comps:
+        data["gcns_companions"] = comps
+    has_bound = any(c.get("bound") for c in comps)      # a genuinely BOUND CPM companion (not optical)
+    if (gcns_n and gcns_n > 1) or has_bound:            # co-membership (Q4a) OR a bound companion; monotonic
+        data["is_multiple"] = True
+    if has_bound and not data.get("multiplicity_basis"):
+        data["multiplicity_basis"] = "gcns_cpm"         # fill-None: preserves an orbit-derived basis
+    # No fabrication: a BOUND GCNS companion with no orbital solution → orbit-dependent quantities are
+    # not computable (never invent a/e/mass-partition/S_crit for a wide CPM pair). Claim a bound
+    # companion only when one is actually bound — a purely optical co-membership makes no such claim.
+    if has_bound and not data.get("elements") and not data.get("note"):
+        data["note"] = ("bound companion detected via the GCNS common-proper-motion layer; "
+                        "orbit-dependent quantities (a, e, component-mass partition, S_crit) are "
+                        "not computable without an orbital solution")
+    return data
+
+
 def _multiplicity_data_star(simbad, star, mass_catalog=None):
     """CR-2 otype hint + **CR-10.5 Part 2 catalog cross-check**: run `binary-orbit` (SB9 / WDS-ORB6 /
     Gaia-DR3-NSS) ONCE regardless of otype, so a spectroscopic binary whose primary otype is a
@@ -635,9 +662,9 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
         from core import binary
         result = binary.binary_orbit(star=star)
     except Exception:
-        return data
+        return _augment_gcns_multiplicity(data, simbad)
     if not isinstance(result, dict) or "error" in result:
-        return data
+        return _augment_gcns_multiplicity(data, simbad)
     solutions = result.get("solutions") or []
     # Exclude planet-class companions from the STELLAR-multiplicity determination — a raw NSS/SB1 pull
     # tags a sub-13-M_Jup companion as `planet` (§3.3), and a planet-only host (e.g. GJ 876's 61 d NSS
@@ -645,7 +672,7 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
     # resolved stellar pair and still counts.
     stellar = [s for s in solutions if (s.get("companion") or {}).get("class") != "planet"]
     if not stellar:
-        return data
+        return _augment_gcns_multiplicity(data, simbad)
     # A catalogued stellar orbit ⇒ multiple (even against a variability otype). SB flag if any is
     # spectroscopic (SB9 source, an SB* NSS solution_type, or an SB1/SB2 companion classifier).
     cross_sb = any(s.get("source") == "sb9"
@@ -698,15 +725,24 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
         if stab.get("e_out_of_hw_range"):
             data["note"] = ("eccentricity outside the Holman-Wiegert fit domain — the "
                             "critical SMA is an extrapolation")
-    return data
+    return _augment_gcns_multiplicity(data, simbad)
 
 
 def _blocks_multiplicity(d):
     rows = [("Multiple?", "yes" if d["is_multiple"] else "no"),
             ("Spectroscopic (SB) flag", "yes" if d["sb_flag"] else "no"),
             ("Basis", d.get("basis") or "—"), ("SIMBAD otype", d.get("otype") or "—")]
-    if d.get("multiplicity_basis"):
-        rows.append(("Catalog orbit", d["multiplicity_basis"]))
+    mb = d.get("multiplicity_basis")
+    if mb == "gcns_cpm":                          # CR-18: a GCNS/CPM bound pair, not a catalog orbit
+        rows.append(("Multiplicity basis", "GCNS common-proper-motion (bound, no orbit)"))
+    elif mb:
+        rows.append(("Catalog orbit", mb))
+    for comp in d.get("gcns_companions") or []:    # CR-18: GCNS companion(s) — bound flag is per-pair
+        sep = comp.get("proj_sep_au")
+        sep_s = f"proj_sep {sep:.1f} AU" if isinstance(sep, (int, float)) else "proj_sep —"
+        rows.append(("GCNS companion",
+                     f"{comp.get('star_name') or comp.get('source_id')} — {sep_s}, "
+                     f"{'bound' if comp.get('bound') else 'not bound'}"))
     blocks = [("kv", rows)]
     e = d.get("elements")
     if e:

@@ -646,6 +646,83 @@ def _to_cartesian(ra_deg: float, dec_deg: float, ly: float):
     )
 
 
+def transverse_separation_au(ra1_deg, dec1_deg, ra2_deg, dec2_deg, dist_pc):
+    """CR-18: plane-of-sky (transverse) separation in AU between two sky positions at a reference
+    distance — the great-circle angular separation (arcsec) × ``dist_pc`` (1 pc subtends 1 AU per
+    arcsec). For a neighbourhood sweep ``dist_pc`` is the CENTRE's distance (the frame is "separation
+    as seen from the centre"). Returns None if any input is missing. This is the honest physical
+    separation the 3D Cartesian distance overstates when line-of-sight parallax noise dominates (see
+    ``radial_parallax_dominated``)."""
+    if None in (ra1_deg, dec1_deg, ra2_deg, dec2_deg, dist_pc):
+        return None
+    d1, d2 = math.radians(dec1_deg), math.radians(dec2_deg)
+    dra, ddec = math.radians(ra2_deg - ra1_deg), (d2 - d1)
+    a = math.sin(ddec / 2) ** 2 + math.cos(d1) * math.cos(d2) * math.sin(dra / 2) ** 2
+    ang_arcsec = math.degrees(2 * math.asin(min(1.0, math.sqrt(a)))) * 3600.0
+    return ang_arcsec * dist_pc                        # arcsec × pc = AU
+
+
+def radial_parallax_dominated(dist_pc_center, dist_pc_neighbor, transverse_au,
+                              plx_center=None, plx_neighbor=None,
+                              plx_err_center=None, plx_err_neighbor=None):
+    """CR-18: True when a neighbour's 3D Cartesian separation is dominated by the line-of-sight
+    (radial) parallax-distance difference rather than the transverse separation — i.e. the reported 3D
+    distance overstates the physical separation and must not be trusted to judge boundedness.
+
+    Base rule: ``radial_ly = |d_n − d_c| × 3.26156`` exceeds ``transverse_ly = transverse_au / 63241.077``.
+    Where parallaxes AND their errors are available (the GCNS path), the flag ALSO requires the
+    parallax difference to sit within the combined 1σ — the radial offset is statistically consistent
+    with zero (pure noise), the ζ Ret / GJ 9588 case. Returns None when distances/transverse are
+    missing."""
+    if dist_pc_center is None or dist_pc_neighbor is None or transverse_au is None:
+        return None
+    radial_ly = abs(dist_pc_neighbor - dist_pc_center) * 3.26156
+    transverse_ly = transverse_au / 63241.077
+    if radial_ly <= transverse_ly:
+        return False
+    if None not in (plx_center, plx_neighbor, plx_err_center, plx_err_neighbor):
+        combined = math.sqrt((plx_err_center or 0.0) ** 2 + (plx_err_neighbor or 0.0) ** 2)
+        if combined > 0:
+            return abs(plx_neighbor - plx_center) <= combined
+    return True
+
+
+def gcns_neighbor_separation(center_ra, center_dec, center_dist_pc,
+                             neighbor_ra, neighbor_dec, neighbor_dist_pc,
+                             pair_entry, center_plx=None, neighbor_plx=None,
+                             center_plx_err=None, neighbor_plx_err=None):
+    """CR-18: the additive neighbourhood-separation keys for one neighbour of a centre star, shared by
+    BOTH within-star entry points so their bound/transverse/radial semantics can't diverge. Returns
+    ``{transverse_sep_au, transverse_sep_ly, bound, is_bound_companion, sep_method,
+    radial_parallax_dominated}``.
+
+    ``pair_entry`` = the centre's incident-pair record for this neighbour (``{bound (tri-state),
+    proj_sep_au, separation_arcsec}``) when the neighbour is GCNS-co-systemed with the centre, else
+    None. ``bound`` is TRI-STATE: True=GCNS-bound, False=GCNS-optical, None=outside the GCNS layer
+    (unknown, NOT unbound). Distances/parallaxes must be in ONE consistent frame per caller (GCNS for
+    the GCNS path, SIMBAD 1/ϖ for the star_systems path) — the same frame as the reported 3D
+    distance."""
+    if pair_entry is not None:
+        transverse_au = pair_entry.get("proj_sep_au")
+        bound = pair_entry.get("bound")
+        sep_method = "gcns_proj_sep"
+    else:
+        transverse_au = transverse_separation_au(center_ra, center_dec, neighbor_ra, neighbor_dec,
+                                                 center_dist_pc)
+        bound = None
+        sep_method = "computed_angular"
+    return {
+        "transverse_sep_au":  transverse_au,
+        "transverse_sep_ly":  (transverse_au / 63241.077) if transverse_au is not None else None,
+        "bound":              bound,
+        "is_bound_companion": bound is True,
+        "sep_method":         sep_method,
+        "radial_parallax_dominated": radial_parallax_dominated(
+            center_dist_pc, neighbor_dist_pc, transverse_au,
+            center_plx, neighbor_plx, center_plx_err, neighbor_plx_err),
+    }
+
+
 def _fval(v):
     """Convert to float; return None if missing or NaN."""
     if v is None:

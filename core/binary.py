@@ -210,6 +210,50 @@ def gaia_source_id_from_designations(designations):
     return m.group(1) if m else None
 
 
+def gcns_bound_companions(gaia_id):
+    """CR-18: the GCNS bound-companion signal for a Gaia source_id — a single offline read via
+    ``compute_gcns_system``. Returns ``(gcns_n_components, companions)`` where each companion is
+    ``{source_id, star_name, bound, proj_sep_au, separation_arcsec, basis:"gcns_cpm"}``, and
+    ``(None, [])`` when there is no Gaia id / the star is not in a GCNS resolved system.
+
+    Only pairs **incident on** ``gaia_id`` are emitted — ``compute_gcns_system`` returns every pair in
+    the connected component, so a ≥3-star chain carries non-incident B–C edges that must NOT be keyed
+    onto this star. Shared by the ``multiplicity`` subcommand and the dossier multiplicity section so
+    the two agree by construction."""
+    if not gaia_id:
+        return None, []
+    from core import databases
+    try:
+        gsys = databases.compute_gcns_system(int(gaia_id))
+    except (TypeError, ValueError):
+        return None, []
+    if "error" in gsys or not gsys.get("system"):
+        return None, []
+    system = gsys["system"]
+    gid = int(gaia_id)
+    members = {m.get("gaia_source_id"): m.get("star_name") for m in (system.get("members") or [])}
+    comps = []
+    for p in system.get("pairs") or []:
+        s1, s2 = p.get("source_id1"), p.get("source_id2")
+        if gid == s1:
+            other = s2
+        elif gid == s2:
+            other = s1
+        else:
+            continue                                   # non-incident (B–C) edge in a chain
+        comps.append({
+            "source_id":        other,
+            "star_name":        members.get(other) or str(other),   # uncross-matched member → id string
+            "bound":            p.get("bound"),   # already tri-state (compute_gcns_system applies _gcns_bool)
+            "proj_sep_au":      p.get("proj_sep_au"),
+            "separation_arcsec": p.get("separation_arcsec"),
+            "basis":            "gcns_cpm",
+        })
+    comps.sort(key=lambda c: (c["proj_sep_au"] if c["proj_sep_au"] is not None else float("inf"),
+                              c["source_id"]))
+    return system.get("n_components"), comps
+
+
 def _resolve_binary_identity(star, ra, dec, source_id):
     """Return an identity dict (main_id/ra/dec/sp_type/parallax_mas/gaia_source_id/hip/…) from a
     star name (SIMBAD), a Gaia source_id (gaia_source), or raw ra/dec. Returns (identity, error)."""
@@ -334,8 +378,17 @@ def multiplicity_summary(star=None, source_id=None):
     aggregator read can't miss a known binary.
 
     Output: ``{star, is_multiple, n_components, components:[{basis, sb_flag, sep_au?,
-    m2_solar_lower?}], sb_flag, sources, note?}`` or ``{"error"}``. ``basis`` ∈ visual / astrometric
-    / SB1 / SB2 / eclipsing / spectroscopic; SB1 masses are always the sin i=1 **lower bound**."""
+    m2_solar_lower?}], sb_flag, sources, note?, multiplicity_basis?}`` or ``{"error"}``. ``basis`` ∈
+    visual / astrometric / SB1 / SB2 / eclipsing / spectroscopic / **gcns_cpm** (CR-18: a GCNS
+    common-proper-motion companion, carrying ``bound`` + ``proj_sep_au`` + ``separation_arcsec`` +
+    ``star_name``/``source_id`` — the same fields the dossier's ``gcns_companions`` expose — added even
+    with no orbit); SB1 masses are always the sin i=1 **lower bound**. ``multiplicity_basis`` is set to
+    ``"gcns_cpm"`` only for a pure-GCNS detection with an actually **bound** companion (no orbit
+    component). ``bound`` is tri-state: True=GCNS-bound, False=GCNS-optical, absent=outside the GCNS
+    layer (unknown, NOT unbound). **De-dup (WB MSG 197):** a companion confirmed by BOTH an orbit route
+    AND the GCNS layer is ONE entry — the GCNS signal (``bound``/``proj_sep_au``/``separation_arcsec`` +
+    ``gcns_confirmed:true`` + the resolved ``star_name``/``source_id``) is merged onto the resolved-pair
+    (visual/astrometric) orbit component, so ``len(components)`` = distinct physical companions."""
     from core import databases
     if not star and not source_id:
         return _route_error("multiplicity requires --star or --source-id", ["multiplicity"])
@@ -352,16 +405,9 @@ def multiplicity_summary(star=None, source_id=None):
     if star_label is None:
         star_label = str(source_id) if source_id else None
 
-    # GCNS resolved-system multiplicity (offline, by Gaia source_id).
-    gcns_n, gcns_pairs = None, []
-    if gaia_id:
-        try:
-            gsys = databases.compute_gcns_system(int(gaia_id))
-        except (TypeError, ValueError):
-            gsys = {"error": "bad id"}
-        if "error" not in gsys and gsys.get("system"):
-            gcns_n = gsys["system"].get("n_components")
-            gcns_pairs = gsys["system"].get("pairs") or []
+    # GCNS resolved-system multiplicity (offline, by Gaia source_id) — CR-18: one shared read via the
+    # bound-companion helper (incident pairs only; exposes bound + projected separation).
+    gcns_n, gcns_comps = gcns_bound_companions(gaia_id)
 
     # binary-orbit tool-split → per-component basis.
     bo = binary_orbit(star=star, source_id=source_id)
@@ -401,20 +447,64 @@ def multiplicity_summary(star=None, source_id=None):
     if otype_block and otype_block.get("sb_flag") and not any(
             b in ("SB1", "SB2", "spectroscopic") for b in by_basis):
         _add("spectroscopic", True)
-    # GCNS visual pairs (add a visual basis + projected separation when nothing visual yet).
-    if gcns_pairs and "visual" not in by_basis:
-        sep = next((p.get("proj_sep_au") for p in gcns_pairs if p.get("proj_sep_au") is not None), None)
-        _add("visual", False, sep_au=sep)
-
     components = list(by_basis.values())
     sb_flag = any(c["sb_flag"] for c in components) or bool(otype_block and otype_block.get("sb_flag"))
     is_multiple = (bool(components)
                    or bool(otype_block and otype_block.get("is_multiple"))
-                   or bool(gcns_n and gcns_n > 1))
+                   or bool(gcns_n and gcns_n > 1)
+                   or any(c.get("bound") for c in gcns_comps))   # a bound GCNS companion ⇒ multiple
     if gcns_n and gcns_n > 1:
         n_components = gcns_n
     else:
         n_components = 2 if is_multiple else 1
+
+    # CR-18: fold each GCNS bound companion into components AFTER is_multiple/sb_flag/n_components are
+    # computed (so they can't perturb the verdict). DE-DUP (WB MSG 197): a companion confirmed by BOTH
+    # an orbit route AND the GCNS layer is ONE physical companion — merge the GCNS bound signal onto the
+    # matching **resolved-pair** orbit component (basis visual/astrometric = the same spatially-resolved
+    # companion; an SB/spectroscopic component is an UNRESOLVED close pair, a DIFFERENT companion, never
+    # merged) instead of listing it twice, so len(components) = distinct physical companions. The orbit
+    # components carry no companion source_id/name to match on, so the match is basis-kind + nearest
+    # sep_au↔proj_sep_au; a merged entry keeps its orbit basis and additively gains `bound`/`proj_sep_au`/
+    # `separation_arcsec`/`gcns_confirmed:true` + the GCNS-resolved `star_name`/`source_id`. No match
+    # (an orbit-less wide pair like ζ Ret, or a distinct wide companion) → a new gcns_cpm entry.
+    def _sep_consistent(sep_au, proj_sep_au):
+        # A projected separation vs an orbit separation for the SAME companion agree within a factor
+        # (projection + eccentricity); a factor >4 apart is a different (wide-vs-close) companion.
+        if not sep_au or not proj_sep_au or sep_au <= 0 or proj_sep_au <= 0:
+            return False
+        return 0.25 <= (proj_sep_au / sep_au) <= 4.0
+
+    for comp in gcns_comps:
+        psep = comp.get("proj_sep_au")
+        cands = [c for c in components
+                 if c.get("basis") in ("visual", "astrometric") and not c.get("gcns_confirmed")]
+        target = None
+        consistent = [c for c in cands if _sep_consistent(c.get("sep_au"), psep)]
+        if consistent:
+            target = min(consistent, key=lambda c: abs(c["sep_au"] - psep))
+        elif len(gcns_comps) == 1 and len(cands) == 1:
+            # simple-binary fallback: one resolved-pair candidate + one GCNS companion → the same star,
+            # UNLESS a present-on-both separation actively contradicts it (that is the DR-1 wide-vs-close
+            # case, handled above by _sep_consistent). A separation absent on either side can't contradict.
+            c0 = cands[0]
+            if not (c0.get("sep_au") and psep and not _sep_consistent(c0.get("sep_au"), psep)):
+                target = c0
+        if target is not None:
+            target["bound"] = comp.get("bound")
+            target["proj_sep_au"] = comp.get("proj_sep_au")
+            target["separation_arcsec"] = comp.get("separation_arcsec")
+            target["gcns_confirmed"] = True
+            target["star_name"] = comp.get("star_name")
+            target["source_id"] = comp.get("source_id")
+        else:
+            components.append({
+                "basis": "gcns_cpm", "sb_flag": False,
+                "sep_au": comp.get("proj_sep_au"), "proj_sep_au": comp.get("proj_sep_au"),
+                "separation_arcsec": comp.get("separation_arcsec"),
+                "bound": comp.get("bound"),
+                "star_name": comp.get("star_name"), "source_id": comp.get("source_id"),
+            })
 
     out = {
         "star": star_label, "is_multiple": is_multiple, "n_components": n_components,
@@ -423,6 +513,11 @@ def multiplicity_summary(star=None, source_id=None):
                     "gcns_n_components": gcns_n,
                     "binary_orbit_routes": bo.get("route_tried") if isinstance(bo, dict) else None},
     }
+    # CR-18: name the GCNS/CPM route as the top-level basis ONLY when a companion is actually BOUND and
+    # detection is pure-GCNS (no orbit component). gcns_cpm means a bound CPM pair, so a purely optical
+    # co-membership (all bound=0) does NOT claim it, and an orbit-detected system keeps its own basis.
+    if any(c.get("bound") for c in gcns_comps) and not by_basis:
+        out["multiplicity_basis"] = "gcns_cpm"
     if isinstance(bo, dict) and bo.get("note"):
         out["note"] = bo["note"]
     return out

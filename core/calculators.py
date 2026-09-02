@@ -15,6 +15,7 @@ from collections import deque
 from .equations import _C_MS, _LY_M  # single source of truth (Phase Y/P4.5 promoted to equations)
 from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
                      _to_cartesian, spectral_leading_class, _SP_DISPLAY_LETTERS,
+                     gcns_neighbor_separation,  # CR-18 neighbourhood separation (shared)
                      sp_color,   # the one app-wide spectral palette (Phase 3)
                      # The synthetic-Sol row constants (see _sol_result_row below).
                      _SOL_NAME, _SOL_DESIG, _SOL_SP_TYPE, _SOL_APP_MAG, _SOL_PARSECS,
@@ -461,6 +462,53 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
         d, m, sec = float(parts[0]), float(parts[1]), float(parts[2])
         return sign * (d + m / 60 + sec / 3600)
 
+    # CR-18: transverse separation uses the centre's SIMBAD distance (always available, same frame as
+    # the reported 3D Distance). The GCNS bound flag additionally needs the centre's Gaia id → its
+    # incident bound-pair map; that costs a second SIMBAD lookup, so it is gated to a non-Sol centre
+    # AND a populated GCNS table (a Sol/Sun centre or an empty/unloaded GCNS degrades bound to null,
+    # while transverse is still computed). The centre's ra/dec/ly are unchanged (from the lookup above).
+    import re as _re
+    center_dist_pc = (s["ly"] / 3.26156) if s.get("ly") else None
+    center_pair_map = {}
+    if center_star.strip().lower() not in ("sol", "sun"):
+        try:
+            gcns_ready = conn.execute("SELECT 1 FROM gcns_stars LIMIT 1").fetchone() is not None
+        except Exception:
+            gcns_ready = False
+        if gcns_ready:
+            center_gaia_id = None
+            # Offline first: the centre is usually itself a `star_systems` row — parse its Gaia id from
+            # the designations text (no network), matched on the resolved SIMBAD main_id. Fall back to a
+            # SIMBAD lookup only when that misses, so the common case adds no second network round-trip.
+            try:
+                r0 = conn.execute("SELECT designations FROM star_systems WHERE star_name = ? LIMIT 1",
+                                  (s.get("name"),)).fetchone()
+                if r0:
+                    m0 = _re.search(r"Gaia\s+E?DR3\s+(\d+)", r0["designations"] or "")
+                    center_gaia_id = int(m0.group(1)) if m0 else None
+            except Exception:
+                center_gaia_id = None
+            if center_gaia_id is None:
+                try:
+                    from core import databases
+                    csl = databases.compute_simbad_lookup(center_star)
+                    gv = (csl.get("designations") or {}).get("Gaia EDR3") \
+                        if isinstance(csl, dict) and "error" not in csl else None
+                    mm = _re.search(r"Gaia\s+E?DR3\s+(\d+)", str(gv)) if gv else None
+                    center_gaia_id = int(mm.group(1)) if mm else None
+                except Exception:
+                    center_gaia_id = None
+            if center_gaia_id is not None:
+                try:
+                    from core import databases
+                    crow = conn.execute("SELECT system_id FROM gcns_stars WHERE gaia_source_id = ?",
+                                        (center_gaia_id,)).fetchone()
+                    if crow:
+                        center_pair_map = databases.gcns_center_pair_map(
+                            conn, crow["system_id"], center_gaia_id)
+                except Exception:
+                    pass
+
     cx, cy, cz = _to_cartesian(s["ra_deg"], s["dec_deg"], s["ly"])
 
     matches = []
@@ -481,20 +529,35 @@ def compute_stars_within_distance_of_star(center_star: str, limit_ly: float) -> 
         x, y, z = _to_cartesian(ra_deg, dec_deg, ly)
         dist = math.sqrt((x - cx)**2 + (y - cy)**2 + (z - cz)**2)
         if 0.001 < dist <= limit_ly:
-            matches.append({
+            parsecs_n = 1000.0 / plx
+            entry = {
                 "Star Name":         row["star_name"] or "",
                 "Star Designations": row["designations"] or "",
                 "Spectral Type":     row["spectral_type"] or "",
                 "Distance":          dist,
                 # Phase O F1 — additive keys consumed by O1 (night sky) / O2b (HR overlay).
                 "app_magnitude":     row["app_magnitude"],
-                "parsecs":           1000.0 / plx,
+                "parsecs":           parsecs_n,
                 "x": x, "y": y, "z": z,
-            })
+            }
+            # CR-18: transverse separation + tri-state bound flag — SIMBAD 1/ϖ distance frame (matches
+            # the reported 3D Distance); no parallax errors on this path, so the radial flag uses the
+            # base rule. Neighbour Gaia id parsed from the designations text (the GCNS cross-match key).
+            m = _re.search(r"Gaia\s+E?DR3\s+(\d+)", row["designations"] or "")
+            entry.update(gcns_neighbor_separation(
+                s["ra_deg"], s["dec_deg"], center_dist_pc,
+                ra_deg, dec_deg, parsecs_n,
+                center_pair_map.get(int(m.group(1))) if m else None))
+            matches.append(entry)
 
     # Sol is never a `star_systems` row, so it has to be synthesized (see above).
     sol = _sol_result_row(cx, cy, cz, limit_ly)
     if sol:
+        sol.update({  # CR-18: uniform shape — Sol is synthetic, bound features unknown.
+            "transverse_sep_au": None, "transverse_sep_ly": None,
+            "bound": None, "is_bound_companion": False,
+            "sep_method": "synthetic_sol_origin", "radial_parallax_dominated": None,
+        })
         matches.append(sol)
 
     matches.sort(key=lambda r: r["Distance"])

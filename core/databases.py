@@ -3033,6 +3033,27 @@ def _gcns_bool(v):
     return bool(v) if v is not None else None
 
 
+def gcns_center_pair_map(conn, system_id, center_sid):
+    """CR-18: the centre's incident GCNS bound-pair map — ``{other_source_id: {bound (tri-state),
+    proj_sep_au, separation_arcsec}}`` over pairs where the centre is an endpoint (a ≥3-star chain's
+    non-incident edges are excluded). Shared by both within-star paths so the incident filter + the
+    ``_gcns_bool`` tri-state conversion can't diverge. Empty dict when ``system_id``/``center_sid``
+    is None."""
+    pair_map = {}
+    if system_id is None or center_sid is None:
+        return pair_map
+    for pr in conn.execute(
+            "SELECT source_id1, source_id2, separation_arcsec, proj_sep_au, bound "
+            "FROM gcns_system_pairs WHERE system_id = ?", (system_id,)).fetchall():
+        s1, s2 = pr["source_id1"], pr["source_id2"]
+        other = s2 if center_sid == s1 else (s1 if center_sid == s2 else None)
+        if other is not None:
+            pair_map[other] = {"bound": _gcns_bool(pr["bound"]),
+                               "proj_sep_au": pr["proj_sep_au"],
+                               "separation_arcsec": pr["separation_arcsec"]}
+    return pair_map
+
+
 def compute_gcns_system(source_id: int) -> dict:
     """Resolved multiple-star system containing a Gaia source_id. No network.
 
@@ -3364,6 +3385,7 @@ def compute_gcns_stars_within_star(star=None, source_id=None, limit_ly=None) -> 
     """
     from core.calculators import (_to_cartesian, _SOL_NAME, _SOL_SP_TYPE,
                                   _SOL_APP_MAG)
+    from core.shared import gcns_neighbor_separation
     from core.db import get_conn
 
     if limit_ly is None or limit_ly <= 0:
@@ -3379,8 +3401,15 @@ def compute_gcns_stars_within_star(star=None, source_id=None, limit_ly=None) -> 
     cx, cy, cz = center_xyz
     center_ly  = center["light_years"]
     center_sid = center.get("gaia_source_id")
+    center_system_id = center.get("system_id")
+    center_ra, center_dec = center.get("ra"), center.get("dec")
+    center_dist_pc = center.get("dist_pc")
+    center_plx, center_plx_err = center.get("parallax"), center.get("parallax_error")
 
     conn = get_conn()
+    # CR-18: the centre's incident bound-pair map, so a co-systemed neighbour reports the GCNS
+    # projected separation + bound flag instead of a parallax-noise-dominated 3D distance.
+    center_pair_map = gcns_center_pair_map(conn, center_system_id, center_sid)
     # Radial pre-filter: 3D separation >= |radial difference|, so anything outside
     # [center_ly - limit, center_ly + limit] cannot be within limit_ly. Lossless.
     rows = conn.execute(
@@ -3404,6 +3433,13 @@ def compute_gcns_stars_within_star(star=None, source_id=None, limit_ly=None) -> 
             d = _gcns_row_to_dict(row)
             d["x"], d["y"], d["z"] = x, y, z
             d["Distance"] = dist
+            # CR-18: transverse separation + tri-state bound flag — GCNS distance frame (matches the
+            # reported 3D Distance), parallax errors available so the radial flag is error-aware.
+            d.update(gcns_neighbor_separation(
+                center_ra, center_dec, center_dist_pc,
+                row["ra"], row["dec"], row["dist_pc"],
+                center_pair_map.get(row["gaia_source_id"]),
+                center_plx, row["parallax"], center_plx_err, row["parallax_error"]))
             matches.append(d)
 
     # Gaia does not observe the Sun, so `gcns_stars` has no Sol row — synthesize one
@@ -3425,6 +3461,10 @@ def compute_gcns_stars_within_star(star=None, source_id=None, limit_ly=None) -> 
             "distance_method": "synthetic_sol_origin",
             "x": 0.0, "y": 0.0, "z": 0.0,
             "Distance":        sol_dist,
+            # CR-18: uniform shape — Sol is synthetic, so bound features are unknown.
+            "transverse_sep_au": None, "transverse_sep_ly": None,
+            "bound": None, "is_bound_companion": False,
+            "sep_method": "synthetic_sol_origin", "radial_parallax_dominated": None,
         })
         matches.append(sol)
 

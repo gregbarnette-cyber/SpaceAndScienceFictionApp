@@ -4586,6 +4586,68 @@ helpers + the `mass_resolved_via_primary` marker), `core/report.py` (the dossier
 `tests/test_binary_stability_auto.py` (`Cr16*` classes), `tests/test_report.py` (`Cr16DossierSecondaryViaPrimary`).
 Coordination `/home/greg/Claude/coordination-channel.md` MSG 181–188 (WB re-gate GREEN + Greg-FULFILLED 2026-08-30).
 
+## CR-18 — bound-companion detection via the GCNS pairing layer + neighbourhood transverse separation (hybrid; additive fields + corrective verdict; NUMERIC battery byte-identical)
+
+A **two-part** fix for a real, currently-silent miss: the multiplicity paths determined multiplicity from **orbital
+catalogs only** (Gaia-NSS / SB9 / WDS-ORB6), so a gravitationally **bound** wide common-proper-motion (CPM) pair with no
+solved orbit read as *not multiple* on the very path the consumer runbook uses (the `dossier --sections multiplicity`
+"Multiple?" verdict). CR-18 wires the GCNS pairing layer (`gcns_system_pairs.bound` / `proj_sep_au`, `gcns_stars.system_id`
+— data already in `data/space_app.db`) into that determination, and fixes the neighbourhood sweep to report the **transverse**
+separation instead of a parallax-noise-dominated 3D distance. **Additive fields + a corrective verdict flip on orbit-less
+bound pairs; NO mass / exclusion / stability NUMBER changes** (the whole CR-13 + CR-14 + CR-15.4 + CR-16 battery re-gates
+byte-identical). WB independent re-gate GREEN across two rounds + Greg-FULFILLED 2026-09-01; coordination MSG 191–199; `completed_plans/PHASE_CR18_PLAN.md`.
+
+- **Part A — detection + agreement + signal.** Both the **`multiplicity`** subcommand and the **dossier `multiplicity`
+  section** report a system **multiple** when the GCNS layer co-systems it (`gcns_stars.n_components > 1` — the shared
+  co-membership gate), **even with no orbit**. The two paths **agree by construction** (a shared
+  `binary.gcns_bound_companions(gaia_id)` helper + the same gate).
+  - **`multiplicity`** gains a per-companion component `{basis:"gcns_cpm", bound, proj_sep_au, separation_arcsec,
+    star_name, source_id, sep_au}` (the old GCNS pair was mislabelled `"visual"`), and a top-level
+    `multiplicity_basis:"gcns_cpm"` **only** for a pure-GCNS detection with an actually **bound** companion.
+    **De-dup (WB MSG 197):** a companion confirmed by BOTH an orbit route AND the GCNS layer is **one**
+    `components` entry, not two — the GCNS signal (`bound`/`proj_sep_au`/`separation_arcsec` + **`gcns_confirmed:true`**
+    + the resolved `star_name`/`source_id`) is **merged onto the resolved-pair (visual/astrometric) orbit component**
+    (matched by basis-kind + nearest `sep_au`↔`proj_sep_au`, since the orbit components carry no companion id), so
+    `len(components)` = distinct physical companions (= `n_components − 1` for a simple binary). An SB/spectroscopic
+    component (an *unresolved* close pair) is a different companion and is **never** merged; an orbit-less wide pair
+    (ζ Ret) stays a lone `gcns_cpm` entry. Anchor: **`multiplicity "61 Cyg A"`** → one merged `visual` entry (`bound:true`,
+    orbit `sep_au≈112` + GCNS `proj_sep_au≈110`, `gcns_confirmed:true`, `* 61 Cyg B`), `len(components)=1`.
+  - **dossier `multiplicity`** gains `gcns_companions:[{star_name, source_id, bound, proj_sep_au, separation_arcsec,
+    basis:"gcns_cpm"}]`; sets `multiplicity_basis` to `"gcns_cpm"` **only when no orbit basis is already set** (fill-None —
+    an orbit-detected system keeps its orbit string); and, for a **bound** companion with no orbit, adds a `note` stating
+    orbit-dependent quantities (a / e / component-mass partition / `S_crit`) are **not computable** — it **never
+    fabricates** them.
+  - **`bound` is TRI-STATE (WB MSG 195):** `true` = GCNS gravitationally bound; `false` = GCNS resolved as an
+    optical / non-physical pair; **`null` / absent = outside the Gaia-keyed GCNS layer → "unknown / not covered", NEVER
+    "unbound".** Orbit-bound and GCNS-bound are **independent** confirmations (α Cen is orbit-bound yet carries no GCNS
+    bound field — its primaries are Gaia-missing). A purely optical GCNS grouping (`n_components≥2`, all pairs `bound=0`)
+    keeps its verdict (co-membership, monotonic) but makes **no** bound claim (companion `bound=false`, no `gcns_cpm` basis).
+  - **Monotonic:** CR-18 only ever **adds** `is_multiple:true`; it never flips a `true`→`false`. **`binary-orbit --star`
+    is unchanged** (a pure orbit reporter; honest "no solution" for a CPM pair).
+- **Part B — neighbourhood transverse separation.** `stars-within-star` (opt 19) and `gcns-stars-within-star` each gain
+  additive per-neighbour keys: `transverse_sep_au` / `transverse_sep_ly` (plane-of-sky separation — the GCNS `proj_sep_au`
+  for a co-systemed pair, else great-circle angular sep × the **centre** distance), `bound` (tri-state, as above),
+  `is_bound_companion` (`bound is True` **and** co-systemed), `sep_method` (`gcns_proj_sep` / `computed_angular` /
+  `synthetic_sol_origin`), and `radial_parallax_dominated` (True when the reported 3D `Distance` is inflated by the
+  line-of-sight parallax-distance difference — error-aware on the GCNS path where parallax errors exist, base-rule on the
+  SIMBAD path). The bare 3D `Distance` is still present; the synthetic Sol row carries all new keys (values null/False).
+  The SIMBAD-path `stars-within-star` costs **one** extra `compute_simbad_lookup` to get the centre's Gaia id → bound flag,
+  gated to a non-Sol centre and a populated GCNS table (transverse still computes from the always-available SIMBAD centre
+  distance, so the feature is not GCNS-gated).
+- **Gaia-ID dependence (documented boundary):** the GCNS bound layer is keyed on the Gaia source_id; ~1,259 `gcns_stars`
+  rows (`missing_10mas`, incl. α Cen A/B, Luhman 16) and ~1 % of `star_systems` neighbours have none. Those degrade to
+  `bound=null` / unchanged verdict — never a false report, never fabricated boundedness (spec §"Known limits: resolved
+  systems cover only Gaia-resolved multiples").
+- **Anchors:** `dossier "* zet01 Ret" multiplicity` → **Multiple? yes** (was no), basis GCNS-CPM, bound companion
+  `* zet02 Ret` proj_sep **3721.8**, no fabricated a/e/mass, = `multiplicity "* zet01 Ret"`; `GJ 9588` (→ `G 19-16`) →
+  bound companion `G 19-16 B` proj_sep **136.7**; `stars-within-star "GJ 9588" --ly 1` → `G 19-16 B` **transverse ≈ 137 AU
+  + bound** (not the bare 0.332 ly, now labelled radial-parallax-dominated); ε Eri's WDS optical double stays **not** a
+  GCNS bound companion. Cores: `core/binary.py` (`gcns_bound_companions` + `multiplicity_summary`), `core/report.py`
+  (`_augment_gcns_multiplicity` on every star-bearing return + `_blocks_multiplicity`), `core/shared.py`
+  (`transverse_separation_au` / `radial_parallax_dominated` / `gcns_neighbor_separation`), `core/databases.py`
+  (`gcns_center_pair_map` + `compute_gcns_stars_within_star`), `core/calculators.py`
+  (`compute_stars_within_distance_of_star`). Tests: `tests/test_cr18.py`.
+
 ## Implementation notes
 
 - No `sys.path` manipulation — Python prepends the script's own directory automatically when run directly, so `import core.X` works without changes.
