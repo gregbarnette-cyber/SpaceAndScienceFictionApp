@@ -2397,8 +2397,14 @@ _KPC_TO_PC             = 1000.0
 _GCNS_MAIN_ADQL = """SELECT source_id, ra, dec, parallax, parallax_error,
        dist_16, dist_50, dist_84,
        phot_g_mean_mag, phot_bp_mean_mag, phot_rp_mean_mag,
-       adoptedrv, wd_prob, gcns_prob, name_2mass
+       adoptedrv, wd_prob, gcns_prob, name_2mass,
+       pmra, pmdec, pmra_error, pmdec_error, ruwe
   FROM gcns.main"""
+
+# CR-20 Component 2: the targeted PM-only backfill pull (source_id + the 5 PM columns), used by
+# backfill_gcns_proper_motion to UPDATE existing gcns_stars rows without a destructive re-ingest.
+_GCNS_PM_BACKFILL_ADQL = ("SELECT source_id, pmra, pmdec, pmra_error, pmdec_error, ruwe "
+                          "FROM gcns.main")
 
 _GCNS_MISSING_ADQL = """SELECT main_id, otype, ra, dec, plx_value
   FROM gcns.missing_10mas"""
@@ -2771,6 +2777,8 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
             "main",
             system_id,
             n_components,
+            _fval(row["pmra"]), _fval(row["pmdec"]),          # CR-20: Gaia proper motion
+            _fval(row["pmra_error"]), _fval(row["pmdec_error"]), _fval(row["ruwe"]),
         ))
 
     # missing_10mas: parallax-only objects Gaia EDR3 missed — no source_id, no
@@ -2801,6 +2809,7 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
             "missing_10mas",
             None,                                  # system_id (no source_id to join)
             None,                                  # n_components
+            None, None, None, None, None,          # CR-20: pmra/pmdec/errors/ruwe — no PM in missing_10mas source
         ))
 
     # ── 4. Replace-in-place (one transaction) ───────────────────────────────
@@ -2821,8 +2830,9 @@ def compute_gcns_ingest(progress_callback=None) -> dict:
                     rv_kms, wd_prob, astrom_reliable_prob,
                     spectral_type, star_name, app_magnitude,
                     in_gcns, in_simbad, distance_method, gcns_table,
-                    system_id, n_components)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    system_id, n_components,
+                    pmra, pmdec, pmra_error, pmdec_error, ruwe)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 insert_rows,
             )
             conn.executemany(
@@ -2906,6 +2916,76 @@ def _gcns_meta_dict() -> dict:
         return {r["key"]: r["value"] for r in rows}
     except Exception:
         return {}
+
+
+def backfill_gcns_proper_motion(progress_callback=None) -> dict:
+    """CR-20 Component 2: populate gcns_stars.pmra/pmdec/pmra_error/pmdec_error/ruwe from the gcns.main
+    GAVO query WITHOUT a destructive re-ingest.
+
+    A targeted ALTER (via _migrate_schema on get_conn) + a PM-only UPDATE keyed by source_id — it
+    touches ONLY the 5 PM columns, no other gcns_stars value and no other GCNS table, so every existing
+    subcommand output + the CR-18 resolved-system anchors stay byte-identical BY CONSTRUCTION.
+    missing_10mas rows (NULL gaia_source_id) never match → stay PM-null (no fabrication).
+
+    Returns {updated, pulled, total_main, matched, snapshot_date} or {"error": str} — three distinct
+    counts: `total_main` = all gcns.main rows pulled; `pulled` = those carrying a source_id (the UPDATE
+    parameters); `updated` = rows ACTUALLY matched/changed in gcns_stars (a subset if the local table is
+    a subset of gcns.main); `matched` = gcns_stars rows with non-null pmra afterwards. Network op: one
+    async GAVO pull of ~331k rows x 6 cols (far lighter than the full ingest). Validate-before-write: a
+    truncated or short pull aborts with NO DB write. This box's DB is machine-local/gitignored — the backfill
+    fulfils CR-20 here; another machine gains PM only when the git-synced extended _GCNS_MAIN_ADQL/INSERT
+    is re-run (a full opt-58 re-ingest) there.
+    """
+    from datetime import datetime
+    from core.db import get_conn
+
+    def _progress(msg):
+        if progress_callback:
+            try:
+                progress_callback(msg)
+            except Exception:
+                pass
+
+    conn = get_conn()   # runs _migrate_schema → the 5 PM columns exist
+    n_existing = conn.execute("SELECT COUNT(*) FROM gcns_stars").fetchone()[0]
+    if not n_existing:
+        return {"error": "gcns_stars is empty — run the GCNS import (option 58) first, then backfill."}
+
+    _progress("Fetching Gaia proper motion from gcns.main (async TAP)…")
+    try:
+        result = _gcns_fetch(_GCNS_PM_BACKFILL_ADQL, _GCNS_MAXREC)
+    except Exception as e:
+        return {"error": _network_error_msg(e, "GAVO TAP (gcns.main)")}
+    rows = list(result)
+    n_rows = len(rows)
+    # Validate-before-write: abort on truncation / a short pull (no partial write).
+    if _gcns_check_overflow(result, n_rows) or n_rows < _GCNS_MAIN_MIN_ROWS:
+        return {"error": (f"gcns.main PM pull returned only {n_rows:,} rows "
+                          f"(expected >= {_GCNS_MAIN_MIN_ROWS:,}); aborted before writing.")}
+
+    # Row-tuple order = (pmra, pmdec, pmra_error, pmdec_error, ruwe, source_id) — source_id LAST for the
+    # WHERE even though the SELECT returns it FIRST. A positional slip would write PM into wrong columns.
+    updates = []
+    for row in rows:
+        sid = _ni(row["source_id"])
+        if sid is None:
+            continue
+        updates.append((_fval(row["pmra"]), _fval(row["pmdec"]), _fval(row["pmra_error"]),
+                        _fval(row["pmdec_error"]), _fval(row["ruwe"]), sid))
+
+    _progress(f"Updating proper motion for {len(updates):,} Gaia ids…")
+    before = conn.total_changes
+    with conn:
+        conn.executemany(
+            "UPDATE gcns_stars SET pmra=?, pmdec=?, pmra_error=?, pmdec_error=?, ruwe=? "
+            "WHERE gaia_source_id=?", updates)
+        rows_changed = conn.total_changes - before   # REAL rows matched in gcns_stars (a subset <= pulled)
+        # single-key provenance UPSERT — never re-touch snapshot_date / gcns_version.
+        conn.execute("INSERT OR REPLACE INTO gcns_meta (key, value) VALUES (?, ?)",
+                     ("gcns_pm_backfill_date", datetime.now().strftime("%Y-%m-%d")))
+    matched = conn.execute("SELECT COUNT(*) FROM gcns_stars WHERE pmra IS NOT NULL").fetchone()[0]
+    return {"updated": rows_changed, "pulled": len(updates), "total_main": n_rows, "matched": matched,
+            "snapshot_date": datetime.now().strftime("%Y-%m-%d")}
 
 
 _GCNS_ROW_COLS = [

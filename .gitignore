@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 venv/
 data/
+
+# stray root DB (the real DB is data/space_app.db, covered by data/ above)
+/space_app.db

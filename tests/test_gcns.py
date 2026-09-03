@@ -41,6 +41,8 @@ def _main_row(source_id, name_2mass=None, dist_50_kpc=0.001, **over):
         "phot_g_mean_mag": 9.0, "phot_bp_mean_mag": 10.0, "phot_rp_mean_mag": 8.0,
         "adoptedrv": -22.4, "wd_prob": 0.01, "gcns_prob": 1.0,
         "name_2mass": name_2mass,
+        "pmra": -3678.2, "pmdec": 481.8,        # CR-20: Gaia proper motion (mas/yr)
+        "pmra_error": 0.06, "pmdec_error": 0.05, "ruwe": 1.02,
     }
     row.update(over)
     return row

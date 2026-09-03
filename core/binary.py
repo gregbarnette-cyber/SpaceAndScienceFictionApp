@@ -384,6 +384,80 @@ def _nss_two_body_solutions(source_id, sp_type, plx_fallback):
     return out, None, bm_status     # CR-19: NSS ok, but flag a bounded binary_masses cross-check
 
 
+# ── CR-20: additive tri-state bound-vs-optical verdict-honesty classifier ──────────────────────────
+# Confirmed-binary SIMBAD otypes = an affirmative BOUND signal on their own (a spectroscopic / eclipsing
+# binary is definitionally a bound pair — the periodicity IS the orbit). Deliberately NARROWER than
+# databases._OTYPE_SPECTROSCOPIC, which also carries the rotational/ellipsoidal VARIABLES RS*/El* under
+# sb_flag:true — those describe a variability mechanism, not a confirmed orbit, so they must NOT read
+# `bound` (WB CR-20 Guardrail 1). Also excluded: BY* (rotational variable), the `?`-candidates
+# (SB?/EB?/**?), EP* (star eclipsed by its PLANET — not a stellar binary), and the bare `**` "double or
+# multiple" (a catalog STATUS, not a boundedness determination — WB MSG 219). Detection-of-orbital-
+# motion binaries only; a bare-`**`/RS*/El* star reads `unknown` (or `optical` under a GCNS all-bound=0).
+_BOUND_OTYPES = frozenset({"SB*", "EB*", "Al*", "bL*", "WU*"})
+# CR-20 (WB MSG 222): close-binary otype HINTS — set is_multiple/sb_flag but are NOT confirmed-bound
+# (SB? spectroscopic candidate, EB? eclipsing candidate, RS*/El* rotational/ellipsoidal variables). A hint
+# BLOCKS the `optical` verdict → `unknown` (a possible unresolved bound close companion must not read as
+# "optical / no bound companion"). Deliberately excludes the wide `**`/`**?` doubles (the SAME channel as
+# a GCNS optical pair, not a separate close companion) and BY* (not in the sb_flag set).
+_HINT_OTYPES = frozenset({"SB?", "EB?", "RS*", "El*"})
+_ORBIT_SOURCES = frozenset({"sb9", "orb6"})
+
+
+def is_bound_otype(otype):
+    """CR-20: True when a SIMBAD otype is a CONFIRMED binary (an affirmative bound signal on its own).
+    See ``_BOUND_OTYPES`` — narrow by design; NOT the broad ``sb_flag`` (which also covers RS*/El*)."""
+    return (otype or "") in _BOUND_OTYPES
+
+
+def is_close_binary_hint_otype(otype):
+    """CR-20 (WB MSG 222): True when a SIMBAD otype is a close-binary HINT (``_HINT_OTYPES``) — it blocks
+    the ``optical`` verdict (→ ``unknown``) because a hint may be an unresolved bound close companion. NOT
+    a bound signal itself (excluded from ``_BOUND_OTYPES``); NOT the wide ``**``/``**?`` doubles."""
+    return (otype or "") in _HINT_OTYPES
+
+
+def is_orbit_solution(sol):
+    """CR-20: True when a ``binary_orbit`` SOLUTION is a fitted STELLAR/substellar orbit — an affirmative
+    bound signal. Fitted orbit = SB9 spectroscopic / WDS-ORB6 visual / Gaia-DR3-NSS astrometric (a bare
+    ``wds`` catalog double carries no orbit → excluded). Guardrail 2: classify on a SOLUTION, never on an
+    available route. A **planet-class** companion (a sub-13-M_Jup NSS/SB "orbit", e.g. GJ 876) is NOT a
+    stellar-multiplicity bound signal — excluded here so both paths agree (WB MSG 219)."""
+    src = (sol or {}).get("source") or ""
+    if not (src in _ORBIT_SOURCES or src.startswith("gaia-nss")):
+        return False
+    comp = (sol or {}).get("companion")
+    # A fitted orbit is a real (bound) orbit REGARDLESS of the companion's mass class — the ONLY carve-out
+    # is a definitely-PLANET companion (a planetary orbit is not stellar multiplicity). So a companion of
+    # None (orb6/visual, no mass derived) or an unknown/absent class still reads bound: the orbit itself is
+    # the bound signal; we are not asserting the companion is stellar, only that the system is bound.
+    return not comp or comp.get("class") != "planet"
+
+
+def classify_multiplicity(is_multiple, *, has_fitted_orbit, has_binary_otype, gcns_comps,
+                          has_close_binary_hint=False):
+    """CR-20 additive tri-state bound-vs-optical verdict honesty → ``(multiplicity_class, bound_multiple)``:
+      ``("bound", True)``    any GCNS pair ``bound is True`` OR a fitted (stellar) orbit OR a confirmed-binary otype.
+      ``("optical", False)`` is_multiple AND a GCNS determination (>=1 incident pair, ALL ``bound is False``) AND no bound signal AND no close-binary hint.
+      ``("unknown", None)``  is_multiple but boundedness undetermined (no GCNS pair; bare visual/wds; candidate/variable otype; OR a close-binary hint blocks an otherwise-optical grouping).
+      ``(None, None)``       not multiple (single star) — present-but-null on every output.
+    ``has_close_binary_hint`` (WB MSG 222) = a ``_HINT_OTYPES`` close-binary hint (SB?/EB?/RS*/El*): at the
+    optical branch it means a POSSIBLE unresolved bound close companion, so ``optical`` is downgraded to
+    ``unknown`` (a consumer reading this as authoritative must not be told "optical / no bound companion").
+    Never reads/writes ``is_multiple``/``sb_flag``/any existing field (additive-only). ``bound`` uses
+    ``is True`` and ``optical`` uses ``all(... is False)``, so a tri-state ``bound`` of ``None`` forces
+    neither."""
+    if not is_multiple:
+        return None, None
+    has_gcns_bound = any(c.get("bound") is True for c in (gcns_comps or []))
+    if has_gcns_bound or has_fitted_orbit or has_binary_otype:
+        return "bound", True
+    if gcns_comps and all(c.get("bound") is False for c in gcns_comps):
+        # WB MSG 222: a close-binary otype hint at the optical branch → a POSSIBLE unresolved bound close
+        # companion, so do NOT assert "optical / no bound companion"; downgrade to unknown.
+        return ("unknown", None) if has_close_binary_hint else ("optical", False)
+    return "unknown", None
+
+
 def multiplicity_summary(star=None, source_id=None):
     """CR-2: a multiplicity / spectroscopic-binary summary, composing the cheap SIMBAD otype hint,
     the binary-orbit tool-split (per-component basis + SB1 lower-bound masses), and the offline
@@ -519,8 +593,22 @@ def multiplicity_summary(star=None, source_id=None):
                 "star_name": comp.get("star_name"), "source_id": comp.get("source_id"),
             })
 
+    # CR-20: additive tri-state bound-vs-optical class (all inputs already in scope). The fitted-orbit
+    # scan runs over the raw solutions, but is_orbit_solution excludes planet-class internally, so the
+    # BOUND-SIGNAL matches the dossier's planet-filtered `stellar`. (The class can still differ from the
+    # dossier's only where is_multiple itself differs — the pre-existing planet-only case, unchanged.)
+    _mc_solutions = (bo.get("solutions") or []) if isinstance(bo, dict) else []
+    _otype = otype_block.get("otype") if otype_block else None
+    _mult_class, _bound_multiple = classify_multiplicity(
+        is_multiple,
+        has_fitted_orbit=any(is_orbit_solution(s) for s in _mc_solutions),
+        has_binary_otype=is_bound_otype(_otype),
+        has_close_binary_hint=is_close_binary_hint_otype(_otype),
+        gcns_comps=gcns_comps)
     out = {
-        "star": star_label, "is_multiple": is_multiple, "n_components": n_components,
+        "star": star_label, "is_multiple": is_multiple,
+        "multiplicity_class": _mult_class, "bound_multiple": _bound_multiple,   # CR-20 (additive)
+        "n_components": n_components,
         "components": components, "sb_flag": sb_flag,
         "sources": {"simbad_otype": otype_block.get("otype") if otype_block else None,
                     "gcns_n_components": gcns_n,

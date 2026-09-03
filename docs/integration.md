@@ -3929,9 +3929,11 @@ basis + SB1 lower-bound masses), and the offline GCNS resolved-system count.
 ```bash
 query.py multiplicity --star "alpha Centauri"
 ```
-Core: `binary.multiplicity_summary(star=None, source_id=None)`. Output: `{star, is_multiple, n_components,
-components:[{basis, sb_flag, sep_au?, m2_solar_lower?}], sb_flag, sources, note?}`. `basis` ∈ visual /
-astrometric / SB1 / SB2 / eclipsing / spectroscopic; **SB1 masses are always the sin i=1 lower bound**.
+Core: `binary.multiplicity_summary(star=None, source_id=None)`. Output: `{star, is_multiple, multiplicity_class,
+bound_multiple, n_components, components:[{basis, sb_flag, sep_au?, m2_solar_lower?}], sb_flag, sources, note?}`.
+**CR-20:** `multiplicity_class ∈ {"bound","optical","unknown"}` + `bound_multiple` (`true`/`false`/`null`) — the
+additive tri-state bound-vs-optical verdict-honesty signal (single star → both `null`); see the CR-20 block.
+`basis` ∈ visual / astrometric / SB1 / SB2 / eclipsing / spectroscopic; **SB1 masses are always the sin i=1 lower bound**.
 **CR-16:** for a **degenerate/WD-secondary** query of a letterless-primary pair, the SB1 `m2_solar_lower` is now
 solved at the correct **primary** mass (`multiplicity "Sirius B"` → **0.4577**, not the WD-mis-seeded 0.283) — the
 orbit companion masses inherit `binary_orbit`'s primary-sp-type redirect (see the CR-16 block); a letter-symmetric
@@ -4696,6 +4698,19 @@ bounds **every per-source SYNC `gaia_tap` call** at that one gateway, degrades t
   (`_call_with_watchdog`), `core/catalog.py` (`gaia_tap` sync bound + circuit-breaker + `set_gaia_timeout` + `_warn` + the
   hook), `core/binary.py` / `core/report.py` / `core/databases.py` / `core/exclusion_system.py` / `core/stellar_mass.py`
   (marker surfacing), `query.py` (`--gaia-timeout`). Tests: `tests/test_cr19.py`.
+
+## CR-20 — multiplicity verdict honesty (additive tri-state) + `gcns_stars` Gaia-PM backbone (additive; NUMERIC battery + CR-18 anchors byte-identical)
+
+Two additive components; `is_multiple` and every existing key/value stay byte-for-byte identical (the CR-15.4/CR-17 additive-key precedent).
+
+- **Component 1 — verdict honesty.** `multiplicity` (`binary.multiplicity_summary`) **and** the `dossier --sections multiplicity` JSON `data` gain a top-level **`multiplicity_class ∈ {"bound","optical","unknown"}`** + convenience **`bound_multiple`** (`true`/`false`/`null`), so a consumer can tell a gravitationally **bound** multiple from an **unbound optical / co-membership** grouping without reading per-component fields. One shared classifier (`binary.classify_multiplicity`) drives both paths.
+  - **Class logic:** **`bound`** — any GCNS pair `bound=1`, **or** a fitted stellar orbit (`source` ∈ SB9 / WDS-ORB6 / Gaia-DR3-NSS; a bare `wds` catalog double is NOT an orbit; a **planet-class** companion orbit is excluded — a planetary NSS/SB orbit is not a stellar-multiplicity bound signal), **or** a confirmed-binary SIMBAD otype (`SB*`/`EB*`/`Al*`/`bL*`/`WU*`). **`optical`** — `is_multiple` **and** a GCNS determination (≥1 incident pair, ALL `bound=0`) **and** no bound signal **and** no close-binary otype hint. **`unknown`** — `is_multiple` but boundedness undetermined (no GCNS pair; a bare visual/WDS entry; a candidate/variable otype), **or** a close-binary otype **hint** blocks an otherwise-`optical` grouping. **Single star** (`is_multiple:false`) → `multiplicity_class:null`, `bound_multiple:null` (present-but-null, never omitted).
+  - **Close-binary hint blocks `optical` (WB MSG 222):** a star at the `optical` branch that carries a close-binary otype hint **`{SB?, EB?, RS*, El*}`** (spectroscopic/eclipsing candidates + rotational/ellipsoidal variables — they set `is_multiple`/`sb_flag` but are NOT confirmed-bound) reads **`unknown`**, not `optical` — a hint may be an unresolved bound close companion, so a consumer must not be told "optical / no bound companion". The **wide** `**`/`**?` doubles do NOT block (the same channel as the GCNS optical pair). Anchors: StKM 1-79 (null otype) stays `optical`; ε Eri (`BY*`, not in the hint set) stays `unknown`.
+  - **Deliberately NOT `bound`:** rotational/ellipsoidal variables `RS*`/`El*`/`BY*` (they carry the existing `sb_flag:true` but assert a variability mechanism, not an orbit), `?`-candidates (`SB?`/`EB?`/`**?`), `EP*` (planet-eclipse), and the bare `**` "double or multiple" (catalog status, not a boundedness determination — WB MSG 219). `**` `gcns_confirmed` is NOT renamed (it means co-membership, not bound); **`multiplicity_class`/`bound_multiple` are the authoritative bound signal** — switch a boundedness read to them.
+  - **Anchors:** ε Eri → `unknown`; a pure-optical GCNS grouping (e.g. StKM 1-79 / `--source-id 2782899393446682368`, all pairs `bound=0`) → `optical`; ζ¹ Ret / 61 Cyg A / α Cen → `bound`. The **rendered** markdown/html dossier `document` is unchanged (the tri-state is in the JSON `data` only) — byte-identical.
+- **Component 2 — astrometric backbone.** `gcns_stars` now persists **`pmra, pmdec, pmra_error, pmdec_error, ruwe`** from the `gcns.main` GAVO query. **Schema-additive only** — these columns are **NOT** added to `_GCNS_ROW_COLS`, so **no** GCNS subcommand output changes (`gcns-source`/`gcns-system`/`gcns-within-sol`/`gcns-stars-within-star`/`dossier` byte-identical); PM is a backbone for CR-21, not surfaced in CR-20. `missing_10mas` rows carry **null** PM (no PM in source; never fabricated). Population is a **targeted backfill** — `core.databases.backfill_gcns_proper_motion()` (a core function, invoked directly for delivery — **no `query.py` subcommand**, matching the CLI/GUI-only convention of the GCNS ingest) does an `ALTER` (via `_migrate_schema`) + a PM-only `UPDATE` keyed by `source_id`, touching only the 5 PM columns → existing `gcns_stars` values + the resolved-system tables (hence the CR-18 anchors) byte-identical by construction. The full `_GCNS_MAIN_ADQL`/insert is also extended so a future opt-58 re-ingest carries PM. **Machine-local caveat:** `data/space_app.db` is gitignored — the backfill fulfils CR-20 for the box it runs on; another machine gains PM only when the git-synced extended ADQL/INSERT is re-run (a full opt-58 re-ingest) there.
+
+Cores: `core/binary.py` (classifier + `multiplicity_summary`), `core/report.py` (dossier), `core/db.py` (schema + `_migrate_schema`), `core/databases.py` (ADQL/insert + `backfill_gcns_proper_motion`; `_GCNS_ROW_COLS` unchanged). Tests: `tests/test_cr20.py`.
 
 ## Implementation notes
 

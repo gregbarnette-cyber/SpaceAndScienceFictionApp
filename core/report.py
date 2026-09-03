@@ -621,7 +621,7 @@ def _pick_basis_solution(solutions):
     return solutions[0]
 
 
-def _augment_gcns_multiplicity(data, simbad):
+def _augment_gcns_multiplicity(data, simbad, has_fitted_orbit=False):
     """CR-18: additively fold the GCNS bound-companion signal into the dossier multiplicity data.
     Called before EVERY star-bearing return of ``_multiplicity_data_star`` — the ζ¹ Ret path returns
     early at ``if not stellar`` (no orbit), so a single trailing block would miss the exact anchor
@@ -645,6 +645,20 @@ def _augment_gcns_multiplicity(data, simbad):
         data["note"] = ("bound companion detected via the GCNS common-proper-motion layer; "
                         "orbit-dependent quantities (a, e, component-mass partition, S_crit) are "
                         "not computable without an orbital solution")
+    # CR-20: additive tri-state class, AFTER is_multiple is finalized. Uses the SAME shared classifier as
+    # binary.multiplicity_summary, so the two paths yield the same class for the same (is_multiple,
+    # bound-signals) — they can still differ ONLY where is_multiple itself differs, which is the
+    # pre-existing planet-only-orbit case (the summary counts a planet-NSS component; the dossier filters
+    # it) that CR-20 does NOT change. `has_fitted_orbit` is passed by the caller (False on the early/
+    # no-orbit returns; the final return passes the planet-filtered signal). Only ADDS two keys.
+    _mc, _bm = binary.classify_multiplicity(
+        data.get("is_multiple", False),
+        has_fitted_orbit=has_fitted_orbit,
+        has_binary_otype=binary.is_bound_otype(data.get("otype")),
+        has_close_binary_hint=binary.is_close_binary_hint_otype(data.get("otype")),
+        gcns_comps=comps)
+    data["multiplicity_class"] = _mc
+    data["bound_multiple"] = _bm
     return data
 
 
@@ -657,8 +671,18 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
     mult = simbad.get("multiplicity") or {}
     otype_sb = bool(mult.get("sb_flag"))
     data = {"is_multiple": bool(mult.get("is_multiple")), "sb_flag": otype_sb,
-            "basis": mult.get("basis"), "otype": mult.get("otype"), "multiplicity_basis": None}
+            "basis": mult.get("basis"), "otype": mult.get("otype"), "multiplicity_basis": None,
+            "multiplicity_class": None, "bound_multiple": None}   # CR-20: present-but-null on EVERY return path
     if not star:
+        # CR-20 (CP1+CP2): classify from the LOCAL otype signal only — do NOT run the GCNS co-membership
+        # fold here (that would non-additively flip is_multiple / add gcns_companions on this bare-return
+        # path, which historically returned `data` untouched). No orbit/GCNS is fetched, so the class
+        # rests on is_multiple + the otype; a multiple-via-otype is still classified (not left null).
+        from core import binary
+        data["multiplicity_class"], data["bound_multiple"] = binary.classify_multiplicity(
+            data["is_multiple"], has_fitted_orbit=False,
+            has_binary_otype=binary.is_bound_otype(data.get("otype")),
+            has_close_binary_hint=binary.is_close_binary_hint_otype(data.get("otype")), gcns_comps=[])
         return data
     try:
         from core import binary
@@ -736,7 +760,10 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
         if stab.get("e_out_of_hw_range"):
             data["note"] = ("eccentricity outside the Holman-Wiegert fit domain — the "
                             "critical SMA is an extrapolation")
-    return _augment_gcns_multiplicity(data, simbad)
+    # CR-20: the ONLY return with fitted orbits in scope — pass the planet-filtered fitted-orbit signal
+    # (`stellar` is already non-planet; is_orbit_solution also re-excludes planets, so it's idempotent).
+    return _augment_gcns_multiplicity(
+        data, simbad, has_fitted_orbit=any(binary.is_orbit_solution(s) for s in stellar))
 
 
 def _blocks_multiplicity(d):
@@ -867,7 +894,8 @@ def _blocks_disk(d):
 
 
 def _multiplicity_data_sol():
-    return {"is_multiple": False, "sb_flag": False, "basis": None, "otype": "G2V (single star)"}
+    return {"is_multiple": False, "sb_flag": False, "basis": None, "otype": "G2V (single star)",
+            "multiplicity_class": None, "bound_multiple": None}   # CR-20: single → present-but-null
 
 
 def _age_population_data_sol():

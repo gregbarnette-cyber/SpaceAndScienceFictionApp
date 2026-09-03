@@ -260,7 +260,12 @@ def _create_schema(conn: sqlite3.Connection):
             distance_method      TEXT,             -- 'gcns_bayesian' | 'gcns_missing_plx_inversion'
             gcns_table           TEXT,              -- 'main' | 'missing_10mas'
             system_id            INTEGER,           -- gcns_systems.system_id if a resolved-system member; else NULL
-            n_components         INTEGER            -- component count of that system; NULL if not a member
+            n_components         INTEGER,           -- component count of that system; NULL if not a member
+            pmra                 REAL,              -- CR-20: Gaia proper motion pmra* (mas/yr); NULL for missing_10mas
+            pmdec                REAL,              -- CR-20: Gaia proper motion in Dec (mas/yr)
+            pmra_error           REAL,              -- CR-20
+            pmdec_error          REAL,              -- CR-20
+            ruwe                 REAL               -- CR-20: Gaia renormalised unit weight error
         );
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_gcns_source_id
@@ -425,6 +430,11 @@ def _migrate_schema(conn: sqlite3.Connection):
     CREATE TABLE IF NOT EXISTS never alters an existing table, so columns added
     after a table was first created must be patched in via ALTER TABLE. Each is
     guarded by a PRAGMA check so re-running is a no-op.
+
+    Note (CR-20): the DB is machine-local/gitignored — an existing DB gains the
+    Gaia-PM columns here, but they stay NULL until the PM backfill
+    (databases.backfill_gcns_proper_motion) or a full opt-58 re-ingest under the
+    extended _GCNS_MAIN_ADQL runs on that box.
     """
     def _has_col(table, col):
         return any(r["name"] == col
@@ -433,6 +443,11 @@ def _migrate_schema(conn: sqlite3.Connection):
     for table, col, decl in [
         ("gcns_stars", "system_id",    "INTEGER"),
         ("gcns_stars", "n_components", "INTEGER"),
+        ("gcns_stars", "pmra",         "REAL"),   # CR-20 Component 2: Gaia proper motion backbone
+        ("gcns_stars", "pmdec",        "REAL"),
+        ("gcns_stars", "pmra_error",   "REAL"),
+        ("gcns_stars", "pmdec_error",  "REAL"),
+        ("gcns_stars", "ruwe",         "REAL"),
     ]:
         try:
             if not _has_col(table, col):

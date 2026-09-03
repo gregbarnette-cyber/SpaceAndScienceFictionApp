@@ -17,6 +17,7 @@ _MAIN_COLS = {
     "dist_16", "dist_50", "dist_84",
     "phot_g_mean_mag", "phot_bp_mean_mag", "phot_rp_mean_mag",
     "adoptedrv", "wd_prob", "gcns_prob", "name_2mass",
+    "pmra", "pmdec", "pmra_error", "pmdec_error", "ruwe",   # CR-20: the ADQL now hard-requires these
 }
 _MISSING_COLS = {"main_id", "otype", "ra", "dec", "plx_value"}
 _RESOLVED_COLS = {"source_id1", "source_id2", "separation", "mag_diff",
