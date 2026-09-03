@@ -6,6 +6,7 @@ import os
 import random
 import re
 import socket
+import threading
 import time
 from contextlib import contextmanager
 
@@ -1268,6 +1269,42 @@ def _timeout_ctx(seconds):
         yield
     finally:
         socket.setdefaulttimeout(old)
+
+
+class _WatchdogTimeout(Exception):
+    """CR-19: raised by ``_call_with_watchdog`` when the wrapped call does not return within the
+    wall-clock bound. Distinct from a socket/requests timeout — it is a hard wall-clock abandonment:
+    the worker thread is left running as a daemon and dies with the process."""
+
+
+def _call_with_watchdog(fn, *args, timeout, **kwargs):
+    """Run ``fn(*args, **kwargs)`` with a hard wall-clock bound (``timeout`` seconds).
+
+    Runs ``fn`` in a **daemon** thread and joins for ``timeout``. If it finishes, the return value is
+    returned (or its exception re-raised, **preserving the original type** so a caller's
+    error-classification still works). If it is still running after ``timeout``, the thread is
+    **abandoned** (daemon → never blocks interpreter exit) and ``_WatchdogTimeout`` is raised.
+
+    Deliberately **NOT** ``concurrent.futures.ThreadPoolExecutor``: its workers are non-daemon and
+    atexit-joined, so an abandoned slow call would re-hang the process at exit. A daemon
+    ``threading.Thread`` is the only primitive that both bounds the wait AND lets the process exit.
+    Used by the CR-19 sync Gaia-TAP bound (``core.catalog``)."""
+    box = {}
+
+    def _worker():
+        try:
+            box["value"] = fn(*args, **kwargs)
+        except Exception as e:                      # captured so join() sees a completed thread
+            box["error"] = e
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        raise _WatchdogTimeout(f"call exceeded {timeout}s wall-clock bound")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
 
 
 def _make_simbad(*fields, timeout=30):

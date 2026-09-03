@@ -238,7 +238,7 @@ class Cr14BinaryOrbitMarkerTest(unittest.TestCase):
                 "eccentricity": 0.52, "source": "sb9", "grade": "a"}
         ident = {"ra": 1.0, "dec": 2.0, "sp_type": "G2V", "gaia_source_id": None,
                  "parallax_mas": None, "main_id": "X"}
-        with patch("core.binary._resolve_binary_identity", return_value=(ident, None)), \
+        with patch("core.binary._resolve_binary_identity", return_value=(ident, None, None)), \
              patch("core.binary._sb9_solutions", return_value=([deg, real], None)), \
              patch("core.binary._wds_orb6_solutions", return_value=[]):
             r = binary.binary_orbit(star="X")
@@ -305,7 +305,7 @@ class Cr16BinaryOrbitRedirectTest(unittest.TestCase):
         with patch("core.databases.compute_simbad_lookup", side_effect=self._lookup(sec, pri)), \
              patch("core.binary._sb9_solutions",
                    side_effect=lambda ra, dec, sp: (cap.__setitem__("sb9_sp", sp) or ([], None))), \
-             patch("core.binary._nss_two_body_solutions", return_value=([], None)), \
+             patch("core.binary._nss_two_body_solutions", return_value=([], None, None)), \
              patch("core.binary._wds_orb6_solutions", return_value=[]):
             res = binary.binary_orbit(star="Sirius B")
         self.assertEqual(res["query"], "Sirius B")                          # query echo preserved
@@ -322,7 +322,7 @@ class Cr16BinaryOrbitRedirectTest(unittest.TestCase):
                    return_value=sec) as m, \
              patch("core.binary._sb9_solutions",
                    side_effect=lambda ra, dec, sp: (cap.__setitem__("sb9_sp", sp) or ([], None))), \
-             patch("core.binary._nss_two_body_solutions", return_value=([], None)), \
+             patch("core.binary._nss_two_body_solutions", return_value=([], None, None)), \
              patch("core.binary._wds_orb6_solutions", return_value=[]):
             res = binary.binary_orbit(star="alpha Cen B")
         self.assertNotIn("primary", res["identity"])          # no redirect

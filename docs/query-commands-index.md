@@ -132,7 +132,7 @@ descriptions are condensed from integration.md's prose.
 | `search-hwc` | Filter the local Habitable Worlds Catalog (no network). |
 | `search-exoplanets` | Filter the live NASA pscomppars archive via TAP. |
 | `search-hypatia` | Filter the local Hypatia abundance cache (no network). |
-| `compare-stars` | Side-by-side comparison of 2–4 stars (SIMBAD + NASA supplement + HZ + Hypatia). CR-11.2: per-star mass-provenance block + `--star-mass-catalog`; measured mass preferred → `mass`/`radius` track it. |
+| `compare-stars` | Side-by-side comparison of 2–4 stars (SIMBAD + NASA supplement + HZ + Hypatia). CR-11.2: per-star mass-provenance block + `--star-mass-catalog`; measured mass preferred → `mass`/`radius` track it. CR-19: `--gaia-timeout` bounds the Gaia FLAME call; a bounded call degrades with a `flame_status` flag (never hangs). |
 
 ## Cooling, thermal, shielding & compute (U / V / AD / AR)
 | Command | Description |
@@ -258,7 +258,7 @@ descriptions are condensed from integration.md's prose.
 |---|---|
 | `metric-drive-power` | Metric-drive field-rocket radiated power + fuel/mass bill (STL-mode law only). |
 | `exclusion-boundary` | FTL exclusion-boundary radius r_ex (the "Alcubierre Limit"); a Kuiper-calibrated in-universe dial. |
-| `exclusion-system` | CR-11.3: compose `exclusion-boundary` over a binary/multi-star system (`--star` or `--component`) into merge-grouped, phase-varying, asymmetric zones with per-component off-MS domain guards. |
+| `exclusion-system` | CR-11.3: compose `exclusion-boundary` over a binary/multi-star system (`--star` or `--component`) into merge-grouped, phase-varying, asymmetric zones with per-component off-MS domain guards. CR-19: `--gaia-timeout` bounds the Gaia-archive TAP calls; a `--star` degrade flags `gaia_status` (binary path) + `flame_status_a`/`_b` (mass path), and a mass-resolving `--component` degrade flags per-component `flame_status_<a+i>`, never hangs. |
 
 ## ISM dust / extinction (T2)
 | Command | Description |
@@ -281,7 +281,7 @@ descriptions are condensed from integration.md's prose.
 ## Dossier, projects & generation (Q / R / S)
 | Command | Description |
 |---|---|
-| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). CR-10.5: self-flags evolved hosts (luminosity-class region guard, `--force-ms-inversion`) + cross-checks `binary-orbit` for multiplicity (`multiplicity_basis`). CR-11.2: stellar-mass provenance block + `--star-mass-catalog`/`--mass-solar`; a preferred measured mass recomputes the mass-derived fields (radius/calc-L/limits) coherently. CR-16: a secondary-named target's `multiplicity` masses resolve via the primary (`"Sirius B"` → 2.063/0.4577, matching the system-name dossier). |
+| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). CR-10.5: self-flags evolved hosts (luminosity-class region guard, `--force-ms-inversion`) + cross-checks `binary-orbit` for multiplicity (`multiplicity_basis`). CR-11.2: stellar-mass provenance block + `--star-mass-catalog`/`--mass-solar`; a preferred measured mass recomputes the mass-derived fields (radius/calc-L/limits) coherently. CR-16: a secondary-named target's `multiplicity` masses resolve via the primary (`"Sirius B"` → 2.063/0.4577, matching the system-name dossier). CR-19: `--gaia-timeout` bounds the Gaia FLAME + multiplicity-orbit calls; a bounded call renders a `⚠ Gaia FLAME <status>` mass row / a "Gaia archive — degraded" multiplicity row (`flame_status`/`gaia_status`), never hangs. |
 | `project-list` | List project workspaces (name, description, member count). |
 | `project-get` | A project workspace + its members (with `generated_spec` echoed parsed). |
 | `generate-system` | Deterministically generate a plausible planetary system (synthetic-from-seed or real-anchor). |
@@ -291,7 +291,7 @@ descriptions are condensed from integration.md's prose.
 |---|---|
 | `debris-disk` | Observed IR-excess debris disk vs Chen 2014 + Cotten & Song 2016, else a per-star AllWISE-W4 warm-dust upper limit (never null). LIVE. |
 | `multiplicity` | Stellar-multiplicity summary — otype hint + `binary-orbit` tool-split + GCNS component count (SB1 masses = sin i=1 lower bound). LIVE. CR-16: a degenerate/WD-secondary query's `m2_solar_lower` is now solved at the correct primary mass (`"Sirius B"` → 0.4577, not 0.283). |
-| `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a **catalog-aware per-component mass chain** (`--star-mass-catalog`; same masses as `exclusion-system`/dossier) + real-ratio solution selection + `e_out_of_hw_range` flag. LIVE. CR-16: a degenerate/WD-secondary query resolves via the primary → `"Sirius B"` = `"Sirius"` (2.063/0.4577; 2.063/1.018 w/ catalog). |
+| `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a **catalog-aware per-component mass chain** (`--star-mass-catalog`; same masses as `exclusion-system`/dossier) + real-ratio solution selection + `e_out_of_hw_range` flag. LIVE. CR-16: a degenerate/WD-secondary query resolves via the primary → `"Sirius B"` = `"Sirius"` (2.063/0.4577; 2.063/1.018 w/ catalog). CR-19: `--gaia-timeout` bounds the Gaia-archive TAP calls; a bounded call flags `gaia_status` + `flame_status_a`/`_b`, never hangs. |
 | `population-classify` | Thin/thick/halo Galactic-population verdict from U/V/W (Bensby velocity-ellipsoid on a Schönrich LSR). |
 | `nuclear-inventory` | Fusion + fissile (per-isotope GCE, WB 3c FINAL) + radiogenic-heat inventory from stellar [Fe/H]/age/[Eu/H]; CR-10.2 `[Fe/H]>+0.5` soft `feh_extrapolation` flag. |
 | `detection-completeness` | Per-method min-detectable-planet-vs-SMA map (RV/transit/astrometry/imaging), WB 3a FINAL defaults; CR-10.4 archive-M★ preference + `star_mass_provenance`; CR-10.3 per-star RV tier-2 catalog (`--rv-precision-catalog`) + per-method `floor_provenance`. |

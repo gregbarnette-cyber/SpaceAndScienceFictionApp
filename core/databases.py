@@ -4082,23 +4082,28 @@ def _sol_compare_entry(mass_catalog=None) -> dict:
     }
 
 
-def _flame_mass_for(sl) -> float:
-    """CR-11.2: the Gaia DR3 FLAME mass for a resolved star, or None. Best-effort (network);
-    any failure → None so the resolver falls through to the L-inversion."""
+def _flame_mass_for(sl):
+    """CR-11.2 / CR-19: the Gaia DR3 FLAME mass for a resolved star (or None), plus the CR-19 degrade
+    marker — returns ``(mass_or_None, flame_status_or_None)`` where ``flame_status`` ∈
+    {"timeout","unreachable"} when the Gaia-TAP call was bounded out (else None). Best-effort
+    (network); any failure → ``(None, marker)`` so the resolver falls through to the L-inversion —
+    flagged, not silent. A genuine FLAME miss (no row) → ``(None, None)`` (byte-identical, as today)."""
     try:
         from core import binary, catalog
         sid = binary.gaia_source_id_from_designations(sl.get("designations"))
         if not sid:
-            return None
+            return None, None
         ga = catalog.gaia_astrophysical(source_id=sid)
-        params = ga.get("parameters") if isinstance(ga, dict) else None
-        if params:
-            mf = params.get("mass_flame")
-            if isinstance(mf, (int, float)) and not isinstance(mf, bool) and mf > 0:
-                return mf
+        if isinstance(ga, dict):
+            params = ga.get("parameters")
+            if params:
+                mf = params.get("mass_flame")
+                if isinstance(mf, (int, float)) and not isinstance(mf, bool) and mf > 0:
+                    return mf, None
+            return None, ga.get("gaia_bound_reason")     # miss → None; bounded → "timeout"/"unreachable"
     except Exception:
-        return None
-    return None
+        return None, None
+    return None, None
 
 
 def compare_stars(names: list, star_mass_catalog=None) -> dict:
@@ -4235,7 +4240,7 @@ def compare_stars(names: list, star_mass_catalog=None) -> dict:
             pass
         cat_row = (stellar_mass_tables.match_mass(mass_catalog, sl.get("main_id"),
                                                   sl.get("designations")) if mass_catalog else None)
-        flame_mass = _flame_mass_for(sl) if cat_row is None else None
+        flame_mass, flame_status = (_flame_mass_for(sl) if cat_row is None else (None, None))
         mblock = stellar_mass.resolve_mass(
             inv_mass, sp_type=sl.get("sp_type"), main_id=sl.get("main_id"),
             designations=sl.get("designations"), manual_mass=None,
@@ -4245,6 +4250,9 @@ def compare_stars(names: list, star_mass_catalog=None) -> dict:
         entry["massL_inversion_caution"] = mblock["massL_inversion_caution"]
         entry["peculiar_star_flag"]      = mblock["peculiar_star_flag"]
         entry["mass_note"]               = mblock["note"]
+        # CR-19: FLAME-degrade flag — degrade-branch only (mass fell to the inversion tier).
+        if flame_status and mblock["mass_provenance"] == stellar_mass.MS_INVERSION:
+            entry["flame_status"] = flame_status
 
         # Decision-B parity (WB MSG 008): when a MEASURED mass (catalog/FLAME) is preferred over the
         # inversion, the headline mass ↔ radius track it too (coherent, and `mass`/`radius`-equal to

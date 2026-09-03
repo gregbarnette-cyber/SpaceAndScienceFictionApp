@@ -30,10 +30,14 @@ API forms verified live against astroquery 0.4.11 on 2026-07-23:
 """
 
 import math
+import os
 import re
+import sys
+import time
 
 from core import catalog_cache
-from core.shared import _network_error_msg, _route_error, _with_retries, _timeout_ctx
+from core.shared import (_network_error_msg, _route_error, _with_retries, _timeout_ctx,
+                         _call_with_watchdog, _WatchdogTimeout, _retry_after_seconds)
 
 _GAIA_SYNC_ROW_CAP = 2000    # the ESA Gaia sync endpoint MAXREC (spec §5) — informational flag
 
@@ -169,39 +173,207 @@ def _build_gaia_adql(table, columns, where, cone, row_limit):
     return f"SELECT {top}{cols} FROM {table}{wsql}"
 
 
+# ── CR-19: sync Gaia-TAP wall-clock bound + graceful degrade ──────────────────
+# The sync gaia_tap path (FLAME / NSS / binary_masses / coords) had no real wall-clock bound
+# (`_timeout_ctx` = `socket.setdefaulttimeout` only, reset by any dribble of bytes), so a stalled
+# Gaia archive hung the mass/identity resolvers for minutes. CR-19 bounds every SYNC call at this
+# one gateway (default 60s, retry-1), lets the callers degrade through their existing tiers, and
+# tags the failure with the internal `gaia_bound_reason` on the error dict (callers surface it as
+# `flame_status` / `gaia_status`). The ASYNC census path and the disabled setting run the legacy
+# path, byte-identical to before.
+_GAIA_TIMEOUT_DEFAULT = 60.0     # seconds; a healthy FLAME/NSS single-source call is ~4-6s (measured)
+_GAIA_RETRY_BACKOFF = 0.5        # fallback backoff between the 2 bounded attempts (HTTP Retry-After wins)
+_GAIA_CIRCUIT_COOLDOWN_S = 60.0  # the breaker auto-re-arms after this — self-healing, so a long-lived
+                                 # GUI recovers with no manual reset (query.py never reaches it: one run)
+_GAIA_TIMEOUT_OVERRIDE = None    # set by query.py --gaia-timeout at dispatch (process-wide)
+_gaia_sync_down = None           # circuit-breaker: None=armed, else (reason, tripped_monotonic)
+
+
+def set_gaia_timeout(seconds):
+    """Set the process-wide sync Gaia-TAP wall-clock bound (query.py --gaia-timeout). ``None`` →
+    fall back to the env / default."""
+    global _GAIA_TIMEOUT_OVERRIDE
+    _GAIA_TIMEOUT_OVERRIDE = seconds
+
+
+def reset_gaia_sync_circuit():
+    """Re-arm the sync-Gaia circuit-breaker. query.py never needs this (one process = one run); the
+    long-lived GUI calls it at the start of each user operation so a transient stall does not disable
+    Gaia for the whole session."""
+    global _gaia_sync_down
+    _gaia_sync_down = None
+
+
+def _gaia_sync_timeout():
+    """Effective sync-Gaia wall-clock bound: ``--gaia-timeout`` override > ``SPACE_APP_GAIA_TIMEOUT``
+    env > 60s. Returns ``None`` when **disabled** (a value that parses to ``<= 0``) → the legacy
+    unbounded path. A **non-numeric** env is ignored → the default."""
+    v = _GAIA_TIMEOUT_OVERRIDE
+    if v is None:
+        raw = os.environ.get("SPACE_APP_GAIA_TIMEOUT")
+        if raw is not None and raw != "":
+            try:
+                v = float(raw)
+            except (TypeError, ValueError):
+                return _GAIA_TIMEOUT_DEFAULT
+    if v is None:
+        return _GAIA_TIMEOUT_DEFAULT
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return _GAIA_TIMEOUT_DEFAULT
+    return v if v > 0 else None
+
+
+def _warn(msg):
+    """CR-19: one-line stderr warning on a bounded/degraded sync Gaia-TAP call — the single ``core/``
+    stderr seam (mockable in tests; a separate stream from query.py's stdout JSON, so it never
+    disturbs a JSON consumer)."""
+    try:
+        sys.stderr.write(f"[gaia] {msg}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def _trip_gaia_circuit(reason):
+    """Open the sync-Gaia circuit-breaker on a sustained stall. Trips on ``timeout`` **only** — a fast
+    ``unreachable`` (connection refused) is cheap per-call and may be transient, so it must not
+    disable Gaia for the whole run. The breaker auto-re-arms after ``_GAIA_CIRCUIT_COOLDOWN_S``."""
+    global _gaia_sync_down
+    if reason == "timeout" and _gaia_sync_down is None:
+        _gaia_sync_down = (reason, time.monotonic())
+
+
+def _gaia_circuit_reason():
+    """The open-breaker reason iff the breaker is open AND still within its cooldown; else ``None``.
+    Past the cooldown it **auto-re-arms** (a long-lived GUI self-heals without a manual
+    ``reset_gaia_sync_circuit()``; query.py's single short run stays inside the cooldown)."""
+    global _gaia_sync_down
+    if _gaia_sync_down is None:
+        return None
+    reason, at = _gaia_sync_down
+    if (time.monotonic() - at) >= _GAIA_CIRCUIT_COOLDOWN_S:
+        _gaia_sync_down = None
+        return None
+    return reason
+
+
+def _bounded_error(reason, q, exc=None, warn=True):
+    """The degrade error dict for a bounded sync Gaia-TAP call, carrying the internal transport key
+    ``gaia_bound_reason`` ∈ {"timeout","unreachable"} (callers map it to ``flame_status`` /
+    ``gaia_status``)."""
+    if reason == "timeout":
+        msg = f"ESA Gaia TAP timed out (>{_gaia_sync_timeout()}s wall-clock bound)"
+    else:
+        msg = (_network_error_msg(exc, "ESA Gaia TAP") if exc is not None
+               else "Could not connect to ESA Gaia TAP.")
+    err = _route_error(msg, ["gaia-tap"])
+    err["gaia_bound_reason"] = reason
+    if warn:
+        _warn(f"sync TAP bounded ({reason}) — degrading: {q[:120]}")
+    return err
+
+
+def _bounded_gaia_call(attempt_fn, *, timeout, retries=2):
+    """Run ``attempt_fn`` under the wall-clock watchdog, up to ``retries`` attempts (retry-1 = 2).
+    Raises ``_WatchdogTimeout`` if the final attempt timed out; re-raises the last network exception
+    otherwise (so ``gaia_tap`` can distinguish "timeout" from "unreachable")."""
+    last_exc = None
+    for i in range(retries):
+        try:
+            return _call_with_watchdog(attempt_fn, timeout=timeout)
+        except Exception as e:
+            last_exc = e
+        if i < retries - 1:
+            # Honor an HTTP Retry-After (429/503) on a throttled-but-reachable TAP — the same
+            # respect the legacy `_with_retries` gave — so a throttle is NOT falsely degraded to
+            # "unreachable" (which would change a value on a reachable TAP). A watchdog timeout
+            # carries no Retry-After → the fixed fallback.
+            delay = _retry_after_seconds(last_exc)
+            time.sleep(delay if delay is not None else _GAIA_RETRY_BACKOFF)
+    raise last_exc
+
+
+def _shape_gaia(q, t, use_async):
+    """astropy Table → the standard ``gaia_tap`` result dict (shared by the legacy + bounded paths)."""
+    truncated = bool(not use_async and len(t) >= _GAIA_SYNC_ROW_CAP)
+    return {"service": "gaia", "query": q, "count": len(t),
+            "async": bool(use_async), "truncated": truncated,
+            "column_units": _column_units(t), "rows": _table_to_rows(t)}
+
+
 def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
              row_limit=2000, use_async=False, timeout=300):
     """Any Gaia DR3 table by ADQL (`adql=`) or structured (`table`/`columns`/`where`/`cone`).
     `use_async=True` uses launch_job_async (no 2000-row cap) for population pulls; sync results
-    hitting 2000 rows are flagged `truncated` (spec §5)."""
+    hitting 2000 rows are flagged `truncated` (spec §5).
+
+    CR-19: the **sync** path carries a wall-clock bound (`_gaia_sync_timeout()`, default 60s,
+    retry-1) so a stalled Gaia archive can no longer hang the mass/identity resolvers; on the bound
+    it returns a degrade error dict carrying `gaia_bound_reason`. The **async** path and the disabled
+    setting (`--gaia-timeout 0` / `SPACE_APP_GAIA_TIMEOUT<=0`) run the legacy unbounded path,
+    byte-identical to before."""
     if not adql and not table:
         return _route_error("gaia-tap requires --adql or --table", ["gaia-tap"])
 
-    def _run():
-        from astroquery.gaia import Gaia
-        q = adql or _build_gaia_adql(table, columns, where, cone, row_limit)
-        with _timeout_ctx(timeout):
-            if use_async:
-                prev = Gaia.ROW_LIMIT
-                Gaia.ROW_LIMIT = row_limit if (row_limit and row_limit > 0) else -1
-                try:
-                    job = _with_retries(Gaia.launch_job_async, q, retries=3, base_delay=3.0)
-                finally:
-                    Gaia.ROW_LIMIT = prev
-            else:
-                job = _with_retries(Gaia.launch_job, q)
-            t = job.get_results()
-        truncated = bool(not use_async and len(t) >= _GAIA_SYNC_ROW_CAP)
-        return {"service": "gaia", "query": q, "count": len(t),
-                "async": bool(use_async), "truncated": truncated,
-                "column_units": _column_units(t), "rows": _table_to_rows(t)}
+    q = adql or _build_gaia_adql(table, columns, where, cone, row_limit)
+    params = {"adql": adql, "table": table, "columns": columns, "where": where,
+              "cone": cone, "row_limit": row_limit, "async": use_async}
+    bound = None if use_async else _gaia_sync_timeout()
+
+    # ── Legacy path (async census, or the bound disabled): byte-identical to before CR-19 ──
+    if bound is None:
+        def _run():
+            from astroquery.gaia import Gaia
+            with _timeout_ctx(timeout):
+                if use_async:
+                    prev = Gaia.ROW_LIMIT
+                    Gaia.ROW_LIMIT = row_limit if (row_limit and row_limit > 0) else -1
+                    try:
+                        job = _with_retries(Gaia.launch_job_async, q, retries=3, base_delay=3.0)
+                    finally:
+                        Gaia.ROW_LIMIT = prev
+                else:
+                    job = _with_retries(Gaia.launch_job, q)
+                t = job.get_results()
+            return _shape_gaia(q, t, use_async)
+        try:
+            return catalog_cache.cached("gaia", params, _run)
+        except Exception as e:
+            return _route_error(_network_error_msg(e, "ESA Gaia TAP"), ["gaia-tap"])
+
+    # ── Bounded sync path (CR-19) ──
+    # Circuit-breaker: once a sync call has TIMED OUT (within the cooldown), short-circuit further
+    # calls fast — but a cached row is valid regardless of the breaker, so check the cache first
+    # (miss → degrade). The breaker auto-re-arms past the cooldown (`_gaia_circuit_reason`).
+    open_reason = _gaia_circuit_reason()
+    if open_reason is not None:
+        hit = catalog_cache.cache_get(catalog_cache.cache_key("gaia", params))
+        if hit is not None:
+            return hit
+        return _bounded_error(open_reason, q, warn=False)
+
+    def _attempt():
+        # Deterministic test hook: force the unreachable-degrade path with NO network (CR-19 §③).
+        if os.environ.get("SPACE_APP_GAIA_FORCE_UNREACHABLE"):
+            import requests
+            raise requests.exceptions.ConnectionError("SPACE_APP_GAIA_FORCE_UNREACHABLE (test hook)")
+        from astroquery.gaia import GaiaClass
+        g = GaiaClass()                          # a FRESH client per attempt — an abandoned attempt
+        job = g.launch_job(q)                    # must not share astroquery's global Gaia session
+        t = job.get_results()
+        return _shape_gaia(q, t, use_async)
 
     try:
-        params = {"adql": adql, "table": table, "columns": columns, "where": where,
-                  "cone": cone, "row_limit": row_limit, "async": use_async}
-        return catalog_cache.cached("gaia", params, _run)
+        return catalog_cache.cached(
+            "gaia", params,
+            lambda: _bounded_gaia_call(_attempt, timeout=bound, retries=2))
+    except _WatchdogTimeout:
+        _trip_gaia_circuit("timeout")
+        return _bounded_error("timeout", q)
     except Exception as e:
-        return _route_error(_network_error_msg(e, "ESA Gaia TAP"), ["gaia-tap"])
+        return _bounded_error("unreachable", q, exc=e)
 
 
 # ── Tier-1 gateway: HEASARC (X-ray) ───────────────────────────────────────────
@@ -336,16 +508,22 @@ def gaia_binary_masses(source_id):
     not treated as "no data". Returns the row dict (`m1`/`m2` +bounds, `fluxratio`, `combination_method`,
     `m1_ref`, `flag`) or `None` when there is no row or both `m1`/`m2` are null. **`m2` is frequently
     NULL even when `m1` is present** (Gaia derived only the primary), which is exactly why the
-    Thiele-Innes computation stays primary and this only fills/cross-checks."""
+    Thiele-Innes computation stays primary and this only fills/cross-checks.
+
+    CR-19: returns ``(row_or_None, gaia_status_or_None)`` — ``gaia_status`` ∈ {"timeout","unreachable"}
+    when the sync Gaia-TAP call was bounded out (else None), so a caller can surface the binary-path
+    degrade rather than silently reading a bounded cross-check as "no data"."""
     if not source_id:
-        return None
+        return None, None
     res = gaia_tap(adql=(
         "SELECT m1, m1_lower, m1_upper, m2, m2_lower, m2_upper, fluxratio, "
         "combination_method, m1_ref, flag FROM gaiadr3.binary_masses "
         f"WHERE source_id={source_id}"))
-    if "error" in res or not res.get("rows"):
-        return None
+    if "error" in res:
+        return None, res.get("gaia_bound_reason")
+    if not res.get("rows"):
+        return None, None
     row = res["rows"][0]
     if row.get("m1") is None and row.get("m2") is None:
-        return None
-    return row
+        return None, None
+    return row, None

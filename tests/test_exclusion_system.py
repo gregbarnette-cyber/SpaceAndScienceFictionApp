@@ -381,7 +381,10 @@ class Cr13ResolverTest(unittest.TestCase):
         for p in patches:
             p.start()
         try:
-            return es._resolve_system_from_star(star, catalog)
+            res = es._resolve_system_from_star(star, catalog)
+            # CR-19: _resolve_system_from_star now returns (comps, notes, degrade_meta); these pre-CR-19
+            # assertions read the 2-tuple, so drop the meta here (an error dict passes through unchanged).
+            return (res[0], res[1]) if isinstance(res, tuple) and len(res) == 3 else res
         finally:
             for p in reversed(patches):
                 p.stop()

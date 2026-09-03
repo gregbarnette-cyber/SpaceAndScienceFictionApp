@@ -4648,6 +4648,55 @@ byte-identical). WB independent re-gate GREEN across two rounds + Greg-FULFILLED
   (`gcns_center_pair_map` + `compute_gcns_stars_within_star`), `core/calculators.py`
   (`compute_stars_within_distance_of_star`). Tests: `tests/test_cr18.py`.
 
+## CR-19 — sync Gaia-archive-TAP wall-clock bound (fail-fast + retry-once + degrade-with-flag; ROBUSTNESS, no success-path value change)
+
+**Availability/robustness fix, not a content fix.** The sync `catalog.gaia_tap` gateway — the tier-3 Gaia DR3
+**FLAME** bolometric-mass (via `gaia-astrophysical`) **plus** the `binary_orbit` calls `nss_two_body_orbit` /
+`binary_masses` / `gaia_source` (coords) — had no real wall-clock timeout (its only bound was
+`socket.setdefaulttimeout`, which a stalled archive resets on every partial read), so `dossier`, `compare-stars`,
+`exclusion-system --star` and `binary-stability-auto` **hung for minutes** when the Gaia archive stalled. CR-19
+bounds **every per-source SYNC `gaia_tap` call** at that one gateway, degrades through the existing tiers, and
+**flags** the degrade. **No success-path value change** — on a reachable TAP the bound never fires and every number
+(the whole CR-13+CR-14+CR-15.4+CR-16 battery + `dossier "epsilon Eri"` → `gaia_flame` **0.811**) is byte-identical.
+
+- **Bound + retry + degrade.** The sync path runs the query in a **daemon-thread watchdog** (`shared._call_with_watchdog`
+  — NOT `concurrent.futures`, whose non-daemon pool would re-hang at process exit) with a **fresh `GaiaClass()` per
+  attempt** (no shared-singleton race), **one retry** (2 attempts; HTTP `Retry-After` honored so a throttled-but-reachable
+  TAP is not falsely degraded), then returns a degrade error dict carrying the internal `gaia_bound_reason` ∈
+  {`"timeout"`, `"unreachable"`}. Callers fall through their existing tiers (FLAME → tier-4 L-inversion; NSS/coords → the
+  honest "no orbit / no companion" path). The **async** census path (`close_binary_census`, `use_async=True`) and the
+  disabled setting take the **legacy** unbounded path, byte-identical.
+- **Two degrade markers — degrade-branch ONLY (absent on success/genuine-miss, hence byte-identical):**
+  - **`flame_status`** (`"timeout"`/`"unreachable"`) — on the **mass** path: `compare-stars` per-star `flame_status`;
+    `dossier` renders `⚠ Gaia FLAME <status>` on the Stellar-mass row; `binary-stability-auto` + `exclusion-system --star`
+    carry per-component **`flame_status_a`/`flame_status_b`**. `mass_provenance` stays `ms_luminosity_inversion` (the tier
+    actually used).
+  - **`gaia_status`** (`"timeout"`/`"unreachable"`) — on the **binary/orbit/multiplicity** block: `binary-orbit` /
+    `multiplicity` / `binary-stability-auto` (top-level key), the `dossier` multiplicity section (a "Gaia archive —
+    degraded" row), `exclusion-system --star` (top-level key). **Consumer contract: `gaia_status` present ⇒ a
+    Gaia-archive call was bounded out → a negative (no-orbit / single) conclusion here is DEGRADED, not authoritative.**
+  - A genuine no-rows result (the query succeeded) carries **no** marker. Every bounded sync call is also **loud** — a
+    stderr warning fires (`[gaia] sync TAP bounded (<reason>) …`).
+- **Knobs.** `--gaia-timeout <seconds>` on `dossier` / `compare-stars` / `exclusion-system` / `binary-stability-auto`
+  (env **`SPACE_APP_GAIA_TIMEOUT`**); default **60 s**; **`0` disables** (restore the legacy unbounded path). A
+  per-process **circuit-breaker** (trips on a `timeout` only, auto-re-arms after a 60 s cooldown, checks the cache first)
+  caps a fully-stalled subcommand at ~one timeout window. The raw `gaia-astrophysical` reader strips the internal
+  `gaia_bound_reason`.
+- **Test hook / re-gate.** `SPACE_APP_GAIA_FORCE_UNREACHABLE=1` forces the `"unreachable"` degrade across all four sync
+  sites with **no network** (deterministic). Documented re-gate: a reachable TAP (battery byte-identical) + a forced short
+  bound (`SPACE_APP_CATALOG_CACHE=0 … --gaia-timeout 1`) + a blocked TAP (`SPACE_APP_GAIA_FORCE_UNREACHABLE=1`) → each
+  FLAME-path subcommand **bounded + flagged**, never hanging.
+- **`exclusion-system --component`** (WB MSG 209 uniform-surface addendum): a **mass-resolving** component (a dict
+  spec carrying `designations`, the programmatic "mass-resolving mode") whose FLAME call is bounded flags a
+  per-component **`flame_status_<a+i>`** (`flame_status_a`/`_b`/…) `{"timeout"|"unreachable"}`, degrade-branch-only —
+  matching the `--star` C3 convention — plus the universal stderr. A **CLI-string** `--component` carries no
+  `designations` (not a `_parse_component_spec` key), so it never resolves via FLAME and stays FLAME-free /
+  deterministic (byte-identical, no marker — the skill's no-network re-gate fallback).
+- **Out of scope:** `detection-completeness --star` (NASA archive M★, no FLAME); the async census. Cores: `core/shared.py`
+  (`_call_with_watchdog`), `core/catalog.py` (`gaia_tap` sync bound + circuit-breaker + `set_gaia_timeout` + `_warn` + the
+  hook), `core/binary.py` / `core/report.py` / `core/databases.py` / `core/exclusion_system.py` / `core/stellar_mass.py`
+  (marker surfacing), `query.py` (`--gaia-timeout`). Tests: `tests/test_cr19.py`.
+
 ## Implementation notes
 
 - No `sys.path` manipulation — Python prepends the script's own directory automatically when run directly, so `import core.X` works without changes.

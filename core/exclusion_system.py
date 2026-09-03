@@ -345,12 +345,12 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
 
 
 # ── per-component mass resolution (CR-11.2 chain) ─────────────────────────────
-def _resolve_component_mass(spec, catalog, allow_flame=True):
+def _resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
     """CR-14.3 (L7): thin delegate to the shared ``stellar_mass.resolve_component_mass`` — the single
     per-component mass chain now used by ``exclusion-system``, ``binary-stability-auto`` and the dossier
     ``multiplicity`` section (so they report the same masses for a given star). Behavior byte-identical
     to the CR-11.2/CR-13.2 body it replaced."""
-    return stellar_mass.resolve_component_mass(spec, catalog, allow_flame)
+    return stellar_mass.resolve_component_mass(spec, catalog, allow_flame, status_out=status_out)
 
 
 def _parse_component_spec(s):
@@ -497,11 +497,12 @@ def _resolve_system_from_star(star, catalog):
                          "r_ex=null; pass --star-mass-catalog for its mass")
         else:
             notes.append(f"'{star}' resolved to the single component {main_id}")
-        return [comp], notes
+        return [comp], notes, {}                         # CR-19 3-tuple (pre-binary_orbit: no degrade meta)
 
     # binary-orbit → real-ratio-preferring stability elements (CR-13.3)
     from core import binary
     bo = binary.binary_orbit(star=star)
+    bo_status = bo.get("gaia_status") if isinstance(bo, dict) else None   # CR-19: binary-path degrade
     solutions = bo.get("solutions", []) if isinstance(bo, dict) else []
     sel, sel_note = _select_orbit_masses(solutions, sl.get("sp_type"))
 
@@ -518,7 +519,7 @@ def _resolve_system_from_star(star, catalog):
         comp, _mass, _domain, _cn = built
         notes.append(sel_note if sel is None else
                      "only a wide hierarchical bond resolved (no close companion) — single body")
-        return [comp], notes
+        return [comp], notes, {"gaia_status": bo_status}   # CR-19: flag a bounded coords/NSS degrade
 
     # binary: primary A + companion B, BOTH routed through the per-component mass chain (CR-13.2).
     used_orbit = False
@@ -526,7 +527,8 @@ def _resolve_system_from_star(star, catalog):
     prim_spec = {"name": main_id, "sp_type": sl.get("sp_type"),
                  "designations": _augment_designations(sl.get("designations"),
                                                        _component_candidate_ids(main_id, "A"))}
-    prim_mass, prim_prov, _n = _resolve_component_mass(prim_spec, catalog)
+    _sa = {}
+    prim_mass, prim_prov, _n = _resolve_component_mass(prim_spec, catalog, status_out=_sa)
     if prim_mass is None:
         prim_mass, prim_prov, used_orbit = sel["m1_solar"], sel["mass_prov_a"], True
 
@@ -542,7 +544,8 @@ def _resolve_system_from_star(star, catalog):
                      "as main-sequence; pass --component with class=wd/brown-dwarf to override")
     comp_spec = {"name": comp_id, "sp_type": comp_sp, "class": comp_class,
                  "designations": _augment_designations(comp_desig, {comp_id})}
-    comp_mass, comp_prov, _n = _resolve_component_mass(comp_spec, catalog)
+    _sb = {}
+    comp_mass, comp_prov, _n = _resolve_component_mass(comp_spec, catalog, status_out=_sb)
     if comp_mass is None:
         comp_mass, comp_prov, used_orbit = sel["m2_solar"], sel["mass_prov_b"], True
 
@@ -569,7 +572,15 @@ def _resolve_system_from_star(star, catalog):
          "sp_type": comp_sp, "class": comp_class, "designations": comp_desig, "pair": "AB",
          "sma_au": sma, "ecc": sel["ecc"]},
     ]
-    return comps, notes
+    # CR-19: system-level degrade meta — gaia_status (binary path) + per-component flame_status_a/_b (a
+    # bounded per-component FLAME call). Surfaced on the result by compute_exclusion_system; compose
+    # builds fixed per-component dicts, so these ride at the system level (matching binary-stability-auto).
+    meta = {"gaia_status": bo_status}
+    if _sa.get("flame_status"):
+        meta["flame_status_a"] = _sa["flame_status"]
+    if _sb.get("flame_status"):
+        meta["flame_status_b"] = _sb["flame_status"]
+    return comps, notes, meta
 
 
 def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=None,
@@ -584,27 +595,37 @@ def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=
         return {"error": catalog["error"]}
 
     notes = []
+    star_meta = {}                                       # CR-19: exclusion --star degrade markers
+    comp_flame = {}                                      # CR-19 (MSG 209): --component per-component FLAME degrade
     if star and component_specs:
         return {"error": "give either --star or --component blocks, not both."}
     if star:
         resolved = _resolve_system_from_star(star, catalog)
         if isinstance(resolved, dict) and "error" in resolved:
             return resolved
-        components, notes = resolved
+        components, notes, star_meta = resolved
     elif component_specs:
         components = []
-        for raw in component_specs:
+        for i, raw in enumerate(component_specs):
             spec = _parse_component_spec(raw) if isinstance(raw, str) else dict(raw)
             if isinstance(spec, dict) and "error" in spec:
                 return spec
-            m, prov, mnote = _resolve_component_mass(spec, catalog)
+            # CR-19 (WB MSG 209): uniform-surface addendum — a bounded FLAME on a mass-resolving
+            # --component (a dict spec carrying `designations`; a CLI string spec carries none, so it
+            # stays FLAME-free / deterministic) flags a per-component `flame_status_<a+i>` ∈
+            # {timeout|unreachable}, degrade-branch-only, matching the --star C3 convention. The
+            # `mass_provenance` stays the actual tier used; the universal gaia_tap `_warn` stderr fires.
+            _st = {}
+            m, prov, mnote = _resolve_component_mass(spec, catalog, status_out=_st)
+            if _st.get("flame_status"):
+                comp_flame[f"flame_status_{chr(ord('a') + i)}"] = _st["flame_status"]
             if m is None:
                 # C1 → (A) parity (plan-review F2): a LONE out-of-domain component is numerically inert
                 # and needs no mass — let compose's tolerance emit r_ex=null + unresolved_out_of_domain.
                 # Any mass-requiring component (MS, or one of several) still errors here.
                 domain, _cn = _component_domain(spec.get("sp_type"), spec.get("class"))
                 if not (len(component_specs) == 1 and domain == "out_of_domain"):
-                    return {"error": mnote}
+                    return {"error": mnote, **comp_flame}   # CR-19: a bounded FLAME → flag it on the error too
             else:
                 spec["mass_solar"] = m
                 spec["mass_provenance"] = prov
@@ -618,4 +639,11 @@ def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=
         result["resolution_notes"] = notes
     if star and "error" not in result:
         result["star"] = star
+        # CR-19: degrade markers — gaia_status (binary path; a bounded coords/NSS call → the
+        # single-body/no-companion verdict is degraded) + per-component flame_status_a/_b (mass path).
+        for _k in ("gaia_status", "flame_status_a", "flame_status_b"):
+            if star_meta.get(_k):
+                result[_k] = star_meta[_k]
+    if component_specs and comp_flame and "error" not in result:
+        result.update(comp_flame)                        # CR-19 (MSG 209): --component FLAME degrade
     return result

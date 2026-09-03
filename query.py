@@ -1245,10 +1245,13 @@ def cmd_catalog_cache_clear(args):
 
 def cmd_gaia_tap(args):
     import core.catalog as catalog
-    _out(catalog.gaia_tap(
+    res = catalog.gaia_tap(
         adql=args.adql, table=args.table, columns=args.columns, where=args.where,
         cone=args.cone, row_limit=args.row_limit, use_async=args.use_async,
-    ))
+    )
+    if isinstance(res, dict):
+        res.pop("gaia_bound_reason", None)     # CR-19: internal transport key — not exposed on the raw reader
+    _out(res)
 
 
 def cmd_heasarc_query(args):
@@ -1298,7 +1301,10 @@ def cmd_close_binary_census(args):
 
 def cmd_gaia_astrophysical(args):
     import core.catalog as catalog
-    _out(catalog.gaia_astrophysical(star=args.star, source_id=args.source_id))
+    res = catalog.gaia_astrophysical(star=args.star, source_id=args.source_id)
+    if isinstance(res, dict):
+        res.pop("gaia_bound_reason", None)     # CR-19: internal transport key — not exposed on the raw reader
+    _out(res)
 
 
 def cmd_besancon_query(args):
@@ -3250,6 +3256,10 @@ def main(argv=None):
                         "The deterministic core — mass via manual > catalog > FLAME > L-inversion.")
     p.add_argument("--star-mass-catalog",
                    help="CR-11.2: path to a WB-owned measured-mass catalog JSON (per-component mass tier-2)")
+    p.add_argument("--gaia-timeout", dest="gaia_timeout", type=float, default=None,
+                   help="CR-19: wall-clock bound (s) on the tier-3 Gaia-archive-TAP calls (FLAME/NSS/"
+                        "coords); 0 disables. Default 60 (or $SPACE_APP_GAIA_TIMEOUT). On a bound the call "
+                        "degrades (flame_status/gaia_status flag) instead of hanging.")
     p.add_argument("--phase", choices=["periastron", "apastron", "both"], default="both",
                    help="Report the boundary at periastron, apastron, or both (default both)")
     p.add_argument("--alpha", type=float, default=exclusion_system._DEFAULT_ALPHA,
@@ -3658,6 +3668,10 @@ def main(argv=None):
                    help="CR-14.3: path to a WB-owned per-star measured-mass catalog JSON (tier-2, "
                         "REPLACES the internal seed; loud error on a bad path) — routes per-component "
                         "masses through the same chain as exclusion-system / dossier")
+    p.add_argument("--gaia-timeout", dest="gaia_timeout", type=float, default=None,
+                   help="CR-19: wall-clock bound (s) on the tier-3 Gaia-archive-TAP calls (FLAME/NSS/"
+                        "coords); 0 disables. Default 60 (or $SPACE_APP_GAIA_TIMEOUT). On a bound the call "
+                        "degrades (flame_status/gaia_status flag) instead of hanging.")
     p.set_defaults(func=cmd_binary_stability_auto)
 
     # multiplicity (CR-2): SB flag + per-component multiplicity summary (otype + binary-orbit + GCNS).
@@ -4030,6 +4044,10 @@ def main(argv=None):
     p.add_argument("--star-mass-catalog",
                    help="CR-11.2: path to a WB-owned per-star measured-mass catalog JSON "
                         "(tier-2, REPLACES the internal seed; loud error on a bad path)")
+    p.add_argument("--gaia-timeout", dest="gaia_timeout", type=float, default=None,
+                   help="CR-19: wall-clock bound (s) on the tier-3 Gaia-archive-TAP FLAME call; 0 "
+                        "disables. Default 60 (or $SPACE_APP_GAIA_TIMEOUT). On a bound the mass degrades "
+                        "to the inversion tier with a flame_status flag instead of hanging.")
     p.set_defaults(func=cmd_compare_stars)
 
     # ── Reference data ───────────────────────────────────────────────────────
@@ -4121,6 +4139,10 @@ def main(argv=None):
     p.add_argument("--star-mass-catalog",
                    help="CR-11.2: path to a WB-owned per-star measured-mass catalog JSON "
                         "(tier-2, REPLACES the internal seed; loud error on a bad path)")
+    p.add_argument("--gaia-timeout", dest="gaia_timeout", type=float, default=None,
+                   help="CR-19: wall-clock bound (s) on the tier-3 Gaia-archive-TAP calls (FLAME + the "
+                        "multiplicity NSS/coords); 0 disables. Default 60 (or $SPACE_APP_GAIA_TIMEOUT). On "
+                        "a bound the call degrades (flame_status/gaia_status flag) instead of hanging.")
     p.add_argument("--mass-solar", type=float,
                    help="CR-11.2: manual stellar mass (M_sun) override — tier-1, supersedes "
                         "catalog / FLAME / inversion")
@@ -4312,6 +4334,9 @@ def main(argv=None):
     p.set_defaults(func=cmd_warhead_effects)
 
     args = parser.parse_args(argv)
+    if getattr(args, "gaia_timeout", None) is not None:
+        import core.catalog as _catalog                     # CR-19: process-wide sync Gaia-TAP bound
+        _catalog.set_gaia_timeout(args.gaia_timeout)
     try:
         args.func(args)
     except Exception as e:

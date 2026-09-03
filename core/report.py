@@ -374,6 +374,8 @@ def _blocks_regions(d):
     mb = d.get("mass") or {}
     _prov = mb.get("mass_provenance")
     _mass_cell = f"{_n(s.get('stellar_mass'))} M☉" + (f" ({_prov})" if _prov else "")
+    if mb.get("flame_status"):                 # CR-19: FLAME tier bounded out → degraded to the inversion
+        _mass_cell += f" ⚠ Gaia FLAME {mb['flame_status']}"
     blocks = [
         ("em", f"Computed with sunlight intensity = {_n(d.get('sunlight_intensity'), 1)}, "
                f"bond albedo = {_n(d.get('bond_albedo'), 1)}."),
@@ -663,6 +665,11 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
         result = binary.binary_orbit(star=star)
     except Exception:
         return _augment_gcns_multiplicity(data, simbad)
+    # CR-19: capture the binary-path degrade BEFORE the error/empty branches, so a bounded coords/NSS
+    # call can't let this section silently ship a false "single" — the marker flags that the orbit
+    # cross-check was bounded out, not authoritative. Degrade-branch only (absent on a clean pull).
+    if isinstance(result, dict) and result.get("gaia_status"):
+        data["gaia_status"] = result["gaia_status"]
     if not isinstance(result, dict) or "error" in result:
         return _augment_gcns_multiplicity(data, simbad)
     solutions = result.get("solutions") or []
@@ -702,10 +709,14 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
     sel, sel_note = binary.select_stability_elements(
         stellar, prim_sp if prim_sp is not None else simbad.get("sp_type"))
     preferred = None
+    fs = {}                                              # CR-19: per-component FLAME degrade side channel
     if sel is not None:
         preferred = stellar_mass.resolve_binary_components(
-            (prim_sl if prim_sl is not None else simbad), sel, mass_catalog,
+            (prim_sl if prim_sl is not None else simbad), sel, mass_catalog, status_out=fs,
             system_name=(prim_name if prim_name is not None else star))
+    for _k in ("flame_status_a", "flame_status_b"):      # CR-19: per-component FLAME degrade (mass path)
+        if fs.get(_k):
+            data[_k] = fs[_k]
     # Thread the SAME selection through (code-review findings 1/2) — the preferred masses and the
     # sma/element recompute must come from one selection, not two off possibly-different sp_type sources.
     stab = binary.stability_from_solutions(result.get("query"), ident, stellar,
@@ -743,6 +754,12 @@ def _blocks_multiplicity(d):
         rows.append(("GCNS companion",
                      f"{comp.get('star_name') or comp.get('source_id')} — {sep_s}, "
                      f"{'bound' if comp.get('bound') else 'not bound'}"))
+    if d.get("gaia_status"):                        # CR-19: the orbit cross-check was bounded out
+        rows.append(("Gaia archive", f"degraded ({d['gaia_status']}) — orbit cross-check bounded; a "
+                                     "'single' conclusion here is not authoritative"))
+    for _lbl, _k in (("A", "flame_status_a"), ("B", "flame_status_b")):
+        if d.get(_k):
+            rows.append((f"FLAME mass ({_lbl})", f"{d[_k]} — degraded to inversion"))
     blocks = [("kv", rows)]
     e = d.get("elements")
     if e:
@@ -1004,14 +1021,21 @@ def _resolve_star_mass_block(simbad, inversion_mass, mass_catalog, manual_mass, 
     cat_row = (stellar_mass_tables.match_mass(
         mass_catalog, simbad.get("main_id"), simbad.get("designations")) if mass_catalog else None)
     flame_mass = None
+    flame_status = None
     if not manual_hit and cat_row is None and want_gaia:
         ga = _gaia_astro(simbad, memo)
         if isinstance(ga, dict):
             flame_mass = (ga.get("parameters") or {}).get("mass_flame")
-    return stellar_mass.resolve_mass(
+            flame_status = ga.get("gaia_bound_reason")     # CR-19: a bounded FLAME call → degrade flag
+    block = stellar_mass.resolve_mass(
         inversion_mass, sp_type=simbad.get("sp_type"), main_id=simbad.get("main_id"),
         designations=simbad.get("designations"), manual_mass=manual_mass, catalog=mass_catalog,
         flame_mass=flame_mass, catalog_row=cat_row)
+    # CR-19: surface the FLAME degrade ONLY when the mass actually fell to the inversion tier
+    # (degrade-branch only → success + genuine-miss stay byte-identical).
+    if flame_status and block["mass_provenance"] == stellar_mass.MS_INVERSION:
+        block["flame_status"] = flame_status
+    return block
 
 
 def _patch_regions_for_mass(reg, m):

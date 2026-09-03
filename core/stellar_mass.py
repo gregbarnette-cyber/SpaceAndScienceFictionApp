@@ -174,7 +174,7 @@ def augment_designations(designations, extra_ids):
     return d
 
 
-def resolve_component_mass(spec, catalog, allow_flame=True):
+def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
     """Resolve one component's preferred mass via the CR-11.2 chain. Returns
     ``(mass_solar, mass_provenance, note)`` or ``(None, None, error_str)``.
 
@@ -207,6 +207,11 @@ def resolve_component_mass(spec, catalog, allow_flame=True):
                     mf = params.get("mass_flame")
                     if isinstance(mf, (int, float)) and not isinstance(mf, bool) and mf > 0:
                         flame_mass = mf
+                # CR-19: a bounded per-component FLAME call (timeout/unreachable) with no mass →
+                # record it so the caller can flag the mass-path degrade (else None → byte-identical).
+                if flame_mass is None and status_out is not None and isinstance(ga, dict) \
+                        and ga.get("gaia_bound_reason"):
+                    status_out["flame_status"] = ga["gaia_bound_reason"]
         except Exception:
             flame_mass = None
     block = resolve_mass(
@@ -231,7 +236,8 @@ def recompute_sma_kepler3(sma, sel_mtot, pref_mtot):
     return sma
 
 
-def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system_name=None):
+def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system_name=None,
+                              status_out=None):
     """CR-14.3 orchestrator: resolve the **preferred** masses of a binary's two components (A + B)
     through the shared chain, matching ``exclusion_system._resolve_system_from_star``'s per-component
     derivation so ``binary-stability-auto`` / the dossier ``multiplicity`` section / ``exclusion-system``
@@ -262,7 +268,8 @@ def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system
     prim_spec = {"name": main_id, "sp_type": primary_sl.get("sp_type"),
                  "designations": augment_designations(primary_sl.get("designations"),
                                                       component_candidate_ids(main_id, "A"))}
-    m1, prov_a, _n = resolve_component_mass(prim_spec, catalog, allow_flame=allow_flame)
+    _sa = {}
+    m1, prov_a, _n = resolve_component_mass(prim_spec, catalog, allow_flame=allow_flame, status_out=_sa)
     if m1 is None:
         m1, prov_a = sel.get("m1_solar"), sel.get("mass_prov_a")
 
@@ -280,7 +287,8 @@ def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system
     comp_spec = {"name": comp_id, "sp_type": comp_sp,
                  "designations": augment_designations(comp_desig, {comp_id} if comp_id else set())}
     b_orbit = False
-    m2, prov_b, _n = resolve_component_mass(comp_spec, catalog, allow_flame=allow_flame)
+    _sb = {}
+    m2, prov_b, _n = resolve_component_mass(comp_spec, catalog, allow_flame=allow_flame, status_out=_sb)
     if m2 is None:
         m2, prov_b, b_orbit = sel.get("m2_solar"), sel.get("mass_prov_b"), True
 
@@ -289,6 +297,13 @@ def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system
     # (prov_a is the clean "binary_orbit_m1", which carries no caution) they would mislabel a measured B
     # (code-review finding 3).
     notes = list(sel.get("notes") or []) if b_orbit else []
+    # CR-19: surface a bounded per-component FLAME degrade via the side channel (return arity unchanged →
+    # a caller that passes no status_out is byte-identical). Degrade-branch only.
+    if status_out is not None:
+        if _sa.get("flame_status"):
+            status_out["flame_status_a"] = _sa["flame_status"]
+        if _sb.get("flame_status"):
+            status_out["flame_status_b"] = _sb["flame_status"]
     return m1, prov_a, m2, prov_b, notes
 
 

@@ -354,7 +354,7 @@ class Cr154IdentityDesignationsTest(unittest.TestCase):
               "designations": {"NAME": "* alf Cen A", "HIP": "71683"},
               "ra": 219.9, "dec": -60.8, "plx_value": 750.0}
         with mock.patch("core.databases.compute_simbad_lookup", return_value=sl):
-            ident, err = binary._resolve_binary_identity("alpha Cen", None, None, None)
+            ident, err, _gs = binary._resolve_binary_identity("alpha Cen", None, None, None)  # CR-19 3-tuple
         self.assertIsNone(err)
         self.assertEqual(ident["designations"], {"NAME": "* alf Cen A", "HIP": "71683"})  # additive key
         self.assertEqual(ident["main_id"], "* alf Cen")

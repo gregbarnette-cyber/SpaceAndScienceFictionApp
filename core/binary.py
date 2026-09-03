@@ -254,18 +254,29 @@ def gcns_bound_companions(gaia_id):
     return system.get("n_components"), comps
 
 
+def _worse_gaia_status(a, b):
+    """CR-19: combine two per-call degrade markers — ``timeout`` (a sustained stall) dominates
+    ``unreachable``; ``None`` when neither Gaia-archive call in the binary path was bounded out."""
+    if a == "timeout" or b == "timeout":
+        return "timeout"
+    return a or b
+
+
 def _resolve_binary_identity(star, ra, dec, source_id):
     """Return an identity dict (main_id/ra/dec/sp_type/parallax_mas/gaia_source_id/hip/…) from a
-    star name (SIMBAD), a Gaia source_id (gaia_source), or raw ra/dec. Returns (identity, error)."""
+    star name (SIMBAD), a Gaia source_id (gaia_source), or raw ra/dec. Returns
+    ``(identity, error, gaia_status)`` — CR-19: ``gaia_status`` ∈ {"timeout","unreachable"} when the
+    coords Gaia-TAP lookup was bounded out (else None), so ``binary_orbit`` can flag the degrade."""
     from core import databases, catalog
     ident = {"main_id": None, "ra": ra, "dec": dec, "sp_type": None,
              "parallax_mas": None, "gaia_source_id": (str(source_id) if source_id else None),
              "hip": None}
+    gaia_status = None                                  # CR-19: set if the coords Gaia-TAP call is bounded
     if star:
         sl = databases.compute_simbad_lookup(star)
         if "error" in sl:
             if ra is None or dec is None:
-                return None, sl["error"]
+                return None, sl["error"], None
         else:
             desig = sl.get("designations") or {}
             ident.update({
@@ -289,11 +300,13 @@ def _resolve_binary_identity(star, ra, dec, source_id):
             ident["dec"] = ident["dec"] if ident["dec"] is not None else row.get("dec")
             if ident["parallax_mas"] is None:
                 ident["parallax_mas"] = row.get("parallax")
+        elif "error" in g:
+            gaia_status = g.get("gaia_bound_reason")   # CR-19: a bounded coords lookup → degrade marker
     if ident["ra"] is None or ident["dec"] is None:
-        return None, "Could not resolve coordinates for the target"
+        return None, "Could not resolve coordinates for the target", gaia_status
     plx = ident["parallax_mas"]
     ident["distance_ly"] = (1000.0 / plx * _LY_PER_PC) if (plx and plx > 0) else None
-    return ident, None
+    return ident, None, gaia_status
 
 
 def _apply_binary_masses(comp, bmass):
@@ -333,9 +346,9 @@ def _nss_two_body_solutions(source_id, sp_type, plx_fallback):
     res = catalog.gaia_tap(adql=("SELECT * FROM gaiadr3.nss_two_body_orbit "
                                  f"WHERE source_id={source_id}"))
     if "error" in res:
-        return [], res["error"]
+        return [], res["error"], res.get("gaia_bound_reason")     # CR-19: propagate a bounded NSS call
     m1 = m1_from_spectral_type(sp_type)
-    bmass = catalog.gaia_binary_masses(source_id)      # §3.3 independent cross-check (once per source)
+    bmass, bm_status = catalog.gaia_binary_masses(source_id)   # §3.3 cross-check (+ CR-19 degrade marker)
     out = []
     for row in res.get("rows", []):
         period = row.get("period")
@@ -368,7 +381,7 @@ def _nss_two_body_solutions(source_id, sp_type, plx_fallback):
             "parallax_mas": plx, "companion": comp,
             "verification": verification_tag("gaia-nss", source_id=source_id),
         })
-    return out, None
+    return out, None, bm_status     # CR-19: NSS ok, but flag a bounded binary_masses cross-check
 
 
 def multiplicity_summary(star=None, source_id=None):
@@ -513,6 +526,10 @@ def multiplicity_summary(star=None, source_id=None):
                     "gcns_n_components": gcns_n,
                     "binary_orbit_routes": bo.get("route_tried") if isinstance(bo, dict) else None},
     }
+    # CR-19: a bounded coords/NSS/binary_masses call in binary_orbit → the single/multiple verdict here
+    # is degraded, not authoritative. Degrade-branch only (a fully-successful pull carries no key).
+    if isinstance(bo, dict) and bo.get("gaia_status"):
+        out["gaia_status"] = bo["gaia_status"]
     # CR-18: name the GCNS/CPM route as the top-level basis ONLY when a companion is actually BOUND and
     # detection is pure-GCNS (no orbit component). gcns_cpm means a bound CPM pair, so a purely optical
     # co-membership (all bound=0) does NOT claim it, and an orbit-detected system keeps its own basis.
@@ -652,9 +669,12 @@ def binary_orbit(star=None, ra=None, dec=None, source_id=None):
     if not star and not source_id and (ra is None or dec is None):
         return _route_error("binary-orbit requires --star, --source-id, or --ra/--dec")
 
-    ident, err = _resolve_binary_identity(star, ra, dec, source_id)
+    ident, err, gaia_status = _resolve_binary_identity(star, ra, dec, source_id)
     if err and ident is None:
-        return _route_error(err, ["simbad", "gaia_source"])
+        rerr = _route_error(err, ["simbad", "gaia_source"])
+        if gaia_status:
+            rerr["gaia_status"] = gaia_status          # CR-19: a bounded coords lookup on the fail path
+        return rerr
 
     # CR-16: a degenerate/non-MS secondary (WD sp-type, no OBAFGKM class) of a letterless-primary pair
     # cannot seed the orbit's primary mass. Resolve the PRIMARY's sp-type + identity and use them for the
@@ -677,11 +697,12 @@ def binary_orbit(star=None, ra=None, dec=None, source_id=None):
 
     if ident.get("gaia_source_id"):
         route_tried.append("gaia-nss:two_body_orbit")
-        nss, nss_err = _nss_two_body_solutions(
+        nss, nss_err, nss_status = _nss_two_body_solutions(
             ident["gaia_source_id"], mass_sp, ident.get("parallax_mas"))
         solutions.extend(nss)
         if nss_err:
             route_errors.append(f"gaia-nss: {nss_err}")
+        gaia_status = _worse_gaia_status(gaia_status, nss_status)   # CR-19
 
     route_tried.append("sb9")
     sb9, sb9_err = _sb9_solutions(ident["ra"], ident["dec"], mass_sp)
@@ -713,6 +734,11 @@ def binary_orbit(star=None, ra=None, dec=None, source_id=None):
     }
     if route_errors:
         result["route_errors"] = route_errors
+    # CR-19: a Gaia-archive call in the binary path (coords / NSS / binary_masses) was bounded out →
+    # a negative conclusion here (no orbit / no companion / single) is DEGRADED, not authoritative.
+    # Degrade-branch only: a genuine no-rows result (every call succeeded) carries no key.
+    if gaia_status:
+        result["gaia_status"] = gaia_status
     if not solutions:
         result["note"] = ("no orbital solution found across the routes tried "
                           f"({', '.join(route_tried)}) — not-Gaia-resolved / not-in-SB9 does not "
@@ -1012,6 +1038,7 @@ def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma
     # (--ra/--dec/--source-id with no name) leaves main_id None → no catalog designations → the orbit
     # masses stand (L3 graceful fallback).
     preferred = None
+    fs = {}                                    # CR-19: per-component FLAME degrade side channel
     # CR-16: when binary_orbit redirected a degenerate secondary, resolve masses via the PRIMARY it
     # attached (`redirected_primary` → sp_type + primary_sl + system_name); else keep the CR-15.4 fallback.
     prim_sp, prim_sl, prim_name = redirected_primary(ident)
@@ -1032,12 +1059,21 @@ def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma
             primary_sl = databases.compute_simbad_lookup(star or ident.get("main_id"))
         if isinstance(primary_sl, dict) and "error" not in primary_sl:
             preferred = stellar_mass.resolve_binary_components(
-                primary_sl, sel, catalog,
+                primary_sl, sel, catalog, status_out=fs,
                 system_name=(prim_name if prim_name is not None else (star or ident.get("main_id"))))
     # Thread the SAME selection through (code-review findings 1/2) — one select, not two.
     out = stability_from_solutions(result.get("query"), ident, solutions,
                                    result.get("route_tried"), test_sma_au=test_sma_au,
                                    preferred_masses=preferred, selection=(sel, sel_note))
+    # CR-19: the empty-solutions / degraded path — propagate the binary-path degrade marker so a bounded
+    # NSS/coords call can't silently yield a false "no companion / single" verdict. (The `"error" in
+    # result` return above already carries it for the coords-fail path.)
+    if isinstance(out, dict) and result.get("gaia_status"):
+        out["gaia_status"] = result["gaia_status"]
+    if isinstance(out, dict):                  # CR-19: per-component FLAME degrade (mass path)
+        for _k in ("flame_status_a", "flame_status_b"):
+            if fs.get(_k):
+                out[_k] = fs[_k]
     # CR-16 transparency: when the masses resolved via a redirected primary, flag it additively so a
     # consumer seeing the PRIMARY's m1 for a secondary-named query (`star` still echoes "Sirius B") knows
     # why. Only present on the redirect path — absent (byte-identical) for every letter-symmetric/primary query.
