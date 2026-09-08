@@ -24,7 +24,7 @@ exactly as they are; **WSL / Linux / macOS are unaffected (no micromamba, no beh
 | Package that blocks Windows | `healpy` — no native-Windows **pip** wheel (`dustmaps` hard-requires it). Unchanged as of Sept 2026 (healpy docs still say Linux/macOS only, Windows via WSL). |
 | Native-Windows route that *does* exist | **conda-forge `win-64`** build of healpy (currently 1.20.0, 2026-07-25). Not pip. |
 | Tool | **micromamba** (single static binary, no base env, touches no global PATH) — chosen over Miniforge for an isolated, non-interactive, subprocess-invoked env. |
-| Routing model | **Option B** — a re-dispatch shim *inside* `query.py`, keyed on "can this interpreter `import healpy`?". No change to the consumer contract, the sister repo's `bin/sfq`, or the skill's Q21. |
+| Routing model | **Option B** — a re-dispatch shim *inside* `query.py`, keyed on "can this interpreter load a dust map?" (the shared `core.dust._dustmaps_available` gate — `dustmaps` AND `healpy`). No change to the consumer contract, the sister repo's `bin/sfq`, or the skill's Q21. |
 | opt 59 (fetch) | **No code change** (explicitly removed from scope). The map fetch is a one-time step done via manual resumable download or a one-time env-side fetch. |
 
 **One sentence:** *serve dust in-process if you can; otherwise hand it to a Python that can* — and
