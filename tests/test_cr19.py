@@ -412,5 +412,70 @@ class GaiaClassEquivalenceLiveTest(unittest.TestCase):
         self.assertEqual(shared, fresh)
 
 
+# ── CR-19.1: the dossier bare-except raise path flags gaia_status="error" ─────
+# The CR-19 timeout/unreachable degrade RETURNS a dict + gaia_status; an UNEXPECTED raise in
+# binary_orbit hit the dossier bare-except (report.py ~690) BEFORE the gaia_status capture, so the
+# verdict shipped unflagged. CR-19.1 sets the additive 3rd value "error" on that path (byte-identical
+# elsewhere) + a SPACE_APP_BINARY_ORBIT_FORCE_RAISE=1 hook so WB re-gates the raise path live.
+class Cr191BareExceptDegradeTest(unittest.TestCase):
+    @staticmethod
+    def _gaia_cell(blocks):
+        return next((v for kind, *rest in blocks if kind == "kv"
+                     for k, v in rest[0] if k == "Gaia archive"), None)
+
+    def test_dossier_raise_path_sets_gaia_status_error(self):
+        from core import report, binary
+        simbad = {"main_id": "* x", "sp_type": "G2V", "multiplicity": {},
+                  "designations": {"Gaia EDR3": "999"}}
+        with mock.patch.object(binary, "binary_orbit", side_effect=RuntimeError("boom")), \
+             mock.patch.object(report, "_augment_gcns_multiplicity", side_effect=lambda d, s: d):
+            data = report._multiplicity_data_star(simbad, "X")
+        self.assertEqual(data.get("gaia_status"), "error")   # unexpected raise → non-authoritative
+
+    def test_force_raise_hook_sets_error_on_dossier_path(self):
+        # CR-19.1 (finding-1 scoping): the hook raises on the DOSSIER path before binary_orbit runs
+        # (the spy asserts binary_orbit is never called), and the bare-except stamps gaia_status="error".
+        from core import report, binary
+        simbad = {"main_id": "* x", "sp_type": "G2V", "multiplicity": {},
+                  "designations": {"Gaia EDR3": "999"}}
+        os.environ["SPACE_APP_BINARY_ORBIT_FORCE_RAISE"] = "1"
+        try:
+            with mock.patch.object(binary, "binary_orbit",
+                                   side_effect=AssertionError("must not be called")), \
+                 mock.patch.object(report, "_augment_gcns_multiplicity", side_effect=lambda d, s: d):
+                data = report._multiplicity_data_star(simbad, "X")
+            self.assertEqual(data.get("gaia_status"), "error")
+        finally:
+            os.environ.pop("SPACE_APP_BINARY_ORBIT_FORCE_RAISE", None)
+
+    def test_hook_is_dossier_scoped_not_global(self):
+        # CR-19.1 (finding-1): the hook is NOT global in binary_orbit — with it set, a direct
+        # binary_orbit call still takes its normal path (curated route-error), not a raise.
+        from core import binary
+        os.environ["SPACE_APP_BINARY_ORBIT_FORCE_RAISE"] = "1"
+        try:
+            r = binary.binary_orbit()                 # no args → normal curated route-error, NOT a raise
+            self.assertIsInstance(r, dict)
+            self.assertIn("error", r)
+        finally:
+            os.environ.pop("SPACE_APP_BINARY_ORBIT_FORCE_RAISE", None)
+
+    def test_render_error_reads_errored_not_bounded(self):
+        from core import report
+        _, blocks = report._blocks_multiplicity(
+            {"is_multiple": False, "sb_flag": False, "basis": None, "otype": None,
+             "multiplicity_basis": None, "gaia_status": "error"})
+        cell = self._gaia_cell(blocks)
+        self.assertIn("orbit cross-check errored", cell)
+        self.assertNotIn("bounded", cell)
+
+    def test_render_timeout_still_reads_bounded(self):   # byte-identity for the existing values
+        from core import report
+        _, blocks = report._blocks_multiplicity(
+            {"is_multiple": False, "sb_flag": False, "basis": None, "otype": None,
+             "multiplicity_basis": None, "gaia_status": "timeout"})
+        self.assertIn("orbit cross-check bounded", self._gaia_cell(blocks))
+
+
 if __name__ == "__main__":
     unittest.main()

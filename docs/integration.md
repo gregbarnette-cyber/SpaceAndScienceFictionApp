@@ -4718,6 +4718,21 @@ bounds **every per-source SYNC `gaia_tap` call** at that one gateway, degrades t
   (`_call_with_watchdog`), `core/catalog.py` (`gaia_tap` sync bound + circuit-breaker + `set_gaia_timeout` + `_warn` + the
   hook), `core/binary.py` / `core/report.py` / `core/databases.py` / `core/exclusion_system.py` / `core/stellar_mass.py`
   (marker surfacing), `query.py` (`--gaia-timeout`). Tests: `tests/test_cr19.py`.
+- **CR-19.1 (dossier bare-except completeness, additive; 2026-09-07).** The CR-19 degrade path RETURNS a dict +
+  `gaia_status`; an UNEXPECTED raise in `binary_orbit` hit the dossier bare-except in `report._multiplicity_data_star`
+  BEFORE the `gaia_status` capture, shipping the multiplicity verdict **unflagged** (a consumer reading `gaia_status`
+  presence couldn't catch it). That path now sets an additive **3rd value `gaia_status="error"`** — vocab →
+  **`{"timeout","unreachable","error"}`** — distinct from the transient infra values so a consumer can branch transient
+  (re-run) vs non-transient (a raise, may not clear on re-run). **Dossier-path only:** a raise in
+  `multiplicity_summary` propagates to `query.py`'s top-level dispatcher, which curates it to `{"error"}` (so the
+  `multiplicity` subcommand errors out cleanly, never a false optical) — untouched, unlike the dossier path which
+  CATCHES and degrades. The degrade render reads "orbit cross-check **errored**" for `"error"` (vs "bounded" for
+  timeout/unreachable — byte-identical). **Test hook `SPACE_APP_BINARY_ORBIT_FORCE_RAISE=1`** forces a raise on the
+  **dossier multiplicity path** (dossier-scoped in `report._multiplicity_data_star`, so it does NOT confound other
+  subcommands; no network) so WB re-gates the raise→`error` path live (mirrors `SPACE_APP_GAIA_FORCE_UNREACHABLE=1`).
+  Additive / byte-identical on a clean pull — `is_multiple`/`multiplicity_class`/`bound_multiple` unchanged. **Core
+  `core/report.py` only** (the hook lives on the dossier path; `binary.py` unchanged); tests `tests/test_cr19.py`
+  (`Cr191BareExceptDegradeTest`).
 
 ## CR-20 — multiplicity verdict honesty (additive tri-state) + `gcns_stars` Gaia-PM backbone (additive; NUMERIC battery + CR-18 anchors byte-identical)
 

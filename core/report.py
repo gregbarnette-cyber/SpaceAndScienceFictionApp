@@ -685,9 +685,20 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
             has_close_binary_hint=binary.is_close_binary_hint_otype(data.get("otype")), gcns_comps=[])
         return data
     try:
+        import os
         from core import binary
-        result = binary.binary_orbit(star=star)
+        if os.environ.get("SPACE_APP_BINARY_ORBIT_FORCE_RAISE") == "1":   # CR-19.1 test hook (WB C5),
+            raise RuntimeError(                                          # DOSSIER-PATH-SCOPED (not global in
+                "SPACE_APP_BINARY_ORBIT_FORCE_RAISE=1: forced dossier "  # binary_orbit) so it re-gates the
+                "binary_orbit raise (CR-19.1 test hook)")                # raise→error path here without
+        result = binary.binary_orbit(star=star)                          # confounding other subcommands
     except Exception:
+        # CR-19.1: an UNEXPECTED binary_orbit raise (NOT the CR-19 timeout/unreachable degrade, which
+        # RETURNS a dict + gaia_status and hits the branch below) — flag the verdict non-authoritative
+        # so the `gaia_status`-presence consumer contract still catches it. Additive: on a clean pull
+        # binary_orbit does not raise, so this branch is never taken and every existing output is
+        # byte-identical. Distinct 3rd value "error" (vs the transient {"timeout","unreachable"}).
+        data["gaia_status"] = "error"
         return _augment_gcns_multiplicity(data, simbad)
     # CR-19: capture the binary-path degrade BEFORE the error/empty branches, so a bounded coords/NSS
     # call can't let this section silently ship a false "single" — the marker flags that the orbit
@@ -781,8 +792,9 @@ def _blocks_multiplicity(d):
         rows.append(("GCNS companion",
                      f"{comp.get('star_name') or comp.get('source_id')} — {sep_s}, "
                      f"{'bound' if comp.get('bound') else 'not bound'}"))
-    if d.get("gaia_status"):                        # CR-19: the orbit cross-check was bounded out
-        rows.append(("Gaia archive", f"degraded ({d['gaia_status']}) — orbit cross-check bounded; a "
+    if d.get("gaia_status"):                        # CR-19/CR-19.1: the orbit cross-check was degraded
+        _how = "errored" if d["gaia_status"] == "error" else "bounded"   # CR-19.1: "error" wasn't bounded
+        rows.append(("Gaia archive", f"degraded ({d['gaia_status']}) — orbit cross-check {_how}; a "
                                      "'single' conclusion here is not authoritative"))
     for _lbl, _k in (("A", "flame_status_a"), ("B", "flame_status_b")):
         if d.get(_k):
