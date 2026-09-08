@@ -9,6 +9,12 @@
 # the stellar layer working and skips the dust path behind an import gate.
 #
 # astropy / numpy / requests are already in the base requirements.txt.
+#
+# Native Windows: healpy has no pip wheel, but conda-forge ships a win-64 build. Install
+# this set (plus the science subset of requirements.txt) into a micromamba/conda env
+# instead of pip, then point query.py at it with SPACE_APP_DUST_PYTHON — the dust
+# subcommands re-dispatch to that interpreter; it stays a no-op on WSL/Linux/macOS. Full
+# one-time steps: DUST_WINDOWS_MICROMAMBA_PLAN.md.
 dustmaps
 healpy
 h5py

@@ -31,7 +31,11 @@ invocation already handles the Windows `venv/Scripts/python.exe` vs Linux `venv/
 the base-folder case fallback — see `docs/integration.md`).
 
 **Phase T dust path (`dustmaps`/`healpy`) is WSL/Linux-only.** `healpy` has **no Windows pip wheel**, so
-`pip install dustmaps` fails on a native-Windows checkout. Build, run, and test the Phase T **dust**
+`pip install dustmaps` fails on a native-Windows checkout. (Native Windows *can* still serve the dust
+subcommands via a conda-forge/micromamba env reached by the `query.py` `SPACE_APP_DUST_PYTHON`
+re-dispatch shim — `_needs_dust`/`_redispatch_to_dust_env`, a **no-op wherever the dust extra imports**
+(probed via `core.dust._dustmaps_available`), so WSL/Linux/macOS are byte-identical; setup in
+`DUST_WINDOWS_MICROMAMBA_PLAN.md`.) Build, run, and test the Phase T **dust**
 subcommands (`dust-sightline` / `dust-between`; CLI option-59 dust-fetch; and the dust-weighted routing
 `--weight dust` on `jump-route`/`optimal-tour`/`multi-stop`/`nearest-neighbor`/`trade-route`, in
 `core/dust_routing.py`) from the **WSL/Linux venv** — which is also the path the sister consumer repo invokes. The optional

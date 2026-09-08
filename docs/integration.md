@@ -3263,6 +3263,26 @@ pip wheel — a Windows pip checkout keeps the stellar layer and the dust subcom
 curated *"install the optional 'dust' extra"* error. § = a local read **of the fetched dust map
 cache** (`data/dust/`, gitignored); see **CLI option 59 `dust-fetch`** below to populate it.
 
+**Native Windows via micromamba (Option-B re-dispatch shim).** `healpy` has no native-Windows pip
+wheel, but conda-forge ships a `win-64` build — so a native-Windows checkout can serve the dust
+subcommands from an isolated conda-forge/micromamba env reached over a subprocess boundary. Set
+**`SPACE_APP_DUST_PYTHON`** to a dust-capable interpreter command (e.g.
+`…\micromamba.exe run -r <root> -n dust python`, or the env's `python.exe` directly); `query.py`
+then re-runs itself under that interpreter for the dust-map commands — `dust-sightline`,
+`dust-between`, and any route with `--weight dust`/`blend` — and relays the child's JSON and exit
+code. The shim (`_needs_dust` / `_redispatch_to_dust_env`) is keyed on whether **this** interpreter
+can load a dust map — the **same `core.dust` gate the app itself uses** (`_dustmaps_available()`,
+i.e. `dustmaps` **and** `healpy`), **not** on the OS — so it is a **pure no-op on WSL/Linux/macOS**
+and inside the conda child (which carries the internal `SPACE_APP_DUST_SUBPROCESS` recursion
+sentinel): wherever the dust extra imports it runs in-process, byte-identical to before. With
+neither the extra nor `SPACE_APP_DUST_PYTHON` available, the curated *"install the 'dust' extra"*
+error still surfaces; a mis-set `SPACE_APP_DUST_PYTHON` (interpreter not found) is reported as a
+curated `{"error"}` JSON, never a raw traceback. **`SPACE_APP_DUST_PYTHON` must name an interpreter
+that emits nothing to stdout** — the child's stdout is relayed verbatim to the consumer, so any
+launcher banner would corrupt the JSON; **prefer the env's `python.exe` directly** (no launcher
+output) over an activation wrapper. One-time setup steps (micromamba install, env, map fetch, env
+var) live in `DUST_WINDOWS_MICROMAMBA_PLAN.md`.
+
 **Maps (`--map`, default `auto`):** `near-field` = **Leike, Glatzle & Enßlin 2020** (Cartesian box
 ±370/±370/±270 pc, 1-pc voxels; `dustmaps.leike2020`); `edenhofer` = **Edenhofer et al. 2024**
 (HEALPix sphere ~69 pc–1.25 kpc; `dustmaps.edenhofer2023` — the dustmaps key/module is **2023**,

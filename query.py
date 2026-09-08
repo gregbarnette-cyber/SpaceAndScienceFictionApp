@@ -8,6 +8,7 @@ Prints JSON to stdout. Exits 0 on success, 1 on error.
 
 import argparse
 import json
+import os
 import sys
 
 import core.active_shield as active_shield
@@ -73,6 +74,63 @@ def _out(result):
     if isinstance(result, dict) and "error" in result:
         sys.exit(1)
     sys.exit(0)
+
+
+# ── Dust re-dispatch shim ─────────────────────────────────────────────────────
+# On native Windows `healpy` has no pip wheel, so the dust-map subcommands can't run
+# in-process. If a dust-capable interpreter (e.g. a conda-forge micromamba env) is
+# configured via SPACE_APP_DUST_PYTHON, re-run query.py under it for those commands.
+# Keyed on "can this interpreter load a dust map?" — the SAME `core.dust` gate the app
+# itself uses (dustmaps AND healpy), NOT on the OS — so it is a pure no-op on
+# WSL/Linux/macOS (and inside the conda child), where the dust extra imports fine.
+# See DUST_WINDOWS_MICROMAMBA_PLAN.md and docs/integration.md (Dust / ISM).
+_DUST_SUBPROCESS_SENTINEL = "SPACE_APP_DUST_SUBPROCESS"   # set on the child to block recursion
+_DUST_PYTHON_ENV = "SPACE_APP_DUST_PYTHON"                # e.g. "…micromamba.exe run -r … -n dust python"
+
+
+def _needs_dust(args) -> bool:
+    """True for invocations that must load a dust map (dustmaps/healpy): the two
+    dust-query subcommands, or any route weighted by dust/blend."""
+    if getattr(args, "func", None) in (cmd_dust_sightline, cmd_dust_between):
+        return True
+    return getattr(args, "weight", None) in ("dust", "blend")
+
+
+def _redispatch_to_dust_env(raw_argv):
+    """Re-run query.py under SPACE_APP_DUST_PYTHON and exit with its code, unless this
+    command should be served in-process. Returns (without exiting) when:
+      - we ARE the child (sentinel set) — never re-spawn;
+      - the dust extra is importable here (WSL/Linux/macOS, or the installed extra);
+      - no dust interpreter is configured (fall through to the curated 'dust extra' error).
+    A failure to launch the configured interpreter is surfaced as curated {"error"} JSON,
+    never a raw traceback, so the stdout-JSON contract holds on every path."""
+    if os.environ.get(_DUST_SUBPROCESS_SENTINEL) == "1":
+        return
+    try:
+        import core.dust as _dust                        # probe the REAL requirement via the app's own
+        if _dust._dustmaps_available():                  # gate (dustmaps AND healpy) — no drift, no
+            return                                       # false "in-process" when only healpy is present
+    except Exception:
+        pass
+    cmd = os.environ.get(_DUST_PYTHON_ENV)
+    if not cmd:
+        return
+    import shlex
+    import subprocess
+    if os.name == "nt":                                  # posix=False keeps C:\ backslashes; then strip
+        parts = [p[1:-1] if len(p) >= 2 and p[0] in "\"'" and p[-1] == p[0] else p
+                 for p in shlex.split(cmd, posix=False)]  # any matched surrounding quotes off each token
+    else:
+        parts = shlex.split(cmd)
+    try:
+        child = subprocess.run(
+            [*parts, os.path.abspath(__file__), *raw_argv],
+            env={**os.environ, _DUST_SUBPROCESS_SENTINEL: "1"},
+        )                                                # stdout/stderr inherited ⇒ child JSON passes through
+    except Exception as e:                               # bad interpreter path / not on PATH / launch error
+        _out({"error": f"Could not launch the dust interpreter named by {_DUST_PYTHON_ENV} "
+                       f"({cmd!r}): {e}. See DUST_WINDOWS_MICROMAMBA_PLAN.md."})   # _out() exits 1
+    sys.exit(child.returncode)                           # preserves _out()'s 0/1 exit contract
 
 
 def _simbad_then(star, fn, **kwargs):
@@ -1899,6 +1957,7 @@ def cmd_warhead_effects(args):
 
 
 def main(argv=None):
+    raw_argv = list(sys.argv[1:]) if argv is None else list(argv)   # for the dust re-dispatch shim
     parser = argparse.ArgumentParser(
         description="Query SpaceAndScienceFictionApp core functions; outputs JSON to stdout.",
         epilog=(
@@ -4337,6 +4396,8 @@ def main(argv=None):
     if getattr(args, "gaia_timeout", None) is not None:
         import core.catalog as _catalog                     # CR-19: process-wide sync Gaia-TAP bound
         _catalog.set_gaia_timeout(args.gaia_timeout)
+    if _needs_dust(args):                                   # Windows: route dust cmds to SPACE_APP_DUST_PYTHON
+        _redispatch_to_dust_env(raw_argv)                  # no-op where healpy imports (WSL/Linux/macOS)
     try:
         args.func(args)
     except Exception as e:
