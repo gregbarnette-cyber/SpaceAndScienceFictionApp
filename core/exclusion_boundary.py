@@ -27,6 +27,8 @@ No network, no DB, no numpy, no RNG, no time.
 
 import math
 
+from core import exclusion_wall as ew
+
 # ── Wind Ẇ presets (M_sun/yr — observational/first-principles ancestors, overridable) ──
 _WDOT_SOLAR = 2e-14                     # Sun, calibration anchor (Wang 1998 / textbook solar-wind flux)
 _WIND_PRESETS = {
@@ -146,4 +148,132 @@ def compute_exclusion_boundary(
         result["r_ex_au_alpha_third"] = r_ex_at(1.0 / 3.0)
         result["r_ex_au_alpha_half"] = r_ex_at(0.5)
 
+    return result
+
+
+# ── CR-22: the two-layer orchestrator (frozen r_ex generator above + the research-grade WALL) ──
+_EVOLVED_STANDOFF_NOTE = (
+    "mass-law applied outside its canon MS domain (canon: MS-only); research-grade / regulatory "
+    "assumption — the standoff for an evolved host uses the measured mass, not an MS luminosity "
+    "inversion")
+_EVOLVED_NO_MASS_NOTE = (
+    "no measured mass for an evolved host — standoff not computed; pass --star-mass-catalog or "
+    "--mass-msun (the wind-term wall is still emitted)")
+
+
+def _wind_echo(inputs, prov):
+    """Flatten the resolved wind inputs + provenance into the additive echo fields (spec CR-22.4)."""
+    echo = {
+        "mass_loss_msun_yr": inputs["wdot"], "mass_loss_provenance": prov.get("mass_loss"),
+        "wind_speed_kms": inputs["v_wind"], "wind_speed_provenance": prov.get("wind_speed"),
+        "v_ism_kms": inputs["v_ism"], "v_ism_provenance": prov.get("v_ism"),
+        "c_ms_kms": inputs["c_ms"], "c_ms_provenance": prov.get("c_ms"),
+        "n_cloud_cm3": inputs["n_cloud"], "n_cloud_provenance": prov.get("n_cloud"),
+        "cloud_temp_k": inputs["cloud_temp"], "cloud_temp_provenance": prov.get("cloud_temp"),
+        "wind_phase_yr": inputs["t_phase"], "wind_phase_provenance": prov.get("wind_phase"),
+        "f_shock": inputs["f_shock"], "f_shock_provenance": prov.get("f_shock"),
+        "m_shock_min": inputs["m_shock_min"], "m_shock_min_provenance": prov.get("m_shock_min"),
+        "mass_loss_source": inputs["mass_loss_source"],
+        "mass_loss_source_provenance": prov.get("mass_loss_source"),
+    }
+    if inputs.get("b_field") is not None:
+        echo["b_field_ug"] = inputs["b_field"]
+        echo["c_ms_band_derived"] = inputs.get("c_ms_band_derived")
+    return echo
+
+
+def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
+                               sp_type=None, otype=None, class_tag=None, object_name=None,
+                               domain=None, wind_class=None, class_note=None, mass_provenance=None,
+                               mass_note=None,
+                               wind_state=None, mass_loss_msun_yr=None, wind_speed=None,
+                               v_ism=None, c_ms=None, b_field=None, n_cloud=None, cloud_temp=None,
+                               wind_phase_yr=None, f_shock=None, m_shock_min=None,
+                               mass_loss_source=None, dial=None, calibration_au=_KUIPER_EDGE_AU,
+                               alpha=1.0 / 3.0, beta=0.0, gamma=0.0, scan_alpha=False):
+    """CR-22 two-layer boundary: the unchanged canon STANDOFF (the FROZEN
+    ``compute_exclusion_boundary`` above) + the research-grade physical WALL
+    (``exclusion_wall.compute_wall``), with the four-value domain classifier + free-harbor guard.
+
+    Classification is done here (``exclusion_wall.classify_domain_wind``) unless ``domain`` is passed
+    pre-classified by the caller. The standoff arithmetic is byte-identical to
+    ``compute_exclusion_boundary`` — this function never re-derives ``r_ex``; it only wraps it and
+    adds the additive wall/domain/echo fields. Returns the result dict, or the frozen generator's
+    curated ``{"error": …}`` (mass ≤ 0, out-of-band exponents) for an in-domain body.
+    """
+    if domain is None:
+        domain, wind_class, class_note = ew.classify_domain_wind(
+            sp_type=sp_type, otype=otype, class_tag=class_tag, wind_class=wind_class,
+            object_name=object_name, wind_state=wind_state)
+
+    inputs, prov = ew.resolve_wind_inputs(
+        domain, wind_class, sp_type, mass_loss_msun_yr=mass_loss_msun_yr, wind_speed=wind_speed,
+        v_ism=v_ism, c_ms=c_ms, b_field=b_field, n_cloud=n_cloud, cloud_temp=cloud_temp,
+        wind_phase_yr=wind_phase_yr, f_shock=f_shock, m_shock_min=m_shock_min,
+        mass_loss_source=mass_loss_source)
+
+    base = {"domain": domain, "wind_class": wind_class, "class_note": class_note,
+            "object": object_name, "mass_msun": mass_msun, "model_note": _MODEL_NOTE}
+
+    # ── windless free harbor: no standoff, no wall (a WD / BD / rogue) ──
+    if domain == ew.WINDLESS:
+        base.update({"standoff_au": None, "r_ex_au": None, "forcing_class": "free_harbor",
+                     "wall_au": None, "wall_band_au": None, "wall_route": "none_windless",
+                     "wall_reason": "windless — free harbor", "wall_note": ew._WALL_NOTE,
+                     "verdict_marginal": False, "wall_exceeds_standoff": None,
+                     "wall_to_standoff_ratio": None, "r_ap_au": None})
+        return base
+
+    # ── unmodeled (hot subdwarf sdB/sdO): honest null on both layers (NOT free harbor) ──
+    if domain == ew.UNMODELED:
+        base.update({"standoff_au": None, "r_ex_au": None, "forcing_class": None,
+                     "wall_au": None, "wall_band_au": None, "wall_route": "none_unmodeled",
+                     "wall_reason": class_note or "class outside the wind model",
+                     "wall_note": ew._WALL_NOTE, "verdict_marginal": False,
+                     "wall_exceeds_standoff": None, "wall_to_standoff_ratio": None,
+                     "r_ap_au": None})
+        return base
+
+    # ── main_sequence / evolved: the FROZEN standoff (when a mass is known) + the wall ──
+    standoff = None
+    result = dict(base)
+    if mass_msun is not None and mass_msun > 0:
+        stand = compute_exclusion_boundary(
+            mass_msun=mass_msun,
+            luminosity_lsun=(luminosity_lsun if luminosity_lsun is not None else 1.0),
+            mass_loss_msun_yr=mass_loss_msun_yr, wind_state=wind_state, dial=dial,
+            calibration_au=calibration_au, alpha=alpha, beta=beta, gamma=gamma,
+            scan_alpha=scan_alpha, object_name=object_name)
+        if "error" in stand:
+            return stand                                   # frozen generator's curated error
+        standoff = stand["r_ex_au"]
+        for k in ("r_ex_au", "luminosity_lsun", "dial", "alpha", "beta", "gamma", "calibration_au",
+                  "forcing_class", "r_ex_au_alpha_third", "r_ex_au_alpha_half"):
+            if k in stand:
+                result[k] = stand[k]
+        result["standoff_au"] = standoff
+        if domain == ew.EVOLVED:
+            result["standoff_note"] = _EVOLVED_STANDOFF_NOTE
+    else:
+        result.update({"r_ex_au": None, "standoff_au": None, "forcing_class": None})
+        if domain == ew.EVOLVED:
+            # keep the resolver's specific hint (CP2 finding 6), not just the generic note
+            result["standoff_note"] = (
+                f"{_EVOLVED_NO_MASS_NOTE} ({mass_note})" if mass_note else _EVOLVED_NO_MASS_NOTE)
+
+    if mass_provenance:
+        result["mass_provenance"] = mass_provenance
+
+    wall = ew.compute_wall(
+        wdot=inputs["wdot"], v_wind=inputs["v_wind"], v_ism=inputs["v_ism"], c_ms=inputs["c_ms"],
+        n_cloud=inputs["n_cloud"], r_ex=standoff, wind_class=wind_class, t_phase=inputs["t_phase"],
+        f_shock=inputs["f_shock"], m_shock_min=inputs["m_shock_min"], c_ms_band=inputs["c_ms_band"])
+    for k in ("wall_au", "wall_band_au", "wall_route", "wall_reason", "wall_note",
+              "verdict_marginal", "r_ap_au"):
+        result[k] = wall[k]
+    band_hi = wall["wall_band_au"][1] if wall["wall_band_au"] else None
+    exceeds, ratio = ew.hazard_flags(band_hi, wall["wall_au"], standoff)
+    result["wall_exceeds_standoff"] = exceeds
+    result["wall_to_standoff_ratio"] = ratio
+    result.update(_wind_echo(inputs, prov))
     return result

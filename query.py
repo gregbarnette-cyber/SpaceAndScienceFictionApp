@@ -26,6 +26,9 @@ import core.equations as equations
 import core.exoplanet_batch as exoplanet_batch   # CR-8 batch ps pull (network lazy inside handlers)
 import core.exclusion_boundary as exclusion_boundary
 import core.exclusion_system as exclusion_system
+import core.exclusion_wall as exclusion_wall       # CR-22 two-layer wall engine + classifier
+import core.stellar_mass as stellar_mass           # CR-22 evolved-host measured-mass resolve
+import core.stellar_mass_tables as stellar_mass_tables
 import core.exotic_physics as exotic_physics
 import core.feasibility as feasibility
 import core.formation as formation
@@ -749,22 +752,9 @@ def cmd_beamrider_relay_spacing(args):
         total_range_ly=args.total_range_ly, total_range_m=args.total_range_m))
 
 
-def _resolve_star_mass_lum(name):
-    """Resolve a star name → {"mass": M⊙, "lum": L⊙} via SIMBAD + regions, or {"error"}.
-
-    Reuses the Star System Regions derivation (works for any main-sequence type).
-    """
-    simbad = databases.compute_simbad_lookup(name)
-    if "error" in simbad:
-        return simbad
-    reg = regions.compute_star_system_regions_from_simbad(simbad)
-    if "error" in reg:
-        return reg
-    mass = reg.get("stellarMass")
-    lum = reg.get("bcLuminosity")
-    if mass is None or lum is None:
-        return {"error": f"Could not derive mass/luminosity for '{name}'."}
-    return {"mass": mass, "lum": lum}
+# CR-22: --object name → its representative wind_class (windless objects → None; classify catches them).
+_OBJECT_WIND_CLASS = {"sun": "solar", "m-dwarf": "active", "o-star": "o_hot",
+                      "brown-dwarf": None, "rogue-planet": None}
 
 
 def cmd_exclusion_boundary(args):
@@ -778,11 +768,23 @@ def cmd_exclusion_boundary(args):
                        "(--mass-msun / --object / --star / --spectral-type)."})
         return
 
-    obj_name = None
-    mass = args.mass_msun
+    # CR-22 two-layer wall/medium kwargs shared by every path
+    wind_kw = dict(
+        mass_loss_msun_yr=args.mass_loss_msun_yr, wind_state=args.wind_state,
+        wind_speed=args.wind_speed, v_ism=args.v_ism, c_ms=args.c_ms, b_field=args.b_field,
+        n_cloud=args.n_cloud, cloud_temp=args.cloud_temp, wind_phase_yr=args.wind_phase_yr,
+        f_shock=args.f_shock, m_shock_min=args.m_shock_min, mass_loss_source=args.mass_loss_source,
+        dial=args.dial, calibration_au=args.calibration_au, alpha=args.alpha, beta=args.beta,
+        gamma=args.gamma, scan_alpha=args.scan_alpha)
     lum = args.luminosity_lsun
-    wdot = args.mass_loss_msun_yr
+    two_layer = exclusion_boundary.compute_two_layer_boundary
 
+    # ── bare mass: no class info (classifier → main_sequence, no wall) ──
+    if args.mass_msun is not None:
+        _out(two_layer(mass_msun=args.mass_msun, luminosity_lsun=lum, **wind_kw))
+        return
+
+    # ── object preset: mass/lum/wind_class from the preset (windless presets caught by classify) ──
     if args.object:
         key = args.object.lower()
         if key not in exclusion_boundary._OBJECT_PRESETS:
@@ -790,20 +792,23 @@ def cmd_exclusion_boundary(args):
                            f"{', '.join(sorted(exclusion_boundary._OBJECT_PRESETS))}."})
             return
         m_p, l_p, w_p = exclusion_boundary._OBJECT_PRESETS[key]
-        mass, obj_name = m_p, key
-        if lum is None:
-            lum = l_p
-        if wdot is None and w_p:
-            wdot = w_p
-    elif args.star:
-        r = _resolve_star_mass_lum(args.star)
-        if "error" in r:
-            _out(r)
+        # keep the preset's W-dot so --object o-star/m-dwarf --gamma still feeds the standoff wind
+        # term (and the wall) as it did pre-CR-22 (CP2 finding 1); a user --mass-loss-msun-yr wins.
+        obj_kw = {**wind_kw,
+                  "mass_loss_msun_yr": (args.mass_loss_msun_yr if args.mass_loss_msun_yr is not None
+                                        else (w_p or None))}
+        _out(two_layer(mass_msun=m_p, luminosity_lsun=(lum if lum is not None else l_p),
+                       object_name=key, wind_class=_OBJECT_WIND_CLASS.get(key), **obj_kw))
+        return
+
+    # ── spectral type: classify ONCE here (windless/evolved have no MS-table mass) + thread it ──
+    if args.spectral_type:
+        dom, wc, note = exclusion_wall.classify_domain_wind(sp_type=args.spectral_type)
+        cls_kw = dict(domain=dom, wind_class=wc, class_note=note)
+        if dom in (exclusion_wall.WINDLESS, exclusion_wall.UNMODELED, exclusion_wall.EVOLVED):
+            # windless → free harbor; evolved → no MS-table mass → standoff refused, wall still emitted
+            _out(two_layer(sp_type=args.spectral_type, **cls_kw, **wind_kw))
             return
-        mass, obj_name = r["mass"], args.star
-        if lum is None:
-            lum = r["lum"]
-    elif args.spectral_type:
         row, key = regions._lookup_spectral_type(args.spectral_type)
         if row is None:
             _out({"error": f"Could not resolve spectral type '{args.spectral_type}'."})
@@ -814,26 +819,64 @@ def cmd_exclusion_boundary(args):
         except (TypeError, ValueError):
             _out({"error": f"Main-sequence row for '{key}' lacks a numeric mass/luminosity."})
             return
-        obj_name = key
-        if lum is None:
-            lum = row_lum
+        _out(two_layer(mass_msun=mass, luminosity_lsun=(lum if lum is not None else row_lum),
+                       sp_type=args.spectral_type, object_name=key, **cls_kw, **wind_kw))
+        return
 
-    _out(exclusion_boundary.compute_exclusion_boundary(
-        mass_msun=mass,
-        luminosity_lsun=(lum if lum is not None else 1.0),
-        mass_loss_msun_yr=wdot, wind_state=args.wind_state,
-        dial=args.dial, calibration_au=args.calibration_au,
-        alpha=args.alpha, beta=args.beta, gamma=args.gamma,
-        scan_alpha=args.scan_alpha, object_name=obj_name))
+    # ── star name: SIMBAD identity → classify → route the mass resolve (MS regions / evolved catalog) ──
+    if args.star:
+        sl = databases.compute_simbad_lookup(args.star)
+        if isinstance(sl, dict) and "error" in sl:
+            _out(sl)
+            return
+        sp, ot = sl.get("sp_type"), sl.get("otype")
+        dom, wc, note = exclusion_wall.classify_domain_wind(sp_type=sp, otype=ot)
+        cls_kw = dict(domain=dom, wind_class=wc, class_note=note)
+
+        if dom in (exclusion_wall.WINDLESS, exclusion_wall.UNMODELED):
+            _out(two_layer(sp_type=sp, otype=ot, object_name=args.star, **cls_kw, **wind_kw))
+            return
+
+        if dom == exclusion_wall.EVOLVED:
+            # measured mass from the catalog (NOT an MS luminosity inversion — spec CR-22.2)
+            catalog = stellar_mass_tables.load_mass_catalog(args.star_mass_catalog)
+            if isinstance(catalog, dict) and "error" in catalog:
+                _out(catalog)
+                return
+            spec = {"name": sl.get("main_id"), "sp_type": sp,
+                    "designations": stellar_mass.augment_designations(
+                        sl.get("designations"), {sl.get("main_id")})}
+            mass, mprov, mnote = stellar_mass.resolve_component_mass(spec, catalog, allow_flame=True)
+            _out(two_layer(mass_msun=mass, luminosity_lsun=lum, sp_type=sp, otype=ot,
+                           object_name=args.star, mass_provenance=mprov, mass_note=mnote,
+                           **cls_kw, **wind_kw))
+            return
+
+        # main sequence: reuse the resolved SIMBAD row for the regions mass (byte-identical to the
+        # pre-CR-22 regions mass path — same lookup → same stellarMass/bcLuminosity), so epsilon Eri holds.
+        reg = regions.compute_star_system_regions_from_simbad(sl)
+        if isinstance(reg, dict) and "error" in reg:
+            _out(reg)
+            return
+        mass, star_lum = reg.get("stellarMass"), reg.get("bcLuminosity")
+        if mass is None or star_lum is None:
+            _out({"error": f"Could not derive mass/luminosity for '{args.star}'."})
+            return
+        _out(two_layer(mass_msun=mass, luminosity_lsun=(lum if lum is not None else star_lum),
+                       sp_type=sp, otype=ot, object_name=args.star, **cls_kw, **wind_kw))
 
 
-# CR-11.3 — binary / multi-star exclusion-boundary composition.
+# CR-11.3 — binary / multi-star exclusion-boundary composition (+ CR-22 two-layer wall).
 def cmd_exclusion_system(args):
+    system_wind = dict(
+        wind_speed=args.wind_speed, v_ism=args.v_ism, c_ms=args.c_ms, b_field=args.b_field,
+        n_cloud=args.n_cloud, cloud_temp=args.cloud_temp, wind_phase_yr=args.wind_phase_yr,
+        f_shock=args.f_shock, m_shock_min=args.m_shock_min, mass_loss_source=args.mass_loss_source)
     _out(exclusion_system.compute_exclusion_system(
         star=args.star, component_specs=args.component,
         star_mass_catalog=args.star_mass_catalog, phase=args.phase,
         alpha=args.alpha, calibration_au=args.calibration_au, dial=args.dial,
-        beta=args.beta, gamma=args.gamma))
+        beta=args.beta, gamma=args.gamma, system_wind=system_wind))
 
 
 def _resolve_star_teff_lum(name):
@@ -3299,6 +3342,28 @@ def main(argv=None):
     p.add_argument("--gamma", type=float, default=0.0, help="Wind exponent (default 0 = off)")
     p.add_argument("--scan-alpha", action="store_true",
                    help="Also emit r_ex at both alpha edges (1/3 and 1/2)")
+    # CR-22: evolved-host measured mass + the research-grade wall's wind/medium inputs
+    p.add_argument("--star-mass-catalog",
+                   help="JSON mass catalog for an evolved-host measured mass (CR-22)")
+    p.add_argument("--wind-speed", type=float, help="Wind speed v_wind, km/s (CR-22 wall)")
+    p.add_argument("--v-ism", dest="v_ism", type=float,
+                   help="Star-cloud relative speed V_ISM, km/s (default 26; --star: assumed)")
+    p.add_argument("--c-ms", dest="c_ms", type=float,
+                   help="Fast-magnetosonic speed c_ms, km/s (default 20)")
+    p.add_argument("--b-field", dest="b_field", type=float,
+                   help="Cloud magnetic field, microgauss (derives c_ms)")
+    p.add_argument("--n-cloud", dest="n_cloud", type=float, help="Cloud density n, cm^-3 (default 0.1)")
+    p.add_argument("--cloud-temp", dest="cloud_temp", type=float,
+                   help="Cloud temperature, K (default 6300)")
+    p.add_argument("--wind-phase-yr", dest="wind_phase_yr", type=float,
+                   help="Wind phase duration, yr (giant/astropause cap)")
+    p.add_argument("--f-shock", dest="f_shock", type=float,
+                   help="Shock-standoff ratio f=r_bs/r_ap (default 1.5, research-grade owed pin)")
+    p.add_argument("--m-shock-min", dest="m_shock_min", type=float,
+                   help="Min fast-magnetosonic Mach for a bow shock (default 1.5)")
+    p.add_argument("--mass-loss-source", dest="mass_loss_source",
+                   choices=["astrosphere_wood", "recipe", "measured_direct"],
+                   help="Mass-loss source; astrosphere_wood forces v_wind=400 (double-handling rule)")
     p.set_defaults(func=cmd_exclusion_boundary)
 
     # exclusion-system (CR-11.3) — binary / multi-star composition of the frozen single-body generator
@@ -3329,6 +3394,22 @@ def main(argv=None):
                    help="Required-breakthrough calibration constant (default: auto to --calibration-au)")
     p.add_argument("--beta", type=float, default=0.0, help="Luminosity exponent (default 0 = off)")
     p.add_argument("--gamma", type=float, default=0.0, help="Wind exponent (default 0 = off)")
+    # CR-22: system-level wall inputs (a --component's own key wins over these); the wall + wall_zones
+    # are emitted by default. Per-component wind keys go inside --component (wind_class, wind_speed, …).
+    p.add_argument("--wind-speed", type=float, help="System-level wind speed v_wind, km/s (CR-22 wall)")
+    p.add_argument("--v-ism", dest="v_ism", type=float, help="System-level V_ISM, km/s (default 26)")
+    p.add_argument("--c-ms", dest="c_ms", type=float, help="System-level c_ms, km/s (default 20)")
+    p.add_argument("--b-field", dest="b_field", type=float, help="System-level cloud B, microgauss")
+    p.add_argument("--n-cloud", dest="n_cloud", type=float, help="System-level cloud n, cm^-3 (default 0.1)")
+    p.add_argument("--cloud-temp", dest="cloud_temp", type=float, help="System-level cloud T, K (default 6300)")
+    p.add_argument("--wind-phase-yr", dest="wind_phase_yr", type=float,
+                   help="System-level wind phase duration, yr (giant/astropause cap)")
+    p.add_argument("--f-shock", dest="f_shock", type=float, help="Shock-standoff ratio f (default 1.5)")
+    p.add_argument("--m-shock-min", dest="m_shock_min", type=float,
+                   help="Min fast-magnetosonic Mach for a bow shock (default 1.5)")
+    p.add_argument("--mass-loss-source", dest="mass_loss_source",
+                   choices=["astrosphere_wood", "recipe", "measured_direct"],
+                   help="System-level mass-loss source (astrosphere_wood forces v_wind=400)")
     p.set_defaults(func=cmd_exclusion_system)
 
     # ── Phase AL (Group R) — power generation / storage / thermal (Pkt 27) ────

@@ -1845,6 +1845,43 @@ non-positive dial/calibration, `β ≠ 0` with L ≤ 0, or a wind exponent (`γ 
 **Anchors:** Sun 47.5 AU; 0.1 M☉ → 22.05/15.02 AU (α 1/3, 1/2); 10 M☉ → 102.3/150.2 AU (harbor); explicit
 `--dial` overrides auto-cal; solar-wind term = 1 at the Ẇ=2×10⁻¹⁴ preset.
 
+##### CR-22 — the two-layer boundary (standoff + research-grade physical WALL)
+`exclusion-boundary` now emits, alongside the unchanged canon **STANDOFF** (`r_ex = 47.5·M^0.4`, byte-identical),
+a second **research-grade physical WALL** (the deeper medium-readability surface) + off-MS/evolved fixes. The
+standoff arithmetic is **untouched**; every new field is **additive**; the one consumer-visible break is the
+`domain` enum. Core entry: `exclusion_boundary.compute_two_layer_boundary(...)` (the frozen
+`compute_exclusion_boundary` is unchanged; `query.py` calls the two-layer orchestrator).
+- **`domain ∈ {main_sequence, evolved, windless_free_harbor, unmodeled}`** (replaces the implicit MS/off-MS):
+  WD/BD/rogue (and lum VII) → `windless_free_harbor` (`standoff/r_ex null`, `forcing_class "free_harbor"`, no
+  wall — the `--object brown-dwarf`/`rogue-planet` and `--spectral-type DA2` free-harbor fixes); **hot subdwarf
+  sdB/sdO → `unmodeled`** (honest null, weak wind, outside the model — NOT free-harbor); cool subdwarf (lum VI)
+  → `main_sequence` (a real standoff, no note); subgiant/giant/supergiant/AGB/WR → `evolved` (a standoff from a
+  **measured mass** via `--star-mass-catalog`,
+  carrying `standoff_note` = out-of-canon-MS-domain; no measured mass → the standoff is refused but the mass-free
+  wall is still emitted).
+- **New flags:** `--star-mass-catalog` (evolved measured mass; the `--star` path prefers it over an MS L-inversion),
+  and the wall's wind/medium inputs `--wind-speed`, `--v-ism` (default 26, `assumed` on `--star` — the vectorial
+  auto-derive is deferred to WB `OQ-SA-EXCL2`), `--c-ms` (default 20) **or** `--b-field` (derives c_ms), `--n-cloud`
+  (0.1), `--cloud-temp` (6300), `--wind-phase-yr`, `--f-shock` (1.5), `--m-shock-min` (1.5),
+  `--mass-loss-source {astrosphere_wood|recipe|measured_direct}` (astrosphere_wood forces v_wind=400).
+- **Additive output fields:** `standoff_au` (= `r_ex_au` alias), `standoff_note`, `domain`, `wind_class`,
+  `class_note`, `wall_au` (scalar midpoint | null), `wall_band_au` `[lo,hi]`, `wall_route ∈ {wind_term, bow_shock,
+  bow_shock_marginal, capped_astropause, capped_windtime, none_windless, none_no_wind, none_unmodeled}`
+  (`none_no_wind`/`none_unmodeled` are CR-22 additions), `wall_reason`, `wall_note` (always "research-grade"),
+  `verdict_marginal`, `wall_exceeds_standoff` + `wall_to_standoff_ratio` (the load-bearing hazard driver, `null` if
+  either layer null), `r_ap_au`, `mass_provenance` (evolved), and the wind-input echoes (`wind_speed_kms`,
+  `v_ism_kms`, `c_ms_kms`/`b_field_ug`, `n_cloud_cm3`, `cloud_temp_k`, `wind_phase_yr`, `f_shock`, `m_shock_min`,
+  `mass_loss_source`, `mass_loss_msun_yr`) each with a `_provenance ∈ {supplied, class_default, b_field_derived,
+  assumed, astrosphere_wood_forced, none}`.
+- **Wall physics (research-grade):** wind-term `√((Ẇ/Ẇ☉)·(v☉/v_wind))×(4–8 AU)`; bow-wave/shock route by
+  `M_f = V_ISM/c_ms` (default `M_shock_min` 1.5; `C = 4M_f²/(M_f²+3)`); a mandatory giant/astropause cap
+  `min(r_ap, v_wind·t_phase)` (slow-wind M-giant/AGB/RSG walls stay ly-scale, K/G/F giants Oort-scale).
+- **CR-22 anchors:** `--object sun` → standoff 47.5, wall ≈6/[4,8] `wind_term` (bow wave, M_f 1.3), `verdict_marginal
+  true`, `wall_exceeds_standoff false`, `r_ap 120`; `--object brown-dwarf`/`rogue-planet` → `windless_free_harbor`;
+  `--star "delta Pavonis" --star-mass-catalog …` → `evolved/subgiant_mild`, standoff ≈47 + note; `epsilon Ophiuchi`
+  → `evolved/giant_mild` standoff ≈61 + Oort wall `wall_exceeds_standoff true`; `37 Ophiuchi` → `evolved/
+  giant_overwindy` standoff ≈56 + capped ly-scale wall.
+
 ### Power generation / storage / thermal (Phase AL — Group R, no network)
 
 Ten `query.py`-only, pure-math, self-validating calculators + two bundled-table subcommands for the
@@ -4419,6 +4456,27 @@ query.py exclusion-system --component "id=A,mass=2.063,class=A0mA1Va,pair=AB,sma
 Tests: `tests/test_exclusion_system.py` (anchors/domain-guard/merge/envelope/point-mass/degenerate/validation),
 `tests/test_query_exclusion_system.py` (query contract), `tests/test_query_exclusion_system_live.py` (live `--star Sirius`).
 Core: `core/exclusion_system.py` (composes the frozen `core/exclusion_boundary.py`).
+
+**CR-22 — the two-layer boundary on `exclusion-system` (multi-star wall merge).** `exclusion-system` gains the same
+two-layer output as `exclusion-boundary` (see the CR-22 block under `exclusion-boundary` for the shared additive fields +
+the `domain` enum + wind flags). **Standoff numeric anchors byte-identical** (Sirius A 63.5, α Cen 49.0/45.7 + bands 54/65,
+Proxima 20.5 — regression-anchored). Changes: the per-component `domain` is the **four-value enum** (a giant is now `evolved`
+with a standoff from its measured mass, no longer `out_of_domain`/null; only `windless_free_harbor`/`unmodeled` are null); the
+per-component output gains the CR-22 wall fields (`wall_au`, `wall_band_au`, `wall_route`, `wall_reason`, `wall_note`,
+`verdict_marginal`, `r_ap_au`, `wall_exceeds_standoff`, `wall_to_standoff_ratio`, `wind_class`, `standoff_au`). `point_mass_r_ex_au`
+now corroborates over standoff-bearing members (main-sequence **+ evolved**); a windless/unmodeled mass is still never summed in.
+**New top-level `wall_zones[]`** (parallel to `zones`, a SEPARATE union-find on **wall** overlap `d < wall_hi_i + wall_hi_j`):
+per wall-zone `members`, `wall_envelope_au{periastron,apastron}` (present only where walls overlap — absence reported, not
+asserted), `combined_wind_wall_au` + `combined_wind_band_au` (a single value on the **summed** mass-loss, capped) +
+`combined_wind_phase` (F11 eligibility — where sep ≲ walls), `wall_exceeds_standoff`. System-level wall inputs are the same
+flags as `exclusion-boundary` (a `--component` key wins over the system-level default); per-component wind keys inside
+`--component`: `wind_class`, `wind_speed`, `v_ism`, `c_ms`, `b_field`, `n_cloud`, `cloud_temp`, `wind_phase_yr`,
+`mass_loss_source`, `f_shock`, `m_shock_min`, `otype`. **CR-22.5 anchors:** **70 Oph** (Wood Ṁ=100 → ~50 each) → per-component
+walls ~28–57 AU, `wall_envelope` at all phases, `combined_wind_wall_au` ~40–80, `wall_exceeds_standoff true`; **α Cen** (Ṁ=2 →
+~1 each) → walls ~4–8, envelope near peri only, `combined_wind_phase "periastron"`; **61 Cyg** (Ṁ=0.5, wide) → `wall_zones []`
+(no overlap at any phase); Sirius A+B → A a small wall, B (WD) `wall_au null`, no wall-zone. Core: `core/exclusion_wall.py`
+(the shared pure-math engine: `classify_domain_wind`, `compute_wall`, `c_ms_from_bfield`, `resolve_wind_inputs`, `wind_row_for`,
+`hazard_flags`) + `core/exclusion_system.py`. Tests: `tests/test_cr22.py`. `completed_plans/PHASE_CR22_PLAN.md`.
 
 ## CR-12 — WD cooling-grid ≤1.00 M☉ cooling-age re-derivation (Bedard 2020 unification) + criterion-1 correction
 

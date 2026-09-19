@@ -39,68 +39,55 @@ import math
 import re
 
 from core import exclusion_boundary as eb
+from core import exclusion_wall as ew           # CR-22 wall engine + four-value classifier
 from core import stellar_mass
 from core import stellar_mass_tables
 
 _WIDE_SMA_AU = 1000.0        # a resolved "orbit" wider than this + an invented equal-mass = a wide member
 
 _DEFAULT_ALPHA = 0.4          # mid of the canon [1/3, 1/2] band; reproduces the hand-card anchors
-_OFF_MS_TAGS = {"wd", "white-dwarf", "white_dwarf", "brown-dwarf", "brown_dwarf", "bd",
-                "rogue", "rogue-planet", "giant", "evolved"}
-_TAG_CLASS_NOTE = {
-    "wd": "white dwarf", "white-dwarf": "white dwarf", "white_dwarf": "white dwarf",
-    "brown-dwarf": "brown dwarf", "brown_dwarf": "brown dwarf", "bd": "brown dwarf",
-    "rogue": "rogue / sub-brown-dwarf", "rogue-planet": "rogue / sub-brown-dwarf",
-    "giant": "evolved giant", "evolved": "evolved star",
-}
+# (CR-22: the off-MS tag/class-note tables moved into core.exclusion_wall — _WINDLESS_TAGS /
+# _EVOLVED_TAGS / _CLASS_NOTES — the single source of truth for the four-value classifier.)
 
 _MODEL_NOTE_COMPOSE = (
     "CR-11.3 composition of the FROZEN single-body exclusion-boundary generator over the resolved "
-    "components — no second calibration. Per-component r_ex is compute_exclusion_boundary on the "
-    "CR-11.2-preferred mass; off-MS components (WD/BD/rogue/giant) are out-of-domain and contribute no "
-    "sphere (their real mass still sets the barycenter). The zone envelope is the union of in-domain "
-    "spheres at their barycentric offsets — larger, time-varying and asymmetric than any single "
-    "component (canon). point_mass_r_ex_au is corroboration-only over in-domain members; an "
-    "out-of-domain mass is never summed in."
+    "components — no second calibration. Per-component STANDOFF r_ex is compute_exclusion_boundary on "
+    "the CR-11.2-preferred mass; CR-22 gives an EVOLVED host (subgiant/giant/supergiant/AGB/WR) a "
+    "standoff too, from its measured mass (standoff_note flags the out-of-canon-MS-domain use). Only "
+    "windless_free_harbor (WD/BD/rogue) and unmodeled (hot subdwarf) components contribute NO sphere "
+    "(r_ex_au=null; their real mass still sets the barycenter). The standoff-zone envelope is the union "
+    "of standoff-bearing spheres at their barycentric offsets. CR-22 also emits a second, "
+    "research-grade physical WALL per component + a parallel wall_zones merge (envelope + combined-wind "
+    "on summed mass-loss). point_mass_r_ex_au corroborates over standoff-bearing members (main-sequence "
+    "+ evolved); a windless/unmodeled mass is never summed in."
 )
 
 
-# ── domain guard ──────────────────────────────────────────────────────────────
-def _component_domain(sp_type=None, class_tag=None):
-    """(domain, class_note) — 'main_sequence' or 'out_of_domain' for a component.
+# ── domain guard (CR-22: four-value, via the shared classifier) ─────────────────
+def _component_domain(sp_type=None, class_tag=None, otype=None):
+    """(domain, class_note) — the CR-22 four-value domain for a component.
 
-    An explicit off-MS ``class_tag`` (wd/brown-dwarf/rogue/giant) wins; else the SIMBAD ``sp_type`` is
-    classified by the app's canonical ``detection._host_class`` (CR-6-AMEND) — white dwarf (``D*``),
-    brown dwarf (``L``/``T``/``Y``), **hot subdwarf** (``sdB``/``sdO``), subgiant (IV), giant
-    (I/II/III), luminosity VI/VII — is out-of-domain. An ordinary OBAFGKM dwarf (lum V, or cool
-    subdwarfs ``sdM``/``esdM``) is main-sequence.
-    """
-    if class_tag:
-        t = class_tag.strip().lower()
-        if t in _OFF_MS_TAGS:
-            return "out_of_domain", _TAG_CLASS_NOTE.get(t, t)
-        if t in ("main-sequence", "main_sequence", "ms", "dwarf"):
-            return "main_sequence", None
-        # else fall through and treat the tag as a spectral type
-        sp_type = sp_type or class_tag
-    sp = (sp_type or "").strip()
-    if not sp:
-        return "main_sequence", None    # no info → assume MS (do not fabricate a guard)
-    # Reuse the app's canonical non-MS classifier (CR-6-AMEND) so this guard agrees with the rest of
-    # the tool: WD (degenerate `D*`), BD (`L`/`T`/`Y`), **hot subdwarf sdB/sdO**, subgiant (IV),
-    # giant (I/II/III), luminosity VI/VII — while cool subdwarfs (sdM/esdM) and lum-V dwarfs stay MS.
-    from core import detection
-    host_class = detection._host_class(sp)
-    if host_class is not None:
-        return "out_of_domain", host_class.replace("_", " ")
-    return "main_sequence", None
+    Thin 2-tuple wrapper over ``exclusion_wall.classify_domain_wind`` (dropping wind_class), so every
+    existing caller/unpack site is unchanged while the VALUES become the four-state enum
+    ``{main_sequence, evolved, windless_free_harbor, unmodeled}`` (WB CR-22 MSG 240/242): WD/BD/rogue →
+    windless_free_harbor; hot subdwarf sdB/sdO → unmodeled (honest null); cool subdwarf (lum VI),
+    lum-V dwarf, Am/Ap → main_sequence; subgiant/giant/supergiant/AGB/WR → evolved. ``otype`` is
+    forwarded so an AGB/Mira/WR/carbon star with a bare (lum-class-less) spectral type is classified
+    evolved — never fabricated as MS (the CR-6-AMEND / CR-13-F1 off-MS-fabrication guard)."""
+    dom, _wc, note = ew.classify_domain_wind(sp_type=sp_type, class_tag=class_tag, otype=otype)
+    return dom, note
 
 
 # ── per-component r_ex (frozen generator) ────────────────────────────────────
 def _component_rex(comp, alpha, calibration_au, dial, beta, gamma):
-    """r_ex_au for an in-domain component via the FROZEN generator, or None if out-of-domain / error."""
-    if comp["domain"] != "main_sequence":
+    """r_ex_au for a component that HAS a standoff (main_sequence OR evolved-with-a-mass) via the
+    FROZEN generator, or ``None`` for windless_free_harbor / unmodeled / an evolved host with no mass.
+    CR-22: an evolved host earns a standoff from its measured mass (spec CR-22.2), so only the genuinely
+    boundary-less domains return ``None`` here — Sirius B (windless) stays null; a giant now gets r_ex."""
+    if comp["domain"] not in (ew.MAIN_SEQUENCE, ew.EVOLVED):
         return None, None
+    if comp.get("mass_solar") is None:
+        return None, None                         # evolved host with no measured mass → no standoff
     res = eb.compute_exclusion_boundary(
         comp["mass_solar"], luminosity_lsun=comp.get("luminosity_lsun") or 1.0,
         mass_loss_msun_yr=comp.get("mass_loss_msun_yr"), wind_state=comp.get("wind_state"),
@@ -203,15 +190,75 @@ class _UF:
 
 
 # ── the composition core ──────────────────────────────────────────────────────
+# ── CR-22.5 wall geometry: a PARALLEL merge on wall overlap, distinct from the standoff merge ─────
+def _comp_wind_params(comp, system_wind):
+    """Per-component wall inputs (the component overrides the system-level default) for
+    ``exclusion_wall.resolve_wind_inputs``."""
+    sw = system_wind or {}
+
+    def pick(key):
+        v = comp.get(key)
+        return v if v is not None else sw.get(key)
+    return dict(mass_loss_msun_yr=comp.get("mass_loss_msun_yr"),
+                wind_speed=pick("wind_speed"), v_ism=pick("v_ism"), c_ms=pick("c_ms"),
+                b_field=pick("b_field"), n_cloud=pick("n_cloud"), cloud_temp=pick("cloud_temp"),
+                wind_phase_yr=pick("wind_phase_yr"), f_shock=pick("f_shock"),
+                m_shock_min=pick("m_shock_min"), mass_loss_source=pick("mass_loss_source"))
+
+
+def _wall_envelope(members, phase):
+    """Semi-extent of a group's merged WALL at ``phase`` (union of walls + orbital offsets), or
+    ``None`` when the walls do NOT overlap at this phase (absence is reported, not asserted — CR-22.5)."""
+    contrib = [m for m in members if m.get("wall_band_hi") is not None]
+    if not contrib:
+        return None
+    if len(members) == 1:
+        return contrib[0]["wall_band_hi"]
+    m_tot = sum((m.get("mass_solar") or 0.0) for m in members) or None
+    if len(members) == 2 and m_tot:
+        a, b = members
+        d = _pair_sep(a, b, phase)
+        wa = a.get("wall_band_hi") or 0.0
+        wb = b.get("wall_band_hi") or 0.0
+        if math.isfinite(d):
+            if d >= wa + wb:                       # walls do not overlap at this phase
+                return None
+            off_a = d * (b.get("mass_solar") or 0.0) / m_tot
+            off_b = d * (a.get("mass_solar") or 0.0) / m_tot
+            reaches = [off + m["wall_band_hi"] for m, off in ((a, off_a), (b, off_b))
+                       if m.get("wall_band_hi") is not None]
+            return max(reaches)
+        return max(m["wall_band_hi"] for m in contrib)     # concentric (no finite separation)
+    return max(m["wall_band_hi"] for m in contrib)          # >2 members: approximate union reach
+
+
+def _combined_wind_wall(contrib):
+    """Combined-wind wall band for a tight group: the wind-term on the SUMMED mass-loss (spec CR-22.5),
+    a single value with no phase dependence; v_wind = the dominant (max-Ẇ) member's speed, and the
+    medium (v_ism/c_ms/n_cloud) from that member's resolved inputs. ``None`` for a single wind source."""
+    winds = [m for m in contrib if (m.get("wall_inputs") or {}).get("wdot")]
+    if len(winds) < 2:
+        return None, None
+    dom = max(winds, key=lambda m: m["wall_inputs"]["wdot"])
+    di = dom["wall_inputs"]
+    sum_wdot = sum(m["wall_inputs"]["wdot"] for m in winds)
+    # carry the dominant member's t_phase so the giant/astropause cap still trims an evolved combined
+    # wall to ly-scale (CP3 finding 2) — a solar-class pair has t_phase=None → no cap, as before.
+    w = ew.compute_wall(wdot=sum_wdot, v_wind=di["v_wind"], v_ism=di["v_ism"], c_ms=di["c_ms"],
+                        n_cloud=di["n_cloud"], r_ex=None, wind_class=None, t_phase=di.get("t_phase"))
+    return w.get("wall_au"), w.get("wall_band_au")
+
+
 def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
                              calibration_au=eb._KUIPER_EDGE_AU, dial=None,
-                             beta=0.0, gamma=0.0):
+                             beta=0.0, gamma=0.0, system_wind=None):
     """Compose the frozen single-body generator over resolved ``components``. See the module docstring.
 
     ``components`` — list of dicts with (at least) ``id``, ``mass_solar`` (> 0), optional
-    ``luminosity_lsun``, ``sp_type``/``class`` (drives the domain guard), and the orbital placement
-    ``pair`` / ``sma_au`` / ``ecc`` / ``orbits`` / ``wind_state`` / ``mass_loss_msun_yr``. Returns the
-    result dict or a curated ``{"error": str}``.
+    ``luminosity_lsun``, ``sp_type``/``class``/``wind_class`` (drive the domain + wind classifier), and
+    the orbital placement ``pair`` / ``sma_au`` / ``ecc`` / ``orbits`` plus per-component wind inputs.
+    ``system_wind`` supplies system-level wall inputs (a component's own value wins). Returns the result
+    dict (standoff ``zones`` + CR-22.5 ``wall_zones``) or a curated ``{"error": str}``.
     """
     if not components:
         return {"error": "exclusion-system requires at least one --component (or a --star to resolve)."}
@@ -226,11 +273,13 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         cid = c.get("id") or f"component-{i + 1}"
         m = c.get("mass_solar")
         m_ok = isinstance(m, (int, float)) and not isinstance(m, bool) and m > 0
-        domain, class_note = _component_domain(c.get("sp_type"), c.get("class"))
-        # CR-13 C1 → Option (A): a LONE out-of-domain component (WD/BD/rogue/giant) whose mass is
-        # unresolved is numerically inert (single-component barycenter = the star, no in-domain sphere,
-        # no point-mass sum), so it needs no mass — skip the guard and flag it, rather than erroring.
-        lone_ood_unresolved = (n_comp == 1 and domain == "out_of_domain" and not m_ok)
+        domain, wind_class, class_note = ew.classify_domain_wind(
+            sp_type=c.get("sp_type"), otype=c.get("otype"), class_tag=c.get("class"),
+            wind_class=c.get("wind_class"), wind_state=c.get("wind_state"))
+        # CR-13 C1 → Option (A), CR-22-widened: a LONE non-main-sequence component with an unresolved
+        # mass is numerically inert (windless/unmodeled carry no standoff; an evolved host with no
+        # measured mass emits only the mass-free wall) — needs no mass, so flag it rather than erroring.
+        lone_ood_unresolved = (n_comp == 1 and domain != ew.MAIN_SEQUENCE and not m_ok)
         if not m_ok and not lone_ood_unresolved:
             return {"error": f"component '{cid}' needs a positive mass_solar (got {m!r})."}
         comps.append({
@@ -238,10 +287,16 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             "mass_provenance": c.get("mass_provenance") or (
                 "unresolved_out_of_domain" if lone_ood_unresolved else None),
             "luminosity_lsun": c.get("luminosity_lsun"), "sp_type": c.get("sp_type"),
-            "domain": domain, "class_note": class_note,
+            "domain": domain, "wind_class": wind_class, "class_note": class_note,
             "pair": c.get("pair"), "sma_au": c.get("sma_au"), "ecc": c.get("ecc"),
             "orbits": c.get("orbits"), "wind_state": c.get("wind_state"),
             "mass_loss_msun_yr": c.get("mass_loss_msun_yr"),
+            # per-component wall inputs (fall back to system-level in _comp_wind_params)
+            "wind_speed": c.get("wind_speed"), "v_ism": c.get("v_ism"), "c_ms": c.get("c_ms"),
+            "b_field": c.get("b_field"), "n_cloud": c.get("n_cloud"),
+            "cloud_temp": c.get("cloud_temp"), "wind_phase_yr": c.get("wind_phase_yr"),
+            "f_shock": c.get("f_shock"), "m_shock_min": c.get("m_shock_min"),
+            "mass_loss_source": c.get("mass_loss_source"),
         })
 
     # per-component r_ex (frozen generator on the preferred mass)
@@ -250,7 +305,28 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         if err:
             return {"error": f"component '{c['id']}': {err}"}
 
-    # merge-grouping: union over the periastron overlap test (closest approach)
+    # per-component WALL (research-grade; composed here, the frozen generator stays pure — CR-22.5)
+    for c in comps:
+        wp = _comp_wind_params(c, system_wind)
+        inputs, _prov = ew.resolve_wind_inputs(c["domain"], c["wind_class"], c.get("sp_type"), **wp)
+        wall = ew.compute_wall(
+            wdot=inputs["wdot"], v_wind=inputs["v_wind"], v_ism=inputs["v_ism"], c_ms=inputs["c_ms"],
+            n_cloud=inputs["n_cloud"], r_ex=c["r_ex_au"], wind_class=c["wind_class"],
+            t_phase=inputs["t_phase"], f_shock=inputs["f_shock"], m_shock_min=inputs["m_shock_min"],
+            c_ms_band=inputs["c_ms_band"]) if c["domain"] in (ew.MAIN_SEQUENCE, ew.EVOLVED) else {
+                "wall_au": None, "wall_band_au": None,
+                "wall_route": "none_windless" if c["domain"] == ew.WINDLESS else "none_unmodeled",
+                "wall_reason": (c.get("class_note") or ("windless — free harbor"
+                                if c["domain"] == ew.WINDLESS else "class outside the wind model")),
+                "wall_note": ew._WALL_NOTE, "verdict_marginal": False, "r_ap_au": None}
+        c["wall"] = wall
+        c["wall_inputs"] = inputs if c["domain"] in (ew.MAIN_SEQUENCE, ew.EVOLVED) else None
+        c["wall_band_hi"] = wall["wall_band_au"][1] if wall.get("wall_band_au") else None
+        exceeds, ratio = ew.hazard_flags(c["wall_band_hi"], wall.get("wall_au"), c["r_ex_au"])
+        c["wall_exceeds_standoff"] = exceeds
+        c["wall_to_standoff_ratio"] = ratio
+
+    # standoff merge-grouping: union over the periastron overlap test (closest approach)
     n = len(comps)
     uf = _UF(n)
     for i in range(n):
@@ -280,10 +356,8 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             long_axis[ph] = la
             minor = mn if minor is None else minor
             bary_note = bn
-        # point-mass corroboration: in-domain members only, never an out-of-domain mass. Pass the
-        # summed in-domain luminosity + wind so a --beta run uses the real luminosities (not 1.0) and
-        # a --gamma run doesn't error out → silently drop the point-mass (the per-component calls
-        # already guaranteed every in-domain member carries the wind gamma needs, else compose errored).
+        # point-mass corroboration: standoff-bearing members only (main_sequence + evolved-with-mass;
+        # CR-22 MINOR-10 — evolved masses now corroborate, windless/unmodeled masses are never summed).
         point_mass = None
         if in_dom:
             m_in = sum(m["mass_solar"] for m in in_dom)
@@ -295,9 +369,13 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
                 mass_loss_msun_yr=wind_in, wind_state=(wstate if wind_in is None else None),
                 alpha=alpha, calibration_au=calibration_au, dial=dial, beta=beta, gamma=gamma)
             point_mass = pm.get("r_ex_au") if "error" not in pm else None
-        # forcing class from the zone's representative size (the point-mass r_ex, or the single sphere)
         rep = point_mass if point_mass is not None else (in_dom[0]["r_ex_au"] if in_dom else None)
-        forcing = eb._forcing_class(rep) if rep is not None else "out_of_domain"
+        if rep is not None:
+            forcing = eb._forcing_class(rep)
+        elif all(m["domain"] == ew.WINDLESS for m in members):
+            forcing = "free_harbor"
+        else:
+            forcing = "out_of_domain"
         zones.append({
             "members": [m["id"] for m in members],
             "status": "merged" if len(members) > 1 else "separate",
@@ -306,9 +384,16 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             "barycenter": bary_note,
             "components": [{
                 "id": m["id"], "mass_solar": m["mass_solar"], "mass_provenance": m.get("mass_provenance"),
-                "r_ex_au": m["r_ex_au"],
-                "domain": "main_sequence" if m["r_ex_au"] is not None else "out_of_domain",
+                "r_ex_au": m["r_ex_au"], "standoff_au": m["r_ex_au"],
+                "domain": m["domain"], "wind_class": m.get("wind_class"),
                 "class_note": m.get("class_note"),
+                "wall_au": m["wall"].get("wall_au"), "wall_band_au": m["wall"].get("wall_band_au"),
+                "wall_route": m["wall"].get("wall_route"), "wall_reason": m["wall"].get("wall_reason"),
+                "wall_note": m["wall"].get("wall_note"),
+                "verdict_marginal": m["wall"].get("verdict_marginal"),
+                "r_ap_au": m["wall"].get("r_ap_au"),
+                "wall_exceeds_standoff": m["wall_exceeds_standoff"],
+                "wall_to_standoff_ratio": m["wall_to_standoff_ratio"],
             } for m in members],
             "point_mass_r_ex_au": point_mass,
             "forcing_class": forcing,
@@ -316,6 +401,58 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
     # deterministic order: largest zone envelope first, then by member ids
     zones.sort(key=lambda z: (-(max((v or 0) for v in z["long_axis_au"].values()) if z["long_axis_au"] else 0),
                               z["members"]))
+
+    # ── CR-22.5 WALL ZONES (parallel to the standoff zones): a separate union-find on wall overlap ──
+    wuf = _UF(n)
+    for i in range(n):
+        for j in range(i + 1, n):
+            d = _pair_sep(comps[i], comps[j], "peri")
+            wi = comps[i]["wall_band_hi"] or 0.0
+            wj = comps[j]["wall_band_hi"] or 0.0
+            if math.isfinite(d) and wi and wj and d < wi + wj:
+                wuf.union(i, j)
+    wgroups = {}
+    for i in range(n):
+        wgroups.setdefault(wuf.find(i), []).append(comps[i])
+
+    wall_zones = []
+    for members in wgroups.values():
+        contrib = [m for m in members if m.get("wall_band_hi") is not None]
+        if not contrib:
+            continue
+        env = {}
+        overlap_phases = []
+        for ph in phases:
+            la = _wall_envelope(members, _ph_key[ph]) if len(members) > 1 else None
+            env[ph] = la
+            if la is not None:
+                overlap_phases.append(ph)
+        combined_au, combined_band = _combined_wind_wall(contrib)
+        # only report a wall zone where walls actually OVERLAP at a requested phase (F11 eligibility) —
+        # a lone / non-overlapping wall stays on its standoff-zone component (CR-22.5). The union-find
+        # groups on peri (closest approach), so in an apastron-only run a peri-only-overlap pair yields
+        # no apo envelope → no wall_zone (CP4 finding 2 — no spurious phase-None combined-wind zone).
+        if not overlap_phases:
+            continue
+        # combined_wind_phase names WHERE the combined wind is eligible (walls overlap) — F11
+        # phase-eligibility; the value itself is phase-independent. overlap_phases is non-empty here
+        # (a 2+-member wall group is unioned at peri → peri always overlaps).
+        combined_phase = None
+        if combined_au is not None and overlap_phases:
+            combined_phase = "both" if len(overlap_phases) == 2 else overlap_phases[0]
+        max_standoff = max((m["r_ex_au"] for m in members if m["r_ex_au"] is not None), default=None)
+        env_hi = max([v for v in env.values() if v is not None] + ([combined_band[1]] if combined_band else []),
+                     default=None)
+        wall_zones.append({
+            "members": [m["id"] for m in members],
+            "wall_envelope_au": env,
+            "combined_wind_wall_au": combined_au,
+            "combined_wind_band_au": combined_band,
+            "combined_wind_phase": combined_phase,
+            "wall_exceeds_standoff": (bool(env_hi > max_standoff)
+                                      if env_hi is not None and max_standoff is not None else None),
+        })
+    wall_zones.sort(key=lambda z: z["members"])
 
     # pairwise separations echo
     separations = []
@@ -338,6 +475,7 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         "dial": float(dial) if dial is not None else float(calibration_au),
         "calibration_au": calibration_au,
         "zones": zones,
+        "wall_zones": wall_zones,
         "separations_au": separations,
         "model_note": eb._MODEL_NOTE,
         "composition_note": _MODEL_NOTE_COMPOSE,
@@ -358,11 +496,17 @@ def _parse_component_spec(s):
     into a spec dict. Numeric keys are coerced; unknown keys raise. Returns dict or ``{"error"}``."""
     spec = {}
     _num = {"mass", "mass_solar", "lum", "luminosity_lsun", "sma", "sma_au", "ecc",
-            "mass_loss_msun_yr"}
+            "mass_loss_msun_yr",
+            # CR-22 per-component wall inputs
+            "wind_speed", "v_ism", "c_ms", "b_field", "n_cloud", "cloud_temp",
+            "wind_phase_yr", "f_shock", "m_shock_min"}
     _alias = {"mass": "mass_solar", "lum": "luminosity_lsun", "sma": "sma_au",
-              "type": "sp_type", "sptype": "sp_type"}
-    _known = {"id", "name", "mass_solar", "luminosity_lsun", "sp_type", "class", "pair",
-              "sma_au", "ecc", "orbits", "wind_state", "mass_loss_msun_yr"}
+              "type": "sp_type", "sptype": "sp_type", "otype": "otype"}
+    _known = {"id", "name", "mass_solar", "luminosity_lsun", "sp_type", "otype", "class", "pair",
+              "sma_au", "ecc", "orbits", "wind_state", "mass_loss_msun_yr",
+              # CR-22 per-component wall inputs
+              "wind_class", "wind_speed", "v_ism", "c_ms", "b_field", "n_cloud", "cloud_temp",
+              "wind_phase_yr", "f_shock", "m_shock_min", "mass_loss_source"}
     for tok in str(s).split(","):
         tok = tok.strip()
         if not tok:
@@ -444,7 +588,7 @@ def _single_body_component(sl, catalog, star):
     spec = {"name": sl.get("main_id"), "sp_type": sp, "class": class_tag,
             "designations": _augment_designations(sl.get("designations"), {sl.get("main_id")})}
     mass, prov, _n = _resolve_component_mass(spec, catalog)
-    domain, class_note = _component_domain(sp, class_tag)   # broad guard, matches compose
+    domain, class_note = _component_domain(sp, class_tag, otype=sl.get("otype"))   # broad guard, matches compose
     if mass is None and domain == "main_sequence":
         # MS single body with no measured mass — reuse the dossier's bolometric-L inversion (Q2).
         from core import regions
@@ -491,10 +635,10 @@ def _resolve_system_from_star(star, catalog):
         if isinstance(built, dict) and "error" in built:
             return built
         comp, mass, domain, class_note = built
-        if mass is None and domain == "out_of_domain":
-            notes.append(f"'{star}' is a lone {class_note or 'out-of-domain'} component with no "
-                         "resolvable mass (no catalog row, no Gaia FLAME) — out-of-domain guard gives "
-                         "r_ex=null; pass --star-mass-catalog for its mass")
+        if mass is None and domain != ew.MAIN_SEQUENCE:
+            notes.append(f"'{star}' is a lone {class_note or domain} component with no resolvable mass "
+                         "(no catalog row, no Gaia FLAME) — the off-MS guard gives r_ex=null; pass "
+                         "--star-mass-catalog for its mass")
         else:
             notes.append(f"'{star}' resolved to the single component {main_id}")
         return [comp], notes, {}                         # CR-19 3-tuple (pre-binary_orbit: no degrade meta)
@@ -585,7 +729,8 @@ def _resolve_system_from_star(star, catalog):
 
 def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=None,
                              phase="both", alpha=_DEFAULT_ALPHA,
-                             calibration_au=eb._KUIPER_EDGE_AU, dial=None, beta=0.0, gamma=0.0):
+                             calibration_au=eb._KUIPER_EDGE_AU, dial=None, beta=0.0, gamma=0.0,
+                             system_wind=None):
     """Entry point for ``exclusion-system``. Resolve the components (from ``--star`` live, or explicit
     ``--component`` specs) — each mass via the CR-11.2 chain — then compose. Returns the result dict
     (with a ``resolution`` note block) or a curated ``{"error": str}``.
@@ -623,8 +768,9 @@ def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=
                 # C1 → (A) parity (plan-review F2): a LONE out-of-domain component is numerically inert
                 # and needs no mass — let compose's tolerance emit r_ex=null + unresolved_out_of_domain.
                 # Any mass-requiring component (MS, or one of several) still errors here.
-                domain, _cn = _component_domain(spec.get("sp_type"), spec.get("class"))
-                if not (len(component_specs) == 1 and domain == "out_of_domain"):
+                domain, _cn = _component_domain(spec.get("sp_type"), spec.get("class"),
+                                                otype=spec.get("otype"))
+                if not (len(component_specs) == 1 and domain != ew.MAIN_SEQUENCE):
                     return {"error": mnote, **comp_flame}   # CR-19: a bounded FLAME → flag it on the error too
             else:
                 spec["mass_solar"] = m
@@ -634,7 +780,8 @@ def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=
         return {"error": "exclusion-system requires --star or at least one --component."}
 
     result = compose_exclusion_system(components, phase=phase, alpha=alpha,
-                                      calibration_au=calibration_au, dial=dial, beta=beta, gamma=gamma)
+                                      calibration_au=calibration_au, dial=dial, beta=beta, gamma=gamma,
+                                      system_wind=system_wind)
     if "error" not in result and notes:
         result["resolution_notes"] = notes
     if star and "error" not in result:

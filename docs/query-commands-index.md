@@ -257,8 +257,8 @@ descriptions are condensed from integration.md's prose.
 | Command | Description |
 |---|---|
 | `metric-drive-power` | Metric-drive field-rocket radiated power + fuel/mass bill (STL-mode law only). |
-| `exclusion-boundary` | FTL exclusion-boundary radius r_ex (the "Alcubierre Limit"); a Kuiper-calibrated in-universe dial. |
-| `exclusion-system` | CR-11.3: compose `exclusion-boundary` over a binary/multi-star system (`--star` or `--component`) into merge-grouped, phase-varying, asymmetric zones with per-component off-MS domain guards. CR-19: `--gaia-timeout` bounds the Gaia-archive TAP calls; a `--star` degrade flags `gaia_status` (binary path) + `flame_status_a`/`_b` (mass path), and a mass-resolving `--component` degrade flags per-component `flame_status_<a+i>`, never hangs. |
+| `exclusion-boundary` | FTL exclusion-boundary radius r_ex (the "Alcubierre Limit"); a Kuiper-calibrated in-universe dial. CR-22: a **two-layer** output — the unchanged canon **standoff** + a second **research-grade physical WALL** (`wall_au`/`wall_route`/`wall_exceeds_standoff`, wind flags `--wind-speed`/`--v-ism`/`--c-ms`/`--b-field`/…); a four-value `domain` enum (`main_sequence`/`evolved`/`windless_free_harbor`/`unmodeled`) with a windless free-harbor guard on every path + evolved-host standoff from a measured mass (`--star-mass-catalog`). |
+| `exclusion-system` | CR-11.3: compose `exclusion-boundary` over a binary/multi-star system (`--star` or `--component`) into merge-grouped, phase-varying, asymmetric zones with per-component off-MS domain guards. CR-19: `--gaia-timeout` bounds the Gaia-archive TAP calls; a `--star` degrade flags `gaia_status` (binary path) + `flame_status_a`/`_b` (mass path), and a mass-resolving `--component` degrade flags per-component `flame_status_<a+i>`, never hangs. CR-22: the two-layer wall lands per component + a parallel top-level `wall_zones[]` (envelope + combined-wind on summed Ẇ + phase-eligibility); the four-value `domain` enum; per-`--component` wind keys + system-level wind flags. |
 
 ## ISM dust / extinction (T2)
 | Command | Description |

@@ -36,13 +36,14 @@ def _alpha_cen(**over):
 
 class DomainGuardTest(unittest.TestCase):
     def test_class_tags_and_sp_types(self):
-        self.assertEqual(es._component_domain(class_tag="wd")[0], "out_of_domain")
-        self.assertEqual(es._component_domain(class_tag="brown-dwarf")[0], "out_of_domain")
-        self.assertEqual(es._component_domain(class_tag="rogue")[0], "out_of_domain")
-        self.assertEqual(es._component_domain(class_tag="giant")[0], "out_of_domain")
-        self.assertEqual(es._component_domain(sp_type="DA2")[0], "out_of_domain")   # WD
-        self.assertEqual(es._component_domain(sp_type="T5")[0], "out_of_domain")    # BD
-        self.assertEqual(es._component_domain(sp_type="K0III")[0], "out_of_domain") # giant
+        # CR-22: the four-value enum (was the binary main_sequence/out_of_domain)
+        self.assertEqual(es._component_domain(class_tag="wd")[0], "windless_free_harbor")
+        self.assertEqual(es._component_domain(class_tag="brown-dwarf")[0], "windless_free_harbor")
+        self.assertEqual(es._component_domain(class_tag="rogue")[0], "windless_free_harbor")
+        self.assertEqual(es._component_domain(class_tag="giant")[0], "evolved")
+        self.assertEqual(es._component_domain(sp_type="DA2")[0], "windless_free_harbor")   # WD
+        self.assertEqual(es._component_domain(sp_type="T5")[0], "windless_free_harbor")    # BD
+        self.assertEqual(es._component_domain(sp_type="K0III")[0], "evolved")              # giant
         self.assertEqual(es._component_domain(sp_type="A0mA1Va")[0], "main_sequence")
         self.assertEqual(es._component_domain(sp_type="G2V")[0], "main_sequence")
         self.assertEqual(es._component_domain(sp_type=None)[0], "main_sequence")    # no info → MS
@@ -56,7 +57,7 @@ class SiriusAnchorTest(unittest.TestCase):
         self.assertEqual(z["status"], "merged")
         self.assertEqual(sorted(z["members"]), ["A", "B"])
         comps = {c["id"]: c for c in z["components"]}
-        self.assertEqual(comps["B"]["domain"], "out_of_domain")   # WD guard withholds the sphere
+        self.assertEqual(comps["B"]["domain"], "windless_free_harbor")   # WD → free harbor, no sphere
         self.assertIsNone(comps["B"]["r_ex_au"])
         self.assertAlmostEqual(comps["A"]["r_ex_au"], 63.46, places=1)
 
@@ -191,11 +192,13 @@ class ReviewFixTest(unittest.TestCase):
         self.assertGreater(off_B, off_A + rA)                          # the trap the old code fell into
         self.assertAlmostEqual(z["long_axis_au"]["apastron"], off_A + rA, places=1)  # in-domain reach only
 
-    def test_fix3_hot_subdwarf_out_of_domain(self):
-        self.assertEqual(es._component_domain(sp_type="sdB")[0], "out_of_domain")
-        self.assertEqual(es._component_domain(sp_type="sdO")[0], "out_of_domain")
+    def test_fix3_hot_subdwarf_unmodeled(self):
+        # CR-22 MSG 242 Item 2: hot subdwarfs → unmodeled (honest null); cool subdwarf → MS; subgiant → evolved
+        self.assertEqual(es._component_domain(sp_type="sdB")[0], "unmodeled")
+        self.assertEqual(es._component_domain(sp_type="sdO")[0], "unmodeled")
         self.assertEqual(es._component_domain(sp_type="sdM3.0")[0], "main_sequence")  # cool subdwarf ~MS
-        self.assertEqual(es._component_domain(sp_type="K0IV")[0], "out_of_domain")    # subgiant
+        self.assertEqual(es._component_domain(sp_type="M1VI")[0], "main_sequence")    # cool subdwarf (lum VI)
+        self.assertEqual(es._component_domain(sp_type="K0IV")[0], "evolved")          # subgiant
 
     def test_fix5_point_mass_survives_beta_and_gamma(self):
         beta = es.compose_exclusion_system([
@@ -340,7 +343,7 @@ class Cr13ComposeToleranceTest(unittest.TestCase):
         self.assertIsNone(c["r_ex_au"])
         self.assertIsNone(c["mass_solar"])
         self.assertEqual(c["mass_provenance"], "unresolved_out_of_domain")
-        self.assertEqual(c["class_note"], "white dwarf")
+        self.assertEqual(c["domain"], "windless_free_harbor")   # CR-22: WD → free harbor (was out_of_domain)
 
     def test_in_domain_unresolved_mass_still_errors(self):
         r = es.compose_exclusion_system([{"id": "x", "sp_type": "G2V"}], alpha=0.4)   # MS, no mass

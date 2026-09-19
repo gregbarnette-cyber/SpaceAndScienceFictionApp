@@ -28,7 +28,7 @@ class ExclusionSystemQueryTest(unittest.TestCase):
         self.assertEqual(z["status"], "merged")
         self.assertAlmostEqual(z["long_axis_au"]["apastron"], 73.9, places=0)
         b = next(c for c in z["components"] if c["id"] == "B")
-        self.assertEqual(b["domain"], "out_of_domain")
+        self.assertEqual(b["domain"], "windless_free_harbor")   # CR-22: WD → free harbor
         self.assertIsNone(b["r_ex_au"])
         # parity with the core
         ref = es.compute_exclusion_system(component_specs=[
