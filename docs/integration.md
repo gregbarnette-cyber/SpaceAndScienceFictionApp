@@ -1834,8 +1834,9 @@ query.py exclusion-boundary --mass-msun 1 --gamma 0.5 --mass-loss-msun-yr 1e-6  
 ```
 Core: `exclusion_boundary.compute_exclusion_boundary(mass_msun, luminosity_lsun, mass_loss_msun_yr, wind_state,
 dial, calibration_au, alpha, beta, gamma, scan_alpha, object_name)`. **Body source (exactly one):** `--mass-msun`
-| `--object {sun, m-dwarf, o-star, brown-dwarf, rogue-planet}` | `--star <name>` (SIMBAD + regions mass/lum,
-**network**) | `--spectral-type <type>` (main-sequence table, local DB). Optional environment: `--luminosity-lsun`,
+| `--object {sun, m-dwarf, o-star, brown-dwarf, rogue-planet}` | `--star <name>` (SIMBAD identity + the **shared mass
+tier ladder** manual > catalog > Gaia FLAME > L-inversion — CR-23; `regions` supplies the luminosity + the inversion
+tier; **network**) | `--spectral-type <type>` (main-sequence table, local DB). Optional environment: `--luminosity-lsun`,
 `--mass-loss-msun-yr` (Ẇ), `--wind-state {quiet, solar, active, hot}` (→ a Ẇ preset). Calibration/scaling:
 `--dial`, `--calibration-au` (default 47.5), `--alpha` (default 1/3), `--beta`/`--gamma` (default 0),
 `--scan-alpha` (emit both α edges). Output: `{r_ex_au, r_ex_au_alpha_third, r_ex_au_alpha_half, mass_msun,
@@ -1859,7 +1860,8 @@ standoff arithmetic is **untouched**; every new field is **additive**; the one c
   **measured mass** via `--star-mass-catalog`,
   carrying `standoff_note` = out-of-canon-MS-domain; no measured mass → the standoff is refused but the mass-free
   wall is still emitted).
-- **New flags:** `--star-mass-catalog` (evolved measured mass; the `--star` path prefers it over an MS L-inversion),
+- **New flags:** `--star-mass-catalog` (a measured mass on the `--star` path — CR-22 for evolved hosts, **CR-23 also on
+  the main-sequence path** as tier-2 of the mass ladder, preferred over Gaia FLAME + the L-inversion),
   and the wall's wind/medium inputs `--wind-speed`, `--v-ism` (default 26, `assumed` on `--star` — the vectorial
   auto-derive is deferred to WB `OQ-SA-EXCL2`), `--c-ms` (default 20) **or** `--b-field` (derives c_ms), `--n-cloud`
   (0.1), `--cloud-temp` (6300), `--wind-phase-yr`, `--f-shock` (1.5), `--m-shock-min` (1.5),
@@ -1869,7 +1871,9 @@ standoff arithmetic is **untouched**; every new field is **additive**; the one c
   bow_shock_marginal, capped_astropause, capped_windtime, none_windless, none_no_wind, none_unmodeled}`
   (`none_no_wind`/`none_unmodeled` are CR-22 additions), `wall_reason`, `wall_note` (always "research-grade"),
   `verdict_marginal`, `wall_exceeds_standoff` + `wall_to_standoff_ratio` (the load-bearing hazard driver, `null` if
-  either layer null), `r_ap_au`, `mass_provenance` (evolved), and the wind-input echoes (`wind_speed_kms`,
+  either layer null), `r_ap_au`, `mass_provenance` (CR-22: evolved only; **CR-23 generalizes it to every path** — the
+  6-value enum + `null` on a no-mass domain — plus `mass_note` and a bounded-degrade `flame_status`; see the CR-23 block
+  below), and the wind-input echoes (`wind_speed_kms`,
   `v_ism_kms`, `c_ms_kms`/`b_field_ug`, `n_cloud_cm3`, `cloud_temp_k`, `wind_phase_yr`, `f_shock`, `m_shock_min`,
   `mass_loss_source`, `mass_loss_msun_yr`) each with a `_provenance ∈ {supplied, class_default, b_field_derived,
   assumed, astrosphere_wood_forced, none}`.
