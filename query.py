@@ -781,7 +781,8 @@ def cmd_exclusion_boundary(args):
 
     # ── bare mass: no class info (classifier → main_sequence, no wall) ──
     if args.mass_msun is not None:
-        _out(two_layer(mass_msun=args.mass_msun, luminosity_lsun=lum, **wind_kw))
+        _out(two_layer(mass_msun=args.mass_msun, luminosity_lsun=lum,
+                       mass_provenance="manual", **wind_kw))       # CR-23.2 §2b
         return
 
     # ── object preset: mass/lum/wind_class from the preset (windless presets caught by classify) ──
@@ -798,7 +799,8 @@ def cmd_exclusion_boundary(args):
                   "mass_loss_msun_yr": (args.mass_loss_msun_yr if args.mass_loss_msun_yr is not None
                                         else (w_p or None))}
         _out(two_layer(mass_msun=m_p, luminosity_lsun=(lum if lum is not None else l_p),
-                       object_name=key, wind_class=_OBJECT_WIND_CLASS.get(key), **obj_kw))
+                       object_name=key, wind_class=_OBJECT_WIND_CLASS.get(key),
+                       mass_provenance="object_preset", **obj_kw))    # CR-23.2 §2b (preset always has a mass)
         return
 
     # ── spectral type: classify ONCE here (windless/evolved have no MS-table mass) + thread it ──
@@ -820,7 +822,8 @@ def cmd_exclusion_boundary(args):
             _out({"error": f"Main-sequence row for '{key}' lacks a numeric mass/luminosity."})
             return
         _out(two_layer(mass_msun=mass, luminosity_lsun=(lum if lum is not None else row_lum),
-                       sp_type=args.spectral_type, object_name=key, **cls_kw, **wind_kw))
+                       sp_type=args.spectral_type, object_name=key,
+                       mass_provenance="spectral_type_table", **cls_kw, **wind_kw))   # CR-23.2 §2b
         return
 
     # ── star name: SIMBAD identity → classify → route the mass resolve (MS regions / evolved catalog) ──
@@ -846,24 +849,51 @@ def cmd_exclusion_boundary(args):
             spec = {"name": sl.get("main_id"), "sp_type": sp,
                     "designations": stellar_mass.augment_designations(
                         sl.get("designations"), {sl.get("main_id")})}
-            mass, mprov, mnote = stellar_mass.resolve_component_mass(spec, catalog, allow_flame=True)
-            _out(two_layer(mass_msun=mass, luminosity_lsun=lum, sp_type=sp, otype=ot,
-                           object_name=args.star, mass_provenance=mprov, mass_note=mnote,
-                           **cls_kw, **wind_kw))
+            _st = {}
+            mass, mprov, mnote = stellar_mass.resolve_component_mass(
+                spec, catalog, allow_flame=True, status_out=_st)   # CR-23.2: capture the degrade flag
+            res = two_layer(mass_msun=mass, luminosity_lsun=lum, sp_type=sp, otype=ot,
+                            object_name=args.star, mass_provenance=mprov, mass_note=mnote,
+                            **cls_kw, **wind_kw)
+            if _st.get("flame_status") and "error" not in res:
+                res["flame_status"] = _st["flame_status"]
+            _out(res)
             return
 
-        # main sequence: reuse the resolved SIMBAD row for the regions mass (byte-identical to the
-        # pre-CR-22 regions mass path — same lookup → same stellarMass/bcLuminosity), so epsilon Eri holds.
+        # main sequence: CR-23.1 — resolve mass through the shared tier ladder (manual > catalog >
+        # Gaia FLAME > L-inversion), identical in tier order + result to exclusion-system --star and
+        # dossier for the same star. bcLuminosity feeds BOTH the L-inversion tier (= the old
+        # regions.stellarMass = bcLuminosity**0.2632) and the wall/luminosity term. Byte-identity holds
+        # ONLY when the star falls to that inversion tier — i.e. a FLAME-miss star that is NOT in the
+        # catalog OR the 4-star internal seed (load_mass_catalog(None) → Sirius A / Vega / α Cen A/B); a
+        # seed/catalog/FLAME hit deliberately shifts (the intended Option-A harmonization). (Pre-CR-23
+        # this branch used the raw inversion only, ignoring the catalog + FLAME — the ε Eri
+        # 42.51-vs-dossier-43.69 divergence.)
         reg = regions.compute_star_system_regions_from_simbad(sl)
         if isinstance(reg, dict) and "error" in reg:
             _out(reg)
             return
-        mass, star_lum = reg.get("stellarMass"), reg.get("bcLuminosity")
-        if mass is None or star_lum is None:
-            _out({"error": f"Could not derive mass/luminosity for '{args.star}'."})
+        star_lum = reg.get("bcLuminosity")
+        if star_lum is None:
+            _out({"error": f"Could not derive luminosity for '{args.star}'."})
             return
-        _out(two_layer(mass_msun=mass, luminosity_lsun=(lum if lum is not None else star_lum),
-                       sp_type=sp, otype=ot, object_name=args.star, **cls_kw, **wind_kw))
+        catalog = stellar_mass_tables.load_mass_catalog(args.star_mass_catalog)
+        if isinstance(catalog, dict) and "error" in catalog:
+            _out(catalog)
+            return
+        spec = {"name": sl.get("main_id"), "sp_type": sp, "luminosity_lsun": star_lum,
+                "designations": stellar_mass.augment_designations(
+                    sl.get("designations"), {sl.get("main_id")})}
+        _st = {}
+        # star_lum > 0 → the inversion tier is always available, so mass is never None on the MS path.
+        mass, mprov, mnote = stellar_mass.resolve_component_mass(
+            spec, catalog, allow_flame=True, status_out=_st)
+        res = two_layer(mass_msun=mass, luminosity_lsun=(lum if lum is not None else star_lum),
+                        sp_type=sp, otype=ot, object_name=args.star,
+                        mass_provenance=mprov, mass_note=mnote, **cls_kw, **wind_kw)
+        if _st.get("flame_status") and "error" not in res:   # CR-23.2: surface a bounded FLAME degrade
+            res["flame_status"] = _st["flame_status"]
+        _out(res)
 
 
 # CR-11.3 — binary / multi-star exclusion-boundary composition (+ CR-22 two-layer wall).
@@ -3345,6 +3375,9 @@ def main(argv=None):
     # CR-22: evolved-host measured mass + the research-grade wall's wind/medium inputs
     p.add_argument("--star-mass-catalog",
                    help="JSON mass catalog for an evolved-host measured mass (CR-22)")
+    # CR-23.2: bound the --star FLAME tier (mass-chain harmonization); the global dispatch applies it
+    p.add_argument("--gaia-timeout", dest="gaia_timeout", type=float, default=None,
+                   help="Per-source Gaia-archive wall-clock bound in s (0 disables); --star FLAME tier (CR-23)")
     p.add_argument("--wind-speed", type=float, help="Wind speed v_wind, km/s (CR-22 wall)")
     p.add_argument("--v-ism", dest="v_ism", type=float,
                    help="Star-cloud relative speed V_ISM, km/s (default 26; --star: assumed)")

@@ -94,5 +94,25 @@ class Cr13StarResolutionLive(unittest.TestCase):
         self.assertEqual(provs, {"catalog"})
 
 
+@unittest.skipUnless(_reachable(), "network not reachable (or SPACE_APP_RUN_LIVE unset)")
+class Cr23EpsilonEriFlameLive(unittest.TestCase):
+    """CR-23.1/23.2 live anchors: a non-cataloged FLAME-resolved star now matches dossier (0.811)."""
+
+    def test_exclusion_boundary_star_flame(self):   # acceptance 1: 0.811 / gaia_flame / ≈43.69 at α=0.4
+        rc, d, err = _run("exclusion-boundary", "--star", "epsilon Eridani", "--alpha", "0.4")
+        self.assertEqual(rc, 0, err)
+        self.assertAlmostEqual(d["mass_msun"], 0.811, delta=0.01)
+        self.assertEqual(d["mass_provenance"], "gaia_flame")
+        self.assertAlmostEqual(d["r_ex_au"], 43.69, delta=0.1)
+
+    def test_exclusion_system_star_agrees(self):    # acceptance 3: both subcommands agree
+        rc, d, err = _run("exclusion-system", "--star", "epsilon Eridani", "--alpha", "0.4")
+        self.assertEqual(rc, 0, err)
+        comp = d["zones"][0]["components"][0]
+        self.assertAlmostEqual(comp["mass_solar"], 0.811, delta=0.01)
+        self.assertEqual(comp["mass_provenance"], "gaia_flame")
+        self.assertAlmostEqual(comp["r_ex_au"], 43.69, delta=0.1)
+
+
 if __name__ == "__main__":
     unittest.main()

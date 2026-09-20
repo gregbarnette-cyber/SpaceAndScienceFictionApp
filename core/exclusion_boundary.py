@@ -218,6 +218,7 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     # ── windless free harbor: no standoff, no wall (a WD / BD / rogue) ──
     if domain == ew.WINDLESS:
         base.update({"standoff_au": None, "r_ex_au": None, "forcing_class": "free_harbor",
+                     "mass_provenance": mass_provenance,   # CR-23.2 §2a: always present (object_preset / None)
                      "wall_au": None, "wall_band_au": None, "wall_route": "none_windless",
                      "wall_reason": "windless — free harbor", "wall_note": ew._WALL_NOTE,
                      "verdict_marginal": False, "wall_exceeds_standoff": None,
@@ -227,6 +228,7 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     # ── unmodeled (hot subdwarf sdB/sdO): honest null on both layers (NOT free harbor) ──
     if domain == ew.UNMODELED:
         base.update({"standoff_au": None, "r_ex_au": None, "forcing_class": None,
+                     "mass_provenance": mass_provenance,   # CR-23.2 §2a: always present (None on no-mass)
                      "wall_au": None, "wall_band_au": None, "wall_route": "none_unmodeled",
                      "wall_reason": class_note or "class outside the wind model",
                      "wall_note": ew._WALL_NOTE, "verdict_marginal": False,
@@ -261,8 +263,13 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
             result["standoff_note"] = (
                 f"{_EVOLVED_NO_MASS_NOTE} ({mass_note})" if mass_note else _EVOLVED_NO_MASS_NOTE)
 
-    if mass_provenance:
-        result["mass_provenance"] = mass_provenance
+    result["mass_provenance"] = mass_provenance      # CR-23.2 §2a: always present (None on no-mass)
+    # CR-23.2 §2c: surface the resolver note (e.g. the L^0.2632 over-read caution) — but ONLY on the
+    # with-mass path (standoff resolved). The evolved-NO-mass branch already embeds mass_note inside
+    # standoff_note, so this guard avoids duplicating it across two keys (review F3); windless/unmodeled
+    # return early with no mass, so they carry no mass_note either (review F5 — consistent by this rule).
+    if mass_note and standoff is not None:
+        result["mass_note"] = mass_note
 
     wall = ew.compute_wall(
         wdot=inputs["wdot"], v_wind=inputs["v_wind"], v_ism=inputs["v_ism"], c_ms=inputs["c_ms"],

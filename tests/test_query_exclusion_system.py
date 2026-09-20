@@ -73,5 +73,57 @@ class ExclusionSystemQueryTest(unittest.TestCase):
         self.assertIn("error", d)
 
 
+class Cr23MassProvenanceCliTest(unittest.TestCase):
+    """CR-23.2: mass_provenance on every exclusion-boundary path, end-to-end through the CLI (no network)."""
+
+    def test_mass_msun_manual(self):
+        rc, d, _ = _run("exclusion-boundary", "--mass-msun", "2", "--alpha", "0.4")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["mass_provenance"], "manual")
+
+    def test_object_preset(self):
+        rc, d, _ = _run("exclusion-boundary", "--object", "sun", "--alpha", "0.4")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["mass_provenance"], "object_preset")
+
+    def test_object_windless_object_preset(self):
+        rc, d, _ = _run("exclusion-boundary", "--object", "brown-dwarf", "--alpha", "0.4")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["mass_provenance"], "object_preset")
+
+    def test_spectral_type_table(self):
+        rc, d, _ = _run("exclusion-boundary", "--spectral-type", "G2V", "--alpha", "0.4")
+        self.assertEqual(rc, 0)
+        self.assertEqual(d["mass_provenance"], "spectral_type_table")
+
+    def test_spectral_type_windless_null_key_present(self):
+        rc, d, _ = _run("exclusion-boundary", "--spectral-type", "DA2", "--alpha", "0.4")
+        self.assertEqual(rc, 0)
+        self.assertIn("mass_provenance", d)
+        self.assertIsNone(d["mass_provenance"])
+
+    def test_gaia_timeout_arg_accepted(self):
+        rc, d, _ = _run("exclusion-boundary", "--mass-msun", "1", "--alpha", "0.4", "--gaia-timeout", "5")
+        self.assertEqual(rc, 0)         # arg parses (exit 0, not argparse exit 2)
+
+    def test_exclusion_system_evolved_component_standoff_note(self):   # CR-23.3 via --component (offline)
+        rc, d, _ = _run("exclusion-system", "--component", "id=Delta,mass=0.991,lum=1.2,type=G8IV",
+                        "--alpha", "0.4")
+        self.assertEqual(rc, 0)
+        c = d["zones"][0]["components"][0]
+        self.assertEqual(c["domain"], "evolved")
+        self.assertIsNotNone(c["standoff_au"])
+        self.assertIsNotNone(c["standoff_note"])
+        self.assertIn("research-grade", c["standoff_note"])
+
+    def test_exclusion_system_ms_component_standoff_note_null(self):   # CR-23.3 control
+        rc, d, _ = _run("exclusion-system", "--component", "id=e,mass=0.811,lum=0.32,type=K2V",
+                        "--alpha", "0.4")
+        self.assertEqual(rc, 0)
+        c = d["zones"][0]["components"][0]
+        self.assertEqual(c["domain"], "main_sequence")
+        self.assertIsNone(c["standoff_note"])
+
+
 if __name__ == "__main__":
     unittest.main()

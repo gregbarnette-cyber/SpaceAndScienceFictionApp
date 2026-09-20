@@ -1882,6 +1882,30 @@ standoff arithmetic is **untouched**; every new field is **additive**; the one c
   → `evolved/giant_mild` standoff ≈61 + Oort wall `wall_exceeds_standoff true`; `37 Ophiuchi` → `evolved/
   giant_overwindy` standoff ≈56 + capped ly-scale wall.
 
+##### CR-23 — mass-chain harmonization + `mass_provenance` on every path (built 2026-09-20)
+Before CR-23 the `--star` **main-sequence** branch resolved mass from the raw `regions` **L-inversion**, ignoring
+`--star-mass-catalog` **and** Gaia FLAME, and surfaced no `mass_provenance` — so `exclusion-boundary --star "epsilon
+Eridani"` gave 0.7576540 → **42.51** while `dossier` (and `exclusion-system`) resolved 0.811 (gaia_flame) → **43.69**.
+CR-23.1 rewires that branch to the **shared tier ladder** `stellar_mass.resolve_component_mass` (manual > catalog >
+Gaia DR3 FLAME > L-inversion), identical in tier order + result to `dossier --star` and `exclusion-system --star`.
+- **Value change (intended, Option A):** a non-cataloged **FLAME-resolved** MS star's standoff shifts to the FLAME
+  mass (ε Eri 42.51 → **43.69** at `--alpha 0.4`, matching `dossier`); σ Dra / Lalande 21185 likewise. A FLAME-**miss**
+  star with no catalog row falls to the same L-inversion as before → **byte-identical**. **Also:** a **cataloged** single
+  MS star via `--star` shifts inversion→catalog — including the internal seed (`Sirius A`/`α Cen A`/`α Cen B`) which loads
+  with **no** `--star-mass-catalog` flag. (`Vega` is in the seed too, but pre-CR-23 it already errors on a no-Teff
+  `regions` data issue before any standoff computes — unrelated to CR-23's mass chain.)
+- **CR-23.2 — `mass_provenance` on EVERY `exclusion-boundary` output** ∈ `{manual, catalog, gaia_flame,
+  ms_luminosity_inversion, object_preset, spectral_type_table}` (or **`null`** on a no-mass domain — windless / unmodeled /
+  evolved-no-mass, where `mass_msun` is null): `--mass-msun`→`manual`, `--object`→`object_preset` (preset always has a
+  mass), `--spectral-type`→`spectral_type_table` (MS) / `null` (windless/unmodeled), `--star`→the ladder tier. A bounded
+  FLAME degrade surfaces top-level **`flame_status`** ∈ `{timeout, unreachable}` (never a silent fall-through);
+  **`--gaia-timeout <s>`** (0 disables) is now accepted on `exclusion-boundary` too. `mass_note` (the resolver's over-read
+  caution / catalog citation) is surfaced alongside on the with-mass path.
+- **CR-23 anchors:** `--star "epsilon Eridani" --alpha 0.4` → `mass_msun 0.811`, `mass_provenance gaia_flame`, `r_ex_au
+  ≈43.69` (matches `dossier` + `exclusion-system --star`); a forced-short `--gaia-timeout` on an un-cataloged star →
+  `ms_luminosity_inversion` **+ `flame_status`**; `--mass-msun 1` → `manual`/47.5 (byte-identical); `--object sun` →
+  `object_preset`; `--spectral-type DA2` → `mass_provenance null`. `completed_plans/PHASE_CR23_PLAN.md`.
+
 ### Power generation / storage / thermal (Phase AL — Group R, no network)
 
 Ten `query.py`-only, pure-math, self-validating calculators + two bundled-table subcommands for the
@@ -4477,6 +4501,19 @@ walls ~28–57 AU, `wall_envelope` at all phases, `combined_wind_wall_au` ~40–
 (no overlap at any phase); Sirius A+B → A a small wall, B (WD) `wall_au null`, no wall-zone. Core: `core/exclusion_wall.py`
 (the shared pure-math engine: `classify_domain_wind`, `compute_wall`, `c_ms_from_bfield`, `resolve_wind_inputs`, `wind_row_for`,
 `hazard_flags`) + `core/exclusion_system.py`. Tests: `tests/test_cr22.py`. `completed_plans/PHASE_CR22_PLAN.md`.
+
+**CR-23 — mass-chain harmonization on `exclusion-system` (built 2026-09-20).** The mass chain was already the shared
+tier ladder on every `exclusion-system` path (`--star` single/binary + `--component`), so **mass VALUES are unchanged**
+(ε Eri single-body has resolved 0.811/gaia_flame/43.69 since CR-13; the cataloged CR-13/14/16/22 anchors byte-identical).
+CR-23 adds, per component (additive keys): **`mass_note`** (the resolver's over-read caution / catalog citation, `null`
+on a clean inversion — parity with `exclusion-boundary`) and **`standoff_note`** (CR-23.3 — research-grade for an
+**evolved** component's off-canon-MS-domain standoff, reusing the same wording as `exclusion-boundary`; `null` for
+`main_sequence`, `null` by construction for `windless_free_harbor`/`unmodeled`). A bounded FLAME degrade on the
+**single-body** `--star` mass path now surfaces top-level **`flame_status`** (previously dropped — the binary path's
+`flame_status_a`/`_b` were already surfaced). **CR-23 anchors:** `exclusion-system --star "Delta Pavonis" --star-mass-catalog
+… --alpha 0.4` → `domain evolved`, standoff **47.33 unchanged** + non-null research-grade `standoff_note`; `Procyon A` →
+**55.53 unchanged** + note; ε Eri (MS) → `standoff_note null`; Sirius B (windless) → `standoff_note null`.
+Tests: `tests/test_cr23.py` + `tests/test_query_exclusion_system*.py`. `completed_plans/PHASE_CR23_PLAN.md`.
 
 ## CR-12 — WD cooling-grid ≤1.00 M☉ cooling-age re-derivation (Bedard 2020 unification) + criterion-1 correction
 
