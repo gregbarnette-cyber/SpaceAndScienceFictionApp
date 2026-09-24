@@ -10,8 +10,11 @@
 import socket
 import unittest
 
+from core import exclusion_wall as _ew
 from tests._netcheck import live_enabled
 from tests._queryharness import make_env, run_query
+
+_WINDLESS_NOTE = _ew._CLASS_NOTES[_ew.WINDLESS]
 
 _ENV = make_env("cr113_excl_live_throwaway.db")
 
@@ -43,8 +46,10 @@ class Cr113StarSiriusLive(unittest.TestCase):
         self.assertEqual(z["status"], "merged")
         self.assertEqual(len(z["members"]), 2)
         domains = {c["domain"] for c in z["components"]}
-        self.assertEqual(domains, {"main_sequence", "out_of_domain"})   # A MS, B WD-guarded
-        wd = next(c for c in z["components"] if c["domain"] == "out_of_domain")
+        # A MS, B WD-guarded — CR-22 split the old `out_of_domain` into the four-value enum (a WD is
+        # `windless_free_harbor`)
+        self.assertEqual(domains, {"main_sequence", "windless_free_harbor"})
+        wd = next(c for c in z["components"] if c["domain"] == "windless_free_harbor")
         self.assertIsNone(wd["r_ex_au"])                                # sphere withheld
         ms = next(c for c in z["components"] if c["domain"] == "main_sequence")
         self.assertGreater(ms["r_ex_au"], 55.0)                         # A's sphere (measured ~2.06 M☉)
@@ -65,7 +70,10 @@ class Cr13StarResolutionLive(unittest.TestCase):
         self.assertEqual(d["n_components"], 1)
         c = d["zones"][0]["components"][0]
         self.assertIsNone(c["r_ex_au"])                            # WD guard, no sphere
-        self.assertEqual((c.get("class_note") or "").lower(), "white dwarf")
+        # CR-22: a WD is the `windless_free_harbor` domain and carries the shared windless class_note
+        # (pre-CR-22 this read "white dwarf")
+        self.assertEqual(c["domain"], "windless_free_harbor")
+        self.assertEqual(c.get("class_note"), _WINDLESS_NOTE)
         # bare (no external catalog): B is absent from the seed → mass unresolved, not fabricated
         self.assertEqual(c["mass_provenance"], "unresolved_out_of_domain")
         self.assertNotIn("Sirius B B", str(d["zones"][0]["members"]))   # the old doubled designation
