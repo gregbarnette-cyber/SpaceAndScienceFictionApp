@@ -95,12 +95,13 @@ def resolve_mass(inversion_mass, sp_type=None, main_id=None, designations=None,
         if catalog and isinstance(catalog, dict) and "error" not in catalog:
             catalog_row = smt.match_mass(catalog, main_id, designations)
 
-    def _pos(x):
-        return isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0
+    # CR-22.6: every tier (manual / catalog / FLAME / inversion) goes through the shared finite-positive
+    # predicate, so a non-finite value is a miss at any tier, exactly as NaN already was (`nan > 0` is False)
+    _pos = smt.is_positive_finite
 
     if _pos(manual_mass):
         mass, prov = float(manual_mass), MANUAL
-    elif catalog_row is not None:
+    elif catalog_row is not None and _pos(catalog_row.get("mass_solar")):   # a caller-pre-matched row too
         mass, prov = float(catalog_row["mass_solar"]), CATALOG
     elif _pos(flame_mass):
         mass, prov = float(flame_mass), GAIA_FLAME
@@ -194,7 +195,11 @@ def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
     name = spec.get("name") or spec.get("id")
     flame_mass = None
     manual = spec.get("mass_solar")
-    manual_hit = isinstance(manual, (int, float)) and not isinstance(manual, bool) and manual > 0
+    # CR-22.6: a non-finite manual mass (`mass=inf` / `1e309`) is a miss, exactly like `nan` (which already fails
+    # `> 0`) — so `--component "id=A,mass=inf"` gets the same "has no resolvable mass" error NaN does. Checked here
+    # too (not only in resolve_mass's `_pos`) because `manual_hit` also gates the FLAME fetch below — keeping inf
+    # on NaN's exact path. (`lum=inf` → an inf inversion, which `_pos` then rejects.)
+    manual_hit = smt.is_positive_finite(manual)
     cat_hit = bool(catalog) and smt.match_mass(catalog, name, spec.get("designations")) is not None
     if allow_flame and not manual_hit and not cat_hit and spec.get("designations"):
         try:
@@ -205,7 +210,7 @@ def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
                 params = ga.get("parameters") if isinstance(ga, dict) else None
                 if params:
                     mf = params.get("mass_flame")
-                    if isinstance(mf, (int, float)) and not isinstance(mf, bool) and mf > 0:
+                    if smt.is_positive_finite(mf):
                         flame_mass = mf
                 # CR-19: a bounded per-component FLAME call (timeout/unreachable) with no mass →
                 # record it so the caller can flag the mass-path degrade (else None → byte-identical).

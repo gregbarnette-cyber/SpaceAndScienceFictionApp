@@ -1861,12 +1861,40 @@ model_note}` (`r_ex_au_alpha_*` only with `--scan-alpha`); plus the CR-22 two-la
 `standoff_au`, `wall_*`, the wind-input echoes), CR-23 `mass_provenance`/`mass_note`/`flame_status`, and CR-25
 `wind_class_provenance`/`wind_otype`/`wind_otype_source`/`wind_class_note`/`otype_status` — see the blocks below
 (the wall/medium and mass-ladder flags `--star-mass-catalog`, `--gaia-timeout`, `--wind-speed` … are listed in the
-CR-22/CR-23 blocks). **Validation:** negative exponents, non-positive dial/calibration, `β ≠ 0` with L ≤ 0, or a
-wind exponent (`γ ≠ 0`) with no wind input → exit 1. **Known gap (CR-22 regression):** `--mass-msun ≤ 0`
-currently returns exit 0 with a null standoff (`r_ex_au`/`forcing_class` null) instead of the frozen
-generator's `M ≤ 0` error — `compute_two_layer_boundary` skips the standoff when the mass is not positive.
-**Anchors:** Sun 47.5 AU; 0.1 M☉ → 22.05/15.02 AU (α 1/3, 1/2); 10 M☉ → 102.3/150.2 AU (harbor); explicit
+CR-22/CR-23 blocks). **Validation:** `--mass-msun` ≤ 0 or NaN (`"--mass-msun (or a resolved object mass) must be
+> 0."`) or +inf (`"… must be finite."`), negative exponents, non-positive dial/calibration, `β ≠ 0` with L ≤ 0, or a
+wind exponent (`γ ≠ 0`) with no wind input → exit 1. The mass check runs first (CR-22.6 restored it — see the CR-22.6
+block below). **Anchors:** Sun 47.5 AU; 0.1 M☉ → 22.05/15.02 AU (α 1/3, 1/2); 10 M☉ → 102.3/150.2 AU (harbor); explicit
 `--dial` overrides auto-cal; solar-wind term = 1 at the Ẇ=2×10⁻¹⁴ preset.
+
+##### CR-22.6 — finite, positive masses only (a CR-22 regression fix, 2026-09-24)
+Since CR-22, the bare `--mass-msun` path went through `compute_two_layer_boundary`, which treats a non-positive mass as
+"no mass". So `--mass-msun 0` / `-1` / `nan` exited **0** with a null standoff (`r_ex_au`/`forcing_class` null, no
+`error`), and `inf` exited 0 with `"r_ex_au": Infinity` (not strict JSON). CR-22.6 restores the pre-CR-22 contract and
+extends it to non-finite masses. Only invalid input changes; every finite positive mass is byte-identical.
+- **`exclusion-boundary --mass-msun M`:**
+  - M ≤ 0 (incl. `-0.0`), NaN or −inf → `{"error": "--mass-msun (or a resolved object mass) must be > 0."}`, exit 1.
+    This is checked first, so `--mass-msun 0 --alpha -1` reports the mass error.
+  - +inf (also `1e309`, which overflows to inf) → `{"error": "--mass-msun (or a resolved object mass) must be
+    finite."}`, exit 1.
+  - `-inf` must be written `--mass-msun=-inf`. With a space it is argparse exit 2, because `-inf` isn't
+    number-shaped.
+- **The shared stellar-mass resolver** (`stellar_mass.resolve_mass` / `resolve_component_mass`, and the dossier mass
+  block, all through one predicate `stellar_mass_tables.is_positive_finite`) treats a non-finite value as a **miss at
+  every tier** (manual, catalog, Gaia FLAME, L-inversion), exactly as NaN already was, so
+  resolution falls through to the next tier:
+  - `exclusion-system --component "id=A,mass=inf"` (or `mass=1e309`, `lum=inf`) → `"component 'A' has no
+    resolvable mass …"`, exit 1, the same as `mass=nan`.
+  - A `--star-mass-catalog` row whose `mass_solar` is the `NaN` / `Infinity` token (which `json.load` accepts) is
+    skipped like a ≤ 0 row. The star resolves from FLAME or the inversion instead, and `mass_provenance` is not
+    `catalog`.
+  - `dossier --mass-solar inf` / `nan` is ignored as a manual override (it falls through to the next tier).
+- **A directly-built `compose_exclusion_system` component dict** with an inf `mass_solar` → `"component '<id>' needs a
+  finite mass_solar (got inf)."`. The ≤ 0 message is unchanged. A lone out-of-domain component whose numeric mass is
+  rejected reports `mass_provenance: "unresolved_out_of_domain"`, not the provenance it arrived with.
+- **Not covered:** other numeric flags (e.g. `--luminosity-lsun inf --beta 0.5`, `--mass-loss-msun-yr nan --gamma
+  0.5`) still accept argparse's `nan`/`inf` and can emit `NaN`/`Infinity`. That is an app-wide argparse `type=float`
+  issue, outside this fix.
 
 ##### CR-22 — the two-layer boundary (standoff + research-grade physical WALL)
 `exclusion-boundary` now emits, alongside the unchanged canon **STANDOFF** (`r_ex = 47.5·M^0.4`, byte-identical),
@@ -4527,7 +4555,8 @@ column), `main_seq_lifespan_yr`, and the `0.2·M` inner / `40·M` outer system l
 `luminosity_consistency` diagnostic stays pinned to the inversion radius (it is a check *of* the inversion). A star still
 on the inversion mass is **byte-unchanged**. **`--star-mass-catalog`** is a WB-owned JSON that **REPLACES** the internal seed wholesale (the seed = the four
 verified anchors: Sirius A 2.063 / Vega 2.135 / α Cen A 1.079 / α Cen B 0.909); a bad/unreadable/no-`stars`-array path →
-curated `{"error"}` (loud, never a silent fallback); a malformed row skipped best-effort (mirrors CR-10.3). Anchors: Sirius A
+curated `{"error"}` (loud, never a silent fallback); a malformed row (non-numeric, ≤ 0, or — CR-22.6 — a non-finite
+`NaN`/`Infinity` mass) skipped best-effort (mirrors CR-10.3). Anchors: Sirius A
 (`A0mA1Va`) → default seed `catalog` 2.063 + `peculiar_star_flag=true`; with an empty/replacing catalog →
 `ms_luminosity_inversion` ≈ 2.59 + `massL_inversion_caution=true` (**the silent 2.59-with-no-flag must not persist**); Vega
 (`A0Va`) → caution via the hot-MS path, `peculiar_star_flag=false`; α Cen A `G2V` / B `K1V` → both flags false.
@@ -4552,7 +4581,7 @@ single-body `exclusion-boundary` generator (no second calibration) over a resolv
 `otype` + the wall keys, see the CR-22 / CR-25.4 blocks; `sp_type`/`type`/`sptype` give a spectral type directly; `class` also
 takes `subgiant`/`supergiant`/`agb`/`wolf-rayet`/`wr` → `evolved` and `main-sequence`/`ms`/`dwarf`; an unknown key is a curated
 error). Per-component mass = the
-**CR-11.2 chain** (manual `mass=` → `--star-mass-catalog` → FLAME [`--star` components only — a CLI `--component` carries no designations;
+**CR-11.2 chain** (manual `mass=` [finite, > 0 — `nan`/`inf` are a miss, CR-22.6] → `--star-mass-catalog` → FLAME [`--star` components only — a CLI `--component` carries no designations;
 see CR-19] → `L`-inversion from `lum`), which drives **both** the r_ex
 sphere **and** the barycentric offset. *(⚠ **domain values SUPERSEDED BY CR-22** — per-component `domain` no longer uses
 `out_of_domain`: WD/BD/rogue → `windless_free_harbor`, sdB/sdO → `unmodeled` (both `r_ex_au: null`), giant/subgiant →

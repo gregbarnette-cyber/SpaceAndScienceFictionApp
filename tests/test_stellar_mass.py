@@ -286,5 +286,88 @@ class Cr15Test(unittest.TestCase):
         self.assertEqual(r[2], 0.5)           # both fall to the orbit split (0.5) on the bad B lookup
 
 
+class Cr226NonFiniteMassTest(unittest.TestCase):
+    """CR-22.6: a non-finite mass never resolves. `json.load` accepts the NaN / Infinity tokens and `val <= 0` is
+    False for NaN, so the catalog matcher now skips a non-finite row explicitly (resolution falls through to the
+    next tier), and a non-finite manual `mass_solar` is a miss, exactly like NaN already was."""
+
+    _CAT = ('{"stars": [{"main_id": "HD 1", "mass_solar": NaN},'
+            ' {"main_id": "HD 2", "mass_solar": Infinity},'
+            ' {"main_id": "HD 3", "mass_solar": -Infinity},'
+            ' {"main_id": "HD 4", "mass_solar": 0.8}]}')
+
+    def test_match_mass_skips_non_finite_rows(self):
+        cat = json.loads(self._CAT)                   # the same parse load_mass_catalog does
+        for mid in ("HD 1", "HD 2", "HD 3"):
+            with self.subTest(main_id=mid):
+                self.assertIsNone(smt.match_mass(cat, mid))
+        self.assertEqual(smt.match_mass(cat, "HD 4")["mass_solar"], 0.8)   # finite row still matches
+
+    def test_load_mass_catalog_file_with_nan_row_falls_through(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            f.write(self._CAT)
+            path = f.name
+        try:
+            cat = smt.load_mass_catalog(path)
+            self.assertNotIn("error", cat)            # a malformed ROW is best-effort, not a bad file
+            m, prov, _ = sm.resolve_component_mass({"name": "HD 1", "luminosity_lsun": 0.5}, cat,
+                                                   allow_flame=False)
+            self.assertEqual(prov, "ms_luminosity_inversion")      # next tier, NOT catalog
+            self.assertAlmostEqual(m, 0.5 ** 0.2632)
+            m, prov, _ = sm.resolve_component_mass({"name": "HD 4"}, cat, allow_flame=False)
+            self.assertEqual((m, prov), (0.8, "catalog"))          # a finite row is unchanged
+        finally:
+            os.unlink(path)
+
+    def test_non_finite_manual_mass_is_a_miss_like_nan(self):
+        for bad in (float("inf"), float("nan")):
+            with self.subTest(mass=bad):
+                m, prov, note = sm.resolve_component_mass({"id": "A", "mass_solar": bad}, None,
+                                                          allow_flame=False)
+                self.assertIsNone(m)
+                self.assertIsNone(prov)
+                self.assertIn("has no resolvable mass", note)
+                # ...and with a luminosity it falls through to the inversion tier (NaN's existing semantics)
+                m, prov, _ = sm.resolve_component_mass(
+                    {"id": "A", "mass_solar": bad, "luminosity_lsun": 0.5}, None, allow_flame=False)
+                self.assertEqual(prov, "ms_luminosity_inversion")
+
+    def test_resolve_mass_rejects_non_finite_at_every_tier(self):
+        inf = float("inf")
+        r = sm.resolve_mass(inf, manual_mass=inf, flame_mass=inf)     # every tier non-finite → no mass
+        self.assertIsNone(r["mass_solar"])
+        r = sm.resolve_mass(0.9, manual_mass=inf, flame_mass=inf)     # falls to the finite inversion tier
+        self.assertEqual((r["mass_solar"], r["mass_provenance"]), (0.9, "ms_luminosity_inversion"))
+        r = sm.resolve_mass(0.9, manual_mass=float("nan"), flame_mass=0.8)   # NaN manual: pre-existing miss
+        self.assertEqual((r["mass_solar"], r["mass_provenance"]), (0.8, "gaia_flame"))
+
+    def test_is_positive_finite(self):
+        for good in (1, 0.3, 5e-324, 1e30):
+            self.assertTrue(smt.is_positive_finite(good))
+        for bad in (0, -1, -0.0, float("nan"), float("inf"), float("-inf"), True, None, "1.0"):
+            self.assertFalse(smt.is_positive_finite(bad), bad)
+
+    def test_pre_matched_non_finite_catalog_row_falls_through(self):
+        # resolve_mass's catalog_row= lets a caller pre-match; a non-finite row there is a miss too
+        r = sm.resolve_mass(0.9, catalog_row={"main_id": "X", "mass_solar": float("inf")}, flame_mass=0.8)
+        self.assertEqual((r["mass_solar"], r["mass_provenance"]), (0.8, "gaia_flame"))
+
+    def test_dossier_non_finite_manual_mass_tries_flame_like_nan(self):
+        # the dossier mass block gates the FLAME fetch on manual_hit — inf must take NaN's path (FLAME tried)
+        from unittest import mock
+        import core.report as report
+        ga = {"parameters": {"mass_flame": 0.81}}
+        sl = {"main_id": "* eps Eri", "sp_type": "K2V", "designations": {}}
+        for bad in (float("inf"), float("nan")):
+            with self.subTest(mass=bad), mock.patch.object(report, "_gaia_astro", return_value=ga) as g:
+                block = report._resolve_star_mass_block(sl, 0.76, None, bad, True, {})
+                g.assert_called_once()
+                self.assertEqual((block["mass_solar"], block["mass_provenance"]), (0.81, "gaia_flame"))
+
+    def test_finite_manual_mass_unchanged(self):
+        self.assertEqual(sm.resolve_component_mass({"id": "A", "mass_solar": 2.063}, None,
+                                                   allow_flame=False)[:2], (2.063, "manual"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -206,8 +206,16 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     path's ``object_preset``). ``wind_otype_source`` (CR-25 / MSG 266) is caller-only: the main_id whose
     otype list was consulted when it is NOT the star itself. The standoff arithmetic is byte-identical to
     ``compute_exclusion_boundary`` — this function never re-derives ``r_ex``; it only wraps it and
-    adds the additive wall/domain/echo fields. Returns the result dict, or the frozen generator's
-    curated ``{"error": …}`` (mass ≤ 0, out-of-band exponents) for an in-domain body.
+    adds the additive wall/domain/echo fields. Returns the result dict, or — only on the main_sequence /
+    evolved domains, and only for a **positive** mass — the frozen generator's curated ``{"error": …}``
+    (out-of-band exponents, non-positive dial/calibration, ``β ≠ 0`` with L ≤ 0, ``mass_loss_msun_yr ≤ 0``
+    or an unknown ``wind_state``); windless / unmodeled bodies return before any of that validation.
+
+    **Mass is NOT validated here.** A ``None``, non-positive or NaN ``mass_msun`` takes the null-standoff
+    branch (the honest evolved-no-mass case), and +inf reaches the frozen generator unchecked. Validating a
+    user-supplied mass (finite and > 0) is the caller's job — ``query.py``'s bare ``--mass-msun`` guard
+    (CR-22.6, which restored the pre-CR-22 error this wrapper had bypassed); the other entry paths pass a
+    resolved finite positive mass or ``None``.
     """
     if domain is None:
         cw = ew.classify_wind(

@@ -313,19 +313,27 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
     for i, c in enumerate(components):
         cid = c.get("id") or f"component-{i + 1}"
         m = c.get("mass_solar")
-        m_ok = isinstance(m, (int, float)) and not isinstance(m, bool) and m > 0
+        # CR-22.6: finite too — the resolver already turns a non-finite `--component mass=` into the "no resolvable
+        # mass" error; this backstops a directly-built component dict (inf would otherwise reach r_ex as Infinity).
+        m_ok = stellar_mass_tables.is_positive_finite(m)
         cw, eff_ws, sys_withheld = _classify_component(c, system_wind_state)
         domain, wind_class, class_note = cw["domain"], cw["wind_class"], cw["class_note"]
         # CR-13 C1 → Option (A), CR-22-widened: a LONE non-main-sequence component with an unresolved
         # mass is numerically inert (windless/unmodeled carry no standoff; an evolved host with no
         # measured mass emits only the mass-free wall) — needs no mass, so flag it rather than erroring.
         lone_ood_unresolved = (n_comp == 1 and domain != ew.MAIN_SEQUENCE and not m_ok)
+        m_given = isinstance(m, (int, float)) and not isinstance(m, bool)
         if not m_ok and not lone_ood_unresolved:
+            if m_given and m > 0:    # CR-22.6: +inf is positive, so say what is actually wrong with it
+                return {"error": f"component '{cid}' needs a finite mass_solar (got {m!r})."}
             return {"error": f"component '{cid}' needs a positive mass_solar (got {m!r})."}
+        prov = c.get("mass_provenance")
+        if lone_ood_unresolved and (not prov or m_given):
+            # CR-22.6: a rejected numeric mass (non-finite / ≤ 0) must not keep the tier provenance it arrived with
+            prov = "unresolved_out_of_domain"
         comps.append({
             "id": cid, "mass_solar": float(m) if m_ok else None,
-            "mass_provenance": c.get("mass_provenance") or (
-                "unresolved_out_of_domain" if lone_ood_unresolved else None),
+            "mass_provenance": prov,
             "mass_note": c.get("mass_note"),   # CR-23.2 §2c (review F4): parity with exclusion-boundary
             "luminosity_lsun": c.get("luminosity_lsun"), "sp_type": c.get("sp_type"),
             "domain": domain, "wind_class": wind_class, "class_note": class_note,

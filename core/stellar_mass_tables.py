@@ -20,6 +20,7 @@ never a silent seed fallback); a malformed single row inside a valid file is ski
 """
 
 import json
+import math
 
 # Internal seed (flag-less default). The four CR-11.2 anchors, verified-at-primary 2026-08-26,
 # mirroring the WB JSON shape. Sirius A / Vega are precisely the bright stars Gaia FLAME saturates
@@ -61,6 +62,13 @@ _SEED_CATALOG = {
 }
 
 
+def is_positive_finite(x):
+    """CR-22.6: the one "usable mass" predicate — a real number (not a bool), > 0 and finite. NaN fails ``> 0``;
+    ±inf fails ``isfinite``. Shared by ``match_mass``, ``stellar_mass.resolve_mass`` / ``resolve_component_mass``,
+    ``exclusion_system.compose_exclusion_system`` and the dossier mass block so the rule cannot drift per copy."""
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0 and math.isfinite(x)
+
+
 def _norm(s):
     """Whitespace-collapsed, upper-cased identifier for matching (``"HD  48915"`` → ``"HD 48915"``)."""
     if not s:
@@ -93,8 +101,9 @@ def match_mass(catalog, main_id, designations=None):
     """First catalog row matching the resolved star, else ``None``.
 
     Matches a row's ``main_id`` / any ``aliases`` entry against the star's ``main_id`` / any
-    ``designations`` value (normalized). A malformed row (no ``main_id``, or a non-numeric
-    ``mass_solar``) is skipped best-effort — the primary computation is never touched.
+    ``designations`` value (normalized). A malformed row (no ``main_id``, or a non-numeric,
+    non-positive or non-finite ``mass_solar``) is skipped best-effort — the primary computation is never
+    touched, and resolution falls through to the next tier.
     """
     ids = set()
     if main_id:
@@ -109,8 +118,10 @@ def match_mass(catalog, main_id, designations=None):
         if not isinstance(row, dict):
             continue
         val = row.get("mass_solar")
-        if isinstance(val, bool) or not isinstance(val, (int, float)) or val <= 0:
-            continue  # malformed / missing measurement — skip best-effort
+        if not is_positive_finite(val):
+            # malformed / missing measurement — skip best-effort. CR-22.6: json.load accepts the NaN /
+            # Infinity tokens, so a non-finite mass is skipped like a ≤ 0 one (falls through to the next tier).
+            continue
         keys = set()
         if row.get("main_id"):
             keys.add(_norm(row["main_id"]))

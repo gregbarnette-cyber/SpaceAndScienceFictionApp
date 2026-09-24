@@ -8,6 +8,7 @@ Prints JSON to stdout. Exits 0 on success, 1 on error.
 
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -781,6 +782,16 @@ def cmd_exclusion_boundary(args):
 
     # ── bare mass: no class info (classifier → main_sequence, no wall) ──
     if args.mass_msun is not None:
+        # CR-22.6: compute_two_layer_boundary treats a non-positive mass as "no mass" (null standoff, exit 0), so the
+        # FROZEN generator's M ≤ 0 check is unreachable from here — restore it (pre-CR-22 message, checked first so it
+        # keeps its pre-CR-22 precedence) and require a finite mass. `not (m > 0)` also catches NaN and -inf, so +inf
+        # is the only non-finite value left for the second check.
+        if not (args.mass_msun > 0):
+            _out({"error": "--mass-msun (or a resolved object mass) must be > 0."})
+            return
+        if not math.isfinite(args.mass_msun):
+            _out({"error": "--mass-msun (or a resolved object mass) must be finite."})
+            return
         _out(two_layer(mass_msun=args.mass_msun, luminosity_lsun=lum,
                        mass_provenance="manual", **wind_kw))       # CR-23.2 §2b
         return

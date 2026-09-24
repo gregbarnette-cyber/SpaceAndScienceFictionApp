@@ -1056,8 +1056,8 @@ def _resolve_star_mass_block(simbad, inversion_mass, mass_catalog, manual_mass, 
     FLAME is consulted only when manual + catalog both miss and a region-bearing dossier is requested
     (`want_gaia`), keeping a cheap `--sections identity` dossier network-free. The catalog is matched
     once here and passed to `resolve_mass` so it is not scanned twice."""
-    manual_hit = (isinstance(manual_mass, (int, float)) and not isinstance(manual_mass, bool)
-                  and manual_mass > 0)
+    # CR-22.6: the shared finite-positive rule — a non-finite --mass-solar is a miss like NaN, so FLAME is tried
+    manual_hit = stellar_mass_tables.is_positive_finite(manual_mass)
     cat_row = (stellar_mass_tables.match_mass(
         mass_catalog, simbad.get("main_id"), simbad.get("designations")) if mass_catalog else None)
     flame_mass = None
