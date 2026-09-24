@@ -32,12 +32,11 @@ API forms verified live against astroquery 0.4.11 on 2026-07-23:
 import math
 import os
 import re
-import sys
 import time
 
 from core import catalog_cache
 from core.shared import (_network_error_msg, _route_error, _with_retries, _timeout_ctx,
-                         _call_with_watchdog, _WatchdogTimeout, _retry_after_seconds)
+                         _WatchdogTimeout, _bounded_call, _env_timeout, _stderr_warn)
 
 _GAIA_SYNC_ROW_CAP = 2000    # the ESA Gaia sync endpoint MAXREC (spec §5) — informational flag
 
@@ -208,32 +207,14 @@ def _gaia_sync_timeout():
     """Effective sync-Gaia wall-clock bound: ``--gaia-timeout`` override > ``SPACE_APP_GAIA_TIMEOUT``
     env > 60s. Returns ``None`` when **disabled** (a value that parses to ``<= 0``) → the legacy
     unbounded path. A **non-numeric** env is ignored → the default."""
-    v = _GAIA_TIMEOUT_OVERRIDE
-    if v is None:
-        raw = os.environ.get("SPACE_APP_GAIA_TIMEOUT")
-        if raw is not None and raw != "":
-            try:
-                v = float(raw)
-            except (TypeError, ValueError):
-                return _GAIA_TIMEOUT_DEFAULT
-    if v is None:
-        return _GAIA_TIMEOUT_DEFAULT
-    try:
-        v = float(v)
-    except (TypeError, ValueError):
-        return _GAIA_TIMEOUT_DEFAULT
-    return v if v > 0 else None
+    return _env_timeout("SPACE_APP_GAIA_TIMEOUT", _GAIA_TIMEOUT_DEFAULT, override=_GAIA_TIMEOUT_OVERRIDE)
 
 
 def _warn(msg):
     """CR-19: one-line stderr warning on a bounded/degraded sync Gaia-TAP call — the single ``core/``
     stderr seam (mockable in tests; a separate stream from query.py's stdout JSON, so it never
     disturbs a JSON consumer)."""
-    try:
-        sys.stderr.write(f"[gaia] {msg}\n")
-        sys.stderr.flush()
-    except Exception:
-        pass
+    _stderr_warn("gaia", msg)
 
 
 def _trip_gaia_circuit(reason):
@@ -278,21 +259,11 @@ def _bounded_error(reason, q, exc=None, warn=True):
 def _bounded_gaia_call(attempt_fn, *, timeout, retries=2):
     """Run ``attempt_fn`` under the wall-clock watchdog, up to ``retries`` attempts (retry-1 = 2).
     Raises ``_WatchdogTimeout`` if the final attempt timed out; re-raises the last network exception
-    otherwise (so ``gaia_tap`` can distinguish "timeout" from "unreachable")."""
-    last_exc = None
-    for i in range(retries):
-        try:
-            return _call_with_watchdog(attempt_fn, timeout=timeout)
-        except Exception as e:
-            last_exc = e
-        if i < retries - 1:
-            # Honor an HTTP Retry-After (429/503) on a throttled-but-reachable TAP — the same
-            # respect the legacy `_with_retries` gave — so a throttle is NOT falsely degraded to
-            # "unreachable" (which would change a value on a reachable TAP). A watchdog timeout
-            # carries no Retry-After → the fixed fallback.
-            delay = _retry_after_seconds(last_exc)
-            time.sleep(delay if delay is not None else _GAIA_RETRY_BACKOFF)
-    raise last_exc
+    otherwise (so ``gaia_tap`` can distinguish "timeout" from "unreachable"). The loop itself is the
+    shared ``shared._bounded_call`` (CR-25 reuses it for the SIMBAD otype fetch): it honors an HTTP
+    Retry-After (429/503) so a throttled-but-reachable TAP is NOT falsely degraded to "unreachable";
+    a watchdog timeout carries no Retry-After → the fixed ``_GAIA_RETRY_BACKOFF``."""
+    return _bounded_call(attempt_fn, timeout=timeout, retries=retries, backoff=_GAIA_RETRY_BACKOFF)
 
 
 def _shape_gaia(q, t, use_async):

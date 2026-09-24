@@ -375,7 +375,11 @@ class Cr13ResolverTest(unittest.TestCase):
 
     def _run(self, star, catalog, simbad_map, solutions=None, bclum=None, no_flame=False):
         patches = [mock.patch("core.databases.compute_simbad_lookup", _fake_simbad(simbad_map)),
-                   mock.patch("core.binary.binary_orbit", lambda **k: {"solutions": solutions or []})]
+                   mock.patch("core.binary.binary_orbit", lambda **k: {"solutions": solutions or []}),
+                   # CR-25: a K/M component now fetches its FULL SIMBAD otype list — stub it to "no list"
+                   # (→ the primary otype, the pre-CR-25 behavior) so these fixtures stay socket-free.
+                   mock.patch("core.databases.fetch_star_otypes",
+                              lambda main_id, primary_otype=None, component_rule=True: None)]
         if no_flame:
             patches.append(mock.patch("core.binary.gaia_source_id_from_designations", lambda d: None))
         if bclum is not None:

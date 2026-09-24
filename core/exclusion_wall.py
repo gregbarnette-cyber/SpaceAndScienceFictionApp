@@ -155,28 +155,116 @@ def _domain_for_wind_class(wc):
 _WIND_STATE_CLASS = {"quiet": "quiet", "solar": "solar", "active": "active", "hot": "o_hot"}
 
 
-def _ms_wind_class(colour, wind_state=None, otype=None):
-    """MS wind_class from the spectral colour (V rows). K/M default quiet → active on a flare/young flag.
-    With no resolvable colour, fall back to an explicit --wind-state preset (else None → no wall)."""
-    if colour == "O":
-        return "o_hot"
-    if colour == "B":
-        return "b_hot"
-    if colour == "A":
-        return "a_dwarf"
-    if colour == "F":
-        return "f_dwarf"
-    if colour == "G":
-        return "solar"
-    if colour in ("K", "M"):
-        active = (wind_state or "").strip().lower() == "active" or _is_flare_otype(otype)
-        return "active" if active else "quiet"
-    return _WIND_STATE_CLASS.get((wind_state or "").strip().lower())   # no colour → wind_state or None
+# MS colour → its default wind_class (V rows); K/M default quiet (CR-25: the otype auto-detect lifts
+# them to active — the quiet MAGNITUDE stays 1e-16, recalibration is CR-26's).
+_COLOUR_DEFAULT_WIND = {"O": "o_hot", "B": "b_hot", "A": "a_dwarf", "F": "f_dwarf", "G": "solar",
+                        "K": "quiet", "M": "quiet"}
+
+# CR-25.2 — the conservative magnetic-active otype set (WB scope-lock + MSG 264). EXACT whole-code match
+# (case-insensitive): `UV*` never matches the bare `UV` (a UV-source flag), and `Ro*` / `V*` are excluded
+# (over-broad). `Er*` (Eruptive) is the load-bearing modern code; `Fl*`/`UV*` are legacy leaves.
+_ACTIVE_OTYPE_CODES = ("BY*", "Er*", "Fl*", "RS*", "UV*")
+_ACTIVE_CODE_BY_LOWER = {c.lower(): c for c in _ACTIVE_OTYPE_CODES}
+# FYI (i): the pre-CR-25 long-name aliases are kept alongside the exact codes.
+_ACTIVE_LEGACY = (("flare", "Fl*"), ("uv cet", "UV*"))
+
+# CR-25.1 / Q8 — domain-consistency notes on an explicit bin override that crosses hot↔cool.
+_Q8_HOT_NOTE = ("explicit wind_state 'hot' → o_hot (a line-driven hot-star wind) on {art} {c}-type "
+                "main-sequence star — physically inconsistent; honored as an explicit override")
+_Q8_COOL_NOTE = ("explicit wind_state '{ws}' → {wc} (a cool-star wind bin) on {art} {c}-type "
+                 "main-sequence star — physically inconsistent; honored as an explicit override")
+# CR-25 Q3a — a wind_state never sets the bin of a non-main-sequence host (the wall's identity row stands).
+_Q3A_HOST = {EVOLVED: "an evolved", WINDLESS: "a windless (free-harbor)", UNMODELED: "an unmodeled"}
+_Q3A_NOTE = ("wind_state '{ws}' does not set the wind bin of {host} host — the identity-derived wind "
+             "class stands")
+# An explicit wind_class (--component wind_class= / an --object preset) outranks a wind_state FOR THE
+# BIN (the notes are bin-scoped: the FROZEN standoff may still take the wind_state as its γ>0 Ẇ — see
+# with_gamma_caveat).
+_SUPERSEDED_NOTE = ("wind_state '{ws}' does not set the wind bin — superseded by the explicit "
+                    "wind_class '{wc}'")
+# …worded for an --object preset (the user gave no wind_class — the preset's bin is fixed).
+PRESET_NOTE = ("wind_state '{ws}' does not set the wind bin — the --object preset's wind_class '{wc}' "
+               "is fixed")
+# CR-25 Q3b: the exclusion-system SYSTEM --wind-state reaches main-sequence components only — a non-MS
+# component is not given it at all (neither the bin nor the γ>0 standoff).
+SYSTEM_NOT_APPLIED_NOTE = ("system --wind-state '{ws}' not applied: {host} host — the identity-derived "
+                           "wind class stands")
+SYSTEM_SUPERSEDED_NOTE = ("system --wind-state '{ws}' does not set the wind bin — superseded by the "
+                          "explicit wind_class '{wc}'")
+# The FROZEN standoff takes an explicit wind_state as its γ>0 Ẇ on any host (CR-25 Q7 — untouched).
+GAMMA_STANDOFF_NOTE = ("; at γ>0 the regulated standoff's Ẇ term still uses it (pre-existing, "
+                       "unchanged)")
 
 
-def _is_flare_otype(otype):
-    ot = (otype or "").strip().lower()
-    return "flare" in ot or "uv cet" in ot or ot in ("fl*", "uv*")
+def _article(letter):
+    """'an' before a spectral letter spoken with a vowel sound (A, F=eff, M=em, O); else 'a'."""
+    return "an" if letter in ("A", "F", "M", "O") else "a"
+
+
+def _norm_wind_state(wind_state):
+    """A recognized ``--wind-state`` preset (lower-cased), else ``None``."""
+    w = (wind_state or "").strip().lower()
+    return w if w in _WIND_STATE_CLASS else None
+
+
+def _otype_codes(otype=None, otypes=None):
+    """The otype codes to scan: the fetched full list ``otypes`` (any iterable) when given, else the
+    primary ``otype`` split on '|' (the ``--component otype=BY*|Er*`` form; a plain otype → 1 code)."""
+    if otypes is not None:
+        return [str(c).strip() for c in otypes if c is not None and str(c).strip()]
+    if not otype:
+        return []
+    return [c.strip() for c in str(otype).split("|") if c.strip()]
+
+
+def active_otype_matches(otype=None, otypes=None):
+    """CR-25.2: the sorted canonical active-set codes present in the star's otype(s) — ``[]`` if none.
+    Exact whole-code match (case-insensitive) against ``{BY*, Er*, Fl*, RS*, UV*}``, plus the legacy
+    long names (``Flare Star`` → ``Fl*``, ``UV Cet …`` → ``UV*``)."""
+    found = set()
+    for code in _otype_codes(otype, otypes):
+        low = code.lower()
+        hit = _ACTIVE_CODE_BY_LOWER.get(low)
+        if hit:
+            found.add(hit)
+            continue
+        for sub, canon in _ACTIVE_LEGACY:
+            if sub in low:
+                found.add(canon)
+    return sorted(found)
+
+
+def _ms_wind(colour, wind_state=None, otype=None, otypes=None):
+    """CR-25 main-sequence bin resolution → ``(wind_class, provenance, wind_otype, wind_class_note)``.
+
+    Precedence: an explicit ``wind_state`` (any colour — Q1) → ``manual``; else an active otype on a
+    **K/M** star (Q1 gate — G/F/A/B/O never read it, so no G flip and no O/B demotion) → ``active`` /
+    ``otype_auto``; else the colour default → ``class_default``; no colour and no wind_state → ``None``.
+    ``wind_otype`` (the matched codes, K/M only) is reported even when the manual override won (Q5)."""
+    ws = _norm_wind_state(wind_state)
+    matched = active_otype_matches(otype, otypes) if colour in ("K", "M") else []
+    wind_otype = matched or None
+    if ws:
+        wc = _WIND_STATE_CLASS[ws]
+        note = None
+        if ws == "hot" and colour in ("F", "G", "K", "M"):
+            note = _Q8_HOT_NOTE.format(art=_article(colour), c=colour)
+        elif ws in ("quiet", "solar", "active") and colour in ("O", "B"):
+            note = _Q8_COOL_NOTE.format(ws=ws, wc=wc, art=_article(colour), c=colour)
+        return wc, "manual", wind_otype, note
+    if matched:
+        return "active", "otype_auto", wind_otype, None
+    if colour in _COLOUR_DEFAULT_WIND:
+        return _COLOUR_DEFAULT_WIND[colour], "class_default", None, None
+    return None, None, None, None
+
+
+def _otype_any(pred, otype):
+    """Apply an otype predicate to a plain primary otype, or to EACH code of the '|' list form (FYI ii:
+    WR/AGB stays on the primary; a '|' list has no primary → any-code)."""
+    if otype and "|" in str(otype):
+        return any(pred(c) for c in _otype_codes(otype=otype))
+    return pred(otype)
 
 
 def _is_wr_otype(otype):
@@ -200,113 +288,179 @@ _EVOLVED_TAGS = {"subgiant": "subgiant_mild", "giant": "giant_overwindy",
 
 
 # ── the tri/four-state domain + wind classifier ─────────────────────────────────
-def classify_domain_wind(sp_type=None, otype=None, class_tag=None, wind_class=None,
-                         object_name=None, wind_state=None):
-    """``(domain, wind_class, class_note)`` — the four-value domain classifier + wind_class resolver.
+def classify_wind(sp_type=None, otype=None, class_tag=None, wind_class=None, object_name=None,
+                  wind_state=None, otypes=None):
+    """CR-25 — the full domain + wind classification → a dict:
+    ``{domain, wind_class, class_note, wind_class_provenance, wind_otype, wind_class_note}``.
 
-    ``domain ∈ {main_sequence, evolved, windless_free_harbor, unmodeled}``. ``wind_class`` is the
-    EMITTED string (or ``None`` for windless/unmodeled or a body with no resolvable colour).
+    ``domain ∈ {main_sequence, evolved, windless_free_harbor, unmodeled}``; ``wind_class`` is the EMITTED
+    string (or ``None``). ``otype`` is the PRIMARY SIMBAD otype (WR/AGB detection — FYI ii) and, absent
+    ``otypes``, the active-otype source; ``otypes`` is the FULL fetched list (CR-25.2) when available.
 
-    An explicit ``wind_class`` overrides the WIND ROW, but the **domain** is still taken from the
-    identity (``sp_type``/``class_tag``/``object_name``) when one is present — so an O-subgiant whose
-    emitted wind_class is ``o_hot`` re-classifies as ``evolved`` (not ``main_sequence``) as long as its
-    sp_type rides along. Only a **bare** ``wind_class`` with no identity infers the domain from the
-    wind_class (o_hot/b_hot → main_sequence by default). See CR-22.4.
+    Bin precedence (CR-25.1): an explicit ``wind_class`` (``--component wind_class=`` / an ``--object``
+    preset) > ``wind_state`` > the active-otype auto-detect (MS K/M only) > the colour default. The
+    DOMAIN logic is unchanged from CR-22.4: an explicit ``wind_class`` keeps the identity's domain when one
+    is present (an O-subgiant stays ``evolved``), and only a bare / windless / unmodeled identity infers
+    the domain from the wind_class. ``wind_class_provenance ∈ {manual, otype_auto, class_default,
+    object_preset(caller-set), None}`` (Q4); a ``wind_state`` never sets the bin of a non-MS host (Q3a).
     """
-    dom, wc, note = _classify_identity(sp_type, otype, class_tag, object_name, wind_state)
+    dom, wc0, note, colour = _classify_identity(sp_type, otype, class_tag, object_name)
+    ws = _norm_wind_state(wind_state)
+    relevant = dom == MAIN_SEQUENCE and colour in ("K", "M")
+    ms = _ms_wind(colour, wind_state, otype, otypes) if dom in (MAIN_SEQUENCE, None) else None
     if wind_class:
         w = str(wind_class).strip().lower()
         if w in EMITTED_WIND_CLASSES:
+            wnote = _SUPERSEDED_NOTE.format(ws=ws, wc=w) if ws else None
+            wotype = ms[2] if ms else None
             if dom is None or dom in (WINDLESS, UNMODELED):
                 # no identity signal (or a windless/unmodeled one the user is overriding) →
                 # infer the domain from the explicit wind_class
-                return _domain_for_wind_class(w), w, (note if dom is None else None)
-            return dom, w, note                  # identity present → keep its domain, override the row
+                return _wind_result(_domain_for_wind_class(w), w, (note if dom is None else None),
+                                    "manual", wotype, wnote, relevant, False)
+            return _wind_result(dom, w, note, "manual", wotype, wnote, relevant, False)   # row overridden
     if dom is None:
         # a bare mass (no identity): MS, with a wall only if a --wind-state preset was given
-        return MAIN_SEQUENCE, _ms_wind_class(None, wind_state, otype), None
-    return dom, wc, note
+        return _wind_result(MAIN_SEQUENCE, ms[0], None, ms[1], ms[2], ms[3], relevant, bool(ws))
+    if dom == MAIN_SEQUENCE:
+        return _wind_result(dom, ms[0], note, ms[1], ms[2], ms[3], relevant, bool(ws))
+    # evolved / windless / unmodeled: the identity row stands; a wind_state is ignored + noted (Q3a)
+    return _wind_result(dom, wc0, note, ("class_default" if wc0 else None), None,
+                        (_Q3A_NOTE.format(ws=ws, host=_Q3A_HOST[dom]) if ws else None), relevant, False)
 
 
-def _classify_identity(sp_type, otype, class_tag, object_name, wind_state):
-    """Domain + wind_class from IDENTITY only (no explicit wind_class override). Returns
-    ``(None, None, None)`` when there is no identity signal at all (a bare ``--mass-msun``)."""
+def _wind_result(domain, wind_class, class_note, provenance, wind_otype, wind_class_note, relevant,
+                 binned):
+    return {"domain": domain, "wind_class": wind_class, "class_note": class_note,
+            "wind_class_provenance": provenance, "wind_otype": wind_otype,
+            "wind_class_note": wind_class_note,
+            # not output fields: the full SIMBAD otype list can matter (MS K/M — Q1/Q6); a valid
+            # wind_state actually SET the bin (else it was superseded / ignored — see with_gamma_caveat)
+            "otype_list_relevant": relevant, "wind_state_binned": binned}
+
+
+def with_gamma_caveat(note, *, wind_state, binned, gamma, mass_loss_msun_yr, has_standoff):
+    """Append ``GAMMA_STANDOFF_NOTE`` to a bin-scoped "ignored / superseded" note when the wind_state did
+    NOT set the bin but the FROZEN standoff still took it as its γ>0 Ẇ (no explicit rate, a standoff
+    exists). The ONE rule both subcommands use — exclusion-boundary's two-layer and exclusion-system's
+    compose — so the caveat can't drift between them."""
+    if (note and gamma and _norm_wind_state(wind_state) and not binned
+            and mass_loss_msun_yr is None and has_standoff):
+        return note + GAMMA_STANDOFF_NOTE
+    return note
+
+
+def classify_domain_wind(sp_type=None, otype=None, class_tag=None, wind_class=None,
+                         object_name=None, wind_state=None, otypes=None):
+    """``(domain, wind_class, class_note)`` — the CR-22 3-tuple API, now a thin wrapper over
+    ``classify_wind`` (kept so every existing caller sees the same shape). See ``classify_wind``."""
+    r = classify_wind(sp_type=sp_type, otype=otype, class_tag=class_tag, wind_class=wind_class,
+                      object_name=object_name, wind_state=wind_state, otypes=otypes)
+    return r["domain"], r["wind_class"], r["class_note"]
+
+
+def otype_source(fetch):
+    """CR-25 / MSG 266 ``wind_otype_source``: the main_id whose otype list was consulted, when that
+    object is NOT the resolved star itself (``G 272-61`` → ``G 272-61A``); ``None`` for the star's own
+    list, a degrade, or no fetch. ``fetch`` is a ``databases.fetch_star_otypes`` result (or ``None``)."""
+    if not fetch or fetch.get("status") or fetch.get("source_is_self", True):
+        return None
+    return fetch.get("source_main_id")
+
+
+def wind_cls_kw(cw, fetch=None):
+    """The pre-classified kwargs ``compute_two_layer_boundary`` takes, from a ``classify_wind`` result
+    (+ the otype fetch, for ``wind_otype_source``)."""
+    return dict(domain=cw["domain"], wind_class=cw["wind_class"], class_note=cw["class_note"],
+                wind_class_provenance=cw["wind_class_provenance"], wind_otype=cw["wind_otype"],
+                wind_class_note=cw["wind_class_note"], wind_otype_source=otype_source(fetch),
+                wind_state_binned=cw["wind_state_binned"])
+
+
+def _classify_identity(sp_type, otype, class_tag, object_name):
+    """Domain from IDENTITY only (no wind_state, no explicit wind_class) →
+    ``(domain, default_wind_class, class_note, ms_colour)``.
+
+    On a MAIN_SEQUENCE branch ``default_wind_class`` is ``None`` and ``ms_colour`` is the colour the bin
+    resolves from (``classify_wind`` → ``_ms_wind``; may itself be ``None``); on a non-MS branch
+    ``ms_colour`` is ``None`` and ``default_wind_class`` is the identity row. ``(None, None, None, None)``
+    when there is no identity signal at all (a bare ``--mass-msun``)."""
     # object-name presets
     obj = (object_name or "").strip().lower()
     if obj in ("brown-dwarf", "brown_dwarf", "rogue-planet", "rogue_planet", "rogue"):
-        return WINDLESS, None, _CLASS_NOTES[WINDLESS]
+        return WINDLESS, None, _CLASS_NOTES[WINDLESS], None
 
     # explicit class_tag (from --component class=)
     if class_tag:
         t = str(class_tag).strip().lower()
         if t in _WINDLESS_TAGS:
-            return WINDLESS, None, _CLASS_NOTES[WINDLESS]
+            return WINDLESS, None, _CLASS_NOTES[WINDLESS], None
         if t in _EVOLVED_TAGS:
-            return EVOLVED, _EVOLVED_TAGS[t], None
+            return EVOLVED, _EVOLVED_TAGS[t], None, None
         if t in _MS_TAGS:
-            return MAIN_SEQUENCE, _ms_wind_class(detection._sp_letter(sp_type), wind_state, otype), None
+            return MAIN_SEQUENCE, None, None, detection._sp_letter(sp_type)
         sp_type = sp_type or class_tag           # else treat the tag as a spectral type
 
     # otype-driven evolved classes (WR / AGB carry no unambiguous sp_type luminosity class)
-    if _is_wr_otype(otype):
-        return EVOLVED, "wr_overwindy", "Wolf-Rayet"
-    if _is_agb_otype(otype):
-        return EVOLVED, "agb_overwindy", "AGB / Mira / carbon star"
+    if _otype_any(_is_wr_otype, otype):
+        return EVOLVED, "wr_overwindy", "Wolf-Rayet", None
+    if _otype_any(_is_agb_otype, otype):
+        return EVOLVED, "agb_overwindy", "AGB / Mira / carbon star", None
 
     sp = (sp_type or "").strip()
     if not sp:
-        return None, None, None                  # no identity signal → let the caller default to MS
+        return None, None, None, None            # no identity signal → let the caller default to MS
 
     # WR (WN/WC/WO) and carbon (C-*) recognized from the SPECTRAL TYPE itself (no otype needed) —
     # the leading display class covers W/C, which detection._sp_letter (OBAFGKM only) does not.
     lead = shared.spectral_leading_class(sp, letters=shared._SP_DISPLAY_LETTERS)
     if lead == "W":
-        return EVOLVED, "wr_overwindy", "Wolf-Rayet"
+        return EVOLVED, "wr_overwindy", "Wolf-Rayet", None
     if lead == "C":
-        return EVOLVED, "agb_overwindy", "carbon star"
+        return EVOLVED, "agb_overwindy", "carbon star", None
 
     host = detection._host_class(sp)
     colour = detection._sp_letter(sp)
 
     if host in ("white_dwarf", "brown_dwarf"):
-        return WINDLESS, None, _CLASS_NOTES[WINDLESS]
+        return WINDLESS, None, _CLASS_NOTES[WINDLESS], None
 
     if host == "subdwarf":
         # WB MSG 242 Item 2 — split the lump: hot sdB/sdO (colour O/B) vs cool lum-VI (colour A–M).
         if colour in ("O", "B"):
-            return UNMODELED, None, _CLASS_NOTES[UNMODELED]
+            return UNMODELED, None, _CLASS_NOTES[UNMODELED], None
         # cool subdwarf (lum VI) → a metal-poor MAIN-SEQUENCE fusing star with a wind (NO standoff_note)
-        return MAIN_SEQUENCE, _ms_wind_class(colour or "K", wind_state, otype), "cool subdwarf"
+        return MAIN_SEQUENCE, None, "cool subdwarf", (colour or "K")
 
     if host == "subgiant":                       # lum IV
         # spec table exception: O/B at IV keep the hot line-driven wind (WB MSG 242 Item 1)
         if colour == "O":
-            return EVOLVED, "o_hot", "O subgiant"
+            return EVOLVED, "o_hot", "O subgiant", None
         if colour == "B":
-            return EVOLVED, "b_hot", "B subgiant"
-        return EVOLVED, "subgiant_mild", "subgiant"
+            return EVOLVED, "b_hot", "B subgiant", None
+        return EVOLVED, "subgiant_mild", "subgiant", None
 
     if host == "giant":                          # lum I/II/III (collapsed by _host_class)
         m = detection._LUM_CLASS_RE.search(sp)
         lc = m.group(1) if m else "III"
         if lc == "I":                            # supergiant
             wc = "rsg_overwindy" if colour in ("K", "M") else "bsg_overwindy"
-            return EVOLVED, wc, "supergiant"
+            return EVOLVED, wc, "supergiant", None
         # bright giant / giant (II/III)
         if colour == "O":
-            return EVOLVED, "o_hot", "hot giant"
+            return EVOLVED, "o_hot", "hot giant", None
         if colour == "B":
-            return EVOLVED, "b_hot", "hot giant"
+            return EVOLVED, "b_hot", "hot giant", None
         if colour in ("K", "M"):
-            return EVOLVED, "giant_overwindy", ("M giant" if colour == "M" else "K giant")
-        return EVOLVED, "giant_mild", "giant"    # A/F/G (and no-colour) → the mild row
+            return EVOLVED, "giant_overwindy", ("M giant" if colour == "M" else "K giant"), None
+        return EVOLVED, "giant_mild", "giant", None    # A/F/G (and no-colour) → the mild row
 
     # main sequence (lum V or no luminosity class). A cool subdwarf carried as an sd/esd/usd PREFIX
     # (sdM1/sdK/sdG…, no roman lum class) gets the same "cool subdwarf" class_note as the lum-VI form
     # and the --star (Kapteyn's) path — the classification stays main_sequence + the colour wind_class
     # (WB MSG 244 consistency fix; hot sdB/sdO were already routed to unmodeled above).
     ms_note = "cool subdwarf" if (sp[:3] in ("esd", "usd") or sp[:2] == "sd") else None
-    return MAIN_SEQUENCE, _ms_wind_class(colour, wind_state, otype), ms_note
+    return MAIN_SEQUENCE, None, ms_note, colour
 
 
 # ── the wall (spec CR-22.3) ──────────────────────────────────────────────────────

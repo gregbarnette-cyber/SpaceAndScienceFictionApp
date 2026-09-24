@@ -71,6 +71,8 @@ class Cr231ExclusionBoundaryStarLadderTest(unittest.TestCase):
                        lambda sl: {"bcLuminosity": _EPS_ERI_BCLUM}),
             mock.patch("core.binary.gaia_source_id_from_designations", sid),
             mock.patch("core.catalog.gaia_astrophysical", flame),
+            mock.patch("core.databases.fetch_star_otypes",
+                       lambda main_id, primary_otype=None, component_rule=True: None),   # CR-25: offline
         ]
 
     def test_flame_hit_resolves_gaia_flame(self):   # acceptance 1 (offline): 0.811 / gaia_flame / 43.69
@@ -165,6 +167,8 @@ class Cr231BothSubcommandsAgreeTest(unittest.TestCase):
             mock.patch("core.binary.binary_orbit", lambda **k: {"solutions": []}),
             mock.patch("core.binary.gaia_source_id_from_designations", lambda d: "5164707970261890560"),
             mock.patch("core.catalog.gaia_astrophysical", f),
+            mock.patch("core.databases.fetch_star_otypes",
+                       lambda main_id, primary_otype=None, component_rule=True: None),   # CR-25: offline
         ]
         for p in patches:
             p.start()

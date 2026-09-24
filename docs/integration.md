@@ -1910,6 +1910,53 @@ Gaia DR3 FLAME > L-inversion), identical in tier order + result to `dossier --st
   `ms_luminosity_inversion` **+ `flame_status`**; `--mass-msun 1` → `manual`/47.5 (byte-identical); `--object sun` →
   `object_preset`; `--spectral-type DA2` → `mass_provenance null`. `completed_plans/PHASE_CR23_PLAN.md`.
 
+##### CR-25 — wind-wiring fix: `--wind-state` honored + full-SIMBAD-otype active auto-detect + `wind_class_provenance` (built 2026-09-24)
+A **bug fix** (WB `OQ-SA-WIND1`): the `--star` / `--spectral-type` paths classified the wind **without** `--wind-state`
+(silently ignored) and saw only SIMBAD's **primary** otype (`PM*` for most flare M dwarfs), so every non-preset **K/M**
+star was floored to the `quiet` bin (Ẇ 1e-16 → wall 0.424 AU). CR-25 restores the intended 3-bin model. **The STANDOFF
+is untouched** (the FROZEN generator; γ=0 `r_ex` byte-identical on every path) — only the research-grade **WALL** of an
+active K/M star changes (quiet 0.424 → active **13.42 AU**, `wall_route wind_term`), plus `--wind-state` now binding.
+- **Bin precedence (CR-25.1):** an explicit `wind_class` (an `--object` preset) > **`--wind-state {quiet,solar,active,hot}`**
+  (→ `{quiet, solar, active, o_hot}` on ANY main-sequence colour) > the **active-otype auto-detect** (MS **K/M only** —
+  G/F/A/B/O defaults unaffected, O/B never demoted) > the colour default (O→o_hot, B→b_hot, A→a_dwarf, F→f_dwarf,
+  G→solar, K/M→quiet). `--wind-state` does **not** set the bin of an evolved / windless / unmodeled host (a
+  `wind_class_note` says so), and an `--object` preset's bin is fixed. `--mass-loss-msun-yr` is the **independent rate
+  axis** (sets Ẇ + the wall, `mass_loss_provenance: supplied`) and never changes the `wind_class` label.
+- **Active auto-detect (CR-25.2):** on `--star`, the **full** SIMBAD otype list is fetched (one bounded SIMBAD-TAP call,
+  `basic ⋈ ident ⋈ otypes` on normalized `ident.id`) — **only** for an MS K/M star — and the star is `active` if any
+  code is in **`{Er*, Fl*, UV*, BY*, RS*}`** (exact codes, case-insensitive: `UV*` not the bare `UV`; `Ro*`/`V*` never).
+  `Er*` (Eruptive) is the load-bearing modern code; legacy long names (`Flare Star`, `UV Cet`) still match. **Q2
+  attribution:** for a letterless system head (`G 272-61` = GJ 65) the list of its **A component** (`G 272-61A`,
+  resolved through SIMBAD's identifier normalization in the same query) is used, never a union across components; a
+  main_id already naming a component (`* alf Cen B`, `G 272-61B`) uses its own list.
+- **New output fields (CR-25.3, on EVERY `exclusion-boundary` output):** **`wind_class_provenance`** ∈ `{manual,
+  otype_auto, class_default, object_preset}` or `null` (no bin: windless/unmodeled, a bare `--mass-msun` without
+  `--wind-state`, the windless presets) — how the **bin** was chosen, a SIBLING of (never folded into) the CR-22
+  `mass_loss_provenance` (how Ẇ was chosen); **`wind_otype`** (sorted matched active codes, or `null`; shown even when a
+  `manual` override won, e.g. EV Lac `--wind-state quiet` → `["Er*"]`); **`wind_otype_source`** (the main_id whose list
+  was consulted when it is NOT the star itself — e.g. the letterless head `G 272-61` → `"G 272-61A"`; else `null`. N.B.
+  `--star "GJ 65"` itself still errors before any wind is computed — a pre-existing no-Teff (`exclusion-boundary`) /
+  no-mass (`exclusion-system`) resolution gap, not CR-25 — so that example is observed via the fetch / an offline
+  fixture); **`wind_class_note`** (or `null`):
+  a Q8 domain-consistency note on a hot↔cool override (`hot` on an F/G/K/M star; `quiet`/`solar`/`active` on an O/B
+  star — honored), a "does not set the wind bin" note on a non-MS host or when an explicit/preset wind_class supersedes
+  the wind_state, + a `; at γ>0 the regulated standoff's Ẇ term still uses it` caveat when the FROZEN standoff did take
+  it (unchanged pre-CR-25 behavior).
+- **Degrade (CR-19 discipline):** the otype fetch is bounded (`SPACE_APP_SIMBAD_TIMEOUT`, default 30 s/attempt, `<=0`
+  unbounded, retry once, a per-process breaker after a timeout) and cached 7 days on success only; on failure it
+  degrades to the **primary** otype and surfaces top-level **`otype_status`** ∈ `{timeout, unreachable, error}` (absent
+  on success; `error` = a deterministic failure — no/unattributable rows, or SIMBAD answered with a query error — never
+  retried; `unreachable` = any other failure). Deterministic hook: `SPACE_APP_SIMBAD_OTYPES_FORCE_UNREACHABLE=1` (before the cache, no network).
+- **CR-25 anchors (`exclusion-boundary`, α=1/3 default):** `--star "EV Lac"` → `active`/`otype_auto`/`["Er*"]`, wall
+  **13.42**, `r_ex` **32.73** (unchanged); `--wind-state quiet` → 0.424/`manual`; `--mass-loss-msun-yr 1e-13` → label
+  `active`/`otype_auto` + `supplied` (WB erratum E1); Proxima / Wolf 359 / Ross 154 / AD Leo / AU Mic → `active` (`Er*`);
+  Barnard's (`BY*`, the documented Wood-quiet false-active) and ε Eri (`BY*`, a true active; standoff 43.69 @α=0.4)
+  → `active`; τ Cet → `solar` 6.0, κ¹ Cet / EK Dra → `solar` (Q1), Kapteyn's → `quiet` 0.424 — unchanged;
+  `--spectral-type M4V --wind-state active` → `active`/1e-13; `--object m-dwarf --wind-state quiet` → still `active`,
+  `object_preset`. For a Wood-**measured** host the exact interim override is `--mass-loss-msun-yr <Ṁ×2e-14>`, not
+  `--wind-state active` (a coarse 5 Ṁ☉ bin). `completed_plans/PHASE_CR25_PLAN.md`; tests `tests/test_cr25.py` +
+  live `tests/test_cr25_live.py`.
+
 ### Power generation / storage / thermal (Phase AL — Group R, no network)
 
 Ten `query.py`-only, pure-math, self-validating calculators + two bundled-table subcommands for the
@@ -4518,6 +4565,38 @@ on a clean inversion — parity with `exclusion-boundary`) and **`standoff_note`
 … --alpha 0.4` → `domain evolved`, standoff **47.33 unchanged** + non-null research-grade `standoff_note`; `Procyon A` →
 **55.53 unchanged** + note; ε Eri (MS) → `standoff_note null`; Sirius B (windless) → `standoff_note null`.
 Tests: `tests/test_cr23.py` + `tests/test_query_exclusion_system*.py`. `completed_plans/PHASE_CR23_PLAN.md`.
+
+**CR-25.4 — the wind-wiring fix on `exclusion-system` (built 2026-09-24; the star-analysis cards' path).** The same
+classifier as `exclusion-boundary` (see its CR-25 block) now reaches every component: `exclusion-system --star
+"EV Lac"` → component `active`/`otype_auto`/`["Er*"]`, Ẇ 1e-13, wall **13.42**, `r_ex` **30.38** @α=0.4 (was
+`quiet`/0.424). Changes:
+- **New system-level `--wind-state {quiet,solar,active,hot}`** — reaches every **main-sequence** component with no
+  `wind_state=` of its own (a component's own value wins): sets its bin (an explicit `wind_class=` supersedes it —
+  noted) and, like `exclusion-boundary --wind-state`, its γ>0 standoff Ẇ + the point-mass Ẇ. A non-MS component is
+  **not** given it (bin or standoff) — `wind_class_note` "system --wind-state … not applied"; at γ>0 such a component
+  with no own wind input errors as before, with the reason appended.
+- **Per-`--component` `wind_state=` is honored for all four values on any MS colour** (the fixed shared classifier):
+  `class=G2V,mass=1,wind_state=active` → `active` (was `solar`); `class=M4V,mass=0.2,wind_state=solar` → `solar` (was
+  `quiet`). `otype=` accepts a `|` list (`otype=BY*|Er*` → `otype_auto`); `--component` never fetches.
+- **`--star` components** carry their primary otype (CR-25 contract 3(b); single body + binary B — their own) and —
+  for an MS K/M component — the full SIMBAD otype list, fetched after the mass resolves: a single body its own list
+  (the Q2 A-candidate rule as on `exclusion-boundary`); binary component **A** the A-candidate object's list, or — only
+  when that candidate genuinely does not resolve — the system head's list per the Q2 ruling, with a `resolution_notes`
+  line (a head list can carry a companion's code; the note flags it). Binary A is **not** given the head's primary otype
+  as its own `otype`, so a DEGRADED A fetch falls back to nothing (the pre-CR-25 A, colour default + `otype_status_a`),
+  never to the head's primary. Component **B** its own object's list. Never a union.
+- **One classification change (WB E5, intended):** threading the primary otype means an otype-only **WR/AGB** star
+  (`WR*`/`Mi*`/`C*`/`AB*` with no luminosity class in its sp_type) now composes as `evolved` on `exclusion-system --star`
+  (as `exclusion-boundary --star` already classified it) — a different `wind_class`/wall + the research-grade
+  `standoff_note`, and a lone no-mass one is a result instead of a "needs a positive mass_solar" error.
+- **Per-component additive keys:** `wind_class_provenance`, `wind_otype`, `wind_otype_source`, `wind_class_note`, and the
+  resolved **`mass_loss_msun_yr`** + **`mass_loss_provenance`** the wall used (`null` for windless/unmodeled) — so the
+  per-component Ẇ is readable (WB E2). Degrade flags: `otype_status` (single body) / `otype_status_a` / `_b` (binary),
+  top-level, only when degraded.
+- **Unchanged** (every star whose classification is unchanged — i.e. all but the E5 WR/AGB case above): standoffs,
+  zones, `wall_zones`, separations and the point mass at γ=0 (α Cen 48.9669/45.7214 with B
+  `quiet` — its list is {`*`,`**`,`PM*`}; Sirius A 63.46 + B windless; Proxima 20.4824 with the WB catalog, now `active`).
+  `--alpha`/`--phase` are validated before any `--star` network call.
 
 ## CR-12 — WD cooling-grid ≤1.00 M☉ cooling-age re-derivation (Bedard 2020 unification) + criterion-1 correction
 

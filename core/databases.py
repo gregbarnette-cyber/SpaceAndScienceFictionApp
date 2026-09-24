@@ -7,8 +7,10 @@ import math
 import os
 import re
 import threading
+import time
 
 from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
+                     _bounded_call, _env_timeout, _stderr_warn, _WatchdogTimeout,
                      _escape_like, spectral_where, spectral_adql, LY_PER_PC,
                      _SP_CLASS_PREFIXES,
                      _fval, _fmt,  # _fval/_fmt: one canonical copy (P4.6)
@@ -423,6 +425,212 @@ def _simbad_multiplicity_block(otype):
                 "source": "simbad-otype", "otype": ot}
     return {"is_multiple": False, "sb_flag": False, "basis": None,
             "source": "simbad-otype", "otype": ot}
+
+
+# ── CR-25.2: the FULL SIMBAD otype list (exclusion wind auto-detect) ─────────────
+# `compute_simbad_lookup` requests only the PRIMARY otype (`PM*` for most flare M dwarfs), so the
+# exclusion --star paths fetch the full list here — one bounded SIMBAD TAP call (CR-19 discipline:
+# wall-clock watchdog, retry once, degrade to the primary otype with a surfaced `otype_status`, never
+# silent). `simbad-lookup` itself is unchanged, so opt 1 / dossier / multiplicity pay nothing.
+_SIMBAD_OTYPE_TIMEOUT_DEFAULT = 30.0   # s per attempt (SPACE_APP_SIMBAD_TIMEOUT overrides; <=0 = unbounded)
+_SIMBAD_RETRY_BACKOFF = 0.5            # s between the 2 attempts (an HTTP Retry-After wins)
+_SIMBAD_CIRCUIT_COOLDOWN_S = 60.0      # a timed-out SIMBAD short-circuits later fetches this long
+# A main_id that already names a COMPONENT: a trailing capital after whitespace (`* alf Cen B`) or
+# directly after a digit (SIMBAD's own `G 272-61B` / `BD+19  5116A`).
+_COMPONENT_LETTER_RE = re.compile(r"[\s\d][A-Z]$")
+_simbad_otypes_down = None             # circuit-breaker: None = armed, else (reason, tripped_monotonic)
+
+
+class _OtypeResultError(Exception):
+    """The otype-list query returned no usable / attributable object (every SIMBAD object carries ≥1
+    otype row) — a deterministic result, surfaced as ``otype_status: "error"`` (never retried)."""
+
+
+def reset_simbad_otypes_circuit():
+    """Re-arm the SIMBAD otype-fetch circuit-breaker (tests; a long-lived caller between operations)."""
+    global _simbad_otypes_down
+    _simbad_otypes_down = None
+
+
+def _simbad_otypes_circuit_open():
+    """True iff a fetch TIMED OUT within the last cooldown (a stalled SIMBAD is then not re-waited per
+    component — the CR-19 pattern; trips on timeout only, auto re-arms)."""
+    global _simbad_otypes_down
+    if _simbad_otypes_down is None:
+        return False
+    if (time.monotonic() - _simbad_otypes_down[1]) >= _SIMBAD_CIRCUIT_COOLDOWN_S:
+        _simbad_otypes_down = None
+        return False
+    return True
+
+
+def _simbad_otype_timeout():
+    """Effective per-attempt bound: ``SPACE_APP_SIMBAD_TIMEOUT`` > 30 s (``<= 0`` → ``None`` =
+    unbounded; non-numeric → the default) — the shared parser the CR-19 Gaia bound uses too."""
+    return _env_timeout("SPACE_APP_SIMBAD_TIMEOUT", _SIMBAD_OTYPE_TIMEOUT_DEFAULT)
+
+
+def _simbad_warn(msg):
+    _stderr_warn("simbad", msg)
+
+
+def _simbad_otypes_tap(adql):
+    """The network seam: one SIMBAD TAP query → ``[(main_id, matched_ident, otype), …]``. A FRESH pyvo
+    ``TAPService`` per call (its own requests session, so an abandoned watchdog attempt shares no state
+    — mirrors CR-19's fresh ``GaiaClass``); ``run_sync`` directly, so no capabilities round-trip and no
+    astroquery ``lru_cache`` pinning."""
+    from astroquery.simbad import conf
+    from pyvo.dal import TAPService, DALQueryError
+    try:
+        t = TAPService(baseurl=f"https://{conf.server}/simbad/sim-tap").run_sync(adql).to_table()
+    except DALQueryError as e:
+        # the service ANSWERED with a query error (bad ADQL / schema) — deterministic, not a network
+        # fault: never retried, surfaced as otype_status "error" (not "unreachable")
+        raise _OtypeResultError(f"SIMBAD TAP query error: {e}") from e
+    try:
+        return [(str(r["main_id"]), str(r["qid"]), str(r["otype"])) for r in t]
+    except KeyError as e:                                       # a renamed/absent result column
+        raise _OtypeResultError(f"unexpected SIMBAD TAP result columns: {e}") from e
+
+
+def _otypes_query(main_id, component_rule):
+    """The one-call ADQL + the A-candidate (or None). SIMBAD TAP normalizes ``ident.id =`` comparisons
+    (how astroquery's ``query_object`` resolves names), so ``'G 272-61 A'`` matches the object whose
+    main_id is ``G 272-61A`` — one call both resolves the candidate AND returns every object's list,
+    with ``i.id`` (the matched stored identifier) telling which query id each row answered. The Q2 rule
+    applies only to a LETTERLESS head: a main_id already naming a component (``* alf Cen B``,
+    ``G 272-61B``) is its own object — it must never inherit another object's list."""
+    cand = None
+    if component_rule and not _COMPONENT_LETTER_RE.search(main_id):
+        from core import stellar_mass
+        cand = next(iter(stellar_mass.component_candidate_ids(main_id, "A")), None)
+    ids = [main_id] + ([cand] if cand else [])
+    where = " OR ".join("i.id = '%s'" % str(x).replace("'", "''") for x in ids)
+    adql = ("SELECT b.main_id, i.id AS qid, o.otype FROM ident AS i JOIN basic AS b "
+            "ON b.oid = i.oidref JOIN otypes AS o ON o.oidref = b.oid WHERE " + where)
+    return adql, cand
+
+
+def _wskey(s):
+    return " ".join(str(s or "").split())
+
+
+def _idkey(s):
+    """Space-insensitive identifier key (SIMBAD stores ``G 272-61A`` for a ``G 272-61 A`` query)."""
+    return "".join(str(s or "").split()).casefold()
+
+
+def _interpret_otype_rows(rows, main_id, cand):
+    """Group the rows by object and pick ONE object's list (Q2 — never a union):
+
+    * the head (its own main_id) + exactly one other object that answered the candidate → the distinct
+      A object's list (``source_is_self`` False — e.g. ``G 272-61`` → ``G 272-61A``);
+    * the head alone → its own list; ``fallback_to_head`` iff a candidate was tried and did NOT resolve
+      (a candidate that resolved to the head itself — Sirius's ``* alf CMa A`` — is not a fallback);
+    * the head's main_id string absent (a raw / masked main_id): a lone object that answered only the
+      candidate → the distinct A object; else the lone object is the star itself; the head alias + one
+      candidate object → the candidate object.
+
+    No rows, or anything unattributable → ``_OtypeResultError`` (deterministic → ``status: "error"``)."""
+    groups = {}
+    for mid, qid, ot in rows:
+        g = groups.setdefault(_wskey(mid), [str(mid), set(), set()])
+        code = (ot or "").strip()
+        if code and code != "--":
+            g[1].add(code)
+        g[2].add(_idkey(qid))
+    groups = {k: g for k, g in groups.items() if g[1]}
+    cand_k = _idkey(cand) if cand else None
+    cand_resolved = cand_k is not None and any(cand_k in g[2] for g in groups.values())
+
+    def _out(g, is_self, fallback):
+        return {"codes": sorted(g[1]), "source_main_id": g[0], "source_is_self": is_self,
+                "fallback_to_head": fallback}
+
+    own = groups.get(_wskey(main_id))
+    others = [g for k, g in groups.items() if k != _wskey(main_id)]
+    if own is not None:
+        if cand_k is not None and len(others) == 1 and cand_k in others[0][2]:
+            return _out(others[0], False, False)
+        if not others:
+            return _out(own, True, cand_k is not None and not cand_resolved)
+    elif len(groups) == 1:
+        g = next(iter(groups.values()))
+        if cand_k is not None and cand_k in g[2] and _idkey(main_id) not in g[2]:
+            return _out(g, False, False)
+        return _out(g, True, cand_k is not None and not cand_resolved)
+    elif len(groups) == 2 and cand_k is not None:
+        cg = [g for g in groups.values() if cand_k in g[2]]
+        if len(cg) == 1:
+            return _out(cg[0], False, False)
+    raise _OtypeResultError(f"no attributable SIMBAD otype list for {main_id!r} ({len(groups)} objects)")
+
+
+def _otypes_degrade(status, main_id, primary_otype, short_circuit=False):
+    how = "short-circuited (SIMBAD timed out earlier this run)" if short_circuit else f"bounded ({status})"
+    _simbad_warn(f"otype list {how} — degrading to the primary otype: {main_id}")
+    prim = str(primary_otype).strip() if primary_otype else ""
+    return {"codes": [prim] if prim else [], "source_main_id": None, "source_is_self": True,
+            "status": status, "fallback_to_head": False}
+
+
+def fetch_star_otypes(main_id, primary_otype=None, component_rule=True):
+    """CR-25.2 — the FULL SIMBAD otype list for a resolved star (the exclusion wind auto-detect input).
+
+    Returns ``None`` (no fetch, no network) for a falsy ``main_id``; else a dict
+    ``{codes, source_main_id, source_is_self, status, fallback_to_head, candidate}`` (``candidate`` =
+    the A-candidate id actually queried, or ``None``):
+
+    * ``codes`` — the sorted otype codes of the chosen object (``[primary_otype]`` on a degrade).
+    * ``component_rule`` (Q2): for a letterless head the A-candidate (``component_candidate_ids``) is
+      resolved in the SAME query; a distinct resolved object supplies the list (``source_is_self``
+      False, e.g. ``G 272-61`` → ``G 272-61A``). ``False`` for an already-resolved component (binary B).
+    * ``status`` — ``None`` on success; on a degrade ``timeout`` (the watchdog, or the breaker open after
+      an earlier timeout), ``error`` (no rows / unattributable / the service answered with a query error
+      or an unexpected result shape — deterministic, never retried) or
+      ``unreachable`` (any other failure — pyvo wraps network errors as ``DALServiceError`` /
+      ``DALFormatError``, so the CR-19 "anything else" convention is used).
+
+    Bounded: ``SPACE_APP_SIMBAD_TIMEOUT`` (default 30 s, ``<=0`` unbounded) per attempt, retry once with a
+    backoff / ``Retry-After`` respect (``shared._bounded_call``). Only the network rows are bounded +
+    cached (``catalog_cache`` service ``simbad_otypes``, 7 days — an empty or failed fetch is never
+    cached); interpretation runs outside the retry. ``SPACE_APP_SIMBAD_OTYPES_FORCE_UNREACHABLE=1``
+    forces the ``unreachable`` degrade before the cache and any network (a deterministic re-gate hook)."""
+    global _simbad_otypes_down
+    if not main_id or not str(main_id).strip():
+        return None
+    main_id = str(main_id).strip()
+    adql, cand = _otypes_query(main_id, component_rule)          # pure — no network
+    if os.environ.get("SPACE_APP_SIMBAD_OTYPES_FORCE_UNREACHABLE"):
+        return {**_otypes_degrade("unreachable", main_id, primary_otype), "candidate": cand}
+
+    from core import catalog_cache
+    # the A-candidate is in the key: the cached rows answer THIS query (a rule change re-fetches)
+    params = {"main_id": main_id, "component_rule": bool(component_rule), "candidate": cand}
+
+    if _simbad_otypes_circuit_open():
+        rows = catalog_cache.cache_get(catalog_cache.cache_key("simbad_otypes", params))
+        if rows is None:
+            return {**_otypes_degrade("timeout", main_id, primary_otype, short_circuit=True),
+                    "candidate": cand}
+    else:
+        try:
+            rows = catalog_cache.cached(
+                "simbad_otypes", params,
+                lambda: _bounded_call(lambda: _simbad_otypes_tap(adql), timeout=_simbad_otype_timeout(),
+                                      retries=2, backoff=_SIMBAD_RETRY_BACKOFF, fatal=(_OtypeResultError,)))
+        except _WatchdogTimeout:
+            _simbad_otypes_down = ("timeout", time.monotonic())
+            return {**_otypes_degrade("timeout", main_id, primary_otype), "candidate": cand}
+        except _OtypeResultError:
+            return {**_otypes_degrade("error", main_id, primary_otype), "candidate": cand}
+        except Exception:
+            return {**_otypes_degrade("unreachable", main_id, primary_otype), "candidate": cand}
+    try:
+        res = _interpret_otype_rows(rows or [], main_id, cand)
+    except _OtypeResultError:
+        return {**_otypes_degrade("error", main_id, primary_otype), "candidate": cand}
+    return {**res, "status": None, "candidate": cand}
 
 
 # ── NASA Exoplanet Archive helpers ────────────────────────────────────────────

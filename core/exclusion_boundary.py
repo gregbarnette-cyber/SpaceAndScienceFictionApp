@@ -190,21 +190,38 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                                v_ism=None, c_ms=None, b_field=None, n_cloud=None, cloud_temp=None,
                                wind_phase_yr=None, f_shock=None, m_shock_min=None,
                                mass_loss_source=None, dial=None, calibration_au=_KUIPER_EDGE_AU,
-                               alpha=1.0 / 3.0, beta=0.0, gamma=0.0, scan_alpha=False):
+                               alpha=1.0 / 3.0, beta=0.0, gamma=0.0, scan_alpha=False,
+                               otypes=None, wind_class_provenance=None, wind_otype=None,
+                               wind_class_note=None, wind_otype_source=None, wind_state_binned=None):
     """CR-22 two-layer boundary: the unchanged canon STANDOFF (the FROZEN
     ``compute_exclusion_boundary`` above) + the research-grade physical WALL
     (``exclusion_wall.compute_wall``), with the four-value domain classifier + free-harbor guard.
 
-    Classification is done here (``exclusion_wall.classify_domain_wind``) unless ``domain`` is passed
-    pre-classified by the caller. The standoff arithmetic is byte-identical to
+    Classification is done here (``exclusion_wall.classify_wind``, honoring ``wind_state`` and the
+    CR-25 full otype list ``otypes``) unless ``domain`` is passed pre-classified by the caller. **A
+    pre-classifying caller owns the CR-25 wind fields** — it must pass them all
+    (``exclusion_wall.wind_cls_kw`` builds the set: ``wind_class_provenance`` / ``wind_otype`` /
+    ``wind_class_note`` / ``wind_otype_source``) and ``otypes`` is then unused (its effect is already in
+    the passed ``wind_class``). A caller-passed ``wind_class_provenance`` always wins (the ``--object``
+    path's ``object_preset``). ``wind_otype_source`` (CR-25 / MSG 266) is caller-only: the main_id whose
+    otype list was consulted when it is NOT the star itself. The standoff arithmetic is byte-identical to
     ``compute_exclusion_boundary`` — this function never re-derives ``r_ex``; it only wraps it and
     adds the additive wall/domain/echo fields. Returns the result dict, or the frozen generator's
     curated ``{"error": …}`` (mass ≤ 0, out-of-band exponents) for an in-domain body.
     """
     if domain is None:
-        domain, wind_class, class_note = ew.classify_domain_wind(
+        cw = ew.classify_wind(
             sp_type=sp_type, otype=otype, class_tag=class_tag, wind_class=wind_class,
-            object_name=object_name, wind_state=wind_state)
+            object_name=object_name, wind_state=wind_state, otypes=otypes)
+        domain, wind_class, class_note = cw["domain"], cw["wind_class"], cw["class_note"]
+        wind_class_provenance = wind_class_provenance or cw["wind_class_provenance"]
+        wind_otype, wind_class_note = cw["wind_otype"], cw["wind_class_note"]
+        wind_state_binned = cw["wind_state_binned"]
+
+    ws = ew._norm_wind_state(wind_state)
+    if wind_class_provenance == "object_preset" and ws:
+        # an --object preset's bin is fixed (the user gave no wind_class — say so, not "explicit")
+        wind_class_note = ew.PRESET_NOTE.format(ws=ws, wc=wind_class)
 
     inputs, prov = ew.resolve_wind_inputs(
         domain, wind_class, sp_type, mass_loss_msun_yr=mass_loss_msun_yr, wind_speed=wind_speed,
@@ -213,6 +230,9 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
         mass_loss_source=mass_loss_source)
 
     base = {"domain": domain, "wind_class": wind_class, "class_note": class_note,
+            # CR-25.3: how the wind BIN was chosen (independent of mass_loss_provenance — the Ẇ axis)
+            "wind_class_provenance": wind_class_provenance, "wind_otype": wind_otype,
+            "wind_otype_source": wind_otype_source, "wind_class_note": wind_class_note,
             "object": object_name, "mass_msun": mass_msun, "model_note": _MODEL_NOTE}
 
     # ── windless free harbor: no standoff, no wall (a WD / BD / rogue) ──
@@ -263,6 +283,11 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
             result["standoff_note"] = (
                 f"{_EVOLVED_NO_MASS_NOTE} ({mass_note})" if mass_note else _EVOLVED_NO_MASS_NOTE)
 
+    # CR-25: a bin-scoped "ignored / superseded" note gains the γ>0 caveat only when the FROZEN standoff
+    # above actually took the wind_state as its Ẇ (a standoff exists, no explicit rate) — shared rule.
+    result["wind_class_note"] = ew.with_gamma_caveat(
+        wind_class_note, wind_state=wind_state, binned=bool(wind_state_binned), gamma=gamma,
+        mass_loss_msun_yr=mass_loss_msun_yr, has_standoff=standoff is not None)
     result["mass_provenance"] = mass_provenance      # CR-23.2 §2a: always present (None on no-mass)
     # CR-23.2 §2c: surface the resolver note (e.g. the L^0.2632 over-read caution) — but ONLY on the
     # with-mass path (standoff resolved). The evolved-NO-mass branch already embeds mass_note inside

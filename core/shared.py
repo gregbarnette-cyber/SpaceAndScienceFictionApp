@@ -6,6 +6,7 @@ import os
 import random
 import re
 import socket
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -1305,6 +1306,56 @@ def _call_with_watchdog(fn, *args, timeout, **kwargs):
     if "error" in box:
         raise box["error"]
     return box.get("value")
+
+
+def _bounded_call(attempt_fn, *, timeout, retries=2, backoff=0.5, fatal=()):
+    """Run ``attempt_fn`` under the ``_call_with_watchdog`` wall-clock bound, up to ``retries``
+    attempts (retry-1 = 2). Between attempts it honors an HTTP ``Retry-After`` (429/503 — a
+    throttled-but-reachable service is not falsely degraded), else sleeps ``backoff`` s. Raises
+    ``_WatchdogTimeout`` if the final attempt timed out, else re-raises the last exception. An exception
+    of a ``fatal`` type (a deterministic failure — retrying cannot help) is re-raised at once.
+    ``timeout=None`` → unbounded (the watchdog joins forever). Shared by the CR-19 sync Gaia-TAP bound
+    (``catalog._bounded_gaia_call``) and the CR-25 SIMBAD otype-list fetch."""
+    last_exc = None
+    for i in range(retries):
+        try:
+            return _call_with_watchdog(attempt_fn, timeout=timeout)
+        except Exception as e:
+            if fatal and isinstance(e, fatal):
+                raise
+            last_exc = e
+        if i < retries - 1:
+            delay = _retry_after_seconds(last_exc)
+            time.sleep(delay if delay is not None else backoff)
+    raise last_exc
+
+
+def _parse_timeout(value, default):
+    """A wall-clock bound setting → seconds (> 0), ``None`` when disabled (parses to ``<= 0``), or
+    ``default`` when unset (``None``/``""``) or non-numeric."""
+    if value is None or value == "":
+        return default
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    return v if v > 0 else None
+
+
+def _env_timeout(env_name, default, override=None):
+    """Effective bound: an explicit ``override`` > the ``env_name`` env var > ``default`` (parsed by
+    ``_parse_timeout``: ``<= 0`` disables → ``None``; non-numeric → ``default``)."""
+    return _parse_timeout(override if override is not None else os.environ.get(env_name), default)
+
+
+def _stderr_warn(tag, msg):
+    """One ``[tag] msg`` line on stderr — the degrade-warning seam for bounded network calls (a
+    separate stream from query.py's stdout JSON, so it never disturbs a JSON consumer)."""
+    try:
+        sys.stderr.write(f"[{tag}] {msg}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 def _make_simbad(*fields, timeout=30):

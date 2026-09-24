@@ -798,15 +798,21 @@ def cmd_exclusion_boundary(args):
         obj_kw = {**wind_kw,
                   "mass_loss_msun_yr": (args.mass_loss_msun_yr if args.mass_loss_msun_yr is not None
                                         else (w_p or None))}
+        # CR-25.3: a preset's wind bin is the preset's own (--wind-state never overrides it) →
+        # object_preset; a windless preset (brown-dwarf / rogue-planet) has no bin → null.
+        _p_wc = _OBJECT_WIND_CLASS.get(key)
         _out(two_layer(mass_msun=m_p, luminosity_lsun=(lum if lum is not None else l_p),
-                       object_name=key, wind_class=_OBJECT_WIND_CLASS.get(key),
+                       object_name=key, wind_class=_p_wc,
+                       wind_class_provenance=("object_preset" if _p_wc else None),
                        mass_provenance="object_preset", **obj_kw))    # CR-23.2 §2b (preset always has a mass)
         return
 
     # ── spectral type: classify ONCE here (windless/evolved have no MS-table mass) + thread it ──
     if args.spectral_type:
-        dom, wc, note = exclusion_wall.classify_domain_wind(sp_type=args.spectral_type)
-        cls_kw = dict(domain=dom, wind_class=wc, class_note=note)
+        # CR-25.1: honor --wind-state (was dropped here — the pre-classified domain bypassed it)
+        cw = exclusion_wall.classify_wind(sp_type=args.spectral_type, wind_state=args.wind_state)
+        dom = cw["domain"]
+        cls_kw = exclusion_wall.wind_cls_kw(cw)
         if dom in (exclusion_wall.WINDLESS, exclusion_wall.UNMODELED, exclusion_wall.EVOLVED):
             # windless → free harbor; evolved → no MS-table mass → standoff refused, wall still emitted
             _out(two_layer(sp_type=args.spectral_type, **cls_kw, **wind_kw))
@@ -833,8 +839,12 @@ def cmd_exclusion_boundary(args):
             _out(sl)
             return
         sp, ot = sl.get("sp_type"), sl.get("otype")
-        dom, wc, note = exclusion_wall.classify_domain_wind(sp_type=sp, otype=ot)
-        cls_kw = dict(domain=dom, wind_class=wc, class_note=note)
+        # CR-25.1: honor --wind-state (was dropped here — the pre-classified domain bypassed it). The
+        # DOMAIN never depends on the otype list, so branch on this identity pass; the MS branch below
+        # re-classifies with the full list AFTER the mass resolves (no wasted bounded fetch on an error).
+        cw = exclusion_wall.classify_wind(sp_type=sp, otype=ot, wind_state=args.wind_state)
+        dom = cw["domain"]
+        cls_kw = exclusion_wall.wind_cls_kw(cw)
 
         if dom in (exclusion_wall.WINDLESS, exclusion_wall.UNMODELED):
             _out(two_layer(sp_type=sp, otype=ot, object_name=args.star, **cls_kw, **wind_kw))
@@ -888,11 +898,17 @@ def cmd_exclusion_boundary(args):
         # star_lum > 0 → the inversion tier is always available, so mass is never None on the MS path.
         mass, mprov, mnote = stellar_mass.resolve_component_mass(
             spec, catalog, allow_flame=True, status_out=_st)
+        # CR-25.2: the FULL SIMBAD otype list (the primary is `PM*` for most flare M dwarfs), fetched only
+        # where it can change the bin (MS K/M) — the SAME helper exclusion-system --star uses.
+        sw = exclusion_system.resolve_star_wind(sp, ot, sl.get("main_id"), wind_state=args.wind_state,
+                                                cw=cw)          # reuse the identity pass above
         res = two_layer(mass_msun=mass, luminosity_lsun=(lum if lum is not None else star_lum),
                         sp_type=sp, otype=ot, object_name=args.star,
-                        mass_provenance=mprov, mass_note=mnote, **cls_kw, **wind_kw)
+                        mass_provenance=mprov, mass_note=mnote, **sw["cls_kw"], **wind_kw)
         if _st.get("flame_status") and "error" not in res:   # CR-23.2: surface a bounded FLAME degrade
             res["flame_status"] = _st["flame_status"]
+        if sw["status"] and "error" not in res:              # CR-25: a bounded otype-list degrade
+            res["otype_status"] = sw["status"]
         _out(res)
 
 
@@ -906,7 +922,8 @@ def cmd_exclusion_system(args):
         star=args.star, component_specs=args.component,
         star_mass_catalog=args.star_mass_catalog, phase=args.phase,
         alpha=args.alpha, calibration_au=args.calibration_au, dial=args.dial,
-        beta=args.beta, gamma=args.gamma, system_wind=system_wind))
+        beta=args.beta, gamma=args.gamma, system_wind=system_wind,
+        wind_state=args.wind_state))                     # CR-25.4: the system-level bin override
 
 
 def _resolve_star_teff_lum(name):
@@ -3361,7 +3378,11 @@ def main(argv=None):
     p.add_argument("--luminosity-lsun", type=float, help="Body luminosity, L_sun (default 1)")
     p.add_argument("--mass-loss-msun-yr", type=float, help="Wind mass-loss rate W-dot, M_sun/yr")
     p.add_argument("--wind-state", choices=["quiet", "solar", "active", "hot"],
-                   help="Wind-state preset -> a W-dot when the rate is unknown")
+                   help="Wind-state preset: sets the wind_class bin (CR-25: overrides the colour default "
+                        "+ the SIMBAD-otype active auto-detect on a main-sequence star; ignored on an "
+                        "evolved/windless host). Also the gamma>0 standoff W-dot when no rate is given "
+                        "(--mass-loss-msun-yr, or an --object preset's own rate). An --object preset's "
+                        "wind_class is fixed — --wind-state never changes it")
     p.add_argument("--dial", type=float,
                    help="Required-breakthrough calibration constant (default: auto to --calibration-au)")
     p.add_argument("--calibration-au", type=float, default=47.5,
@@ -3409,7 +3430,9 @@ def main(argv=None):
                    help="A component as comma-separated key=value: "
                         "'id=A,mass=2.063,lum=25,class=A0mA1Va,pair=AB,sma=19.8,ecc=0.59'. "
                         "Keys: id/name, mass, lum, class (sp_type or wd/brown-dwarf/rogue/giant), "
-                        "pair, sma, ecc, orbits, wind_state, mass_loss_msun_yr. Repeatable. "
+                        "pair, sma, ecc, orbits, wind_state, wind_class, otype (a SIMBAD code, or a "
+                        "'|' list e.g. otype=BY*|Er*), mass_loss_msun_yr (+ the CR-22 wall keys). "
+                        "Repeatable. "
                         "The deterministic core — mass via manual > catalog > FLAME > L-inversion.")
     p.add_argument("--star-mass-catalog",
                    help="CR-11.2: path to a WB-owned measured-mass catalog JSON (per-component mass tier-2)")
@@ -3417,6 +3440,12 @@ def main(argv=None):
                    help="CR-19: wall-clock bound (s) on the tier-3 Gaia-archive-TAP calls (FLAME/NSS/"
                         "coords); 0 disables. Default 60 (or $SPACE_APP_GAIA_TIMEOUT). On a bound the call "
                         "degrades (flame_status/gaia_status flag) instead of hanging.")
+    p.add_argument("--wind-state", choices=["quiet", "solar", "active", "hot"],
+                   help="CR-25.4: system-level wind state for every MAIN-SEQUENCE component with no "
+                        "wind_state= of its own (its own value wins): sets the wind_class bin (unless an "
+                        "explicit wind_class= supersedes it — noted) and, at --gamma>0, that component's "
+                        "standoff W-dot + the point-mass W-dot, as exclusion-boundary --wind-state does. "
+                        "A non-MS component is not given it at all (noted)")
     p.add_argument("--phase", choices=["periastron", "apastron", "both"], default="both",
                    help="Report the boundary at periastron, apastron, or both (default both)")
     p.add_argument("--alpha", type=float, default=exclusion_system._DEFAULT_ALPHA,
