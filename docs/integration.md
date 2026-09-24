@@ -4538,7 +4538,9 @@ Tests: `tests/test_cooling_hz.py::Cr111HighMassWDTest`.
 
 **CR-11.2 — stellar-mass provenance on `dossier` + `compare-stars`.** Both now resolve stellar mass with an explicit
 **provenance** and two caution flags, mirroring CR-10.4/CR-10.5. **Precedence: manual `--mass-solar` (dossier only) → catalog
-row (`--star-mass-catalog <path>`) → Gaia DR3 FLAME → the `L^0.2632` inversion.** New fields — on `dossier` in the `regions`
+row (`--star-mass-catalog <path>`) → Gaia DR3 FLAME → the `L^0.2632` inversion.** A tier's value counts only if it is
+finite and > 0 (CR-22.6, `stellar_mass_tables.is_positive_finite`); otherwise that tier is a miss and resolution falls
+through, so `--mass-solar nan|inf|0` is silently ignored as an override. New fields — on `dossier` in the `regions`
 section as **`mass{mass_solar, mass_provenance ∈ {manual|catalog|gaia_flame|ms_luminosity_inversion}, massL_inversion_caution,
 peculiar_star_flag, inversion_mass_solar, note, catalog_citation?}`**; on `compare-stars` as flat per-star keys **`mass_solar,
 mass_provenance, massL_inversion_caution, peculiar_star_flag, mass_note`**. Under **decision B** (WB MSG 008) the

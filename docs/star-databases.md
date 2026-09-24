@@ -792,7 +792,8 @@ archive/regions value) → Conservative HZ inner (`rg`) / outer (`mg`) via
   `peculiar_star_flag`, `mass_note`) via the shared `core.stellar_mass` resolver
   (precedence catalog → Gaia FLAME → the `L^0.2632` inversion; `--star-mass-catalog
   <path>` supplies a WB-owned tier-2 catalog, REPLACE semantics + loud bad-path
-  error). The resolution matches the `dossier`'s block for the same star (parity).
+  error; since CR-22.6 a tier value must be finite and > 0 — a `NaN`/`Infinity`
+  catalog row is skipped and resolution falls through to the next tier). The resolution matches the `dossier`'s block for the same star (parity).
   Under **decision B** (WB re-gate MSG 008), when a **measured** mass is preferred
   the headline **`mass`** and **`radius`** (`= M^0.57`) track it too — so mass ↔
   radius are coherent and `dossier ≡ compare-stars` on `mass`/`radius`, not just
