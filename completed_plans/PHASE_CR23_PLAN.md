@@ -1,6 +1,6 @@
 # PHASE CR-23 — exclusion mass-chain harmonization (Option A) + `mass_provenance` surface + evolved `standoff_note`
 
-**Status: BUILT + suite-GREEN (3465 passed / 91 skipped / 0 failures, 2026-09-20) — posted for WB re-gate (MSG 255). Git-held until WB GREEN + Greg's FULFILLED flip.**
+**Status: ✅ FULFILLED + SHIPPED — committed `9722ea4` (WB re-gate GREEN + Greg-FULFILLED, MSG 256). Built + suite-GREEN (3465 passed / 91 skipped / 0 failures, 2026-09-20).**
 Scope-locked **Option A (full harmonization)** by Greg (2026-09-20). Prerequisite CR-22 is FULFILLED
 (SHA `710e7cb`, origin/main). Priority **LOW** (a modest accuracy/consistency fix on *non-cataloged*
 stars). Channel Q&A: MSG 250 (spec) / 251 (diagnosis+Qs) / 252 (rulings). Contract:

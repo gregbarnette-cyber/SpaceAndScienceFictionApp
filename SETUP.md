@@ -22,6 +22,7 @@ sudo apt install libxcb-cursor0
 | `matplotlib` | 3.10.8 | Embedded visualizations in the GUI (HZ diagrams, orbital maps, star maps, abundance charts) |
 | `numpy` | 2.4.4 | Numeric arrays for the 3D star-map and abundance visualizations (imported directly by `gui/visualizations/plot_helpers.py`) |
 | `pyvo` | 1.8.1 | GAVO TAP async jobs for the GCNS import (option 58 — Gaia Catalogue of Nearby Stars) |
+| `pytest` | — | Test runner only (`venv/bin/python -m pytest`); the app itself does not need it |
 
 > Versions above are the tested baseline; `requirements.txt` pins only the matplotlib range (`>=3.6,<4`) and otherwise installs the latest compatible release of each library.
 
@@ -42,6 +43,11 @@ has **no native-Windows pip wheel**. A native-Windows checkout keeps the entire 
 skips the dust path behind an import gate (the dust subcommands/panel return a clean "install the dust extra"
 message). `astropy`/`numpy`/`requests` are already in the base requirements. Install it on top of the base —
 see Installation step 4.
+
+Native Windows can instead serve the dust `query.py` subcommands (and `--weight dust`/`blend`) from a
+conda-forge/micromamba env: install the dust set there and point **`SPACE_APP_DUST_PYTHON`** at its interpreter —
+`query.py` re-dispatches just those commands to it (a no-op wherever the extra imports). One-time steps:
+`DUST_WINDOWS_MICROMAMBA_PLAN.md` Part A (the native-Windows verification is still pending).
 
 ## Installation
 
@@ -72,7 +78,7 @@ pip install -r requirements.txt
 pip install -r requirements-dust.txt
 ```
 
-This pulls `dustmaps` + `healpy` (and `h5py`/`scipy`/…). On **native Windows it fails** (no `healpy` pip wheel) — that is expected; the rest of the app is unaffected. After installing, fetch the map data via **CLI option 59 (Fetch Dust Map Data)** or the GUI **Utilities → Fetch Dust Map Data** panel. The maps are large (Leike 2020 ~2.4 GB, Edenhofer 2024 ~3.2 GB) and hosted on **Zenodo**, which bandwidth-throttles large downloads (~0.5 MB/s) and can't resume a broken transfer — so the GUI panel shows copyable, **resumable** `aria2c -c` / `wget -c` commands for a faster manual download into `data/dust/` (then click **Check Status**, which verifies the md5 and reuses the file). See the "Dust / ISM" section of `docs/integration.md`.
+This pulls `dustmaps` + `healpy` (and `h5py`/`scipy`/…). On **native Windows it fails** (no `healpy` pip wheel) — that is expected (or use the micromamba route above); the rest of the app is unaffected. After installing, fetch the map data via **CLI option 59 (Fetch Dust Map Data)** or the GUI **Utilities → Fetch Dust Map Data** panel. The maps are large (Leike 2020 ~2.4 GB, Edenhofer 2024 ~3.2 GB) and hosted on **Zenodo**, which bandwidth-throttles large downloads (~0.5 MB/s) and can't resume a broken transfer — so the GUI panel shows copyable, **resumable** `aria2c -c` / `wget -c` commands for a faster manual download into `data/dust/` (then click **Check Status**, which verifies the md5 and reuses the file). See the "Dust / ISM" section of `docs/integration.md`.
 
 ## Running the Application
 
@@ -107,6 +113,7 @@ The following CSV files must be present in the project directory. They are auto-
 | `moonInfo.csv` | Seeds the `moons` table → Option 11 — Moon Data |
 | `dwarfPlanetInfo.csv` | Seeds the `dwarf_planets` table → Option 11 — Dwarf Planets |
 | `asteroidsInfo.csv` | Seeds the `asteroids` table → Option 11 — Major Asteroids |
+| `gouldDesignations.csv` | Seeds the `gould_designations` table → the Gould designation block on the SIMBAD lookup (Phase AO; frozen 1879 data, no import option) |
 
 > These four are the **seed source only**. Option 11 (and `query.py solar-system`) read the SQLite tables, not the CSVs — see the auto-seed caveat under *Migrating to a New Machine* below. *(`main.py`'s CLI copy of option 11 still reads the CSVs directly; it was never migrated and the CLI menu is deprecated.)*
 
@@ -150,4 +157,4 @@ The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** trav
 - An internet connection is required for SIMBAD, NASA Exoplanet Archive, JPL Horizons, and Hypatia Catalog queries.
 - The local SQLite database is created automatically on first run at `data/space_app.db` under the repo root (the `data/` directory is gitignored). Set the `SPACE_APP_DB` environment variable to override this path (see `docs/integration.md`).
 - The `backups/` directory holds manual CSV snapshots (e.g. `starSystemsBackup-*.csv`, `templateStarSystems.csv`) that are **not** read by the app — they are retained for reference only.
-- The **dust / ISM path is optional and WSL/Linux-only** (`requirements-dust.txt`; see above). Without it installed, every other feature works normally and the dust subcommands/panel are simply gated off. The dust map cache lives at `data/dust/` (gitignored) and is fetch-once/offline-after.
+- The **dust / ISM path is optional and WSL/Linux-only** (`requirements-dust.txt`; see above — native Windows can reach the dust `query.py` subcommands only through the `SPACE_APP_DUST_PYTHON` micromamba re-dispatch). Without it installed, every other feature works normally and the dust subcommands/panel are simply gated off. The dust map cache lives at `data/dust/` (gitignored) and is fetch-once/offline-after.

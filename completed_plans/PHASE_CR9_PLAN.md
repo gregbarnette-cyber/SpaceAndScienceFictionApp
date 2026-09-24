@@ -1,6 +1,6 @@
 # PHASE CR-9 PLAN — Disposition & quality fields for the batch exoplanet pull
 
-**Status: PLANNED (contract locked). Not yet built.**
+**Status: ✅ FULFILLED + SHIPPED — committed `ad18708` (CR-9 disposition/quality fields + the 3c/CR#1 riders; WB-FULFILLED). *(Original header: PLANNED — contract locked.)***
 Extends **CR-8** (`core/exoplanet_batch.py` / `query.py planetary-systems-batch`, FULFILLED, `94784f1`).
 CR-9 is a **new, additive output-field CR** — same inputs, same modes, more fields. Nothing in CR-8 is
 re-negotiated; the single-host `planetary-systems` (`pscomppars`) path stays byte-identical.

@@ -1,6 +1,6 @@
 # Star Databases Feature Documentation
 
-Options 1–7, 50–52. All sections here involve querying external star/exoplanet data sources or managing the local data store. They change together when APIs, data schemas, or the DB layer is updated.
+Options 1–7, 50–56, 58 (plus the GUI-only Phase G/L/L4 search & comparison surfaces and the Phase M GCNS panels). All sections here involve querying external star/exoplanet data sources or managing the local data store. They change together when APIs, data schemas, or the DB layer is updated.
 
 ## Network Reliability (all online features)
 
@@ -15,10 +15,14 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 
 ## SIMBAD Query Feature
 
-- Uses `astroquery.simbad.Simbad` with votable fields: `sp_type`, `plx_value`, `V`, `mesfe_h` (temperature in the `mesfe_h.teff` column, metallicity [Fe/H] in the `mesfe_h.fe_h` column). Updated for astroquery ≥ 0.4.8 — the pre-0.4.8 top-level names (`sptype`, `plx`, `flux(V)`, `fe_h`) are deprecated (note: the live metallicity comes from the `mesfe_h.fe_h` **subcolumn**, not the deprecated top-level `fe_h` field).
+- Uses `astroquery.simbad.Simbad` with votable fields: `sp_type`, `plx_value`, `V`, `mesfe_h` (`compute_simbad_lookup` additionally requests `otype`) (temperature in the `mesfe_h.teff` column, metallicity [Fe/H] in the `mesfe_h.fe_h` column). Updated for astroquery ≥ 0.4.8 — the pre-0.4.8 top-level names (`sptype`, `plx`, `flux(V)`, `fe_h`) are deprecated (note: the live metallicity comes from the `mesfe_h.fe_h` **subcolumn**, not the deprecated top-level `fe_h` field).
 - `query_star()` → `_parse_designations()` → `_display_results()`.
 - Result column names are lowercase: `main_id`, `ra`, `dec`, `sp_type`, `plx_value`, `V`, `mesfe_h.teff`, `mesfe_h.fe_h`.
 - `compute_simbad_lookup` returns an additive top-level `fe_h` key (float, or `None` when SIMBAD has no value) from the `mesfe_h.fe_h` subcolumn. It is consumed as the **real-anchor metallicity fallback** by the research-priors v2 generation path (`core.generate._resolve_anchor_feh` prefers a Hypatia [Fe/H], falling back to this SIMBAD value); `query.py simbad-lookup` carries it for free.
+- `compute_simbad_lookup` also returns top-level **`otype`** (SIMBAD's **primary** object type) and
+  **`multiplicity`** (`{is_multiple, sb_flag, basis, source:"simbad-otype", otype}`, or `None` with no otype) — the CR-2
+  coarse multiplicity hint; `query.py simbad-lookup` carries both. (The **full** otype list — `databases.fetch_star_otypes`,
+  CR-25 — is fetched only by the exclusion `--star` paths; `simbad-lookup` is unchanged.)
 - Designations are pulled from `Simbad.query_objectids()`; the result column is `id` (lowercase).
 - **Bayer & Flamsteed (Phase AN2, 2026-07-29).** `designations` carries two keys — **`Bayer`**
   (`* alf CMi`) and **`Flamsteed`** (`*  10 CMi`) — inserted directly after `NAME`. SIMBAD returns
@@ -72,7 +76,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 - Parallax (mas) from `plx_value`; distance in parsecs = 1000 / plx; light years = parsecs × 3.26156; all rounded to 4 decimal places.
 - Missing/masked SIMBAD fields are handled by `_safe_get()` and shown as `N/A`.
 - `compute_simbad_lookup` in `core/databases.py` checks `len(result) == 0` in addition to `result is None`; SIMBAD can return an empty table (not `None`) for unknown star names, and both cases now return `{"error": "No results found for '...'"}` cleanly.
-- **GUI (`SimbadPanel`)**: the background call runs `_simbad_with_hypatia()`, which calls `compute_simbad_lookup` then `compute_hypatia_data` in a single thread. Results are presented in three tabs: **Star Properties** (designation banner + star properties table), **Hypatia** (Stellar Properties, Kinematics, and the full 104-species Elemental Abundances — grouped into per-nucleosynthetic-family sub-tables — via `build_hypatia_tab()`), and **Abundance Profile** (category-colored horizontal bar chart, scroll-wrapped; only shown when matplotlib is available and the star has elemental abundance data). A **Kinematics** tab (Phase O O11 — Toomre / galactic-kinematics diagram via `core.viz.prepare_toomre` → `make_toomre_canvas`, with an "ℹ What is this?" Explain button) is added beside Abundance Profile whenever Hypatia returns all three U/V/W velocities. See `docs/star-system-regions.md` for the canonical abundance shape and grouping.
+- **GUI (`SimbadPanel`)**: the background call runs `_simbad_with_hypatia()`, which calls `compute_simbad_lookup` then `compute_hypatia_data` in a single thread. Results are presented in tabs: **Star Properties** (designation banner + star properties table), **GCNS** (when `result["gcns"]` is present — M5; see below), **Hypatia** (Stellar Properties, Kinematics, and the full 104-species Elemental Abundances — grouped into per-nucleosynthetic-family sub-tables — via `build_hypatia_tab()`), and **Abundance Profile** (category-colored horizontal bar chart, scroll-wrapped; only shown when matplotlib is available and the star has elemental abundance data). A **Kinematics** tab (Phase O O11 — Toomre / galactic-kinematics diagram via `core.viz.prepare_toomre` → `make_toomre_canvas`, with an "ℹ What is this?" Explain button) is added beside Abundance Profile whenever Hypatia returns all three U/V/W velocities. See `docs/star-system-regions.md` for the canonical abundance shape and grouping.
 
 ## NASA Exoplanet Archive: All Tables Feature
 
@@ -98,7 +102,7 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
 > eccentricity). The batch reader has since gained **additive** output fields — CR-9 per-planet
 > `disposition`/`limits` and **CR-10.1** `survey_disposition`/`survey_siblings` (live TOI/KOI/K2 FP/candidate
 > cross-match) — none of which touch this `pscomppars` single-host path. See `docs/integration.md`
-> (CR-8/CR-9/CR-10) and `PHASE_CR8_PLAN.md`/`PHASE_CR9_PLAN.md`/`PHASE_CR10_PLAN.md`. The two paths are
+> (CR-8/CR-9/CR-10) and `completed_plans/PHASE_CR8_PLAN.md`/`completed_plans/PHASE_CR9_PLAN.md`/`completed_plans/PHASE_CR10_PLAN.md`. The two paths are
 > independent; nothing here changed.
 
 - Menu option 3: `query_planetary_systems_composite()` — runs the same SIMBAD lookup as `query_exoplanets()`, then queries NASA Exoplanet Archive (`pscomppars`) and displays results. Does **not** query HWO ExEP or Mission Exocat archives.
@@ -352,7 +356,7 @@ Report is a static PNG export, so it keeps Rings. See `docs/gui-architecture.md`
   - **Currently a no-op.** SIMBAD has since reassigned those identifiers: sampling queries 1 and 17 (2026-07-26) returns **0** `PLX …` main_ids out of 40,655 rows, and the built table contains none. The rule is retained as a cheap defensive filter.
   - **It is a data-quality filter, not a crash guard.** It historically also removed most rows carrying degenerate `ra`/`dec` (which `_run_simbad_csv_query` writes as `""` when SIMBAD's value fails to parse), which masked an unguarded `IndexError` in opt 19's per-row coordinate parse. That parser is now hardened (see `docs/calculators.md`, opt 19) and every downstream viz prep skips `x is None`, so consumers must not depend on this rule to keep malformed rows out. Note that blank `spectral_type` (171k of 238k rows) and blank `designations` (678 rows) are already normal and handled everywhere.
 - **DB columns**: `star_name`, `designations`, `spectral_type`, `parallax`, `parsecs`, `light_years`, `app_magnitude`, `ra`, `dec`. These are also the column order written by opt 51's CSV export (`Star Name, Star Designations, Spectral Type, Parallax, Parsecs, Light Years, Apparent Magnitude, RA, DEC`).
-  - Star Name: `main_id`; Star Designations: comma-separated IDs — SIMBAD's common **NAME** first, then **Bayer, Flamsteed** (Phase AN2), then the catalog IDs (GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS) — parsed from the pipe-separated `ids.ids` string via `_parse_designations_from_ids()`. Output order follows the key list, so a named star reads `NAME Chara, GJ 475, HD 109358, HIP 61317, …` (* bet CVn).
+  - Star Name: `main_id`; Star Designations: comma-separated IDs — SIMBAD's common **NAME** first, then **Bayer, Flamsteed** (Phase AN2), then the catalog IDs (GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS) — parsed from the pipe-separated `ids.ids` string via `_parse_designations_from_ids()`. Output order follows the key list, so a named star reads `NAME Chara, * bet CVn, *   8 CVn, GJ 475, HD 109358, HIP 61317, …` (* bet CVn).
     - **Bayer/Flamsteed ARE in the stored column** — option 50 was re-run **2026-07-29**, discharging
       the Phase AN2 D4 deferral the same day the phase closed. **2135 rows** now carry a `* ` token
       (1316 Bayer + 1591 Flamsteed). The lookup-vs-DB asymmetry that D4 described is gone: opts 18/19,
@@ -423,7 +427,7 @@ Report is a static PNG export, so it keeps Rings. See `docs/gui-architecture.md`
 
 ## Import GCNS Data Feature (opt 58)
 
-Adds the **Gaia Catalogue of Nearby Stars** (GCNS; Smart et al. 2021, A&A 649 A6) as a separate astrometric/completeness backbone with **Bayesian distances + uncertainties** — data the SIMBAD-built `star_systems` table lacks. GCNS is stored in its own isolated `gcns_stars` table; nothing about options 18/19/50/51 or the existing `star_systems` table changes. The data is exposed only via `query.py` — the readers `gcns-within-sol` (Phase T1a added the `--wd-prob-min/max` white-dwarf census filter), `gcns-source`, `gcns-system`, plus the GCNS-backed calculators `gcns-distance`, `gcns-travel-time`, `gcns-stars-within-star`, and the Phase T1c `substellar` census (L/T/Y by spectral-type prefix over `gcns_stars`, with a `completeness_note` JSON caveat) — all read-only consumers of the `gcns_stars`/`gcns_systems` tables; see `docs/integration.md`; no existing menu option displays it.
+Adds the **Gaia Catalogue of Nearby Stars** (GCNS; Smart et al. 2021, A&A 649 A6) as a separate astrometric/completeness backbone with **Bayesian distances + uncertainties** — data the SIMBAD-built `star_systems` table lacks. GCNS is stored in its own isolated `gcns_stars` table; nothing about options 18/19/50/51 or the existing `star_systems` table changes. The data is exposed via `query.py` — the readers `gcns-within-sol` (Phase T1a added the `--wd-prob-min/max` white-dwarf census filter), `gcns-source`, `gcns-system`, plus the GCNS-backed calculators `gcns-distance`, `gcns-travel-time`, `gcns-stars-within-star`, and the Phase T1c `substellar` census (L/T/Y by spectral-type prefix over `gcns_stars`, with a `completeness_note` JSON caveat) — all read-only consumers of the `gcns_stars`/`gcns_systems` tables; see `docs/integration.md`; and, since Phase M, the six GUI-only GCNS nav panels + the opt-1 SIMBAD "GCNS" tab display it (see "GCNS Display Surfaces" below); no numbered CLI menu option displays it.
 
 - Menu option 58: `import_gcns_data()` (CLI) / `ImportGcnsPanel` (GUI, in `gui/panels/csv_utility.py`). Core function: `core.databases.compute_gcns_ingest(progress_callback=None)` → `{total_rows, main_count, missing_count, simbad_matched, resolved_pairs, systems_count, systems_multi, members_in_stars, snapshot_date, gcns_version}` or `{"error": ...}`.
 - **Source:** GAVO TAP service `https://dc.g-vo.org/tap`, tables `gcns.main` (331,312 rows), `gcns.missing_10mas` (1,259 known-nearby objects Gaia EDR3 missed — e.g. Alpha Cen A/B, Luhman 16), and `gcns.resolvedss` (19,176 resolved-pair rows — see "Resolved systems" below). All three are pulled in one opt-58 run so they share a single `snapshot_date`. Pulled via `pyvo` **async** jobs (`submit_job` → `run` → `wait` → `fetch_result` → `delete`) with `maxrec=400000`; sync mode is unusable (20k default cap, 60 s timeout). Wrapped in the shared `_with_retries`/`_timeout_ctx` helpers from `core/shared.py`; network errors classified via `_network_error_msg`.
@@ -444,7 +448,7 @@ GCNS exposes Gaia-resolved multiples in `gcns.resolvedss`, so consumers can tell
 - **Storage (isolated, additive):** three new tables in `core/db.py`. `gcns_systems` (one row per derived system: `system_id`, `n_components`, `n_pairs`, `any_bin`, `any_bound`, `all_bound`, `max_proj_sep_au`, `min_proj_sep_au`, `n_in_gcns_stars`). `gcns_system_members` (membership join: `system_id`, `gaia_source_id`, `in_gcns_stars`; indexed on both `system_id` and `gaia_source_id`). `gcns_system_pairs` (the raw resolvedss edges mapped into their system: `system_id`, `source_id1`, `source_id2`, `separation_arcsec`, `mag_diff`, `proj_sep_au`, `bin`, `bound`; indexed on `system_id`).
 - **Non-destructive linkage to `gcns_stars`:** component rows in `gcns_stars` are **never** collapsed or deleted — multiplicity is exposed by join on `gaia_source_id`. As a convenience, two **nullable, additive** columns (`system_id`, `n_components`) are populated on `gcns_stars` rows during ingest (NULL for `missing_10mas` rows, which have no source_id to join, and for any source not in a resolved pair). These are added via an idempotent `ALTER TABLE` migration (`_migrate_schema` in `core/db.py`) so existing databases pick them up.
 - **No fabricated membership:** a `source_id` not present in `gcns.resolvedss` is a single/unresolved object — its `system_id`/`n_components` stay NULL and `gcns-system` returns an error for it. Members listed in `resolvedss` whose `source_id` is **not** in `gcns_stars` (e.g. a secondary fainter than the GCNS cut) are **retained** in `gcns_system_members` and flagged `in_gcns_stars = 0` — never silently dropped.
-- **DB impact:** `gcns_stars`, `gcns_systems`, `gcns_system_members`, `gcns_system_pairs` are **not** auto-seeded (like `star_systems`); they exist empty until opt 58 runs, and add ~55–65 MB to `data/space_app.db` (which is gitignored). Schema/DDL is in `core/db.py` (the four tables + `gcns_meta` + indexes on `gaia_source_id`, `light_years`, the two membership keys, and the pair `system_id`).
+- **DB impact:** `gcns_stars`, `gcns_systems`, `gcns_system_members`, `gcns_system_pairs` are **not** auto-seeded (like `star_systems`); they exist empty until opt 58 runs, and add ~55–65 MB to `data/space_app.db` (which is gitignored). Schema/DDL is in `core/db.py` (the four tables + `gcns_meta` + indexes on `gaia_source_id`, `star_name` (NOCASE), `light_years`, the two membership keys, and the pair `system_id`).
 
 ### Known limits (documented, not "fixed")
 
@@ -507,7 +511,7 @@ designation parsing can surface them.
   values).
   - **An `SAO` fallback was built and then removed** (code review, 2026-07-29). It was
     **unreachable**: `designations` can never carry an `"SAO"` key — neither
-    `core/databases.py`'s `keys_order`/`prefix_map` nor the shared `_CSV_PREFIX_MAP` captures
+    `core/databases.py`'s `keys_order` nor the shared `_CSV_PREFIX_MAP` captures
     SAO ids — and the test that "covered" it hand-built `{"SAO": …}`, a dict shape the
     pipeline never produces, so it passed against dead code. `matched_on` is therefore always
     `"hd"`; the `sao` column is retained in the schema and echoed in the block.
@@ -739,8 +743,8 @@ semantics). Capped at `_EXO_SEARCH_CAP` (200). Network failures are classified v
 
 ## Phase L — Comparison Dashboard (L1–L3)
 
-GUI-only "Comparison" nav category (`gui/panels/comparison.py`) plus one `query.py`
-subcommand. L4 (Hypatia cache + abundance search) is **complete** — see the
+GUI-only "Comparison" nav category (`gui/panels/comparison.py`) plus two `query.py`
+subcommands (`stellar-evolution`; `compare-stars`, added later). L4 (Hypatia cache + abundance search) is **complete** — see the
 "Phase L4 — Hypatia Abundance Cache & Search" section below.
 
 ### L1 — `compare_stars(names: list) -> dict`

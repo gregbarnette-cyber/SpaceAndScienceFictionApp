@@ -25,7 +25,7 @@ related:
 > intended for deletion, leaving the code without its reasons. That is the exact failure this round kept
 > finding in other places, so it is worth not reproducing here.
 >
-> **Open work from this round is tracked separately in [`docs/research-priors-v2-open-work.md`](research-priors-v2-open-work.md)** — that is the hand-off plan; this file is the record of what happened and why.
+> **Open work from this round was tracked in [`docs/research-priors-v2-open-work.md`](research-priors-v2-open-work.md) (closed) and then [`docs/research-priors-v2-remaining.md`](research-priors-v2-remaining.md)** — all built as of 2026-08-03; this file is the record of what happened and why.
 
 Dataset moved **`pkt3.5-v2.3.0` → `v2.8.0`** across the round. No pinned coefficient was changed by APP; one
 was *corrected* by WB (F-0) and one figure was *retracted* by WB (the solar anchor).
@@ -62,7 +62,7 @@ so the realized warm split is ~74/26 against the stated 55/45. If that gap is un
 is the **Beta parameters, not the draw order**.
 
 ### `stellar_multiplicity` + `stellar_activity` — validators (v2.4.0–v2.8.0)
-Shape validators only; **no samplers** (see §4). Beyond shape, they **hard-enforce three structural guards**,
+Shape validators only; **no samplers** (see §4 — *since built: B1/B2*). Beyond shape, they **hard-enforce three structural guards**,
 each with a negative test asserting the guard fails when subverted:
 
 | Guard | Why |
@@ -120,7 +120,7 @@ presented a partial list as the list. **An artifact left by a process is not the
   **D1/D3 must not quote 10²–10³ without §10's corrections attached**, and the acceptance band is relabelled
   explicitly **X-ray contrast**.
 
-## 4. Deliberately not done
+## 4. Deliberately not done *(at the time — both since built: the sampler = B1 after v2.9.0; the tail = v2.11.0 Q4)*
 
 - **The `stellar_multiplicity` sampler.** `ecc_dist` is drawable, but the 12 d circularization boundary was
   measured on *solar-type* primaries (Raghavan 2010, abstract-grade) and the census is ~77% M dwarfs — with
@@ -176,4 +176,5 @@ venv/bin/python -c "import json,sys; sys.path.insert(0,'.'); \
 # → VALID; all 8 blocks listed
 venv/bin/python query.py generate-system --seed 3 --research-policy strict   # stamps pkt3.5-v2.8.0
 QT_QPA_PLATFORM=offscreen venv/bin/python -m unittest discover -s tests      # 1960 pass, 1 skipped
+# (as of v2.8.0; today: 9 blocks incl. age_dist, stamp pkt3.5-v2.11.0-2026-08-03, runner `venv/bin/python -m pytest`)
 ```

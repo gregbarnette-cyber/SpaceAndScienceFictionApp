@@ -2,7 +2,7 @@
 
 `query.py` is a thin JSON dispatcher at the repo root. It allows the `scifiWorldBuilding-Claude` repo (the current consumer — it sits alongside this checkout under `.../Claude/` and calls in through its `bin/sfq` wrapper; formerly the `ScienceFictionResearch-Claude` repo) and any other caller to invoke `core/` functions via a Bash command and receive structured JSON on stdout without needing a copy of the core code.
 
-> **Cross-repo coordination channel.** Spec/contract questions between this app repo and `scifiWorldBuilding-Claude` are handled asynchronously via the shared, append-only file **`/home/greg/claude/coordination-channel.md`** (parent dir of both repos; note the lowercase `claude`). It carries a protocol preamble at the top — newest entry on top, per-entry `STATUS`, and the file-ownership rule (**this repo owns code/tests/`docs/integration.md`; the research repo owns request/spec/canon files — each side edits only its own repo's files and requests changes to the other's in-channel**). Read it before acting on a cross-repo request; post a reply entry when you action one.
+> **Cross-repo coordination channel.** Spec/contract questions between this app repo and `scifiWorldBuilding-Claude` are handled asynchronously via the shared, append-only file **`/home/greg/Claude/coordination-channel.md`** (parent dir of both repos; the base folder is `Claude` on some machines and `claude` on others — use whatever `ls` shows). It carries a protocol preamble at the top — append-only messages added at the bottom, the exact machine-watched header `## MSG NNN · FROM: APP · TO: WB · <topic>` (reverse for WB→APP), each message ending with an `**AWAITING:**` line, and the file-ownership rule (**this repo owns code/tests/`docs/integration.md`; the research repo owns request/spec/canon files — each side edits only its own repo's files and requests changes to the other's in-channel**). Read it before acting on a cross-repo request; post a reply entry when you action one.
 
 ## Invocation
 
@@ -32,8 +32,8 @@ than relying on a prior `cd`.
 
 ## Output and exit codes
 
-- Always writes JSON to **stdout** — result dict (or list for `habitable-zone`) on success, `{"error": "..."}` on failure.
-- Exits **0** on success, **1** on error.
+- Always writes JSON to **stdout** — result dict (or a **list** for `habitable-zone` and `main-sequence`) on success, `{"error": "..."}` on a handled failure.
+- Exits **0** on success, **1** on a handled error, **2** on an argparse usage error (missing/unknown flag, bad `choices` value, non-numeric) — usage text on **stderr**, nothing on stdout.
 - Output is pretty-printed: `json.dumps(result, indent=2, default=str)`. `default=str` ensures numpy/astropy masked values from archive queries are serialized as strings rather than crashing.
 - astroquery warnings (e.g. `NoResultsWarning`) go to **stderr** and do not affect stdout JSON.
 
@@ -187,6 +187,12 @@ or serialized**, so this contract always carries the raw string.
 
 Every success result is a JSON **dict** unless noted. Every failure is `{"error": "<message>"}` with exit code 1. Always check for an `"error"` key before reading other fields.
 
+**Not exhaustive — 50 of the 182 subcommands have no row here:** Phases AE–AJ (gravitation, relativity, exotic
+vacuum, black holes, warp, formation), AK (`metric-drive-power`, `exclusion-boundary`), `exclusion-system`, AP–AR
+(sensing / strategic-geography / compute), and `debris-disk`, `multiplicity`, `binary-stability-auto`,
+`nuclear-inventory`, `detection-completeness`, `population-classify`. Their flags, network use and keys are in their
+sections below; `docs/query-commands-index.md` lists all 182.
+
 | Subcommand | Required args | Network | Output top-level keys (success) |
 |---|---|---|---|
 | `simbad-lookup` | `--star` | SIMBAD | `main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, designations, desig_str, gcns, gould` (`fe_h` = [Fe/H] from `mesfe_h`, `null` when absent; `gcns` optional — Phase M5, `null` when absent; `gould` optional — Phase AO, `null` when absent) |
@@ -223,7 +229,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `trojan-stability` | `--host-mass-earth --companion-mass-earth --star-mass-solar` | none | `mass_ratio, criterion, stable` |
 | `lorentz-factor` | `--velocity-c` | none | `velocity_c, lorentz_factor, time_dilation_pct` |
 | `circumbinary-hz` | (`--teff1 --lum1 --teff2 --lum2`) \| (`--star1 --star2`) | none \| SIMBAD (`--star`) | `combined_lum, eff_teff, out_of_range_teff, zones[]` |
-| `cooling-hz` | `--track {wd,bd}` [`--mass-solar`\|`--mass-mjup` · one of `--teff`\|`--cooling-age-gyr`\|`--sma-au` · `--chz-threshold-gyr --hz-edge --age-max-gyr --satellite-density` · `--cooling-delay-gyr --distillation-teff-k` (AD A0, WD-only ²²Ne pause)] | none (bundled cooling table) | mode 1: `teff_k, lum_lsun, radius_rsun, zones[], out_of_range_teff`; mode 2: `ever_habitable, entry/exit_age_gyr, residence_gyr`; mode 3: `chz_inner/outer_au, inner_edge_roche_limited, roche_limit_au`; all: `mode, model_note, any_out_of_range, hz_model_valid_teff_k`; +pause: `pause_teff_k, pause_hz_inner/outer_au, effective_age_max_gyr`. **CR-11.1:** WD `--mass-solar` accepts 0.40–1.30 M☉ (clamp 1.30–1.38 Chandrasekhar; refuse >1.38); ≤1.0 byte-identical |
+| `cooling-hz` | `--track {wd,bd}` [`--mass-solar`\|`--mass-mjup` · one of `--teff`\|`--cooling-age-gyr`\|`--sma-au` · `--chz-threshold-gyr --hz-edge --age-max-gyr --satellite-density` · `--cooling-delay-gyr --distillation-teff-k` (AD A0, WD-only ²²Ne pause)] | none (bundled cooling table) | mode 1: `teff_k, lum_lsun, radius_rsun, zones[], out_of_range_teff`; mode 2: `ever_habitable, entry/exit_age_gyr, residence_gyr`; mode 3: `chz_inner/outer_au, inner_edge_roche_limited, roche_limit_au`; all: `mode, model_note, any_out_of_range, hz_model_valid_teff_k`; +pause: `pause_teff_k, pause_hz_inner/outer_au, effective_age_max_gyr`. **CR-11.1/CR-12:** WD `--mass-solar` accepts 0.40–1.30 M☉ (clamp 1.30–1.38 Chandrasekhar; refuse >1.38); CR-12 re-derived the whole grid, so ≤1.0 cooling ages / residence / CHZ changed (not byte-identical); all modes carry `notes` (CR-12.4 `one_core_uncertain` when >1.05 M☉) |
 | `rv-semi-amplitude` | `--planet-mass-earth --star-mass-solar` (`--period-days`\|`--sma-au`) [`--ecc --inclination-deg`] | none | `k_ms, period_days, sma_au, ecc, inclination_deg` |
 | `transit-signal` | `--planet-radius-earth --star-radius-solar` (`--sma-au` \| `--period-days --star-mass-solar`) | none | `depth_ppm, depth_frac, transit_prob, duration_hours, sma_au, period_days` |
 | `astrometric-signal` | `--planet-mass-earth --star-mass-solar --sma-au --distance-pc` | none | `signal_microarcsec, signal_arcsec` |
@@ -267,7 +273,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `population-capacity` | ≥1 budget of (`--crop-area-m2` \| `--power-w` \| `--water-kg-day` \| `--fixed-nitrogen-kg-yr` \| `--food-dry-kg-day`) [per-person `--per-person-*` overrides] | none (X1/X2 defaults) | `per_resource{…{budget,per_person,source,population}}, sustainable_population, binding_constraint, slack{…}` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
-| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion` `--star-mass-catalog <path>` `--mass-solar <M☉>`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis`; **CR-11.2** adds `regions.mass{mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,inversion_mass_solar,note}` (a preferred measured mass recomputes radius/calc-L/limits — decision B); **CR-15.1** a secondary-named target (e.g. `alpha Cen B`) now resolves the **correct** per-component masses in the `multiplicity` section — the H1 `primary_override` was dropped, so component A resolves via the shared chain (matching `binary-stability-auto`: `alpha Cen B` → 1.079/0.909, not the buggy 0.909/0.909); **CR-16** resolves a **degenerate-secondary** letterless-primary target (`Sirius B` — a WD secondary) via the primary → **2.063/0.4577** (±catalog 1.018), matching the system-name dossier (see the CR-16 block below) |
+| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion` `--star-mass-catalog <path>` `--mass-solar <M☉>` `--gaia-timeout <s>`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis`; **CR-11.2** adds `regions.mass{mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,inversion_mass_solar,note}` (a preferred measured mass recomputes radius/calc-L/limits — decision B); **CR-15.1** a secondary-named target (e.g. `alpha Cen B`) now resolves the **correct** per-component masses in the `multiplicity` section — the H1 `primary_override` was dropped, so component A resolves via the shared chain (matching `binary-stability-auto`: `alpha Cen B` → 1.079/0.909, not the buggy 0.909/0.909); **CR-16** resolves a **degenerate-secondary** letterless-primary target (`Sirius B` — a WD secondary) via the primary → **2.063/0.4577** (±catalog 1.018), matching the system-name dossier (see the CR-16 block below) |
 | `generate-system` | `--seed` [`--anchor-star` `--spectral-class` `--planets` `--require-habitable` `--constraint…` `--companion` `--nbody` `--research-policy`] | none (synthetic) · SIMBAD + NASA + HWC (with `--anchor-star`) | `seed, mode, anchor_star, star, planets[], warnings, notes` — plus `feasible, constraints[]` with `--constraint` |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
@@ -297,7 +303,7 @@ Every success result is a JSON **dict** unless noted. Every failure is `{"error"
 | `substellar` | [`--ly-max --include-late-m --classes …`] | none (local DB) | `classes, ly_max, count, capped, cap, completeness_note, population, stars[]` |
 | `dust-sightline` | one of (`--l --b`)\|(`--ra --dec`)\|(`--star`\|`--id`) `--dist-end` [`--dist-start --steps`\|`--step-pc` `--map`] | none (local dust cache)§ | `map, frame, l, b, dist_start_pc, dist_end_pc, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
 | `dust-between` | (`--star1`\|`--id1`) (`--star2`\|`--id2`) [`--steps`\|`--step-pc` `--map`] | SIMBAD‡ (local dust cache)§ | `map, frame, star1_info, star2_info, separation_pc/ly, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
-| `compare-stars` | `--stars N [N …]` (2–4) [`--star-mass-catalog <path>`] | SIMBAD + NASA + Hypatia + Gaia FLAME | `stars[]` (per-star error isolation) + **CR-11.2** per-star `mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,mass_note` (measured mass preferred → `mass`/`radius` track it, decision B) |
+| `compare-stars` | `--stars N [N …]` (2–4) [`--star-mass-catalog <path>` `--gaia-timeout <s>`] | SIMBAD + NASA + Hypatia + Gaia FLAME | `stars[]` (per-star error isolation) + **CR-11.2** per-star `mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,mass_note` (measured mass preferred → `mass`/`radius` track it, decision B) |
 | `project-list` | _(none)_ | none (local DB) | `projects[]` (name, description, member_count, created_date) |
 | `project-get` | `--name` | none (local DB) | `project, members[]` (each member's `generated_spec` echoed parsed) |
 | `main-sequence` | _(none)_ | none (local DB) | **list** of 24 spectral-class rows |
@@ -600,7 +606,7 @@ clamped:** when `eff_teff` falls outside the Kopparapu validity (~2600–7200 K)
 
 ### Detectability / exomoon / triple / relativistic calculators (Phase T1b — no network)
 
-Eight new self-validating (Phase-H/P contract) pure-math calculators for the sibling worldbuilding repo's
+Seven new self-validating (Phase-H/P contract) pure-math calculators for the sibling worldbuilding repo's
 survey-bias and dynamics research. Curated `{"error"}` → exit 1; argparse → exit 2. **B1 `tidal-heating`
 and C2 `kozai-lidov` are explicitly order-of-magnitude** (fixed-Q / secular approximations) — treat their
 single numbers as scale estimates, not precise predictions. The three load-bearing coefficients were
@@ -687,8 +693,9 @@ A&A 637 A38)** substellar tracks. Stored in `core/cooling_tables.py` as
 `(age_gyr, teff_k, log10_l_lsun, radius_rsun)` rows per mass; every row is verified against
 `L/L_sun = (R/R_sun)²(Teff/Teff_sun)⁴` at transcription. **Luminosity is derived from the
 interpolated (Teff, R) by that identity** (not interpolated independently), so every
-interpolated epoch is physically self-consistent. *(Grid: WD 0.4–1.0 M☉ in 0.1 steps; BD
-~13.6–75.4 M_Jup. A mass off the grid returns a clean error.)*
+interpolated epoch is physically self-consistent. *(Grid: WD 0.40–1.30 M☉ in 0.05 steps — a mass in (1.30, 1.38] clamps to the 1.30 sequence, >1.38
+refuses as super-Chandrasekhar (CR-11.1/CR-12); BD ~13.6–75.4 M_Jup. Any other off-grid mass returns a clean
+error.)*
 
 **Three modes**, selected by which of `--teff` / `--cooling-age-gyr` / `--sma-au` is given
 (a single argparse mutually-exclusive group; at most one):
@@ -719,7 +726,7 @@ cooling_age_gyr, teff_k, lum_lsun, radius_rsun, zones[], out_of_range_teff, note
 
 **Mode 2 — residence** (`--sma-au`): `{mode:"residence", sma_au, ever_habitable,
 entry_age_gyr, exit_age_gyr, residence_gyr, entry_teff_k, exit_teff_k,
-entry_out_of_range, exit_out_of_range, truncated_at_age_max}`. **The Kopparapu validity
+entry_out_of_range, exit_out_of_range, truncated_at_age_max, notes}`. **The Kopparapu validity
 gate is asymmetric — hot-side only.** Above ~7200 K the polynomial is unreliable (and
 eventually returns a negative S_eff), so the young hot-dwarf phase is gated out — without
 this a far orbit would falsely read habitable while the dwarf blazes. The cool side is a
@@ -727,21 +734,22 @@ this a far orbit would falsely read habitable while the dwarf blazes. The cool s
 for cooling-dwarf residence, so a crossing below 2600 K is **allowed and flagged**
 (`entry/exit_out_of_range`), not gated — this is what lets a planet track a cooling BD's HZ
 for Gyr. "Never habitable" is a normal result (`ever_habitable:false`), not an error.
-**Anchors:** 0.6 M☉ WD, a=0.01 AU → `residence_gyr ≈ 7.4` (optimistic, reproducing Fossati
-2012's ~8 Gyr) / ≈ 4.5 (conservative). BD peak residence rises with mass — ~0.3 Gyr at
+**Anchors:** 0.6 M☉ WD, a=0.01 AU → `residence_gyr ≈ 8.4` (optimistic, cf. Fossati 2012's ~8 Gyr)
+/ ≈ 5.8 (conservative) — the CR-12 re-derived grid (was 7.4 / 4.5). BD peak residence rises with mass — ~0.3 Gyr at
 13.6 M_Jup up to ~9 Gyr at 75 M_Jup (multi-Gyr only for the most massive BDs, ~>52 M_Jup,
 matching Bolmont 2011/2017), the cold-host portion carrying `exit_out_of_range:true`.
 
 **Mode 3 — CHZ band** (default; none of the three): `{mode:"chz", chz_threshold_gyr,
 chz_inner_au, chz_outer_au, inner_edge_roche_limited, roche_limit_au, roche_rigid_au,
-chz_inner_out_of_range, chz_outer_out_of_range, satellite_density}`. `roche_limit_au`
+chz_inner_out_of_range, chz_outer_out_of_range, satellite_density, notes}`. `roche_limit_au`
 is the **fluid** (rubble-pile) tidal-disruption radius; `inner_edge_roche_limited` is true
 when the CHZ inner edge falls inside it (Pkt 7 R2 — the cool-WD collision). **Anchor:**
-0.6 M☉, threshold 3 Gyr → CHZ ≈ 0.0065–0.0198 AU (Agol 2011's ~0.005–0.02), reproduced
+0.6 M☉, threshold 3 Gyr → CHZ ≈ 0.0072–0.0182 AU (CR-12 grid; Agol 2011's ~0.005–0.02), reproduced
 across 0.4–0.9 M☉, with the optimistic-edge inner edge Roche-limited.
 
 **All modes** carry `track, mass_solar, mass_mjup, hz_edge, age_max_gyr, model_note`
-(names the bundled table source), `any_out_of_range`, and `hz_model_valid_teff_k`
+(names the bundled table source), `notes` (array; `[]` unless a caveat applies — e.g. the CR-12.4
+`one_core_uncertain` above 1.05 M☉), `any_out_of_range`, and `hz_model_valid_teff_k`
 (`[2600, 7200]`).
 
 > **Validation (self-validating — Phase-H/P):** curated `{"error"}` exit 1 for `--track`
@@ -765,7 +773,7 @@ When Δ>0 every mode's result additionally carries `cooling_delay_gyr`, `distill
 `effective_age_max_gyr`, and a pause note appended to `model_note`. **Order-of-magnitude**: the
 pause is modelled as a (Teff, L, R) freeze (not a re-solved track), and the realized ~10 Gyr
 delay depends strongly on the assumed ²²Ne fraction (~3%), applying only to the ~0.6–2.5%
-high-neon WD subset. **Anchors:** 0.6 M☉ peak residence **6.3 Gyr → 16.3 Gyr at Δ=10**
+high-neon WD subset. **Anchors:** 0.6 M☉ peak residence **≈6.9 Gyr → ≈16.9 Gyr at Δ=10** (CR-12 grid; was 6.3 → 16.3)
 (Vanderburg Table 1: 6.67 → 15.56); a planet inside the frozen pause-HZ band gains ~Δ Gyr of
 residence; the long-residence CHZ outer edge moves **outward** (threshold 6 Gyr: 0.0147 →
 0.0193 AU; at threshold 8 Gyr standard cooling yields *no* CHZ while the pause creates one).
@@ -804,7 +812,7 @@ Radiating **area** (and optional mass) to reject a heat load by Stefan–Boltzma
 query.py radiator-area --heat-watts 1e9 --radiator-temp-k 300 --emissivity 0.9 --sides 2
 query.py radiator-area --input-power-watts 3e9 --efficiency 0.4 --radiator-temp-k 350
 ```
-Core: `thermal.compute_radiator_area(heat_watts=None, input_power_watts=None, efficiency=None, radiator_temp_k=None, emissivity=0.9, sides=2, sink_temp_k=0.0, areal_mass_kgm2=None)`. Heat load: `--heat-watts` **or** the inline F1 chain `--input-power-watts`+`--efficiency` (computes `Q=P_in·(1−η)`). `--radiator-temp-k` required (>0); `--emissivity` default 0.9 (0<ε≤1); `--sides {1,2}` default 2 (a flat panel radiates from both faces); `--sink-temp-k` default 0 (idealized deep space); `--areal-mass-kgm2` optional → `radiator_mass_kg`. Output: `{radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_temp_k, sink_temp_k, emissivity, sides, radiator_mass_kg|null, areal_mass_kgm2|null, scaling_note, model_note}`. `blackside_flux_wm2 = σ·T_rad⁴` makes the T⁴ dependence legible; `scaling_note` states the A ∝ T⁻⁴ rule, the Carnot coupling, and the `T_sink → T_rad` collapse; P4.4 adds `model_note` (the gray-body σ(T⁴−T_sink⁴) formula + its uniform-temperature/diffuse-gray assumptions). **Validation:** non-positive heat/temp; ε ∉ (0,1]; `sides ∉ {1,2}`; `T_sink ≥ T_rad` (a radiator can't reject below its environment — curated error); `T_sink < 0`; both/neither heat anchor → curated `{"error"}` exit 1. **Anchors (verified):** σT⁴ = 459 W/m² @300 K / 5.67e4 @1000 K (ε=1, 1 side); **1 GW @300 K, ε=0.9, double-sided → ≈1.21×10⁶ m² ≈ 1.21 km²**.
+Core: `thermal.compute_radiator_area(heat_watts=None, input_power_watts=None, efficiency=None, radiator_temp_k=None, emissivity=0.9, sides=2, sink_temp_k=0.0, areal_mass_kgm2=None)`. Heat load: `--heat-watts` **or** the inline F1 chain `--input-power-watts`+`--efficiency` (computes `Q=P_in·(1−η)`). `--radiator-temp-k` required (>0); `--emissivity` default 0.9 (0<ε≤1); `--sides {1,2}` default 2 (a flat panel radiates from both faces); `--sink-temp-k` default 0 (idealized deep space); `--areal-mass-kgm2` optional → `radiator_mass_kg`. Output: `{radiator_area_m2, radiator_area_km2, flux_wm2, blackside_flux_wm2, heat_watts, radiator_temp_k, sink_temp_k, emissivity, sides, radiator_mass_kg|null, areal_mass_kgm2|null, scaling_note, model_note}`. `blackside_flux_wm2 = σ·T_rad⁴` makes the T⁴ dependence legible; `scaling_note` states the A ∝ T⁻⁴ rule, the Carnot coupling, and the `T_sink → T_rad` collapse; P4.4 adds `model_note` (the gray-body σ(T⁴−T_sink⁴) formula + its uniform-temperature/diffuse-gray assumptions). **Validation:** non-positive heat/temp; ε ∉ (0,1]; `T_sink ≥ T_rad` (a radiator can't reject below its environment — curated error); `T_sink < 0`; both/neither heat anchor → curated `{"error"}` exit 1. **Anchors (verified):** σT⁴ = 459 W/m² @300 K / 5.67e4 @1000 K (ε=1, 1 side); **1 GW @300 K, ε=0.9, double-sided → ≈1.21×10⁶ m² ≈ 1.21 km²**. `--sides` outside {1,2} → argparse exit 2 (`choices`).
 
 #### `shielding-attenuation` (F3)
 Attenuation of penetrating radiation by shielding **mass**, two modes.
@@ -822,7 +830,7 @@ Core: `thermal.compute_shielding_attenuation(areal_density_gcm2=None, thickness_
 
 > **Caveat — F3 coefficients & GCR mode.** The photon μ/ρ grid was **reconciled cell-by-cell
 > against the live NIST XAAMDI tables (2026-06-30)** and is pinned by a golden test
-> (`tests/test_thermal.py::test_nist_pinned_grid`): water/polyethylene from the ComTab
+> (`tests/test_thermal.py::ShieldingPhotonTest::test_nist_pinned_grid`): water/polyethylene from the ComTab
 > compound tables; aluminum/lead/hydrogen/iron from the ElemTab element tables; `regolith` is
 > an SiO₂-dominant silicate analog **computed** from the NIST elemental Si+O tables via the
 > mixture rule (an approximation, flagged in `notes`). The water- and lead-@1-MeV HVL anchors
@@ -932,10 +940,11 @@ seu_cross_section_cm2=None, memory_bits=None, ecc_margin=None)`.
   q_effective, source_form}`. **Provenance tags** (`axis_b.provenance`): `career_budget_policy` +
   `clade_adjusted_budget_sv` = `policy`, `reid_percent` + `ddref_used` = `extrapolation`, `q_used` =
   `physics-limit` (a policy/projection number is never tagged `physics-limit`).
-- **Validation:** unknown clade/profile/lever/policy, a fluence with **no** quality (cannot weight),
+- **Validation:** a fluence with **no** quality (cannot weight),
   both magnitude forms, non-positive dose/LET/DMF/DDREF/dose-rate, a malformed/non-exclusive
   `--let-spectrum`, a blocked p53 double-improve, or an over-5000-Gy ceiling without the RB flag →
-  curated `{"error"}` exit 1; a bad `--clade`/`--profile` choice or non-numeric value → argparse exit 2.
+  curated `{"error"}` exit 1; a bad `--clade`/`--profile`/`--lever`/`--career-budget-policy`/`--particle-type`/
+  `--dose-rate-unit`/`--duration-unit` choice or non-numeric value → argparse exit 2.
 - **Order-of-magnitude & scope.** `is_order_of_magnitude:true`. The RBE grid and clade modifiers are
   canon-labelled estimates, not a transport/dose-response simulation. Per §5 the tool does **not** compute
   shielding (→ `shielding-attenuation`), trajectory dose accumulation (→ relativistic `travel-time`/flux +
@@ -1048,8 +1057,8 @@ liquid_waste_rate=None)`. `--closure-scenario` ∈ `{open,iss,advanced,bioregen}
 total_water_kg, food_dry_kg, kcal, solid_waste_kg, liquid_waste_kg}, totals{…×crew×days},
 closure{water,o2,food}, scenario, makeup_mass_kg{o2, water, food, total}, model_note, notes}`.
 `makeup[stream] = rate·crew·days·(1−closure)`; open-loop → makeup == total. **Validation:**
-`crew>0`, `days>0`, each overridden rate `>0`, each closure ∈ [0,1], known scenario → else curated
-`{"error"}` exit 1. **Anchor:** per person / open / 1 day → O₂ 0.895, CO₂ 1.085, food 0.800 kg,
+`crew>0`, `days>0`, each overridden rate `>0`, each closure ∈ [0,1] → else curated
+`{"error"}` exit 1; an unknown `--closure-scenario` is an argparse `choices` error (exit 2). **Anchor:** per person / open / 1 day → O₂ 0.895, CO₂ 1.085, food 0.800 kg,
 3054 kcal, potable 2.0 kg; `--closure-scenario iss --days 365` water makeup = 0.10× the open total.
 
 #### `bioregen-area` (X2)
@@ -1063,8 +1072,8 @@ query.py bioregen-area --kcal-per-day 2500 --crop wheat --dli-mol 30 --artificia
 query.py bioregen-area --crop wheat --ppfd-umol 520.8 --photoperiod-h 16
 query.py bioregen-area --crop chlorella --dli-mol 30
 ```
-Core: `life_support.compute_bioregen_area(kcal_per_day=None, crew=1, crop=None, ppfd_umol=None,
-photoperiod_h=16, dli_mol=None, par_wm2=None, photo_efficiency=None, harvest_index=None,
+Core: `life_support.compute_bioregen_area(kcal_per_day=None, crew=1, crop=None, crops=None, ppfd_umol=None,
+photoperiod_h=16.0, dli_mol=None, par_wm2=None, photo_efficiency=None, harvest_index=None,
 artificial=False, led_par_efficiency=None, f_edible_energy=1.0)`. Light anchor: `--ppfd-umol`
 (+`--photoperiod-h`), `--dli-mol`, or `--par-wm2` (a **required argparse mutex** — 0/2 → exit 2);
 all three describing the same light give the same area. `--kcal-per-day` default 2500;
@@ -1081,7 +1090,8 @@ rejected** (unknown-arg exit 2) — PAR is a caller-supplied parameter (`par_is_
 stellar-type-resolved PAR is the **Phase-AA `par-flux`** tool, whose `ppfd_umol_m2_s` output feeds
 this tool's `--ppfd-umol` anchor — see "PAR / photosynthesis by stellar type"). **Validation:** exactly one light anchor;
 `kcal_per_day>0`, `crew>0`, `photoperiod_h ∈ (0,24]`, `photo_efficiency`/`harvest_index`/
-`led_par_efficiency`/`f_edible_energy ∈ (0,1]`, known crop → else curated `{"error"}` exit 1.
+`led_par_efficiency`/`f_edible_energy ∈ (0,1]` → else curated `{"error"}` exit 1; an unknown `--crop` is argparse
+exit 2 (`choices`) — only an unknown crop inside `--crops` is the curated exit-1 error.
 **Anchors:** 2500 kcal, DLI≈30, wheat → area ≈ 40 m²/person (measured cross-check ≈ 37 m²);
 `--artificial --led-par-efficiency 0.4` → ≈ 7.6 kW/person; `--crop chlorella` gives a smaller area.
 
@@ -1229,7 +1239,7 @@ integral.
 > estimate); a varying-ISM multi-leg optimisation is a separate consuming tool.
 ```bash
 query.py magsail --ism-density-cm3 0.1 --ion-mass-amu 1.0 --beta 0.1 --magnetic-moment-am2 3.14e15 --vehicle-mass-t 1000
-query.py magsail --beta 0.1 --coil-radius-m 100000 --coil-current-a 100000        # exact near-field standoff
+query.py magsail --ism-density-cm3 0.1 --ion-mass-amu 1.0 --beta 0.1 --coil-radius-m 100000 --coil-current-a 100000   # exact near-field standoff ≈ 13.1 km (at the default ion mass 1.3 there is no standoff — R_mp clamps to R_coil)
 query.py magsail --beta 0.1 --magnetic-moment-am2 1e15 --ionization-fraction 0.5   # only ions couple
 ```
 Core: `ism_drag.compute_magsail(ism_density_cm3=None, ion_mass_amu=None, velocity_kms=None,
@@ -1785,7 +1795,7 @@ query.py metric-drive-power --thrust-n 1 --k 3 --beam-compare                   
 ```
 Core: `metric_drive.compute_metric_drive_power(mass_kg, mass_tonnes, thrust_n, accel_g, accel_ms2,
 delta_v_kms, delta_v_c, rapidity, duration_days, k, fuel, f_conv, eta_dir, turn, integrated_rapidity,
-beam_compare)`. **Mass:** `--mass-kg` | `--mass-tonnes`. **Thrust source:** `--thrust-n` OR `--accel-g`/
+beam_compare, self_consistent, ash)`. **Mass:** `--mass-kg` | `--mass-tonnes`. **Thrust source:** `--thrust-n` OR `--accel-g`/
 `--accel-ms2` (× mass). **Rapidity source:** `--rapidity` (Δη direct) OR `--delta-v-c`/`--delta-v-kms`
 (exact-relativistic atanh) OR a leg `--accel-* + --duration-days`. `--k` (alias `--tsiolkovsky-k`, default 3);
 `--fuel {d-t, d-he3, pp, dd, antimatter-pp, antimatter-ee}` (pp/dd f-values reused from
@@ -1824,7 +1834,8 @@ FTL exclusion-boundary radius **r_ex** (the "Alcubierre Limit") for a body:
 `r_ex = DIAL · (M/M☉)^α · (L/L☉)^β · (Ẇ/Ẇ_☉)^γ`, auto-calibrated so r_ex(Sun) = the Kuiper-edge anchor
 (47.5 AU) unless `--dial` is given. `α` (mass exponent, canon [1/3, 1/2], default 1/3), `β`/`γ` (luminosity /
 wind exponents, default 0 = off). Classifies the **graded forcing** geography (`forcing_class` ∈ `harbor` /
-`checkpoint` / `optional`, provisional bands: optional < 10 AU, harbor ≥ 95 AU).
+`checkpoint` / `optional`, provisional bands: optional < 10 AU, harbor ≥ 95 AU; + CR-22: `free_harbor` on a
+windless body, `null` when no standoff is computed).
 ```bash
 query.py exclusion-boundary --object sun                          # r_ex 47.5 AU
 query.py exclusion-boundary --mass-msun 0.1 --scan-alpha          # third 22.05 / half 15.02 AU, checkpoint
@@ -1832,17 +1843,28 @@ query.py exclusion-boundary --mass-msun 10 --scan-alpha           # third 102.3 
 query.py exclusion-boundary --object sun --dial 100 --alpha 0.5   # explicit dial overrides auto-cal → 100
 query.py exclusion-boundary --mass-msun 1 --gamma 0.5 --mass-loss-msun-yr 1e-6   # hot-star wind pushes r_ex out
 ```
-Core: `exclusion_boundary.compute_exclusion_boundary(mass_msun, luminosity_lsun, mass_loss_msun_yr, wind_state,
+Core: `query.py` calls `exclusion_boundary.compute_two_layer_boundary(...)` (CR-22), which wraps the FROZEN
+standoff generator `compute_exclusion_boundary(mass_msun, luminosity_lsun, mass_loss_msun_yr, wind_state,
 dial, calibration_au, alpha, beta, gamma, scan_alpha, object_name)`. **Body source (exactly one):** `--mass-msun`
 | `--object {sun, m-dwarf, o-star, brown-dwarf, rogue-planet}` | `--star <name>` (SIMBAD identity + the **shared mass
 tier ladder** manual > catalog > Gaia FLAME > L-inversion — CR-23; `regions` supplies the luminosity + the inversion
 tier; **network**) | `--spectral-type <type>` (main-sequence table, local DB). Optional environment: `--luminosity-lsun`,
-`--mass-loss-msun-yr` (Ẇ), `--wind-state {quiet, solar, active, hot}` (→ a Ẇ preset). Calibration/scaling:
+`--mass-loss-msun-yr` (Ẇ), `--wind-state {quiet, solar, active, hot}` (CR-25: sets the `wind_class` bin →
+`{quiet, solar, active, o_hot}` on a main-sequence host, overriding the colour default and the SIMBAD-otype
+auto-detect; ignored with a note on an evolved/windless/unmodeled host; an `--object` preset's bin is fixed — see
+the CR-25 block. It is also the γ>0 standoff Ẇ preset (1e-16 / 2e-14 / 1e-13 / 1e-6) when no
+`--mass-loss-msun-yr` is given). Calibration/scaling:
 `--dial`, `--calibration-au` (default 47.5), `--alpha` (default 1/3), `--beta`/`--gamma` (default 0),
 `--scan-alpha` (emit both α edges). Output: `{r_ex_au, r_ex_au_alpha_third, r_ex_au_alpha_half, mass_msun,
 luminosity_lsun, mass_loss_msun_yr, dial, alpha, beta, gamma, calibration_au, forcing_class, object,
-model_note}` (`r_ex_au_alpha_*` only with `--scan-alpha`). **Validation:** M ≤ 0, negative exponents,
-non-positive dial/calibration, `β ≠ 0` with L ≤ 0, or a wind exponent (`γ ≠ 0`) with no wind input → exit 1.
+model_note}` (`r_ex_au_alpha_*` only with `--scan-alpha`); plus the CR-22 two-layer fields (`domain`,
+`standoff_au`, `wall_*`, the wind-input echoes), CR-23 `mass_provenance`/`mass_note`/`flame_status`, and CR-25
+`wind_class_provenance`/`wind_otype`/`wind_otype_source`/`wind_class_note`/`otype_status` — see the blocks below
+(the wall/medium and mass-ladder flags `--star-mass-catalog`, `--gaia-timeout`, `--wind-speed` … are listed in the
+CR-22/CR-23 blocks). **Validation:** negative exponents, non-positive dial/calibration, `β ≠ 0` with L ≤ 0, or a
+wind exponent (`γ ≠ 0`) with no wind input → exit 1. **Known gap (CR-22 regression):** `--mass-msun ≤ 0`
+currently returns exit 0 with a null standoff (`r_ex_au`/`forcing_class` null) instead of the frozen
+generator's `M ≤ 0` error — `compute_two_layer_boundary` skips the standoff when the mass is not positive.
 **Anchors:** Sun 47.5 AU; 0.1 M☉ → 22.05/15.02 AU (α 1/3, 1/2); 10 M☉ → 102.3/150.2 AU (harbor); explicit
 `--dial` overrides auto-cal; solar-wind term = 1 at the Ẇ=2×10⁻¹⁴ preset.
 
@@ -1874,9 +1896,12 @@ standoff arithmetic is **untouched**; every new field is **additive**; the one c
   either layer null), `r_ap_au`, `mass_provenance` (CR-22: evolved only; **CR-23 generalizes it to every path** — the
   6-value enum + `null` on a no-mass domain — plus `mass_note` and a bounded-degrade `flame_status`; see the CR-23 block
   below), and the wind-input echoes (`wind_speed_kms`,
-  `v_ism_kms`, `c_ms_kms`/`b_field_ug`, `n_cloud_cm3`, `cloud_temp_k`, `wind_phase_yr`, `f_shock`, `m_shock_min`,
-  `mass_loss_source`, `mass_loss_msun_yr`) each with a `_provenance ∈ {supplied, class_default, b_field_derived,
-  assumed, astrosphere_wood_forced, none}`.
+  `v_ism_kms`, `c_ms_kms`, `n_cloud_cm3`, `cloud_temp_k`, `wind_phase_yr`, `f_shock`, `m_shock_min`,
+  `mass_loss_source`, `mass_loss_msun_yr`) each with a sibling provenance key (`mass_loss_provenance`,
+  `wind_speed_provenance`, `v_ism_provenance`, `c_ms_provenance`, `n_cloud_provenance`, `cloud_temp_provenance`,
+  `wind_phase_provenance`, `f_shock_provenance`, `m_shock_min_provenance`, `mass_loss_source_provenance`) ∈
+  `{supplied, class_default, b_field_derived, assumed, astrosphere_wood_forced, none}`; with `--b-field` also
+  `b_field_ug` + `c_ms_band_derived` `[lo,hi]` (`c_ms_provenance: b_field_derived`).
 - **Wall physics (research-grade):** wind-term `√((Ẇ/Ẇ☉)·(v☉/v_wind))×(4–8 AU)`; bow-wave/shock route by
   `M_f = V_ISM/c_ms` (default `M_shock_min` 1.5; `C = 4M_f²/(M_f²+3)`); a mandatory giant/astropause cap
   `min(r_ap, v_wind·t_phase)` (slow-wind M-giant/AGB/RSG walls stay ly-scale, K/G/F giants Oort-scale).
@@ -1979,7 +2004,8 @@ Core: `power.compute_annihilation_power_train(mass_flow_kgs, power_total_w, spec
 override (default 0.5 pp / 1.0 ee). Output: `{power_total_w, power_directed_w, power_gamma_w,
 power_neutrino_w, eta_dir, species, model_note}`. For `pp` the branching is fixed ≈½ν/⅓γ/⅙e± (γ = P/3, ν = P/2)
 and `power_directed_w = η_dir·P_total` is the design-capturable fraction (overlaps the channels, not a strict
-partition). **Validation:** both/neither anchor, non-positive value, bad species, η_dir ∉ (0,1] → exit 1.
+partition). **Validation:** neither anchor, non-positive value, η_dir ∉ (0,1] → exit 1; both anchors or a bad
+`--species` → argparse exit 2.
 **Anchor:** pp, 1 µg/s → total 8.988e7 W; η_dir 0.5 → directed 4.494e7, γ 2.996e7, ν 4.494e7.
 
 #### `antimatter-production` (R2)
@@ -1995,7 +2021,8 @@ Schmidt/Gerrish/Martin NASA), never a shipped number. Optional `--trap-field-t` 
 space-charge mass-density ceiling ε₀·B²/2. Output: `{energy_in_j, energy_stored_j, production_efficiency,
 threshold_floor_efficiency, energy_ratio_in_per_stored, storage_density_kg_m3|null, trap_field_t, notes,
 model_note}`. `threshold_floor_efficiency = 2 m_p/6 m_p = 0.3333` (exact, baryon-conserving threshold).
-**Validation:** both/neither anchor, non-positive, missing efficiency, η ∉ (0,1], trap field ≤ 0 → exit 1.
+**Validation:** neither anchor, non-positive, missing efficiency, η ∉ (0,1], trap field ≤ 0 → exit 1; both
+anchors → argparse exit 2.
 **Anchor:** stored 1 ng, η 1e-4 → stored 8.988e7 J, in 8.988e11 J, floor 0.3333, ratio 1e4.
 
 #### `reactor-net-power` (R4)
@@ -2022,7 +2049,8 @@ tx_power_w, pointing_efficiency)`. Wavelength anchor (exactly one): `--wavelengt
 default 1. `D_spot = 2.44·λ·L/D_t`, `capture = min(1, (D_r/D_spot)²)`, full coupling needs D_t·D_r ≳ 2.44·λ·L.
 Output: `{spot_diameter_m, capture_fraction, delivered_power_w|null, aperture_product_m2,
 full_coupling_product_m2, coupling_margin, wavelength_m, range_m, pointing_efficiency, model_note}`.
-**Validation:** both/neither wavelength anchor, any non-positive aperture/range, pointing ∉ (0,1] → exit 1.
+**Validation:** neither wavelength anchor, any non-positive aperture/range, pointing ∉ (0,1] → exit 1; both
+wavelength anchors → argparse exit 2.
 **Anchor:** λ 1 µm, D_t 10 m, L 1 AU → D_spot 3.65e4 m; D_r 100 m → capture 7.5e-6.
 
 #### `fusion-lawson` (R10)
@@ -2037,7 +2065,8 @@ confinement_boost)`. `--fuel {d-t,d-he3,d-d,p-b11}` required; supply the `(n,T,�
 `--triple-product` directly; `--confinement-boost` (AG multiplier on n·τ, default 1). Output:
 `{triple_product_kev_s_m3, ignition_threshold, q_fusion, ignited, confinement_boost, fuel, model_note}`.
 Per-fuel ignition thresholds are **[pin @ open]** illustrative anchors (p-B11 ~10³× harder). **Validation:**
-bad fuel, no/partial triple + no `--triple-product`, both supplied, non-positive, boost ≤ 0 → exit 1.
+no/partial triple + no `--triple-product`, both supplied, non-positive, boost ≤ 0 → exit 1; a bad/missing
+`--fuel` → argparse exit 2.
 **Anchor:** D-T n·T·τ = 3e21 → q 1 (ignited boundary); boost 3 → q 3.
 
 #### `heat-pump` (R3)
@@ -2050,8 +2079,8 @@ Core: `thermal.compute_heat_pump(cold_temp_k, hot_temp_k, heat_lifted_w, work_w,
 `--work-w`; `--efficiency-fraction` (0,1] default 1 (fraction of Carnot COP). `COP_cool = T_c/(T_h−T_c)`;
 `W = Q_c/COP`; `heat_rejected = Q_c + W` (feeds `radiator-area` at T_h). Output: `{cop_cool_carnot,
 cop_heat_carnot, cop_cool_actual, work_w, heat_lifted_w, heat_rejected_w, cold_temp_k, hot_temp_k,
-efficiency_fraction, model_note}`. **Validation:** T ≤ 0, T_h ≤ T_c, both/neither load anchor, frac ∉ (0,1] →
-exit 1. **Anchor:** lift 1 W 300→320 K → COP 15, W 0.0667, rejected 1.0667 W.
+efficiency_fraction, model_note}`. **Validation:** T ≤ 0, T_h ≤ T_c, neither load anchor, frac ∉ (0,1] →
+exit 1 (both load anchors → argparse exit 2). **Anchor:** lift 1 W 300→320 K → COP 15, W 0.0667, rejected 1.0667 W.
 
 #### `flywheel-storage` (R8)
 Flywheel specific-energy ceiling `e = K·σ/ρ` (the material-strength wall, same σ as a rotating-habitat rim).
@@ -2131,7 +2160,8 @@ object_size_m, criterion, coefficient)`. `--criterion {rayleigh,dawes,sparrow}` 
 `--coefficient` override; `--range-m` → `linear_resolution_m`; `--separation-m` → `resolvable`;
 `--object-size-m` → `resolved_or_point`. Output: `{angular_resolution_rad, angular_resolution_arcsec,
 linear_resolution_m|null, resolvable|null, resolved_or_point|null, criterion, coefficient, …}`.
-**Validation:** aperture ≤ 0, both/neither λ/f, bad criterion, coefficient ≤ 0, non-positive range/sep/size → exit 1.
+**Validation:** aperture ≤ 0, coefficient ≤ 0, non-positive range/sep/size → exit 1; both/neither λ/f or a bad
+`--criterion` → argparse exit 2.
 
 #### `point-source-detection` (S1)
 The "no-stealth-in-space" core: an unresolved source of power `L` at range `R`, aperture `D`.
@@ -2162,7 +2192,8 @@ this is the classical EM/thermal envelope (no exotic gravimetric/GW drive-wake s
 **lower bound** (a resolved source spreads flux over multiple resolution elements). The `photon_rate_hz`
 is a **band-centre (narrow-band) conversion of the bolometric `P_rx`** — not an in-band Planck integral —
 consistent with the bolometric `E`/`P_rx` by construction (degrades as Δλ/λ grows). **Validation:**
-both/neither source, rx ≤ 0, ε/η ∉ (0,1], >1 floor, solve-mode with no floor, background with no band → exit 1.
+rx ≤ 0, ε/η ∉ (0,1], >1 floor, solve-mode with no floor, background with no band → exit 1; both/neither source
+→ argparse exit 2.
 
 #### `radar-range` (S3)
 Active radar range equation (the `R⁻⁴` counterpart to S1's passive `R⁻²`).
@@ -2175,7 +2206,7 @@ target_rcs_m2, range_m | min_detectable_power_w, integration_s, system_noise_tem
 snr_threshold)`. `P_rx = P_tx·A_tx·A_rx·σ/(4π·λ²·R⁴)`; `--rx-aperture-m` defaults to tx (monostatic);
 gains default `(πD/λ)²`, overridable; `--system-noise-temp-k` → SNR vs `P_n = k_B·T_sys·Δf`. Output:
 `{received_power_w|null, max_range_m|null, snr|null, tx_gain, rx_gain, …}`. **Validation:** non-positive
-tx-power/aperture/rcs, both/neither λ/f, both/neither range/P_min → exit 1.
+tx-power/aperture/rcs → exit 1; both/neither λ/f or both/neither range/P_min → argparse exit 2.
 
 ### Strategic-geography graph analytics (Phase AQ — Group T, local DB, no network unless a name needs SIMBAD)
 
@@ -2208,8 +2239,8 @@ graph{n_nodes,n_edges,connected,components}, node_set, weight, betweenness_cappe
 dust_errors], …}`. **Scale guard:**
 degree/articulation/bridges/components run on any size; **betweenness + min-cut are capped at 2000 nodes**
 — above it they return `null` with a note (narrow `--within-ly` or use `--stars`). Models the STL/lane era;
-for FTL free-emergence picketing use `arrival-corridors`. **Validation:** no/two selectors, max-jump ≤ 0,
-bad weight, `--from` without `--to`, `--within-ly` without `--of`, < 2 nodes → exit 1.
+for FTL free-emergence picketing use `arrival-corridors`. **Validation:** max-jump ≤ 0, `--from` without
+`--to`, `--within-ly` without `--of`, < 2 nodes → exit 1; no/two selectors or a bad `--weight` → argparse exit 2.
 
 #### `arrival-corridors` (T2)
 FTL-emergence / picket geometry: cluster the origin bearings into corridors and size the picket solid angle.
@@ -2223,8 +2254,8 @@ equatorial→galactic rotation); `light_lag_yr = distance_ly`; cluster by angula
 `angular_coverage_fraction = Σ Ω_cone/4π`, `Ω_cone = 2π(1−cos halfwidth)`. Output: `{system, corridors[]
 {origin, distance_ly, bearing_lb{l,b}, light_lag_yr, cluster_id}, n_origins, n_distinct_corridors,
 corridor_halfwidth_deg, cluster_deg, angular_coverage_fraction, …}`. Geometry only — interdiction *doctrine*
-is Pkt 38. **Validation:** no system, no/both origin selectors, halfwidth/cluster ∉ (0,180], min ≥ max,
-no candidates after filters → exit 1.
+is Pkt 38. **Validation:** halfwidth/cluster ∉ (0,180], min ≥ max, no candidates after filters → exit 1; a
+missing `--system` or no/both origin selectors → argparse exit 2.
 
 ### Compute & beamrider utilities (Phase AR — Group U, no network)
 
@@ -2241,7 +2272,7 @@ query.py landauer-limit --temp-k 2.725                  # CMB-cold: E_bit=2.608e
 Core: `thermal.compute_landauer_limit(temp_k, bits | power_w | bit_rate_hz, reversible)`. Output:
 `{energy_per_bit_j, temp_k, total_energy_j|null, max_erasure_rate_hz|null, min_power_w|null, reversible,
 model_note}`. `--reversible` only annotates that reversible/adiabatic computing can go below the floor.
-**Validation:** temp ≤ 0, >1 of bits/power/bit-rate, non-positive value → exit 1.
+**Validation:** temp ≤ 0, non-positive value → exit 1; >1 of bits/power/bit-rate → argparse exit 2.
 
 #### `beamrider-relay-spacing` (U2)
 Diffraction-limited relay-node spacing — inverts `beamed-power-delivery` for the STL-waystation skeleton.
@@ -2252,8 +2283,8 @@ query.py beamrider-relay-spacing --wavelength-m 1e-6 --tx-aperture-m 1000 --rx-a
 Core: `power.compute_beamrider_relay_spacing(wavelength_m|frequency_hz, tx_aperture_m, rx_aperture_m,
 delivered_fraction_threshold, total_range_ly | total_range_m)`. `L_t = D_t·D_r/(2.44·λ)` (full-capture
 range); `L_relay = L_t/√threshold`. Output: `{transition_range_m, relay_spacing_m, relay_spacing_ly,
-delivered_fraction_threshold, n_relays|null, …}`. **Validation:** both/neither λ/f, non-positive aperture,
-threshold ∉ (0,1], both total-range units → exit 1.
+delivered_fraction_threshold, n_relays|null, …}`. **Validation:** non-positive aperture, threshold ∉ (0,1] →
+exit 1; both/neither λ/f or both total-range units → argparse exit 2.
 
 ### Megastructure scale (Phase Z — pure math + bundled material/body tables, no network)
 
@@ -2396,7 +2427,7 @@ query.py par-flux --teff-k 2700 --insolation-wm2 1361                 # late-M: 
 query.py par-flux --star "Tau Ceti" --insolation-wm2 1361 --par-band-nm 400 750
 ```
 Core: `par_flux.compute_par_flux(teff_k=None, spectral_type=None, star=None, insolation_wm2=None,
-luminosity_lsun=None, distance_au=None, par_band_nm=(400.0, 700.0))`.
+luminosity_lsun=None, distance_au=None, par_band_nm=(400.0, 700.0), sed="blackbody")`.
 - **Teff — exactly one source:** `--teff-k` (offline) / `--spectral-type` (→ `main_sequence_stars`
   ceiling-rule lookup, offline local DB) / `--star` (→ SIMBAD + regions, **the only networked path**;
   resolved inside the core, lazily). **Insolation — exactly one source:** `--insolation-wm2` (direct)
@@ -2608,7 +2639,8 @@ query.py dossier --star "Tau Ceti" --fmt html --sections identity regions planet
 query.py dossier --star Sol                       # fully offline (Solar System)
 query.py dossier --star Sol --sections planets moons
 ```
-Core function: `report.build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion=False)`
+Core function: `report.build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion=False,
+star_mass_catalog=None, mass_solar=None)`
 (CR-10.5: `--force-ms-inversion` overrides the evolved-star region guard — see the CR-10 second-fire block below.
 CR-11.2: `--star-mass-catalog`/`--mass-solar` add stellar-mass provenance + measured-mass preference — see the CR-11 block below.)
 
@@ -2617,7 +2649,8 @@ CR-11.2: `--star-mass-catalog`/`--mass-solar` add stellar-mass provenance + meas
   HZ-ring / abundance figures are a GUI-only enrichment, never in the `query.py` output).
   `json` emits a structured **`data`** dict (the per-section data dicts) and **no** `document`.
 - **`--sections`** (default: all available): any subset of `identity regions habitable_zone
-  planets hypatia gcns moons`. `moons` is a **Sol-only opt-in** (large; never in the default
+  planets hypatia gcns multiplicity age_population disk moons` (the CR-5 three are in the default set — see
+  the CR-5 block below). `moons` is a **Sol-only opt-in** (large; never in the default
   set).
 - **Sections.** `identity`, `regions` (stellar properties + system regions + the full Phase P
   alternate-solvent bands & ice/condensation lines), `habitable_zone` (Kopparapu, 3 luminosity
@@ -3141,7 +3174,7 @@ All GCNS sources within N light years of Sol, sorted ascending by `light_years`.
 query.py gcns-within-sol --ly 15
 query.py gcns-within-sol --ly 50 --wd-prob-min 0.5      # white-dwarf census (Phase T1a)
 ```
-Core function: `databases.compute_gcns_within_sol(ly, wd_prob_min=None, wd_prob_max=None)`
+Core function: `databases.compute_gcns_within_sol(limit_ly, wd_prob_min=None, wd_prob_max=None)`
 Output: `{limit_ly, count, snapshot_date, gcns_version, stars[]}`. Each star carries the fields above plus heliocentric `x`/`y`/`z` (ly) for map parity with `stars-within-sol`.
 - **Phase T1a — white-dwarf census filter (E1, additive).** Optional `--wd-prob-min` / `--wd-prob-max` restrict the census to sources whose GCNS white-dwarf probability (`wd_prob`) falls in the given range; rows with a NULL `wd_prob` are excluded once either bound is set. Both omitted → byte-identical to the unfiltered census. A `min > max` simply matches nothing (count 0), not an error — consistent with the other range filters. This is the closest census primitive to attach to (there is **no** GCNS `search-*` function). Empty `gcns_stars` → `{"error"}` exit 1; non-numeric `--ly`/`--wd-prob-*` → argparse exit 2.
 Example (abridged):
@@ -3177,7 +3210,7 @@ Single GCNS row by Gaia EDR3/DR3 `source_id` (the cross-match join key). EDR3 an
 ```bash
 query.py gcns-source --id 5853498713190525696
 ```
-Core function: `databases.compute_gcns_by_source_id(id)`
+Core function: `databases.compute_gcns_by_source_id(source_id)`
 Output: `{snapshot_date, gcns_version, star}` — `star` is a single dict with the fields above (no `x`/`y`/`z`) — or `{"error": ...}` if the id is not present (exit 1).
 
 #### `gcns-system`
@@ -3185,7 +3218,7 @@ The resolved multiple-star system containing a Gaia EDR3/DR3 `source_id`. Derive
 ```bash
 query.py gcns-system --id 1872046609345556480   # 61 Cygni A → the 61 Cyg system
 ```
-Core function: `databases.compute_gcns_system(id)`
+Core function: `databases.compute_gcns_system(source_id)`
 Output: `{snapshot_date, gcns_version, query_source_id, system}`, or `{"error": ...}` (exit 1) when the id is in **no** resolved system (single/unresolved object) or the `gcns_systems` table is empty.
 
 `system` is a dict:
@@ -3566,8 +3599,10 @@ bounds.
 ```bash
 query.py compare-stars --stars "Tau Ceti" Sol "18 Sco" "Delta Pavonis"
 ```
-Core function: `databases.compare_stars(names)`. Output: `{stars: [{name, sp_type, teff, luminosity, mass, radius,
-hz_inner_au, hz_outer_au, ly, app_magnitude, hypatia, error}, …]}` — `hypatia` is the raw `hypatia-data` result dict
+Core function: `databases.compare_stars(names, star_mass_catalog=None)`; flags `--stars`, `--star-mass-catalog <path>`
+(CR-11.2), `--gaia-timeout <s>` (CR-19). Output: `{stars: [{name, sp_type, teff, luminosity, mass, radius,
+hz_inner_au, hz_outer_au, ly, app_magnitude, hypatia, error, mass_solar, mass_provenance, massL_inversion_caution,
+peculiar_star_flag, mass_note, flame_status?}, …]}` (the mass keys: see the CR-11.2 block) — `hypatia` is the raw `hypatia-data` result dict
 (or `null`). **Per-star failures are isolated**: each star carries its own `error` (`null` on success) with missing
 numerics `null`; the **only top-level `{"error"}` (exit 1)** is the arg-count check (< 2 non-blank names, or > 4).
 `"Sol"`/`"Sun"` are injected from reference constants (G2V, 5778 K, 1 M/R/L☉, [X/H]≡0 baseline) with no SIMBAD call, so
@@ -3794,8 +3829,8 @@ non-degenerate-secondary / primary / system query is byte-identical (no `primary
 
 #### `close-binary-census`
 The systematic population sweep (Gaia NSS faint + SB9 bright with Hipparcos/Gaia parallax → X-Match
-dedup → companion classification → planet filter). `--drop-planets` is **on by default** (opt out with
-`--keep-planets`).
+dedup → companion classification → planet filter). Planet dropping is **on by default** (core `drop_planets=True`); opt out with
+`--keep-planets` — there is no `--drop-planets` flag.
 ```bash
 query.py close-binary-census --dist-max-ly 65 --period-max-d 365
 query.py close-binary-census --dist-max-ly 100 --period-max-d 365 --include nss,sb9 --exclude-known census.txt
@@ -4018,10 +4053,10 @@ All four Phase AT calculators are **pure-compute, no network**; core validation 
 
 ## Star-analysis change requests (CR-1 … CR-7 — for the star_analysis skill)
 
-Seven subcommands built from the `spaceapp-change-request-spec.md` contract. **CR-1/2/3** make **LIVE**
+Six new subcommands plus three new `dossier` sections (CR-5) built from the `spaceapp-change-request-spec.md` contract. **CR-1/2/3** make **LIVE**
 VizieR/SIMBAD/Gaia queries (same network class as the Phase AM catalog tier — `{"error", route_tried}` on
 failure, an empty-but-valid result is not an error); **CR-4/6/7** are pure-math self-validating (curated
-`{"error"}` exit 1, argparse exit 2) with `network only on the optional --star path`. Every non-detection
+`{"error"}` exit 1, argparse exit 2) with network only on the optional `--star` path of CR-6/CR-7 (`nuclear-inventory` has no `--star`). Every non-detection
 returns an **upper limit / explicit empty, never a null**.
 
 **CR-4/CR-6 WB bundles.** `nuclear-inventory`'s fissile output consumes the WB **3c FINAL** fissile-GCE model —
@@ -4062,10 +4097,12 @@ basis + SB1 lower-bound masses), and the offline GCNS resolved-system count.
 query.py multiplicity --star "alpha Centauri"
 ```
 Core: `binary.multiplicity_summary(star=None, source_id=None)`. Output: `{star, is_multiple, multiplicity_class,
-bound_multiple, n_components, components:[{basis, sb_flag, sep_au?, m2_solar_lower?}], sb_flag, sources, note?}`.
+bound_multiple, n_components, components:[{basis, sb_flag, sep_au?, m2_solar_lower?}], sb_flag, sources, multiplicity_basis?, gaia_status?, note?}`.
 **CR-20:** `multiplicity_class ∈ {"bound","optical","unknown"}` + `bound_multiple` (`true`/`false`/`null`) — the
 additive tri-state bound-vs-optical verdict-honesty signal (single star → both `null`); see the CR-20 block.
-`basis` ∈ visual / astrometric / SB1 / SB2 / eclipsing / spectroscopic; **SB1 masses are always the sin i=1 lower bound**.
+`basis` ∈ visual / astrometric / SB1 / SB2 / eclipsing / spectroscopic / `gcns_cpm` (CR-18 — an orbit-less GCNS companion
+with `bound, proj_sep_au, separation_arcsec, star_name, source_id`; see the CR-18 block); **SB1 masses are always the sin
+i=1 lower bound**.
 **CR-16:** for a **degenerate/WD-secondary** query of a letterless-primary pair, the SB1 `m2_solar_lower` is now
 solved at the correct **primary** mass (`multiplicity "Sirius B"` → **0.4577**, not the WD-mis-seeded 0.283) — the
 orbit companion masses inherit `binary_orbit`'s primary-sp-type redirect (see the CR-16 block); a letter-symmetric
@@ -4278,7 +4315,7 @@ A **new, additive** CR extending CR-8 (CR-8 stays fulfilled/unchanged). Same too
 modes — CR-9 only **adds output fields + two pull-behaviors**. Built on the same `ps` table (composite-only
 fields come from a second `pscomppars` query, always tagged). `core/exoplanet_batch.py`; contract
 `scifiWorldBuilding-Claude/.../spaceapp-change-request-CR9-disposition-quality-fields.md`; plan
-`PHASE_CR9_PLAN.md`.
+`completed_plans/PHASE_CR9_PLAN.md`.
 
 **Field tiering (`--fields`):** `core` = the CR-8 fields **+ CR-9 Tier-1 disposition/quality**; `full` = that
 **+ Tier-2 enrichment + the composite block + the OEC block + the raw `ps` row**. All built in one delivery —
@@ -4346,13 +4383,13 @@ carrying a second pinned sub-case) + the two pull-behavior anchors:
 inclinations 88.49/88.571/89.73 · `HD 219134 d & f→pl_bmasselim=−1` **and** `HD 128311 b→pl_orbincllim=−1`
 (the −1 sign) · `HD 192310 b/c→inclination_deg=90.0 + mass_prov_raw="Msin(i)/sin(i)"` · **behavior #2**
 `GJ 667 C→b/c/e/f/g present` · **behavior #3** `α Cen A→Proxima Cen b under component_planets` (26 Dra→nothing,
-a documented limitation). Offline logic: `tests/test_exoplanet_batch.py` (+8 CR-9 classes); live anchors reuse
+a documented limitation). Offline logic: `tests/test_exoplanet_batch.py` (+6 CR-9 classes); live anchors reuse
 `tests/test_query_exoplanet_batch_live.py`.
 
 ## CR-10 — detection-floor & survey-disposition bundle (three items; additive, no fulfilled behavior moved)
 
 First fire = **CR-10.1 + CR-10.2 + CR-10.4** (CR-10.3 HELD, not built). All additive; each item is an enrichment.
-Coordination MSG 087–091; `PHASE_CR10_PLAN.md`; WB re-gates each independently on the sister venv.
+Coordination MSG 087–091; `completed_plans/PHASE_CR10_PLAN.md`; WB re-gates each independently on the sister venv.
 
 **CR-10.1 — native transit-survey FP/candidate disposition (`planetary-systems-batch`, LIVE, core-tier).**
 A **new per-planet `survey_disposition` block** (present-but-`null`, **never omitted** — CR-9 tri-state discipline):
@@ -4511,9 +4548,16 @@ single-body `exclusion-boundary` generator (no second calibration) over a resolv
 `binary-orbit`/SB9 resolution of the primary orbit; a companion's WD/BD nature is confirmed by a `"<name> B"` otype lookup —
 **wide hierarchical companions with no catalogued orbit, e.g. Proxima, need `--component`**) and the deterministic
 **`--component "id=A,mass=2.063,lum=25,class=A0mA1Va,pair=AB,sma=19.8,ecc=0.59"`** (repeatable; keys id/name, mass, lum, class
-[sp_type or `wd`/`brown-dwarf`/`rogue`/`giant`], pair, sma, ecc, orbits, wind_state, mass_loss_msun_yr). Per-component mass = the
-**CR-11.2 chain** (manual `mass=` → `--star-mass-catalog` → FLAME → `L`-inversion from `lum`), which drives **both** the r_ex
-sphere **and** the barycentric offset. An **off-MS component** (WD/BD/rogue/giant) is `domain: out_of_domain`, `r_ex_au: null`
+[sp_type or `wd`/`brown-dwarf`/`rogue`/`giant`], pair, sma, ecc, orbits, wind_state, mass_loss_msun_yr — CR-22 adds `wind_class`,
+`otype` + the wall keys, see the CR-22 / CR-25.4 blocks; `sp_type`/`type`/`sptype` give a spectral type directly; `class` also
+takes `subgiant`/`supergiant`/`agb`/`wolf-rayet`/`wr` → `evolved` and `main-sequence`/`ms`/`dwarf`; an unknown key is a curated
+error). Per-component mass = the
+**CR-11.2 chain** (manual `mass=` → `--star-mass-catalog` → FLAME [`--star` components only — a CLI `--component` carries no designations;
+see CR-19] → `L`-inversion from `lum`), which drives **both** the r_ex
+sphere **and** the barycentric offset. *(⚠ **domain values SUPERSEDED BY CR-22** — per-component `domain` no longer uses
+`out_of_domain`: WD/BD/rogue → `windless_free_harbor`, sdB/sdO → `unmodeled` (both `r_ex_au: null`), giant/subgiant →
+`evolved` **with** a standoff from its measured mass; `point_mass_r_ex_au` sums main-sequence + evolved. See the CR-22 block
+below.)* An **off-MS component** (WD/BD/rogue/giant) is `domain: out_of_domain`, `r_ex_au: null`
 (**no sphere**) — but its **real mass still sets the barycenter** (Sirius B). Merge-grouping = union-find over the periastron
 overlap test `d < r_ex,i + r_ex,j` (out-of-domain radius = 0). Output: `zones[]` (per zone `members`, `status ∈ {merged,
 separate}`, `long_axis_au{periastron,apastron}`, `minor_axis_au`, `barycenter`, `components[]{id, mass_solar, mass_provenance,
@@ -4521,7 +4565,7 @@ r_ex_au|null, domain, class_note}`, `point_mass_r_ex_au` [**in-domain members on
 in], `forcing_class`), plus `separations_au`, `n_components`, `n_zones`, `phase`, `alpha`/`dial`/`calibration_au`, `model_note`,
 `composition_note`. A **single-star** input reproduces `exclusion-boundary` on the same mass + `alpha`. Self-validating (curated
 `{"error"}` exit 1; argparse exit 2). Anchors (via `--component`): **Sirius** — one `merged` zone, A `r_ex ≈ 63.5` (measured
-2.063), B `out_of_domain`/`null` (WD guard), `long_axis ≈ {peri: 66, apo: 74}`, `point_mass ≈ 63.5` (A alone); **α Cen** — two
+2.063), B `windless_free_harbor`/`null` (WD guard; `out_of_domain` pre-CR-22), `long_axis ≈ {peri: 66, apo: 74}`, `point_mass ≈ 63.5` (A alone); **α Cen** — two
 zones, AB `merged` (A 49.0 / B 45.7, `long_axis ≈ {54, 65}`, `minor ≈ 49`, `point_mass ≈ 62.5`) + Proxima `separate` (≈ 20.5).
 ```
 query.py exclusion-system --star "Sirius"                                              # live: merged, B WD-guarded
@@ -4536,7 +4580,10 @@ Core: `core/exclusion_system.py` (composes the frozen `core/exclusion_boundary.p
 two-layer output as `exclusion-boundary` (see the CR-22 block under `exclusion-boundary` for the shared additive fields +
 the `domain` enum + wind flags). **Standoff numeric anchors byte-identical** (Sirius A 63.5, α Cen 49.0/45.7 + bands 54/65,
 Proxima 20.5 — regression-anchored). Changes: the per-component `domain` is the **four-value enum** (a giant is now `evolved`
-with a standoff from its measured mass, no longer `out_of_domain`/null; only `windless_free_harbor`/`unmodeled` are null); the
+with a standoff from its measured mass, no longer `out_of_domain`/null; only `windless_free_harbor`/`unmodeled` — and a lone `evolved` component with no measured
+mass — are null; the string `out_of_domain` survives elsewhere: a zone with no standoff-bearing member has `forcing_class`
+`"free_harbor"` (all windless) or `"out_of_domain"` (unmodeled / no-mass evolved), and `mass_provenance` may be
+`"unresolved_out_of_domain"` — CR-13); the
 per-component output gains the CR-22 wall fields (`wall_au`, `wall_band_au`, `wall_route`, `wall_reason`, `wall_note`,
 `verdict_marginal`, `r_ap_au`, `wall_exceeds_standoff`, `wall_to_standoff_ratio`, `wind_class`, `standoff_au`). `point_mass_r_ex_au`
 now corroborates over standoff-bearing members (main-sequence **+ evolved**); a windless/unmodeled mass is still never summed in.
@@ -4559,7 +4606,8 @@ tier ladder on every `exclusion-system` path (`--star` single/binary + `--compon
 CR-23 adds, per component (additive keys): **`mass_note`** (the resolver's over-read caution / catalog citation, `null`
 on a clean inversion — parity with `exclusion-boundary`) and **`standoff_note`** (CR-23.3 — research-grade for an
 **evolved** component's off-canon-MS-domain standoff, reusing the same wording as `exclusion-boundary`; `null` for
-`main_sequence`, `null` by construction for `windless_free_harbor`/`unmodeled`). A bounded FLAME degrade on the
+`main_sequence`, `null` by construction for `windless_free_harbor`/`unmodeled`; an `evolved` component with **no** measured mass carries the
+"no measured mass for an evolved host — standoff not computed…" note instead). A bounded FLAME degrade on the
 **single-body** `--star` mass path now surfaces top-level **`flame_status`** (previously dropped — the binary path's
 `flame_status_a`/`_b` were already surfaced). **CR-23 anchors:** `exclusion-system --star "Delta Pavonis" --star-mass-catalog
 … --alpha 0.4` → `domain evolved`, standoff **47.33 unchanged** + non-null research-grade `standoff_note`; `Procyon A` →
@@ -4657,7 +4705,9 @@ are **unchanged** (their anchors are byte-identical). `completed_plans/PHASE_CR1
 
 **What changed in the `--star` path.**
 - **Component / wide-member / secondary resolution (CR-13.1).** A directly-named **secondary** (`--star "Sirius B"` →
-  SIMBAD `* alf CMa B`) or any **off-MS** body (WD/BD/sdB/sdO/giant/subgiant) resolves to a **single component**, never
+  SIMBAD `* alf CMa B`) or a **WD/BD** body (SIMBAD otype `white dwarf`/`brown dwarf`, or a `D…`/`L`/`T`/`Y` sp_type) resolves to a **single
+component** (a giant/subgiant/sdB/sdO is routed like any star — a single body only when no usable close orbit resolves —
+and the domain guard never gives it a fabricated MS-inversion mass), never
   the old mangled `"Sirius B B"` / placeholder-1.0 / mislabeled-WD output. A **single star** or a **wide-hierarchical
   member** whose only catalogued "orbit" is a wide bond with no usable component mass (`--star "Proxima Centauri"`, the
   ~13 000 AU tie to α Cen AB) computes as a **single body** (no crash). A **primary**-named input (`--star "alpha Cen A"`)
@@ -4679,13 +4729,15 @@ sphere is `null` and the mass is numerically inert, so it is emitted with `r_ex_
 tolerance, which the `--component` path shares for a lone out-of-domain component with no `mass=`),
 **`binary_orbit_equal_split_unresolved`** (a placeholder `q=1.0` orbit **or** the no-secondary equal-mass fallback), and
 **`binary_orbit_sb1_min`** (an SB1 sin i=1 lower bound). Each carries a `resolution_notes` caution. Output JSON shape is
-otherwise unchanged.
+otherwise unchanged. Also possible (pre-existing, CR-11.3): **`binary_orbit_m1`** (the primary mass from the orbit) and
+**`binary_orbit_m2`** (a clean real-ratio companion mass); the two flagged values replace `binary_orbit_m2` when the
+companion mass is a placeholder / SB1 minimum.
 
 **Anchors** (WB re-gates live, both `--star` and `--component`; α=0.4, calibration 47.5): `--star "alpha Centauri"
 --star-mass-catalog <cat>` → A `1.079`/`catalog`/`49.0`, B `0.909`/`catalog`/`45.7`, merged `{54, 65}`, minor `≈49`,
 point-mass `62.5` (= the `--component` reference); `--star "Sirius" --star-mass-catalog <cat>` → A `2.063`/`catalog`/`63.5`,
 Sirius B `1.018`/`catalog` (WD guard, `r_ex null`), merged `{66, 74}`; `--star "Sirius B"` → a single WD component,
-`r_ex_au: null`, `class_note "white dwarf"`, **bare** `mass_provenance "unresolved_out_of_domain"` / **with catalog**
+`domain windless_free_harbor`, `r_ex_au: null`, `class_note` the shared windless note (`"white dwarf"` pre-CR-22), **bare** `mass_provenance "unresolved_out_of_domain"` / **with catalog**
 `1.018`/`catalog`; `--star "Proxima Centauri" --alpha 0.4` → single body, **with catalog** `0.1221`/`catalog`/`20.48`,
 **bare** `0.139`/`ms_luminosity_inversion`/`21.57`; `--star "alpha Centauri"` (no catalog) → not a silent `1.02/1.02`
 (real-ratio or a flagged equal-split); `--star "Sirius"` (no B row) → B's `0.458` flagged `binary_orbit_sb1_min`.

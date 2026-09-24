@@ -1,6 +1,6 @@
 # Science and Science Fiction Feature Documentation
 
-Options 11–16. All features here display data from local CSV files or hardcoded tables. No external API calls. Lowest change frequency of all feature groups.
+Options 11–16. All features here display data from SQLite tables seeded from local CSV files, or from hardcoded tables (the deprecated CLI still reads some CSVs directly — opts 11/14). No external API calls. Lowest change frequency of all feature groups.
 
 > **`query.py`:** options 11–13 are also exposed as subcommands — `solar-system` (11), `main-sequence` (12), and `sol-regions` (13) — see `docs/integration.md`. The Honorverse tables (options 14–16) remain GUI/CLI-only.
 
@@ -129,22 +129,22 @@ Eccentricities that differ from JPL were **left alone deliberately**: the `/sats
 > existing DB will not pick the new rows up on its own. Run **option 55 / Utilities → Import Solar
 > System Data** after pulling; `import_solar_system_csvs` does `DELETE` + bulk `INSERT` for all four
 > tables in one transaction.
-- **GUI (`SolarSystemPanel`)**: the four data tabs (Planets, Moons, Dwarf Planets, Asteroids) are unchanged. **Phase O O7** makes it a `DiagramToggleMixin` with a **Show Diagrams** toggle adding two orbital-diagram tabs via `core.viz.prepare_solar_system_orbits` → `make_orbits_canvas`: **Orbital Diagram** (a `QComboBox` over *Planets* / *Dwarf Planets + Asteroids*) and **Moon Systems** (a `QComboBox` per planet; moon SMAs km→AU via ÷1.496e8, with a secondary km top axis). No new menu option, no CLI change.
+- **GUI (`SolarSystemPanel`)**: the four data tabs (Planets, Moons, Dwarf Planets, Asteroids) are unchanged. **Phase O O7** makes it a `DiagramToggleMixin` with a **Show Diagrams** toggle adding two orbital-diagram tabs via `core.viz.prepare_solar_system_orbits` → `make_orbits_canvas`: **Orbital Diagram** (a `QComboBox` over *Planets* / *Dwarf Planets + Asteroids (major)* / *(all)*) and **Moon Systems** (a `QComboBox` per planet; moon SMAs km→AU via ÷1.496e8, with a secondary km top axis). No new menu option, no CLI change.
 
 ### Option 12: Main Sequence Star Properties — `main_sequence_star_properties()`
-- Reads `propertiesOfMainSequenceStars.csv` and displays all rows in a single table.
+- Reads the SQLite `main_sequence_stars` table via `core.science.compute_main_sequence_table()` (seeded from `propertiesOfMainSequenceStars.csv` by `_STATIC_TABLES`) and displays all rows in a single table.
 - Columns: Spectral Class, B-V, Teff (K), Abs Mag Vis, Abs Mag Bol, BC, Lum, R, M, p (g/cm3), Lifetime (years).
 
 ### Option 13: Sol Solar System Regions — `sol_solar_system_regions()`
 - Displays all Star System Regions output tables for the Sun using hardcoded solar constants: `vmag = -26.74`, `boloLum = -0.07`, `temp = 5778 K`, `sunlightIntensity = 1.0`, `bondAlbedo = 0.3`.
-- Parallax back-computed from absolute magnitude: `plx = 1000 / (10^((vmag - absMag + 5) / 5))` ≈ 206265 mas.
+- Parallax back-computed from absolute magnitude: `plx = 1000 / (10^((vmag - absMag + 5) / 5))` ≈ 2.06 × 10⁸ mas (≈ 206 265 arcsec — the Sun at 1 AU).
 - Calls the same shared display helpers documented in `docs/star-system-regions.md`: `_display_star_system_properties()`, `_display_stellar_properties()`, `_display_star_distance()`, `_display_earth_equivalent_orbit()`, `_display_solar_system_regions()`, `_display_alternate_hz_regions()`, `_display_calculated_hz()`.
 - **GUI (`SolRegionsPanel`)**: seven data tabs (built once at construction; no inputs). **Phase O O6** makes it a `DiagramToggleMixin` with a **Show Diagrams** toggle adding the three ring tabs opts 9/10 have — **HZ Diagram**, **System Regions Diagram**, **Alternate HZ Diagram** — via the shared `gui/panels/star_regions.py::add_region_diagram_tabs` over the `compute_sol_regions()` dict (the same `prepare_hz_diagram` / `prepare_system_regions_diagram` / `prepare_alt_hz_diagram` preps; O6 added no new core code). The seven data tabs are unchanged. (The **HZ Diagram** tab later gained the app-wide **Phase 5 Rings/Strip toggle** — Sol is a single star, so its Strip shows the HZ bands with no planet markers; see `docs/star-databases.md`.)
 
 ## Science Fiction Features
 
 ### Option 14: Honorverse Hyper Limits by Spectral Class — `honorverse_hyper_limits()`
-- Reads `spTypeHyperLM.csv` (no header; columns: Spectral Class, Light Minutes).
+- Reads `spTypeHyperLM.csv` (no header; columns: Spectral Class, Light Minutes) — the CLI; the GUI reads the `honorverse_hyper` DB table seeded from it, via `core.science.compute_honorverse_hyper_limits()`.
 - Converts LM → AU: `au = lm / 8.3167`.
 - Output table columns: Spectral Class | Light Minutes (2dp) | AUs (4dp).
 - **GUI (`HonorverseHyperPanel`)**: the table is unchanged. **Phase O O10a** makes it a `DiagramToggleMixin` with a **Show Diagrams** toggle adding a **"Hyper Limits"** bar-chart tab (`core.viz.prepare_hyper_limits` → `make_hyper_bar_canvas`): all 44 classes as horizontal bars in LM with a secondary AU top axis, coloured by spectral class (hottest at top), scroll-wrapped.

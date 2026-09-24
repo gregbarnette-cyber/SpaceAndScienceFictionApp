@@ -1,6 +1,6 @@
 # PHASE_CR10_PLAN.md — Detection-floor & survey-disposition bundle (star_analysis CR-10)
 
-**Status: WB-RE-GATED GREEN — all 3 items independently reproduced on the shipped tool (MSG 093). AWAITING Greg's one FULFILLED flip + commit go; commit HELD · 2026-08-20**
+**Status: ✅ FULFILLED + SHIPPED — committed `0849cdb` (CR-10.1/10.2/10.4). WB re-gated GREEN — all 3 items independently reproduced on the shipped tool (MSG 093) · 2026-08-20**
 (Greg cleared 2026-08-20; #1 sibling-sweep = built, #2 tolerance ≈1.5%, #3 tier = core-tier.)
 
 **Build results (per item):**

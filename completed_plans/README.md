@@ -17,6 +17,11 @@ in here too, with the same history (moved with `git mv`).
 - `IMPROVEMENT_PLAN.md` — 8 phases shipped, but P4.6 is **PARTIALLY DONE**: the
   sexagesimal RA/Dec parser was never consolidated (4 copies across 6 call sites, with
   three different failure contracts). Stays at root until that closes.
+- `DUST_WINDOWS_MICROMAMBA_PLAN.md` — the code shipped (`247b3b7`); the native-Windows
+  setup (Part A) + verification (Part E2) are pending. Moves here once Windows is green.
+- `DOSSIER_EXTENSION_INVESTIGATION.md` — investigation notes, not a committed plan.
+- `CR12_montreal_files/` — the CR-12 Bédard 2020 source-data archive (data provenance,
+  not a plan).
 
 > **Status headers in these files are unreliable.** Several read *"Proposed"* or
 > *"Planned"* for phases that shipped long ago (e.g. `PHASE_AA`, `PHASE_V`, `PHASE_Y`,
@@ -24,7 +29,7 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (59 files)
+## Index (73 files)
 
 | File | Title |
 |---|---|
@@ -43,7 +48,7 @@ in here too, with the same history (moved with `git mv`).
 | [PHASE_AK_PLAN.md](PHASE_AK_PLAN.md) | PHASE AK (Group Q) — Metric-Drive Power/Fuel + Exclusion-Boundary Calculators — Implemen |
 | [PHASE_AL_PLAN.md](PHASE_AL_PLAN.md) | Phase AL — Power Generation / Storage / Thermal Calculators (Group R; Pkt 27) |
 | [PHASE_AM_PLAN.md](PHASE_AM_PLAN.md) | Phase AM — `query.py` Catalog-Access Tier (VizieR + Gaia TAP + X-Match/HEASARC) & Binary |
-| [PHASE_AN_PLAN.md](PHASE_AN_PLAN.md) | Phase AN — Bayer & Flamsteed Designations — built 2026-07-29 (carries a live D4 deferral: `star_systems.designations` needs an option-50 rebuild) |
+| [PHASE_AN_PLAN.md](PHASE_AN_PLAN.md) | Phase AN — Bayer & Flamsteed Designations — built 2026-07-29 (the D4 deferral was discharged 2026-07-29 — the option-50 rebuild ran; 2135 rows carry the new keys) |
 | [PHASE_AO_PLAN.md](PHASE_AO_PLAN.md) | Phase AO — Gould Designations (Uranometria Argentina) — built 2026-07-29 |
 | [PHASE_H_PLAN.md](PHASE_H_PLAN.md) | Phase H — Worldbuilding Calculators · Implementation Plan |
 | [PHASE_I_OPTS_PLAN.md](PHASE_I_OPTS_PLAN.md) | PHASE I-OPTS — Route Planning: Four New Options · Implementation Plan |
@@ -81,6 +86,10 @@ in here too, with the same history (moved with `git mv`).
 | [ROUTE_CHART_REFACTOR_PLAN.md](ROUTE_CHART_REFACTOR_PLAN.md) | Route-Chart Refactor — the 7 Route Planning maps onto the shared builder (Phases 1–2) + the one-palette unification (Phase 3) |
 | [SPECTRAL_CLASS_PLAN.md](SPECTRAL_CLASS_PLAN.md) | Spectral-Class Prefix Plan — search chips (Part 1) + colour/legend (Part 2) |
 | [STAR_ANALYSIS_CR_PLAN.md](STAR_ANALYSIS_CR_PLAN.md) | Star-Analysis CRs (CR-1…CR-7) — 6 `query.py` subcommands + 3 dossier sections for the WB `star_analysis` skill; incl. the 3c/3a FINAL WB bundles + CR-6-AMEND non-MS host guard |
+| [PHASE_CR8_PLAN.md](PHASE_CR8_PLAN.md) | CR-8 — batch exoplanet-archive pull: `query.py planetary-systems-batch` on the NASA `ps` table (not `pscomppars`) — full per-planet + per-system fields for many hosts, `default_flag` solution scope, mass-kind enum, coverage manifest; FULFILLED + shipped `94784f1` (2026-08-16); moved from the repo root 2026-09-24 |
+| [PHASE_CR9_PLAN.md](PHASE_CR9_PLAN.md) | CR-9 — `planetary-systems-batch` disposition/quality fields (Tier-1 `disposition`/`limits` tri-state, Tier-2 full, `composite` + `oec` blocks, the multi-arm host resolution) + the 3c/CR#1 riders; FULFILLED + shipped `ad18708` (2026-08-20); moved from the repo root 2026-09-24 |
+| [PHASE_CR10_PLAN.md](PHASE_CR10_PLAN.md) | CR-10 first fire — CR-10.1 `survey_disposition`/`survey_siblings` (live TOI/KOI/K2) + CR-10.2 `nuclear-inventory` soft `feh_extrapolation` + CR-10.4 `detection-completeness` archive-M★ preference; FULFILLED + shipped `0849cdb` (2026-08-20); moved from the repo root 2026-09-24 |
+| [PHASE_CR10_SECOND_FIRE_PLAN.md](PHASE_CR10_SECOND_FIRE_PLAN.md) | CR-10 second fire — CR-10.3 per-star RV-precision catalog + CR-10.5 `dossier` luminosity-class guard + multiplicity cross-check (+ the disclosed SB9-resolver fix); FULFILLED + shipped `c3f3637` (2026-08-22); moved from the repo root 2026-09-24 |
 | [PHASE_CR11_PLAN.md](PHASE_CR11_PLAN.md) | CR-11 — WD cooling-grid 0.40→1.30 M☉ extension + shared stellar-mass provenance resolver (`core/stellar_mass.py`) + `exclusion-system` binary/multi-star composition; built 2026-08-26 |
 | [PHASE_CR12_PLAN.md](PHASE_CR12_PLAN.md) | CR-12 — WD cooling-grid ≤1.00 M☉ cooling-age re-derivation (dense Bedard 2020 resample) + CR-12.4 `one_core_uncertain` ONe caveat (Camisassa 2019); built 2026-08-26 |
 | [PHASE_CR13_PLAN.md](PHASE_CR13_PLAN.md) | CR-13 — `exclusion-system --star` live-resolution robustness (secondary/wide-member/single-body routing, per-component mass chain, degenerate/SB1 flags, C1→A tolerance); built 2026-08-29 |

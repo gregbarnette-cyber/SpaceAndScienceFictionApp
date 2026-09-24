@@ -22,7 +22,7 @@ Two selection modes, identical record shape:
 
 Contract: ``scifiWorldBuilding-Claude/.../spaceapp-change-request-CR8-batch-exoplanet-archive-pull.md``.
 Failure → the app-wide ``{"error", route_tried}`` shape (``shared._route_error``). See
-``PHASE_CR8_PLAN.md`` and ``docs/integration.md``.
+``completed_plans/PHASE_CR8_PLAN.md`` and ``docs/integration.md``.
 """
 
 import re
@@ -751,7 +751,7 @@ def _enrich_full(result):
 # Per-planet survey_disposition (matched / ambiguous / null, present-but-null never omitted) + a
 # best-effort host-level sibling-FP sweep (WB Q1a). Cross-match is schema-forced: TESS via the host TIC
 # + orbital-period bind; Kepler/K2 via an exact planet-name join (ps carries no KIC/EPIC). See
-# PHASE_CR10_PLAN.md §3 + coordination MSG 087-091. Faithful surfacing (MSG 091): the raw survey
+# completed_plans/PHASE_CR10_PLAN.md §3 + coordination MSG 087-091. Faithful surfacing (MSG 091): the raw survey
 # disposition is emitted verbatim even when it conflicts with the archive confirmation (an FP TOI on a
 # confirmed planet still reports FP) — the tool NEVER reconciles/downgrades; that is the consumer's job.
 _TESS_PERIOD_TOL = 0.015     # relative period tolerance for a ps-planet ↔ TOI bind (~1.5%; WB ~1–2%)

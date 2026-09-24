@@ -27,6 +27,11 @@ related:
 >
 > **§3–§4 are still live**: the standing divergence and the invariants are referenced from the new file
 > rather than copied, so they have exactly one home. Do not delete them.
+>
+> **Superseded since closure (the body below is not edited):** §B1's Rayleigh(σ = 0.21) f(e) → v2.11.0 **Q2**
+> (`f(e) ∝ e^η`); §B2's "still open" anchor-mode age path → **built** (remaining §1a); the §B2 / "Also recorded"
+> unsampled thin/thick/halo split → **Q5**; §B3's hard `a_half` truncation / "no power-law tail" → **Q3 + Q4**.
+> See `docs/research-priors-v2-remaining.md`.
 
 **Read `docs/research-priors-v2-close-binary-actions.md` first.** It is the round record and explains
 *why* the decisions below were made. This file is only what remains.

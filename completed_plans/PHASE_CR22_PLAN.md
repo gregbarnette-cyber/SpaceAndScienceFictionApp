@@ -1,6 +1,6 @@
 # PHASE CR-22 PLAN — two-layer exclusion boundary: regulated STANDOFF + research-grade physical WALL
 
-**Status: PLAN (v2, plan-review-hardened) — awaiting Greg's go to build.** Spec: `scifiWorldBuilding-Claude/design-lab/star-system-analysis/spaceapp-change-request-CR22-exclusion-two-layer-wall.md` (v4 DRAFT). Kit: `.../cr22-handoff-kit.md`. Q&A: channel MSG 238–240 (all answered). Two plan-review agents (architect + spec-fidelity) run against v1; every finding folded in here — see §16 changelog.
+**Status: ✅ FULFILLED + SHIPPED — committed `710e7cb` (WB re-gate GREEN + Greg-FULFILLED 2026-09-18). *(Original header: PLAN v2, plan-review-hardened — awaiting Greg's go to build.)*** Spec: `scifiWorldBuilding-Claude/design-lab/star-system-analysis/spaceapp-change-request-CR22-exclusion-two-layer-wall.md` (v4 DRAFT). Kit: `.../cr22-handoff-kit.md`. Q&A: channel MSG 238–240 (all answered). Two plan-review agents (architect + spec-fidelity) run against v1; every finding folded in here — see §16 changelog.
 
 CR-22 gives `exclusion-boundary` (single-body) **and** `exclusion-system` (multi) a **two-layer** output: the unchanged canon **STANDOFF** (`r_ex = 47.5·(M/M☉)^0.4`) plus a second **research-grade physical WALL** (the deeper, inner medium-readability surface), plus off-MS/evolved classification fixes. Five sub-CRs (22.1–22.5).
 

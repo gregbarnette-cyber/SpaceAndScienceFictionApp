@@ -12,8 +12,8 @@ consumer (eventually the sister `scifiWorldBuilding-Claude` project) produces it
 > selector (`core/priors.py`), the `research_policy="strict"` wiring through `core/generate.py` +
 > `core/feasibility.py` (Layer-3), the `query.py generate-system --research-policy` flag, and the
 > GUI (Import Research Priors panel + the generator's research-policy selector + the DbStatus row).
-> The committed `tests/fixtures/research_priors_sample.json` is a **synthetic placeholder** — real
-> sister-project research content lands later as a **data swap, not a code change** (same schema).
+> The committed `tests/fixtures/research_priors_sample.json` is a **synthetic placeholder** — the real
+> Packet 3.5 content has since landed as that **data swap, not a code change** (same schema; see Storage).
 > See `completed_plans/PHASE_R3_PLAN.md`.
 
 ## Why a contract
@@ -105,14 +105,16 @@ narratives are wanted.
 - The live cache is `data/research_priors/` (`priors.json` + a `meta.json` stamp), **gitignored**
   like `data/dust/`. The importer (R3-C3) validates a contract file and writes the cache;
   `ResearchPriors.load()` reads it (defensively re-validating).
-- Committed artifacts are the **sample** (`tests/fixtures/research_priors_sample.json`, perturbed)
-  and the **identity** fixture (`tests/fixtures/research_priors_identity.json`, DefaultPriors clone)
+- Committed artifacts are the **sample** (`tests/fixtures/research_priors_sample.json`, perturbed),
+  the **identity** fixture (`tests/fixtures/research_priors_identity.json`, DefaultPriors clone) and the
+  **v2 sample** (`tests/fixtures/research_priors_v2_sample.json`, the v2 blocks)
   — `data/` being wholly gitignored, the canonical sample lives in `tests/fixtures/`. To try the
   hook before real data exists, the importer can ingest the sample fixture directly.
 - **To load the real research-calibrated dataset (Packet 3.5):** ingest from the sibling
   `scifiWorldBuilding-Claude` repo —
-  `compute_research_priors_ingest(path='../scifiWorldBuilding-Claude/design-lab/star-system-generation-priors/research_priors_v1.json')`
-  (or the GUI **Import Research Priors** panel → that file). Because `data/` is gitignored, this cache is a
+  `compute_research_priors_ingest(path='../scifiWorldBuilding-Claude/design-lab/star-system-generation-priors/research_priors_v2.json')`
+  (the GUI **Import Research Priors** panel prefills this path via `default_priors_source()` when the sibling
+  repo is present; the live dataset is `pkt3.5-v2.11.0-2026-08-03`). Because `data/` is gitignored, this cache is a
   per-machine build — re-run once after cloning and after any dataset-version bump (a new `dataset_version`). Full
   refresh workflow + verify steps live in that repo's
   `research/star-and-planetary-system-generation/sister-project-coordination.md` §Phase I.
@@ -129,12 +131,14 @@ narratives are wanted.
 
 The sister project's **v2 contract request**
 (`scifiWorldBuilding-Claude/research/query-api-methods/research-priors-v2-contract-request.md`)
-extends the contract with **four optional sister-project blocks** (`mass_model`,
-`occurrence_by_metallicity`, `intra_system_correlation`, `cold_giant_population`) that express formation
-physics v1's flat marginals cannot, plus one app-side axis (`feh_dist`). The blocks arrived across three
-point releases: **v2.0** (the first three sampling blocks + `feh_dist`), **v2.1** (the nested
-`mass_model.disk.disk_mass_dist`, a per-system log-normal disk-mass lever), and **v2.2** (the top-level
-`cold_giant_population` block). **v2 is a strict, additive superset:** `_KNOWN_SCHEMA_MAJORS` now holds
+extends the contract with **nine optional blocks** — seven sister-project blocks (`mass_model`,
+`occurrence_by_metallicity`, `intra_system_correlation`, `cold_giant_population`, `inner_giant_population`,
+`stellar_multiplicity`, `stellar_activity`) that express physics v1's flat marginals cannot, plus two app-side
+axes (`feh_dist`, `age_dist`). The blocks arrived across point releases: **v2.0** (the first three sampling
+blocks + `feh_dist`), **v2.1** (the nested `mass_model.disk.disk_mass_dist`, a per-system log-normal
+disk-mass lever), **v2.2** (the top-level `cold_giant_population` block), **v2.3** (`inner_giant_population`),
+**v2.4** (`stellar_multiplicity`, `stellar_activity`) and **v2.10** (`age_dist`); v2.11.0 added sub-fields
+only (`age_dist.populations`, `wide_lognormal.wide_powerlaw_tail`, `ecc_dist.f_e_functional_form`). **v2 is a strict, additive superset:** `_KNOWN_SCHEMA_MAJORS` now holds
 `{"1", "2"}`; every v1.0 dataset still validates/ingests unchanged, and a dataset that omits a block falls
 back to the corresponding v1 field. Each block is validated **only when present** (curated `{"error"}`
 otherwise) and exposed on `ResearchPriors` as a same-named attribute (`None` when absent; `DefaultPriors`
@@ -150,6 +154,7 @@ carries them as `None` too, so `getattr` is uniform).
 | `inner_giant_population` (v2.3) | nothing — v2.2 placed ~zero close-in giants | `{sma_dist:{dist="mixture", 0<inner_edge_au<1, outer="snow_line", components:[{name, dist ∈ {lognormal_au, powerlaw}, weight>0, …}] summing to 1}, occurrence_ref="occurrence_by_metallicity.giant_fraction" (**hard dependency**), mass_range_mjup:[0<lo<hi≤13], eccentricity_dist:{warm:beta(α,β>0), hot:rayleigh(0<σ<1)}, formation_channel_mix:{<zone>:{channel: frac∈[0,1]} summing to 1}}` |
 | `feh_dist` (app-side) | synthetic host `[Fe/H]` = `None` (F2 inert) | `{mean:#, sigma>0, min?:#, max?:#}` — synthetic-mode metallicity source |
 | `stellar_multiplicity` (v2.4) | `star["multiplicity"]` stays `None` in synthetic mode (GCNS-derived under `--anchor-star`) | `{multiplicity_fraction:{mass_msun_grid ascending, fraction (same len, 0..1), sigma?}, companion_frequency?, higher_order_fraction?:{value 0..1}, mass_ratio_dist:{dist="powerlaw_q", slope, 0<q_min<q_max≤1, twin_excess_*?}, separation_dist:{dist="mixture", components:[…] weights summing to 1}, ecc_dist?, consumer_contract?}` |
+| `age_dist` (v2.10, app-side) | `star["age_gyr"]` = `None` in synthetic mode (the single-star activity branches + the `a_half` roll-off are inert) | `{sfh_histogram:[{0≤lo<hi, fraction≥0}] contiguous, Σ>0; sfh_smoothing_note required iff an interior bin is 0; mass_conditional_age?:[{0≤mass_lo<mass_hi, mean/median_age_gyr?>0}]; mean_age_gyr?/median_age_gyr?>0; population_mix_recommended_local?/population_mix_bgm_nearplane?:{pop≥0, Σ>0}}` — the v2.11.0 `populations` sub-block (Q5) is consumed, not validated |
 | `stellar_activity` (v2.4) | nothing — no XUV environment was set for any generated star | `{rotation_activity:{saturation_log_lx_lbol<0, saturation_rossby>0, unsaturated_slope<0, ro_valid_range?, log_lx_lbol_valid_range? (may be descending), relation_rms_dex?}, convective_turnover:{relation:str, valid_mass_msun, mass_msun_grid/tau_days (parallel, may descend in mass)}, rotation_age_singles?, rotation_age_fgk?, tidal_locking?, circumbinary_xuv:{component_count_scaling==1.0, xray_to_euv?}, expected_locked_vs_single_delta?:{is_prior_field==false}}` |
 
 The importer's `meta.json` and `get_research_priors_status()` gain a **`v2_blocks`** list (`[]` for a v1
@@ -177,7 +182,9 @@ excited/quiescent group, then the block's own weights pick within it; hot zone: 
 the full mix is used). Each such planet carries `formation_channel` + `giant_zone` (`"hot"`/`"warm"`). This
 **bypasses the B1 `giant_switch` for a controlled sub-population — the gate itself is unchanged**, and a giant
 interior to the snow line is always a tagged member of this population, never grid-grown.
-**`stellar_multiplicity` is SAMPLED (Phase R3-V2 B1); `stellar_activity` is not.** These are the first
+**Both stellar blocks are SAMPLED — `stellar_multiplicity` (close-binary-round B1) and `stellar_activity`
+(B2, fed by `age_dist`).** (Close-binary-round numbering, `docs/research-priors-v2-open-work.md` §2 — not the
+Stage-B B1–B6 in the status box below.) These are the first
 *stellar* axes in the contract (every other block is planetary — note the `multiplicity` key inside
 `cold_giant_population` is a *giant* count). Both validate, appear in `v2_blocks`, and are exposed on
 `ResearchPriors`.
@@ -194,9 +201,11 @@ e–P transition) — the gap that had held it. Two behaviours are contractual a
 **never identically zero**, and the boundary is **statistical, never a cut** (BY Dra is `e = 0.300` at
 `P = 5.98 d`). Above the boundary the **`f(e) ∝ e^η`** shape is **source-pinned** (Moe & Di Stefano 2017; η period +
 primary-mass-dependent — v2.11.0 Q2, replacing the earlier app-side Rayleigh(σ = 0.21)); the emitted
-note names the source, and `p`/coefficients are drift-guarded against the dataset's formula strings.
+note names the source. The η coefficients (`_ECC_ETA_LATE`/`_EARLY`) are hardcoded from
+`ecc_dist.f_e_functional_form` but — unlike `_TAU_RELATION` — carry **no drift test yet**; `p` is an app-side
+dial.
 
-****Wide-companion survival roll-off + tail (B3 + v2.11.0 Q3/Q4).** The wide component's outer behaviour is
+**Wide-companion survival roll-off + tail (B3 + v2.11.0 Q3/Q4).** The wide component's outer behaviour is
 a **smooth survival roll-off** `S(a) = 0.5^((a/a_half)^p)` (p ≈ 1.35, a tunable convenience) around the
 half-life scale `a_half ≈ 1.212 × (M_tot / t)` pc (Weinberg 1987 eq. 28) — the scale at which roughly **half**
 the population has been disrupted by age *t*, **not** a wall: the source reports "no evidence of breaks or
@@ -220,7 +229,7 @@ misuse by the sampler: Winters' σ = 1.16 is a whole-range *untruncated* fit out
 flag records a source-vs-source model disagreement (D&K's two components vs Winters' one), which the modern
 Gaia data do not settle in D&K's favour.
 
-`stellar_activity` is now sampled too (Phase R3-V2 B2)**, because the v2.10 **`age_dist`** block supplied
+**`stellar_activity` is now sampled too (close-binary-round B2)**, because the v2.10 **`age_dist`** block supplied
 the input it named and nothing produced. `age_dist` is the mirror of `feh_dist` but is **not** a Gaussian: a
 population-weighted SFH **histogram**, drawn then **MS-lifetime-truncated** against the Phase-L3
 `compute_stellar_evolution` (`truncate_and_renormalize` — no star older than its own main sequence). Its
@@ -245,7 +254,12 @@ split, so age is drawn **population → that population's SFH** (thin ≈ the bl
 the sub-block (a v2.10 dataset) the blended histogram is used, as before — the block had sanctioned that
 simplification for the activity chain alone ("for the stellar_activity chain ALONE a single blended
 distribution is adequate"). The queued BGM per-population pull (which would refine thick/halo) timed out and
-is closed; the literature-anchored forms are final. See `docs/research-priors-v2-open-work.md` §B2.
+is closed; the literature-anchored forms are final. See `docs/research-priors-v2-remaining.md` §2 (Q5) and §5
+(the BGM pull, closed).
+
+**Real anchors (1a):** `age_dist` is never sampled for an `--anchor-star` host — `age_gyr` comes from HWC
+`S_AGE` → Mission Exocat `st_age` (`star["age_source"]`), and with `stellar_activity` present the chain is
+reconstructed from that age **after** infill (single-star branches only), tagged `p_rot_source="modelled"`.
 
 Their validators additionally **hard-enforce three structural guards**, so a future dataset edit cannot
 silently subvert them (each has a negative test): `ecc_dist.consumer_must_not_default_to_zero` must be **true**
@@ -277,6 +291,8 @@ real-anchor host `[Fe/H]` is **Hypatia-preferred, SIMBAD `mesfe_h.fe_h` fallback
 > calibration meets the sister's targets: small-planet mass ~1.5 M⊕, giant mass function ~Saturn-modal +
 > super-Jupiters to 13 M_J, cold-giant occurrence on the FV05 curve (solar ~9% / +0.5 ~21% / −0.5 ~1.7%).
 > All consumption is block-gated → a v1.0 dataset and `permissive` stay byte-identical (`star["feh"]=None`).
-> Only optional second-order items remain (metallicity-dependent SMA/multiplicity, hot-Jupiter channel,
-> `feh_dist` thin/thick mixture). Full plan + checkpoints: `completed_plans/PHASE_R3_V2_PLAN.md`; the B6 collaboration
+> Since then the hot-Jupiter channel shipped as v2.3 `inner_giant_population`, the stellar blocks +
+> `age_dist` are sampled, and v2.11.0 Q1–Q5 are built (live `pkt3.5-v2.11.0-2026-08-03`;
+> `docs/research-priors-v2-remaining.md`). Still unbuilt, optional: metallicity-dependent cold-giant
+> SMA/multiplicity and a `feh_dist` thin/thick mixture. Full plan + checkpoints: `completed_plans/PHASE_R3_V2_PLAN.md`; the B6 collaboration
 > record: `docs/research-priors-v2-b6-actions.md`.

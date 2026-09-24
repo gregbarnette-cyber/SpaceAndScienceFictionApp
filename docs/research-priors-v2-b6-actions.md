@@ -12,7 +12,7 @@ related:
   - completed_plans/PHASE_R3_V2_PLAN.md
 ---
 
-# B6 actions — generator → Packet 3.5: **L1 implemented; L2 + mass-scale calibration deferred (with design)**
+# B6 actions — generator → Packet 3.5: **L1 implemented; L2 + mass-scale calibration built 2026-07-20 (see Update)**
 
 **Status: Draft reply to the B6 reply** (`research-priors-v2-b6-reply.md`, 2026-07-20). Meant to be mirrored
 into `sister-project-coordination.md` §Phase I (v2). No pinned coefficient touched — everything here is in
@@ -107,7 +107,7 @@ V2=../scifiWorldBuilding-Claude/design-lab/star-system-generation-priors/researc
 ```
 
 Full offline suite green after L1. Only the bundled **L2 + mass-scale calibration pass** remains open on our
-side (scheduled, not blocking) — send any preference on the giant-gate-routing question above and we'll fold
+side (scheduled, not blocking — *since built, see the Update below*) — send any preference on the giant-gate-routing question above and we'll fold
 it in.
 
 ---
@@ -143,5 +143,6 @@ Mean **1.3–1.5 giants/giant-system** (target 1.47); 0 giants inside the snow l
 the snow line with a tail to ~26 AU; mass ~Saturn. All your calibration targets are met.
 
 **Second-order, not built (as you flagged):** metallicity-dependent SMA/multiplicity (the primary [Fe/H]
-dependence already lives in `occurrence_by_metallicity`); the hot-Jupiter migrated channel (out of B1 scope).
+dependence already lives in `occurrence_by_metallicity`); the hot-Jupiter migrated channel (out of B1 scope —
+*since built as v2.3 `inner_giant_population`; see close-binary-actions §1*).
 **Stage B is complete** on our side. Suite green.

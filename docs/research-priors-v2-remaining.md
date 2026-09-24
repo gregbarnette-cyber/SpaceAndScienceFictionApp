@@ -23,9 +23,10 @@ The v2 build was **finished** at `pkt3.5-v2.10.0-2026-07-23` (all nine blocks va
 **v2.11.0** round then built the five items below.
 
 This file was the live work. **`docs/research-priors-v2-open-work.md` is closed** and kept as the round record
-— go there for *why* the earlier decisions were made. (One thing it says is now **superseded**: its "why no
-power-law tail" reasoning was reversed by v2.11.0 **Q4**, which adds the tail via the **continuity splice** the
-sister later supplied — the frozen record is not edited, but the tail IS now built.)
+— go there for *why* the earlier decisions were made. (Several things it says are now **superseded** — the
+frozen record is not edited: its Rayleigh f(e) → **Q2**; the hard truncation + "why no power-law tail"
+reasoning → **Q3/Q4** (the tail is added via the **continuity splice** the sister later supplied); "population
+split not sampled" → **Q5**; "still open: anchor-mode age path" → **1a**.)
 
 > **Section-number mapping — these items were renumbered when they moved here.** Session transcripts, commit
 > messages and the closed plan's own §7 all refer to them by their *old* numbers, and both numbering schemes
@@ -173,18 +174,14 @@ summary elsewhere kept asserting the superseded version. One home, referenced fr
 
 ## 5. Coordination
 
-The sister project is reached via an **append-only** channel at `/home/greg/claude/coordination-channel.md`
+The sister project is reached via an **append-only** channel at `/home/greg/Claude/coordination-channel.md`
 — the shared parent of both repos, outside either git tree. It is scratch: both sides mirror anything
 durable into their own repo before discarding it, so **its absence is not lost work**.
 
-> **Path correction (2026-08-03): the channel is lowercase `/home/greg/claude/`, not capital-C
-> `/home/greg/Claude/`.** This file (and the CLAUDE.md memory note) previously said capital-C and that "an
-> earlier lowercase path is gone; do not look there" — the reverse of reality on this WSL/Linux checkout.
-> The filesystem is **case-sensitive**, capital-C `/home/greg/Claude/` does **not exist**, and the real
-> ~25 KB channel lives at the lowercase path (verified 2026-08-03 — the same error broke a capital-C file
-> path handed in at the start of that session). The sister repo is its sibling
-> `/home/greg/claude/scifiWorldBuilding-Claude`. The capital-C form only resolves on a case-insensitive
-> Windows checkout.
+> **Path note:** the parent directory's case has differed across checkouts — lowercase `/home/greg/claude/`
+> on 2026-08-03, capital-C `/home/greg/Claude/` as of 2026-09-24 (where the channel is live through the CR
+> series). The filesystem is case-sensitive, so use whatever `ls` shows; the sister repo is always the sibling
+> `…/scifiWorldBuilding-Claude`.
 
 **Round closed 2026-08-03.** 1a is done (above), and the v2.11.0 round shipped all five: the sister answered
 Q1 (verified the Huang/Wu/Triaud lead → hot-suppress / warm-coexist) and pinned Q2–Q5 (the `f(e) ∝ e^η`
@@ -193,8 +190,8 @@ SFHs), bumping the dataset to `pkt3.5-v2.11.0-2026-08-03`; APP built + tested + 
 The sister confirmed every realized number lands on the pins. Three implementation dials (Q3 `p = 1.35`,
 Q4 `s_join = 1000 AU`, Q4 `γ_mid`) are correctly APP-side and not source-pinnable — the boundary, not a gap.
 The Q5 BGM per-population refinement is **closed** (the queued pull timed out server-side; the
-literature-anchored thin/thick/halo forms are final). The ephemeral coordination channel was decommissioned
-after both sides parked. **Nothing is outstanding on either side.**
+literature-anchored thin/thick/halo forms are final). The coordination channel was parked after this round
+(and later reused for the CR series). **Nothing is outstanding on either side.**
 
 > **The finding both sides reached independently, worth carrying into any future round:**
 > ***a characterisation is a lead, not a measurement.*** Five of five sister-side defects came from

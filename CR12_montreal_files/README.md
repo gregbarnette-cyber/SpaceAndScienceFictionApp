@@ -22,7 +22,7 @@ table). This closes the CR-11.1 "lost on another machine" gap.
   sequences at **0.05 M☉ spacing, 0.20–1.30 M☉**.
 - **Fetched:** 2026-08-26 (CR-12). See `MANIFEST.txt` for the per-file **md5 + model count + byte
   size** of all 19 files (0.40–1.30 M☉ — the tool's grid range).
-- **Frozen-source cross-check:** this pull reproduces the verification's `wd-cooling-grid-verification.md`
+- **Frozen-source cross-check:** this pull reproduces the verification's `scifiWorldBuilding-Claude/design-lab/star-system-analysis/wd-cooling-grid-verification.md` (sibling repo)
   §3.1 verbatim pins **byte-for-byte** — e.g. `seq_100_thick.txt` model rows 64/65:
   `Teff=26239.5864 Age=1.054917E+08` and `Teff=25827.3842 Age=1.116121E+08` (→ interp 0.1095 Gyr
   at 25970 K). `seq_100/105/115` share a byte size by coincidence (same model count) but are

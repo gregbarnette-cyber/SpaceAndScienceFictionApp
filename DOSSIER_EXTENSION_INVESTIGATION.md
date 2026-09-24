@@ -1,6 +1,9 @@
 # System Dossier — Extension Investigation
 
-**Status:** Investigation / notes only — **not** a committed plan, nothing built.
+**Status:** Investigation / notes only — **not** a committed plan, nothing built *from this file*. (Since
+written, the star-analysis CR-5 shipped the dossier `multiplicity` / `age_population` / `disk` sections, which
+overlap the `companions` and `kinematics` candidates below — check `docs/integration.md` (CR-5) before picking
+one up.)
 **Date:** 2026-08-11
 **Scope:** What new sections could be added to the `dossier` subcommand
 (`core/report.build_system_dossier`) / Phase Q, including but not limited to OEC.

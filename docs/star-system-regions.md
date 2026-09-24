@@ -1,6 +1,6 @@
 # Star System Regions Feature Documentation
 
-Options 8–10. All three variants produce identical output tables and share the same six rendering helpers. They change together when physics formulas or table layouts are revised.
+Options 8–10. All three variants produce identical output tables and share the same seven rendering helpers. They change together when physics formulas or table layouts are revised.
 
 ## Star System Regions Feature
 
@@ -11,7 +11,7 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
 - Menu option 8: fully automated — SIMBAD lookup + BC DB lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
 - After the Calculated HZ table, the CLI queries the Hypatia Catalog for stellar properties and elemental abundances (see Hypatia Catalog section below). Hypatia errors are shown inline but do not abort the function.
 - **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
-- **DB lookup:** `_load_main_sequence_data()` queries the `main_sequence_stars` DB table (lazy, cached in `_MAIN_SEQUENCE_DATA`) and builds `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype. Row dicts use the original CSV column names so all callers work unchanged.
+- **DB lookup:** `core.regions._load_main_sequence_data()` (GUI/`query.py`) queries the `main_sequence_stars` DB table (lazy, cached in `_MAIN_SEQUENCE_DATA`) and builds `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype. Row dicts use the original CSV column names so all callers work unchanged. (The deprecated CLI's own `main.py` copy reads `propertiesOfMainSequenceStars.csv` directly.)
   - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
   - `_parse_spectral_class(sp_str)` uses `_SP_PATTERN.search()` to extract `(letter, subtype_float)`.
   - `_lookup_spectral_type(sp_str)` applies a **ceiling rule**: finds the smallest available subtype number ≥ the requested subtype (e.g. G1 → G2, G6 → G8, A4 → A5). If all entries in the class are cooler than requested (subtype exceeds all), advances to the next cooler letter class's hottest entry (e.g. F9 → G0). `_LETTER_SEQUENCE = ["O","B","A","F","G","K","M"]` defines the cross-letter fallthrough order.
@@ -67,12 +67,12 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - Columns: Parallax (2dp), Trig Parallax (4dp), Parsecs (4dp), Light Years (4dp)
 - **Earth Equivalent Orbit Properties table** — rendered by `_display_earth_equivalent_orbit()`; uses `_print_table()` (two-line header row, all columns right-aligned):
   - `distAU = sqrt(bcLuminosity / sunlightIntensity)`
-  - `distKM = distAU × 149597870.7` (the canonical `_KM_PER_AU`; was `149000000`, 0.4% low)
+  - `distKM = distAU × 149597870.7` (the canonical `_KM_PER_AU`; was `149000000`, 0.4% low — fixed in `core/regions.py`, the GUI/`query.py` path; the deprecated `main.py` CLI copies still use `149000000`)
   - `planetaryYear = sqrt(distAU³ / stellarMass)`
   - `planetaryTemperature = 314.9 × (1 - bondAlbedo)^0.25 × sunlightIntensity^0.25` (Phase P P1e — the M1 surface model; the corrected `(1−A)^0.25` albedo exponent. Identical to the legacy `374 × 1.1 × (1−A) × S^0.25` at A=0.3 → 288 K, but physically correct at every other albedo — the old linear `(1−A)` collapsed unrealistically at high albedo, e.g. Venus → ~110 K below its 227 K equilibrium temp.)
   - `planetaryTemperatureC = planetaryTemperature - 273.15`
   - `planetaryTemperatureF = (planetaryTemperatureC × 9/5) + 32`
-  - `starAngularDiameter = 57.3 × (stellarDiameterKM / distKM)` (small-angle rad→deg; was the buggy `57.3 **`, which rendered the Sun at ~1.04° instead of ~0.53°); `sizeOfSun = f"{starAngularDiameter:.2f}°"`
+  - `starAngularDiameter = 57.3 × (stellarDiameterKM / distKM)` (small-angle rad→deg; was the buggy `57.3 **`, which rendered the Sun at ~1.04° instead of ~0.53° — fixed in `core/regions.py`; the deprecated `main.py` CLI copies still use `57.3 **`); `sizeOfSun = f"{starAngularDiameter:.2f}°"`
   - Columns: Distance AU (4dp), Distance KM (5e), Year (4dp), Temp K (2dp), Temp C (2dp), Temp F (2dp), Size of Sun (degree string)
 
 > **Phase P — two temperature models (M1 / M2).** The region rows below split across two
@@ -92,7 +92,7 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
 > `implied_edge_temp(au, L, model)` inverts this to annotate each row. See `docs/equations.md`
 > (the two calculators) and `completed_plans/PHASE_P_PLAN.md` §0.
 
-- **Solar System Regions table** — rendered by `_display_solar_system_regions()`; uses `_print_table()` (Region | AU, left-aligned); AU formatted as `{val:.4f} ({val × 8.3167:.3f} LM)`:
+- **Solar System Regions table** — rendered by `_display_solar_system_regions()`; uses `_print_table()` (Region | AU | Implied Cond. T (M2 equilib.), left-aligned; the T column is filled only for the snow and N₂/CO lines — Phase P P7a); AU formatted as `{val:.4f} ({val × 8.3167:.3f} LM)`:
   - `sysilGrav = 0.2 × stellarMass`, `sysilSunlight = sqrt(bcLuminosity/16)`
   - `hzil = sqrt(bcLuminosity/1.1)`, `hzol = sqrt(bcLuminosity/0.53)`
   - `snowLine = sqrt(bcLuminosity/0.139)`, `lh2Line = sqrt(bcLuminosity/0.0025)`, `sysol = 40 × stellarMass`
@@ -102,7 +102,7 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - Fluorosilicone-Fluorosilicone Inner/Outer (÷52, ÷29.9) — **hypothetical high-T silicone analog** (~670–770 K; Phase P P1d label-only), Fluorocarbon-Sulfur Inner/Outer (÷38.7, ÷3.2)
   - Protein-Water Inner/Outer (÷2.8, ÷0.8), Protein-Ammonia Inner/Outer (÷0.48, ÷0.21)
   - Polylipid-Methane Inner/Outer (÷0.023, ÷0.0094), **Polylipid-Hydrogen Inner/Outer (÷0.0000247, ÷0.0000053)** — Phase P P1a value correction (was ÷0.0025, ÷0.000024; the legacy inner edge was supercritical and the outer sat at the boil point; now the real H₂ 1-atm liquid range ≈ 200–440 AU)
-  - **Phase P P2 (additive, M1):** Carbon Dioxide Inner/Outer (÷1.243, ÷0.320 — pressure-conditional, ≥5.2 atm), Liquid Sulfur (÷38.59, ÷3.309), Water-Ammonia Eutectic (÷0.8075, ÷0.1395), Sulfuric Acid (÷20.13, ÷0.940). These are derived from the shared `core.equations._SOLVENTS` liquid ranges via `compute_solvent_zone` at A=0.3, so they can't drift from the Solvent Habitable Zone calculator.
+  - **Phase P P2 (additive, M1):** Carbon Dioxide Inner/Outer (÷1.242, ÷0.3198 — pressure-conditional, ≥5.2 atm), Liquid Sulfur (÷38.57, ÷3.306), Water-Ammonia Eutectic (÷0.807, ÷0.1394), Sulfuric Acid (÷20.12, ÷0.9398) (at `_t_ref_surface(0.3)` = 288.036 K). These are derived from the shared `core.equations._SOLVENTS` liquid ranges via `compute_solvent_zone` at A=0.3, so they can't drift from the Solvent Habitable Zone calculator.
   - **Phase P P3 (additive, M2):** the ice-condensation fronts `iceLineNH3`/`iceLineCO2`/`iceLineN2`/`iceLineCO` (CO₂/NH₃/N₂/CO; N₂/CO are disk-set) are added to the regions dict via `compute_ice_lines` and flow through `query.py` (not displayed as table rows).
 - **Calculated Habitable Zone table** — rendered by `_display_calculated_hz()`; uses `_print_table()` (4 columns: Zone + 3 luminosity AU columns, all left-aligned); AU formatted as `{au:.3f} ({au × 8.3167:.3f} LM)`:
   - `calculatedLuminosity = stellarRadius² × (temp/5778)⁴`
@@ -146,9 +146,9 @@ After `_display_calculated_hz()`, a `simbad_compat` dict is built from the SIMBA
 
 `_build_region_tabs(d, viz_widget=None)` reads `d.get("hypatia")`. When present:
 
-- **Data tab "Hypatia"** — `QScrollArea` with three sections built by `_build_hypatia_tab(hypatia)`:
-  - **Stellar Properties table** (`make_table`): T_eff (K), log g, Spectral Type, V mag, B-V, Distance (pc), Disk.
-  - **Kinematics table** (`make_table`): U (km/s), V (km/s), W (km/s), PM RA (mas/yr), PM Dec (mas/yr).
+- **Data tab "Hypatia"** — `QScrollArea` with three sections built by the shared `gui.panels.hypatia_tab.build_hypatia_tab(hypatia)`:
+  - **Stellar Properties table** (`_tbl`): T_eff (K), log g, Spectral Type, V mag, B-V, Distance (pc), Disk.
+  - **Kinematics table** (`_tbl`): U (km/s), V (km/s), W (km/s), PM RA (mas/yr), PM Dec (mas/yr).
   - **Elemental Abundances (Lodders 2009)** — grouped by nucleosynthetic family: one bold category header (`CATEGORIES` label) plus its own `make_table` per non-empty category, with columns Element (`display_symbol`, e.g. `Ba II`), Name, [X/H] Mean, ±Std, Min, Max, # Catalogs. The `±Std` value is the Hypatia `plusminus` spread (dex), **not** the API's own `std` field — that field is `log₁₀` of the linear-space scatter and is negative for almost every element, so `_parse_hypatia_composition` reads `plusminus` instead. If abundances list is empty, shows a gray italic label instead.
   - Error state: single gray italic label with the error message.
 - **Viz tab "Abundance Profile"** (added to `viz_widget` when `mpl_available()` and abundances list non-empty) — horizontal bar chart via `make_abundance_canvas()` in `gui/visualizations/plot_helpers.py`: bars colored by **nucleosynthetic-family category** (colors from `CATEGORIES`; a one-row gap separates groups), with a category legend, `axvline` at 0 (solar reference), and error bars from the `std` field (the Hypatia `plusminus` spread; `make_abundance_canvas` clamps any negative value to 0 defensively, since matplotlib ≥ 3.6 rejects negative `xerr`). With up to ~100 bars the canvas is wrapped via `wrap_scrollable()` so it scrolls vertically instead of squashing. Title: `[X/H] Elemental Abundances — {star_name}`. This is one of opt 8's Hypatia-dependent viz tabs — it joins the always-present HZ Diagram, System Regions Diagram, and Alternate HZ Diagram (see `docs/gui-architecture.md`). Opts 9/10 show only those first three.

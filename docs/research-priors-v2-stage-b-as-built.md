@@ -1,6 +1,6 @@
 ---
 type: as-built-reply
-status: Draft
+status: Superseded
 packet: "3.5"
 from: SpaceAndScienceFictionApp (generator / sister project)
 to: scifiWorldBuilding-Claude Packet 3.5
@@ -19,6 +19,12 @@ is now **consumed end-to-end** by the generator, not just ingested. This documen
 was interpreted** (the decisions the contract explicitly left to the engine), the **tunable knobs** now open
 for your calibration input, and a short list of **field-shape questions** to confirm. Meant to be mirrored
 into your `sister-project-coordination.md` §Phase I (v2) and/or a reply on the request file.
+
+> **Superseded by B6/L1–L2 (2026-07-20, `docs/research-priors-v2-b6-actions.md`).** The values below are
+> pre-B6: the mass-model scatter is now `(2.0, 40.0)` (not `(0.5, 8.0)`); the giant ceiling is ~13 M_J with a
+> peaked F4-anchored draw (not 600 M⊕); giant gating is a per-system roll on the saturating FV05 `_occ_eff`
+> with eligibility `max(M_iso, M_iso,peb) ≥ M_crit` (not per-orbit `min(1, gf/gf₀)`); and the live cache is
+> `pkt3.5-v2.11.0-2026-08-03` (not v2.0.0).
 
 > **Boundary reminder (unchanged):** you own the pinned physics coefficients (canon-tracked); we own the
 > sampling algorithms + the engine knobs below. Everything here is offered for iteration — push back on any
@@ -141,4 +147,5 @@ re-ingest v1 to revert.)
 ## Status
 
 Stage B core (B1–B5) built + full offline suite green (1863 passed). Only **B6** (this iteration loop) is open.
+*(Since closed — B6/L1–L2 built 2026-07-20; see `docs/research-priors-v2-b6-actions.md`.)*
 No further code is required for v2 to be live; the knobs above are the only thing awaiting your input.
