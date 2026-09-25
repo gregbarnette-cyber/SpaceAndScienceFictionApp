@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the CLI app
+# Run the CLI app (deprecated — the GUI and query.py are the live entry points)
 python main.py
 
 # Run the GUI app
@@ -137,28 +137,14 @@ The project has three entry points that share all computation through the `core/
 - **Synthetic Sol:** opt 19 and GCNS M4c append a synthetic Sol row; `prepare_sky_from_star` must not add its own.
 - **Cross-repo:** spec ambiguities go to the sibling repo via the coordination channel `/home/greg/Claude/coordination-channel.md`, not decided unilaterally. The `main.py` CLI is deprecated — fix `core/`, not its inline copies.
 
-### CLI Architecture
+### CLI Architecture (deprecated)
 
-`main.py` is the single entry point for the CLI. All features live as functions in this file (for now) and are registered in the `MENU_OPTIONS` dict at the bottom, which drives the main menu loop.
-
-```
-MENU_OPTIONS = {
-    "1": ("SIMBAD Lookup Query", query_star),
-    # add new features here
-}
-```
-
-The main menu loop calls whichever function the user picks, then returns to the menu after the function ends. Every feature function must call `input("\nPress Enter to Return to the Main Menu")` before returning.
-
-## Adding New Features
-
-1. Write the feature as a top-level function.
-2. Register it in `MENU_OPTIONS` with the next available key and a short label.
-3. End the function with the "Press Enter to Return to the Main Menu" prompt.
-4. Screen clearing rules:
-   - If the function has **no user inputs** (pure data display): call `os.system("cls" if os.name == "nt" else "clear")` at the very start of the function, before any output.
-   - If the function **collects user inputs first**: call `os.system("cls" if os.name == "nt" else "clear")` after all inputs are collected and before the first output `print()`.
-   - The main menu loop clears the screen at the top of each iteration, so functions do **not** need to clear after the "Press Enter" prompt.
+`main.py` is the deprecated CLI: each feature is a top-level function registered in the `MENU_OPTIONS` dict,
+and its menu numbers (below) are still the app-wide option numbers ("opt 19", "option 55") that the GUI and
+docs use. New features go in `core/`, exposed through `query.py` and/or a GUI panel — not as new `main.py`
+menu entries. When an existing CLI function does need an edit, keep its conventions: it ends with
+`input("\nPress Enter to Return to the Main Menu")`, and it clears the screen
+(`os.system("cls" if os.name == "nt" else "clear")`) before its first output, after any input prompts.
 
 ## Menu Options
 
