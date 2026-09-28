@@ -1964,6 +1964,11 @@ Gaia DR3 FLAME > L-inversion), identical in tier order + result to `dossier --st
   `object_preset`; `--spectral-type DA2` → `mass_provenance null`. `completed_plans/PHASE_CR23_PLAN.md`.
 
 ##### CR-25 — wind-wiring fix: `--wind-state` honored + full-SIMBAD-otype active auto-detect + `wind_class_provenance` (built 2026-09-24)
+> **Superseded in part by CR-26 (below)** for coronal-wind main-sequence F/G/K/M stars: the WALL rate now comes from the
+> CR-26 tier ladder, a K/M star's default label reads `solar` (not `quiet`), `f_dwarf` is retired as a default, and
+> `--wind-state` selects the class-default state only. CR-25's otype auto-detect, `wind_class_provenance` and the
+> non-coronal colour rows (O/B/A, evolved, windless) stand as described here.
+
 A **bug fix** (WB `OQ-SA-WIND1`): the `--star` / `--spectral-type` paths classified the wind **without** `--wind-state`
 (silently ignored) and saw only SIMBAD's **primary** otype (`PM*` for most flare M dwarfs), so every non-preset **K/M**
 star was floored to the `quiet` bin (Ẇ 1e-16 → wall 0.424 AU). CR-25 restores the intended 3-bin model. **The STANDOFF
@@ -2010,9 +2015,9 @@ active K/M star changes (quiet 0.424 → active **13.42 AU**, `wall_route wind_t
   `--wind-state active` (a coarse 5 Ṁ☉ bin). `completed_plans/PHASE_CR25_PLAN.md`; tests `tests/test_cr25.py` +
   live `tests/test_cr25_live.py`.
 
-##### CR-26 — the per-star wind model: supplied → measured → X-ray → non-detection → class-default tier ladder (built 2026-09-27)
+##### CR-26 — the per-star wind model: supplied → measured → X-ray → non-detection → class-default tier ladder (built 2026-09-27; FULFILLED + pushed 2026-09-28, `a2a0ae0`)
 WB contract `design-lab/star-system-analysis/spaceapp-change-request-CR26-xray-tier-wind-model.md` (+ channel rulings
-MSG 287–306). For a **coronal-wind main-sequence** star (domain `main_sequence`, spectral class F/G/K/M — F dwarfs
+MSG 287–317, incl. the re-gate rulings RG1–RG9). For a **coronal-wind main-sequence** star (domain `main_sequence`, spectral class F/G/K/M — F dwarfs
 included, the `f_dwarf` default retired) the research-grade **WALL** rate now comes from a per-star tier ladder instead
 of CR-25's three coarse bins. **The canon standoff is unchanged at `--gamma 0`** (the FROZEN generator, byte-identical);
 at γ > 0 the tier's rate feeds the standoff's wind term (WB Q1 — an upper-bound rate makes the standoff an upper bound,
@@ -2034,7 +2039,8 @@ star's current wind* (the §26.8 disclosures ride in `wind_model.notes`, verbati
 - **New inputs.** `exclusion-boundary --radius-rsun <R☉> --log-fx <fit-scale log F_X> | --log-fx-limit <…> --prot-days <d>`;
   `exclusion-system --prot-days` (reaches every component lacking its own) and `--component` keys `radius_rsun=`, `log_fx=`,
   `log_fx_limit=`, `prot_days=`, `main_id=` (the measured-table identity — a hit supplies the class when no `class=`/`sp=`
-  is given; a caller's class wins, noted if it disagrees; H4), `sp=` (= `sp_type`). **Exit 2** on a non-finite / out-of-range
+  is given; a caller's class wins, noted if its letter **or** the domain it resolves to — with the component's own `otype` —
+  differs from the row's; H4 + RG2), `sp=` (= `sp_type`). **Exit 2** on a non-finite / out-of-range
   value (`log_fx`, `log_fx_limit` ∉ [0, 12]; radius ∉ (0, 2000]; prot ∉ (0, 1e5]) or `log_fx` + `log_fx_limit` together, on
   every path; unknown `--component` keys and the pre-existing numeric keys keep exit 1. A valid CR-26 input on a star no tier
   can use (a bare mass, an `--object`, A/B/O, evolved, windless, unmodeled) is ignored with a note.
@@ -2053,7 +2059,10 @@ star's current wind* (the §26.8 disclosures ride in `wind_model.notes`, verbati
   `xray.status ∈ {ok, timeout, unreachable, error, not_run}`; `xray.rung ∈ {2RXS_1RXS, 2RXS, eRASS1, XMM, supplied}`;
   `xray.rungs[].status ∈ {detection, no_detection, timeout, unreachable, error, not_queried, out_of_footprint}`;
   `limit_survey ∈ {RASS, eRASS1, supplied}`; `tiers[*].status ∈ {ok, upper_limit_only, failed, not_reachable}` (a no-network
-  path — `--component`, `--spectral-type` — reads `not_reachable` for the X-ray tiers it cannot query, K1).
+  path — `--component`, `--spectral-type` — reads `not_reachable` for the X-ray tiers it cannot query, K1; `failed` when a
+  lookup failure blocked them — including a component whose own SIMBAD identity lookup failed and left nothing to query,
+  RG5); `radius.status` maps `tic` / `gaia` / `simbad_cone` → a failure code, or `not_queried` for all three when every
+  astrometry step failed (RG7).
 - **A failed lookup is not a non-detection:** a failed rung or survey-limit query with no detection → the class default +
   `not_authoritative` (never `xray_nondetection`); a failed rung above a detection → the detection, `not_authoritative`.
   **Hooks** (one per resolve family, before the cache and any network): `SPACE_APP_XRAY_FORCE_UNREACHABLE` (`=2RXS,eRASS1,XMM`
@@ -2063,8 +2072,25 @@ star's current wind* (the §26.8 disclosures ride in `wind_model.notes`, verbati
   `SPACE_APP_BLEND_FORCE_UNREACHABLE`, `SPACE_APP_SIMBAD_IDENT_FORCE_UNREACHABLE`. Timeouts `SPACE_APP_XRAY_TIMEOUT`,
   `SPACE_APP_TIC_TIMEOUT` (30 s), `SPACE_APP_SIMBAD_TIMEOUT`; `SPACE_APP_CATALOG_CACHE_DIR` redirects the cache. The blend
   needs the local GCNS table (option 58) — an empty table reads as a failed blend family (`not_authoritative`).
+- **Identity + blend rules (channel rulings; re-gate RG1–RG9):**
+  - **A star never blends with itself** — its GCNS main row goes by `source_id`, and any `missing_10mas` row that is its own
+    copy (G13: a name match or the same SIMBAD `main_id`) goes too, with or without a main row (RG1). On H1's degraded path
+    (the star's own identity lookup failed) the candidate string and the head's `main_id` serve the name half (K3
+    despacing both sides, that path only) and the star's own `source_id` still removes its main row (RG4).
+  - `radius_pair_ambiguous`'s 5″ GCNS-neighbour half ignores a `missing_10mas` system entry (`** …`, or SIMBAD otype `**`)
+    and the target's own copy (RG3; a radius-family lookup that `SPACE_APP_TIC_FORCE_UNREACHABLE` suppresses — the row
+    then stays a star). In the blend, S1 keeps its 2″-of-a-main-row condition (N1).
+  - **A blend partner's radius-lookup failure** (a failed / timed-out TIC or Gaia call, or the family forced unreachable)
+    adds a `wind_model.notes` entry naming the partner (as in `blended_source`), the family and the status — no flag
+    (RG8).
+  - **H1:** after a failed identity lookup the measured table is matched on the candidate string (K3 variant too), with a
+    note; when that finds no row, the note and `not_authoritative` reach the output **whatever tier then sets the rate**
+    — `noncoronal_row` and the evolved route included, on both subcommands (RG5 / RG9).
 - **Data:** the six WB-owned CSVs in `data/cr26/` are vendored byte-identical, **md5-checked at load** (a mismatch → a curated
-  error, exit 1; `SPACE_APP_CR26_DATA_DIR` overrides the directory). Never edit them — a data change is a WB change.
+  error, exit 1; `SPACE_APP_CR26_DATA_DIR` overrides the directory). Never edit them — a data change is a WB change. The
+  three class-statistics files are WB's **variant-B** set (MSG 311: class_states `0502174c…`, fork8 `c5e900c5…`, fork9
+  `1e333643…`); they **supersede the spec's printed class numbers** (§Units: "on any mismatch the file wins") — incl.
+  §26.8 item 9's range (now 0.08–0.27 dex) and the `marginal_state` text (now 14 %).
 - **Behaviour changes (contracted, §Consequences):** walls move for coronal-wind MS stars; `wind_class` K/M default `quiet` →
   `solar`; `--wind-state` binds at tier 5 only; `f_dwarf` retired as a default; γ > 0 standoffs move for in-scope stars; an
   Am-type string (`kA5hF0mF2`) reads as its first upper-case letter (A → the `a_dwarf` row, H7 — the one deliberate value change
@@ -2077,7 +2103,7 @@ star's current wind* (the §26.8 disclosures ride in `wind_model.notes`, verbati
   spec's printed class numbers); the GJ 65 `--component` pair → 0.1975 / 0.1834, zone band [0.590, 20.65] vs the
   20.51 standoff (exceeds, `periastron`); `--component "id=E,mass=0.82,class=K2V,main_id=* eps Eri"` → measured 30, wall 32.86.
   Live (`tests/test_cr26_live.py`): Wolf 359 0.1141, 61 Cyg B 0.6290 (blended), α Cen A `tiers.xray` 0.9156. Plan
-  `PHASE_CR26_PLAN.md` (moves to `completed_plans/` at the CR close); tests `tests/test_cr26_{model,network,wiring,live}.py`.
+  `completed_plans/PHASE_CR26_PLAN.md`; tests `tests/test_cr26_{model,network,wiring,live}.py`.
 
 ### Power generation / storage / thermal (Phase AL — Group R, no network)
 

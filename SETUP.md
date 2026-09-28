@@ -124,7 +124,7 @@ The following CSV files must be present in the project directory. They are auto-
 The code comes down with `git clone`, but the **local SQLite database (`data/space_app.db`) is gitignored and does not transfer with the repo**. Rebuilding it from scratch is slow:
 
 - **Option 50 (Star Systems DB Query)** runs 17 sequential SIMBAD criteria queries (several minutes, network-bound).
-- **Option 58 (Import GCNS Data)** pulls ~331k rows from GAVO TAP (~55–65 MB added to the DB).
+- **Option 58 (Import GCNS Data)** pulls ~331k rows from GAVO TAP (~55–65 MB added to the DB). CR-26's `exclusion-*` blend detection reads this table — without it the X-ray tier's blend family reads as failed (`not_authoritative`).
 - **Import Hypatia Cache** (GUI utility) makes ~112 throttled API calls (~14k stars / ~245k abundance rows).
 - **Option 59 (Fetch Dust Map Data)** — *only if you use the optional dust extra* — downloads ~5.6 GB of map files into `data/dust/` (also gitignored, WSL/Linux only). These don't live in `space_app.db`; copy the `data/dust/` directory across (or re-fetch) the same way.
 
@@ -155,6 +155,6 @@ The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** trav
 ## Notes
 
 - An internet connection is required for SIMBAD, NASA Exoplanet Archive, JPL Horizons, and Hypatia Catalog queries.
-- The local SQLite database is created automatically on first run at `data/space_app.db` under the repo root (the `data/` directory is gitignored). Set the `SPACE_APP_DB` environment variable to override this path (see `docs/integration.md`).
+- The local SQLite database is created automatically on first run at `data/space_app.db` under the repo root (the `data/` directory is gitignored, except `data/cr26/` — the WB-owned CR-26 wind-model CSVs, committed and md5-checked at load). Set the `SPACE_APP_DB` environment variable to override this path (see `docs/integration.md`).
 - The `backups/` directory holds manual CSV snapshots (e.g. `starSystemsBackup-*.csv`, `templateStarSystems.csv`) that are **not** read by the app — they are retained for reference only.
 - The **dust / ISM path is optional and WSL/Linux-only** (`requirements-dust.txt`; see above — native Windows can reach the dust `query.py` subcommands only through the `SPACE_APP_DUST_PYTHON` micromamba re-dispatch). Without it installed, every other feature works normally and the dust subcommands/panel are simply gated off. The dust map cache lives at `data/dust/` (gitignored) and is fetch-once/offline-after.

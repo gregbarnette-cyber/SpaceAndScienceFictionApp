@@ -1,6 +1,6 @@
 # PHASE CR-26 — exclusion per-star wind model: supplied → measured → X-ray → non-detection → class-default tier ladder
 
-**Status: BUILT through CP5 (2026-09-27); WB re-gate RED (MSG 311) → fixes + re-vendor done 2026-09-28 (§12b) — awaiting WB's whole-gate re-run, then Greg's FULFILLED flip.**
+**Status: COMPLETE — FULFILLED 2026-09-28 (WB MSG 317, Greg signed); committed + pushed to `main` as `a2a0ae0` (MSG 318).** Re-gate history: RED (MSG 311) → fixed; RG8/RG9 (MSG 315) → fixed; GREEN (MSG 317).
 - Build log: §12b. Suite 3767 passed / 110 skipped / 0 failures (after the re-gate fixes RG1–RG9); `test_cr26_live.py` 7 passed / 1 skipped.
 - Build-complete report posted as MSG 308; WB acknowledged in MSG 309 (the re-gate runs in a fresh WB session).
 - **Git-held, and the working tree must stay unchanged until GREEN** (WB MSG 309). Nothing is committed.
