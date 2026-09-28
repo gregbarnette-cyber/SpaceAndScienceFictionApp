@@ -24,7 +24,9 @@ import time
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Gitignored (data/ is already in .gitignore), native filesystem — same model as data/dust,
 # data/oec. Read as a module global inside the functions so tests can monkeypatch it.
-_CACHE_DIR = _REPO_ROOT / "data" / "catalog_cache"
+# CR-26: SPACE_APP_CATALOG_CACHE_DIR redirects it (read once, at import — enough for a subprocess).
+_CACHE_DIR = (pathlib.Path(os.environ["SPACE_APP_CATALOG_CACHE_DIR"])
+              if os.environ.get("SPACE_APP_CATALOG_CACHE_DIR") else _REPO_ROOT / "data" / "catalog_cache")
 
 DEFAULT_TTL_S = 7 * 86400.0   # 7 days — published catalog rows are effectively static.
 

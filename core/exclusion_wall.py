@@ -542,7 +542,8 @@ def compute_wall(wdot, v_wind, v_ism=_V_ISM_DEF, c_ms=_C_MS_DEF, n_cloud=_N_CLOU
 def resolve_wind_inputs(domain, wind_class, sp_type=None, *,
                         mass_loss_msun_yr=None, wind_speed=None, v_ism=None, c_ms=None,
                         b_field=None, n_cloud=None, cloud_temp=None, wind_phase_yr=None,
-                        f_shock=None, m_shock_min=None, mass_loss_source=None):
+                        f_shock=None, m_shock_min=None, mass_loss_source=None,
+                        tier=None, tier_rate=None, tier_row=None):
     """Resolve the wall's wind/medium inputs to concrete values + a parallel provenance dict.
 
     Precedence per field: an explicit value → the wind_class row default → the module default. The
@@ -553,8 +554,28 @@ def resolve_wind_inputs(domain, wind_class, sp_type=None, *,
     mass_loss_source (+ ``c_ms_band`` = the FIXED favored band for verdict_marginal, and
     ``c_ms_band_derived`` when b-field-derived); each provenance ∈ {supplied, class_default,
     b_field_derived, assumed, astrosphere_wood_forced, none}.
+
+    **CR-26 (additive):** ``tier`` ∈ the four CR-26 ladder tiers (``measured`` / ``xray`` /
+    ``xray_nondetection`` / ``class_default``) sets Ẇ = ``tier_rate`` with ``mass_loss`` provenance = the tier
+    name, the Wood source (``astrosphere_wood``, provenance ``class_default``) and **v_wind = 400 forced even over
+    a supplied** ``wind_speed`` (WB R10) — a supplied ``mass_loss_source`` is ignored (the caller notes it).
+    ``t_phase`` comes from ``tier_row`` (the CR-26 state label's row — ``quiet``/``solar``/``active``, t_phase
+    None — or an evolved measured host's own CR-25 row, R5). ``tier="none"`` → no wind at all (a null wall —
+    an in-scope star with no usable CR-26 value). ``tier=None`` → today's path, byte-identical.
     """
-    row = wind_row_for(wind_class, sp_type)      # (wdot, v_wind, t_phase, src) or None
+    if tier in CR26_LADDER_TIERS:
+        row = wind_row_for(tier_row, sp_type)
+        prov = {"mass_loss": tier, "mass_loss_source": "class_default", "wind_speed": "astrosphere_wood_forced"}
+        wdot, src, v_wind = tier_rate, "astrosphere_wood", _V_SUN
+        if wind_phase_yr is not None:
+            t_phase, prov["wind_phase"] = wind_phase_yr, "supplied"
+        elif row:
+            t_phase, prov["wind_phase"] = row[2], "class_default"
+        else:
+            t_phase, prov["wind_phase"] = None, "none"
+        return _medium(wdot, v_wind, t_phase, src, prov, v_ism=v_ism, c_ms=c_ms, b_field=b_field,
+                       n_cloud=n_cloud, cloud_temp=cloud_temp, f_shock=f_shock, m_shock_min=m_shock_min)
+    row = None if tier == "none" else wind_row_for(wind_class, sp_type)   # (wdot, v_wind, t_phase, src)
     prov = {}
 
     if mass_loss_msun_yr is not None:
@@ -595,7 +616,18 @@ def resolve_wind_inputs(domain, wind_class, sp_type=None, *,
         t_phase, prov["wind_phase"] = row[2], "class_default"
     else:
         t_phase, prov["wind_phase"] = None, "none"
+    return _medium(wdot, v_wind, t_phase, src, prov, v_ism=v_ism, c_ms=c_ms, b_field=b_field,
+                   n_cloud=n_cloud, cloud_temp=cloud_temp, f_shock=f_shock, m_shock_min=m_shock_min)
 
+
+# CR-26: the four ladder tiers whose rate is a Wood-convention rate (v_wind 400 forced — R10). One source of
+# truth: the model's own tuple (stellar_wind imports only stellar_wind_tables + shared — no cycle).
+from core.stellar_wind import LADDER_TIERS as CR26_LADDER_TIERS    # noqa: E402
+
+
+def _medium(wdot, v_wind, t_phase, src, prov, *, v_ism=None, c_ms=None, b_field=None, n_cloud=None,
+            cloud_temp=None, f_shock=None, m_shock_min=None):
+    """The medium half of ``resolve_wind_inputs`` (shared by today's path and the CR-26 tier path)."""
     if v_ism is not None:
         vi, prov["v_ism"] = v_ism, "supplied"
     else:
@@ -632,6 +664,30 @@ def resolve_wind_inputs(domain, wind_class, sp_type=None, *,
              "mass_loss_source": src, "b_field": b_field,
              "c_ms_band": (band_derived if band_derived else _C_MS_BAND),
              "c_ms_band_derived": band_derived}, prov)
+
+
+def wind_band_walls(inputs, rate, band_dex, upper, standoff, wind_class=None):
+    """CR-26 §26.6 — the same wall model at the rate band's two edges: ``wall_band_wind_au = [lo edge of the
+    geometric band at Ṁ·10^lo, hi edge at Ṁ·10^hi]`` (each with its own route; ``wall_band_wind_routes`` only
+    when they differ), ``wall_band_wind_exceeds_standoff`` (hi > the standoff; null with no standoff) and
+    ``wall_is_upper_bound``. No band, or an upper-bound rate → both band fields null."""
+    out = {"wall_band_wind_au": None, "wall_band_wind_exceeds_standoff": None,
+           "wall_is_upper_bound": bool(upper)}
+    if upper or rate is None or not band_dex or inputs is None:
+        return out
+    kw = dict(v_wind=inputs["v_wind"], v_ism=inputs["v_ism"], c_ms=inputs["c_ms"], n_cloud=inputs["n_cloud"],
+              r_ex=standoff, wind_class=wind_class, t_phase=inputs["t_phase"], f_shock=inputs["f_shock"],
+              m_shock_min=inputs["m_shock_min"], c_ms_band=inputs["c_ms_band"])
+    lo = compute_wall(wdot=rate * 10.0 ** band_dex[0], **kw)
+    hi = compute_wall(wdot=rate * 10.0 ** band_dex[1], **kw)
+    if not lo.get("wall_band_au") or not hi.get("wall_band_au"):
+        return out
+    band = [lo["wall_band_au"][0], hi["wall_band_au"][1]]
+    out["wall_band_wind_au"] = band
+    out["wall_band_wind_exceeds_standoff"] = (bool(band[1] > standoff) if standoff is not None else None)
+    if lo["wall_route"] != hi["wall_route"]:
+        out["wall_band_wind_routes"] = [lo["wall_route"], hi["wall_route"]]
+    return out
 
 
 def hazard_flags(wall_band_hi, wall_au, standoff_au):

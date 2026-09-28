@@ -1,0 +1,55 @@
+# CR-26 spec §CR-26.8 (disclosures), copied verbatim from WB design-lab/star-system-analysis/spaceapp-change-request-CR26-xray-tier-wind-model.md lines 665-718 for the R8 token-fidelity test. Do not edit.
+Every relation-based output (tiers 3–5) carries these, in words a card author can quote:
+1. **What it is** (by tier): X-ray tier — a long-term, population-typical Ṁ for a star at that X-ray flux; non-detection
+   tier — for a star of its class below its survey limit; class default — for a typical star of its class and radius (no
+   X-ray measurement of the star). Never the star's current wind; single-epoch catalog fluxes, with the cycle/flare
+   spread inside the band.
+2. **The band is ≈ 68 %:** on the 22 astrospheric detections' leave-one-out residuals the regime bands cover 15 — about 1
+   star in 3 falls outside, with residuals up to 1.5 dex from the line (≤ 0.3 dex beyond a band edge); the widths were set
+   with those residuals in view (a calibration, not an independent test); the widened, class-default and non-detection
+   bands are model constructions with no separate coverage test.
+3. **How much the X-ray tier knows:** it beats a class default by ≈ 9 % in dex overall (leave-one-out rms 0.855 vs 0.944).
+   By regime (line vs class default): log F_X < 4.7 — 0.20 vs 0.45 dex (n = 5); 4.7–6.0 — 0.88 vs 1.02 (n = 13); above
+   6.0 — 1.21 vs 1.12 (n = 4: no gain — there a single F_X carries no more information than "active star").
+4. **The quiet band is GK-calibrated:** the six detections below log F_X 4.7 are G/K stars and the Sun; the 4.85 quiet
+   edge takes in one M dwarf, GJ 173 (log F_X 4.81), which sits +0.50 above the line, outside +0.30.
+5. **K and M stars split in the mid regime:** K dwarfs sit ≈ +0.8 dex above the line, M dwarfs ≈ 0 — equally consistent
+   with one line (LRT p = 0.72), so one line is used.
+6. **The intercept is a method choice:** using the upper limits (censoring) lowers it 0.18 dex vs a plain fit (×1.5 in
+   Ṁ, ×1.23 in a wall); it is WB-derived (Wood publishes a slope only; Wood's 0.77 lies inside this fit's slope 68 % CI).
+7. **eRASS1 fluxes of soft, quiet stars may read low:** a one-sided term ≲ 0.3 dex in F_X, so the point Ṁ may read up to
+   0.18 dex low (0.3 × the slope 0.592; the central wall up to ≈ 19 % low — the true wall up to ≈ 23 % larger) — inside the
+band's upper half in every regime;
+   it is not added to the band (were it added in quadrature to the quiet band's +0.30, that wall edge would move ≈ 6 %);
+   the conversion is untested below log F_X 5.5.
+8. **G's quiet state is marginal** (when used): it sits on the class's lowest detection.
+9. **The typical point sits above the class's predicted-rate median** by 0.09–0.27 dex (§CR-26.5).
+10. **Radius limits:** M7–M9 have fewer than 3 catalog radii within 10 pc and take the M6 median (0.1275 R⊙), likely
+    too large for M8–M9 (by roughly 10–25 % — an unpinned estimate) — ≲ 0.08 dex in an X-ray-tier Ṁ (the radius enters F_X too: Ṁ ∝ R^(2 × (1 − 0.592)) =
+    R^0.82) but up to ≈ 0.19 dex in a class-default Ṁ (Ṁ ∝ R²); in a close pair a catalog cross-match can give a star its companion's
+    radius, which the 0.3-dex check does not catch when the two are similar (α Cen B carries α Cen A's 1.225 R⊙ in the W4
+    pull; flagged `radius_pair_ambiguous`, §CR-26.3.5) — supply `--radius-rsun` where it matters.
+11. **Flag text:** each flag in `flags` carries its one-line meaning (the `active_bimodal` and `bimodal_class` definitions
+    above verbatim; the extrapolation classes and their widening).
+12. **XMM-rung fluxes** (when `xmm_rung`): the conversion was calibrated on RASS-detected sources (`sum_flag` ≤ 1), whose
+    p16/p84 −0.41/+0.04 tail comes from bright-star pile-up failures the guard excludes; the scatter for the faint, clean
+    sources the guard keeps is untested, and no band term is applied (W6 fork F5).
+13. **Below the fit** (when `below_fit_range`): the point sits below the fit's lowest astrospheric detection (log F_X
+    4.03); the relation is extrapolated there, without a widening.
+14. **An otype-selected active state** (when `wind_class_provenance: otype_auto` sets the class-default state): it
+    assumes the star sits at its class's p84 X-ray flux; of the flare-labelled local stars checked at W6 about 1 in 3
+    reach it (e.g. AD Leo, EV Lac, Ross 154 and YZ CMi above; 61 Cyg A, Barnard's star and most other M4+ flare stars
+    0.3 dex or more below) — supply
+    the star's X-ray flux (`--log-fx` / `log_fx=`) where it is known (W6 fork T3).
+15. **A combined-wind band** (on each member of a zone that reports `combined_wind_wall_band_wind_au`): the band sums
+    the members' band-edge rates — the merged system's own band when they share one blended F_X; with separate F_X it
+    assumes their residuals move together, and for independent residuals the pair's upper edge could lie up to ≈ ×1.3
+    further out in the wall (mid, active and class-default bands; in the quiet band the summed edge is conservative —
+    §CR-26.6, W6 fork T11).
+
+The measured tier carries: Wood's ≈ ×2 systematic; that binary rates are combined astrospheres (area-shared per
+component — `measured_combined_split`); the method flags' text; that Kislyakova-set values (band edges, system edges) are
+charge-exchange rates, not V_w-conditioned, run at v_wind 400 by convention, with systematics "a factor of a few" and
+model inputs shared with the hydrogen-wall method; that a measured Ṁ was inferred for the local ISM Wood assumed (the
+LIC vector), so pairing it with a different ISM (CR-24) re-uses an ISM-conditioned number; and, on an evolved host, that
+v_wind 400 is Wood's lower-main-sequence assumption (§CR-26.2).

@@ -926,6 +926,17 @@ _SPECTRAL_CHIP_LETTERS = ["O", "B", "A", "F", "G", "K", "M"]
 _SP_CLASS_PREFIXES = ("", "d", "sd", "esd", "usd", "k", "h", "kn",
                       "d/sd", "sd:", "s/sd", "(sd)")
 
+def collapse_ws(s):
+    """Whitespace-collapse an identifier — SIMBAD pads ids (``HD  95735`` → ``HD 95735``, ``*  10 Tau``).
+    The one normaliser for SIMBAD main_id matching (the CR-25 otype resolver and the CR-26 measured table)."""
+    return " ".join(str(s or "").split())
+
+
+# CR-26: the dwarf / subdwarf subset of the prefixes above (the Am-type `k`/`h`/`kn` metallic-line prefixes
+# are NOT dwarf markers — WB H7), longest first so `esd`/`usd`/`d/sd` win over `sd`/`d`. The CR-26 wind
+# model's `parse_sp` strips one of these before the class letter (`dM6` → M6; `sdM1` → M1, a subdwarf).
+_SP_DWARF_SUBDWARF_PREFIXES = ("d/sd", "s/sd", "(sd)", "esd", "usd", "sd:", "sd", "d")
+
 # The wider letter set used for DISPLAY (dot colour + legend bucketing), as opposed to
 # the search chips above. Adds the classes that are not main-sequence OBAFGKM but are
 # still real, colourable classes: degenerate D (white dwarfs), brown dwarfs L/T/Y,

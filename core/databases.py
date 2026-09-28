@@ -9,7 +9,7 @@ import re
 import threading
 import time
 
-from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries,
+from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries, collapse_ws,
                      _bounded_call, _env_timeout, _stderr_warn, _WatchdogTimeout,
                      _escape_like, spectral_where, spectral_adql, LY_PER_PC,
                      _SP_CLASS_PREFIXES,
@@ -247,7 +247,7 @@ def compute_simbad_lookup(star_name: str) -> dict:
         return {"error": _network_error_msg(e, "SIMBAD")}
 
     if result is None or len(result) == 0:
-        return {"error": f"No results found for '{star_name}'"}
+        return {"error": f"{SIMBAD_NO_RESULTS_PREFIX} '{star_name}'"}
 
     row = result[0]
     col_names = result.colnames
@@ -439,6 +439,9 @@ _SIMBAD_CIRCUIT_COOLDOWN_S = 60.0      # a timed-out SIMBAD short-circuits later
 # directly after a digit (SIMBAD's own `G 272-61B` / `BD+19  5116A`).
 _COMPONENT_LETTER_RE = re.compile(r"[\s\d][A-Z]$")
 _simbad_otypes_down = None             # circuit-breaker: None = armed, else (reason, tripped_monotonic)
+# The prefix of compute_simbad_lookup's answered-empty error ("SIMBAD answered: no such object") — a shared
+# constant so the CR-26 identity adapter can tell it from a network failure (drift-tested).
+SIMBAD_NO_RESULTS_PREFIX = "No results found for"
 
 
 class _OtypeResultError(Exception):
@@ -512,7 +515,7 @@ def _otypes_query(main_id, component_rule):
 
 
 def _wskey(s):
-    return " ".join(str(s or "").split())
+    return collapse_ws(s)
 
 
 def _idkey(s):
@@ -631,6 +634,128 @@ def fetch_star_otypes(main_id, primary_otype=None, component_rule=True):
     except _OtypeResultError:
         return {**_otypes_degrade("error", main_id, primary_otype), "candidate": cand}
     return {**res, "status": None, "candidate": cand}
+
+
+# ── CR-26: SIMBAD helpers for the per-star wind model (astrometry / radius cone / blend parent) ─────
+# One NEW seam + breaker, never the CR-25 otype-list ones (`_simbad_otypes_tap` / `_simbad_otypes_down`),
+# so a stall in one family cannot short-circuit the other. Bounded by SPACE_APP_SIMBAD_TIMEOUT, retry once,
+# answered results cached as {"answered": True, "sources": [...]} (an answered-empty result is cached too;
+# a failure never is). The caller (core.xray_catalog) checks its own family's force-unreachable hook first.
+_simbad_cr26_down = {}               # per CR-26 family (astrometry / radius / blend) → (reason, tripped)
+
+
+class _Cr26SimbadAnswered(Exception):
+    """SIMBAD answered with a query error — deterministic, never retried (status ``error``)."""
+
+
+def reset_simbad_cr26_circuit():
+    _simbad_cr26_down.clear()
+
+
+def _simbad_cr26_tap(adql):
+    """The CR-26 SIMBAD network seam: one TAP query → a list of plain row dicts (fresh pyvo service)."""
+    from astroquery.simbad import conf
+    from pyvo.dal import TAPService, DALQueryError
+    try:
+        t = TAPService(baseurl=f"https://{conf.server}/simbad/sim-tap").run_sync(adql).to_table()
+    except DALQueryError as e:
+        raise _Cr26SimbadAnswered(f"SIMBAD TAP query error: {e}") from e
+    from core.xray_catalog import _plain
+    return [{c: _plain(r[c]) for c in t.colnames} for r in t]
+
+
+def _simbad_cr26_call(service, params, adql, family):
+    """``(rows, None)`` on an answer (possibly empty), else ``(None, code)`` — code ∈ {timeout, unreachable,
+    error}. Bounded + retry once + a per-family breaker (trips on timeout only, auto re-arms) + cache
+    (answers only)."""
+    from core import catalog_cache
+    key = catalog_cache.cache_key(service, params)
+    down = _simbad_cr26_down.get(family)
+    if down is not None:
+        if (time.monotonic() - down[1]) < _SIMBAD_CIRCUIT_COOLDOWN_S:
+            hit = catalog_cache.cache_get(key)
+            return (hit["sources"], None) if hit is not None else (None, "timeout")
+        _simbad_cr26_down.pop(family, None)
+    try:
+        res = catalog_cache.cached(
+            service, params,
+            lambda: {"answered": True, "sources": _bounded_call(
+                lambda: _simbad_cr26_tap(adql), timeout=_simbad_otype_timeout(), retries=2,
+                backoff=_SIMBAD_RETRY_BACKOFF, fatal=(_Cr26SimbadAnswered,))})
+        return res["sources"], None
+    except _WatchdogTimeout:
+        _simbad_cr26_down[family] = ("timeout", time.monotonic())
+        _simbad_warn(f"CR-26 {service} bounded (timeout)")
+        return None, "timeout"
+    except _Cr26SimbadAnswered:
+        return None, "error"
+    except Exception:
+        _simbad_warn(f"CR-26 {service} bounded (unreachable)")
+        return None, "unreachable"
+
+
+def _adql_str(s):
+    return str(s).replace("'", "''")
+
+
+def simbad_astrometry(ident, family="astrometry"):
+    """One bounded SIMBAD query for ``ident`` → ``({oid, main_id, ra, dec, pmra, pmdec, plx_value, plx_err,
+    otype, sp_type, g}, None)`` (J2000.0 position; ``g`` = the SIMBAD ``flux`` G, or None), ``(None, None)``
+    when SIMBAD answered with no object, or ``(None, code)`` on a failure."""
+    adql = ("SELECT TOP 1 b.oid, b.main_id, b.ra, b.dec, b.pmra, b.pmdec, b.plx_value, b.plx_err, b.otype, "
+            "b.sp_type, f.flux AS g FROM ident AS i JOIN basic AS b ON b.oid = i.oidref "
+            "LEFT OUTER JOIN flux AS f ON f.oidref = b.oid AND f.filter = 'G' "
+            f"WHERE i.id = '{_adql_str(ident)}'")
+    rows, st = _simbad_cr26_call("simbad_cr26_astrom", {"ident": str(ident)}, adql, family)
+    if st:
+        return None, st
+    return (rows[0] if rows else None), None
+
+
+def simbad_cone_stars(ra, dec, radius_arcsec, exclude_oid=None, exclude_main_id=None, family="radius"):
+    """R12 — the SIMBAD objects of **stellar** type in a cone that are not the target itself (by ``oid``),
+    not an X-ray / IR / radio catalogue record, and not a ``**`` system entry → ``(list, None)`` or
+    ``(None, code)``."""
+    adql = ("SELECT oid, main_id, otype FROM basic WHERE 1 = CONTAINS(POINT('ICRS', ra, dec), "
+            f"CIRCLE('ICRS', {float(ra):.8f}, {float(dec):.8f}, {float(radius_arcsec) / 3600.0:.8f}))")
+    rows, st = _simbad_cr26_call("simbad_cr26_cone", {"ra": round(float(ra), 6), "dec": round(float(dec), 6),
+                                                      "r": float(radius_arcsec)}, adql, family)
+    if st:
+        return None, st
+    me = _wskey(exclude_main_id) if exclude_main_id else None
+    return [r for r in rows if _is_stellar_otype(r.get("otype")) and r.get("oid") != exclude_oid
+            and (me is None or _wskey(r.get("main_id")) != me)], None
+
+
+# SIMBAD stellar CANDIDATE codes (a star, not yet confirmed as its class) — counted as stars in the R12 cone.
+_STELLAR_CANDIDATE_OTYPES = frozenset({"LM?", "BD?", "WD?", "N*?", "TT?", "Be?", "RG?", "HB?", "RR?", "Ce?",
+                                       "WR?", "AB?", "C*?", "S*?", "Mi?", "pA?", "pr?", "HS?", "BS?", "WV?",
+                                       "bC?", "sg?", "s?r", "s?y", "s?b", "Y*?", "OH?", "CH?", "RB?", "BY?",
+                                       "Er?", "EB?", "SB?", "El?"})
+
+
+def _is_stellar_otype(ot):
+    """R12: a SIMBAD object of stellar type — a ``…*`` code (``*``, ``PM*``, ``BY*``, ``SB*``, …) or a stellar
+    candidate — but never the system's own ``**`` entry. X-ray / IR / radio / galaxy records never end in ``*``."""
+    ot = (ot or "").strip()
+    if not ot or ot in ("**", "**?"):
+        return False
+    return ot.endswith("*") or ot.endswith("*?") or ot in _STELLAR_CANDIDATE_OTYPES
+
+
+# J3 (MSG 298): only a multiple-star-family parent names a SYSTEM — never a cluster / association / group.
+_MULTIPLE_STAR_OTYPES = frozenset({"**", "SB*", "EB*", "El*", "**?", "SB?", "EB?"})
+
+
+def simbad_parent(ident, family="blend"):
+    """The SIMBAD ``h_link`` parents of ``ident`` whose otype is in the multiple-star family (J3) →
+    ``([parent_oid, …], None)`` or ``(None, code)``."""
+    adql = ("SELECT h.parent, b.otype FROM ident AS i JOIN h_link AS h ON h.child = i.oidref "
+            f"JOIN basic AS b ON b.oid = h.parent WHERE i.id = '{_adql_str(ident)}'")
+    rows, st = _simbad_cr26_call("simbad_cr26_parent", {"ident": str(ident)}, adql, family)
+    if st:
+        return None, st
+    return sorted({r["parent"] for r in rows if (r.get("otype") or "").strip() in _MULTIPLE_STAR_OTYPES}), None
 
 
 # ── NASA Exoplanet Archive helpers ────────────────────────────────────────────

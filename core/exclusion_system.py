@@ -38,16 +38,22 @@ resolves the system (SIMBAD + ``binary-orbit``/SB9) then hands the components he
 import math
 import re
 
+from core import detection
 from core import exclusion_boundary as eb
 from core import exclusion_wall as ew           # CR-22 wall engine + four-value classifier
 from core import stellar_mass
 from core import stellar_mass_tables
+from core import stellar_wind                   # CR-26 per-star wind model (pure)
+from core import xray_catalog                   # CR-26 orchestrator (the deterministic path never networks)
 
 _WIDE_SMA_AU = 1000.0        # a resolved "orbit" wider than this + an invented equal-mass = a wide member
 
 _DEFAULT_ALPHA = 0.4          # mid of the canon [1/3, 1/2] band; reproduces the hand-card anchors
 # (CR-22: the off-MS tag/class-note tables moved into core.exclusion_wall — _WINDLESS_TAGS /
 # _EVOLVED_TAGS / _CLASS_NOTES — the single source of truth for the four-value classifier.)
+
+_NOTE_R11 = ("at γ > 0 the zone's point_mass_r_ex_au sums an upper-bound member rate, so it is an upper bound "
+             "too")
 
 _MODEL_NOTE_COMPOSE = (
     "CR-11.3 composition of the FROZEN single-body exclusion-boundary generator over the resolved "
@@ -79,7 +85,7 @@ def _component_domain(sp_type=None, class_tag=None, otype=None):
 
 
 # ── per-component r_ex (frozen generator) ────────────────────────────────────
-def _component_rex(comp, alpha, calibration_au, dial, beta, gamma):
+def _component_rex(comp, alpha, calibration_au, dial, beta, gamma, standoff_rate=None):
     """r_ex_au for a component that HAS a standoff (main_sequence OR evolved-with-a-mass) via the
     FROZEN generator, or ``None`` for windless_free_harbor / unmodeled / an evolved host with no mass.
     CR-22: an evolved host earns a standoff from its measured mass (spec CR-22.2), so only the genuinely
@@ -88,9 +94,12 @@ def _component_rex(comp, alpha, calibration_au, dial, beta, gamma):
         return None, None
     if comp.get("mass_solar") is None:
         return None, None                         # evolved host with no measured mass → no standoff
+    # CR-26 (WB Q1): at γ > 0 a ladder tier's rate feeds the standoff (the caller passes it only then)
+    ml, ws = ((standoff_rate, None) if standoff_rate is not None
+              else (comp.get("mass_loss_msun_yr"), comp.get("wind_state")))
     res = eb.compute_exclusion_boundary(
         comp["mass_solar"], luminosity_lsun=comp.get("luminosity_lsun") or 1.0,
-        mass_loss_msun_yr=comp.get("mass_loss_msun_yr"), wind_state=comp.get("wind_state"),
+        mass_loss_msun_yr=ml, wind_state=ws,
         dial=dial, calibration_au=calibration_au, alpha=alpha, beta=beta, gamma=gamma)
     if "error" in res:
         return None, res["error"]
@@ -278,6 +287,104 @@ def _classify_component(c, system_wind_state=None):
     return cw, sys_ws, False
 
 
+# ── CR-26: the per-component wind model ──────────────────────────────────────────
+_TAG_WORDS = ew._WINDLESS_TAGS | ew._MS_TAGS | set(ew._EVOLVED_TAGS)
+
+
+def _model_sp(c):
+    """The spectral string the CR-26 model parses: ``sp_type``, else a ``class=`` that is a type (not a tag)."""
+    sp = c.get("sp_type")
+    if sp:
+        return sp
+    cl = c.get("class")
+    return cl if cl and str(cl).strip().lower() not in _TAG_WORDS else None
+
+
+def _component_model(c, system_wind, system_prot_days):
+    """Run the CR-26 model for one classified component (``None`` for a windless / unmodeled one, or an evolved
+    one without a measured row — those keep today's path). A ``--star`` component carries ``wind_inputs`` (the
+    network lookups, resolved at the entry point); a plain dict takes the deterministic inputs (no network)."""
+    if c["domain"] not in (ew.MAIN_SEQUENCE, ew.EVOLVED):
+        return None
+    sw_ = system_wind or {}
+    sp = _model_sp(c)
+    row = ew.wind_row_for(c.get("wind_class"), sp)
+    sup = {"supplied_rate": c.get("mass_loss_msun_yr"), "log_fx": c.get("log_fx"),
+           "log_fx_limit": c.get("log_fx_limit"), "radius_rsun": c.get("radius_rsun"),
+           "prot_days": c.get("prot_days") if c.get("prot_days") is not None else system_prot_days,
+           "wind_state": c.get("wind_state"),
+           "wind_class": c.get("wind_class_explicit"), "active_otype": bool(c.get("wind_otype")),
+           "mass_loss_source": c.get("mass_loss_source") or sw_.get("mass_loss_source"),
+           "wind_speed": c.get("wind_speed") if c.get("wind_speed") is not None else sw_.get("wind_speed")}
+    inp = c.get("wind_inputs")
+    if inp is None:
+        inp = xray_catalog.resolve_star_wind_inputs(
+            {"sp_type": sp, "main_id": c.get("main_id"), "domain": c["domain"],
+             "cr25_letter": detection._sp_letter(sp), "noncoronal_rate": row[0] if row else None,
+             "notes": c.get("cr26_notes")}, sup, allow_network=False)
+    else:
+        for k, v in sup.items():
+            if k in ("log_fx", "log_fx_limit", "radius_rsun") and v is None:
+                continue
+            setattr(inp, k, v)
+        inp.domain, inp.cr25_letter = c["domain"], detection._sp_letter(sp)
+        inp.noncoronal_rate = row[0] if row else None
+        inp.notes = list(c.get("cr26_notes") or []) + list(inp.notes or [])
+    m = stellar_wind.resolve_wind_model(inp)
+    if c["domain"] == ew.EVOLVED and m["mass_loss_tier"] != "measured":
+        h1_notes, h1_flags = stellar_wind.h1_carry(m)            # RG9: an H1 miss keeps its note + flag
+        c["cr26_notes"] += [n for n in h1_notes if n not in c["cr26_notes"]]
+        if h1_flags:
+            c["cr26_carry_flags"] = h1_flags
+        return None
+    return m
+
+
+def _combined_wind_band(contrib, max_standoff):
+    """CR-26 §26.6 / T11 — the combined-wind wall at the summed band-edge rates (a member with no band adds its
+    point to both sums; v / medium / t_phase of the largest-rate member held fixed). Returns the three zone
+    fields ``{combined_wind_wall_band_wind_au, combined_wind_band_exceeds_standoff,
+    combined_wind_wall_is_upper_bound}``."""
+    winds = [m for m in contrib if (m.get("wall_inputs") or {}).get("wdot")]
+    if len(winds) < 2:
+        return {"combined_wind_wall_band_wind_au": None, "combined_wind_band_exceeds_standoff": None,
+                "combined_wind_wall_is_upper_bound": None}
+    if any(m.get("cr26_upper") for m in winds):
+        return {"combined_wind_wall_band_wind_au": None, "combined_wind_band_exceeds_standoff": None,
+                "combined_wind_wall_is_upper_bound": True}
+    dom = max(winds, key=lambda m: m["wall_inputs"]["wdot"])
+    di = dom["wall_inputs"]
+    lo_sum = hi_sum = 0.0
+    for m in winds:
+        w, bd = m["wall_inputs"]["wdot"], m.get("cr26_band_dex")
+        lo_sum += w * (10.0 ** bd[0] if bd else 1.0)
+        hi_sum += w * (10.0 ** bd[1] if bd else 1.0)
+    kw = dict(v_wind=di["v_wind"], v_ism=di["v_ism"], c_ms=di["c_ms"], n_cloud=di["n_cloud"], r_ex=None,
+              wind_class=None, t_phase=di.get("t_phase"))
+    lo, hi = ew.compute_wall(wdot=lo_sum, **kw), ew.compute_wall(wdot=hi_sum, **kw)
+    band = [lo["wall_band_au"][0], hi["wall_band_au"][1]]
+    return {"combined_wind_wall_band_wind_au": band,
+            "combined_wind_band_exceeds_standoff": (bool(band[1] > max_standoff) if max_standoff is not None
+                                                    else None),
+            "combined_wind_wall_is_upper_bound": False}
+
+
+def _measured_system_edges(comps):
+    """G4 — Kislyakova's system upper edge, reported at system level when the system's components resolve."""
+    out = []
+    for c in comps:
+        meas = ((c.get("cr26") or {}).get("wind_model") or {}).get("measured") or {}
+        edge = meas.get("system_upper_edge_mdot_sun")
+        if edge is None:
+            continue
+        head = re.sub(r"\s?[A-D]$", "", stellar_wind.swt.collapse_ws(c.get("main_id")))
+        members = [o["id"] for o in comps
+                   if re.sub(r"\s?[A-D]$", "", stellar_wind.swt.collapse_ws(o.get("main_id"))) == head]
+        if len(members) >= 2:
+            out.append({"members": members, "system_upper_edge_mdot_sun": edge, "source": "kislyakova2024"})
+    return out
+
+
 def _compose_arg_error(phase, alpha):
     """The compose argument checks (also run by ``compute_exclusion_system`` BEFORE any --star network
     resolution, so a bad --phase/--alpha costs no SIMBAD / Gaia call)."""
@@ -290,7 +397,7 @@ def _compose_arg_error(phase, alpha):
 
 def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
                              calibration_au=eb._KUIPER_EDGE_AU, dial=None,
-                             beta=0.0, gamma=0.0, system_wind=None, system_wind_state=None):
+                             beta=0.0, gamma=0.0, system_wind=None, system_wind_state=None, prot_days=None):
     """Compose the frozen single-body generator over resolved ``components``. See the module docstring.
 
     ``components`` — list of dicts with (at least) ``id``, ``mass_solar`` (> 0), optional
@@ -350,11 +457,49 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             "cloud_temp": c.get("cloud_temp"), "wind_phase_yr": c.get("wind_phase_yr"),
             "f_shock": c.get("f_shock"), "m_shock_min": c.get("m_shock_min"),
             "mass_loss_source": c.get("mass_loss_source"),
+            # CR-26 inputs (the model runs below, before the standoff — plan §5d)
+            "class": c.get("class"), "main_id": c.get("main_id"), "wind_inputs": c.get("wind_inputs"),
+            "log_fx": c.get("log_fx"), "log_fx_limit": c.get("log_fx_limit"),
+            "radius_rsun": c.get("radius_rsun"), "prot_days": c.get("prot_days"),
+            "wind_class_explicit": c.get("wind_class"), "cr26_notes": list(c.get("cr26_notes") or []),
+            "sys_ws_reached": bool(eff_ws and not c.get("wind_state")),
         })
+
+    # CR-26 — the per-component wind model (plan §5d step 2), before the standoff
+    for c in comps:
+        own = c.get("wind_state") if not c["sys_ws_reached"] else None
+        if (own and c["domain"] in (ew.MAIN_SEQUENCE, ew.EVOLVED) and c.get("mass_solar") is not None
+                and c.get("mass_loss_msun_yr") is None and own not in eb._WIND_STATE_MAP):
+            # M-6 (MED-2c): a bad own wind_state is rejected at any γ (a ladder tier would otherwise hide it)
+            return {"error": f"component '{c['id']}': Unknown --wind-state '{own}'. "
+                             f"Choose from: {', '.join(sorted(eb._WIND_STATE_MAP))}."}
+        m = _component_model(c, system_wind, prot_days)
+        if m is not None and m.get("typeless"):
+            c["cr26_notes"] += [n for n in m["wind_model"]["notes"] if n not in c["cr26_notes"]]
+            c["cr26_carry_flags"] = list(m["wind_model"]["flags"])      # RG5: e.g. an H1 miss's not_authoritative
+            m = None                                          # no spectral type at all → today's path (§26.5)
+        if not stellar_wind.in_scope(c["domain"], stellar_wind.parse_sp(_model_sp(c))[0]):
+            sup26 = xray_catalog.cr26_supplied(None, getter=c.get)
+            if sup26["prot_days"] is None and prot_days is not None:
+                sup26["prot_days"] = prot_days                # the system --prot-days reached it too
+            c["cr26_notes"] += xray_catalog.ignored_input_notes(sup26)
+        c["cr26"] = m
+        if m and m.get("h7_letter") and c.get("wind_class_provenance") in ("class_default", "otype_auto"):
+            wc = ew._COLOUR_DEFAULT_WIND.get(m["h7_letter"])      # H7 (as exclusion-boundary's _h7_cls_kw)
+            if wc:
+                c["wind_class"], c["wind_class_provenance"], c["wind_otype"] = wc, "class_default", None
+                row = ew.wind_row_for(wc)
+                ent = m["wind_model"]["tiers"].get("noncoronal_row")
+                if ent is not None and row:
+                    ent["mass_loss_msun_yr"] = row[0]
+        c["cr26_ladder"] = bool(m and m["mass_loss_tier"] in ew.CR26_LADDER_TIERS)
 
     # per-component r_ex (frozen generator on the preferred mass)
     for c in comps:
-        c["r_ex_au"], err = _component_rex(c, alpha, calibration_au, dial, beta, gamma)
+        st_rate = c["cr26"]["standoff_rate"] if (c["cr26_ladder"] and gamma) else None
+        if st_rate is not None and c["cr26"]["upper"]:
+            c["cr26"]["wind_model"]["notes"].append(stellar_wind.NOTE_Q1_UPPER)
+        c["r_ex_au"], err = _component_rex(c, alpha, calibration_au, dial, beta, gamma, standoff_rate=st_rate)
         if err:
             if c["sys_wind_state_withheld"]:
                 # CR-25 Q3b: the system --wind-state was given but (by design) not fed to this non-MS
@@ -366,12 +511,22 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         # actually took the wind_state (the same shared rule as exclusion-boundary)
         c["wind_class_note"] = ew.with_gamma_caveat(
             c.get("wind_class_note"), wind_state=c.get("wind_state"), binned=c["wind_state_binned"],
-            gamma=gamma, mass_loss_msun_yr=c.get("mass_loss_msun_yr"), has_standoff=c["r_ex_au"] is not None)
+            gamma=gamma, mass_loss_msun_yr=(st_rate if st_rate is not None else c.get("mass_loss_msun_yr")),
+            has_standoff=c["r_ex_au"] is not None)
 
     # per-component WALL (research-grade; composed here, the frozen generator stays pure — CR-22.5)
     for c in comps:
         wp = _comp_wind_params(c, system_wind)
-        inputs, prov = ew.resolve_wind_inputs(c["domain"], c["wind_class"], c.get("sp_type"), **wp)
+        m = c["cr26"]
+        tier = m["mass_loss_tier"] if m else None
+        label = m.get("label") if m else None
+        inputs, prov = ew.resolve_wind_inputs(
+            c["domain"], c["wind_class"], c.get("sp_type"), **wp,
+            tier=(tier if (c["cr26_ladder"] or tier == "none") else None),
+            tier_rate=(m["rate"] if c["cr26_ladder"] else None),
+            tier_row=((label or c["wind_class"]) if c["cr26_ladder"] else None))
+        if label:
+            c["wind_class"] = label                           # CR-26 §26.5: the state label
         wall = ew.compute_wall(
             wdot=inputs["wdot"], v_wind=inputs["v_wind"], v_ism=inputs["v_ism"], c_ms=inputs["c_ms"],
             n_cloud=inputs["n_cloud"], r_ex=c["r_ex_au"], wind_class=c["wind_class"],
@@ -389,6 +544,17 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         exceeds, ratio = ew.hazard_flags(c["wall_band_hi"], wall.get("wall_au"), c["r_ex_au"])
         c["wall_exceeds_standoff"] = exceeds
         c["wall_to_standoff_ratio"] = ratio
+        # CR-26 additive fields (§26.7)
+        if tier is None:
+            tier = eb.derive_mass_loss_tier(
+                c["domain"], c.get("wind_class_provenance"), c.get("mass_loss_msun_yr"), c.get("wind_state"),
+                (c["wall_inputs"] or {}).get("wdot"), sp_type=c.get("sp_type"), class_tag=c.get("class"))
+        if c["domain"] in (ew.WINDLESS, ew.UNMODELED) and c.get("mass_loss_msun_yr") is not None:
+            c["cr26_notes"].append(eb.NOTE_RATE_UNUSED)
+        c["cr26_fields"] = eb._cr26_fields(tier, m, c["wall_inputs"], c["r_ex_au"], c["wind_class"],
+                                           c["cr26_notes"], c.get("cr26_carry_flags", ()))
+        c["cr26_upper"] = bool(c["cr26_fields"]["mass_loss_upper_limit"])
+        c["cr26_band_dex"] = c["cr26_fields"]["mass_loss_band_dex"]
 
     # standoff merge-grouping: union over the periastron overlap test (closest approach)
     n = len(comps)
@@ -426,8 +592,24 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         if in_dom:
             m_in = sum(m["mass_solar"] for m in in_dom)
             lum_in = sum((m.get("luminosity_lsun") or 0.0) for m in in_dom) or None
-            wind_in = sum((m.get("mass_loss_msun_yr") or 0.0) for m in in_dom) or None
-            wstate = next((m.get("wind_state") for m in in_dom if m.get("wind_state")), None)
+            if gamma:
+                # CR-26 R11 / H8: each member's standoff-input rate (a ladder tier's rate, a supplied rate, or a
+                # wind_state member's legacy-map rate); an upper-bound member makes the point mass an upper bound
+                def _st_in(m):
+                    if m.get("cr26_ladder"):
+                        return m["cr26"]["standoff_rate"] or 0.0
+                    if m.get("mass_loss_msun_yr") is not None:
+                        return m["mass_loss_msun_yr"]
+                    return eb._WIND_STATE_MAP.get(m.get("wind_state") or "", 0.0)
+                wind_in = sum(_st_in(m) for m in in_dom) or None
+                wstate = None
+                if len(in_dom) > 1 and any(m.get("cr26_upper") for m in in_dom):
+                    for m in in_dom:                          # (a lone member's own Q1 note already says it)
+                        if m.get("cr26"):
+                            m["cr26"]["wind_model"]["notes"].append(_NOTE_R11)
+            else:
+                wind_in = sum((m.get("mass_loss_msun_yr") or 0.0) for m in in_dom) or None
+                wstate = next((m.get("wind_state") for m in in_dom if m.get("wind_state")), None)
             pm = eb.compute_exclusion_boundary(
                 m_in, luminosity_lsun=(lum_in if lum_in is not None else 1.0),
                 mass_loss_msun_yr=wind_in, wind_state=(wstate if wind_in is None else None),
@@ -473,6 +655,7 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
                 "r_ap_au": m["wall"].get("r_ap_au"),
                 "wall_exceeds_standoff": m["wall_exceeds_standoff"],
                 "wall_to_standoff_ratio": m["wall_to_standoff_ratio"],
+                **m["cr26_fields"],                                  # CR-26 §26.7 (additive)
             } for m in members],
             "point_mass_r_ex_au": point_mass,
             "forcing_class": forcing,
@@ -522,7 +705,7 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         max_standoff = max((m["r_ex_au"] for m in members if m["r_ex_au"] is not None), default=None)
         env_hi = max([v for v in env.values() if v is not None] + ([combined_band[1]] if combined_band else []),
                      default=None)
-        wall_zones.append({
+        zone = {
             "members": [m["id"] for m in members],
             "wall_envelope_au": env,
             "combined_wind_wall_au": combined_au,
@@ -530,7 +713,18 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             "combined_wind_phase": combined_phase,
             "wall_exceeds_standoff": (bool(env_hi > max_standoff)
                                       if env_hi is not None and max_standoff is not None else None),
-        })
+        }
+        # CR-26 §26.6 / T11 — the combined-wind band fields ride wherever combined_wind_wall_au does (null with it)
+        zone.update(_combined_wind_band(contrib, max_standoff) if combined_au is not None else
+                    {"combined_wind_wall_band_wind_au": None, "combined_wind_band_exceeds_standoff": None,
+                     "combined_wind_wall_is_upper_bound": None})
+        if combined_au is not None:
+            if zone["combined_wind_wall_band_wind_au"] is not None:
+                for m in members:                             # disclosure item 15, on every member
+                    wm = m["cr26_fields"]["wind_model"]
+                    if stellar_wind.DISCLOSURES[15] not in wm["notes"]:
+                        wm["notes"].append(stellar_wind.DISCLOSURES[15])
+        wall_zones.append(zone)
     wall_zones.sort(key=lambda z: z["members"])
 
     # pairwise separations echo
@@ -555,9 +749,13 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         "calibration_au": calibration_au,
         "zones": zones,
         "wall_zones": wall_zones,
+        "measured_system_edges": _measured_system_edges(comps),     # CR-26 G4
         "separations_au": separations,
         "model_note": eb._MODEL_NOTE,
         "composition_note": _MODEL_NOTE_COMPOSE,
+        # internal (popped by query.py): the components the system --wind-state reached whose rate a data tier set
+        "_cr26_system_ws_unused": [c["id"] for c in comps if c.get("sys_ws_reached") and c.get("cr26")
+                                   and c["cr26"].get("unused_wind_state")],
     }
 
 
@@ -578,14 +776,18 @@ def _parse_component_spec(s):
             "mass_loss_msun_yr",
             # CR-22 per-component wall inputs
             "wind_speed", "v_ism", "c_ms", "b_field", "n_cloud", "cloud_temp",
-            "wind_phase_yr", "f_shock", "m_shock_min"}
+            "wind_phase_yr", "f_shock", "m_shock_min",
+            # CR-26 per-star wind-model inputs (their G14 ranges are exit-2-validated by query.py)
+            "radius_rsun", "log_fx", "log_fx_limit", "prot_days"}
     _alias = {"mass": "mass_solar", "lum": "luminosity_lsun", "sma": "sma_au",
-              "type": "sp_type", "sptype": "sp_type", "otype": "otype"}
+              "type": "sp_type", "sptype": "sp_type", "sp": "sp_type", "otype": "otype"}
     _known = {"id", "name", "mass_solar", "luminosity_lsun", "sp_type", "otype", "class", "pair",
               "sma_au", "ecc", "orbits", "wind_state", "mass_loss_msun_yr",
               # CR-22 per-component wall inputs
               "wind_class", "wind_speed", "v_ism", "c_ms", "b_field", "n_cloud", "cloud_temp",
-              "wind_phase_yr", "f_shock", "m_shock_min", "mass_loss_source"}
+              "wind_phase_yr", "f_shock", "m_shock_min", "mass_loss_source",
+              # CR-26 (main_id= is the measured-table identity key — distinct from the free-text id / name)
+              "radius_rsun", "log_fx", "log_fx_limit", "prot_days", "main_id"}
     for tok in str(s).split(","):
         tok = tok.strip()
         if not tok:
@@ -685,6 +887,24 @@ def _select_orbit_masses(solutions, sp_type):
     return binary.select_stability_elements(solutions, sp_type)
 
 
+def _cr26_identity(sl, *, candidate=None, sl_failed=False, component_a=False, borrow_plx=None):
+    """The identity a ``--star`` component hands the CR-26 orchestrator (all SIMBAD resolution for CR-26
+    happens there, behind ``allow_network``)."""
+    sl = sl or {}
+    own = sl.get("plx_value") if (sl.get("plx_value") or 0) > 0 else None
+    plx = own or (borrow_plx if (borrow_plx or 0) > 0 else None)
+    notes = []
+    if own is None and plx:
+        notes.append("this component has no parallax of its own — the system primary's parallax is used (a "
+                      "physical companion's distance matches the primary's to far better than 1 %)")
+    main_id = sl.get("main_id")
+    return {"sp_type": sl.get("sp_type"), "main_id": main_id, "designations": sl.get("designations"),
+            "ra": sl.get("ra"), "dec": sl.get("dec"), "d_pc": (1000.0 / plx if plx else None),
+            "candidate": candidate if candidate is not None else (None if component_a else
+                                                                  xray_catalog.a_candidate(main_id)),
+            "sl_failed": sl_failed, "component_a": component_a, "notes": notes}
+
+
 def _single_body_component(sl, catalog, star, status_out=None):
     """Resolve a single / secondary / wide-member star to ONE component via the CR-11.2 mass chain,
     wiring the bolometric-L inversion (CR-13.2 / Q2) when a **main-sequence** star has no
@@ -719,7 +939,9 @@ def _single_body_component(sl, catalog, star, status_out=None):
             # CR-25 (contract 3(b)): the primary otype rides on the component (compose's classify
             # previously saw otype=None — its WR/AGB-by-otype now agrees with the domain above)
             "otype": sl.get("otype"),
-            "designations": sl.get("designations")}
+            "designations": sl.get("designations"),
+            # CR-26: the resolved SIMBAD record the orchestrator needs (resolved at the entry point)
+            "_cr26_identity": _cr26_identity(sl)}
     # CR-25.2: the FULL otype list — fetched only for an MS K/M body, and only now the mass resolved
     sw = resolve_star_wind(sp, sl.get("otype"), sl.get("main_id"), class_tag=class_tag)
     if sw["otypes"] is not None:
@@ -855,16 +1077,24 @@ def _resolve_system_from_star(star, catalog):
                               component_rule=False)
             if comp_ok else {"cls_kw": {"wind_otype_source": None}, "otypes": None, "status": None,
                              "fallback_to_head": False, "candidate": None})
+    # CR-26: A is identified through its A candidate (independent of the CR-25 K/M gate; G12 falls back to the
+    # head); B through the comp_sl already fetched above (a network failure → the H1 string fallback).
+    comp_failed = (not comp_ok and isinstance(comp_sl, dict) and not str(comp_sl.get("error", "")).startswith(
+        databases.SIMBAD_NO_RESULTS_PREFIX))
+    ident_a = _cr26_identity(sl, candidate=xray_catalog.a_candidate(main_id), component_a=True)
+    ident_b = _cr26_identity(comp_sl if comp_ok else {"sp_type": comp_sp},
+                             candidate=(comp_id if comp_failed else ""), sl_failed=comp_failed,
+                             borrow_plx=sl.get("plx_value"))
     comps = [
         {"id": main_id or f"{star} A", "name": main_id, "mass_solar": prim_mass,
          "mass_provenance": prim_prov, "mass_note": prim_note, "sp_type": sl.get("sp_type"),
          "wind_otype_source": sw_a["cls_kw"]["wind_otype_source"],
          "designations": sl.get("designations"), "pair": "AB",
-         "sma_au": sma, "ecc": sel["ecc"]},
+         "sma_au": sma, "ecc": sel["ecc"], "_cr26_identity": ident_a},
         {"id": comp_id, "name": comp_id, "mass_solar": comp_mass, "mass_provenance": comp_prov,
          "mass_note": comp_note, "sp_type": comp_sp, "class": comp_class,
          "otype": comp_otype, "wind_otype_source": sw_b["cls_kw"]["wind_otype_source"],
-         "designations": comp_desig, "pair": "AB", "sma_au": sma, "ecc": sel["ecc"]},
+         "designations": comp_desig, "pair": "AB", "sma_au": sma, "ecc": sel["ecc"], "_cr26_identity": ident_b},
     ]
     for c, sw in zip(comps, (sw_a, sw_b)):
         if sw["otypes"] is not None:
@@ -887,11 +1117,45 @@ def _resolve_system_from_star(star, catalog):
 def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=None,
                              phase="both", alpha=_DEFAULT_ALPHA,
                              calibration_au=eb._KUIPER_EDGE_AU, dial=None, beta=0.0, gamma=0.0,
-                             system_wind=None, wind_state=None):
+                             system_wind=None, wind_state=None, prot_days=None):
     """Entry point for ``exclusion-system``. Resolve the components (from ``--star`` live, or explicit
     ``--component`` specs) — each mass via the CR-11.2 chain — then compose. Returns the result dict
     (with a ``resolution`` note block) or a curated ``{"error": str}``.
     """
+    from core import stellar_wind_tables
+    try:
+        return _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, alpha, calibration_au,
+                                         dial, beta, gamma, system_wind, wind_state, prot_days)
+    except stellar_wind_tables.Cr26DataError as e:       # a corrupt / missing WB data file (CR-26 §1)
+        return {"error": str(e)}
+
+
+def _h4_inject(spec):
+    """H4 (M-8) — a ``main_id=`` measured-row hit supplies the class (``sp_type_simbad``) when the caller gave
+    none; a caller's class wins, with a note if it disagrees — its ``parse_sp`` letter or its domain differs (RG2).
+    Runs in the ``--component`` loop BEFORE the mass chain / domain, so an evolved row classifies as evolved."""
+    mid = spec.get("main_id")
+    if not mid:
+        return spec
+    row = stellar_wind.swt.load_cr26_tables()["MEASURED"].get(stellar_wind.swt.collapse_ws(mid))
+    if row is None:
+        return spec
+    caller = spec.get("sp_type") or spec.get("class")
+    if not caller:
+        spec["sp_type"] = row["sp_type_simbad"]
+        return spec
+    rl = stellar_wind.parse_sp(row["sp_type_simbad"])[0]
+    cl = stellar_wind.parse_sp(caller)[0] if str(caller).strip().lower() not in _TAG_WORDS else None
+    rd = _component_domain(row["sp_type_simbad"], None)[0]
+    cd = _component_domain(spec.get("sp_type"), spec.get("class"), spec.get("otype"))[0]   # as the component is classed
+    if (cl and cl != rl) or cd != rd:                # RG2 (MSG 311): the class letter OR the domain it resolves to
+        spec.setdefault("cr26_notes", []).append(
+            stellar_wind.NOTE_H4.format(cc=caller, rc=row["sp_type_simbad"]))
+    return spec
+
+
+def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, alpha, calibration_au, dial, beta,
+                              gamma, system_wind, wind_state, prot_days):
     catalog = stellar_mass_tables.load_mass_catalog(star_mass_catalog)
     if isinstance(catalog, dict) and "error" in catalog:
         return {"error": catalog["error"]}
@@ -915,6 +1179,7 @@ def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=
             spec = _parse_component_spec(raw) if isinstance(raw, str) else dict(raw)
             if isinstance(spec, dict) and "error" in spec:
                 return spec
+            spec = _h4_inject(spec)                          # CR-26 H4 — before the mass chain / domain
             # CR-19 (WB MSG 209): uniform-surface addendum — a bounded FLAME on a mass-resolving
             # --component (a dict spec carrying `designations`; a CLI string spec carries none, so it
             # stays FLAME-free / deterministic) flags a per-component `flame_status_<a+i>` ∈
@@ -941,9 +1206,32 @@ def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=
     else:
         return {"error": "exclusion-system requires --star or at least one --component."}
 
+    if star:
+        # CR-26: the per-star network inputs, after the CR-23 mass + CR-25 otype resolution. The frozen
+        # generator's checks run first on the standoff-bearing components (M-6: no CR-26 lookup is spent on a
+        # bad --dial/--beta/…; an all-windless system keeps today's exit 0).
+        for c in components:
+            dom, _ = _component_domain(c.get("sp_type"), c.get("class"), otype=c.get("otype"))
+            if dom in (ew.MAIN_SEQUENCE, ew.EVOLVED) and c.get("mass_solar") is not None:
+                ws_c = (ew._norm_wind_state(wind_state) or wind_state) if dom == ew.MAIN_SEQUENCE else None
+                err = eb.standoff_arg_error(c.get("luminosity_lsun") or 1.0, c.get("mass_loss_msun_yr"),
+                                            ws_c, dial, calibration_au, alpha, beta, gamma)
+                if err:
+                    return {"error": f"component '{c.get('id')}': {err['error']}"}
+        for c in components:
+            ident = c.pop("_cr26_identity", None)
+            if ident is None:
+                continue
+            dom, _ = _component_domain(c.get("sp_type"), c.get("class"), otype=c.get("otype"))
+            if dom not in (ew.MAIN_SEQUENCE, ew.EVOLVED):
+                continue
+            ident = dict(ident, domain=dom, mass=c.get("mass_solar"), catalog=catalog)
+            c["wind_inputs"] = xray_catalog.resolve_star_wind_inputs(
+                ident, {"prot_days": prot_days}, catalog=catalog)
+            c["main_id"] = c["wind_inputs"].main_id
     result = compose_exclusion_system(components, phase=phase, alpha=alpha,
                                       calibration_au=calibration_au, dial=dial, beta=beta, gamma=gamma,
-                                      system_wind=system_wind, system_wind_state=wind_state)
+                                      system_wind=system_wind, system_wind_state=wind_state, prot_days=prot_days)
     if "error" not in result and notes:
         result["resolution_notes"] = notes
     if star and "error" not in result:

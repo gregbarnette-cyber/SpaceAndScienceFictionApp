@@ -274,6 +274,17 @@ def _shape_gaia(q, t, use_async):
             "column_units": _column_units(t), "rows": _table_to_rows(t)}
 
 
+def _gaia_stdout_to_stderr():
+    """A context that diverts stdout to stderr around the ``astroquery.gaia`` import and client construction:
+    its module-level ``Gaia = GaiaClass()`` (a network call) and every client print the ESA archive's server banner
+    (e.g. "In preparation for Gaia DR4, …") to STDOUT, which would corrupt query.py's JSON. Used INSIDE the bounded
+    attempt, so the import's own network call stays under the CR-19 wall-clock bound (CP5). Found in the CR-26 live
+    probe (a pre-existing CR-19 / CR-23 path)."""
+    import contextlib
+    import sys
+    return contextlib.redirect_stdout(sys.stderr)
+
+
 def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
              row_limit=2000, use_async=False, timeout=300):
     """Any Gaia DR3 table by ADQL (`adql=`) or structured (`table`/`columns`/`where`/`cone`).
@@ -296,8 +307,9 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
     # ── Legacy path (async census, or the bound disabled): byte-identical to before CR-19 ──
     if bound is None:
         def _run():
-            from astroquery.gaia import Gaia
             with _timeout_ctx(timeout):
+                with _gaia_stdout_to_stderr():
+                    from astroquery.gaia import Gaia
                 if use_async:
                     prev = Gaia.ROW_LIMIT
                     Gaia.ROW_LIMIT = row_limit if (row_limit and row_limit > 0) else -1
@@ -330,9 +342,12 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
         if os.environ.get("SPACE_APP_GAIA_FORCE_UNREACHABLE"):
             import requests
             raise requests.exceptions.ConnectionError("SPACE_APP_GAIA_FORCE_UNREACHABLE (test hook)")
-        from astroquery.gaia import GaiaClass
-        g = GaiaClass()                          # a FRESH client per attempt — an abandoned attempt
-        job = g.launch_job(q)                    # must not share astroquery's global Gaia session
+        # a FRESH client per attempt — an abandoned attempt must not share astroquery's global Gaia session;
+        # the import + client banner go to stderr, still inside the bounded attempt (see _gaia_stdout_to_stderr)
+        with _gaia_stdout_to_stderr():
+            from astroquery.gaia import GaiaClass
+            g = GaiaClass(show_server_messages=False)
+        job = g.launch_job(q)
         t = job.get_results()
         return _shape_gaia(q, t, use_async)
 

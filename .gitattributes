@@ -35,3 +35,6 @@
 *.so    binary
 *.dll   binary
 *.exe   binary
+
+# CR-26: WB-owned data files, md5-checked at load — keep them byte-identical on every OS (no CRLF).
+data/cr26/*.csv -text

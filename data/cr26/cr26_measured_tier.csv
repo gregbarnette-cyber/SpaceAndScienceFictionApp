@@ -1,0 +1,37 @@
+row_key,system,component,simbad_main_id,sp_type_simbad,sp_type_wood2021,wood2021_row,wood_mdot_sun,wood_limit,wood_scope,wood_radius_rsun,kislyakova_mdot_sun,kislyakova_limit,kislyakova_scope,measured_rule
+prox_cen,Proxima Centauri,single,NAME Proxima Centauri,M5.5Ve,M5.5 V,1,0.2,ul,single,0.14,0.7,ul,single,upper_limit
+gj_699,Barnard's star,single,NAME Barnard's star,M4V,M4 V,2,0.2,ul,single,0.19,,,,upper_limit
+gj_411,GJ 411,single,HD 95735,M2+V,M2 V,3,0.1,ul,single,0.36,,,,upper_limit
+gj_887,GJ 887,single,HD 217987,M2V,M2 V,5,0.5,det,single,0.47,,,,point
+gj_15_a,GJ 15 AB,A,HD 1326,M2V,M2 V,6,10,det,combined_unsplit,0.37,,,,point_combined
+gj_15_b,GJ 15 AB,B,HD 1326B,M3.5V,M3.5 V,6,10,det,combined_unsplit,0.17,,,,point_combined
+gj_273,GJ 273,single,BD+05 1668,M3.5V,M3.5 V,7,0.2,ul,single,0.31,,,,upper_limit
+gj_860_a,GJ 860 AB,A,HD 239960A,M3V,M3 V,8,0.15,det,combined_unsplit,0.29,,,,point_combined
+gj_860_b,GJ 860 AB,B,HD 239960B,M4V,M4 V,8,0.15,det,combined_unsplit,0.26,,,,point_combined
+ev_lac,EV Lac,single,V* EV Lac,M4.0Ve,M3.5 V,10,1,det,single,0.32,,,,point
+gj_205,GJ 205,single,HD 36395,M1.5Ve,M1.5 V,11,0.3,det,single,0.59,,,,point
+gj_588,GJ 588,single,CD-40 9712,M2.5V,M2.5 V,12,5,ul,single,0.43,,,,upper_limit
+yz_cmi,YZ CMi,single,V* YZ CMi,M4.0Ve,M4 V,13,30,det,single,0.33,,,,point
+gj_644_ab,GJ 644 AB,AB (one SIMBAD object),HD 152751,M3.5Ve,M3+M4+M4 V,14,5,ul,combined_one_object,,,,,upper_limit
+gj_338_a,GJ 338 AB,A,HD 79210,K7V,M0 V,15,0.5,det,combined_unsplit,0.60,,,,point_combined
+gj_338_b,GJ 338 AB,B,HD 79211,M0V,M0 V,15,0.5,det,combined_unsplit,0.60,,,,point_combined
+gj_173,GJ 173,single,BD-11 916,M1V,M1 V,17,0.75,det,single,0.42,,,,point
+alf_cen_a,alpha Cen AB,A,* alf Cen A,G2V,G2 V,18,0.46,det,split,1.22,0.75,ul,combined_system,point_method_conflict
+alf_cen_b,alpha Cen AB,B,* alf Cen B,K1V,K0 V,18,1.54,det,split,0.86,0.75,ul,combined_system,point_method_conflict
+eps_eri,eps Eri,single,* eps Eri,K2V,K2 V,19,30,det,single,0.74,15.6,det,single,point_span_both
+61_cyg_a,61 Cyg AB,A,* 61 Cyg A,K5V,K5 V,20,0.5,det,single,0.67,9.6,det,combined_system,point_method_mixed_system_edge
+eps_ind,eps Ind,single,* eps Ind,K5V,K5 V,21,0.5,det,single,0.73,,,,point
+tau_cet,tau Cet,single,* tau Cet,G8V,G8 V,22,0.1,ul,single,0.77,4.2,ul,single,upper_limit
+70_oph_a,70 Oph AB,A,* 70 Oph A,K0V,K0 V,23,55.7,det,split,0.83,66.5,det,combined_system,point_span_both
+70_oph_b,70 Oph AB,B,* 70 Oph B,K4V,K5 V,23,44.3,det,split,0.67,66.5,det,combined_system,point_span_both
+36_oph_a,36 Oph AB,A,* 36 Oph A,K2V,K1 V,24,8.5,det,split,0.69,,,,point
+36_oph_b,36 Oph AB,B,* 36 Oph B,K1V,K1 V,24,6.5,det,split,0.59,,,,point
+del_pav,del Pav,single,* del Pav,G8IV,G8 IV,25,10,det,single,1.22,,,,point
+gj_892,GJ 892,single,HD 219134,K3V,K3 V,26,0.5,det,single,0.78,,,,point
+ksi_boo_a,xi Boo AB,A,* ksi Boo A,G7Ve,G8 V,27,0.5,det,split,0.86,,,,point
+ksi_boo_b,xi Boo AB,B,* ksi Boo B,K5Ve,K4 V,27,4.5,det,split,0.61,,,,point
+61_vir,61 Vir,single,* 61 Vir,G6.5V,G5 V,28,0.3,det,single,0.99,,,,point
+del_eri,del Eri,single,* del Eri,K0+IV,K0 IV,29,4,det,single,2.58,,,,point
+pi1_uma,pi1 UMa,single,* pi.01 UMa,G0.5V,G1.5 V,30,0.5,det,single,0.97,,,,point
+lam_and,lam And,single,* lam And,G8IVk,G8 IV-III,31,5,det,single,7.40,,,,point
+dk_uma,DK UMa,single,* d UMa,G5III-IV,G4 III-IV,32,0.15,det,single,4.40,,,,point

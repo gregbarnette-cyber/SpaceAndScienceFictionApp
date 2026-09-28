@@ -753,14 +753,18 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
         return 47.5 * (_EVLAC_BCLUM ** 0.2632) ** alpha             # the FLAME-miss inversion standoff
 
     def test_spectral_type_wind_state_now_honored(self):
+        # CR-26 contracted change: --wind-state selects the CR-26 class-default STATE (M4+ active: 10^1.0373 ×
+        # the M4 subtype-median R² = 0.2230²), no longer the coarse 1e-13 bin; the K/M default reads `solar`.
         r = _run_boundary(spectral_type="M4V", wind_state="active")
         self.assertEqual((r["wind_class"], r["wind_class_provenance"], r["wind_otype"]),
                          ("active", "manual", None))
-        self.assertAlmostEqual(r["wall_au"], _WALL_ACTIVE, places=9)
-        self.assertEqual(r["mass_loss_msun_yr"], 1e-13)
+        rate = 10 ** 1.0373 * 0.2230 ** 2 * 2e-14
+        self.assertAlmostEqual(r["mass_loss_msun_yr"], rate, places=20)
+        self.assertAlmostEqual(r["wall_au"], 6.0 * (rate / 2e-14) ** 0.5, places=9)
+        self.assertEqual(r["mass_loss_tier"], "class_default")
         d = _run_boundary(spectral_type="M4V")
-        self.assertEqual((d["wind_class"], d["wind_class_provenance"]), ("quiet", "class_default"))
-        self.assertAlmostEqual(d["wall_au"], _WALL_QUIET, places=9)
+        self.assertEqual((d["wind_class"], d["wind_class_provenance"]), ("solar", "class_default"))
+        self.assertAlmostEqual(d["mass_loss_msun_yr"], 10 ** 0.4729 * 0.2230 ** 2 * 2e-14, places=20)
         self.assertEqual(r["r_ex_au"], d["r_ex_au"])                      # standoff unmoved (γ=0)
 
     def test_star_ev_lac_otype_auto(self):
@@ -768,17 +772,21 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
         self.assertEqual((r["wind_class"], r["wind_class_provenance"], r["wind_otype"],
                           r["wind_otype_source"], r["wind_class_note"]),
                          ("active", "otype_auto", ["Er*"], None, None))
-        self.assertAlmostEqual(r["wall_au"], _WALL_ACTIVE, places=9)
+        # CR-26 contracted change: EV Lac is a Wood-measured star (1.0 Ṁ⊙ → wall 6.00, A2); the otype_auto
+        # label stays (the state label); the standoff is unmoved at γ=0.
+        self.assertAlmostEqual(r["wall_au"], 6.0, places=9)
+        self.assertEqual((r["mass_loss_tier"], r["mass_loss_provenance"]), ("measured", "measured"))
         self.assertEqual(r["wall_route"], "wind_term")
         self.assertAlmostEqual(r["r_ex_au"], self._rex(), places=9)
         self.assertNotIn("otype_status", r)
-        self.assertEqual(r["mass_loss_provenance"], "class_default")
 
     def test_star_ev_lac_overrides(self):
         q = self._star("EV Lac", {"V* EV Lac": _LISTS["EV Lac"]}, wind_state="quiet")
         self.assertEqual((q["wind_class"], q["wind_class_provenance"], q["wind_otype"]),
                          ("quiet", "manual", ["Er*"]))
-        self.assertAlmostEqual(q["wall_au"], _WALL_QUIET, places=9)
+        # CR-26 contracted change: a data tier (EV Lac measured) keeps its value — the flag is a label only
+        self.assertAlmostEqual(q["wall_au"], 6.0, places=9)
+        self.assertTrue(any("did not set the wind rate" in n for n in q["wind_model"]["notes"]))
         a = self._star("EV Lac", {"V* EV Lac": _LISTS["EV Lac"]}, wind_state="active")
         self.assertEqual((a["wind_class"], a["wind_class_provenance"]), ("active", "manual"))
         self.assertEqual(q["r_ex_au"], a["r_ex_au"])
@@ -806,7 +814,9 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
         r = self._star("tau Cet", seam=boom)
         self.assertEqual((r["wind_class"], r["wind_class_provenance"], r["wind_otype"]),
                          ("solar", "class_default", None))
-        self.assertAlmostEqual(r["wall_au"], 6.0, places=9)
+        # CR-26 contracted change: τ Cet is Wood-measured as an upper limit ≤ 0.1 Ṁ⊙ → wall ≲ 6√0.1 (A2)
+        self.assertAlmostEqual(r["wall_au"], 6.0 * 0.1 ** 0.5, places=9)
+        self.assertTrue(r["wall_is_upper_bound"])
         a = self._star("tau Cet", seam=boom, wind_state="active")
         self.assertEqual((a["wind_class"], a["wind_class_provenance"]), ("active", "manual"))
 
@@ -814,7 +824,7 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
         os.environ["SPACE_APP_SIMBAD_OTYPES_FORCE_UNREACHABLE"] = "1"
         r = self._star("EV Lac", {"V* EV Lac": _LISTS["EV Lac"]})
         self.assertEqual((r["wind_class"], r["otype_status"], r["wind_otype_source"]),
-                         ("quiet", "unreachable", None))
+                         ("solar", "unreachable", None))          # CR-26: a K/M default reads `solar`
         b = self._star("Barnard", {"NAME Barnard's star": _LISTS["Barnard"]})
         self.assertEqual((b["wind_class"], b["wind_class_provenance"], b["otype_status"]),
                          ("active", "otype_auto", "unreachable"))   # primary BY* still auto-detects
@@ -848,15 +858,18 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
 
     def test_q7_gamma_standoff_untouched(self):
         rows = {"V* EV Lac": _LISTS["EV Lac"]}
+        # CR-26 contracted change (WB Q1): at γ>0 the tier rate feeds the standoff — EV Lac's measured 1.0 Ṁ⊙
+        # (= 2e-14 → wind term 1) — so an in-scope star no longer errors, and an unused --wind-state no longer
+        # sets the standoff either.
+        base = self._rex(0.4)
         e = self._star("EV Lac", rows, alpha=0.4, gamma=0.2)
-        self.assertIn("wind exponent set without", e["error"])       # otype_auto never feeds the standoff
+        self.assertAlmostEqual(e["r_ex_au"], base, places=9)
         q = self._star("EV Lac", rows, alpha=0.4, gamma=0.2, wind_state="quiet")
         a = self._star("EV Lac", rows, alpha=0.4, gamma=0.2, wind_state="active")
-        base = self._rex(0.4)
-        self.assertAlmostEqual(q["r_ex_au"], base * (1e-16 / 2e-14) ** 0.2, places=9)
-        self.assertAlmostEqual(a["r_ex_au"], base * (1e-13 / 2e-14) ** 0.2, places=9)
-        self.assertAlmostEqual(a["wall_au"], _WALL_ACTIVE, places=9)   # the wall now follows the flag
-        self.assertAlmostEqual(q["wall_au"], _WALL_QUIET, places=9)
+        self.assertAlmostEqual(q["r_ex_au"], base, places=9)
+        self.assertAlmostEqual(a["r_ex_au"], base, places=9)
+        self.assertAlmostEqual(a["wall_au"], 6.0, places=9)
+        self.assertAlmostEqual(q["wall_au"], 6.0, places=9)
 
     def test_star_non_ms_branches_carry_the_fields_by_value(self):
         def boom(adql):
@@ -879,7 +892,7 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
         def boom(adql):
             raise AssertionError("fetched with no main_id")
         r = self._star("Nameless", seam=boom)
-        self.assertEqual((r["wind_class"], r["wind_class_provenance"]), ("quiet", "class_default"))
+        self.assertEqual((r["wind_class"], r["wind_class_provenance"]), ("solar", "class_default"))  # CR-26
         self.assertNotIn("otype_status", r)
 
     def test_evolved_gamma_note_says_the_standoff_still_uses_it(self):
@@ -945,26 +958,31 @@ class Cr25SystemWiringTest(_Cr25EnvMixin, unittest.TestCase):
         c = self._comps(r)["V* EV Lac"]
         self.assertEqual((c["wind_class"], c["wind_class_provenance"], c["wind_otype"], c["wind_otype_source"]),
                          ("active", "otype_auto", ["Er*"], None))
-        self.assertEqual(c["mass_loss_msun_yr"], 1e-13)
-        self.assertAlmostEqual(c["wall_au"], _WALL_ACTIVE, places=9)
+        # CR-26 contracted change: EV Lac is Wood-measured (1.0 Ṁ⊙ = 2e-14 → wall 6.00, A2)
+        self.assertEqual((c["mass_loss_msun_yr"], c["mass_loss_tier"]), (2e-14, "measured"))
+        self.assertAlmostEqual(c["wall_au"], 6.0, places=9)
         self.assertAlmostEqual(c["r_ex_au"], 47.5 * (_EVLAC_BCLUM ** 0.2632) ** 0.4, places=9)
         self.assertNotIn("otype_status", r)
         q = self._comps(self._sys(self._evlac_seam, star="EV Lac", alpha=0.4, wind_state="quiet"))["V* EV Lac"]
         self.assertEqual((q["wind_class"], q["wind_class_provenance"], q["wind_otype"]), ("quiet", "manual", ["Er*"]))
-        self.assertAlmostEqual(q["wall_au"], _WALL_QUIET, places=9)
+        self.assertAlmostEqual(q["wall_au"], 6.0, places=9)            # the data tier keeps its value
         self.assertEqual(q["r_ex_au"], c["r_ex_au"])
 
     def test_star_single_body_degrade(self):
         os.environ["SPACE_APP_SIMBAD_OTYPES_FORCE_UNREACHABLE"] = "1"
         r = self._sys(self._evlac_seam, star="EV Lac", alpha=0.4)
         self.assertEqual(r["otype_status"], "unreachable")
-        self.assertEqual(self._comps(r)["V* EV Lac"]["wind_class"], "quiet")
+        self.assertEqual(self._comps(r)["V* EV Lac"]["wind_class"], "solar")     # CR-26: the K/M default label
 
     def test_component_overrides_fixed_not_broken(self):              # E6: the discriminating pair
-        cases = (("class=G2V,mass=1.0,wind_state=active", "active", 6.0, _WALL_ACTIVE),
-                 ("class=M4V,mass=0.2,wind_state=solar", "solar", _WALL_QUIET, 6.0),
-                 ("class=M4V,mass=0.2,wind_state=active", "active", _WALL_ACTIVE, _WALL_ACTIVE),
-                 ("class=G2V,mass=1.0,wind_state=solar", "solar", 6.0, 6.0))
+        # CR-26 contracted change: wind_state selects the CR-26 class-default STATE (per-area level × the
+        # subtype-median R²: G2 1.0010, M4 0.2230), no longer a coarse bin
+        def w(per_area, r):
+            return 6.0 * (10 ** per_area * r * r) ** 0.5
+        cases = (("class=G2V,mass=1.0,wind_state=active", "active", 6.0, w(0.9172, 1.0010)),
+                 ("class=M4V,mass=0.2,wind_state=solar", "solar", _WALL_QUIET, w(0.4729, 0.2230)),
+                 ("class=M4V,mass=0.2,wind_state=active", "active", _WALL_ACTIVE, w(1.0373, 0.2230)),
+                 ("class=G2V,mass=1.0,wind_state=solar", "solar", 6.0, w(0.0994, 1.0010)))
         for spec, wc, old_wall, new_wall in cases:
             c = list(self._comps(es.compute_exclusion_system(component_specs=[spec])).values())[0]
             self.assertEqual((c["wind_class"], c["wind_class_provenance"]), (wc, "manual"), spec)
@@ -1030,7 +1048,7 @@ class Cr25SystemWiringTest(_Cr25EnvMixin, unittest.TestCase):
         c = self._comps(r)
         a, b = c["BD+19  5116"], c["BD+19  5116 B"]
         self.assertEqual((a["wind_class"], a["wind_otype"], a["wind_otype_source"]),
-                         ("quiet", None, "BD+19  5116A"))               # head's Er* is NOT A's
+                         ("solar", None, "BD+19  5116A"))               # head's Er* is NOT A's (CR-26: solar)
         self.assertEqual((b["wind_class"], b["wind_class_provenance"], b["wind_otype"], b["wind_otype_source"]),
                          ("active", "otype_auto", ["Er*"], None))
         self.assertFalse(any("otype list taken from the system head" in n for n in r.get("resolution_notes", [])))
@@ -1047,7 +1065,7 @@ class Cr25SystemWiringTest(_Cr25EnvMixin, unittest.TestCase):
                       "'BD+19  5116 A' SIMBAD object)", r["resolution_notes"])
         self.assertEqual(r["otype_status_b"], "unreachable")
         self.assertNotIn("otype_status_a", r)
-        self.assertEqual(c["BD+19  5116 B"]["wind_class"], "quiet")     # degraded to its primary PM*
+        self.assertEqual(c["BD+19  5116 B"]["wind_class"], "solar")     # degraded to its primary PM* (CR-26)
 
     def test_mass_error_path_never_fetches(self):
         def boom(adql):
@@ -1102,7 +1120,7 @@ class Cr25SystemWiringTest(_Cr25EnvMixin, unittest.TestCase):
         c = {x["id"]: x for z in with_list["zones"] for x in z["components"]}
         self.assertAlmostEqual(c["* alf Cen"]["r_ex_au"], 47.5 * 1.079 ** 0.4, places=9)
         self.assertAlmostEqual(c["* alf Cen B"]["r_ex_au"], 47.5 * 0.909 ** 0.4, places=9)
-        self.assertEqual((c["* alf Cen B"]["wind_class"], c["* alf Cen B"]["wind_otype"]), ("quiet", None))
+        self.assertEqual((c["* alf Cen B"]["wind_class"], c["* alf Cen B"]["wind_otype"]), ("solar", None))  # CR-26
 
 
 class Cr25Cp3RegressionTest(_Cr25EnvMixin, unittest.TestCase):
@@ -1119,20 +1137,21 @@ class Cr25Cp3RegressionTest(_Cr25EnvMixin, unittest.TestCase):
             component_specs=["id=A,class=G2V,mass=1.0,wind_state=active,wind_class=solar"], gamma=0.3)
         c = r["zones"][0]["components"][0]
         self.assertEqual(c["wind_class"], "solar")
-        self.assertAlmostEqual(c["r_ex_au"], 47.5 * 5 ** 0.3, places=9)
+        # CR-26 contracted change (G10 + Q1): wind_class=solar is the state selector (typical); the class-default
+        # rate (G typical 10^0.0994 × 1.0010²) feeds the γ>0 standoff, so the wind_state no longer does
+        self.assertAlmostEqual(c["r_ex_au"], 47.5 * (10 ** 0.0994 * 1.0010 ** 2) ** 0.3, places=9)
         self.assertEqual(c["wind_class_note"],
                          "wind_state 'active' does not set the wind bin — superseded by the explicit "
-                         "wind_class 'solar'; at γ>0 the regulated standoff's Ẇ term still uses it "
-                         "(pre-existing, unchanged)")
+                         "wind_class 'solar'")
 
     def test_system_wind_state_on_explicit_wind_class_ms(self):
         r = es.compute_exclusion_system(component_specs=["id=A,class=G2V,mass=1.0,wind_class=solar"],
                                         wind_state="active", gamma=0.3)
         c = r["zones"][0]["components"][0]
         self.assertEqual(c["wind_class"], "solar")
-        self.assertAlmostEqual(c["r_ex_au"], 47.5 * 5 ** 0.3, places=9)    # MS: the standoff takes it
+        # CR-26 contracted change (G10 + Q1): the class-default rate feeds the γ>0 standoff
+        self.assertAlmostEqual(c["r_ex_au"], 47.5 * (10 ** 0.0994 * 1.0010 ** 2) ** 0.3, places=9)
         self.assertTrue(c["wind_class_note"].startswith("system --wind-state 'active' does not set the wind bin"))
-        self.assertTrue(c["wind_class_note"].endswith("(pre-existing, unchanged)"))
 
     def test_withheld_system_flag_error_explains_itself(self):
         r = es.compute_exclusion_system(component_specs=["id=G,class=K0III,mass=1.5"],
@@ -1147,7 +1166,8 @@ class Cr25Cp3RegressionTest(_Cr25EnvMixin, unittest.TestCase):
             "id=B,class=M4V,mass=0.3,mass_loss_msun_yr=3e-14,pair=AB,sma=9000,ecc=0",
             "id=W,class=wd,mass=0.6,pair=AW,sma=20000,ecc=0"])
         c = {x["id"]: x for z in r["zones"] for x in z["components"]}
-        self.assertEqual((c["A"]["mass_loss_msun_yr"], c["A"]["mass_loss_provenance"]), (1e-16, "class_default"))
+        self.assertAlmostEqual(c["A"]["mass_loss_msun_yr"], 10 ** 0.4729 * 0.2230 ** 2 * 2e-14, places=20)  # CR-26
+        self.assertEqual(c["A"]["mass_loss_provenance"], "class_default")
         self.assertEqual((c["B"]["mass_loss_msun_yr"], c["B"]["mass_loss_provenance"]), (3e-14, "supplied"))
         self.assertEqual((c["W"]["mass_loss_msun_yr"], c["W"]["mass_loss_provenance"]), (None, None))
 
@@ -1168,7 +1188,7 @@ class Cr25Cp3RegressionTest(_Cr25EnvMixin, unittest.TestCase):
         c = {x["id"]: x for z in r["zones"] for x in z["components"]}
         a = c["BD+19  5116"]
         self.assertEqual((a["wind_class"], a["wind_class_provenance"], a["wind_otype"]),
-                         ("quiet", "class_default", None))
+                         ("solar", "class_default", None))            # CR-26: the K/M default label
         self.assertEqual(r["otype_status_a"], "unreachable")
 
 

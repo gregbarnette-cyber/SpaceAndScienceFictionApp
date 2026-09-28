@@ -2010,6 +2010,75 @@ active K/M star changes (quiet 0.424 → active **13.42 AU**, `wall_route wind_t
   `--wind-state active` (a coarse 5 Ṁ☉ bin). `completed_plans/PHASE_CR25_PLAN.md`; tests `tests/test_cr25.py` +
   live `tests/test_cr25_live.py`.
 
+##### CR-26 — the per-star wind model: supplied → measured → X-ray → non-detection → class-default tier ladder (built 2026-09-27)
+WB contract `design-lab/star-system-analysis/spaceapp-change-request-CR26-xray-tier-wind-model.md` (+ channel rulings
+MSG 287–306). For a **coronal-wind main-sequence** star (domain `main_sequence`, spectral class F/G/K/M — F dwarfs
+included, the `f_dwarf` default retired) the research-grade **WALL** rate now comes from a per-star tier ladder instead
+of CR-25's three coarse bins. **The canon standoff is unchanged at `--gamma 0`** (the FROZEN generator, byte-identical);
+at γ > 0 the tier's rate feeds the standoff's wind term (WB Q1 — an upper-bound rate makes the standoff an upper bound,
+noted). Every CR-26 value is research-grade: *a long-term, population-typical Ṁ for a star at that X-ray flux, not the
+star's current wind* (the §26.8 disclosures ride in `wind_model.notes`, verbatim).
+- **Tiers (`mass_loss_tier`), first that yields a value wins:** `supplied` (`--mass-loss-msun-yr` / `mass_loss_msun_yr=`,
+  unchanged) → `measured` (Wood 2021 / Kislyakova 2024, the WB table `data/cr26/cr26_measured_tier.csv`, matched on the
+  whitespace-collapsed SIMBAD `main_id`; also on the `evolved` domain) → `xray` (HEASARC 2RXS → eRASS1 → 5XMM-DR15, PM-propagated
+  to each source's epoch; the guarded XMM rung; the censored Wood relation `log(Ṁ/A) = 0.245 + 0.592 (log F_X − 5)`;
+  GCNS blends by equal surface flux) → `xray_nondetection` (the fork-9 tables at the survey limit) → `class_default`
+  (the class state × R★²) → `noncoronal_row` (A/B/O, evolved without a row, windless, unmodeled — CR-22 rows unchanged);
+  plus `object_preset`, `legacy_row` (a bare `--mass-msun --wind-state`), `none`.
+- **`--wind-state` selects the class-default state only** (`quiet`/`solar`→typical/`active`; `hot` → `noncoronal_row` o_hot
+  at tier 5): a star whose rate a data tier set keeps it, a `wind_model.notes` entry + one stderr line say so (exit 0).
+  `wind_class` is the CR-26 **state label** (`quiet` / `solar` / `active`) for every in-scope star — a K/M star with no
+  active otype now reads **`solar`** (was `quiet`). `mass_loss_provenance` gains `measured` / `xray` / `xray_nondetection`.
+  Tiers 2–5 are Wood-convention rates: `mass_loss_source: astrosphere_wood`, **v_wind 400 forced even over `--wind-speed`**
+  (R10 — noted); a `--mass-loss-source` counts only with a supplied rate.
+- **New inputs.** `exclusion-boundary --radius-rsun <R☉> --log-fx <fit-scale log F_X> | --log-fx-limit <…> --prot-days <d>`;
+  `exclusion-system --prot-days` (reaches every component lacking its own) and `--component` keys `radius_rsun=`, `log_fx=`,
+  `log_fx_limit=`, `prot_days=`, `main_id=` (the measured-table identity — a hit supplies the class when no `class=`/`sp=`
+  is given; a caller's class wins, noted if it disagrees; H4), `sp=` (= `sp_type`). **Exit 2** on a non-finite / out-of-range
+  value (`log_fx`, `log_fx_limit` ∉ [0, 12]; radius ∉ (0, 2000]; prot ∉ (0, 1e5]) or `log_fx` + `log_fx_limit` together, on
+  every path; unknown `--component` keys and the pre-existing numeric keys keep exit 1. A valid CR-26 input on a star no tier
+  can use (a bare mass, an `--object`, A/B/O, evolved, windless, unmodeled) is ignored with a note.
+- **New output fields (every `exclusion-boundary` result and every `exclusion-system` component):** `mass_loss_tier`,
+  `mass_loss_band_msun_yr` ([lo, hi] or null), `mass_loss_band_dex`, `mass_loss_upper_limit`, `wall_band_wind_au` (the wall at
+  the band's two rate edges; null with no band or an upper bound), `wall_band_wind_routes` (only when the two edges' routes
+  differ), `wall_band_wind_exceeds_standoff`, `wall_is_upper_bound`, and **`wind_model`**
+  `{model, per_area_log, log_fx, log_fx_kind, regime, band_construction, class_bin, state, flags, extrapolation_class, modes,
+  xray{status, rung, detection, source_id, epoch, separation_arcsec, flux_fit_scale, log_fx, system_log_fx, limit_log_fx,
+  limit_survey, erass1_footprint, blended_source, rungs, xmm_guard?}, radius, measured, tiers, notes}` (a skeleton with
+  `xray.status: not_run` and empty `tiers` on the non-ladder tiers). **Zone level (`exclusion-system`, wherever
+  `combined_wind_wall_au` is):** `combined_wind_wall_band_wind_au`, `combined_wind_band_exceeds_standoff`,
+  `combined_wind_wall_is_upper_bound`; top level `measured_system_edges` (61 Cyg's Kislyakova system edge, G4).
+- **Enums:** `class_bin ∈ {F, G, K, M0–M3.5 (en dash), M4+}`; `log_fx_kind ∈ {detection, supplied, conditional_below_limit,
+  survey_limit, class_state}`; `band_construction ∈ {regime, class_mixture, truncated_mixture, measured_span}`;
+  `xray.status ∈ {ok, timeout, unreachable, error, not_run}`; `xray.rung ∈ {2RXS_1RXS, 2RXS, eRASS1, XMM, supplied}`;
+  `xray.rungs[].status ∈ {detection, no_detection, timeout, unreachable, error, not_queried, out_of_footprint}`;
+  `limit_survey ∈ {RASS, eRASS1, supplied}`; `tiers[*].status ∈ {ok, upper_limit_only, failed, not_reachable}` (a no-network
+  path — `--component`, `--spectral-type` — reads `not_reachable` for the X-ray tiers it cannot query, K1).
+- **A failed lookup is not a non-detection:** a failed rung or survey-limit query with no detection → the class default +
+  `not_authoritative` (never `xray_nondetection`); a failed rung above a detection → the detection, `not_authoritative`.
+  **Hooks** (one per resolve family, before the cache and any network): `SPACE_APP_XRAY_FORCE_UNREACHABLE` (`=2RXS,eRASS1,XMM`
+  fails just those rungs; any other value all three), `SPACE_APP_XRAY_LIMIT_FORCE_UNREACHABLE`,
+  `SPACE_APP_XRAY_ASTROM_FORCE_UNREACHABLE` (`=g` fails only the SIMBAD-G fetch — the H6 case; never the local GCNS step),
+  `SPACE_APP_TIC_FORCE_UNREACHABLE` (TIC + the SIMBAD 5″ cone), `SPACE_APP_GAIA_RADIUS_FORCE_UNREACHABLE`,
+  `SPACE_APP_BLEND_FORCE_UNREACHABLE`, `SPACE_APP_SIMBAD_IDENT_FORCE_UNREACHABLE`. Timeouts `SPACE_APP_XRAY_TIMEOUT`,
+  `SPACE_APP_TIC_TIMEOUT` (30 s), `SPACE_APP_SIMBAD_TIMEOUT`; `SPACE_APP_CATALOG_CACHE_DIR` redirects the cache. The blend
+  needs the local GCNS table (option 58) — an empty table reads as a failed blend family (`not_authoritative`).
+- **Data:** the six WB-owned CSVs in `data/cr26/` are vendored byte-identical, **md5-checked at load** (a mismatch → a curated
+  error, exit 1; `SPACE_APP_CR26_DATA_DIR` overrides the directory). Never edit them — a data change is a WB change.
+- **Behaviour changes (contracted, §Consequences):** walls move for coronal-wind MS stars; `wind_class` K/M default `quiet` →
+  `solar`; `--wind-state` binds at tier 5 only; `f_dwarf` retired as a default; γ > 0 standoffs move for in-scope stars; an
+  Am-type string (`kA5hF0mF2`) reads as its first upper-case letter (A → the `a_dwarf` row, H7 — the one deliberate value change
+  to a non-coronal output); a direct `compose_exclusion_system` call on an in-scope plain dict now runs the (deterministic)
+  model, while a direct `compute_two_layer_boundary` call with no `wind_model` keeps today's path (`mass_loss_tier` derived:
+  `supplied` / `legacy_row` / `noncoronal_row` / `none`). A star with **no spectral type** keeps today's path.
+- **Anchors (offline, deterministic):** `--spectral-type K2V --radius-rsun 0.755 --log-fx 6.5 --prot-days 0.4` → Ṁ 7.7427 Ṁ☉,
+  wall 16.70 {2.66–229.6}; `--spectral-type K1V --radius-rsun 0.833 --log-fx-limit 4.094` → ≤ 0.3548, wall ≲ 3.57;
+  `--spectral-type K2V` → 1.137, 6.40 AU (the class-statistics files re-vendored per WB MSG 311 — they supersede the
+  spec's printed class numbers); the GJ 65 `--component` pair → 0.1975 / 0.1834, zone band [0.590, 20.65] vs the
+  20.51 standoff (exceeds, `periastron`); `--component "id=E,mass=0.82,class=K2V,main_id=* eps Eri"` → measured 30, wall 32.86.
+  Live (`tests/test_cr26_live.py`): Wolf 359 0.1141, 61 Cyg B 0.6290 (blended), α Cen A `tiers.xray` 0.9156. Plan
+  `PHASE_CR26_PLAN.md` (moves to `completed_plans/` at the CR close); tests `tests/test_cr26_{model,network,wiring,live}.py`.
+
 ### Power generation / storage / thermal (Phase AL — Group R, no network)
 
 Ten `query.py`-only, pure-math, self-validating calculators + two bundled-table subcommands for the

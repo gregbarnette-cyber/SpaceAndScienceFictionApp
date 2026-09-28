@@ -1,10 +1,9 @@
 # PHASE CR-26 — exclusion per-star wind model: supplied → measured → X-ray → non-detection → class-default tier ladder
 
-**Status: PLAN v2.1 (reconciled rewrite + round-3 fixes, 2026-09-26).**
-- Round-1 and round-2 plan reviews are folded in.
-- Every WB ruling is folded into the body: MSG 287 (Q/R), 290 (R10–R12), 292 (G1–G14), 295 (H1–H8).
-- Round-3 review done and folded; WB J1–J3 agreed as defaulted (MSG 298). No open questions.
-- The build waits for Greg's go.
+**Status: BUILT through CP5 (2026-09-27); WB re-gate RED (MSG 311) → fixes + re-vendor done 2026-09-28 (§12b) — awaiting WB's whole-gate re-run, then Greg's FULFILLED flip.**
+- Build log: §12b. Suite 3767 passed / 110 skipped / 0 failures (after the re-gate fixes RG1–RG9); `test_cr26_live.py` 7 passed / 1 skipped.
+- Build-complete report posted as MSG 308; WB acknowledged in MSG 309 (the re-gate runs in a fresh WB session).
+- **Git-held, and the working tree must stay unchanged until GREEN** (WB MSG 309). Nothing is committed.
 
 **Contract:** WB `design-lab/star-system-analysis/spaceapp-change-request-CR26-xray-tier-wind-model.md`, cited as `§26.N` and `A0–A8`. **The spec is the contract.** The channel rulings fill its gaps, and the re-gate checks them.
 
@@ -40,12 +39,12 @@
   - **Standoff Ṁ:** the FROZEN generator (`core/exclusion_boundary.py:106-118`) picks the supplied rate, else `_WIND_STATE_MAP[ws]`. At γ>0 with neither, it errors. At γ=0, `wind_term = 1.0` (`:125`).
   - **MS bin:** `_ms_wind` (`:237`), with its colour taken from `detection._sp_letter` (case-insensitive).
   - **Composition:** `compose_exclusion_system` (`core/exclusion_system.py:291`) runs these steps in order:
-    1. `_classify_component` (`:252`, called at `:318`);
-    2. `_component_rex` (`:340`);
+    1. `_classify_component` (`:252`, called at `:319`);
+    2. `_component_rex` (called at `:357`);
     3. the wall loop;
     4. the zones;
     5. `_combined_wind_wall` (`:235`);
-    6. the point mass (`:377-383`).
+    6. the point mass (`:425-436`).
   - **Callers:** only `query.py` and `core/exclusion_{boundary,system}.py` call the four touched functions.
 
 - **Identity and astrometry.**
@@ -70,7 +69,7 @@
   - `catalog.gaia_tap` is CR-19-bounded, and `SPACE_APP_GAIA_FORCE_UNREACHABLE` sits inside it.
   - There is no runtime md5 check anywhere in `core/` today. CR-26 adds the first one.
 
-## R. Rulings index (channel MSG 285–295). Each is folded into the body at the § given.
+## R. Rulings index (channel MSG 285–302). Each is folded into the body at the § given.
 
 | Ruling | Substance | Body |
 |---|---|---|
@@ -112,15 +111,20 @@
 | J1 | A field star gets no area share; the system F_X is taken over the target + real partners only. | §2d |
 | J2 | `hot` binds at tier 5 → o_hot with `wind_class: o_hot`. Under a data tier it is an unused flag, and the label is the otherwise-selected state. | §2f |
 | J3 | The (S) SIMBAD parent counts only if it is multiple-star-family (`**`, `SB*`, `EB*`, `El*`, candidates); not a cluster, association or group. | §4.5 |
+| K1 (MSG 302) | On a no-network path (`--component`, `--spectral-type`), the lower X-ray tiers in `tiers` read `not_reachable`. No new enum value. | §2h |
+| K2 (MSG 302) | An F/G/K star with no subtype digit: each catalog radius is checked at 0.3 dex against the class median (rejections listed in `rejected`); `subtype_median_rsun: null`; a supplied radius gets the > 0.3-dex note against the same class median. | §2g |
+| K3 (MSG 302) | On the H1 degraded path only, the string fallback also tries the candidate with the space before a trailing capital A–D removed (`HD 1326 B` → `HD 1326B`). | §4.7 |
 
 ---
 
 ## 1. Vendored data and the loader — `data/cr26/` + `core/stellar_wind_tables.py` (new)
 
 - **Vendoring.** `cp` the six CSVs byte-identical into `data/cr26/` and commit them.
+- **Line endings (round-4 HIGH).** `.gitattributes` has `* text=auto` and `*.csv text`, so a native-Windows checkout would get CRLF copies and fail the md5 check. **Append** `data/cr26/*.csv -text` to `.gitattributes`, after the `*.csv text` line (`:8`; the last matching line wins), **before** the files are `git add`ed, in the same commit. Tests assert that `git check-attr text data/cr26/<file>` reads `unset` and that the vendored bytes contain no `\r` (the WB files have none).
 - **Pinned md5s.** `CR26_MD5` holds the spec's six md5s. The data directory defaults to `data/cr26/`; `SPACE_APP_CR26_DATA_DIR` overrides it.
 - **Loading.** `load_cr26_tables()` is memoised, keyed on the resolved directory; `clear_cr26_cache()` resets it. It reads bytes, checks the md5 **before parsing**, then parses as utf-8 `csv`.
 - **Failure.** A mismatched or missing file raises `Cr26DataError`, which surfaces as a curated error (exit 1). The model never computes from an unverified table.
+  - Where it is caught: `cmd_exclusion_boundary` and `cmd_exclusion_system` in `query.py` catch `Cr26DataError` → `{"error": …}` + exit 1. `compute_exclusion_system`'s existing curated-error return also catches it, so core callers get the same dict (L-10).
 - **Structural self-check.** The loader also checks:
   - the row counts;
   - the five class bins, with the en dash;
@@ -130,7 +134,7 @@
   - `MEASURED[collapsed main_id]`, with a duplicate-key check;
   - `CLASS_STATES[(bin, state)]`, incl. the M4+ modes;
   - `FORK8[bin]`;
-  - `FORK9[bin]`, a sorted list of `(limit, row)`;
+  - `FORK9[bin]`, a dict keyed by the integer grid index `round(limit × 20)` (70–160), read by §2e's `floor(limit × 20 + 1e-9)` (one keying — L-9);
   - `SUBTYPE_R[(letter, int)]`;
   - `HW[int(round(x*100))]`.
 - **Empty cells** parse to `None`.
@@ -262,6 +266,7 @@ The model maps a `StarWindInputs` to a `WindModel`.
 - **`hot`** binds at **tier 5 only**: `noncoronal_row` on the o_hot row, state null, `wind_class: o_hot` (J2, MSG 298). When a data tier sets the rate, `hot` is an unused `--wind-state` (note + stderr), and the label is the state the star would otherwise get.
 - **Any other `wind_class` row** → `noncoronal_row` on that row, with the note "the caller's wind_class bypassed the CR-26 ladder".
 - **Rate.** Ṁ = 10^(the state's `point_log_Mdot_per_A`, 4 dp, from the class-states file) × R².
+- **Output fields (G5).** `log_fx` = the state's F_X, `log_fx_kind: class_state`, `state` = the selected state. `regime` = the regime of the state's F_X on every class state, the typical `class_mixture` included (G5: every relation construction; only the `regime_edge` note is regime-band-only).
 - **Band.**
   - Typical: fork-8 (`class_mixture`).
   - Quiet or active: the file's band (`regime`).
@@ -274,7 +279,7 @@ The model maps a `StarWindInputs` to a `WindModel`.
 - **`subtype_unknown`** (an M star with no digit):
   - `tiers.class_default` and `tiers.xray_nondetection` are `not_reachable`.
   - The X-ray tier still runs, with an unchecked catalog radius (`radius_unchecked`) and **no** late-M widening.
-  - With no usable X-ray value, `mass_loss_tier` is `none`, flagged `subtype_unknown` (+ `not_authoritative` if a lookup failed). "No usable value" covers: no detection; a limit only; **a detection but no catalog radius**; a failed lookup.
+  - With no usable X-ray value, `mass_loss_tier` is `none`, flagged `subtype_unknown` (+ `not_authoritative` if a lookup failed). "No usable value" covers: no detection; a limit only; **a detection but no radius (neither supplied nor catalog)**; a failed lookup. A supplied `--radius-rsun` / `radius_rsun=` with a detection or `--log-fx` is usable (§26.5).
   - `--wind-state` does not set the rate. The H3 note says so: "`--wind-state` did not set the wind rate (the wall is null); it still feeds the γ > 0 standoff through the legacy map, as before."
 - **No spectral type at all** → no tier, and a null wall.
 
@@ -285,6 +290,7 @@ The model maps a `StarWindInputs` to a `WindModel`.
   3. `subtype_median`, or `subtype_median_replaced_outlier` when a catalog value was rejected;
   4. `class_median`.
 - **Unchecked radii.** An M star with no subtype, or a partner with no class, takes the first catalog value unchecked (`radius_unchecked`, or `blend_partner_radius_unchecked` for a partner).
+- **F/G/K with no subtype digit** (`K`, `G V`, a partner typed `K`) **(K2, MSG 302)**: each catalog value is checked at 0.3 dex against the **class median** (F 1.4100 / G 0.9760 / K 0.7085); a rejected value is listed in `rejected`. `subtype_median_rsun: null`, and the chain falls back to `class_median`. No new flag. A supplied radius on such a star gets the > 0.3-dex off-median note against the same class median.
 - **`radius_pair_ambiguous`** requires both of these:
   - the radius came from TIC, `gaia_flame` or `gaia_gspphot`; **and**
   - one of: another star in the SIMBAD 5″ cone (R12); a GCNS neighbour within 5″; a lettered `main_id` — either a space-separated capital A–D at the end (`* 61 Cyg B`, `GJ 1245 B`), or a capital A–D directly after the catalogue number (`HD 156384C`). Both forms are pinned.
@@ -294,6 +300,9 @@ The model maps a `StarWindInputs` to a `WindModel`.
 
 ### 2h. Assembly — `resolve_wind_model(inputs, *, state_sel) → WindModel`
 - **Precedence:** supplied → measured → xray → xray_nondetection → class_default → noncoronal_row. The caller sets the other three states: `object_preset`, `legacy_row` and `none`.
+- **What the model returns (import direction, M-5).** `resolve_wind_model` returns the tier, the label and the CR-26 rates only, computed from the §1 tables. It never imports `exclusion_wall`, `exclusion_boundary` or `detection`.
+  - The non-coronal row rate (G10, o_hot, `noncoronal_row`) is filled by `exclusion_wall.resolve_wind_inputs`, which owns `_WIND_ROWS`. The legacy-map `standoff_rate` is filled by `compute_two_layer_boundary` and by compose (R11), because `_WIND_STATE_MAP` lives in `exclusion_boundary.py:42`, which imports `exclusion_wall` (`:30`) and so cannot be imported back (round-5 L-2). Every tier's `standoff_rate` has an owner: the model for tiers 2–5, and today's frozen arguments for the rest.
+  - The CR-25 colour letter that H7 needs is passed in as a `StarWindInputs` field (`cr25_letter`), computed from `detection._sp_letter` by whoever builds the inputs: the orchestrator and `deterministic_inputs`. Both live in `core/xray_catalog.py` (not in the `stellar_wind` leaf) and import `detection` lazily.
 - **`ladder_outcome(rungs, astrom_status, limit_status, g_status)`** is pure and table-tested:
   - **Flux.** The first rung that answered with a kept detection supplies the flux.
     - A rung above it that failed → the value stands, flagged `not_authoritative`.
@@ -302,14 +311,14 @@ The model maps a `StarWindInputs` to a `WindModel`.
   - **No detection.** Any failure → the class default + `not_authoritative`, never the non-detection path. Failures here: a failed rung, the survey-limit query, the astrometry lookup, or the G fetch.
   - **`xray.status`.**
     - `ok` when every query the result depends on answered; otherwise the first failure's code.
-    - `not_run` in five cases: no identity; a supplied `log_fx`/`log_fx_limit`; the star is out of scope; no usable distance; network disabled (`allow_network=False`, reached only in the offline tests). The last case gives the class default with **no** `not_authoritative` and a note.
+    - `not_run` in five cases: no identity; a supplied `log_fx`/`log_fx_limit`; the star is out of scope; no usable distance; network disabled (`allow_network=False` — the `--component` and `--spectral-type` paths, and the conftest default for in-process `--star` tests). The last case gives the class default (or the measured tier on a table hit) with **no** `not_authoritative`, and a note.
 - **`tiers`** (Q4 + G2) lists the in-scope tiers below the used one.
   - Entry shape: `{mass_loss_msun_yr, mass_loss_band_msun_yr, used: false, status, log_fx, flags}`.
   - Statuses:
 
     | Status | When |
     |---|---|
-    | `not_reachable` | No measured row; `xray_nondetection` when a detection exists; `xray` when none does; `class_default` under `subtype_unknown`. |
+    | `not_reachable` | No measured row; `xray_nondetection` when a detection exists; `xray` when none does; `class_default` under `subtype_unknown`; and **(K1, MSG 302)** `xray` / `xray_nondetection` on a no-network path (`--component`, `--spectral-type`, or `allow_network=False`) when the caller supplied no `log_fx` / `log_fx_limit` for them. |
     | `failed` | A failure that leaves the entry no value. |
     | `upper_limit_only` | The entry is a non-detection bound: `mass_loss_msun_yr` = the bound, band null (e.g. a 107 Psc-type `tiers.xray_nondetection` under a supplied or measured star). |
     | `ok` | The entry has a value. If a failure could have changed that value, the entry's own `flags` carry `not_authoritative`. The top level carries `not_authoritative` only when the used value depended on the failure. |
@@ -328,7 +337,7 @@ The model maps a `StarWindInputs` to a `WindModel`.
   - `notes` carries the ignored-input entries and CR-25's `hot` mismatch note;
   - no disclosures.
 - **Top-level fields.**
-  - `mass_loss_msun_yr` (the point, or the bound) and `mass_loss_tier`.
+  - `mass_loss_msun_yr` (the point, or the bound) and `mass_loss_tier`. When neither `wind_model` nor `mass_loss_tier` is passed to `compute_two_layer_boundary`, **it derives the tier itself**, in this order (M-7, round-5 MED-1 / L-4): `object_preset` when `wind_class_provenance == "object_preset"` (the `--object` path passes a preset rate in `mass_loss_msun_yr`, so this check must come first; `query.py`'s `--object` branch also passes `mass_loss_tier="object_preset"` explicitly); else `supplied` with a rate; else `legacy_row` with a `wind_state`, or when `resolve_wind_inputs` took a class-row rate (e.g. a direct `compute_two_layer_boundary(sp_type="G2V")` call: the legacy wind-class row, provenance `class_default`, as today); else `none`. `query.py` passes nothing extra on the bare-mass path, so `test_query_exclusion_system.py:176`'s CLI-vs-core equality holds.
   - `mass_loss_provenance`:
 
     | Tier | Provenance |
@@ -396,8 +405,11 @@ The model maps a `StarWindInputs` to a `WindModel`.
 - **At γ>0:**
   - Tiers 2–5: `mass_loss_msun_yr = wm.standoff_rate` (the point, or the bound) with `wind_state=None`. An upper-bound rate gets the Q1 note.
   - Every other tier, including an in-scope star whose tier is `none`: today's arguments (H3). A `--wind-state` feeds the standoff through the legacy map, with the H3 note; with no wind input, it errors as today.
-- **Up-front validation.** An invalid `wind_state` string is rejected before any of the above, with the frozen generator's message **verbatim** (`"Unknown --wind-state '<x>'…"`, pinned by `test_cr25.py:1230`).
-- **Direct core calls** with no `wind_model` (and `compose_exclusion_system` with a plain dict that has no `wind_inputs`) take the `tier=None` path, which is today's behaviour, byte-identical. The CR-26 ladder runs only when `query.py` (or a caller) attaches a `wind_model` / `wind_inputs`. That keeps `test_query_exclusion_system.py:176`'s equality and the direct-call tests green. The asymmetry is documented in `docs/integration.md`.
+- **Validation placement (M-6, round-5 MED-2).** The pre-orchestrator checks mirror the frozen generator's **order and conditions** exactly (`exclusion_boundary.py:104-118`): alpha/beta/gamma < 0, dial ≤ 0, calibration ≤ 0, β ≠ 0 with L ≤ 0; then `mass_loss_msun_yr ≤ 0` ("`--mass-loss-msun-yr must be > 0.`"); then an unknown `wind_state` **only when no rate is supplied**, with the message verbatim (`"Unknown --wind-state '<x>'…"`). They run **after domain classification and only on the MS / evolved-with-mass branch**, i.e. exactly where the frozen generator runs them today. So a supplied rate + a bad state stays exit 0, and a windless or unmodeled body keeps today's exit 0.
+  - On `exclusion-boundary` the CLI's `--wind-state` has argparse `choices` (`query.py:3391`), so a bad string exits 2 before any of this; the `wind_state` check is reachable only through direct core calls and is tested in-process.
+  - **γ>0 compose regression guard.** At γ>0 a tier-2–5 component calls the frozen generator with `wind_state=None`, so a component's own bad `wind_state=` would no longer be rejected there. Compose therefore validates each MS / evolved-with-mass component's own `wind_state` before the model, **at any γ**, under the frozen condition (only when the component supplies no rate), so today's rejection is preserved rather than lost. Pinned by the existing γ=0 test (`test_cr25.py:1236-1237`) plus a new γ>0 variant.
+- **Direct `compute_two_layer_boundary` calls** with no `wind_model` take the `tier=None` path, which is today's behaviour, byte-identical. That keeps `test_query_exclusion_system.py:176`'s bare-mass equality and the direct-call tests green.
+- **`compose_exclusion_system` always runs the model (M-1).** An in-scope component without `wind_inputs` gets `deterministic_inputs(c)` (§5d.2), so `--component` dicts, which arrive plain, get CR-26. Direct `compose` calls on in-scope plain dicts therefore change value; the affected tests are listed in §7.14. The asymmetry with bare `compute_two_layer_boundary` calls is documented in `docs/integration.md`.
 - **Output.** Every §26.7 field plus `wind_model`; without a `wind_model`, the R7 skeleton.
 - **`with_gamma_caveat`** fires only when a `wind_state` actually fed the standoff.
 
@@ -408,8 +420,9 @@ The model maps a `StarWindInputs` to a `WindModel`.
 ## 4. Network layer — `core/xray_catalog.py` (new) + the SIMBAD helpers in `core/databases.py`
 
 **Discipline, for every family:**
-- **Retries.** `shared._bounded_call(retries=2, fatal=<AnsweredError>)`: one retry; an error the service answered is never retried.
+- **Retries.** `shared._bounded_call(retries=2, fatal=<AnsweredError>)`: one retry; an error the service answered is never retried. (Identity is the exception; see §4.6.)
 - **Isolation.** Each family has its own circuit breaker and its own TAP seam function. The new SIMBAD helpers never reuse `_simbad_otypes_tap` / `_simbad_otypes_down`.
+  - **One shared breaker (L-6).** Astrometry step 2 and the Gaia radius both go through `catalog.gaia_tap`, so they share CR-19's `_gaia_sync_down` (`catalog.py:188`) with the FLAME mass tier. A Gaia outage that trips it during the mass chain also short-circuits those two steps. That is the intended behaviour, and it is documented beside §4.1's hook note.
 - **Caching.**
   - `catalog_cache.cached` is used with a producer that raises on failure, so a degraded answer is never cached.
   - Every answer uses the shape `{"answered": True, "sources": [...]}`, with no `rows` key, so an answered-empty result is cached. A test checks that the file is written.
@@ -428,12 +441,16 @@ The model maps a `StarWindInputs` to a `WindModel`.
 - **Missing PM.** R6 (zero PM) applies only to an answered lookup that had no PM.
 - **G for the XMM guard.** Gaia, else SIMBAD `flux` G. When the SIMBAD fetch that would supply G fails, the H6 rule applies. That fetch belongs to this family, so the re-gate uses the hook below; it is named in the build report.
 - **Distance** = SIMBAD `plx_value`. On `exclusion-system`, a component with none borrows the primary's (with a note). No parallax at all → Q2 (`not_run`).
-- **Hook:** `SPACE_APP_XRAY_ASTROM_FORCE_UNREACHABLE`. The CR-19 `SPACE_APP_GAIA_FORCE_UNREACHABLE` also fails step 2, because it sits inside `gaia_tap`. That coupling is one-way and documented.
+- **Hook:** `SPACE_APP_XRAY_ASTROM_FORCE_UNREACHABLE`.
+  - The value `g` (case-insensitive) fails **only** the SIMBAD-G fetch, so the re-gate can reach H6 on a non-Gaia star (spec MED-2). Any other non-empty value fails steps 2 and 3.
+  - The hook **never** blocks the local GCNS step 1.
+  - The CR-19 `SPACE_APP_GAIA_FORCE_UNREACHABLE` also fails step 2, because it sits inside `gaia_tap`. That coupling is one-way and documented.
+- **All steps failed (APP-decided; FYI to WB in MSG 301).** The class default + `not_authoritative`; all three `rungs` read `not_queried`; `xray.status` = the failure code.
 
 ### 4.2 Ladder — `xray_ladder(astrom, d_pc)` (family: xray)
 - **Pre-filter cone.** The match radius + |μ|·max|epoch − ref| + a margin. The centres sit at 2RXS 1990.8 / eRASS1 2020.2 / XMM 2011.0.
 - **2RXS.** Re-propagate to each row's `time` and take the nearest match within 60″. The flux is `onerxs_count_rate` × 6e-12 (rung `2RXS_1RXS`); otherwise `count_rate` × 10^−0.063 × 6e-12 (rung `2RXS`).
-- **eRASS1.** Only where Galactic l ≥ 180°; otherwise the rung reads `out_of_footprint`. The nearest match within 15″; flux `b1_flux` × 10^0.052.
+- **eRASS1.** Only where Galactic l ≥ 180°; otherwise the rung reads `out_of_footprint`. Like 2RXS, each row is re-propagated to its own `time` ("at the source's epoch", §26.3.1); the 2020.2 centre is only the pre-filter. The nearest match within 15″; flux `b1_flux` × 10^0.052.
 - **XMM.**
   - Match: the nearest source within 10″ + |μ|·(end − time)/2, evaluated at the midpoint epoch.
   - Flux: the soft band sum, × 10^0.087.
@@ -458,7 +475,7 @@ The model maps a `StarWindInputs` to a `WindModel`.
 
 ### 4.4 Radius candidates — `radius_candidates(astrom, gaia_id, main_id)` (family: radius)
 - **TIC.** Its own `_bounded_call` around `Vizier(columns=[…]).query_region("IV/39/tic82", 5″)` at J2000. The J2000 position is the Gaia position propagated back, or SIMBAD's for a non-Gaia star. Take `Rad` of the nearest row; the column names are probed live at CP2. Call it with `cache=False` (astroquery's own cache is the known residual-cache problem).
-- **Gaia.** `catalog.gaia_astrophysical(source_id)` for `radius_flame` / `radius_gspphot`. This is bounded, and usually a cache hit.
+- **Gaia.** `catalog.gaia_astrophysical(source_id=sid)` (keyword — the first positional is `star`, which would trigger a SIMBAD lookup; L-1) for `radius_flame` / `radius_gspphot`. This is bounded, and usually a cache hit.
 - **SIMBAD cone** (R12). `databases.simbad_cone_stars(ra, dec, 5″)` counts objects that meet all of:
   - a stellar otype;
   - not the target (by `oid`);
@@ -478,18 +495,21 @@ The model maps a `StarWindInputs` to a `WindModel`.
   - Missing rows start at J2000 and move by their SIMBAD PM.
   - The SQL uses a dec band plus an RA window (wrap-safe, 1/cos δ), with bound parameters.
 - **Missing-row astrometry (G1).** One bounded `simbad_astrometry` call per missing row, returning parallax ± error, PM, G and `main_id`. A failure falls under R4's partial rule.
-- **Dedup, main vs main.** Two rows are the same star when they sit within 2″ and differ by |ΔG| ≤ 0.5, or when their collapsed names match. When either G is NULL, only a name match merges them.
+- **Dedup, main vs main — never merged (L1, agreed MSG 306).** Two main-table rows are distinct Gaia DR3 sources. The original rule (within 2″ and |ΔG| ≤ 0.5, or a shared collapsed name) deleted real companions: 41 GCNS `star_name`s are each shared by two different sources (e.g. the 0.45″ `HD 281650` pair).
 - **Dedup, missing vs main** (G13). Two rows are the same star when they sit within 2″ at J2000 and either:
   - their collapsed names match; or
   - both resolve to the same SIMBAD `main_id` (a bounded lookup, made only for such pairs).
 
   A failed lookup → treated as distinct, with `not_authoritative`.
-- **Target removal.** The target is removed by source_id. A target with no source_id is removed by the G13 test against its own `main_id`.
+- **Target removal** (after the dedup, so the target's own `missing_10mas` copy merges into its main row first). The target is removed **by source_id only** when it has one (never on a name match against another main row — L1). A target with no source_id removes a `missing_10mas` row by G13 in full, and a **main** row only by G13's identity half (the row's `Gaia DR3 <sid>` resolves to the target's own `main_id` — MSG 306).
+- **S1 (MSG 306) — a system entry is not a star.** A `missing_10mas` row within 2″ of a main row whose name begins `** `, or which resolves in SIMBAD to otype `**`, is that row's system entry: dropped with the duplicates (`** LDS 823`, `** LDS 9146`, `CD-38 1297`).
+- **S2 (MSG 306) — on a letterless head the blend's target is the resolved A component** (its `source_id`, else its `main_id`), never the head; on a failed H1 lookup the A candidate string serves the name half. Otherwise α Cen A / 70 Oph A would stay in their own beam and blend with themselves.
+- **S3 (MSG 306) — a partner never takes a radius from a star already in the blend.** A partner's TIC match that is the target's own object (its TIC or Gaia id) or another blend member is rejected (the partner then has no radius → `blend_partner_radius_missing`). HD 182488B / HD 49197B would otherwise count their primary's area twice.
 - **Partner tests.** A partner must pass one of:
   - **(P) parallax:** |Δϖ| ≤ 3√(σ₁²+σ₂²). Not evaluable when a parallax or its error is missing, or a parallax is ≤ 0.
   - **(M) proper motion:** |Δμ| ≤ 1000·42.12·√(M_tot/s_AU)/(4.74047·d_pc).
     - The partner's mass comes from `stellar_mass.resolve_component_mass({"name": <SIMBAD main_id>, "designations": {"Gaia EDR3": "Gaia DR3 <sid>"}}, catalog)`.
-    - A missing mass → 2 M☉ + a note (R3; a partner FLAME failure also counts as R3).
+    - If either mass is unavailable, **M_tot = 2 M☉** (the total, not the partner's mass) + a note (R3; a partner FLAME failure also counts as R3).
     - No PM → not evaluable.
   - **(S) same system:** the same GCNS `system_id`; or the same SIMBAD parent (`databases.simbad_parent(oid)`, via `h_link`) **whose otype is in the multiple-star family** (`**`, `SB*`, `EB*`, `El*`, `**?`, `SB?`, `EB?`), so cluster, association and moving-group parents don't count (J3, MSG 298); or a component-letter designation.
 
@@ -497,6 +517,7 @@ The model maps a `StarWindInputs` to a `WindModel`.
 - **Partner metadata.**
   - Name: SIMBAD `main_id` (resolved by `Gaia DR3 <sid>`), else the GCNS identifier.
   - Spectral type: GCNS, else SIMBAD, else none.
+  - WD status (`wd_partner_in_beam`): the GCNS `wd_prob` column ≥ 0.5, or the SIMBAD otype `WD*` from the partner's identity lookup.
   - Radius: the §4.4 chain.
 - **Hook:** `SPACE_APP_BLEND_FORCE_UNREACHABLE` → no blend processing, `not_authoritative`, a note (A7).
 - **R4 partial.** When a partner lookup fails, blend on whatever (P)/(M) still decide, name the partners by their GCNS identifier, and flag `not_authoritative` with a note.
@@ -508,18 +529,25 @@ The model maps a `StarWindInputs` to a `WindModel`.
   - `simbad_astrometry(ident)`;
   - `simbad_cone_stars(ra, dec, r)`;
   - `simbad_parent(oid)`.
-- **Identity** (a component's own `main_id`, the G12 A candidate, and the G13 "same `main_id`" lookup) uses the **existing** `databases.compute_simbad_lookup`. No new identity helper is added. That keeps designation parsing in `core.shared` (the one-parser guardrail) and means the existing test mocks of `compute_simbad_lookup` already cover it. The call is wrapped in `_bounded_call` + the identity family hook inside `xray_catalog`.
+- **Identity** (a component's own `main_id`, the G12 A candidate, and the G13 "same `main_id`" lookup) uses the **existing** `databases.compute_simbad_lookup`. No new identity helper is added. That keeps designation parsing in `core.shared` (the one-parser guardrail) and means the existing test mocks of `compute_simbad_lookup` already cover it.
+  - **Adapter `_identity_lookup(ident)` (M-4).** `compute_simbad_lookup` never raises: it returns `{"error": …}` both for a network failure (`databases.py:245-247`, via `_network_error_msg`) and for an answered empty result (`"No results found for …"`, `:249-250`). The adapter tells them apart:
+    - `"No results found"` → **answered, no object** (returns `None`; never sets `not_authoritative`; e.g. a nonexistent `* eps Eri A` candidate);
+    - any other `error` → raises a retryable `_IdentityFailed`, mapped to timeout / unreachable / error;
+    - otherwise → the record.
+  - It runs under `_bounded_call(retries=1, …)` + the identity hook. `retries=1` because `compute_simbad_lookup` already retries internally (`_with_retries`: 3 tries × 2 queries) and carries its own `_timeout_ctx(30)`; so `SPACE_APP_SIMBAD_TIMEOUT` on the outer `_bounded_call` is the real wall-clock bound (documented).
+  - The "No results found" prefix becomes a shared constant in `databases.py`, used by both `compute_simbad_lookup` and the adapter, with a drift test. Existing test fakes that return other strings (`"No results for …"`, `test_cr23.py:22`; `"nope"`, `test_cr25.py:1082`) are read as failures by the adapter; where such a fake reaches CR-26 code, it is updated to the constant (round-5 L-5).
 - **Hooks.** Each call is checked against its **caller's** family hook: astrometry, radius, blend, or identity (`SPACE_APP_SIMBAD_IDENT_FORCE_UNREACHABLE`).
 
 ### 4.7 Orchestrator — `resolve_star_wind_inputs(identity, supplied, *, catalog, allow_network=True) → StarWindInputs`
 - **All identity resolution happens here, behind `allow_network`** (round-3 HIGH). The callers pass the unresolved strings plus the `sl` / `comp_sl` they already hold:
-  - A: `compute_simbad_lookup(component_candidate_ids(head, "A"))`, independent of the CR-25 K/M gate. When CR-25's `fetch_star_otypes` already resolved the A candidate (`sw_a`), its `source_main_id` is reused.
-  - B: the `comp_sl` that `_resolve_system_from_star` already fetched (`exclusion_system.py:820`), which is no longer discarded.
+  - A: `_identity_lookup(cand)` for each `cand` in `sorted(component_candidate_ids(head, "A"))`, taking the first answered record. `component_candidate_ids` returns a **set** (`stellar_mass.py:149-162`), so the order is made deterministic; an empty set → no A identity (L-2). This is independent of the CR-25 K/M gate. When CR-25 already resolved the A candidate, its main_id is reused. `resolve_star_wind` has no `source_main_id` key; the value lives only in `cls_kw["wind_otype_source"]`, and only when the source is not self and the K/M gate fired, so it is reused only in that case (L-3).
+  - B: the `comp_sl` that `_resolve_system_from_star` already fetched (`exclusion_system.py:815`), which is no longer discarded.
 - **Signature:** `resolve_star_wind_inputs(identity, supplied, *, catalog, allow_network=True, db_path=None)`. `db_path` defaults to `core.db._DB_PATH`.
 - **Letterless head on `exclusion-boundary --star`, with no measured row** (G12): match the resolved A candidate, with a note. The ladder still runs at the head's position.
 - **A failed identity lookup** (H1): match the measured table on the head/candidate string, with a note.
   - `not_authoritative` is set **only when the string match finds no row**.
   - A string hit takes the measured tier with the note alone.
+  - **(K3, MSG 302)** On this degraded path only, the string match also tries the candidate with the space before a trailing capital A–D removed (`HD 1326 B` → `HD 1326B`, so GJ 15 B, GJ 860 B and the G12 A candidate `HD 239960 A` → row `HD 239960A` (GJ 860 A) still hit). The normal §2c exact match is unchanged.
   - Hook: `SPACE_APP_SIMBAD_IDENT_FORCE_UNREACHABLE`.
 - **Supplied inputs replace lookups:**
 
@@ -532,13 +560,15 @@ The model maps a `StarWindInputs` to a `WindModel`.
 
 - **Reachable-tier lookups.** Measured and supplied-rate stars still run the ladder, and the limit if there is no detection, so that `tiers` is filled. An evolved measured host, or an out-of-scope star, runs none of them.
 - **`allow_network=False`** (the `--component` and `--spectral-type` paths, and the conftest default) calls no fetcher; `xray.status` is `not_run`.
+  - The measured-table match is a pure lookup, so it **still applies** offline. A mocked `--star` fixture whose `main_id` is a measured row takes the measured tier (M-2): `V* EV Lac`, `* eps Eri`, `* tau Cet`, `NAME Barnard's star`, `NAME Proxima Centauri`, `* alf Cen A`, `* alf Cen B` (round-5 L-1).
+  - The lower X-ray tiers with no supplied input read `not_reachable` in `tiers` (K1, MSG 302); a supplied `log_fx=` / `log_fx_limit=` still feeds its own tier.
 
 ### 4.8 Hooks and timeouts
 | Family | Hook | Timeout |
 |---|---|---|
 | X-ray catalog rungs | `SPACE_APP_XRAY_FORCE_UNREACHABLE[=rungs]` | `SPACE_APP_XRAY_TIMEOUT` |
 | survey limit / local exposure | `SPACE_APP_XRAY_LIMIT_FORCE_UNREACHABLE` | same |
-| astrometry (live Gaia + SIMBAD, incl. the SIMBAD-G fetch — H6) | `SPACE_APP_XRAY_ASTROM_FORCE_UNREACHABLE` | CR-19 / SIMBAD |
+| astrometry (live Gaia + SIMBAD; never the local GCNS step) | `SPACE_APP_XRAY_ASTROM_FORCE_UNREACHABLE` (`=g`: the SIMBAD-G fetch only — H6) | CR-19 / SIMBAD |
 | radius: TIC + SIMBAD cone | `SPACE_APP_TIC_FORCE_UNREACHABLE` | `SPACE_APP_TIC_TIMEOUT` |
 | radius: Gaia | `SPACE_APP_GAIA_RADIUS_FORCE_UNREACHABLE` | CR-19 |
 | blend partners (GCNS + partner SIMBAD) | `SPACE_APP_BLEND_FORCE_UNREACHABLE` | SIMBAD |
@@ -556,7 +586,7 @@ The model maps a `StarWindInputs` to a `WindModel`.
   - `log_fx` / `log_fx_limit` outside [0, 12];
   - radius ≤ 0 or > 2000;
   - prot ≤ 0 or > 1e5.
-- **Cheap checks before any network:** `--alpha`, `--dial`, `--beta`, `--calibration-au`, and the `wind_state` string.
+- **Cheap checks (M-6):** `--alpha`, `--dial`, `--beta`, `--calibration-au`, `--mass-loss-msun-yr ≤ 0`, then the `wind_state` string only when no rate is supplied — the frozen order and conditions (§3c). They run **after domain classification and only on the MS / evolved-with-mass branch**, just before the orchestrator. On `--star` that is after SIMBAD, the mass chain and the CR-25 otype fetch (all pre-existing network), but **before any CR-26 network call**; a supplied star with a bad rate therefore never runs the ladder. A windless, unmodeled or evolved-no-mass body returns before them, exactly as today (e.g. `--star <WD> --alpha -1` and `--spectral-type DA --beta 1 --luminosity-lsun 0` stay exit 0). Pinned by tests.
 - **Test compatibility.** Every new attribute is read with `getattr(args, name, None)`.
 - **Help text:** the ladder, the `--wind-state` change, and "research-grade; standoff unchanged at γ=0".
 
@@ -585,6 +615,10 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
   - **New system flag `--prot-days`** (exit-2 validated like the key). It passes `cmd_exclusion_system` → `compute_exclusion_system(prot_days=…)` and reaches every component lacking its own `prot_days=`; a component key wins. On a non-ladder component it is ignored, with a note. Covered by a wiring test.
 - **`--component` path** (deterministic, `allow_network=False`, never a socket):
   - The measured tier matches on `main_id=`. When the caller gives no `class=`/`sp=`, the row's `sp_type_simbad` supplies class and domain. A caller's class wins, with a note if it disagrees (H4). No row → G8.
+  - **H4 injection point (M-8).** The row's `sp_type_simbad` is written into the spec **in the `--component` loop of `compute_exclusion_system` (`:915`), before `_resolve_component_mass` / `_component_domain`**, so the evolved rows (`* del Pav` G8IV, `* del Eri` K0+IV, `* lam And` G8IVk, `* d UMa` G5III-IV) classify as evolved, not bare MS. The injected `sp_type` also reaches the mass chain's caution flag, though not the mass value.
+  - **"The caller gave a class"** means any of `class=`, `sp=`, `sp_type=`, `type=`, `sptype=` (the last four collapse to `sp_type`). Because `class=` may be a tag (`giant`, `wd`), "disagrees" is decided by `parse_sp` letter, or by domain when the caller's class has no letter.
+  - **Parser keys.** `_parse_component_spec` (`exclusion_system.py:577-588`) gets `main_id` in `_known`; `radius_rsun`, `log_fx`, `log_fx_limit`, `prot_days` in `_num` and `_known`; and `sp` → `sp_type` in `_alias`.
+  - `main_id=` is an identity key for the measured table only. It does **not** feed the mass chain, which still reads `mass=` / `name=` / `id=` as today. A `main_id=` component without `mass=` or a resolvable `name=` therefore errors as a bare component does today, **except** a lone evolved-row component (`* del Pav` etc.): the injected `sp_type` makes the lone-out-of-domain tolerance (`:922-928`) apply, so it exits 0 with `unresolved_out_of_domain` (round-5 L-3; pinned by a test). `name=` keeps its existing meaning (the catalog-mass name); the two keys may name the same star.
   - The `log_fx=`, `log_fx_limit=`, `radius_rsun=` and `prot_days=` keys work as their flags do.
   - The class-default state follows §2f: `wind_class=` state selector > `wind_state=` > the system `--wind-state` > `otype=` > typical.
   - mass + `wind_state=` with no class and no measured hit → `legacy_row` (G8).
@@ -596,8 +630,10 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
 
 ### 5d. `compose_exclusion_system` — where the model runs
 1. **Classify.** `_classify_component` gives the effective `wind_state`, the explicit `wind_class`, and the domain.
-2. **Model.** `resolve_wind_model(c["wind_inputs"] or deterministic_inputs(c), state_sel=…)`.
-   - A plain dict with an in-scope `sp_type` but no `wind_inputs` (e.g. `test_exclusion_system.py:203`) gets the deterministic class default.
+2. **Model.** `resolve_wind_model(c.get("wind_inputs") or deterministic_inputs(c), state_sel=…)`.
+   - This is the one rule (§3c): compose **always** runs the model. `--component` dicts arrive plain and take `deterministic_inputs(c)`, which honours `main_id=`, `log_fx=`, `log_fx_limit=`, `radius_rsun=`, `prot_days=` and `otype=` with no network.
+   - A plain dict with an in-scope `sp_type` and none of those keys gets the deterministic class default. (The in-scope direct-compose cases are in `test_cr25.py`; `test_exclusion_system.py`'s direct compose calls use out-of-scope classes or assert only the γ=0 standoff and point mass, so they don't change.)
+   - **Per-component cheap checks** (§3c order and conditions) run on MS / evolved-with-mass components **before** the model and before the `--star` orchestrator (in `_resolve_system_from_star`), because `_compose_arg_error` (`:281-288`) checks only phase and alpha and a bad `--dial` / `--calibration-au` / `--beta` / `--gamma` is otherwise caught only in `_component_rex`, after the network. An all-windless system stays exit 0.
    - Out of scope → the R7 skeleton.
 3. **Standoff.** `_component_rex(c, …, standoff_rate=…)`, applying Q1 / H3 exactly as §3c does.
 4. **Walls.** `resolve_wind_inputs(tier=wm, identity_row=…)` + `wind_band_walls`.
@@ -616,12 +652,14 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
 
 - **New code:** `core/stellar_wind_tables.py`, `core/stellar_wind.py`, `core/xray_catalog.py`.
 - **New data:** `data/cr26/*.csv` (6).
+- **`.gitignore`** — `data/` becomes `data/*` + `!data/cr26/`, so the vendored CSVs are tracked while every other `data/` file (the DB, caches, dust maps) stays ignored (found at build step 1: nothing under `data/` was tracked).
+- **`.gitattributes`** — `data/cr26/*.csv -text`, added before the CSVs are staged (round-4 HIGH).
 - **New tests:** `tests/conftest.py`, `tests/data/cr26_spec_disclosures.txt`, `tests/test_cr26_model.py`, `tests/test_cr26_network.py`, `tests/test_cr26_wiring.py`, `tests/test_cr26_live.py`.
 - **Edited:**
   - `core/exclusion_wall.py`
   - `core/exclusion_boundary.py` — wrapper only; the FROZEN body is untouched.
   - `core/exclusion_system.py`
-  - `core/databases.py` — the four SIMBAD helpers, the seam and the breaker.
+  - `core/databases.py` — the three SIMBAD helpers (§4.6), the seam and the breaker. Identity reuses `compute_simbad_lookup` through the `xray_catalog._identity_lookup` adapter.
   - `core/catalog_cache.py` — `SPACE_APP_CATALOG_CACHE_DIR`.
   - `query.py` — incl. `exclusion-system --prot-days`.
   - `core/shared.py` — the named `_SP_DWARF_SUBDWARF_PREFIXES` subset constant.
@@ -637,7 +675,7 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
 ### Isolation
 - A `tests/conftest.py` **autouse** fixture does two things:
   1. It wraps `core.xray_catalog.resolve_star_wind_inputs` so that `allow_network` is **forced** to False: `lambda *a, **k: orig(*a, **{**k, "allow_network": False})`, not `functools.partial`, which an explicit `allow_network=True` would override. Callers always go through the module attribute, never `from … import`.
-  2. It patches every new seam to raise `AssertionError`: `databases._simbad_cr26_tap`, the HEASARC seam, the TIC seam, and the identity `_bounded_call` wrapper. A leak then fails loudly and never reaches the network.
+  2. It patches every CR-26 network seam with a stub that **appends to a module-level leak list** and raises: `databases._simbad_cr26_tap`, the HEASARC seam, the TIC seam, `xray_catalog._identity_lookup`, and three new thin wrappers owned by `xray_catalog` through which CR-26 makes its Gaia and partner-mass calls — `_gaia_astrom_seam` (→ `catalog.gaia_tap`), `_gaia_radius_seam` (→ `catalog.gaia_astrophysical`) and `_partner_mass_seam` (→ `stellar_mass.resolve_component_mass`). The underlying functions stay unpatched, because existing tests use and mock them (round-5 MED-3). The fixture's teardown calls `pytest.fail()` when the list is non-empty; autouse fixtures apply to the `unittest.TestCase` classes pytest collects. A raised `AssertionError` alone would be swallowed: the family except-chains catch `Exception` (cf. `databases.py:627`), and `_call_with_watchdog` returns `None` on a `BaseException` (`shared.py:1295-1308`). So a leak fails the test, and never reaches the network (M-3).
 - Tests marked `@pytest.mark.cr26_network` opt out and mock the seams. `test_cr26_live.py` is in-process, so it carries that marker too.
 - `SPACE_APP_CATALOG_CACHE_DIR` is read once, when `_CACHE_DIR` is initialised (at import, which is enough for subprocesses). In-process tests keep monkeypatching `_CACHE_DIR`, so the existing `test_catalog_cache.py` / `test_cr25.py` patches are unaffected. The tmp-cache + `clear_cr26_cache()` + hook-popping setup is scoped to the `test_cr26_*` files.
 - Offline subprocess tests never use `--star`.
@@ -648,7 +686,7 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
    - md5 pass and mismatch;
    - row counts; en dash; fork-9 top rows equal fork-8;
    - `hw` pins;
-   - repo copies match the pinned md5s;
+   - repo copies match the pinned md5s, and contain no `\r` (the `.gitattributes` `-text` rule);
    - the rule ↔ scope check.
 2. **Parsing and scope:**
    - every §2a pin;
@@ -680,7 +718,7 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
    - grid boundaries; limits below 3.50 and above 8.00;
    - the bimodal gate.
 7. **Radius:**
-   - every rung; rejection;
+   - every rung; rejection; K2 (F/G/K with no digit → class-median check, `rejected`, the supplied-radius note);
    - VB 10;
    - the `radius_pair_ambiguous` gate (α Cen A no, 61 Cyg B yes, 70 Oph A yes);
    - `radius_unchecked`; the off-median note; failed families recorded.
@@ -706,13 +744,13 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
     - Wolf 359, Ross 128, Ross 248, σ Dra, AD Leo;
     - 70 Oph A.
 12. **Network** (`cr26_network`, mocked seams):
-    - **matching:** propagation; the widened pre-filter (Barnard's); nearest match; footprint; XMM tolerance; conversions;
+    - **matching:** propagation (2RXS **and eRASS1** per row `time`); the widened pre-filter (Barnard's); nearest match; footprint; XMM tolerance; conversions;
     - **XMM:** guard order; G3 (G from Gaia → SIMBAD → none; floor on the system F_X); G6 (a lower detection is recorded but not used; no `xmm_guard` after an earlier detection); G9;
     - **survey limit:** medians, 380.15 s, deeper-wins, N4;
-    - **astrometry:** the fallback from step 2 to 3; an all-failed lookup counts as a failed X-ray lookup; R6; H6;
+    - **astrometry:** the fallback from step 2 to 3; an all-failed lookup counts as a failed X-ray lookup (all rungs `not_queried`); R6; H6 via `SPACE_APP_XRAY_ASTROM_FORCE_UNREACHABLE=g` on a non-Gaia star with XMM as the candidate → the XMM rung `failed`; the hook never blocks the local GCNS step;
     - **blend dedup:** main-vs-main incl. NULL G; G13 (name / same `main_id` / different `main_id` / failed lookup / no-source_id self-removal);
     - **blend partners:** (P) / (M) / (S) incl. α Cen via G1; field star; WD; missing radius; R3; R4 partial; empty table → failed; the reach cut;
-    - **identity:** H1 (failed identity with a string hit → note only; no hit → `not_authoritative`);
+    - **identity:** the `_identity_lookup` adapter ("No results found" → answered-empty, never `not_authoritative`; a network error → failed, one attempt at the outer layer); H1 (failed identity with a string hit → note only; no hit → `not_authoritative`); K3 (`HD 1326 B` hits `HD 1326B`, and `HD 239960 A` hits `HD 239960A`, on the degraded path only);
     - **plumbing:** every hook incl. the rung list and `=0`; retry once; the breaker; the cache (answered-empty written, a failure never written).
 13. **Wiring** (in-process + offline subprocess):
     - A0 byte-identity, incl. bare `--mass-msun --mass-loss-msun-yr` → `supplied`;
@@ -728,9 +766,15 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
     - A6, all four bullets:
       - the GJ 65 zone, exact;
       - 61 Cyg composition + `measured_system_edges`;
-      - ε Eri via `main_id=`, offline;
+      - ε Eri via `main_id=`, offline, with `mass=0.82` → `wall_band_wind_exceeds_standoff` **false** (standoff 43.875 > band top 43.818; A2's `true` comes from the catalog mass ≈ 0.811 and is pinned live only);
       - a system `--wind-state quiet` reaching only the class-default component, with its note;
-    - H4 (caller class wins + the disagreement note); G8; H8;
+    - H4 (caller class wins + the disagreement note; a `main_id=` hit on an evolved row classifies as evolved); G8; H8;
+    - **offline `query.py` anchors (spec MED-4)**, as subprocess runs with no network: `exclusion-boundary --spectral-type` A3b rows 1–2 (`--log-fx` / `--radius-rsun` / `--prot-days`), A4b row 2 (`--log-fx-limit`) and one A5 row; `exclusion-system --component` A4b row 1 and the A5 `otype=Er*` bullet (active state, `otype_auto`, disclosure item 14);
+    - **combined-wind null rules:** a zone with an upper-bound member (`log_fx_limit=` below the class grid → `upper_limit_only`) → `combined_wind_wall_is_upper_bound: true` and both band fields null; a zone with a supplied (no-band) member contributing its point to both sums; item 15 present only when the band is non-null;
+    - M-6 (in-process, Namespace / direct core calls — the CLI's `--wind-state` choices exit 2 first): a windless / unmodeled body with a bad `alpha` / `wind_state` keeps exit 0; a supplied rate + a bad `wind_state` stays exit 0; `--mass-loss-msun-yr -1` on an in-scope star errors before any CR-26 seam is touched; the γ>0 variant of `test_cr25.py:1237`; exclusion-system per-component cheap checks before the orchestrator;
+    - `--object` tier: `sun`, `m-dwarf`, `o-star` → `object_preset` (round-5 MED-1);
+    - a lone `--component main_id=* del Pav` with no mass → exit 0, `unresolved_out_of_domain`;
+    - K1: `tiers` on the `--component` measured path reads `not_reachable` for the X-ray tiers;
     - A7 per hook (these tests are `cr26_network`).
 14. **Existing tests updated as contracted changes.** Each one is listed at CP3/CP4 against its §Consequences clause:
     - `test_cr25.py:849` (`test_q7_gamma_standoff_untouched`) and `:1117-1135`;
@@ -741,22 +785,24 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
       - the γ>0 pins (`:116-125`);
       - the degrade `wind_class "quiet"` (`:130`);
     - **live:** `test_query_exclusion_system_live.py` (in-scope anchors);
-    - **offline:** the mocked in-process `--star` tests (`test_exclusion_system.py:374-391`, `test_cr25.py:719-747, 918-1088`, `test_cr23.py:64-251`) take the conftest-forced `not_run` class default. Their wind assertions are updated to that; their mass/standoff assertions stay unchanged;
+    - **live files on throwaway DBs (M-9).** `test_cr25_live.py:15` and `test_query_exclusion_system_live.py:21` run with an empty `gcns_stars`, so under R4 the blend family reads failed and every X-ray-tier star is `not_authoritative`. Their in-scope re-pins assert **the tier and the flags only**. The value pins live in `test_cr26_live.py`, on the real DB;
+    - **offline:** the mocked in-process `--star` tests. Under the conftest-forced `allow_network=False`, a fixture whose `main_id` is a measured row takes the **measured tier** (`V* EV Lac` point; `* eps Eri` `point_span_both`; `* tau Cet` / `NAME Barnard's star` `upper_limit`; `NAME Proxima Centauri`, `* alf Cen A`, `* alf Cen B` per their rows; M-2); every other in-scope fixture takes the `not_run` class default. Their wind assertions are updated to that; their mass/standoff assertions stay unchanged. The build lists every affected test **by name** at CP3/CP4. Known sites (round-5 L-1): `test_exclusion_system.py:374-391, :421, :431, :453, :482`; `test_cr25.py:719-747, :755-848, :861-884, :918-1088, :1105` (α Cen B `wind_class "quiet"`), `:1144-1152` (M4V `--component` rate 1e-16 → the CR-26 class default), `:1159-1172` (EQ Peg label); `test_cr23.py:64-251`;
+    - **direct `compose_exclusion_system` calls on in-scope plain dicts** (M-1; the in-scope ones are in `test_cr25.py`) now get the deterministic class default; their wind assertions are updated;
     - every CR-22/23/25 assertion on an in-scope star's `wind_class`, rate, wall, provenance, or the f_dwarf label;
     - any fixture that uses an Am-type string (H7).
-15. **Live** (`test_cr26_live.py`). Gated on `SPACE_APP_RUN_LIVE=1` + HEASARC reachability, with the cache off, `SPACE_APP_WB_MASS_CATALOG`, and an explicit `db_path=` to the real DB. Skips if `gcns_stars` is empty. Covers:
+15. **Live** (`test_cr26_live.py`). Gated on `SPACE_APP_RUN_LIVE=1` + HEASARC reachability, with the cache off and `SPACE_APP_WB_MASS_CATALOG`. `core.db._DB_PATH` is monkeypatched to the real DB (neither entry point passes a `db_path=` through; connecting re-runs the idempotent `CREATE … IF NOT EXISTS`; L-8). Skips if `gcns_stars` is empty. Covers:
     - A3 (±0.05 dex / ±6 %) and the A4 limits;
     - A2 via `--star`:
       - ε Eri on both subcommands (α 0.4 → true; α 1/3 → false);
       - δ Pav;
       - Proxima + T12;
       - EV Lac `tiers.xray` 3.77 @ 7.155;
-    - A3b rows 1–2; A6 61 Cyg; the A0 standoffs.
+    - A3b rows 1–2 (also pinned offline in group 13); A6 61 Cyg; the A0 standoffs, incl. the A0 named case Procyon → `noncoronal_row`, byte-identical at 55.53.
 
 ## 8. `/code-review high` checkpoints (each checkpoint's findings are triaged and folded before the next)
 
 - **CP1 — data + pure model** (§1–§2, tests 1–11). Focus:
-  - md5 checked before parsing; the en dash;
+  - md5 checked before parsing; the en dash; `.gitattributes` `-text` on `data/cr26/*.csv`;
   - every formula vs the spec: widening order, floor reading, area share on `point_combined` only, K_c;
   - flags evaluated on the system F_X;
   - `tiers` and G2;
@@ -780,7 +826,7 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
   - R10;
   - every path emits every field;
   - exit 2 vs exit 1;
-  - cheap checks run before any network;
+  - the cheap checks: frozen order and conditions, after classification, before any CR-26 network call; the exclusion-system per-component checks before the orchestrator;
   - the stderr warning;
   - H7.
 - **CP4 — `exclusion-system`** (§5c/d, test 13 system half, the test-14 list). Focus:
@@ -813,7 +859,7 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
   | A5 | ±0.001 dex |
   | A3, A4 | ±0.05 dex, walls ±6 % (a regime flip is recomputed at the live regime) |
 
-- **A7:** exercised through each hook. The build report names the H6 hook: `SPACE_APP_XRAY_ASTROM_FORCE_UNREACHABLE`.
+- **A7:** exercised through each hook. The build report names the H6 hook: `SPACE_APP_XRAY_ASTROM_FORCE_UNREACHABLE=g` (SIMBAD-G fetch only), and states the astrometry all-failed degrade result (§4.1).
 - **A8:** the whole exclusion battery, annotated against §Consequences.
 - **md5s:** printed.
 
@@ -824,7 +870,9 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
   - `--wind-state` binds at tier 5 only;
   - f_dwarf is retired as a default;
   - γ>0 standoffs move for in-scope stars;
-  - Am-type strings take `a_dwarf` (H7).
+  - Am-type strings take `a_dwarf` (H7);
+  - the γ>0 point mass for a system with **no** in-scope member also changes: today one supplied rate + one `wind_state` member gives `wind_in` = the supplied sum only (`exclusion_system.py:433-435`); under R11 / H8 the `wind_state` member adds its legacy-map rate (L-7);
+  - direct `compose_exclusion_system` calls on in-scope plain dicts now get CR-26 (M-1).
 - **WB-ref drift** is reported to WB with the live row, never fixed locally.
 - **Outages** degrade to the class default + `not_authoritative`. That is correct, but it blocks the live pre-check.
 - **Latency** is about 15–25 s per star cold, plus the SIMBAD identity and partner calls (accepted).
@@ -832,10 +880,10 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
 - **`--component` exit codes:** existing keys exit 1, CR-26 keys exit 2 (documented).
 
 - **Live-suite time:** each in-scope `--star` adds about 15–25 s cold. The CLAUDE.md live-suite estimate is updated at CP5.
-- **Import direction:** `stellar_wind` is a leaf that imports only `stellar_wind_tables` and `shared`. `exclusion_wall` / `exclusion_boundary` / `exclusion_system` import it, never the other way. `xray_catalog` imports `stellar_wind`, `databases` and `catalog` lazily.
-- **Cheap pre-network checks** mirror the frozen generator's validation and messages exactly: alpha/beta/gamma < 0, dial ≤ 0, calibration ≤ 0, and β ≠ 0 with L ≤ 0. `exclusion-boundary` gets no canon-band alpha check.
+- **Import direction:** `stellar_wind` is a leaf that imports only `stellar_wind_tables` and `shared`. `exclusion_wall` / `exclusion_boundary` / `exclusion_system` import it, never the other way. The non-coronal rates are filled by `exclusion_wall`, the legacy-map rate by `exclusion_boundary` / compose, and the CR-25 colour letter by `xray_catalog` (§2h, M-5, round-5 L-2). `xray_catalog` imports `stellar_wind`, `databases`, `catalog`, `stellar_mass` and `detection` lazily (`detection` imports only calculators / tables / shared, so no cycle).
+- **Cheap checks** mirror the frozen generator's validation, **order, conditions** and messages exactly (§3c): alpha/beta/gamma < 0, dial ≤ 0, calibration ≤ 0, β ≠ 0 with L ≤ 0, `mass_loss_msun_yr ≤ 0`, then `wind_state` only without a rate. They run only on the MS / evolved-with-mass branch, where the frozen generator would run them, so no path that exits 0 today starts to exit 1 (M-6). Compose's component `wind_state` check exists so that no path that exits 1 today starts to exit 0 either (the γ>0 tier-2–5 case). `exclusion-boundary` gets no canon-band alpha check.
 
-## 11. Build sequence (after a clean round-3 review and Greg's go)
+## 11. Build sequence (after the round-4 fold, WB's K1–K3 answer, and Greg's go)
 1. §1 + §2 + tests 1–11 → **CP1**.
 2. §4 + test 12 + the live probe → **CP2**.
 3. §3 + §5a/b + tests 13/14 (boundary) → **CP3**.
@@ -865,44 +913,80 @@ When a data tier sets the rate, an unused `--wind-state` prints a one-line stder
   - MEDs fixed: `exclusion-system --prot-days` added; the §7.14 live and equality tests listed; `tiers` `upper_limit_only`; `--log-fx` keeps the radius chain; the supplied tier on every path.
   - All LOWs folded.
   - Three spec gaps went to WB as J1–J3 (MSG 297), agreed as defaulted in MSG 298.
+- **Round 4** (fresh eyes on v2.1, 2026-09-27):
+  - Findings: code review 1 HIGH / 9 MED / 10 LOW; spec review 0 HIGH / 4 MED / 8 LOW. Nothing HIGH in the model, the wiring or the spec conformance. All six md5s, every ruling Q1–J3, and every recomputed anchor (A3b rows 1–2, A3, A4, A4b, A5, A6) check out.
+  - The HIGH (both reviewers): `.gitattributes` `*.csv text` would give a Windows checkout CRLF copies that fail the md5 check. Fixed with `data/cr26/*.csv -text` + a no-`\r` test (§1, §6).
+  - MEDs fixed:
+    - §3c vs §5d.2 plain-dict contradiction → compose always runs the model (M-1);
+    - the offline mocked `--star` fixtures whose `main_id` is a measured row take the measured tier (M-2);
+    - conftest leak detection via a leak list + teardown `pytest.fail` (M-3);
+    - a `compute_simbad_lookup` adapter that tells "No results found" from a failure (M-4);
+    - the model returns CR-26 rates only; the caller fills non-coronal / legacy rates and the CR-25 letter (M-5);
+    - cheap checks only on the MS / evolved-with-mass branch (M-6);
+    - `compute_two_layer_boundary` derives `mass_loss_tier` itself (M-7);
+    - the H4 injection point in the `--component` loop (M-8);
+    - existing live files on throwaway DBs assert only tier + flags (M-9);
+    - the H6 hook value `=g` (spec MED-2);
+    - offline `query.py` subprocess anchors for the `--spectral-type` / `--component` wiring (spec MED-4).
+  - All LOWs folded: stale line refs; `gaia_astrophysical(source_id=)`; the candidate set; `sw_a`; the helper count; the shared Gaia breaker; the R11 no-in-scope change; the `_DB_PATH` monkeypatch; one fork-9 keying; the `Cr26DataError` catch site; the A6 ε Eri `false`; the combined-null tests; eRASS1 epoch; M_tot = 2 M☉; `subtype_unknown` wording; class-default output fields; Procyon A0 and the A5 `otype=` test; the `wd_partner_in_beam` source.
+  - Spec gaps K1–K3 went to WB in MSG 301, with two FYIs (the astrometry all-failed degrade; the `=g` hook). WB agreed as defaulted in MSG 302, adding the K2 supplied-radius note; both FYIs go on the re-gate's hook list.
+- **Round 5** (scoped code review of the round-4 fixes only, 2026-09-27):
+  - Findings: 0 HIGH / 3 MED / 7 LOW. All folded; none is a spec gap, so nothing went to WB.
+  - MED-1: self-derived `mass_loss_tier` would label `--object` presets `supplied` (the preset rate travels in `mass_loss_msun_yr`). Fixed: `object_preset` is checked first, and `--object` also passes it explicitly (§2h).
+  - MED-2: the cheap checks didn't mirror the frozen generator's order and conditions (`mass_loss ≤ 0` first; `wind_state` only without a rate); the CLI's `--wind-state` `choices` make the planned exit-0 test unreachable; and at γ>0 compose would stop rejecting a component's bad `wind_state=`. Fixed in §3c / §5a / §5d / §10 / §7.13.
+  - MED-3: the leak list missed CR-26's Gaia and partner-mass calls. Fixed: three `xray_catalog`-owned wrapper seams on the leak list (§7 isolation).
+  - LOWs: the full list of measured fixtures and affected test sites (Proxima, α Cen A/B, more `test_cr25` lines; the build names tests); the legacy map's owner is `exclusion_boundary` / compose, and `deterministic_inputs` + `cr25_letter` live in `xray_catalog` (lazy `detection` import); the `--component` parser keys, "caller gave a class" incl. `type=`/`sptype=`, tag-aware "disagrees", and the lone evolved `main_id=` exit-0 case; the direct-call `legacy_row` derivation; the "No results found" constant + drift test and the real SIMBAD timeout bound; `.gitattributes` **append** + a `git check-attr` test; and the stale "before any network" / "offline tests only" wording.
 
-## 13. Session hand-off (paused 2026-09-26, late — resume in a fresh session)
+## 12b. Build log (2026-09-27, Greg's go; WB told "build started" in MSG 304)
+- **Step 1 (§1–§2) → CP1.** `core/stellar_wind_tables.py`, `core/stellar_wind.py`, `core.shared._SP_DWARF_SUBDWARF_PREFIXES` + `core.shared.collapse_ws`, `data/cr26/` (+ `.gitignore`/`.gitattributes`), `tests/test_cr26_model.py` (72).
+  - CP1 `/code-review high`: 10 findings, 9 fixed — out-of-scope supplied rate → `supplied` + `tiers {noncoronal_row}`; a supplied `log_fx`/`log_fx_limit` never falls through to the ladder; `xmm_guard` demotes a missing `sum_flag`; no spectral type → `none`; `hw` rounds half up; item 9 verbatim; `subtype_unknown` note once; one whitespace normaliser (`core.shared.collapse_ws`, used by `databases._wskey` too); dead code removed.
+  - **Not changed (decided):** under H6 (a failed SIMBAD-G fetch) `xray.xmm_guard` stays **absent** — the guard is never evaluated, and a `result` outside the spec's `{kept, xmm_guard_demoted, xmm_floor_demoted}` enum would be worse; the XMM rung's own status (`timeout`/`unreachable`/`error`) carries the reason.
+  - Live probe (step 2 preview): Wolf 359 0.1141 (A3 0.1141), AD Leo 3.5506 (3.5504), 61 Cyg B 0.6290 blended with 61 Cyg A + `radius_pair_ambiguous` (A3 0.6290), α Cen A `tiers.xray` 0.9169 + `blended_source`/`blend_mixed_class` (A3 0.9156).
 
-**State at pause:**
-- Plan v2.1 is final. There are no open WB questions: every ruling through MSG 298 is written into the body.
-- **Not yet built:** no code changed, working tree clean apart from this file. `git status` should show only `PHASE_CR26_PLAN.md` untracked.
-- Greg has **not** given the build go. He asked for a **fresh round of both review agents** at the start of the new session, before the go.
-- Channel: the last message is **MSG 299** (APP: "plan final, with Greg for the go"). The next APP message is MSG 301 (MSG 300 = "paused"). The watcher was stopped at pause, so re-arm it first.
+- **Step 2 (§4) → CP2.** `core/xray_catalog.py`, the CR-26 SIMBAD helpers in `core/databases.py`, `SPACE_APP_CATALOG_CACHE_DIR`, `tests/conftest.py`, `tests/test_cr26_network.py` (47).
+  - CP2 `/code-review high`: 10 findings, all fixed — main-vs-main rows never merged + the target removed by source_id only (**L1 → WB MSG 305**, built as defaulted); a null-flux matched source → the rung reads `error`; SIMBAD PM fills a Gaia row lacking PM; the identity family gets its breaker, and G13 uses the blend-family `simbad_astrometry` (the missing row's `main_id` is already fetched); one SIMBAD breaker **per family** (astrometry / radius / blend); plumbing tests added; the conftest redirects the catalog cache so a warm live cache cannot hide a leak; one read-only GCNS connect helper (a proper file URI; an empty table is not memoised); `_plain` reused, the stellar-otype filter made explicit.
+- **Step 3 (§3, §5a/b) → CP3.** `exclusion_wall.resolve_wind_inputs(tier=…)` + `wind_band_walls`; `exclusion_boundary.standoff_arg_error` / `derive_mass_loss_tier` / `compute_two_layer_boundary(wind_model=…, mass_loss_tier=…, cr26_notes=…)`; `query.py` `exclusion-boundary` (new flags, exit-2 validators, the returning `_exclusion_boundary_result`, `Cr26DataError` → exit 1, the stderr line). Seven `test_cr25.py` boundary tests updated as contracted changes (EV Lac/τ Cet measured, K/M `solar`, Q1). `tests/test_cr26_wiring.py` (boundary half).
+  - H3 is not reachable through `--spectral-type "M V"` (no main-sequence table row → the pre-existing "Could not resolve spectral type" error); it is pinned through the core call and applies on `--star` / `--component`.
+
+  - CP3 `/code-review high`: 10 findings, all fixed — the H7 row replaces only a CR-25 colour-default / otype-auto bin (an explicit `--wind-state` is honoured as on a real A star) and the `tiers.noncoronal_row` rate follows the H7 row; ignored-input notes whenever the star is outside the CR-26 scope (incl. a supplied rate and an evolved measured host); a star with **no spectral type** keeps today's path (`legacy_row` / `none`, §26.5 "keeps today's behaviour"); `--object` + a user rate → `supplied`; windless/unmodeled keep passed notes; `derive_mass_loss_tier` → `legacy_row` for a coarse F/G/K/M bin (as M-7 specifies), `noncoronal_row` for A/B/O; parallax must be > 0 for a distance; one ladder-tier tuple (`stellar_wind.LADDER_TIERS`); the evolved `--star` path networks only when a G12 candidate could still find a measured row.
+- **Step 4 (§5c/d) → CP4.** `compose_exclusion_system` runs the model per component before the standoff (`_component_model`, `_combined_wind_band`, `_measured_system_edges`, R11/H8 point mass, the any-γ own-`wind_state` check), `compute_exclusion_system(prot_days=…)` (H4 injection before the mass chain, per-component cheap checks, then the orchestrator for `--star` components; component A resolved through its A candidate — G12 falls back to the head), `_parse_component_spec` keys, `query.py` `--prot-days` + the exit-2 `--component` type + the once-only stderr line. Ten `test_cr25.py` system tests updated as contracted changes.
+
+  - CP4 `/code-review high`: 10 findings, 9 fixed — H1 on a failed B lookup: the matched row supplies the class (else B was discarded as typeless); component A's candidate is `xray_catalog.a_candidate` (None when the head already names A — parity with `exclusion-boundary`); the component-A note names the candidate; the H7 guard + `tiers.noncoronal_row` fix in compose too; the three combined-band zone fields are always present (null with `combined_wind_wall_au`); B is not looked up twice; the system `--prot-days` gets its ignored note on out-of-scope components; the cheap checks give the system `--wind-state` to MS components only; parallax > 0. **Not changed:** a ladder member's `standoff_rate` is never None (every ladder tier has a rate), so the R11 sum cannot diverge from its standoff.
+- **Pre-existing fix that rides along (disclosed):** astroquery's `astroquery.gaia` import (a module-level `GaiaClass()`) and every fresh `GaiaClass()` print the ESA archive banner ("In preparation for Gaia DR4, …") to **stdout**, corrupting `query.py`'s JSON on every Gaia path (CR-19/CR-23 FLAME included, now CR-26's astrometry/radius too). `core/catalog.py` imports it with stdout diverted to stderr (`_import_gaia`, in the caller's thread) and builds clients with `show_server_messages=False`; the CR-19 test fake accepts the keyword. Found in the step-4 live probe.
+- **Live probe notes:** `--star "61 Cyg"` / `"61 Cygni"` do not resolve in SIMBAD (pre-existing identity behaviour — the spec's A6 allows "or both components"; the offline A6 61 Cyg test composes the two components). α Cen system: A/B measured 0.46/1.54, `tiers.xray` blended, standoffs 48.9669/45.7214 exact. Wolf 359 `exclusion-boundary`: 0.1141, wall 2.03 [1.35–2.70] {0.48–11.26} — A3 exact.
+
+- **WB MSG 306:** L1 agreed (R2's "or a shared `star_name`" retired); S1–S3 folded (tests in `test_cr26_network.py`: 4 new) — suite 3740 / 110 / 0.
+
+- **Step 5–6 → CP5 (whole CR + docs).** Full offline suite green (3740 / 110 / 0 before CP5). Live battery: 21 passed, 4 failed. **All four failures were the live test's design, not CR-26:** `exclusion-boundary --star` stops before CR-26 on the pre-existing no-V / no-Teff regions gap (ρ CrB, Ross 248, 70 Oph A, VB 10), `DENIS J1048-3956` does not resolve as written, VB 10 / DENIS / LEHPM 3396 have no resolvable mass on either subcommand (the pre-existing mass-chain gap), and `61 Cyg` has no SIMBAD system object. Re-routed through `exclusion-system --star`: ρ CrB 0.8587 (exact, `xmm_guard_demoted`), HD 349726 0.1116 (exact, `xmm_floor_demoted`), HD 192310 0.4612, 107 Psc ≤ 0.3548, Ross 248 0.1701 (A3 0.1654, 0.012 dex), 70 Oph A `tiers.xray` 2.7933 blended (A3 2.7883); σ Dra 1.4661 and ι Psc 4.272 exact on `exclusion-boundary`. The unreachable ones are pinned offline (`A3OfflineTest` / `NonDetectionTest`), and the 61 Cyg system test is skipped with the reason.
+  - CP5 `/code-review high`: 10 findings, all fixed — **the Gaia banner fix had moved the first `astroquery.gaia` import (a network call) outside the CR-19 bound**; it now runs inside the bounded attempt with stdout diverted (`catalog._gaia_stdout_to_stderr`); a component with no SIMBAD identity and no Gaia id → `not_run` (`no_identity`), not `error`; a windless / unmodeled body with a supplied rate → `noncoronal_row` on both subcommands + an "ignored" note (and a windless `--object` preset stays `object_preset`); `erass1_footprint` is null unless the eRASS1 rung was evaluated; `exclusion-system` keeps a typeless component's notes; the supplied-flux radius path uses the local GCNS row's J2016 position + PM; the conftest uses one session-scoped tmp cache dir; docs (the live-run count, the plan path, the MSG range); the R11 note is not repeated on a lone zone; the dead `wind_state_is_system` field is dropped.
+
+- **Re-gate RED (WB MSG 311, 2026-09-28) → fixed.** RG1 (a `source_id` target with no GCNS main row blended with its own `missing_10mas` copy — G13 now runs on every missing row), RG4 (the degraded H1 blend target keeps the star's own `source_id`; name half = candidate + head, K3 both sides, degraded path only), RG2 (H4 note on letter **or** domain, domain classed with the component's otype), RG3 (a `** …` / otype-`**` missing row — or the target's own copy by SIMBAD identity — is not a 5″ neighbour; radius-family lookup, honours the TIC hook), RG5 (`failed` xray tiers when the failed lookup left `no_identity`; `not_authoritative` on an H1-miss `none`, surfaced through both callers' typeless path), RG7 (radius families `not_queried` after an astrometry all-fail). Targeted `/code-review high`: 10 findings — 7 fixed, #5 → WB as N1 (MSG 312, S1 without a main row), #3 kept as WB's RG4 rule (stated to WB), #9 subsumed by #8. Re-vendor (Greg ran the copy): class_states `0502174c…`, fork8 `c5e900c5…`, fork9 `1e333643…`; item 9 → 0.08–0.27, `marginal_state` → 14 %; the class numbers quoted in this plan (e.g. §4's K class median 0.7085 → 0.7090) are superseded by the files. Suite 3759 / 110 / 0; live `test_cr26_live` + `test_cr25_live` 18 passed / 1 skipped (61 Cyg). WB MSG 313: N1 → keep S1 as scoped (system rows can be the only GCNS record of real stars — GJ 667 AB); the RG4 reading agreed. No change.
+- **Whole-gate re-run (WB MSG 315): GREEN on all of MSG 311**, plus two disclosure defects → fixed. RG8: each blend-partner radius-lookup failure (TIC / Gaia call failed or timed out, or the family forced unreachable) → a `wind_model.notes` entry naming the partner, the family and the status (`xray_catalog.NOTE_PARTNER_RADIUS`; no flag), kept even when the XMM guard demotes. RG9: an H1 no-row miss carries its note + `not_authoritative` whatever tier sets the rate (non-coronal and G10 returns included), and on the evolved route both subcommands keep them when they discard the model (`stellar_wind.h1_carry` on the new `h1_miss` marker; `cr26_flags` on `compute_two_layer_boundary`). Targeted `/code-review high`: 10 findings — 8 folded (incl. 4 tests), the radius-family reuse refactor skipped (no behaviour), the count finding done here. Suite 3767 / 110 / 0.
+
+## 13. Session hand-off (2026-09-27, end of the build session)
+
+**State:**
+- CR-26 is built through CP5 and **uncommitted**. `git status` shows the CR-26 files modified or untracked; see the §6 file list, plus `.gitignore`, `core/catalog.py` (the Greg-approved Gaia banner fix), `tests/conftest.py`, `tests/data/` and `data/cr26/`.
+- **Do not change the working tree** until WB re-gates GREEN (MSG 309). WB is running a 6-step re-gate plan with its own data harvester in a fresh WB session.
+- **Channel:** the last APP message is MSG 308 (build complete) and the last WB message is MSG 309. Re-arm the watcher with `last=309`.
+- **If WB reports RED:** triage each finding. A genuine CR-26 defect gets fixed, with a test, a targeted `/code-review`, and the suite re-run (one heavy job at a time); then post the fix MSG. A spec question goes back to WB first.
+- **When WB reports GREEN:** Greg signs the FULFILLED flip. Then:
+  1. commit CR-26 only, directly on `main` (no branch), with the attribution lines;
+  2. push, and post the SHA to WB;
+  3. `git mv PHASE_CR26_PLAN.md completed_plans/` and index it in `completed_plans/README.md`; fix the plan-path mentions in `docs/integration.md` and `docs/testing.md` (both say "moves to `completed_plans/` at the CR close");
+  4. update the memory note.
+- CR-24 is next in WB's chain; don't touch it until asked.
+
+**Channel watcher** (a background shell; exits on a new non-APP MSG; re-arm with the new `last` after each one):
+```bash
+while true; do hit=$(grep -E '^## MSG [0-9]+' /home/greg/Claude/coordination-channel.md | grep -v 'FROM: APP ·' | awk -v l=309 '{n=$3+0; if (n>l) print}' | head -5); [ -n "$hit" ] && { echo "$hit"; exit 0; }; sleep 15; done
+```
 
 **Where everything is:**
 
 | What | Where |
 |---|---|
 | Contract (spec) | `/home/greg/Claude/scifiWorldBuilding-Claude/design-lab/star-system-analysis/spaceapp-change-request-CR26-xray-tier-wind-model.md` |
-| Data (WB-owned; vendor byte-identical at build step 1) | `/home/greg/Claude/scifiWorldBuilding-Claude/research/exclusion-boundary-medium-physics/cr26-w5-data/` (md5s in §0 / the spec table) |
-| Fire kit | `/home/greg/Claude/scifiWorldBuilding-Claude/design-lab/star-system-analysis/cr26-handoff-kit.md` |
-| Channel (rulings MSG 285–299) | `/home/greg/Claude/coordination-channel.md` |
-| W4 HEASARC column reference | WB `research/exclusion-boundary-medium-physics/cr26-w4-population-pull.md`, Appendix B.3 (`w4_xmatch.py`) |
-
-**Channel watcher** (a background shell; exits on a new non-APP MSG; re-arm after each one with the new `last`):
-```bash
-while true; do hit=$(grep -E '^## MSG [0-9]+' /home/greg/Claude/coordination-channel.md | grep -v 'FROM: APP ·' | awk -v l=300 '{n=$3+0; if (n>l) print}' | head -5); [ -n "$hit" ] && { echo "$hit"; exit 0; }; sleep 15; done
-```
-
-**Review-agent briefs used in rounds 1–3.** Re-use them, read-only, both in parallel:
-- **Code-grounded:**
-  - Verify the plan against the actual code (`query.py` exclusion cmds/argparse; `core/exclusion_{wall,boundary,system}.py`; `core/catalog.py`, `catalog_cache.py`, `shared.py` `_bounded_call`, `databases.py` SIMBAD seams, `db.py` gcns_stars, `stellar_mass.py`).
-  - Check γ=0 byte-identity / the FROZEN body; that existing tests don't break or open sockets; exit codes; import cycles; internal contradictions.
-  - Output HIGH/MED/LOW with file:line evidence and fixes.
-- **Spec-conformance:**
-  - Read the whole spec + the data + channel MSG 285–299.
-  - Check that every ruling is in the plan body; every spec clause, flag, field, enum, note, input/exit code and §26.9 path is covered; every A0–A8 anchor has a test; any internal contradictions.
-  - Recompute a sample of the anchors.
-  - Output HIGH/MED/LOW, plus any genuine questions for WB.
-- Tell both reviewers this is a **fresh-eyes round 4** on v2.1, to report only real issues, and to say explicitly if there is nothing HIGH.
-
-**After round 4:**
-1. Fold the findings. Any genuine spec gap goes to WB on the channel before the plan is changed; don't decide it unilaterally.
-2. Update §12.
-3. Present to Greg for the build go.
-4. On the go, post "build started" to the channel (MSG 300+) and follow §11.
+| Data (WB-owned; vendored in `data/cr26/`) | `/home/greg/Claude/scifiWorldBuilding-Claude/research/exclusion-boundary-medium-physics/cr26-w5-data/` |
+| Channel (rulings MSG 285–309) | `/home/greg/Claude/coordination-channel.md` |
+| APP contract docs | `docs/integration.md` — the CR-26 block after CR-25 |

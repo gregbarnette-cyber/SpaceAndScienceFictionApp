@@ -182,6 +182,83 @@ def _wind_echo(inputs, prov):
     return echo
 
 
+def standoff_arg_error(luminosity_lsun=None, mass_loss_msun_yr=None, wind_state=None, dial=None,
+                       calibration_au=_KUIPER_EDGE_AU, alpha=1.0 / 3.0, beta=0.0, gamma=0.0):
+    """CR-26 (M-6) — the FROZEN generator's argument checks, in its order and with its messages, WITHOUT the
+    mass check: run by the callers just before the CR-26 network layer on the main-sequence /
+    evolved-with-mass branch (exactly where the frozen generator would run them), so a bad argument never costs
+    a catalog lookup and no path that exits 0 today starts to exit 1. Returns ``{"error"}`` or ``None``."""
+    if calibration_au is None or calibration_au <= 0:
+        return {"error": "--calibration-au must be > 0."}
+    if dial is not None and dial <= 0:
+        return {"error": "--dial must be > 0."}
+    if alpha < 0 or beta < 0 or gamma < 0:
+        return {"error": "Scaling exponents (--alpha/--beta/--gamma) must be ≥ 0."}
+    if beta != 0.0 and (luminosity_lsun is None or luminosity_lsun <= 0):
+        return {"error": "--luminosity-lsun must be > 0 when --beta ≠ 0."}
+    if mass_loss_msun_yr is not None:
+        if mass_loss_msun_yr <= 0:
+            return {"error": "--mass-loss-msun-yr must be > 0."}
+    elif wind_state is not None and wind_state not in _WIND_STATE_MAP:
+        return {"error": f"Unknown --wind-state '{wind_state}'. "
+                         f"Choose from: {', '.join(sorted(_WIND_STATE_MAP))}."}
+    return None
+
+
+def derive_mass_loss_tier(domain, wind_class_provenance, mass_loss_msun_yr, wind_state, wdot, *,
+                          sp_type=None, class_tag=None, object_name=None):
+    """CR-26 (M-7) — ``mass_loss_tier`` when no CR-26 model was attached: ``object_preset`` (an ``--object``
+    preset's rate travels in ``mass_loss_msun_yr``, so this is checked first) > ``supplied`` > ``noncoronal_row``
+    (any identity: a CR-22 row, unchanged) > ``legacy_row`` (a bare mass + a ``--wind-state``) > ``none``."""
+    if wind_class_provenance == "object_preset":
+        return "object_preset"
+    if domain in (ew.WINDLESS, ew.UNMODELED):
+        return "noncoronal_row"                    # no wind at all — a supplied rate is unused (noted)
+    if mass_loss_msun_yr is not None:
+        return "supplied"
+    if domain in (ew.WINDLESS, ew.UNMODELED, ew.EVOLVED) or object_name:
+        return "noncoronal_row"
+    from core import stellar_wind as sw
+    letter = sw.parse_sp(sp_type or class_tag)[0]
+    if letter and letter not in ("F", "G", "K", "M"):
+        return "noncoronal_row"                    # a CR-22 row outside the coronal ladder (A/B/O)
+    if wdot:
+        return "legacy_row"                        # a coarse F/G/K/M bin (a direct call with no model) or a bare
+    return "none"                                  # mass + --wind-state; no wind input → none
+
+
+def _cr26_fields(tier, cr26, inputs, standoff, wind_class, notes=(), flags=()):
+    """The CR-26 additive output fields (§26.7) for one body."""
+    from core import stellar_wind as sw
+    if cr26 is not None and tier in ew.CR26_LADDER_TIERS:
+        rate, band, band_dex, upper = cr26["rate"], cr26["band"], cr26["band_dex"], cr26["upper"]
+    else:
+        rate, band, band_dex, upper = None, None, None, False
+    out = {"mass_loss_tier": tier, "mass_loss_band_msun_yr": band, "mass_loss_band_dex": band_dex,
+           "mass_loss_upper_limit": bool(upper)}
+    out.update(ew.wind_band_walls(inputs, rate, band_dex, upper, standoff, wind_class))
+    if cr26 is not None:
+        wm = cr26["wind_model"]
+        wm["notes"] = list(wm["notes"]) + [n for n in notes if n not in wm["notes"]]
+    else:
+        wm = sw.skeleton(notes)
+    wm["flags"] = list(wm["flags"]) + [f for f in flags if f not in wm["flags"]]   # RG5 / RG9 carried flags
+    out["wind_model"] = wm
+    return out
+
+
+NOTE_RATE_UNUSED = ("--mass-loss-msun-yr / mass_loss_msun_yr ignored: a windless or unmodeled body has no wind "
+                    "(no wall is computed)")
+
+
+def _skeleton_notes(wind_model, cr26_notes, mass_loss_msun_yr=None):
+    """The notes a windless / unmodeled body keeps: any the attached model carried + the caller's (+ an unused
+    supplied rate, never silent)."""
+    notes = list((wind_model or {}).get("wind_model", {}).get("notes") or [])
+    extra = list(cr26_notes or ()) + ([NOTE_RATE_UNUSED] if mass_loss_msun_yr is not None else [])
+    return notes + [n for n in extra if n not in notes]
+
+
 def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                                sp_type=None, otype=None, class_tag=None, object_name=None,
                                domain=None, wind_class=None, class_note=None, mass_provenance=None,
@@ -192,7 +269,8 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                                mass_loss_source=None, dial=None, calibration_au=_KUIPER_EDGE_AU,
                                alpha=1.0 / 3.0, beta=0.0, gamma=0.0, scan_alpha=False,
                                otypes=None, wind_class_provenance=None, wind_otype=None,
-                               wind_class_note=None, wind_otype_source=None, wind_state_binned=None):
+                               wind_class_note=None, wind_otype_source=None, wind_state_binned=None,
+                               wind_model=None, mass_loss_tier=None, cr26_notes=None, cr26_flags=None):
     """CR-22 two-layer boundary: the unchanged canon STANDOFF (the FROZEN
     ``compute_exclusion_boundary`` above) + the research-grade physical WALL
     (``exclusion_wall.compute_wall``), with the four-value domain classifier + free-harbor guard.
@@ -216,6 +294,16 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     user-supplied mass (finite and > 0) is the caller's job — ``query.py``'s bare ``--mass-msun`` guard
     (CR-22.6, which restored the pre-CR-22 error this wrapper had bypassed); the other entry paths pass a
     resolved finite positive mass or ``None``.
+
+    **CR-26 (additive).** ``wind_model`` — a ``stellar_wind.resolve_wind_model`` result the caller attached
+    (``query.py`` / ``compose``). On a ladder tier (measured / xray / xray_nondetection / class_default) its
+    rate sets the wall (Wood convention, v 400 forced), the band walls are added, and at γ > 0 the same rate
+    feeds the standoff's wind term (WB Q1) with ``wind_state=None``; at γ = 0 the FROZEN generator is called
+    with exactly today's arguments. Every other tier — and a direct call with no ``wind_model`` — takes
+    today's path, byte-identical, and gets the R7 ``wind_model`` skeleton. ``mass_loss_tier`` names the
+    tier on those paths (derived when not given — ``derive_mass_loss_tier``); ``cr26_notes`` rides into
+    ``wind_model.notes`` (ignored-input notes etc.); ``cr26_flags`` rides into ``wind_model.flags`` on the
+    skeleton (RG9 — an H1 miss's ``not_authoritative`` on a model the caller discarded).
     """
     if domain is None:
         cw = ew.classify_wind(
@@ -231,11 +319,35 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
         # an --object preset's bin is fixed (the user gave no wind_class — say so, not "explicit")
         wind_class_note = ew.PRESET_NOTE.format(ws=ws, wc=wind_class)
 
+    cr26 = wind_model
+    typeless_flags = list(cr26_flags or ())
+    if cr26 is not None and cr26["mass_loss_tier"] == "none" and cr26.get("typeless"):
+        cr26_notes = list(cr26_notes or ()) + list(cr26["wind_model"]["notes"])
+        typeless_flags += [f for f in cr26["wind_model"]["flags"] if f not in typeless_flags]
+        cr26 = None                                # no spectral type at all → today's behaviour (§26.5)
+    tier = cr26["mass_loss_tier"] if cr26 is not None else None
+    ladder = tier in ew.CR26_LADDER_TIERS
+    cr26_label = cr26.get("label") if cr26 is not None else None
+    identity_wc = wind_class                       # the CR-25 identity row (G11: supplied keeps it)
     inputs, prov = ew.resolve_wind_inputs(
         domain, wind_class, sp_type, mass_loss_msun_yr=mass_loss_msun_yr, wind_speed=wind_speed,
         v_ism=v_ism, c_ms=c_ms, b_field=b_field, n_cloud=n_cloud, cloud_temp=cloud_temp,
         wind_phase_yr=wind_phase_yr, f_shock=f_shock, m_shock_min=m_shock_min,
-        mass_loss_source=mass_loss_source)
+        mass_loss_source=mass_loss_source,
+        tier=(tier if (ladder or tier == "none") else None), tier_rate=(cr26["rate"] if ladder else None),
+        tier_row=(cr26_label or identity_wc) if ladder else None)
+    if cr26_label:
+        wind_class = cr26_label                    # CR-26 §26.5: the state label (quiet / solar / active)
+    if tier is None:
+        tier = mass_loss_tier or derive_mass_loss_tier(
+            domain, wind_class_provenance, mass_loss_msun_yr, wind_state, inputs["wdot"], sp_type=sp_type,
+            class_tag=class_tag, object_name=object_name)
+    # the γ > 0 standoff input (WB Q1): a ladder tier's rate (the point, or the bound); else today's arguments
+    st_rate, st_ws = ((cr26["standoff_rate"], None) if (ladder and gamma) else (mass_loss_msun_yr, wind_state))
+    extra_notes = list(cr26_notes or ())
+    if ladder and gamma and cr26["upper"]:
+        from core import stellar_wind as sw
+        extra_notes.append(sw.NOTE_Q1_UPPER)
 
     base = {"domain": domain, "wind_class": wind_class, "class_note": class_note,
             # CR-25.3: how the wind BIN was chosen (independent of mass_loss_provenance — the Ẇ axis)
@@ -251,6 +363,8 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                      "wall_reason": "windless — free harbor", "wall_note": ew._WALL_NOTE,
                      "verdict_marginal": False, "wall_exceeds_standoff": None,
                      "wall_to_standoff_ratio": None, "r_ap_au": None})
+        base.update(_cr26_fields(mass_loss_tier or "noncoronal_row", None, None, None, None,
+                                 _skeleton_notes(wind_model, cr26_notes, mass_loss_msun_yr), typeless_flags))
         return base
 
     # ── unmodeled (hot subdwarf sdB/sdO): honest null on both layers (NOT free harbor) ──
@@ -262,6 +376,8 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                      "wall_note": ew._WALL_NOTE, "verdict_marginal": False,
                      "wall_exceeds_standoff": None, "wall_to_standoff_ratio": None,
                      "r_ap_au": None})
+        base.update(_cr26_fields(mass_loss_tier or "noncoronal_row", None, None, None, None,
+                                 _skeleton_notes(wind_model, cr26_notes, mass_loss_msun_yr), typeless_flags))
         return base
 
     # ── main_sequence / evolved: the FROZEN standoff (when a mass is known) + the wall ──
@@ -271,7 +387,7 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
         stand = compute_exclusion_boundary(
             mass_msun=mass_msun,
             luminosity_lsun=(luminosity_lsun if luminosity_lsun is not None else 1.0),
-            mass_loss_msun_yr=mass_loss_msun_yr, wind_state=wind_state, dial=dial,
+            mass_loss_msun_yr=st_rate, wind_state=st_ws, dial=dial,
             calibration_au=calibration_au, alpha=alpha, beta=beta, gamma=gamma,
             scan_alpha=scan_alpha, object_name=object_name)
         if "error" in stand:
@@ -295,7 +411,7 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     # above actually took the wind_state as its Ẇ (a standoff exists, no explicit rate) — shared rule.
     result["wind_class_note"] = ew.with_gamma_caveat(
         wind_class_note, wind_state=wind_state, binned=bool(wind_state_binned), gamma=gamma,
-        mass_loss_msun_yr=mass_loss_msun_yr, has_standoff=standoff is not None)
+        mass_loss_msun_yr=st_rate, has_standoff=standoff is not None)
     result["mass_provenance"] = mass_provenance      # CR-23.2 §2a: always present (None on no-mass)
     # CR-23.2 §2c: surface the resolver note (e.g. the L^0.2632 over-read caution) — but ONLY on the
     # with-mass path (standoff resolved). The evolved-NO-mass branch already embeds mass_note inside
@@ -316,4 +432,5 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     result["wall_exceeds_standoff"] = exceeds
     result["wall_to_standoff_ratio"] = ratio
     result.update(_wind_echo(inputs, prov))
+    result.update(_cr26_fields(tier, cr26, inputs, standoff, wind_class, extra_notes, typeless_flags))
     return result

@@ -3,7 +3,9 @@ __pycache__/
 *.pyo
 .pytest_cache/
 venv/
-data/
+data/*
+# CR-26: the WB-owned wind-model data files are vendored + committed (md5-checked at load)
+!data/cr26/
 
 # stray root DB (the real DB is data/space_app.db, covered by data/ above)
 /space_app.db

@@ -33,6 +33,9 @@ def _fake_gaia_module(tbl=None, sleep=0.0, exc=None):
     mod = types.ModuleType("astroquery.gaia")
 
     class _G:
+        def __init__(self, **kw):                 # the real GaiaClass takes keywords (show_server_messages)
+            pass
+
         def launch_job(self, q):
             if sleep:
                 time.sleep(sleep)
