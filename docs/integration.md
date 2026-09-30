@@ -2105,7 +2105,7 @@ star's current wind* (the §26.8 disclosures ride in `wind_model.notes`, verbati
   Live (`tests/test_cr26_live.py`): Wolf 359 0.1141, 61 Cyg B 0.6290 (blended), α Cen A `tiers.xray` 0.9156. Plan
   `completed_plans/PHASE_CR26_PLAN.md`; tests `tests/test_cr26_{model,network,wiring,live}.py`.
 
-##### CR-31 — an explicit `--wind-speed` over a Wood-convention class / preset rate is ignored (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md` §2)
+##### CR-31 — an explicit `--wind-speed` over a Wood-convention class / preset rate is ignored (built 2026-09-30; `completed_plans/PHASE_CR24_31_32_PLAN.md` §2)
 
 CR-22's CP4 relaxation honoured an explicit `--wind-speed` over a *class-default* `astrosphere_wood` source, and it
 did so **unrescaled**. CR-26 closed that on its own tiers (R10) but left it live on `legacy_row` and
@@ -2151,7 +2151,7 @@ subcommands once the tier is known. It is keyed on the resolved inputs, not on h
 - In `exclusion-system` the tier is now derived **before** the wall is computed; the result is identical.
 - Tests: `tests/test_cr31_wind_speed.py`.
 
-##### CR-24 — the per-star V_ISM on `exclusion-boundary` / `exclusion-system` (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md` §3)
+##### CR-24 — the per-star V_ISM on `exclusion-boundary` / `exclusion-system` (built 2026-09-30; `completed_plans/PHASE_CR24_31_32_PLAN.md` §3)
 
 V_ISM, the star–cloud relative speed, is now derived per star as |v★ − v_cloud|, both heliocentric Galactic.
 Previously it was a flat 26 km/s. A Wood-measured star instead takes the V_ISM its rate was inferred at (Wood 2021
@@ -2271,6 +2271,21 @@ a different route.
 
 **Tests:** `tests/test_cr24_tables.py`, `test_cr24_velocity.py`, `test_cr24_range.py`, `test_cr24_wiring.py`
 (offline) and `test_cr24_live.py` (opt-in live).
+
+**Re-gate readings (WB MSG 337, FULFILLED 2026-09-30 — accepted, no change asked):**
+- `close-binary-census`'s stdout still opens with astroquery's `Could not import regions…` line (the X-Match import on
+  the SB9 cross-match, pre-existing on `520b7b4`), so it is not JSON-only as MSG 325 expected. This goes to a WB follow-up,
+  **CR-33**.
+- CR-24 A3's GJ 860 B calls exit 1 on the pre-existing regions / mass errors (the MSG 334 class). A3 was scored on the
+  velocity layer instead: `exclusion-system` with a catalog-mass emulation, and `exclusion-boundary --star "* 70 Oph B"
+  --cloud LIC`.
+- Two CR-24 gaps outside the contract's text, also for **CR-33**:
+  - on a measured-row star, `--lb-cavity` beside `--v-ism` is dropped with no note;
+  - with `--cloud` plus `--v-ism` or `--lb-cavity`, `v_ism_derived_kms` is that cloud's derive, but the output does not
+    name the cloud.
+- A1 is scored 24 of 24 (WB MSG 335): median |Δ| 0.471 at WB's re-gate, largest 61 Cyg A +2.42. GJ 338 A / B and GJ 892
+  are blocked by the pre-existing star-regions error and handed to CR-27.
+- Commits: CR-32 `05a80c9`, CR-31 `cbe9571`, CR-24 `94f709d`.
 
 ### Power generation / storage / thermal (Phase AL — Group R, no network)
 
@@ -5258,7 +5273,7 @@ bounds **every per-source SYNC `gaia_tap` call** at that one gateway, degrades t
   (`Cr191BareExceptDegradeTest`).
 
 - **CR-32 (a Gaia timeout during the archive-client build kept the JSON off stdout — FIXED; built 2026-09-30;
-  `PHASE_CR24_31_32_PLAN.md` §1).** CR-26's banner fix diverted stdout with a process-global
+  `completed_plans/PHASE_CR24_31_32_PLAN.md` §1).** CR-26's banner fix diverted stdout with a process-global
   `contextlib.redirect_stdout(sys.stderr)`, entered on the CR-19 watchdog thread. A watchdog-abandoned attempt never
   left it, so the JSON result, with its `gaia_status` / `flame_status` `timeout` markers, landed on **stderr**:
   stdout was empty and the exit code 0. A retry that succeeded after a timed-out first attempt did the same, with

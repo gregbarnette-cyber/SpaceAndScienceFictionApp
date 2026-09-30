@@ -3,7 +3,7 @@
 V_ISM = |v★ − v_cloud| (both heliocentric Galactic) instead of the fixed 26 km/s, except that a star with a Wood-measured
 wind rate takes the V_ISM that rate was inferred at (D1). V_ISM feeds only the research-grade WALL (its route test) —
 never the standoff, never a wind rate. Contract: the WB spec ``spaceapp-change-request-CR24-exclusion-vism-vectorial-
-derive.md``; plan ``PHASE_CR24_31_32_PLAN.md`` §3.
+derive.md``; plan ``completed_plans/PHASE_CR24_31_32_PLAN.md`` §3.
 
 Layers (pure unless marked):
 - **velocity math** (§CR-24.1): SIMBAD PM + parallax + RV → astropy ``Galactic`` (heliocentric — NOT LSR) (U, V, W);

@@ -131,7 +131,7 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
 - `_queryharness.py` — the shared `query.py` test harness (consolidating ~24 duplicate per-module `_run` helpers). `run_query(*args)` spawns `query.py` under `sys.executable` with a throwaway `SPACE_APP_DB` under `tempfile.gettempdir()` (cross-OS, never `data/space_app.db`) and a 60 s timeout; `run_query_inproc(*args)` dispatches argparse in-process to skip the ~0.1 s interpreter start — **only** for matrices that never touch the DB, since it shares the parent's DB state. Both return `(exit_code, parsed_json_or_None, stderr)`, so the exit-code contract (0 success / 1 curated `{"error"}` / 2 argparse) is asserted alongside the payload. Also `save_main_sequence_cache`/`restore_main_sequence_cache`, which snapshot **both** module-level main-sequence caches (`core.regions` *and* `core.shared`) so an in-process test seeding its own table cannot poison a later one.
 - **Live-network tests are opt-in (`SPACE_APP_RUN_LIVE=1`, 2026-08-03).** The `*_live.py` files (`test_gcns_live.py`, `test_hypatia_live.py`, `test_catalog_live.py`, `test_designation_live.py`, `test_oec_live.py`, `test_wikipedia_live.py`) **and** the NASA-Archive / JPL-Horizons entries in `test_query_expanded.py` / `test_query_phase_n.py` hit the **live network**. Every one now gates on `tests/_netcheck.live_enabled()` (the `SPACE_APP_RUN_LIVE=1` env flag) **and** host reachability (GAVO / Hypatia / CDS / ESA / HEASARC / SIMBAD / GitHub / NASA / JPL), so a routine `pytest -q` skips **all** of them without opening a socket (see CLAUDE.md for the current live-skip count) — the reachability probe is short-circuited on the flag, including the two local probes `_reachable` / `_horizons_reachable` in the query files. Run them with `SPACE_APP_RUN_LIVE=1 venv/bin/python -m pytest` (adds ~7–8 min → the ~12-min full run; still skips cleanly when a service is down). This mirrors the `SPACE_APP_RUN_HEAVY_DUST=1` dust gate, and the `query.py` **runtime** reachability gates that reuse `_netcheck.reachable()` are unaffected (they never consult `live_enabled()`). **Where a per-file bullet above says "gated on `<host>` reachability", read it now as "…AND `SPACE_APP_RUN_LIVE=1`".** Tests that touch the SQLite store never mutate `data/space_app.db`: in-process tests monkeypatch `core.db._DB_PATH` to a tmp file with auto-seeding disabled (pattern in `tests/test_gcns.py`, `tests/test_regions.py`, `tests/test_db_backups.py`), and the `query.py` subprocess tests pass a throwaway DB via the `SPACE_APP_DB` environment variable.
 
-- **CR-32: a Gaia timeout keeps the JSON on stdout (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md` §1,
+- **CR-32: a Gaia timeout keeps the JSON on stdout (built 2026-09-30; `completed_plans/PHASE_CR24_31_32_PLAN.md` §1,
   `docs/integration.md` CR-32 bullet under CR-19).**
   - **`tests/test_cr32_stdout.py`** (offline). Every Gaia client is a fake `astroquery.gaia` module, with no cache.
     - `AbandonedAttemptTest` (T32-1): both bounded attempts are abandoned inside the client build. The later
@@ -155,7 +155,7 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
     `multiplicity`, every Gaia-reaching subcommand, and reachable runs with no preamble (incl.
     `close-binary-census`).
 
-- **CR-31: `--wind-speed` over a Wood-convention class / preset rate (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md`
+- **CR-31: `--wind-speed` over a Wood-convention class / preset rate (built 2026-09-30; `completed_plans/PHASE_CR24_31_32_PLAN.md`
   §2, `docs/integration.md` CR-31 block).**
   - **`tests/test_cr31_wind_speed.py`** (offline, in-process `run_query_inproc`).
   - `Cr311ForcedTest` covers CR-31 acc 1:
@@ -179,7 +179,7 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
   - `Cr31ByteIdentityTest`: every no-`--wind-speed` call on the touched paths equals
     `tests/fixtures/cr31_no_wind_speed_baseline.json` (27 cases, captured from the pre-change tree in a throwaway worktree).
 
-- **CR-24: the per-star V_ISM (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md` §3, `docs/integration.md` CR-24 block).**
+- **CR-24: the per-star V_ISM (built 2026-09-30; `completed_plans/PHASE_CR24_31_32_PLAN.md` §3, `docs/integration.md` CR-24 block).**
   Isolation: `tests/conftest.py` gains `_cr24_velocity_isolation`.
   - For every test **not** marked `@pytest.mark.cr24_velocity` (registered in `pytest.ini`), an in-process `--star`
     run's velocity is not run (`ism_velocity.target_velocity` / `lookup_velocity` return nothing). So the
@@ -250,8 +250,8 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 
 **CR-26 re-gate RG8/RG9 (2026-09-28, WB MSG 315):** **3767 passed, 110 skipped, 519 subtests, 0 failures** (+8 offline: `test_cr26_network.py` `ReGateFixesTest` +4 RG8, `test_cr26_wiring.py` `ReGateWiringTest` +3 RG9 and the new `ReGateQueryEvolvedTest` 1).
 
-**CR-32 (2026-09-30, `PHASE_CR24_31_32_PLAN.md` stage 1):** **3778 passed, 114 skipped, 519 subtests, 0 failures** (+11 offline: `test_cr32_stdout.py`; +4 opt-in live skips: `test_cr32_live.py`).
+**CR-32 (2026-09-30, `completed_plans/PHASE_CR24_31_32_PLAN.md` stage 1):** **3778 passed, 114 skipped, 519 subtests, 0 failures** (+11 offline: `test_cr32_stdout.py`; +4 opt-in live skips: `test_cr32_live.py`).
 
-**CR-31 (2026-09-30, `PHASE_CR24_31_32_PLAN.md` stage 2):** **3792 passed, 114 skipped, 561 subtests, 0 failures** (+14 offline, +42 subtests: `test_cr31_wind_speed.py`).
+**CR-31 (2026-09-30, `completed_plans/PHASE_CR24_31_32_PLAN.md` stage 2):** **3792 passed, 114 skipped, 561 subtests, 0 failures** (+14 offline, +42 subtests: `test_cr31_wind_speed.py`).
 
-**CR-24 (2026-09-30, `PHASE_CR24_31_32_PLAN.md` stage 3):** **3850 passed, 118 skipped, 609 subtests, 0 failures** (+58 offline, +48 subtests: `test_cr24_tables.py`, `test_cr24_velocity.py`, `test_cr24_range.py`, `test_cr24_wiring.py`; +4 opt-in live skips: `test_cr24_live.py`).
+**CR-24 (2026-09-30, `completed_plans/PHASE_CR24_31_32_PLAN.md` stage 3):** **3850 passed, 118 skipped, 609 subtests, 0 failures** (+58 offline, +48 subtests: `test_cr24_tables.py`, `test_cr24_velocity.py`, `test_cr24_range.py`, `test_cr24_wiring.py`; +4 opt-in live skips: `test_cr24_live.py`).
