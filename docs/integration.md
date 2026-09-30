@@ -1912,8 +1912,11 @@ standoff arithmetic is **untouched**; every new field is **additive**; the one c
   wall is still emitted).
 - **New flags:** `--star-mass-catalog` (a measured mass on the `--star` path — CR-22 for evolved hosts, **CR-23 also on
   the main-sequence path** as tier-2 of the mass ladder, preferred over Gaia FLAME + the L-inversion),
-  and the wall's wind/medium inputs `--wind-speed`, `--v-ism` (default 26, `assumed` on `--star` — the vectorial
-  auto-derive is deferred to WB `OQ-SA-EXCL2`), `--c-ms` (default 20) **or** `--b-field` (derives c_ms), `--n-cloud`
+  and the wall's wind/medium inputs `--wind-speed` (ignored — v_wind 400 forced — over a Wood-convention class or
+  preset rate: CR-26's tiers, and since **CR-31** every Wood class row / `--object` preset; see the CR-31 block),
+  `--v-ism` (supplied; without it, **CR-24** derives V_ISM per star on `--star` — the measured row, the LIC derive, or
+  26 `assumed`; every other path stays 26 `assumed` — see the CR-24 block, which also adds `--cloud`,
+  `--clic-max-pc`, `--lb-cavity`), `--c-ms` (default 20) **or** `--b-field` (derives c_ms), `--n-cloud`
   (0.1), `--cloud-temp` (6300), `--wind-phase-yr`, `--f-shock` (1.5), `--m-shock-min` (1.5),
   `--mass-loss-source {astrosphere_wood|recipe|measured_direct}` (astrosphere_wood forces v_wind=400).
 - **Additive output fields:** `standoff_au` (= `r_ex_au` alias), `standoff_note`, `domain`, `wind_class`,
@@ -1928,7 +1931,9 @@ standoff arithmetic is **untouched**; every new field is **additive**; the one c
   `mass_loss_source`, `mass_loss_msun_yr`) each with a sibling provenance key (`mass_loss_provenance`,
   `wind_speed_provenance`, `v_ism_provenance`, `c_ms_provenance`, `n_cloud_provenance`, `cloud_temp_provenance`,
   `wind_phase_provenance`, `f_shock_provenance`, `m_shock_min_provenance`, `mass_loss_source_provenance`) ∈
-  `{supplied, class_default, b_field_derived, assumed, astrosphere_wood_forced, none}`; with `--b-field` also
+  `{supplied, class_default, b_field_derived, assumed, astrosphere_wood_forced, none}` (CR-24 adds `derived`,
+  `derived_tangential_lower_bound`, `measured_row` to `v_ism_provenance`; CR-26 adds its tier names to
+  `mass_loss_provenance`); with `--b-field` also
   `b_field_ug` + `c_ms_band_derived` `[lo,hi]` (`c_ms_provenance: b_field_derived`).
 - **Wall physics (research-grade):** wind-term `√((Ẇ/Ẇ☉)·(v☉/v_wind))×(4–8 AU)`; bow-wave/shock route by
   `M_f = V_ISM/c_ms` (default `M_shock_min` 1.5; `C = 4M_f²/(M_f²+3)`); a mandatory giant/astropause cap
@@ -2035,7 +2040,8 @@ star's current wind* (the §26.8 disclosures ride in `wind_model.notes`, verbati
   `wind_class` is the CR-26 **state label** (`quiet` / `solar` / `active`) for every in-scope star — a K/M star with no
   active otype now reads **`solar`** (was `quiet`). `mass_loss_provenance` gains `measured` / `xray` / `xray_nondetection`.
   Tiers 2–5 are Wood-convention rates: `mass_loss_source: astrosphere_wood`, **v_wind 400 forced even over `--wind-speed`**
-  (R10 — noted); a `--mass-loss-source` counts only with a supplied rate.
+  (R10 — noted; **CR-31** extends the same rule to every Wood class row / `--object` preset rate); a
+  `--mass-loss-source` counts only with a supplied rate.
 - **New inputs.** `exclusion-boundary --radius-rsun <R☉> --log-fx <fit-scale log F_X> | --log-fx-limit <…> --prot-days <d>`;
   `exclusion-system --prot-days` (reaches every component lacking its own) and `--component` keys `radius_rsun=`, `log_fx=`,
   `log_fx_limit=`, `prot_days=`, `main_id=` (the measured-table identity — a hit supplies the class when no `class=`/`sp=`
