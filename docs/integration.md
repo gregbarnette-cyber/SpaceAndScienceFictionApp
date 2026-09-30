@@ -5090,6 +5090,36 @@ bounds **every per-source SYNC `gaia_tap` call** at that one gateway, degrades t
   `core/report.py` only** (the hook lives on the dossier path; `binary.py` unchanged); tests `tests/test_cr19.py`
   (`Cr191BareExceptDegradeTest`).
 
+- **CR-32 (a Gaia timeout during the archive-client build kept the JSON off stdout — FIXED; built 2026-09-30;
+  `PHASE_CR24_31_32_PLAN.md` §1).** CR-26's banner fix diverted stdout with a process-global
+  `contextlib.redirect_stdout(sys.stderr)`, entered on the CR-19 watchdog thread. A watchdog-abandoned attempt never
+  left it, so the JSON result, with its `gaia_status` / `flame_status` `timeout` markers, landed on **stderr**:
+  stdout was empty and the exit code 0. A retry that succeeded after a timed-out first attempt did the same, with
+  no marker at all.
+  - **The fix.** `core.catalog._gaia_stdout_to_stderr` is now **thread-scoped**. A transparent `sys.stdout` proxy
+    (`_ThreadRoutedStdout`) is installed once, on the caller's thread by `gaia_tap`. It routes to stderr (looked up
+    at write time) only the writes of a thread currently inside the diversion. The main thread's JSON always
+    reaches stdout, and an abandoned attempt's late banner still goes to stderr.
+  - The proxy passes through every stream attribute. `isatty` and `encoding` follow the stream actually written.
+    It survives a 2>&1-style stderr capture and leaves a `None` stdout (pythonw) alone.
+  - **CR-32.1, every result on stdout.** This holds on every subcommand that reaches the Gaia gateway:
+    `exclusion-system --star`, `exclusion-boundary --star`, `dossier`, `compare-stars`, `binary-orbit`,
+    `binary-stability-auto`, `multiplicity`, `gaia-tap`, `gaia-astrophysical` and `close-binary-census`. The one
+    gateway is `core/catalog.py`, the only importer of `astroquery.gaia`.
+  - **CR-32.2, banner off stdout.** The diversion now covers the job and `get_results` as well as the import and
+    client. So the async path's astroquery log line `INFO: Query finished.` (which reached `close-binary-census`'s
+    stdout before) now goes to stderr, and that subcommand's stdout is JSON only (WB MSG 326).
+  - **CR-32.3, unchanged.** The markers and their values, the bound, retry and circuit breaker, every exit code
+    and every value are unchanged.
+  - **Test hook `SPACE_APP_GAIA_FORCE_FIRST_ATTEMPT_TIMEOUT=1`** (no network).
+    - The bounded call's **first** attempt runs inside the diversion. It is abandoned by its own 0.5 s watchdog,
+      prints a late marker line, and never returns.
+    - The retry, at the configured bound, then runs normally. The result is not degraded and the breaker is not
+      tripped (CR-32 acc 2).
+    - `shared._bounded_call` gained an additive `first_timeout` for this hook only.
+  - **Tests:** `tests/test_cr32_stdout.py` (offline) and `tests/test_cr32_live.py` (opt-in live: acc 1–3 on every
+    subcommand above).
+
 ## CR-20 — multiplicity verdict honesty (additive tri-state) + `gcns_stars` Gaia-PM backbone (additive; NUMERIC battery + CR-18 anchors byte-identical)
 
 Two additive components; `is_multiple` and every existing key/value stay byte-for-byte identical (the CR-15.4/CR-17 additive-key precedent).

@@ -1319,18 +1319,20 @@ def _call_with_watchdog(fn, *args, timeout, **kwargs):
     return box.get("value")
 
 
-def _bounded_call(attempt_fn, *, timeout, retries=2, backoff=0.5, fatal=()):
+def _bounded_call(attempt_fn, *, timeout, retries=2, backoff=0.5, fatal=(), first_timeout=None):
     """Run ``attempt_fn`` under the ``_call_with_watchdog`` wall-clock bound, up to ``retries``
     attempts (retry-1 = 2). Between attempts it honors an HTTP ``Retry-After`` (429/503 — a
     throttled-but-reachable service is not falsely degraded), else sleeps ``backoff`` s. Raises
     ``_WatchdogTimeout`` if the final attempt timed out, else re-raises the last exception. An exception
     of a ``fatal`` type (a deterministic failure — retrying cannot help) is re-raised at once.
-    ``timeout=None`` → unbounded (the watchdog joins forever). Shared by the CR-19 sync Gaia-TAP bound
+    ``timeout=None`` → unbounded (the watchdog joins forever). ``first_timeout`` (a test hook's only use, CR-32)
+    bounds the first attempt alone. Shared by the CR-19 sync Gaia-TAP bound
     (``catalog._bounded_gaia_call``) and the CR-25 SIMBAD otype-list fetch."""
     last_exc = None
     for i in range(retries):
         try:
-            return _call_with_watchdog(attempt_fn, timeout=timeout)
+            return _call_with_watchdog(attempt_fn, timeout=(first_timeout if (i == 0 and first_timeout)
+                                                            else timeout))
         except Exception as e:
             if fatal and isinstance(e, fatal):
                 raise

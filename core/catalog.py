@@ -29,9 +29,12 @@ API forms verified live against astroquery 0.4.11 on 2026-07-23:
     colRA1='ra', colDec1='dec')`` (Capella → HIP 24608, Plx 76.2 mas).
 """
 
+import contextlib
 import math
 import os
 import re
+import sys
+import threading
 import time
 
 from core import catalog_cache
@@ -256,14 +259,15 @@ def _bounded_error(reason, q, exc=None, warn=True):
     return err
 
 
-def _bounded_gaia_call(attempt_fn, *, timeout, retries=2):
+def _bounded_gaia_call(attempt_fn, *, timeout, retries=2, first_timeout=None):
     """Run ``attempt_fn`` under the wall-clock watchdog, up to ``retries`` attempts (retry-1 = 2).
     Raises ``_WatchdogTimeout`` if the final attempt timed out; re-raises the last network exception
     otherwise (so ``gaia_tap`` can distinguish "timeout" from "unreachable"). The loop itself is the
     shared ``shared._bounded_call`` (CR-25 reuses it for the SIMBAD otype fetch): it honors an HTTP
     Retry-After (429/503) so a throttled-but-reachable TAP is NOT falsely degraded to "unreachable";
     a watchdog timeout carries no Retry-After → the fixed ``_GAIA_RETRY_BACKOFF``."""
-    return _bounded_call(attempt_fn, timeout=timeout, retries=retries, backoff=_GAIA_RETRY_BACKOFF)
+    return _bounded_call(attempt_fn, timeout=timeout, retries=retries, backoff=_GAIA_RETRY_BACKOFF,
+                         first_timeout=first_timeout)
 
 
 def _shape_gaia(q, t, use_async):
@@ -274,15 +278,106 @@ def _shape_gaia(q, t, use_async):
             "column_units": _column_units(t), "rows": _table_to_rows(t)}
 
 
+class _ThreadRoutedStdout:
+    """CR-32: a transparent ``sys.stdout`` proxy that sends to ``sys.stderr`` (looked up at write time) only the
+    writes of a thread currently inside ``_gaia_stdout_to_stderr``; every other thread — the main thread writing
+    query.py's JSON included — reaches the wrapped stream. Every other attribute (``encoding``, ``buffer``,
+    ``fileno``, ``isatty``, …) passes through. A diverted write to a ``None`` stderr (pythonw) is dropped. A write
+    to ``.buffer`` from a diverted thread bypasses the routing (accepted — no worse than before)."""
+
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+
+    def _target(self):
+        if not getattr(_STDOUT_DIVERT, "on", False):
+            return self._wrapped
+        err = sys.stderr
+        if err is self or isinstance(err, _ThreadRoutedStdout):    # a 2>&1-style capture → no recursion
+            err = sys.__stderr__
+        return err
+
+    @property
+    def encoding(self):
+        t = self._target()
+        return getattr(t if t is not None else self._wrapped, "encoding", None)
+
+    def isatty(self):
+        """The stream actually written to decides (colourised log lines must not follow stdout's tty)."""
+        t = self._target()
+        try:
+            return bool(t is not None and t.isatty())
+        except Exception:
+            return False
+
+    def write(self, s):
+        t = self._target()
+        return len(s) if t is None else t.write(s)
+
+    def writelines(self, lines):
+        t = self._target()
+        if t is not None:
+            t.writelines(lines)
+
+    def flush(self):
+        t = self._target()
+        if t is not None and t is not self._wrapped:
+            t.flush()
+        self._wrapped.flush()
+
+    def __getattr__(self, name):
+        if name == "_wrapped":                          # copy / pickle built without __init__ → no recursion
+            raise AttributeError(name)
+        return getattr(self._wrapped, name)
+
+
+_STDOUT_DIVERT = threading.local()
+_STDOUT_PROXY_LOCK = threading.Lock()
+
+
+def _install_stdout_router():
+    """Install the ``_ThreadRoutedStdout`` proxy over the current ``sys.stdout`` (idempotent; a ``None`` stdout —
+    pythonw — is left alone). ``gaia_tap`` calls it on the CALLER's thread before any watchdog worker starts, so the
+    install never races a caller-thread ``redirect_stdout`` (CP1); the diversion re-checks it (a harness may have
+    swapped stdout since)."""
+    with _STDOUT_PROXY_LOCK:
+        cur = sys.stdout
+        if cur is not None and not isinstance(cur, _ThreadRoutedStdout):
+            sys.stdout = _ThreadRoutedStdout(cur)
+
+
+@contextlib.contextmanager
 def _gaia_stdout_to_stderr():
-    """A context that diverts stdout to stderr around the ``astroquery.gaia`` import and client construction:
-    its module-level ``Gaia = GaiaClass()`` (a network call) and every client print the ESA archive's server banner
-    (e.g. "In preparation for Gaia DR4, …") to STDOUT, which would corrupt query.py's JSON. Used INSIDE the bounded
-    attempt, so the import's own network call stays under the CR-19 wall-clock bound (CP5). Found in the CR-26 live
-    probe (a pre-existing CR-19 / CR-23 path)."""
-    import contextlib
-    import sys
-    return contextlib.redirect_stdout(sys.stderr)
+    """Divert THIS thread's stdout to stderr around the ``astroquery.gaia`` import, client construction and job:
+    its module-level ``Gaia = GaiaClass()`` (a network call), every client print of the ESA archive's server banner
+    (e.g. "In preparation for Gaia DR4, …") and the async job's "INFO: Query finished." log line go to STDOUT, which
+    would corrupt query.py's JSON. Used INSIDE the bounded attempt (CP5, CR-26).
+
+    **Thread-scoped (CR-32).** It was a process-global ``redirect_stdout``: a watchdog-abandoned attempt never left
+    it, so stdout stayed pointed at stderr and the JSON result landed on stderr. Now a ``_ThreadRoutedStdout`` proxy
+    is installed once (lazily, under a lock, never removed — it is transparent to every other thread) and only a
+    thread-local flag is set and restored here, so an abandoned attempt can never redirect another thread's output
+    (its own late banner still goes to stderr). A ``None`` stdout (pythonw) is left alone."""
+    _install_stdout_router()
+    prev = getattr(_STDOUT_DIVERT, "on", False)
+    _STDOUT_DIVERT.on = True
+    try:
+        yield
+    finally:
+        _STDOUT_DIVERT.on = prev
+
+
+_HOOK_FIRST_BOUND_S = 0.5
+_HOOK_MARKER = "[SPACE_APP test hook] late banner from the abandoned attempt"
+
+
+def _hook_stall_forever():
+    """CR-32 test hook (``SPACE_APP_GAIA_FORCE_FIRST_ATTEMPT_TIMEOUT=1``) — the body of the bounded call's FIRST
+    attempt, run INSIDE the stdout diversion: it outlives its own short watchdog (``_HOOK_FIRST_BOUND_S``), prints
+    a late "banner" once abandoned, and never leaves (a never-set Event) — exactly the state of a real timed-out
+    client build. ``_bounded_call``'s retry (at the configured bound) then runs the real attempt. No network."""
+    time.sleep(_HOOK_FIRST_BOUND_S + 0.1)
+    print(_HOOK_MARKER, flush=True)
+    threading.Event().wait()
 
 
 def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
@@ -300,6 +395,7 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
         return _route_error("gaia-tap requires --adql or --table", ["gaia-tap"])
 
     q = adql or _build_gaia_adql(table, columns, where, cone, row_limit)
+    _install_stdout_router()                            # CR-32: on the caller's thread, before any worker
     params = {"adql": adql, "table": table, "columns": columns, "where": where,
               "cone": cone, "row_limit": row_limit, "async": use_async}
     bound = None if use_async else _gaia_sync_timeout()
@@ -307,9 +403,9 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
     # ── Legacy path (async census, or the bound disabled): byte-identical to before CR-19 ──
     if bound is None:
         def _run():
-            with _timeout_ctx(timeout):
-                with _gaia_stdout_to_stderr():
-                    from astroquery.gaia import Gaia
+            # CR-32: the diversion now covers the job too (the async job's "INFO: Query finished." log line)
+            with _timeout_ctx(timeout), _gaia_stdout_to_stderr():
+                from astroquery.gaia import Gaia
                 if use_async:
                     prev = Gaia.ROW_LIMIT
                     Gaia.ROW_LIMIT = row_limit if (row_limit and row_limit > 0) else -1
@@ -337,24 +433,31 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
             return hit
         return _bounded_error(open_reason, q, warn=False)
 
+    first_hook = bool(os.environ.get("SPACE_APP_GAIA_FORCE_FIRST_ATTEMPT_TIMEOUT"))
+    n_attempt = [0]
+
     def _attempt():
         # Deterministic test hook: force the unreachable-degrade path with NO network (CR-19 §③).
         if os.environ.get("SPACE_APP_GAIA_FORCE_UNREACHABLE"):
             import requests
             raise requests.exceptions.ConnectionError("SPACE_APP_GAIA_FORCE_UNREACHABLE (test hook)")
+        n_attempt[0] += 1
         # a FRESH client per attempt — an abandoned attempt must not share astroquery's global Gaia session;
-        # the import + client banner go to stderr, still inside the bounded attempt (see _gaia_stdout_to_stderr)
+        # the import + client banner + job go to stderr, still inside the bounded attempt (see _gaia_stdout_to_stderr)
         with _gaia_stdout_to_stderr():
+            if first_hook and n_attempt[0] == 1:
+                _hook_stall_forever()                   # CR-32 acc 2: abandoned inside the diversion; retry succeeds
             from astroquery.gaia import GaiaClass
             g = GaiaClass(show_server_messages=False)
-        job = g.launch_job(q)
-        t = job.get_results()
+            job = g.launch_job(q)
+            t = job.get_results()
         return _shape_gaia(q, t, use_async)
 
     try:
         return catalog_cache.cached(
             "gaia", params,
-            lambda: _bounded_gaia_call(_attempt, timeout=bound, retries=2))
+            lambda: _bounded_gaia_call(_attempt, timeout=bound, retries=2,
+                                       first_timeout=(_HOOK_FIRST_BOUND_S if first_hook else None)))
     except _WatchdogTimeout:
         _trip_gaia_circuit("timeout")
         return _bounded_error("timeout", q)

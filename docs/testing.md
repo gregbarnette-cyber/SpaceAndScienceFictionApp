@@ -131,6 +131,30 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
 - `_queryharness.py` — the shared `query.py` test harness (consolidating ~24 duplicate per-module `_run` helpers). `run_query(*args)` spawns `query.py` under `sys.executable` with a throwaway `SPACE_APP_DB` under `tempfile.gettempdir()` (cross-OS, never `data/space_app.db`) and a 60 s timeout; `run_query_inproc(*args)` dispatches argparse in-process to skip the ~0.1 s interpreter start — **only** for matrices that never touch the DB, since it shares the parent's DB state. Both return `(exit_code, parsed_json_or_None, stderr)`, so the exit-code contract (0 success / 1 curated `{"error"}` / 2 argparse) is asserted alongside the payload. Also `save_main_sequence_cache`/`restore_main_sequence_cache`, which snapshot **both** module-level main-sequence caches (`core.regions` *and* `core.shared`) so an in-process test seeding its own table cannot poison a later one.
 - **Live-network tests are opt-in (`SPACE_APP_RUN_LIVE=1`, 2026-08-03).** The `*_live.py` files (`test_gcns_live.py`, `test_hypatia_live.py`, `test_catalog_live.py`, `test_designation_live.py`, `test_oec_live.py`, `test_wikipedia_live.py`) **and** the NASA-Archive / JPL-Horizons entries in `test_query_expanded.py` / `test_query_phase_n.py` hit the **live network**. Every one now gates on `tests/_netcheck.live_enabled()` (the `SPACE_APP_RUN_LIVE=1` env flag) **and** host reachability (GAVO / Hypatia / CDS / ESA / HEASARC / SIMBAD / GitHub / NASA / JPL), so a routine `pytest -q` skips **all** of them without opening a socket (see CLAUDE.md for the current live-skip count) — the reachability probe is short-circuited on the flag, including the two local probes `_reachable` / `_horizons_reachable` in the query files. Run them with `SPACE_APP_RUN_LIVE=1 venv/bin/python -m pytest` (adds ~7–8 min → the ~12-min full run; still skips cleanly when a service is down). This mirrors the `SPACE_APP_RUN_HEAVY_DUST=1` dust gate, and the `query.py` **runtime** reachability gates that reuse `_netcheck.reachable()` are unaffected (they never consult `live_enabled()`). **Where a per-file bullet above says "gated on `<host>` reachability", read it now as "…AND `SPACE_APP_RUN_LIVE=1`".** Tests that touch the SQLite store never mutate `data/space_app.db`: in-process tests monkeypatch `core.db._DB_PATH` to a tmp file with auto-seeding disabled (pattern in `tests/test_gcns.py`, `tests/test_regions.py`, `tests/test_db_backups.py`), and the `query.py` subprocess tests pass a throwaway DB via the `SPACE_APP_DB` environment variable.
 
+- **CR-32: a Gaia timeout keeps the JSON on stdout (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md` §1,
+  `docs/integration.md` CR-32 bullet under CR-19).**
+  - **`tests/test_cr32_stdout.py`** (offline). Every Gaia client is a fake `astroquery.gaia` module, with no cache.
+    - `AbandonedAttemptTest` (T32-1): both bounded attempts are abandoned inside the client build. The later
+      output reaches stdout, and both late banners reach stderr.
+    - `RetryThenSuccessTest` (T32-2): the `SPACE_APP_GAIA_FORCE_FIRST_ATTEMPT_TIMEOUT` hook. The result is not
+      degraded and the breaker is not tripped. stdout is exactly the main thread's output, and the marker is on
+      stderr.
+    - `ProxyTest` covers:
+      - attribute passthrough and return values;
+      - idempotent install and thread scoping under concurrent diversions;
+      - the recursion guards (copy; stderr as the proxy) and `isatty` following the target;
+      - `None` streams.
+    - `LegacyPathTest`: the async path's real astroquery `log.info("Query finished.")` goes to stderr, as do the
+      sync job's diagnostics.
+    - `QueryPyGatewayTest`: `gaia-tap` and `gaia-astrophysical` run in-process through `query.py` under the hook
+      (JSON on stdout, no preamble). It also pins `core/catalog.py` as the only `astroquery.gaia` importer, which
+      is the structural guarantee for the other Gaia subcommands.
+    - T32-1, T32-2 and T32-6 were confirmed **red** on the pre-fix redirect.
+  - **`tests/test_cr32_live.py`** (opt-in live, `SPACE_APP_RUN_LIVE=1` plus ESA Gaia reachable). It runs CR-32
+    acc 1–3: forced timeouts on `exclusion-system --star` Ross 128 / Lacaille 9352, the env form on
+    `multiplicity`, every Gaia-reaching subcommand, and reachable runs with no preamble (incl.
+    `close-binary-census`).
+
 ## Suite-count history (moved from CLAUDE.md, 2026-09-24)
 
 The running per-CR record of how the offline suite count grew, kept verbatim from the paragraph that used to live in CLAUDE.md's Tests section. CLAUDE.md now carries only the current count; append new history here.
@@ -142,3 +166,5 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 **CR-26 re-gate fixes (2026-09-28, WB MSG 311):** **3759 passed, 110 skipped, 519 subtests, 0 failures** (+14 offline: `test_cr26_network.py` `ReGateFixesTest` 9, `test_cr26_wiring.py` `ReGateWiringTest` 5). The class-statistics re-vendor re-pinned A5 / modes / fork-9 / class-median values in `test_cr26_model.py` + `test_cr26_wiring.py` and the G / M4+ typical levels in `test_cr25.py` in place (no count change).
 
 **CR-26 re-gate RG8/RG9 (2026-09-28, WB MSG 315):** **3767 passed, 110 skipped, 519 subtests, 0 failures** (+8 offline: `test_cr26_network.py` `ReGateFixesTest` +4 RG8, `test_cr26_wiring.py` `ReGateWiringTest` +3 RG9 and the new `ReGateQueryEvolvedTest` 1).
+
+**CR-32 (2026-09-30, `PHASE_CR24_31_32_PLAN.md` stage 1):** **3778 passed, 114 skipped, 519 subtests, 0 failures** (+11 offline: `test_cr32_stdout.py`; +4 opt-in live skips: `test_cr32_live.py`).
