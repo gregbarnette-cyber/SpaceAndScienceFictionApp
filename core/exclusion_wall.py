@@ -620,6 +620,40 @@ def resolve_wind_inputs(domain, wind_class, sp_type=None, *,
                    n_cloud=n_cloud, cloud_temp=cloud_temp, f_shock=f_shock, m_shock_min=m_shock_min)
 
 
+# ── CR-31: an explicit --wind-speed over a Wood-convention class / preset rate (legacy_row / object_preset) ──
+NOTE_CR31_FORCED = ("--wind-speed {v:g} ignored: a Wood-convention {kind} rate ({tier}) forces v_wind = 400 km/s — "
+                    "to use another speed, supply the rate (--mass-loss-msun-yr) with it")
+NOTE_CR31_RESCALE = ("the supplied rate is paired with {v:g} km/s unrescaled; a Wood-convention rate (an astrosphere "
+                     "measures Ṁ·V_w at 400 km/s) must be supplied × 400/v")
+
+
+def cr31_wind_speed(tier, inputs, prov, resolve_unforced):
+    """CR-31 — applied by both callers once the tier is known (it is derived after the first resolve).
+
+    **CR-31.1:** the rate in use is a Wood class row's own (``quiet``/``solar``/``active`` — rate provenance
+    ``class_default``) **whatever the tier label** (``legacy_row``; a ``noncoronal_row`` A/B/O or evolved class given a
+    Wood ``--wind-state`` / ``wind_class=``; a typeless ``--star`` — WB MSG 332), or tier ``object_preset`` (the
+    ``--object sun``/``m-dwarf`` preset rate), the source ``astrosphere_wood`` defaulted from the row, and a supplied
+    wind speed → the speed is IGNORED: re-resolve with no speed (the forced 400, ``astrosphere_wood_forced``) + CR-26's
+    ignored-input note naming the tier reported. Keyed on the resolved inputs, so every spelling (a system or
+    component ``--wind-state``/``wind_class=``, a system or component speed) is covered.
+    **CR-31.2:** tier ``supplied`` with that row-defaulted Wood source and a supplied speed ≠ 400 → the rescale note
+    only (nothing else changes). An explicit ``--mass-loss-source`` never reaches either (already forced / non-Wood).
+    Returns ``(inputs, prov, note | None)``."""
+    wood_row = (inputs.get("mass_loss_source") == "astrosphere_wood"
+                and prov.get("mass_loss_source") == "class_default")
+    if not wood_row or prov.get("wind_speed") != "supplied":
+        return inputs, prov, None
+    v = inputs["v_wind"]
+    if prov.get("mass_loss") == "class_default" or tier == "object_preset":
+        inputs, prov = resolve_unforced()
+        kind = "preset" if tier == "object_preset" else "class"
+        return inputs, prov, NOTE_CR31_FORCED.format(v=v, kind=kind, tier=tier)
+    if tier == "supplied" and v != _V_SUN:
+        return inputs, prov, NOTE_CR31_RESCALE.format(v=v)
+    return inputs, prov, None
+
+
 # CR-26: the four ladder tiers whose rate is a Wood-convention rate (v_wind 400 forced — R10). One source of
 # truth: the model's own tuple (stellar_wind imports only stellar_wind_tables + shared — no cycle).
 from core.stellar_wind import LADDER_TIERS as CR26_LADDER_TIERS    # noqa: E402

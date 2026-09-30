@@ -155,6 +155,30 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
     `multiplicity`, every Gaia-reaching subcommand, and reachable runs with no preamble (incl.
     `close-binary-census`).
 
+- **CR-31: `--wind-speed` over a Wood-convention class / preset rate (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md`
+  §2, `docs/integration.md` CR-31 block).**
+  - **`tests/test_cr31_wind_speed.py`** (offline, in-process `run_query_inproc`).
+  - `Cr311ForcedTest` covers CR-31 acc 1:
+    - `--mass-msun 1.0 --wind-state solar` → 6.0, and `active` → 13.416.
+    - `--object m-dwarf` → 13.416, and `--object sun` → 6.0.
+    - Each is `astrosphere_wood_forced` with the path-named note.
+    - `--wind-speed 400` is forced.
+    - The four `exclusion-system` spellings (Q8).
+    - A Wood row under `noncoronal_row` is forced: `--spectral-type A1V --wind-state solar`, the A1V and K0III
+      component forms, and a typeless `--star` in core (WB MSG 332).
+  - `Cr312UnchangedTest` covers acc 2 and 3:
+    - The supplied tier gives 4.243 with no note.
+    - The rescale note appears on `--wind-state` / `--spectral-type K2V` / `--object m-dwarf` + a rate, and on the
+      component form (6.0).
+    - There is no note at 400.
+    - An explicit Wood source is forced with no CR-31 note.
+    - o-star and `hot` are honoured.
+    - A1V `noncoronal_row` → 3.000.
+    - The K2V CR-26 tier keeps its own note.
+    - The CP0 F-B8 `derive_mass_loss_tier` guard.
+  - `Cr31ByteIdentityTest`: every no-`--wind-speed` call on the touched paths equals
+    `tests/fixtures/cr31_no_wind_speed_baseline.json` (27 cases, captured from the pre-change tree in a throwaway worktree).
+
 ## Suite-count history (moved from CLAUDE.md, 2026-09-24)
 
 The running per-CR record of how the offline suite count grew, kept verbatim from the paragraph that used to live in CLAUDE.md's Tests section. CLAUDE.md now carries only the current count; append new history here.
@@ -168,3 +192,5 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 **CR-26 re-gate RG8/RG9 (2026-09-28, WB MSG 315):** **3767 passed, 110 skipped, 519 subtests, 0 failures** (+8 offline: `test_cr26_network.py` `ReGateFixesTest` +4 RG8, `test_cr26_wiring.py` `ReGateWiringTest` +3 RG9 and the new `ReGateQueryEvolvedTest` 1).
 
 **CR-32 (2026-09-30, `PHASE_CR24_31_32_PLAN.md` stage 1):** **3778 passed, 114 skipped, 519 subtests, 0 failures** (+11 offline: `test_cr32_stdout.py`; +4 opt-in live skips: `test_cr32_live.py`).
+
+**CR-31 (2026-09-30, `PHASE_CR24_31_32_PLAN.md` stage 2):** **3792 passed, 114 skipped, 561 subtests, 0 failures** (+14 offline, +42 subtests: `test_cr31_wind_speed.py`).

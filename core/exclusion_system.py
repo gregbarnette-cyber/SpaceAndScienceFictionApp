@@ -520,11 +520,19 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         m = c["cr26"]
         tier = m["mass_loss_tier"] if m else None
         label = m.get("label") if m else None
-        inputs, prov = ew.resolve_wind_inputs(
-            c["domain"], c["wind_class"], c.get("sp_type"), **wp,
-            tier=(tier if (c["cr26_ladder"] or tier == "none") else None),
-            tier_rate=(m["rate"] if c["cr26_ladder"] else None),
-            tier_row=((label or c["wind_class"]) if c["cr26_ladder"] else None))
+        rw_args = (c["domain"], c["wind_class"], c.get("sp_type"))
+        rw_kw = dict(tier=(tier if (c["cr26_ladder"] or tier == "none") else None),
+                     tier_rate=(m["rate"] if c["cr26_ladder"] else None),
+                     tier_row=((label or c["wind_class"]) if c["cr26_ladder"] else None))
+        inputs, prov = ew.resolve_wind_inputs(*rw_args, **wp, **rw_kw)
+        if tier is None:                                      # derived here (before the wall) for CR-31
+            tier = eb.derive_mass_loss_tier(
+                c["domain"], c.get("wind_class_provenance"), c.get("mass_loss_msun_yr"), c.get("wind_state"),
+                inputs["wdot"], sp_type=c.get("sp_type"), class_tag=c.get("class"))
+        inputs, prov, n31 = ew.cr31_wind_speed(
+            tier, inputs, prov, lambda: ew.resolve_wind_inputs(*rw_args, **dict(wp, wind_speed=None), **rw_kw))
+        if n31:
+            c["cr26_notes"].append(n31)
         if label:
             c["wind_class"] = label                           # CR-26 §26.5: the state label
         wall = ew.compute_wall(
@@ -544,11 +552,7 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         exceeds, ratio = ew.hazard_flags(c["wall_band_hi"], wall.get("wall_au"), c["r_ex_au"])
         c["wall_exceeds_standoff"] = exceeds
         c["wall_to_standoff_ratio"] = ratio
-        # CR-26 additive fields (§26.7)
-        if tier is None:
-            tier = eb.derive_mass_loss_tier(
-                c["domain"], c.get("wind_class_provenance"), c.get("mass_loss_msun_yr"), c.get("wind_state"),
-                (c["wall_inputs"] or {}).get("wdot"), sp_type=c.get("sp_type"), class_tag=c.get("class"))
+        # CR-26 additive fields (§26.7) — the tier was derived above (CR-31)
         if c["domain"] in (ew.WINDLESS, ew.UNMODELED) and c.get("mass_loss_msun_yr") is not None:
             c["cr26_notes"].append(eb.NOTE_RATE_UNUSED)
         c["cr26_fields"] = eb._cr26_fields(tier, m, c["wall_inputs"], c["r_ex_au"], c["wind_class"],

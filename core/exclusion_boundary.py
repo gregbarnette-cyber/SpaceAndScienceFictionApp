@@ -211,7 +211,12 @@ def derive_mass_loss_tier(domain, wind_class_provenance, mass_loss_msun_yr, wind
     preset's rate travels in ``mass_loss_msun_yr``, so this is checked first) > ``supplied`` > ``noncoronal_row``
     (any identity: a CR-22 row, unchanged) > ``legacy_row`` (a bare mass + a ``--wind-state``) > ``none``."""
     if wind_class_provenance == "object_preset":
-        return "object_preset"
+        preset = _OBJECT_PRESETS.get(object_name or "")
+        # CR-31 (CP0 F-B8): a rate that is not the preset's own is the caller's → supplied (query.py passes the tier
+        # explicitly, so this only guards a direct core call)
+        if mass_loss_msun_yr is None or (preset is not None and mass_loss_msun_yr == preset[2]):
+            return "object_preset"
+        return "supplied"
     if domain in (ew.WINDLESS, ew.UNMODELED):
         return "noncoronal_row"                    # no wind at all — a supplied rate is unused (noted)
     if mass_loss_msun_yr is not None:
@@ -329,19 +334,27 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     ladder = tier in ew.CR26_LADDER_TIERS
     cr26_label = cr26.get("label") if cr26 is not None else None
     identity_wc = wind_class                       # the CR-25 identity row (G11: supplied keeps it)
-    inputs, prov = ew.resolve_wind_inputs(
-        domain, wind_class, sp_type, mass_loss_msun_yr=mass_loss_msun_yr, wind_speed=wind_speed,
-        v_ism=v_ism, c_ms=c_ms, b_field=b_field, n_cloud=n_cloud, cloud_temp=cloud_temp,
-        wind_phase_yr=wind_phase_yr, f_shock=f_shock, m_shock_min=m_shock_min,
-        mass_loss_source=mass_loss_source,
-        tier=(tier if (ladder or tier == "none") else None), tier_rate=(cr26["rate"] if ladder else None),
-        tier_row=(cr26_label or identity_wc) if ladder else None)
+    rw_kw = dict(mass_loss_msun_yr=mass_loss_msun_yr, v_ism=v_ism, c_ms=c_ms, b_field=b_field, n_cloud=n_cloud,
+                 cloud_temp=cloud_temp, wind_phase_yr=wind_phase_yr, f_shock=f_shock, m_shock_min=m_shock_min,
+                 mass_loss_source=mass_loss_source,
+                 tier=(tier if (ladder or tier == "none") else None), tier_rate=(cr26["rate"] if ladder else None),
+                 tier_row=(cr26_label or identity_wc) if ladder else None)
+    inputs, prov = ew.resolve_wind_inputs(domain, identity_wc, sp_type, wind_speed=wind_speed, **rw_kw)
     if cr26_label:
         wind_class = cr26_label                    # CR-26 §26.5: the state label (quiet / solar / active)
     if tier is None:
         tier = mass_loss_tier or derive_mass_loss_tier(
             domain, wind_class_provenance, mass_loss_msun_yr, wind_state, inputs["wdot"], sp_type=sp_type,
             class_tag=class_tag, object_name=object_name)
+    t31 = tier
+    if tier == "object_preset":                    # CR-31 (CP2): the preset tier is forced only on the preset's own rate
+        preset = _OBJECT_PRESETS.get(object_name or "")
+        if preset is None or (mass_loss_msun_yr is not None and mass_loss_msun_yr != preset[2]):
+            t31 = "supplied"
+    inputs, prov, n31 = ew.cr31_wind_speed(
+        t31, inputs, prov, lambda: ew.resolve_wind_inputs(domain, identity_wc, sp_type, wind_speed=None, **rw_kw))
+    if n31:
+        cr26_notes = list(cr26_notes or ()) + [n31]
     # the γ > 0 standoff input (WB Q1): a ladder tier's rate (the point, or the bound); else today's arguments
     st_rate, st_ws = ((cr26["standoff_rate"], None) if (ladder and gamma) else (mass_loss_msun_yr, wind_state))
     extra_notes = list(cr26_notes or ())

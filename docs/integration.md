@@ -2105,6 +2105,52 @@ star's current wind* (the §26.8 disclosures ride in `wind_model.notes`, verbati
   Live (`tests/test_cr26_live.py`): Wolf 359 0.1141, 61 Cyg B 0.6290 (blended), α Cen A `tiers.xray` 0.9156. Plan
   `completed_plans/PHASE_CR26_PLAN.md`; tests `tests/test_cr26_{model,network,wiring,live}.py`.
 
+##### CR-31 — an explicit `--wind-speed` over a Wood-convention class / preset rate is ignored (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md` §2)
+
+CR-22's CP4 relaxation honoured an explicit `--wind-speed` over a *class-default* `astrosphere_wood` source, and it
+did so **unrescaled**. CR-26 closed that on its own tiers (R10) but left it live on `legacy_row` and
+`object_preset`. CR-31 closes it there. One shared helper, `core.exclusion_wall.cr31_wind_speed`, is applied by both
+subcommands once the tier is known. It is keyed on the resolved inputs, not on how the flags were spelled.
+
+- **CR-31.1 (force).** The helper forces the speed when all three hold:
+  - the rate in use is a Wood class row's own (rate provenance `class_default`), **whatever the tier label**
+    (`legacy_row`, or `noncoronal_row` for an A/B/O or evolved class given a Wood `--wind-state` / `wind_class=`,
+    or a typeless `--star`; WB MSG 332), or it is the `object_preset` preset rate;
+  - the source is `astrosphere_wood`, defaulted from the `quiet` / `solar` / `active` row (`class_default`);
+  - a wind speed was supplied.
+
+  The speed is then **ignored**. `wind_speed_kms` is 400 with provenance `astrosphere_wood_forced`, and
+  `wind_model.notes` gets:
+  > "--wind-speed N ignored: a Wood-convention class rate (legacy_row) forces v_wind = 400 km/s — to use another
+  > speed, supply the rate (--mass-loss-msun-yr) with it"
+
+  The note names the tier actually reported, e.g. "(noncoronal_row)". The `object_preset` note reads "…a
+  Wood-convention preset rate (object_preset)…" instead.
+  - **Covered spellings:**
+    - `exclusion-boundary --mass-msun … --wind-state quiet|solar|active`
+    - `--object sun|m-dwarf`
+    - every typeless `exclusion-system --component`: system or component `--wind-state` / `wind_state=` /
+      `wind_class=`, and a system or component speed
+    - `--spectral-type A1V --wind-state solar` and `class=K0III,wind_class=solar` (`noncoronal_row`)
+  - `--wind-speed 400` is forced too. The value is unchanged, but the provenance is now `astrosphere_wood_forced`
+    and the note is added, matching CR-26's `NOTE_IGNORED_SPEED` (WB MSG 326).
+  - `--object o-star` and `--wind-state hot` are **not** forced. Their `o_hot` row is `recipe`, not a Wood rate.
+- **CR-31.2 (the rescale note only).** On tier `supplied`, when the source is that row-defaulted
+  `astrosphere_wood` and the supplied speed is not 400, `wind_model.notes` gets:
+  > "the supplied rate is paired with N km/s unrescaled; a Wood-convention rate (an astrosphere measures Ṁ·V_w at
+  > 400 km/s) must be supplied × 400/v"
+
+  This applies on every path that produces the pairing (`--wind-state`, `--spectral-type`, `--star`, `--object`,
+  and an `exclusion-system` component). Nothing else changes.
+
+  An explicit `--mass-loss-source astrosphere_wood` still forces 400 (CR-22 validation #4). An explicit non-Wood
+  source, `noncoronal_row`'s class speeds and every CR-26 tier are unchanged.
+- **Byte-identity.** Every call without `--wind-speed` is byte-identical, pinned by a 27-case pre-change snapshot, including windless, unmodeled and evolved components and γ > 0.
+- **`derive_mass_loss_tier`** now returns `supplied`, not `object_preset`, for a direct core call that passes a
+  user rate other than the preset's. `query.py` always passes the tier explicitly, so it is unaffected.
+- In `exclusion-system` the tier is now derived **before** the wall is computed; the result is identical.
+- Tests: `tests/test_cr31_wind_speed.py`.
+
 ### Power generation / storage / thermal (Phase AL — Group R, no network)
 
 Ten `query.py`-only, pure-math, self-validating calculators + two bundled-table subcommands for the
