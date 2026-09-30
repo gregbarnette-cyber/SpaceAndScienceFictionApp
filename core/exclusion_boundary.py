@@ -232,8 +232,9 @@ def derive_mass_loss_tier(domain, wind_class_provenance, mass_loss_msun_yr, wind
     return "none"                                  # mass + --wind-state; no wind input → none
 
 
-def _cr26_fields(tier, cr26, inputs, standoff, wind_class, notes=(), flags=()):
-    """The CR-26 additive output fields (§26.7) for one body."""
+def _cr26_fields(tier, cr26, inputs, standoff, wind_class, notes=(), flags=(), v_ism_prov=None):
+    """The CR-26 additive output fields (§26.7) for one body. CR-24 ⚑4: the measured-tier ISM placeholder is filled
+    with the V_ISM this run used (``inputs["v_ism"]`` / ``v_ism_prov``)."""
     from core import stellar_wind as sw
     if cr26 is not None and tier in ew.CR26_LADDER_TIERS:
         rate, band, band_dex, upper = cr26["rate"], cr26["band"], cr26["band_dex"], cr26["upper"]
@@ -248,6 +249,13 @@ def _cr26_fields(tier, cr26, inputs, standoff, wind_class, notes=(), flags=()):
     else:
         wm = sw.skeleton(notes)
     wm["flags"] = list(wm["flags"]) + [f for f in flags if f not in wm["flags"]]   # RG5 / RG9 carried flags
+    token = sw.DISCLOSURE_MEASURED["ism"]
+    if token in wm["notes"]:
+        from core import ism_velocity as iv
+        row_key = (wm.get("measured") or {}).get("row_key")
+        filled = (iv.ism_measured_note(row_key, inputs["v_ism"], v_ism_prov or "assumed")
+                  if inputs is not None else None)
+        wm["notes"] = [(filled if n == token else n) for n in wm["notes"] if (n != token or filled)]
     out["wind_model"] = wm
     return out
 
@@ -275,7 +283,8 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                                alpha=1.0 / 3.0, beta=0.0, gamma=0.0, scan_alpha=False,
                                otypes=None, wind_class_provenance=None, wind_otype=None,
                                wind_class_note=None, wind_otype_source=None, wind_state_binned=None,
-                               wind_model=None, mass_loss_tier=None, cr26_notes=None, cr26_flags=None):
+                               wind_model=None, mass_loss_tier=None, cr26_notes=None, cr26_flags=None,
+                               ism=None):
     """CR-22 two-layer boundary: the unchanged canon STANDOFF (the FROZEN
     ``compute_exclusion_boundary`` above) + the research-grade physical WALL
     (``exclusion_wall.compute_wall``), with the four-value domain classifier + free-harbor guard.
@@ -326,15 +335,26 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
 
     cr26 = wind_model
     typeless_flags = list(cr26_flags or ())
+    # CR-24: the resolved V_ISM (``ism`` = {vres, vel} from a --star caller); a path with no lookup resolves here
+    from core import ism_velocity as iv
+    ism = dict(ism or {})
+    vel = ism.get("vel")
+    vres = ism.get("vres") or iv.resolve_v_ism(path="none", supplied=v_ism)
     if cr26 is not None and cr26["mass_loss_tier"] == "none" and cr26.get("typeless"):
         cr26_notes = list(cr26_notes or ()) + list(cr26["wind_model"]["notes"])
         typeless_flags += [f for f in cr26["wind_model"]["flags"] if f not in typeless_flags]
         cr26 = None                                # no spectral type at all → today's behaviour (§26.5)
+    # CR-24: the velocity / V_ISM notes, after a typeless model's (the order exclusion-system uses — CP5)
+    cr26_notes = list(cr26_notes or ()) + [n for n in (vel or {}).get("notes", []) + vres["notes"]
+                                           if n not in (cr26_notes or ())]
     tier = cr26["mass_loss_tier"] if cr26 is not None else None
     ladder = tier in ew.CR26_LADDER_TIERS
     cr26_label = cr26.get("label") if cr26 is not None else None
     identity_wc = wind_class                       # the CR-25 identity row (G11: supplied keeps it)
-    rw_kw = dict(mass_loss_msun_yr=mass_loss_msun_yr, v_ism=v_ism, c_ms=c_ms, b_field=b_field, n_cloud=n_cloud,
+    v_ism_in = vres["v_ism_kms"] if vres["v_ism_provenance"] != "assumed" else None
+    rw_kw = dict(mass_loss_msun_yr=mass_loss_msun_yr, v_ism=v_ism_in,
+                 v_ism_provenance=(vres["v_ism_provenance"] if v_ism_in is not None else None),
+                 c_ms=c_ms, b_field=b_field, n_cloud=n_cloud,
                  cloud_temp=cloud_temp, wind_phase_yr=wind_phase_yr, f_shock=f_shock, m_shock_min=m_shock_min,
                  mass_loss_source=mass_loss_source,
                  tier=(tier if (ladder or tier == "none") else None), tier_rate=(cr26["rate"] if ladder else None),
@@ -378,6 +398,7 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                      "wall_to_standoff_ratio": None, "r_ap_au": None})
         base.update(_cr26_fields(mass_loss_tier or "noncoronal_row", None, None, None, None,
                                  _skeleton_notes(wind_model, cr26_notes, mass_loss_msun_yr), typeless_flags))
+        base.update(iv.velocity_fields(vel))                   # CR-24: the velocity, but no V_ISM (no medium block)
         return base
 
     # ── unmodeled (hot subdwarf sdB/sdO): honest null on both layers (NOT free harbor) ──
@@ -391,6 +412,7 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                      "r_ap_au": None})
         base.update(_cr26_fields(mass_loss_tier or "noncoronal_row", None, None, None, None,
                                  _skeleton_notes(wind_model, cr26_notes, mass_loss_msun_yr), typeless_flags))
+        base.update(iv.velocity_fields(vel))
         return base
 
     # ── main_sequence / evolved: the FROZEN standoff (when a mass is known) + the wall ──
@@ -437,6 +459,12 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
         wdot=inputs["wdot"], v_wind=inputs["v_wind"], v_ism=inputs["v_ism"], c_ms=inputs["c_ms"],
         n_cloud=inputs["n_cloud"], r_ex=standoff, wind_class=wind_class, t_phase=inputs["t_phase"],
         f_shock=inputs["f_shock"], m_shock_min=inputs["m_shock_min"], c_ms_band=inputs["c_ms_band"])
+    # CR-24: the point / DQ2 cloud-set range / DQ3 lower bound, through the one shared helper (plan §3.5b)
+    ladder_band = (cr26 is not None and ladder)
+    wall, v_extra, band_ov, v_notes = iv.apply_v_ism(
+        wall, inputs, standoff, wind_class, vres,
+        band_rate=(cr26["rate"] if ladder_band else None), band_dex=(cr26["band_dex"] if ladder_band else None),
+        band_upper=(cr26["upper"] if ladder_band else False))
     for k in ("wall_au", "wall_band_au", "wall_route", "wall_reason", "wall_note",
               "verdict_marginal", "r_ap_au"):
         result[k] = wall[k]
@@ -445,5 +473,12 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     result["wall_exceeds_standoff"] = exceeds
     result["wall_to_standoff_ratio"] = ratio
     result.update(_wind_echo(inputs, prov))
-    result.update(_cr26_fields(tier, cr26, inputs, standoff, wind_class, extra_notes, typeless_flags))
+    result.update(iv.v_ism_fields(vres))
+    result.update(v_extra)
+    result.update(iv.velocity_fields(vel))
+    result.update(_cr26_fields(tier, cr26, inputs, standoff, wind_class, extra_notes + v_notes, typeless_flags,
+                               v_ism_prov=prov.get("v_ism")))
+    if band_ov:                                                 # DQ3 / D-C3: each wind-band edge at its largest
+        result.pop("wall_band_wind_routes", None)
+        result.update(band_ov)
     return result

@@ -926,6 +926,8 @@ def resolve_star_wind_inputs(identity, supplied, *, catalog=None, allow_network=
     if identity.get("component_a") and identity.get("candidate") and (scope or inp.domain == "evolved"):
         head, cand_a = identity.get("main_id"), identity["candidate"]
         rec, st = _identity_lookup(cand_a) if allow_network else (None, None)
+        if allow_network:
+            inp.a_record = (rec, st)                    # CR-24 reuses it (the head → A record for the velocity)
         if rec and swt.collapse_ws(rec.get("main_id")) != swt.collapse_ws(head):
             plx = rec.get("plx_value")
             identity = dict(identity, main_id=rec.get("main_id"), designations=rec.get("designations"),
@@ -970,6 +972,8 @@ def resolve_star_wind_inputs(identity, supplied, *, catalog=None, allow_network=
             inp.measured_miss_not_authoritative = True
     if not hit and cand and not identity.get("sl_failed"):
         rec, st = (_identity_lookup(cand) if allow_network else (None, None))
+        if allow_network:
+            inp.a_record = (rec, st)                    # CR-24 reuses it (the head → A record for the velocity)
         if rec and swt.collapse_ws(rec.get("main_id")) != swt.collapse_ws(identity.get("main_id")):
             blend_target = {"main_id": rec.get("main_id"),
                             "sid": binary_sid(rec.get("designations"))}     # S2: the resolved A is the target

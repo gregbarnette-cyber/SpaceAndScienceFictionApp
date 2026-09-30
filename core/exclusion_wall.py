@@ -492,6 +492,7 @@ def compute_wall(wdot, v_wind, v_ism=_V_ISM_DEF, c_ms=_C_MS_DEF, n_cloud=_N_CLOU
     c_compress = 4.0 * m_f ** 2 / (m_f ** 2 + 3.0)      # γ=5/3, ≤4
 
     verdict_marginal = False
+    reasons = []                                   # CR-24 verdict_marginal_reasons (in the contract's order)
     # honesty band: does M_f over the favored c_ms band straddle M_shock_min? Only meaningful when the
     # operating c_ms sits within that LIC band — a user-committed c_ms outside it has resolved the
     # uncertainty the band represents (finding CP1-7), so the straddle is not applied there.
@@ -499,6 +500,7 @@ def compute_wall(wdot, v_wind, v_ism=_V_ISM_DEF, c_ms=_C_MS_DEF, n_cloud=_N_CLOU
         lo, hi = c_ms_band
         if (v_ism / hi) < m_shock_min < (v_ism / lo):
             verdict_marginal = True
+            reasons.append("c_ms_straddle")
 
     # route selection
     if m_f < m_shock_min:
@@ -510,6 +512,7 @@ def compute_wall(wdot, v_wind, v_ism=_V_ISM_DEF, c_ms=_C_MS_DEF, n_cloud=_N_CLOU
         route, reason = "bow_shock_marginal", "bow shock binds marginally (r_ap≤r_ex<f·r_ap)"
         band = [wt[0] / math.sqrt(c_compress), wt[1] / math.sqrt(c_compress)]
         verdict_marginal = True
+        reasons.append("bow_shock_marginal")
     elif r_ex is None:
         route, reason, band = "wind_term", \
             "shock exists but binding untested — no standoff (bow-shock-untested-no-standoff)", list(wt)
@@ -520,6 +523,8 @@ def compute_wall(wdot, v_wind, v_ism=_V_ISM_DEF, c_ms=_C_MS_DEF, n_cloud=_N_CLOU
     # f·r_ap within ~10% of r_ex → marginal
     if r_ex is not None and r_ex > 0 and abs(f_shock * r_ap - r_ex) <= 0.10 * r_ex:
         verdict_marginal = True
+        reasons.append("apex_near_standoff")
+    route_precap = route
 
     # giant / astropause cap (trims the naive overshoot to the physical astropause)
     cap, cap_route = r_ap, "capped_astropause"
@@ -536,14 +541,17 @@ def compute_wall(wdot, v_wind, v_ism=_V_ISM_DEF, c_ms=_C_MS_DEF, n_cloud=_N_CLOU
 
     return {"wall_au": 0.5 * (band[0] + band[1]), "wall_band_au": [band[0], band[1]],
             "wall_route": route, "wall_reason": reason, "wall_note": _WALL_NOTE,
-            "verdict_marginal": verdict_marginal, "r_ap_au": r_ap}
+            "verdict_marginal": verdict_marginal, "r_ap_au": r_ap,
+            # additive (CR-24): the triggers that set verdict_marginal, and the route before the astropause /
+            # windtime cap relabelled it (F2 — the branch test). Callers copy explicit keys, so neither leaks.
+            "verdict_marginal_reasons": reasons, "wall_route_precap": route_precap}
 
 
 def resolve_wind_inputs(domain, wind_class, sp_type=None, *,
                         mass_loss_msun_yr=None, wind_speed=None, v_ism=None, c_ms=None,
                         b_field=None, n_cloud=None, cloud_temp=None, wind_phase_yr=None,
                         f_shock=None, m_shock_min=None, mass_loss_source=None,
-                        tier=None, tier_rate=None, tier_row=None):
+                        tier=None, tier_rate=None, tier_row=None, v_ism_provenance=None):
     """Resolve the wall's wind/medium inputs to concrete values + a parallel provenance dict.
 
     Precedence per field: an explicit value → the wind_class row default → the module default. The
@@ -574,7 +582,8 @@ def resolve_wind_inputs(domain, wind_class, sp_type=None, *,
         else:
             t_phase, prov["wind_phase"] = None, "none"
         return _medium(wdot, v_wind, t_phase, src, prov, v_ism=v_ism, c_ms=c_ms, b_field=b_field,
-                       n_cloud=n_cloud, cloud_temp=cloud_temp, f_shock=f_shock, m_shock_min=m_shock_min)
+                       n_cloud=n_cloud, cloud_temp=cloud_temp, f_shock=f_shock, m_shock_min=m_shock_min,
+                       v_ism_provenance=v_ism_provenance)
     row = None if tier == "none" else wind_row_for(wind_class, sp_type)   # (wdot, v_wind, t_phase, src)
     prov = {}
 
@@ -617,7 +626,8 @@ def resolve_wind_inputs(domain, wind_class, sp_type=None, *,
     else:
         t_phase, prov["wind_phase"] = None, "none"
     return _medium(wdot, v_wind, t_phase, src, prov, v_ism=v_ism, c_ms=c_ms, b_field=b_field,
-                   n_cloud=n_cloud, cloud_temp=cloud_temp, f_shock=f_shock, m_shock_min=m_shock_min)
+                   n_cloud=n_cloud, cloud_temp=cloud_temp, f_shock=f_shock, m_shock_min=m_shock_min,
+                   v_ism_provenance=v_ism_provenance)
 
 
 # ── CR-31: an explicit --wind-speed over a Wood-convention class / preset rate (legacy_row / object_preset) ──
@@ -660,9 +670,13 @@ from core.stellar_wind import LADDER_TIERS as CR26_LADDER_TIERS    # noqa: E402
 
 
 def _medium(wdot, v_wind, t_phase, src, prov, *, v_ism=None, c_ms=None, b_field=None, n_cloud=None,
-            cloud_temp=None, f_shock=None, m_shock_min=None):
-    """The medium half of ``resolve_wind_inputs`` (shared by today's path and the CR-26 tier path)."""
-    if v_ism is not None:
+            cloud_temp=None, f_shock=None, m_shock_min=None, v_ism_provenance=None):
+    """The medium half of ``resolve_wind_inputs`` (shared by today's path and the CR-26 tier path).
+    ``v_ism_provenance`` (CR-24) names a resolved V_ISM's provenance (derived / measured_row / …); absent → today's
+    supplied / assumed."""
+    if v_ism is not None and v_ism_provenance:
+        vi, prov["v_ism"] = v_ism, v_ism_provenance
+    elif v_ism is not None:
         vi, prov["v_ism"] = v_ism, "supplied"
     else:
         vi, prov["v_ism"] = _V_ISM_DEF, "assumed"

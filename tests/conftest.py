@@ -73,3 +73,33 @@ def _cr26_network_isolation(request, monkeypatch, tmp_path_factory):
     yield
     if leaks:
         pytest.fail(f"CR-26 network seam(s) reached in an offline test: {sorted(set(leaks))}")
+
+
+# ── CR-24: the per-star V_ISM's velocity lookup (plan §3.3) ─────────────────────────────────────────────────────
+# For every test NOT marked ``@pytest.mark.cr24_velocity``: an in-process ``--star`` run's velocity lookup is
+# "not run" (``target_velocity`` / ``lookup_velocity`` return no velocity → V_ISM by the precedence without a derive:
+# the measured row, else 26 assumed) — so the pre-CR-24 offline ``--star`` tests keep their stubbed identities and
+# never reach SIMBAD; and the two CR-24 network seams are leak stubs (a test that bypasses the defaults fails loud).
+# A ``cr24_velocity`` test keeps the real resolution logic and mocks the seams itself.
+_CR24_SEAMS = (("core.ism_velocity", "_velocity_seam"), ("core.ism_velocity", "_identity_seam"))
+
+
+@pytest.fixture(autouse=True)
+def _cr24_velocity_isolation(request, monkeypatch):
+    import importlib
+    iv = importlib.import_module("core.ism_velocity")
+    marked = bool(request.node.get_closest_marker("cr24_velocity"))
+    leaks = []
+    for mod_name, attr in _CR24_SEAMS:
+        mod = importlib.import_module(mod_name)
+
+        def _stub(*a, _n=f"{mod_name}.{attr}", **k):
+            leaks.append(_n)
+            raise AssertionError(f"CR-24 network seam called in an offline test: {_n}")
+        monkeypatch.setattr(mod, attr, _stub)
+    if not marked:
+        monkeypatch.setattr(iv, "target_velocity", lambda main_id, reuse=None: (None, "own", None))
+        monkeypatch.setattr(iv, "lookup_velocity", lambda main_id, primary=None: None)
+    yield
+    if leaks:
+        pytest.fail(f"CR-24 network seam(s) reached in an offline test: {sorted(set(leaks))}")

@@ -713,7 +713,11 @@ class DisclosureTest(unittest.TestCase):
         for tok in ("×2", "combined astrospheres", "charge-exchange", "400", "a factor of a few", "LIC",
                     "CR-24", "lower-main-sequence"):
             self.assertIn(tok, spec)
+            if tok in ("LIC", "CR-24"):
+                continue          # CR-24 ⚑4 replaced the ISM note (ism_velocity.NOTE_ISM_MEASURED, filled at runtime)
             self.assertIn(tok, got)
+        from core import ism_velocity as iv
+        self.assertIn("Wood 2021 Table 3", iv.NOTE_ISM_MEASURED)
 
     def test_selection(self):
         n = _run(sp_type="K2V")["wind_model"]["notes"]

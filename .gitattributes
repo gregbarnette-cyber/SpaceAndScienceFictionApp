@@ -38,3 +38,5 @@
 
 # CR-26: WB-owned data files, md5-checked at load — keep them byte-identical on every OS (no CRLF).
 data/cr26/*.csv -text
+# CR-24: the WB-owned V_ISM file, md5-checked at load — byte-identical on every OS (no CRLF).
+data/cr24/*.csv -text

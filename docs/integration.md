@@ -2151,6 +2151,127 @@ subcommands once the tier is known. It is keyed on the resolved inputs, not on h
 - In `exclusion-system` the tier is now derived **before** the wall is computed; the result is identical.
 - Tests: `tests/test_cr31_wind_speed.py`.
 
+##### CR-24 — the per-star V_ISM on `exclusion-boundary` / `exclusion-system` (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md` §3)
+
+V_ISM, the star–cloud relative speed, is now derived per star as |v★ − v_cloud|, both heliocentric Galactic.
+Previously it was a flat 26 km/s. A Wood-measured star instead takes the V_ISM its rate was inferred at (Wood 2021
+Table 3). V_ISM feeds **only** the research-grade wall's route test (`M_f = V_ISM / c_ms`,
+`r_ap ∝ 1/V_ISM`). The standoff and every wind-rate field are byte-identical.
+
+The WB spec `spaceapp-change-request-CR24-exclusion-vism-vectorial-derive.md` is the contract. The code is:
+- `core/ism_velocity.py`: the velocity math, the precedence, the exact range evaluator and the one shared
+  application helper `apply_v_ism`.
+- `core/ism_velocity_tables.py`: the WB file loader and the R&L 2008 Table 16 clouds.
+
+**Data (WB-owned — never edit).** `data/cr24/cr24_wood2021_vism.csv` (md5 `ffd164238d055d9134fe65bb9f9df097`, 36
+rows) is vendored byte-identical (`-text`). It is md5-checked at load and cross-checked against CR-26's measured
+table: the same `row_key` / `simbad_main_id`. A bad file → `{"error"}` (exit 1).
+
+**The velocity (§CR-24.1).**
+- SIMBAD `basic` supplies `pmra` / `pmdec` / `plx_value` / `rvz_radvel` / `rvz_qual`. The query is by the **raw
+  resolved `main_id`**, never a collapsed candidate: `'* 70 Oph A'` misses `'*  70 Oph A'` on an exact match.
+- The frame is astropy `Galactic`, heliocentric, not LSR.
+- **The RV gate.** An RV is treated as missing when it is quality D or E, or when it gives |v★| > 1000 km/s.
+  - A null grade passes the grade rule, with a note.
+  - An RV-0 speed or a sky-plane floor ≥ 1000 means PM / parallax are unusable → `unavailable` (F4).
+- **`velocity_provenance`:**
+  - `uvw`;
+  - `tangential_lower_bound`, where V_ISM is the sky-plane floor |P⊥(v★_t − v_cloud)|;
+  - `unavailable`.
+- **Whose record.**
+  - A **letterless head**, on either subcommand, takes its velocity and its parallax from its A record, resolved by
+    CR-26's own identity resolver. It keeps its own record when the A candidate resolves to itself (Sirius) or is
+    answered-empty (EZ Aqr).
+  - A failed A lookup → `unavailable`. The system record is never used.
+  - On `exclusion-system --star` with ≥ 2 components, a component with no usable RV borrows **the A record's own**
+    RV (`rv_source: primary`; `rv` / `rv_grade` / `rv_used` stay the component's own). It never borrows the system
+    record's or a companion's (one way).
+  - An answered-empty A candidate lends nothing, and on ≥ 2 components the primary gets the D-C1 "may be a blend"
+    note.
+- **Discipline.** Bounded, retry once, its own breaker (the CR-26 SIMBAD TAP wrapper). Only answers are cached.
+- **`velocity_status`** ∈ {ok, timeout, unreachable, error, not_run}.
+- The lookup runs on every `--star` target / component, windless included. The one exception is a non-measured
+  star whose V_ISM `--v-ism` / `--lb-cavity` already set (`not_run`). `--component`, `--spectral-type`, bare
+  `--mass-msun` and `--object` never look up.
+
+**Precedence (§CR-24.2; the first step that yields a value sets V_ISM):**
+1. `--v-ism` / `v_ism=` → `supplied`.
+2. `--lb-cavity` / `lb_cavity=true` → 26 `assumed`.
+3. `--cloud <name>` (any distance, when v★ resolves; on a measured-row star only with a full `uvw` — a floor keeps
+   the row, with a note) → `derived` / `derived_tangential_lower_bound`.
+4. The measured row: the CR-26 model's used tier is `measured` (its own table hit, a letterless head's A read
+   included; on `--component`, via `main_id=`) → Wood's V_ISM, `measured_row`, at any distance.
+5. The LIC derive (`v_cloud` = R&L's LIC vector, 23.84 km/s @ Gal 187.0°, −13.5°) within `--clic-max-pc`
+   (default 15) by the velocity record's parallax.
+6. 26 `assumed`.
+
+A measured-row `--star` also reports the derive as `v_ism_derived_kms`, and adds a note when the derive would set
+a different route.
+
+**Uncertainty.**
+- **`clic_domain`** (`within_7pc` / `beyond_7pc`, with a note beyond 7 pc) is set whenever a derive sets V_ISM.
+- **DQ2.** A `derived` V_ISM also reports `v_ism_range_kms` / `wall_range_vism_au` over the nine clouds within
+  15 km/s of the LIC vector (LIC, Leo, Eri, G, Mic, Aur, Blue, NGP, Hyades). `cloud_set_branch` is set when the
+  route **branch** differs across them.
+- **DQ3.** A lower-bound V_ISM evaluates the wall across [floor, 1000] exactly, at the route boundaries.
+  - `wall_au` is **the largest wall** in the interval; its band, route and reason are at the lowest V giving it.
+  - `v_ism_kms` / `m_f` / `r_ap_au` stay at the floor.
+  - `wall_range_vism_au` is [smallest, largest]. A note says whether the lower edge is the wall at V_max or the
+    wall just under the burial speed.
+  - `wall_route_provisional` is true when the burial speed exceeds max(floor, M_shock_min·c_ms) and that
+    threshold is < 1000.
+  - Each `wall_band_wind_au` edge is its own largest value in the interval (D-C3).
+  - The three existing `verdict_marginal` triggers are taken at the floor. `verdict_marginal_reasons` lists
+    `c_ms_straddle`, `bow_shock_marginal`, `apex_near_standoff`, `cloud_set_branch` and
+    `lower_bound_provisional`, in that order.
+- The provisional flag and the branch tests use the route **before** the astropause cap (F2).
+
+**Output (§CR-24.5).**
+- On every result / component: `velocity_provenance`, `velocity_status`, `space_velocity` (`{U, V, W, total,
+  convention, pmra, pmdec, plx, rv, rv_grade, rv_used, rv_source}`).
+- Where the medium block is present, which excludes windless and unmodeled bodies: `v_cloud_used`,
+  `v_cloud_chi2`, `v_ism_derived_kms`, `v_ism_range_kms`, `clic_domain`, `m_f`, `wall_range_vism_au`,
+  `wall_route_provisional`, `verdict_marginal_reasons`.
+- `v_ism_provenance` gains `derived`, `derived_tangential_lower_bound` and `measured_row`. Numbers are unrounded.
+- **D6.** Every `exclusion-system` component carries `exclusion-boundary`'s medium block (the same keys and
+  presence rule).
+- **⚑4.** The measured-tier ISM note is replaced by "A measured Ṁ was inferred at the V_ISM Wood 2021 Table 3
+  lists for this star (<n> km/s); this run uses <V> km/s (<provenance>)."
+
+**The combined-wind zone (§CR-24.4, a CR-22.5 composition change).**
+- The combined wall and band run the route test against the zone's comparison standoff (the largest member
+  standoff), with the DQ4 medium member's medium: the largest rate, then the larger mass, then the first listed.
+  v_wind and t_phase stay with the dominant member.
+- New fields:
+  - `combined_wind_wall_route`
+  - `combined_wind_wall_band_wind_routes`
+  - `combined_wind_route_comparator_au`
+  - `combined_wind_route_geometry_marginal` (the route at the standoff envelope's long axis differs)
+  - `combined_wind_medium_member`
+  - `combined_wind_route_provisional`
+  - `combined_wind_wall_range_vism_au`
+- A lower-bound medium takes DQ3.
+- Below V_ISM 30 (default medium) the zone is byte-identical.
+
+**Flags (both subcommands).**
+- `--cloud <name>`: one of the 15 R&L 2008 Table 16 clouds. An unknown name → exit 2, listing the names.
+  `--cloud` is a real flag now, so `--cloud 300` no longer abbreviates `--cloud-temp`.
+- `--clic-max-pc <pc>` (> 0) and `--lb-cavity`.
+- `--v-ism` / `v_ism=` must be finite and > 0 (exit 2).
+- New `--component` key `lb_cavity=` (true/false; exit 2 otherwise).
+- `--cloud` / `--clic-max-pc` on a no-lookup path, and `--lb-cavity` on a no-identity path, are ignored with a note.
+
+**Test hooks (test-only, not contract).**
+- `SPACE_APP_SIMBAD_VELOCITY_FORCE_UNREACHABLE=1`: fails the velocity lookup only (A7).
+- `SPACE_APP_CR24_INJECT_RV="<rv>[:<g>]"` or `"<main_id>=<rv>[:<g>][,…]"`: replaces the RV + grade after the
+  fetch; the id match collapses whitespace.
+- `SPACE_APP_CR24_COMPONENT_VISM_FLOOR="<id>=<km/s>[,…]"`: a `--component`'s V_ISM becomes a lower-bound floor,
+  below step 4. Its tells are `velocity_status: not_run` and `clic_domain: null`.
+- `SPACE_APP_CR24_DATA_DIR`: the data-dir override.
+
+**Tests:** `tests/test_cr24_tables.py`, `test_cr24_velocity.py`, `test_cr24_range.py`, `test_cr24_wiring.py`
+(offline) and `test_cr24_live.py` (opt-in live).
+
 ### Power generation / storage / thermal (Phase AL — Group R, no network)
 
 Ten `query.py`-only, pure-math, self-validating calculators + two bundled-table subcommands for the

@@ -41,6 +41,7 @@ import re
 from core import detection
 from core import exclusion_boundary as eb
 from core import exclusion_wall as ew           # CR-22 wall engine + four-value classifier
+from core import ism_velocity as iv             # CR-24 per-star V_ISM
 from core import stellar_mass
 from core import stellar_mass_tables
 from core import stellar_wind                   # CR-26 per-star wind model (pure)
@@ -212,7 +213,111 @@ def _comp_wind_params(comp, system_wind):
                 wind_speed=pick("wind_speed"), v_ism=pick("v_ism"), c_ms=pick("c_ms"),
                 b_field=pick("b_field"), n_cloud=pick("n_cloud"), cloud_temp=pick("cloud_temp"),
                 wind_phase_yr=pick("wind_phase_yr"), f_shock=pick("f_shock"),
-                m_shock_min=pick("m_shock_min"), mass_loss_source=pick("mass_loss_source"))
+                m_shock_min=pick("m_shock_min"), mass_loss_source=pick("mass_loss_source"),
+                v_ism_provenance=None)
+
+
+# ── CR-24: per-component V_ISM + velocity (plan 3.3 / 3.7) ─────────────────────────────────────────────────────
+def _floor_hook(cid):
+    """``SPACE_APP_CR24_COMPONENT_VISM_FLOOR="<id>=<km/s>[,...]"`` (test-only, Q5): a --component's V_ISM as a
+    lower-bound floor (so the D-W2-2 zone rule is reachable by construction)."""
+    import os
+    for part in (os.environ.get("SPACE_APP_CR24_COMPONENT_VISM_FLOOR") or "").split(","):
+        k, _, v = part.partition("=")
+        if k.strip() and k.strip() == str(cid):
+            try:
+                f = float(v)
+            except ValueError:
+                return None
+            return f if (math.isfinite(f) and f > 0) else None
+    return None
+
+
+def _cr24_lookup(c, comps, n_star_comps):
+    """Run (once) a --star component's velocity lookup per its plan: the head (or a single body) through
+    ``iv.target_velocity`` (a letterless head takes its A record); a companion through its own record, borrowing
+    the A record's own RV only when its own is missing / gated (the ⚑1 fallback — never the system record's)."""
+    if "_cr24_vel_res" in c:
+        return c["_cr24_vel_res"]
+    plan = c["_cr24_vel"]
+    if plan["role"] == "head":
+        vel, kind, _arec = iv.target_velocity(plan["target"],
+                                              reuse=getattr(c.get("wind_inputs"), "a_record", None))
+        c["_cr24_a_kind"] = kind
+        own_rv = bool(vel and ((vel.get("space_velocity") or {}).get("rv_source") == "own"))
+        if kind == "empty" and n_star_comps >= 2 and own_rv:   # D-C1: >= 2 components, and its own RV really used
+            vel["notes"].append(iv.NOTE_DC1.format(mid=plan["target"]))
+    else:
+        def _lend():                                           # the head is fetched only when B needs its RV
+            head = next((o for o in comps if (o.get("_cr24_vel") or {}).get("role") == "head"), None)
+            if head is None:
+                return None
+            hv = _cr24_lookup(head, comps, n_star_comps)
+            return iv.primary_rv_of(hv) if head.get("_cr24_a_kind") in ("a", "same", "own") else None
+        if plan.get("failed"):
+            st = plan.get("status") or "unreachable"
+            vel = iv._unavailable([iv.NOTE_LOOKUP_FAILED.format(mid=plan.get("name"), st=st)],
+                                  record=plan.get("name"))
+            vel["status"] = st
+        elif not plan.get("target"):
+            vel = iv._unavailable([iv.NOTE_NO_RECORD.format(mid=plan.get("name"))], record=plan.get("name"))
+            vel["status"] = "ok"
+        else:
+            vel = iv.lookup_velocity(plan["target"])
+            if vel and vel["provenance"] == "tangential_lower_bound":     # own RV missing / gated → the flag-1 lend
+                lend = _lend()
+                if lend:
+                    vel = iv.lookup_velocity(plan["target"], primary=lend)
+    c["_cr24_vel_res"] = vel
+    return vel
+
+
+def _failure_class(err):
+    """A failed SIMBAD identity lookup's message → the velocity_status vocabulary (timeout / unreachable / error)."""
+    e = str(err or "").lower()
+    if "timed out" in e or "timeout" in e:
+        return "timeout"
+    if "connect" in e or "unreachable" in e or "network" in e:
+        return "unreachable"
+    return "error"
+
+
+def _cr24_component_ism(c, comps, system_wind, n_star_comps):
+    """``(vres, vel)`` for one component — the section CR-24.2 precedence on its own path (--star: a lookup,
+    unless step 1 or 2 sets V_ISM on a non-measured star; --component: no lookup)."""
+    sw = system_wind or {}
+    m = c.get("cr26")
+    row_key = ((m["wind_model"].get("measured") or {}).get("row_key")
+               if (m and m.get("mass_loss_tier") == "measured") else None)
+    supplied = c.get("v_ism") if c.get("v_ism") is not None else sw.get("v_ism")
+    lb = c.get("lb_cavity") if c.get("lb_cavity") is not None else bool(sw.get("lb_cavity"))
+    if not c.get("_cr24_vel"):                                  # --component: no velocity lookup (flag 8)
+        vres = iv.resolve_v_ism(path="component", supplied=supplied, lb_cavity=lb, measured_row_key=row_key,
+                                floor_hook=_floor_hook(c.get("id")))
+        for flag in ("cloud", "clic_max_pc"):
+            if sw.get(flag) is not None:
+                vres["notes"].append(iv.NOTE_IGNORED_NO_LOOKUP.format(flag="--" + flag.replace("_", "-")))
+        return vres, None
+    return iv.star_v_ism(lambda: _cr24_lookup(c, comps, n_star_comps), supplied=supplied, lb_cavity=lb,
+                         cloud=sw.get("cloud"), clic_max_pc=sw.get("clic_max_pc"), model=m,
+                         has_wall=c["domain"] in (ew.MAIN_SEQUENCE, ew.EVOLVED))
+
+
+def _cr24_component_fields(m):
+    """CR-24's emitted component fields: the D6 medium echo (exclusion-boundary's block, same presence rule —
+    absent for a windless / unmodeled component), the V_ISM fields with it, and the velocity fields always."""
+    out = {}
+    if m.get("wall_inputs") is not None:
+        out.update(eb._wind_echo(m["wall_inputs"], m["wall_prov"]))
+        out.update(iv.v_ism_fields(m["vres"]))
+        out.update(m.get("cr24_extra") or {})
+    # a head whose own lookup was skipped (step 1 / 2) but fetched for a companion's flag-1 lend reports that lookup
+    vel = m.get("vel") or m.get("_cr24_vel_res")
+    if vel is not None and m.get("vel") is None:
+        wm = m["cr26_fields"]["wind_model"]
+        wm["notes"] += [n for n in vel.get("notes", []) if n not in wm["notes"]]
+    out.update(iv.velocity_fields(vel))
+    return out
 
 
 def _wall_envelope(members, phase):
@@ -241,21 +346,57 @@ def _wall_envelope(members, phase):
     return max(m["wall_band_hi"] for m in contrib)          # >2 members: approximate union reach
 
 
-def _combined_wind_wall(contrib):
-    """Combined-wind wall band for a tight group: the wind-term on the SUMMED mass-loss (spec CR-22.5),
-    a single value with no phase dependence; v_wind = the dominant (max-Ẇ) member's speed, and the
-    medium (v_ism/c_ms/n_cloud) from that member's resolved inputs. ``None`` for a single wind source."""
+def _medium_member(winds):
+    """DQ4: the member whose medium sets the zone's — the largest point rate; on equal rates the larger mass, then
+    the first-listed member."""
+    return max(enumerate(winds), key=lambda t: (t[1]["wall_inputs"]["wdot"], t[1].get("mass_solar") or 0.0,
+                                                -t[0]))[1]
+
+
+def _zone_inputs(winds, wdot):
+    """The combined-wind wall's inputs: v_wind / t_phase from today's dominant (max rate, first on a tie), the
+    medium (V_ISM, c_ms, n, f_shock, M_shock_min, the c_ms band) from the DQ4 medium member (flag 1)."""
+    dom = max(winds, key=lambda m: m["wall_inputs"]["wdot"])
+    med = _medium_member(winds)
+    di, mi = dom["wall_inputs"], med["wall_inputs"]
+    inputs = {"wdot": wdot, "v_wind": di["v_wind"], "t_phase": di.get("t_phase"), "v_ism": mi["v_ism"],
+              "c_ms": mi["c_ms"], "n_cloud": mi["n_cloud"], "f_shock": mi["f_shock"],
+              "m_shock_min": mi["m_shock_min"], "c_ms_band": mi["c_ms_band"]}
+    return inputs, med
+
+
+def _combined_wind_wall(contrib, comparator=None, long_axis=None):
+    """Combined-wind wall for a tight group: the wind term on the SUMMED mass-loss (spec CR-22.5), a single value
+    with no phase dependence. **CR-24.4 (D5):** the route test runs against the zone's comparison standoff (the
+    largest member standoff), with the DQ4 medium member's medium; a lower-bound medium takes DQ3 (D-W2-2).
+    Returns ``(wall_au, band_au, info)`` — ``(None, None, None)`` for a single wind source."""
     winds = [m for m in contrib if (m.get("wall_inputs") or {}).get("wdot")]
     if len(winds) < 2:
-        return None, None
-    dom = max(winds, key=lambda m: m["wall_inputs"]["wdot"])
-    di = dom["wall_inputs"]
+        return None, None, None
     sum_wdot = sum(m["wall_inputs"]["wdot"] for m in winds)
-    # carry the dominant member's t_phase so the giant/astropause cap still trims an evolved combined
-    # wall to ly-scale (CP3 finding 2) — a solar-class pair has t_phase=None → no cap, as before.
-    w = ew.compute_wall(wdot=sum_wdot, v_wind=di["v_wind"], v_ism=di["v_ism"], c_ms=di["c_ms"],
-                        n_cloud=di["n_cloud"], r_ex=None, wind_class=None, t_phase=di.get("t_phase"))
-    return w.get("wall_au"), w.get("wall_band_au")
+    inputs, med = _zone_inputs(winds, sum_wdot)
+    vres = med.get("vres") or {}
+    info = {"medium_member": med["id"], "comparator": comparator, "lower_bound": vres.get("mode") == "lower_bound",
+            "provisional": False, "range": None, "notes": []}
+    lb = iv.lower_bound_wall(inputs, comparator, None, vres["v_ism_kms"]) if info["lower_bound"] else None
+    if lb is None:
+        info["lower_bound"] = False
+    if info["lower_bound"]:
+        w, v_at = lb["wall"], lb["v_at"]
+        info.update(provisional=lb["provisional"], range=lb["range"], v_at=v_at)
+        info["notes"] += [iv.NOTE_LB_ZONE.format(mid=med["id"], route_clause=(
+            iv._ROUTE_PROV if lb["provisional"] else iv._ROUTE_NOT_PROV), f=vres["v_ism_kms"], v=v_at),
+            lb["lower_note"]]
+    else:
+        v_at = inputs["v_ism"]
+        w = iv.wall_at(inputs, v_at, comparator)
+    info["route"] = w.get("wall_route")
+    info["v_at"] = v_at
+    geo = False
+    if long_axis is not None and comparator is not None:
+        geo = iv._branch(iv.wall_at(inputs, v_at, long_axis)) != iv._branch(w)
+    info["geometry_marginal"] = geo
+    return w.get("wall_au"), w.get("wall_band_au"), info
 
 
 def _classify_component(c, system_wind_state=None):
@@ -341,10 +482,12 @@ def _component_model(c, system_wind, system_prot_days):
 
 
 def _combined_wind_band(contrib, max_standoff):
-    """CR-26 §26.6 / T11 — the combined-wind wall at the summed band-edge rates (a member with no band adds its
-    point to both sums; v / medium / t_phase of the largest-rate member held fixed). Returns the three zone
+    """CR-26 section 26.6 / T11 — the combined-wind wall at the summed band-edge rates (a member with no band adds
+    its point to both sums; v_wind / t_phase of the largest-rate member, the medium of the DQ4 medium member).
+    **CR-24.4:** each edge runs the route test against the comparator with its own route (``..._routes`` when they
+    differ); under a lower-bound medium each edge is its largest over [floor, V_max] (D-C3). Returns the zone
     fields ``{combined_wind_wall_band_wind_au, combined_wind_band_exceeds_standoff,
-    combined_wind_wall_is_upper_bound}``."""
+    combined_wind_wall_is_upper_bound}`` (+ ``combined_wind_wall_band_wind_routes``)."""
     winds = [m for m in contrib if (m.get("wall_inputs") or {}).get("wdot")]
     if len(winds) < 2:
         return {"combined_wind_wall_band_wind_au": None, "combined_wind_band_exceeds_standoff": None,
@@ -352,21 +495,30 @@ def _combined_wind_band(contrib, max_standoff):
     if any(m.get("cr26_upper") for m in winds):
         return {"combined_wind_wall_band_wind_au": None, "combined_wind_band_exceeds_standoff": None,
                 "combined_wind_wall_is_upper_bound": True}
-    dom = max(winds, key=lambda m: m["wall_inputs"]["wdot"])
-    di = dom["wall_inputs"]
     lo_sum = hi_sum = 0.0
     for m in winds:
         w, bd = m["wall_inputs"]["wdot"], m.get("cr26_band_dex")
         lo_sum += w * (10.0 ** bd[0] if bd else 1.0)
         hi_sum += w * (10.0 ** bd[1] if bd else 1.0)
-    kw = dict(v_wind=di["v_wind"], v_ism=di["v_ism"], c_ms=di["c_ms"], n_cloud=di["n_cloud"], r_ex=None,
-              wind_class=None, t_phase=di.get("t_phase"))
-    lo, hi = ew.compute_wall(wdot=lo_sum, **kw), ew.compute_wall(wdot=hi_sum, **kw)
-    band = [lo["wall_band_au"][0], hi["wall_band_au"][1]]
-    return {"combined_wind_wall_band_wind_au": band,
-            "combined_wind_band_exceeds_standoff": (bool(band[1] > max_standoff) if max_standoff is not None
-                                                    else None),
-            "combined_wind_wall_is_upper_bound": False}
+    inputs, med = _zone_inputs(winds, lo_sum)
+    vres = med.get("vres") or {}
+    if vres.get("mode") == "lower_bound":
+        (lo_v, lo_r), (hi_v, hi_r) = iv.lower_bound_band_edges(inputs, max_standoff, None, vres["v_ism_kms"],
+                                                               lo_sum, hi_sum)
+        if lo_v is None or hi_v is None:                       # degrade like the single-star path (CP5)
+            return {"combined_wind_wall_band_wind_au": None, "combined_wind_band_exceeds_standoff": None,
+                    "combined_wind_wall_is_upper_bound": False}
+    else:
+        lo = iv.wall_at(inputs, inputs["v_ism"], max_standoff, wdot=lo_sum)
+        hi = iv.wall_at(inputs, inputs["v_ism"], max_standoff, wdot=hi_sum)
+        lo_v, lo_r, hi_v, hi_r = lo["wall_band_au"][0], lo["wall_route"], hi["wall_band_au"][1], hi["wall_route"]
+    out = {"combined_wind_wall_band_wind_au": [lo_v, hi_v],
+           "combined_wind_band_exceeds_standoff": (bool(hi_v > max_standoff) if max_standoff is not None
+                                                   else None),
+           "combined_wind_wall_is_upper_bound": False}
+    if lo_r != hi_r:
+        out["combined_wind_wall_band_wind_routes"] = [lo_r, hi_r]
+    return out
 
 
 def _measured_system_edges(comps):
@@ -463,6 +615,8 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             "radius_rsun": c.get("radius_rsun"), "prot_days": c.get("prot_days"),
             "wind_class_explicit": c.get("wind_class"), "cr26_notes": list(c.get("cr26_notes") or []),
             "sys_ws_reached": bool(eff_ws and not c.get("wind_state")),
+            # CR-24: a --star component's velocity plan (set by the resolver; absent on --component) + lb_cavity=
+            "_cr24_vel": c.get("_cr24_vel"), "lb_cavity": c.get("lb_cavity"),
         })
 
     # CR-26 — the per-component wind model (plan §5d step 2), before the standoff
@@ -515,9 +669,17 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             has_standoff=c["r_ex_au"] is not None)
 
     # per-component WALL (research-grade; composed here, the frozen generator stays pure — CR-22.5)
+    n_star_comps = sum(1 for c in comps if c.get("_cr24_vel"))
     for c in comps:
         wp = _comp_wind_params(c, system_wind)
         m = c["cr26"]
+        # CR-24: this component's V_ISM (precedence, spec CR-24.2) -> the wall's v_ism + its provenance
+        c["vres"], c["vel"] = _cr24_component_ism(c, comps, system_wind, n_star_comps)
+        c["cr26_notes"] += [n for n in ((c["vel"] or {}).get("notes", []) + c["vres"]["notes"])
+                            if n not in c["cr26_notes"]]
+        if c["vres"]["v_ism_provenance"] != "assumed":
+            wp["v_ism"] = c["vres"]["v_ism_kms"]
+            wp["v_ism_provenance"] = c["vres"]["v_ism_provenance"]
         tier = m["mass_loss_tier"] if m else None
         label = m.get("label") if m else None
         rw_args = (c["domain"], c["wind_class"], c.get("sp_type"))
@@ -545,6 +707,14 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
                 "wall_reason": (c.get("class_note") or ("windless — free harbor"
                                 if c["domain"] == ew.WINDLESS else "class outside the wind model")),
                 "wall_note": ew._WALL_NOTE, "verdict_marginal": False, "r_ap_au": None}
+        c["cr24_extra"], c["cr24_band_ov"] = {}, None
+        if c["domain"] in (ew.MAIN_SEQUENCE, ew.EVOLVED):          # CR-24: point / DQ2 / DQ3 (plan 3.5b)
+            lad = bool(c["cr26_ladder"])
+            wall, c["cr24_extra"], c["cr24_band_ov"], v_notes = iv.apply_v_ism(
+                wall, inputs, c["r_ex_au"], c["wind_class"], c["vres"],
+                band_rate=(m["rate"] if lad else None), band_dex=(m["band_dex"] if lad else None),
+                band_upper=(m["upper"] if lad else False))
+            c["cr26_notes"] += [n for n in v_notes if n not in c["cr26_notes"]]
         c["wall"] = wall
         c["wall_inputs"] = inputs if c["domain"] in (ew.MAIN_SEQUENCE, ew.EVOLVED) else None
         c["wall_prov"] = prov if c["domain"] in (ew.MAIN_SEQUENCE, ew.EVOLVED) else None
@@ -556,7 +726,11 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         if c["domain"] in (ew.WINDLESS, ew.UNMODELED) and c.get("mass_loss_msun_yr") is not None:
             c["cr26_notes"].append(eb.NOTE_RATE_UNUSED)
         c["cr26_fields"] = eb._cr26_fields(tier, m, c["wall_inputs"], c["r_ex_au"], c["wind_class"],
-                                           c["cr26_notes"], c.get("cr26_carry_flags", ()))
+                                           c["cr26_notes"], c.get("cr26_carry_flags", ()),
+                                           v_ism_prov=(c["wall_prov"] or {}).get("v_ism"))
+        if c["cr24_band_ov"]:                                       # DQ3 / D-C3: the per-edge wind band
+            c["cr26_fields"].pop("wall_band_wind_routes", None)
+            c["cr26_fields"].update(c["cr24_band_ov"])
         c["cr26_upper"] = bool(c["cr26_fields"]["mass_loss_upper_limit"])
         c["cr26_band_dex"] = c["cr26_fields"]["mass_loss_band_dex"]
 
@@ -660,6 +834,7 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
                 "wall_exceeds_standoff": m["wall_exceeds_standoff"],
                 "wall_to_standoff_ratio": m["wall_to_standoff_ratio"],
                 **m["cr26_fields"],                                  # CR-26 §26.7 (additive)
+                **_cr24_component_fields(m),                         # CR-24 D6 echo + V_ISM + velocity
             } for m in members],
             "point_mass_r_ex_au": point_mass,
             "forcing_class": forcing,
@@ -693,7 +868,11 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             env[ph] = la
             if la is not None:
                 overlap_phases.append(ph)
-        combined_au, combined_band = _combined_wind_wall(contrib)
+        max_standoff = max((m["r_ex_au"] for m in members if m["r_ex_au"] is not None), default=None)
+        # CR-24.4: the zone's long axis (the standoff envelope, the larger of periastron / apastron) for DQ4's flag
+        _la = [(_zone_envelope(members, ph)[0]) for ph in ("peri", "apo")]
+        long_axis = max((v for v in _la if v is not None), default=None)
+        combined_au, combined_band, cw_info = _combined_wind_wall(contrib, max_standoff, long_axis)
         # only report a wall zone where walls actually OVERLAP at a requested phase (F11 eligibility) —
         # a lone / non-overlapping wall stays on its standoff-zone component (CR-22.5). The union-find
         # groups on peri (closest approach), so in an apastron-only run a peri-only-overlap pair yields
@@ -706,7 +885,6 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         combined_phase = None
         if combined_au is not None and overlap_phases:
             combined_phase = "both" if len(overlap_phases) == 2 else overlap_phases[0]
-        max_standoff = max((m["r_ex_au"] for m in members if m["r_ex_au"] is not None), default=None)
         env_hi = max([v for v in env.values() if v is not None] + ([combined_band[1]] if combined_band else []),
                      default=None)
         zone = {
@@ -719,10 +897,24 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
                                       if env_hi is not None and max_standoff is not None else None),
         }
         # CR-26 §26.6 / T11 — the combined-wind band fields ride wherever combined_wind_wall_au does (null with it)
+        if combined_au is not None:                           # CR-24.4 additive zone fields
+            zone.update({"combined_wind_wall_route": cw_info["route"],
+                         "combined_wind_route_comparator_au": cw_info["comparator"],
+                         "combined_wind_route_geometry_marginal": cw_info["geometry_marginal"],
+                         "combined_wind_medium_member": cw_info["medium_member"],
+                         "combined_wind_route_provisional": cw_info["provisional"],
+                         "combined_wind_wall_range_vism_au": cw_info["range"]})
         zone.update(_combined_wind_band(contrib, max_standoff) if combined_au is not None else
                     {"combined_wind_wall_band_wind_au": None, "combined_wind_band_exceeds_standoff": None,
                      "combined_wind_wall_is_upper_bound": None})
         if combined_au is not None:
+            if "combined_wind_wall_band_wind_routes" in zone:   # keep the routes beside the band they describe
+                zone["combined_wind_wall_band_wind_routes"] = zone.pop("combined_wind_wall_band_wind_routes")
+            for zn in cw_info["notes"]:                       # D-W2-2: the zone's lower-bound notes, every member
+                for m in members:
+                    wm = m["cr26_fields"]["wind_model"]
+                    if zn not in wm["notes"]:
+                        wm["notes"].append(zn)
             if zone["combined_wind_wall_band_wind_au"] is not None:
                 for m in members:                             # disclosure item 15, on every member
                     wm = m["cr26_fields"]["wind_model"]
@@ -772,6 +964,12 @@ def _resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
     return stellar_mass.resolve_component_mass(spec, catalog, allow_flame, status_out=status_out)
 
 
+def _bool_key(v):
+    """CR-24 ``lb_cavity=``: true/false (also yes/no, 1/0), case-insensitive, to a bool; else None."""
+    t = str(v).strip().lower()
+    return True if t in ("true", "yes", "1") else False if t in ("false", "no", "0") else None
+
+
 def _parse_component_spec(s):
     """Parse a ``--component`` string 'id=A,mass=2.063,class=A0mA1Va,pair=AB,sma=19.8,ecc=0.59'
     into a spec dict. Numeric keys are coerced; unknown keys raise. Returns dict or ``{"error"}``."""
@@ -791,7 +989,9 @@ def _parse_component_spec(s):
               "wind_class", "wind_speed", "v_ism", "c_ms", "b_field", "n_cloud", "cloud_temp",
               "wind_phase_yr", "f_shock", "m_shock_min", "mass_loss_source",
               # CR-26 (main_id= is the measured-table identity key — distinct from the free-text id / name)
-              "radius_rsun", "log_fx", "log_fx_limit", "prot_days", "main_id"}
+              "radius_rsun", "log_fx", "log_fx_limit", "prot_days", "main_id",
+              # CR-24: a Local-Bubble-cavity host (V_ISM 26 assumed; true/false)
+              "lb_cavity"}
     for tok in str(s).split(","):
         tok = tok.strip()
         if not tok:
@@ -809,6 +1009,11 @@ def _parse_component_spec(s):
                 return {"error": f"--component key '{k}' must be numeric (got '{v}')."}
         if key not in _known:
             return {"error": f"--component has unknown key '{k}'."}
+        if key == "lb_cavity":
+            b = _bool_key(v)
+            if b is None:
+                return {"error": f"--component lb_cavity= must be true or false (got '{v}')."}
+            v = b
         spec[key] = v
     return spec
 
@@ -945,7 +1150,9 @@ def _single_body_component(sl, catalog, star, status_out=None):
             "otype": sl.get("otype"),
             "designations": sl.get("designations"),
             # CR-26: the resolved SIMBAD record the orchestrator needs (resolved at the entry point)
-            "_cr26_identity": _cr26_identity(sl)}
+            "_cr26_identity": _cr26_identity(sl),
+            # CR-24: its own record's velocity (a letterless head takes its A record); no fallback (Q3)
+            "_cr24_vel": {"role": "head", "target": sl.get("main_id")}}
     # CR-25.2: the FULL otype list — fetched only for an MS K/M body, and only now the mass resolved
     sw = resolve_star_wind(sp, sl.get("otype"), sl.get("main_id"), class_tag=class_tag)
     if sw["otypes"] is not None:
@@ -1094,11 +1301,16 @@ def _resolve_system_from_star(star, catalog):
          "mass_provenance": prim_prov, "mass_note": prim_note, "sp_type": sl.get("sp_type"),
          "wind_otype_source": sw_a["cls_kw"]["wind_otype_source"],
          "designations": sl.get("designations"), "pair": "AB",
-         "sma_au": sma, "ecc": sel["ecc"], "_cr26_identity": ident_a},
+         "sma_au": sma, "ecc": sel["ecc"], "_cr26_identity": ident_a,
+         "_cr24_vel": {"role": "head", "target": main_id}},
         {"id": comp_id, "name": comp_id, "mass_solar": comp_mass, "mass_provenance": comp_prov,
          "mass_note": comp_note, "sp_type": comp_sp, "class": comp_class,
          "otype": comp_otype, "wind_otype_source": sw_b["cls_kw"]["wind_otype_source"],
-         "designations": comp_desig, "pair": "AB", "sma_au": sma, "ecc": sel["ecc"], "_cr26_identity": ident_b},
+         "designations": comp_desig, "pair": "AB", "sma_au": sma, "ecc": sel["ecc"], "_cr26_identity": ident_b,
+         # CR-24: B's own record (raw SIMBAD main_id); the flag-1 fallback borrows the A record's own RV only
+         "_cr24_vel": {"role": "companion", "target": (comp_sl.get("main_id") if comp_ok else None),
+                       "failed": comp_failed, "name": comp_id,
+                       "status": (_failure_class(comp_sl.get("error")) if comp_failed else None)}},
     ]
     for c, sw in zip(comps, (sw_a, sw_b)):
         if sw["otypes"] is not None:

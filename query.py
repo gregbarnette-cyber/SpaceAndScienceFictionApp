@@ -31,6 +31,8 @@ import core.exclusion_wall as exclusion_wall       # CR-22 two-layer wall engine
 import core.stellar_wind as stellar_wind           # CR-26 per-star wind model (pure)
 import core.stellar_wind_tables as stellar_wind_tables
 import core.xray_catalog as xray_catalog           # CR-26 network layer + orchestrator
+import core.ism_velocity as ism_velocity           # CR-24 per-star V_ISM (velocity resolver + precedence)
+import core.ism_velocity_tables as ism_velocity_tables
 import core.stellar_mass as stellar_mass           # CR-22 evolved-host measured-mass resolve
 import core.stellar_mass_tables as stellar_mass_tables
 import core.exotic_physics as exotic_physics
@@ -756,6 +758,18 @@ def cmd_beamrider_relay_spacing(args):
         total_range_ly=args.total_range_ly, total_range_m=args.total_range_m))
 
 
+def _add_cr24_flags(p):
+    """CR-24: the per-star V_ISM flags (both exclusion subcommands). ``--cloud`` is a real flag, so argparse no
+    longer abbreviates it to ``--cloud-temp``."""
+    p.add_argument("--cloud", default=None, type=_cr24_cloud,
+                   help="CR-24: derive V_ISM against this R&L 2008 cloud vector (any distance): "
+                        + ", ".join(ism_velocity_tables.cloud_names()))
+    p.add_argument("--clic-max-pc", dest="clic_max_pc", default=None, type=_cr24_pos("--clic-max-pc"),
+                   help="CR-24: the default LIC derive runs within this distance, pc (default 15)")
+    p.add_argument("--lb-cavity", dest="lb_cavity", action="store_true",
+                   help="CR-24: the host sits in the Local-Bubble cavity — V_ISM 26 assumed")
+
+
 # ── CR-26: argparse validators (exit 2 — the run-procedure §6.13 A usage-error convention; G14 ranges) ──
 def _cr26_num(value, name, lo, hi, lo_open):
     try:
@@ -780,8 +794,39 @@ def _cr26_prot(value):
     return _cr26_num(value, "--prot-days", 0.0, 1e5, True)
 
 
+def _cr24_pos(name):
+    """CR-24: finite and > 0, else a usage error (exit 2) — ``--v-ism`` / ``v_ism=`` / ``--clic-max-pc``."""
+    def _v(value):
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            raise argparse.ArgumentTypeError(f"{name} must be a number (got {value!r})")
+        if not math.isfinite(v) or v <= 0:
+            raise argparse.ArgumentTypeError(f"{name} must be finite and > 0 (got {value!r})")
+        return v
+    return _v
+
+
+def _cr24_cloud(value):
+    """CR-24: one of the 15 R&L 2008 Table 16 clouds (exit 2 lists them — ``--cloud 300`` is an error, never the
+    ``--cloud-temp`` abbreviation it was)."""
+    names = ism_velocity_tables.cloud_names()
+    hit = next((n for n in names if n.lower() == str(value).strip().lower()), None)
+    if hit is None:
+        raise argparse.ArgumentTypeError(f"unknown --cloud {value!r}; choose one of: {', '.join(names)}")
+    return hit
+
+
+def _cr24_lb(value):
+    if exclusion_system._bool_key(value) is None:          # the core parser's own vocabulary (one source)
+        raise argparse.ArgumentTypeError(f"must be true or false (got {value!r})")
+    return value
+
+
 _CR26_COMPONENT_KEYS = {"radius_rsun": _cr26_radius, "log_fx": _cr26_logfx, "log_fx_limit": _cr26_logfx,
-                        "prot_days": _cr26_prot}
+                        "prot_days": _cr26_prot,
+                        # CR-24
+                        "v_ism": _cr24_pos("v_ism="), "lb_cavity": _cr24_lb}
 
 
 def _cr26_component(value):
@@ -816,7 +861,9 @@ def _cr26_model(identity, sup, *, allow_network):
     """Run the CR-26 orchestrator + pure model for one star (the conftest forces allow_network off)."""
     inp = xray_catalog.resolve_star_wind_inputs(identity, sup, catalog=identity.get("catalog"),
                                                 allow_network=allow_network)
-    return stellar_wind.resolve_wind_model(inp)
+    model = stellar_wind.resolve_wind_model(inp)
+    model["_a_record"] = getattr(inp, "a_record", None)     # CR-24: the A-candidate lookup, reused (never emitted)
+    return model
 
 
 def _h7_cls_kw(cls_kw, model):
@@ -884,6 +931,21 @@ def _exclusion_boundary_result(args):
     # CR-26: the per-star wind model's supplied inputs (getattr — older Namespaces in tests lack them)
     sup26 = xray_catalog.cr26_supplied(args)
     ignored26 = xray_catalog.ignored_input_notes(sup26)
+    # CR-24: --cloud / --clic-max-pc / --lb-cavity on a path with no velocity lookup (or no identity) — noted
+    ignored24 = ([] if args.star else
+                 [ism_velocity.NOTE_IGNORED_NO_LOOKUP.format(flag=f) for f, v in
+                  (("--cloud", getattr(args, 'cloud', None)), ("--clic-max-pc", getattr(args, 'clic_max_pc', None))) if v is not None]
+                 + ([ism_velocity.NOTE_LB_IGNORED + ("" if args.v_ism is not None else " (V_ISM 26 either way)")]
+                    if getattr(args, 'lb_cavity', False) else []))
+
+    def _ism(main_id, model, windless=False):
+        """CR-24: the --star target's velocity (a letterless head takes its A record) + its V_ISM. The lookup is
+        skipped (not_run) only when --v-ism / --lb-cavity sets V_ISM on a non-measured star (Q2)."""
+        vres, vel = ism_velocity.star_v_ism(
+            lambda: ism_velocity.target_velocity(main_id, reuse=(model or {}).get("_a_record"))[0],
+            supplied=args.v_ism, lb_cavity=getattr(args, 'lb_cavity', False), cloud=getattr(args, 'cloud', None),
+            clic_max_pc=getattr(args, 'clic_max_pc', None), model=model, has_wall=not windless)
+        return {"vel": vel} if windless else {"vel": vel, "vres": vres}
 
     def _sup(extra=None):
         d = dict(sup26, supplied_rate=args.mass_loss_msun_yr, wind_state=args.wind_state,
@@ -912,7 +974,7 @@ def _exclusion_boundary_result(args):
             return {"error": "--mass-msun (or a resolved object mass) must be finite."}
         # CR-26: legacy_row with --wind-state, else none (derived in core); CR-26 inputs ignored with a note
         return two_layer(mass_msun=args.mass_msun, luminosity_lsun=lum,
-                         mass_provenance="manual", cr26_notes=ignored26, **wind_kw)       # CR-23.2 §2b
+                         mass_provenance="manual", cr26_notes=ignored26 + ignored24, **wind_kw)       # CR-23.2 §2b
 
     # ── object preset: mass/lum/wind_class from the preset (windless presets caught by classify) ──
     if args.object:
@@ -935,7 +997,7 @@ def _exclusion_boundary_result(args):
                          mass_provenance="object_preset",              # CR-23.2 §2b (preset always has a mass)
                          mass_loss_tier=("supplied" if (args.mass_loss_msun_yr is not None and _p_wc)
                                          else "object_preset"),                 # a windless preset has no wind
-                         cr26_notes=ignored26, **obj_kw)                  # CR-26 (MED-1; §26.1 tier 1)
+                         cr26_notes=ignored26 + ignored24, **obj_kw)      # CR-26 (MED-1; §26.1 tier 1)
 
     # ── spectral type: classify ONCE here (windless/evolved have no MS-table mass) + thread it ──
     if args.spectral_type:
@@ -945,7 +1007,7 @@ def _exclusion_boundary_result(args):
         cls_kw = exclusion_wall.wind_cls_kw(cw)
         if dom in (exclusion_wall.WINDLESS, exclusion_wall.UNMODELED, exclusion_wall.EVOLVED):
             # windless → free harbor; evolved → no MS-table mass → standoff refused, wall still emitted
-            return two_layer(sp_type=args.spectral_type, cr26_notes=ignored26, **cls_kw, **wind_kw)
+            return two_layer(sp_type=args.spectral_type, cr26_notes=ignored26 + ignored24, **cls_kw, **wind_kw)
         row, key = regions._lookup_spectral_type(args.spectral_type)
         if row is None:
             return {"error": f"Could not resolve spectral type '{args.spectral_type}'."}
@@ -963,7 +1025,7 @@ def _exclusion_boundary_result(args):
                              "cr25_letter": detection._sp_letter(args.spectral_type),
                              "noncoronal_rate": _row_rate(cls_kw, args.spectral_type)},
                             _sup(), allow_network=False)
-        notes = _cr26_ignored(args.spectral_type, dom, ignored26)
+        notes = _cr26_ignored(args.spectral_type, dom, ignored26) + ignored24
         return _cr26_attach(two_layer(mass_msun=mass, luminosity_lsun=lum_eff,
                                       sp_type=args.spectral_type, object_name=key,
                                       mass_provenance="spectral_type_table", wind_model=model, cr26_notes=notes,
@@ -993,7 +1055,7 @@ def _exclusion_boundary_result(args):
 
         if dom in (exclusion_wall.WINDLESS, exclusion_wall.UNMODELED):
             return two_layer(sp_type=sp, otype=ot, object_name=args.star, cr26_notes=ignored26,
-                             **cls_kw, **wind_kw)
+                             ism=_ism(main_id, None, windless=True), **cls_kw, **wind_kw)
 
         catalog = None
         if dom == exclusion_wall.EVOLVED:
@@ -1017,6 +1079,7 @@ def _exclusion_boundary_result(args):
             in_table = stellar_wind_tables.load_cr26_tables()["MEASURED"].get(
                 stellar_wind_tables.collapse_ws(main_id)) is not None
             model = _cr26_model(ident, _sup(), allow_network=bool(ident["candidate"]) and not in_table)
+            ism = _ism(main_id, model)                                   # CR-24 (before a non-measured model drops)
             h1_notes, h1_flags = [], []
             if model["mass_loss_tier"] != "measured":
                 h1_notes, h1_flags = stellar_wind.h1_carry(model)        # RG9: an H1 miss keeps its note + flag
@@ -1024,7 +1087,7 @@ def _exclusion_boundary_result(args):
             res = two_layer(mass_msun=mass, luminosity_lsun=lum, sp_type=sp, otype=ot,
                             object_name=args.star, mass_provenance=mprov, mass_note=mnote,
                             wind_model=model, cr26_notes=ignored26 + [n for n in h1_notes if n not in ignored26],
-                            cr26_flags=h1_flags, **cls_kw, **wind_kw)
+                            cr26_flags=h1_flags, ism=ism, **cls_kw, **wind_kw)
             if _st.get("flame_status") and "error" not in res:
                 res["flame_status"] = _st["flame_status"]
             return _cr26_attach(res, model)
@@ -1068,7 +1131,7 @@ def _exclusion_boundary_result(args):
         res = two_layer(mass_msun=mass, luminosity_lsun=lum_eff,
                         sp_type=sp, otype=ot, object_name=args.star,
                         mass_provenance=mprov, mass_note=mnote, wind_model=model, cr26_notes=notes,
-                        **_h7_cls_kw(sw["cls_kw"], model), **wind_kw)
+                        ism=_ism(main_id, model), **_h7_cls_kw(sw["cls_kw"], model), **wind_kw)
         if _st.get("flame_status") and "error" not in res:   # CR-23.2: surface a bounded FLAME degrade
             res["flame_status"] = _st["flame_status"]
         if sw["status"] and "error" not in res:              # CR-25: a bounded otype-list degrade
@@ -1082,7 +1145,9 @@ def cmd_exclusion_system(args):
     system_wind = dict(
         wind_speed=args.wind_speed, v_ism=args.v_ism, c_ms=args.c_ms, b_field=args.b_field,
         n_cloud=args.n_cloud, cloud_temp=args.cloud_temp, wind_phase_yr=args.wind_phase_yr,
-        f_shock=args.f_shock, m_shock_min=args.m_shock_min, mass_loss_source=args.mass_loss_source)
+        f_shock=args.f_shock, m_shock_min=args.m_shock_min, mass_loss_source=args.mass_loss_source,
+        # CR-24 (read by the per-component V_ISM, not by the wall-input resolver)
+        cloud=getattr(args, 'cloud', None), clic_max_pc=getattr(args, 'clic_max_pc', None), lb_cavity=bool(getattr(args, 'lb_cavity', False)))
     res = exclusion_system.compute_exclusion_system(
         star=args.star, component_specs=args.component,
         star_mass_catalog=args.star_mass_catalog, phase=args.phase,
@@ -3571,8 +3636,9 @@ def main(argv=None):
     p.add_argument("--gaia-timeout", dest="gaia_timeout", type=float, default=None,
                    help="Per-source Gaia-archive wall-clock bound in s (0 disables); --star FLAME tier (CR-23)")
     p.add_argument("--wind-speed", type=float, help="Wind speed v_wind, km/s (CR-22 wall)")
-    p.add_argument("--v-ism", dest="v_ism", type=float,
-                   help="Star-cloud relative speed V_ISM, km/s (default 26; --star: assumed)")
+    p.add_argument("--v-ism", dest="v_ism", type=_cr24_pos("--v-ism"),
+                   help="Star-cloud relative speed V_ISM, km/s (supplied — overrides the CR-24 derive; default 26)")
+    _add_cr24_flags(p)
     p.add_argument("--c-ms", dest="c_ms", type=float,
                    help="Fast-magnetosonic speed c_ms, km/s (default 20)")
     p.add_argument("--b-field", dest="b_field", type=float,
@@ -3649,7 +3715,9 @@ def main(argv=None):
     # CR-22: system-level wall inputs (a --component's own key wins over these); the wall + wall_zones
     # are emitted by default. Per-component wind keys go inside --component (wind_class, wind_speed, …).
     p.add_argument("--wind-speed", type=float, help="System-level wind speed v_wind, km/s (CR-22 wall)")
-    p.add_argument("--v-ism", dest="v_ism", type=float, help="System-level V_ISM, km/s (default 26)")
+    p.add_argument("--v-ism", dest="v_ism", type=_cr24_pos("--v-ism"),
+                   help="System-level V_ISM, km/s (supplied; default: the CR-24 per-star derive on --star, else 26)")
+    _add_cr24_flags(p)
     p.add_argument("--c-ms", dest="c_ms", type=float, help="System-level c_ms, km/s (default 20)")
     p.add_argument("--b-field", dest="b_field", type=float, help="System-level cloud B, microgauss")
     p.add_argument("--n-cloud", dest="n_cloud", type=float, help="System-level cloud n, cm^-3 (default 0.1)")

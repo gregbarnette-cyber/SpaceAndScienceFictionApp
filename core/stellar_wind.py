@@ -147,8 +147,9 @@ DISCLOSURES = {
 }
 DISCLOSURE_MEASURED = {
     "wood_x2": "Measured tier: Wood's astrospheric rates carry Wood's own ≈ ×2 systematic.",
-    "ism": ("A measured Ṁ was inferred for the local ISM Wood assumed (the LIC vector), so pairing it with a "
-            "different ISM (CR-24) re-uses an ISM-conditioned number."),
+    # CR-24 ⚑4: a placeholder, replaced once V_ISM is known (exclusion_boundary._cr26_fields) by "A measured Ṁ was
+    # inferred at the V_ISM Wood 2021 Table 3 lists for this star (<n> km/s); this run uses <V> km/s (<prov>)."
+    "ism": "[[CR-24 ISM note — filled once V_ISM is known]]",
     "combined": ("Binary rates are combined astrospheres: Wood's one combined rate is area-shared per component "
                  "(measured_combined_split — equal mass loss per unit area, Wood's Table 3 radii)."),
     "method_conflict": ("method_conflict: Wood's split value is used; Kislyakova 2024's upper limit (< 0.75 "
@@ -455,6 +456,7 @@ class StarWindInputs:
     # identity → measured table
     measured_ids: list = field(default_factory=list)    # strings tried in order (main_id; H1/G12/K3 forms)
     measured_miss_not_authoritative: bool = False       # H1: identity failed AND no string hit
+    a_record: tuple = None          # CR-24: the (record, status) of the A-candidate identity lookup, for reuse
     identity_failed: bool = False           # RG5: the star's own SIMBAD identity lookup failed (H1)
     # lookup results (None = not run)
     network: bool = False                   # a catalog ladder was attempted

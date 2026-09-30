@@ -1,0 +1,202 @@
+{
+ "*  70 Oph": {
+  "dec": 2.5000988299620857,
+  "main_id": "*  70 Oph",
+  "plx_value": 196.72,
+  "pmdec": -962.82,
+  "pmra": 124.16,
+  "ra": 271.363688269495,
+  "rvz_qual": "A",
+  "rvz_radvel": -5.8
+ },
+ "*  70 Oph A": {
+  "dec": 2.500146281931389,
+  "main_id": "*  70 Oph A",
+  "plx_value": 195.5674,
+  "pmdec": -1107.492,
+  "pmra": 206.525,
+  "ra": 271.36353505499625,
+  "rvz_qual": "A",
+  "rvz_radvel": -9.73
+ },
+ "*  70 Oph B": {
+  "dec": 2.498946996844167,
+  "main_id": "*  70 Oph B",
+  "plx_value": 195.8563,
+  "pmdec": -1068.354,
+  "pmra": 333.292,
+  "ra": 271.3644289008066,
+  "rvz_qual": "E",
+  "rvz_radvel": -10.0
+ },
+ "* alf CMa": {
+  "dec": -16.71611586111111,
+  "main_id": "* alf CMa",
+  "plx_value": 379.21,
+  "pmdec": -1223.07,
+  "pmra": -546.01,
+  "ra": 101.28715533333335,
+  "rvz_qual": "A",
+  "rvz_radvel": -5.5
+ },
+ "* alf CMa B": {
+  "dec": -16.716867983351943,
+  "main_id": "* alf CMa B",
+  "plx_value": 374.4896,
+  "pmdec": -914.52,
+  "pmra": -461.571,
+  "ra": 101.28876746876543,
+  "rvz_qual": "",
+  "rvz_radvel": null
+ },
+ "* alf CMi": {
+  "dec": 5.224987557059477,
+  "main_id": "* alf CMi",
+  "plx_value": 284.56,
+  "pmdec": -1036.8,
+  "pmra": -714.59,
+  "ra": 114.82549790798149,
+  "rvz_qual": "A",
+  "rvz_radvel": -4.50528
+ },
+ "* alf Cen": {
+  "dec": -60.83397222222223,
+  "main_id": "* alf Cen",
+  "plx_value": 750.81,
+  "pmdec": 686.0,
+  "pmra": -3608.0,
+  "ra": 219.9020833333333,
+  "rvz_qual": "A",
+  "rvz_radvel": -22.3
+ },
+ "* alf Cen A": {
+  "dec": -60.83399268831004,
+  "main_id": "* alf Cen A",
+  "plx_value": 742.12,
+  "pmdec": 473.67,
+  "pmra": -3679.25,
+  "ra": 219.90205833170774,
+  "rvz_qual": "A",
+  "rvz_radvel": -15.252
+ },
+ "* alf Cen B": {
+  "dec": -60.83752756558407,
+  "main_id": "* alf Cen B",
+  "plx_value": 742.12,
+  "pmdec": 802.98,
+  "pmra": -3614.39,
+  "ra": 219.89609628987276,
+  "rvz_qual": "A",
+  "rvz_radvel": -22.586
+ },
+ "* eps Ind": {
+  "dec": -56.785978554364995,
+  "main_id": "* eps Ind",
+  "plx_value": 274.8431,
+  "pmdec": -2536.192,
+  "pmra": 3966.661,
+  "ra": 330.8402234423433,
+  "rvz_qual": "A",
+  "rvz_radvel": -40.035
+ },
+ "* sig Dra": {
+  "dec": 69.66117661255723,
+  "main_id": "* sig Dra",
+  "plx_value": 173.4939,
+  "pmdec": -1738.286,
+  "pmra": 597.384,
+  "ra": 293.0899592077504,
+  "rvz_qual": "A",
+  "rvz_radvel": 26.734
+ },
+ "HD  33793": {
+  "dec": -45.01843381524333,
+  "main_id": "HD  33793",
+  "plx_value": 254.1986,
+  "pmdec": -5708.614,
+  "pmra": 6491.223,
+  "ra": 77.91912433145708,
+  "rvz_qual": "A",
+  "rvz_radvel": 245.234
+ },
+ "HD  69830": {
+  "dec": -12.632171440980558,
+  "main_id": "HD  69830",
+  "plx_value": 79.4953,
+  "pmdec": -987.829,
+  "pmra": 278.79,
+  "ra": 124.59977903433628,
+  "rvz_qual": "A",
+  "rvz_radvel": 30.115
+ },
+ "HD 217987": {
+  "dec": -35.85307088473306,
+  "main_id": "HD 217987",
+  "plx_value": 304.1354,
+  "pmdec": 1330.285,
+  "pmra": 6765.995,
+  "ra": 346.4668157737879,
+  "rvz_qual": "A",
+  "rvz_radvel": 8.82
+ },
+ "HD 239960B": {
+  "dec": 57.697151875743884,
+  "main_id": "HD 239960B",
+  "plx_value": 249.9668,
+  "pmdec": -686.244,
+  "pmra": -934.098,
+  "ra": 336.9991483422729,
+  "rvz_qual": "E",
+  "rvz_radvel": -28.0
+ },
+ "NAME Barnard's star": {
+  "dec": 4.693364966576667,
+  "main_id": "NAME Barnard's star",
+  "plx_value": 546.9759,
+  "pmdec": 10362.394,
+  "pmra": -801.551,
+  "ra": 269.4520769586187,
+  "rvz_qual": "A",
+  "rvz_radvel": -110.11
+ },
+ "Ross  248": {
+  "dec": 44.17744969753222,
+  "main_id": "Ross  248",
+  "plx_value": 316.4812,
+  "pmdec": -1591.65,
+  "pmra": 112.527,
+  "ra": 355.47931791771504,
+  "rvz_qual": "A",
+  "rvz_radvel": -77.51
+ },
+ "V* EV Lac": {
+  "dec": 44.33399288376722,
+  "main_id": "V* EV Lac",
+  "plx_value": 197.9573,
+  "pmdec": -458.92,
+  "pmra": -706.216,
+  "ra": 341.70721358761165,
+  "rvz_qual": "A",
+  "rvz_radvel": 0.287
+ },
+ "V* EZ Aqr": {
+  "dec": -15.2999325,
+  "main_id": "V* EZ Aqr",
+  "plx_value": 293.6,
+  "pmdec": 2295.3,
+  "pmra": 2314.8,
+  "ra": 339.6399,
+  "rvz_qual": "D",
+  "rvz_radvel": 6824.7
+ },
+ "Wolf  359": {
+  "dec": 7.014723134801666,
+  "main_id": "Wolf  359",
+  "plx_value": 415.1794,
+  "pmdec": -2699.215,
+  "pmra": -3866.338,
+  "ra": 164.1205036259475,
+  "rvz_qual": "A",
+  "rvz_radvel": 19.57
+ }
+}

@@ -712,6 +712,20 @@ def simbad_astrometry(ident, family="astrometry"):
     return (rows[0] if rows else None), None
 
 
+def simbad_velocity(main_id, family="velocity"):
+    """CR-24 — one bounded SIMBAD query for a record's velocity inputs, by its RAW resolved ``main_id`` (SIMBAD's own
+    spacing — never a collapsed or candidate string, which an exact match can miss: ``'* 70 Oph A'`` ≠
+    ``'*  70 Oph A'``) → ``({oid, main_id, ra, dec, pmra, pmdec, plx_value, rvz_radvel, rvz_qual}, None)``,
+    ``(None, None)`` when SIMBAD answered with no object, or ``(None, code)`` on a failure (bounded, retry once, its
+    own breaker family, answers-only cache — the CR-26 TAP discipline)."""
+    adql = ("SELECT TOP 1 b.oid, b.main_id, b.ra, b.dec, b.pmra, b.pmdec, b.plx_value, b.rvz_radvel, b.rvz_qual "
+            f"FROM basic AS b WHERE b.main_id = '{_adql_str(main_id)}'")
+    rows, st = _simbad_cr26_call("simbad_cr24_velocity", {"main_id": str(main_id)}, adql, family)
+    if st:
+        return None, st
+    return (rows[0] if rows else None), None
+
+
 def simbad_cone_stars(ra, dec, radius_arcsec, exclude_oid=None, exclude_main_id=None, family="radius"):
     """R12 — the SIMBAD objects of **stellar** type in a cone that are not the target itself (by ``oid``),
     not an X-ray / IR / radio catalogue record, and not a ``**`` system entry → ``(list, None)`` or

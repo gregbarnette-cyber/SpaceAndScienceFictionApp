@@ -179,6 +179,65 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
   - `Cr31ByteIdentityTest`: every no-`--wind-speed` call on the touched paths equals
     `tests/fixtures/cr31_no_wind_speed_baseline.json` (27 cases, captured from the pre-change tree in a throwaway worktree).
 
+- **CR-24: the per-star V_ISM (built 2026-09-30; `PHASE_CR24_31_32_PLAN.md` §3, `docs/integration.md` CR-24 block).**
+  Isolation: `tests/conftest.py` gains `_cr24_velocity_isolation`.
+  - For every test **not** marked `@pytest.mark.cr24_velocity` (registered in `pytest.ini`), an in-process `--star`
+    run's velocity is not run (`ism_velocity.target_velocity` / `lookup_velocity` return nothing). So the
+    pre-CR-24 offline `--star` tests keep V_ISM 26, or the measured row.
+  - The two CR-24 SIMBAD seams (`ism_velocity._velocity_seam` / `_identity_seam`) are leak stubs.
+  - A marked test keeps the real resolution and stubs the seams from `tests/fixtures/cr24_simbad_velocity_rows.json`
+    (reference SIMBAD rows captured live 2026-09-30).
+  - **`test_cr24_tables.py`:**
+    - the md5, the 36 rows and the LF-only / `git check-attr` check;
+    - the `row_key` cross-check with CR-26, and the float V_ISM (Q7);
+    - a tampered or missing file → `Cr24DataError` → exit 1;
+    - the LIC vector and the 15 clouds' magnitudes;
+    - the DQ2 nine-cloud set and every |Δ| of §Units to ±0.01.
+  - **`test_cr24_velocity.py`:**
+    - the frame is heliocentric Galactic, not LSR;
+    - A2's UVW (Barnard's, Kapteyn's, EV Lac);
+    - the gate (grade D/E, the ceiling, a null grade, F4's RV-0 ceiling);
+    - the sky-plane floor against the naive value (EZ Aqr 34.94, 70 Oph B 33.43 vs 40.04, σ Dra 67.47);
+    - the `unavailable` rules;
+    - whose record: the head → A through the identity seam, with the **raw** `'*  70 Oph A'` sent to the velocity
+      seam; same-record (Sirius); answered-empty (EZ Aqr); failed → `unavailable` (Q1);
+    - the ⚑1 fallback with F-A3's `rv_used` / `rv_source` echo, one way;
+    - the hooks (force-unreachable; the global / per-record RV injection with a collapsed key);
+    - T-V6: a failed velocity call is never cached.
+  - **`test_cr24_range.py`** (pure `[hand]` anchors):
+    - EZ Aqr's DQ3: 2.632 `wind_term`, band [1.755, 3.509] at the reported wall, `r_ap` at the floor, range
+      [1.369, 2.632], floor-only reasons, D-C3 wind band [0.618, 14.639], the notes; the V_max-390 variant 1.415.
+    - σ Dra's hook case: [1.792, 29.37], routes.
+    - A6's lower-bound zone at floors 34.9 / 45 / 200: [1.906, 3.702] ±0.5 %, 14.542 / 13.673, provisional
+      true / true / false, the lower-edge kind.
+    - A dense-grid cross-check.
+    - The F2 capped-bow-shock and WB MSG 328 threshold > 1000 provisional cases.
+    - DQ2 ranges and reasons for Sirius, Wolf 359 and Ross 248, from the reference rows.
+  - **`test_cr24_wiring.py`:**
+    - A0: 28 no-lookup cases byte-identical to `tests/fixtures/cr24_a0_baseline.json`, captured pre-CR-24, with
+      CR-24's additive keys stripped by `tests/_cr24strip.py`. The same helper is now applied by the CR-31 snapshot
+      test.
+    - The new fields on a no-lookup path.
+    - `--cloud` as a real flag (`Foo` / `300` → exit 2 listing the clouds, on both subcommands).
+    - The finite-positive validators; the ignored-flag notes; supplied `--v-ism`.
+    - `--component`: A4's `main_id=* eps Eri` → 27 `measured_row`, `not_run`, the ⚑4 text; 61 Cyg B → 26;
+      `lb_cavity=` and `--lb-cavity`.
+    - The A9 D6 echo parity with `exclusion-boundary` (`c_ms=15`, a system `--c-ms`, `b_field=`, none on sdB).
+    - CR-31 acc 1 through the echo.
+    - The A6 zone: `v_ism=45` / 125 / A25-B45; today's zone without `v_ism=`; the lower-bound medium through the
+      floor hook at 34.9 / 200 / 45.
+    - `--star` through test_cr25's stubs: EV Lac 45 `measured_row` with the derive; overrides with notes; `--cloud
+      LIC`; A7's hook keeps the row; Q2's `not_run`; a windless star reports its velocity only.
+    - The `exclusion-system` component helpers: 70 Oph head 36.44 / B 35.62 from A's own RV; answered-empty → no
+      fallback + the D-C1 note; same-record lends with no note; a gated A record → both floors (D-W3-3).
+  - **`test_cr24_live.py`** (opt-in live, subprocess):
+    - A1: 24 of 24 within ±3 km/s, median ≤ 0.7 (WB MSG 335: the 23 stars that reach the wall on `exclusion-boundary`, plus 70 Oph A via `exclusion-system`; GJ 338 A / B and GJ 892 are blocked by a pre-existing regions error, handed to CR-27).
+    - A3: EZ Aqr on `exclusion-system`; 70 Oph on `exclusion-boundary`.
+    - A5: Wolf 359, Sirius, HD 69830.
+  - Also updated to CR-24's contracted values:
+    - `test_cr25.py`: EV Lac's walls → 3.786 `bow_shock` at Wood's 45 (A4).
+    - `test_cr26_model.py`: the ⚑4 text.
+
 ## Suite-count history (moved from CLAUDE.md, 2026-09-24)
 
 The running per-CR record of how the offline suite count grew, kept verbatim from the paragraph that used to live in CLAUDE.md's Tests section. CLAUDE.md now carries only the current count; append new history here.
@@ -194,3 +253,5 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 **CR-32 (2026-09-30, `PHASE_CR24_31_32_PLAN.md` stage 1):** **3778 passed, 114 skipped, 519 subtests, 0 failures** (+11 offline: `test_cr32_stdout.py`; +4 opt-in live skips: `test_cr32_live.py`).
 
 **CR-31 (2026-09-30, `PHASE_CR24_31_32_PLAN.md` stage 2):** **3792 passed, 114 skipped, 561 subtests, 0 failures** (+14 offline, +42 subtests: `test_cr31_wind_speed.py`).
+
+**CR-24 (2026-09-30, `PHASE_CR24_31_32_PLAN.md` stage 3):** **3850 passed, 118 skipped, 609 subtests, 0 failures** (+58 offline, +48 subtests: `test_cr24_tables.py`, `test_cr24_velocity.py`, `test_cr24_range.py`, `test_cr24_wiring.py`; +4 opt-in live skips: `test_cr24_live.py`).

@@ -11,6 +11,7 @@ import unittest
 from core import exclusion_boundary as eb
 from core import exclusion_system as es
 from core import exclusion_wall as ew
+from tests._cr24strip import strip
 from tests._queryharness import run_query_inproc
 
 _FIX = os.path.join(os.path.dirname(__file__), "fixtures", "cr31_no_wind_speed_baseline.json")
@@ -190,7 +191,8 @@ class Cr31ByteIdentityTest(unittest.TestCase):
             with self.subTest(args=case["args"]):
                 code, payload, err = run_query_inproc(*case["args"])
                 self.assertEqual(code, case["exit"])
-                self.assertEqual(json.loads(json.dumps(payload, default=str)), case["payload"])
+                # from CR-24 (stage 3) on: CR-24's additive keys are stripped by name (the shared A0 helper)
+                self.assertEqual(strip(json.loads(json.dumps(payload, default=str))), case["payload"])
 
 
 if __name__ == "__main__":

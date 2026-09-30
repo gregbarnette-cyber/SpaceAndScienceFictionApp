@@ -6,6 +6,8 @@ venv/
 data/*
 # CR-26: the WB-owned wind-model data files are vendored + committed (md5-checked at load)
 !data/cr26/
+# CR-24: the WB-owned Wood 2021 V_ISM file, vendored + committed (md5-checked at load)
+!data/cr24/
 
 # stray root DB (the real DB is data/space_app.db, covered by data/ above)
 /space_app.db

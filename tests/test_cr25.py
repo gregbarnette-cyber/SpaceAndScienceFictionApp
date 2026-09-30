@@ -16,6 +16,9 @@ import types
 import unittest
 from unittest import mock
 
+# CR-24 (A4): EV Lac's measured 1.0 Ṁ⊙ wind term 6.00 AU at Wood's V_ISM 45 km/s → M_f 2.25 → bow_shock ÷ √C
+_EVLAC_CR24 = 6.0 / (4 * 2.25 ** 2 / (2.25 ** 2 + 3)) ** 0.5
+
 from core import databases
 from core import exclusion_wall as ew
 
@@ -774,9 +777,10 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
                          ("active", "otype_auto", ["Er*"], None, None))
         # CR-26 contracted change: EV Lac is a Wood-measured star (1.0 Ṁ⊙ → wall 6.00, A2); the otype_auto
         # label stays (the state label); the standoff is unmoved at γ=0.
-        self.assertAlmostEqual(r["wall_au"], 6.0, places=9)
+        # CR-24 contracted change (A4): the measured row sets V_ISM 45 (Wood 2021) → M_f 2.25 → bow_shock 3.786
+        self.assertAlmostEqual(r["wall_au"], _EVLAC_CR24, places=9)
         self.assertEqual((r["mass_loss_tier"], r["mass_loss_provenance"]), ("measured", "measured"))
-        self.assertEqual(r["wall_route"], "wind_term")
+        self.assertEqual((r["wall_route"], r["v_ism_kms"], r["v_ism_provenance"]), ("bow_shock", 45.0, "measured_row"))
         self.assertAlmostEqual(r["r_ex_au"], self._rex(), places=9)
         self.assertNotIn("otype_status", r)
 
@@ -785,7 +789,7 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
         self.assertEqual((q["wind_class"], q["wind_class_provenance"], q["wind_otype"]),
                          ("quiet", "manual", ["Er*"]))
         # CR-26 contracted change: a data tier (EV Lac measured) keeps its value — the flag is a label only
-        self.assertAlmostEqual(q["wall_au"], 6.0, places=9)
+        self.assertAlmostEqual(q["wall_au"], _EVLAC_CR24, places=9)          # CR-24: at Wood's V_ISM 45 (A4)
         self.assertTrue(any("did not set the wind rate" in n for n in q["wind_model"]["notes"]))
         a = self._star("EV Lac", {"V* EV Lac": _LISTS["EV Lac"]}, wind_state="active")
         self.assertEqual((a["wind_class"], a["wind_class_provenance"]), ("active", "manual"))
@@ -868,8 +872,8 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
         a = self._star("EV Lac", rows, alpha=0.4, gamma=0.2, wind_state="active")
         self.assertAlmostEqual(q["r_ex_au"], base, places=9)
         self.assertAlmostEqual(a["r_ex_au"], base, places=9)
-        self.assertAlmostEqual(a["wall_au"], 6.0, places=9)
-        self.assertAlmostEqual(q["wall_au"], 6.0, places=9)
+        self.assertAlmostEqual(a["wall_au"], _EVLAC_CR24, places=9)          # CR-24: at Wood's V_ISM 45 (A4)
+        self.assertAlmostEqual(q["wall_au"], _EVLAC_CR24, places=9)
 
     def test_star_non_ms_branches_carry_the_fields_by_value(self):
         def boom(adql):
@@ -960,12 +964,12 @@ class Cr25SystemWiringTest(_Cr25EnvMixin, unittest.TestCase):
                          ("active", "otype_auto", ["Er*"], None))
         # CR-26 contracted change: EV Lac is Wood-measured (1.0 Ṁ⊙ = 2e-14 → wall 6.00, A2)
         self.assertEqual((c["mass_loss_msun_yr"], c["mass_loss_tier"]), (2e-14, "measured"))
-        self.assertAlmostEqual(c["wall_au"], 6.0, places=9)
+        self.assertAlmostEqual(c["wall_au"], _EVLAC_CR24, places=9)          # CR-24: at Wood's V_ISM 45 (A4)
         self.assertAlmostEqual(c["r_ex_au"], 47.5 * (_EVLAC_BCLUM ** 0.2632) ** 0.4, places=9)
         self.assertNotIn("otype_status", r)
         q = self._comps(self._sys(self._evlac_seam, star="EV Lac", alpha=0.4, wind_state="quiet"))["V* EV Lac"]
         self.assertEqual((q["wind_class"], q["wind_class_provenance"], q["wind_otype"]), ("quiet", "manual", ["Er*"]))
-        self.assertAlmostEqual(q["wall_au"], 6.0, places=9)            # the data tier keeps its value
+        self.assertAlmostEqual(q["wall_au"], _EVLAC_CR24, places=9)    # the data tier keeps its value
         self.assertEqual(q["r_ex_au"], c["r_ex_au"])
 
     def test_star_single_body_degrade(self):
