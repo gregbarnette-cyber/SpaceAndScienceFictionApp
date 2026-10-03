@@ -45,7 +45,8 @@ message). `astropy`/`numpy`/`requests` are already in the base requirements. Ins
 see Installation step 4.
 
 Native Windows can instead serve the dust `query.py` subcommands (and `--weight dust`/`blend`) from a
-conda-forge/micromamba env: install the dust set there and point **`SPACE_APP_DUST_PYTHON`** at its interpreter —
+conda-forge/micromamba env: install the dust set there (healpy etc. from conda-forge; `dustmaps` itself via
+`pip install --no-deps`, since conda-forge has no win-64 dustmaps) and point **`SPACE_APP_DUST_PYTHON`** at its interpreter —
 `query.py` re-dispatches just those commands to it (a no-op wherever the extra imports). One-time steps:
 `DUST_WINDOWS_MICROMAMBA_PLAN.md` Part A (the native-Windows verification is still pending).
 

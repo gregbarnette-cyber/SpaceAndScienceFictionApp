@@ -11,7 +11,13 @@ exactly as they are; **WSL / Linux / macOS are unaffected (no micromamba, no beh
   needed**. What remains is the **native-Windows setup (Part A) + Windows verification (Part E2)**.
   → **When you load this on Windows, START AT [Part A](#part-a) below.** Moves to `completed_plans/`
   once Windows verification is green.
-- **Date:** 2026-09-07
+- **Date:** 2026-09-07 · **Re-evaluated 2026-10-03** (on the native-Windows checkout) against the
+  current code and conda-forge/PyPI package state. The shim code needed **no change**, but **Part A2
+  was broken as written**: conda-forge's `dustmaps` recipe is `skip: true  # [win]`, so it has **no
+  win-64 build** and the original one-shot `micromamba create … dustmaps …` would fail to solve. A2 now
+  installs the compiled stack from conda-forge and `dustmaps` from its pure-Python PyPI wheel with
+  `--no-deps`. Other fixes: Edenhofer md5 + an explicit md5 check (A3), Python/astropy pins (A2),
+  E2 uses the project venv, and stale counts/line numbers/notes corrected.
 - **Target platform for the setup steps:** native Windows only. WSL/Linux/macOS need none of Part A.
 - **Branch/commit policy:** commit directly to `main` (standing directive — repo is main-only).
 
@@ -22,7 +28,8 @@ exactly as they are; **WSL / Linux / macOS are unaffected (no micromamba, no beh
 | Question | Decision |
 |---|---|
 | Package that blocks Windows | `healpy` — no native-Windows **pip** wheel (`dustmaps` hard-requires it). Unchanged as of Sept 2026 (healpy docs still say Linux/macOS only, Windows via WSL). |
-| Native-Windows route that *does* exist | **conda-forge `win-64`** build of healpy (currently 1.20.0, 2026-07-25). Not pip. |
+| Native-Windows route that *does* exist | **conda-forge `win-64`** build of healpy (1.20.0; rebuilt 2026-09-22 for py311–py315). Not pip. PyPI healpy 1.20.0 still ships no Windows wheel (checked 2026-10-03). |
+| `dustmaps` itself on Windows | **Not on conda-forge for win-64** (the recipe has `skip: true  # [win]`, a holdover from before healpy had a Windows build; conda-forge ships linux/osx only). But `dustmaps` 1.0.14 is a pure-Python `py3-none-any` wheel on PyPI, so it goes into the conda env with **`pip install --no-deps`** on top of the conda-forge healpy/h5py/scipy/astropy. |
 | Tool | **micromamba** (single static binary, no base env, touches no global PATH) — chosen over Miniforge for an isolated, non-interactive, subprocess-invoked env. |
 | Routing model | **Option B** — a re-dispatch shim *inside* `query.py`, keyed on "can this interpreter load a dust map?" (the shared `core.dust._dustmaps_available` gate — `dustmaps` AND `healpy`). No change to the consumer contract, the sister repo's `bin/sfq`, or the skill's Q21. |
 | opt 59 (fetch) | **No code change** (explicitly removed from scope). The map fetch is a one-time step done via manual resumable download or a one-time env-side fetch. |
@@ -114,12 +121,23 @@ except Exception as e:
   and the `data/dust/` cache automatically (both derived from `__file__`).
 - Overhead is one extra Python startup (~0.5–1 s) **only** for dust commands on Windows — negligible
   against loading a multi-GB dust cube.
-- The shim uses a cheap local `import healpy` (not `import core.dust`) so non-dust calls never pay the
-  numpy/astropy load, preserving the lazy-import performance property `query.py` already relies on.
+- As built, the probe is `import core.dust` + `core.dust._dustmaps_available()` (not a bare
+  `import healpy`; see §0). `core.dust` imports numpy/astropy at module load, but the probe only runs
+  **after** `_needs_dust(args)` is true, so non-dust calls never pay that load. `query.py`'s lazy-import
+  property still holds: importing `query` loads **no** third-party modules (re-checked 2026-10-03).
+- `_needs_dust` coverage re-checked 2026-10-03: the only `--weight` choices containing `dust`/`blend`
+  are the shared route parser (`optimal-tour`/`multi-stop`/`nearest-neighbor`/`trade-route`),
+  `jump-route` (adds `blend`) and `network-centrality`. No dust-map path has been added since the
+  shim shipped that is keyed on anything else.
 
 ---
 
 ## 3. Ownership split — who runs what
+
+*(Written for a WSL session. A Claude session on the native-Windows checkout can run Part A too, but
+only with Greg's explicit go-ahead: it installs a package manager, downloads ~5.6 GB, and sets a
+persistent user env var. As of 2026-10-03 none of Part A has been done on this box: no
+`$HOME\micromamba`, no `data\dust\`, `SPACE_APP_DUST_PYTHON` unset.)*
 
 Because this session runs in **WSL** and cannot (and should not) install a package manager, download
 ~5.6 GB of maps, or set a persistent user env var on your **Windows** box, the work is split:
@@ -129,7 +147,7 @@ Because this session runs in **WSL** and cannot (and should not) install a packa
 | **A. System setup** (micromamba install, env, map fetch, env var) | **Greg** runs the commands below | Windows host (PowerShell) | ⬜ **TODO on Windows** |
 | **B. Code** (the `query.py` shim) | Claude | repo (WSL) | ✅ done |
 | **C. Docs** | Claude | repo (WSL) | ✅ done |
-| **D. Tests** (offline, mock-based) | Claude | repo (WSL) | ✅ done (8/8 pass) |
+| **D. Tests** (offline, mock-based) | Claude | repo (WSL) | ✅ done (9 tests in `tests/test_dust_redispatch.py`) |
 | **E1. Verification — WSL no-op regression** | Claude | repo (WSL) | ✅ done |
 | **E2. Verification — Windows routing** | **Greg** runs the commands below | Windows host | ⬜ **TODO on Windows** |
 
@@ -168,26 +186,40 @@ tar -xf "$env:TEMP\micromamba.tar.bz2" -C $Root Library/bin/micromamba.exe
 
 # Remember the exe path
 $Mm = "$Root\Library\bin\micromamba.exe"
-& $Mm --version        # sanity: prints a version like 2.x
+& $Mm --version        # sanity: prints a version like 2.x (2.9.0 as of 2026-10-03)
 ```
 
 *(Alternative: `Invoke-Expression ((Invoke-WebRequest -Uri https://micro.mamba.pm/install.ps1 -UseBasicParsing).Content)` — the official installer, but it may offer to touch your profile/PATH. The manual binary above avoids that entirely. Reference: <https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html>.)*
 
 ### A2. Create the `dust` environment from conda-forge
 
+Two steps, because conda-forge has **no win-64 `dustmaps`** (see §0):
+
 ```powershell
+# 1) Compiled stack + app deps from conda-forge (everything EXCEPT dustmaps)
 & $Mm create -y -r $Root -n dust -c conda-forge `
-    python=3.12 dustmaps healpy h5py scipy numpy astropy astroquery requests pyvo `
-    progressbar2 six tqdm
+    python=3.14 "astropy=7.2" healpy h5py scipy numpy astroquery requests pyvo `
+    progressbar2 six tqdm pip
+
+# 2) dustmaps from its pure-Python PyPI wheel, WITHOUT letting pip touch the conda deps
+& $Mm run -r $Root -n dust python -m pip install --no-deps "dustmaps==1.0.14"
 ```
 
-- `dustmaps` pulls `healpy`/`h5py`/`scipy`/`astropy`/`numpy` as dependencies; they are listed
-  explicitly for reproducibility.
+- **`--no-deps` matters:** without it pip would try to resolve `healpy` from PyPI, where there is no
+  Windows wheel, and fail (or try to build it from source). All of dustmaps' runtime deps
+  (`astropy, h5py, healpy, numpy, progressbar2, requests, scipy, six, tqdm`) come from step 1.
+- **`python=3.14`** matches the native venv (3.14.3), so the child runs `query.py` on the same
+  language version the Windows checkout is tested on. Every package above has a win-64 py314 build
+  (checked 2026-10-03).
+- **`astropy=7.2`** pins to the version the native venv runs (7.2.0). conda-forge's latest is
+  **8.0.1**, a major bump the app has not been tested against. Leaving it unpinned would let the dust
+  child compute coordinates with a different astropy than the in-process paths. Raise the pin when
+  the main venv moves to astropy 8.
 - This mirrors the **science subset of `requirements.txt` + all of `requirements-dust.txt`**.
 - **No PySide6** — `query.py`'s dust path is Qt-free.
 - Verify healpy imports in the env:
   ```powershell
-  & $Mm run -r $Root -n dust python -c "import healpy, dustmaps; print('healpy', healpy.__version__)"
+  & $Mm run -r $Root -n dust python -c "import healpy, dustmaps, astropy; print('healpy', healpy.__version__, 'astropy', astropy.__version__)"
   ```
 
 ### A3. Fetch the dust maps (one-time, ~5.6 GB total)
@@ -213,7 +245,7 @@ New-Item -ItemType Directory -Force -Path "data\dust\leike_2020","data\dust\eden
 # Leike 2020  (~2.4 GB, md5 1ea998fdaef58f53da639356362223ba)  ->  data\dust\leike_2020\mean_std.h5
 aria2c -c -x4 -d "data\dust\leike_2020" "https://zenodo.org/record/3993082/files/mean_std.h5"
 
-# Edenhofer 2023/2024 (~3.2 GB)  ->  data\dust\edenhofer_2023\mean_and_std_healpix.fits
+# Edenhofer 2023/2024 (~3.2 GB, md5 10c823a5fcf81b47b6e15530bcdf54dc)  ->  data\dust\edenhofer_2023\mean_and_std_healpix.fits
 aria2c -c -x4 -d "data\dust\edenhofer_2023" "https://zenodo.org/record/8187943/files/mean_and_std_healpix.fits"
 ```
 *(No aria2c? `curl.exe -L -C - -o "data\dust\leike_2020\mean_std.h5" "https://zenodo.org/record/3993082/files/mean_std.h5"` resumes with `-C -`. Same for the Edenhofer URL into `data\dust\edenhofer_2023\mean_and_std_healpix.fits`.)*
@@ -222,7 +254,17 @@ aria2c -c -x4 -d "data\dust\edenhofer_2023" "https://zenodo.org/record/8187943/f
 ```powershell
 & $Mm run -r $Root -n dust python -c "import core.dust as d, json; print(json.dumps(d.get_dust_map_status(), indent=2, default=str))"
 ```
-Expected: both maps present with sizes ≈ 2400 MB and ≈ 3200 MB.
+Expected: both maps present, at 2365.6 MB (Leike) and 3252.7 MB (Edenhofer). Those are the Zenodo
+`Content-Length` values, re-checked 2026-10-03; the `zenodo.org/record/…` URLs 301-redirect to
+`/records/…`, which aria2c and `curl -L` follow.
+
+**Verify the md5s.** dustmaps checks md5 only inside its own `fetch()`, **not when it loads a map**,
+so a truncated manual download would otherwise go unnoticed until a query fails:
+```powershell
+(Get-FileHash -Algorithm MD5 "data\dust\leike_2020\mean_std.h5").Hash                    # 1EA998FDAEF58F53DA639356362223BA
+(Get-FileHash -Algorithm MD5 "data\dust\edenhofer_2023\mean_and_std_healpix.fits").Hash  # 10C823A5FCF81B47B6E15530BCDF54DC
+```
+*(The md5s are the ones pinned in dustmaps 1.0.14's `leike2020.fetch` / `edenhofer2023.fetch`.)*
 
 ### A4. Point the app at the env (one persistent user env var)
 
@@ -266,7 +308,11 @@ the `_DUST_EXTRA_MSG` error. (This proves the env + maps work before the shim is
   - `_redispatch_to_dust_env(raw_argv) -> None` — as specified in §2 (recursion guard → `import
     healpy` capability check → `SPACE_APP_DUST_PYTHON` route → `sys.exit(child.returncode)`; returns
     without exiting when it decides to serve in-process).
-- **Wire into `main()`** (currently query.py:1901; dispatch tail at ~4335–4342):
+- *(As built, the helpers sit near the top of `query.py` (~line 88–143), and the probe is
+  `core.dust._dustmaps_available()` rather than `import healpy` (§0/§2). On Windows the shim splits with
+  `posix=False` and then strips matched surrounding quotes, not with the `posix=(os.name != "nt")`
+  one-liner below.)*
+- **Wire into `main()`** (as of 2026-10-03: `main()` at query.py:2285; dispatch tail at ~4796–4805):
   - At the top of `main()`, capture `raw_argv = list(sys.argv[1:]) if argv is None else list(argv)`
     **before** `parser.parse_args`.
   - After `args = parser.parse_args(argv)` and the existing CR-19 `gaia_timeout` block, add:
@@ -322,7 +368,7 @@ probe `core.dust._dustmaps_available` and `subprocess.run`; no network/conda/Qt)
 Update **`docs/testing.md`** with the new file's entry. Run:
 ```bash
 venv/bin/python -m pytest tests/test_dust_redispatch.py -q
-venv/bin/python -m pytest -q      # full offline suite stays green (baseline 3362 passed / 89 skipped)
+venv/bin/python -m pytest -q      # full offline suite stays green (baseline at ship: 3362 passed / 89 skipped; 2026-09-30: 3850 passed / 118 skipped)
 ```
 
 ---
@@ -340,6 +386,9 @@ venv/bin/python -m pytest -q      # full offline suite stays green (baseline 336
 ### E2. Windows routing  *(Greg runs, after Part A)*
 ```powershell
 cd C:\path\to\SpaceAndScienceFictionApp
+# "python" below means the project's NATIVE venv interpreter (venv\Scripts\python.exe, Python 3.14),
+# not a bare system python that lacks the app's deps. Activate it first, or substitute the full path:
+.\venv\Scripts\Activate.ps1
 
 # 1) Native python, dust command -> transparently routed to micromamba, returns JSON (not the extra error)
 python query.py dust-sightline --star "Vega" --dist-end 50 --steps 10
@@ -387,8 +436,8 @@ Remove-Item -Recurse -Force "C:\path\to\SpaceAndScienceFictionApp\data\dust"
 **If a setup step fails midway:**
 - **Env create fails** → the partial env is isolated under `$HOME\micromamba\envs\dust`; run
   `& $Mm env remove -r $Root -n dust -y` (or just delete `$HOME\micromamba`) and retry.
-- **Map download interrupted** → `aria2c -c` / `curl -C -` **resume** rather than corrupt, and dustmaps
-  verifies md5 on load; re-run the A3 command.
+- **Map download interrupted** → `aria2c -c` / `curl -C -` **resume** rather than restart; re-run the
+  A3 command, then re-check the md5s (dustmaps does **not** verify md5 on load).
 - **After any failure, native Python is untouched** — no pip installs ever ran against it, so there is
   nothing to repair on that side.
 
@@ -402,9 +451,13 @@ Remove-Item -Recurse -Force "C:\path\to\SpaceAndScienceFictionApp\data\dust"
 - **Same checkout required:** the micromamba env and native Python must run the **same** `query.py` from
   the **same** repo directory (shared DB + `data/dust/`). On a machine where Greg keeps separate Windows
   and WSL checkouts, each has its own `data/dust/`; Part A fetches into the **Windows** checkout.
-- **`micromamba run` vs direct `python.exe`:** both accepted by the shim; `micromamba run` preferred for
-  activation robustness. If a direct-`python.exe` value ever fails to find a DLL, switch the env var to
-  the `micromamba run` form.
+- **`micromamba run` vs direct `python.exe`:** the shim accepts both. **Direct `python.exe` is
+  preferred** (A4): nothing runs ahead of it that could write to stdout. If a direct-`python.exe` value
+  ever fails to find a DLL, switch the env var to the `micromamba run` form.
+- **dustmaps is pip-installed into a conda env** (A2). Re-running `pip install` without `--no-deps`, or
+  a `micromamba update` that drops pip-installed packages, can break the env. To rebuild, re-run both
+  A2 steps. If conda-forge ever drops the `# [win]` skip from its dustmaps recipe, fold dustmaps back
+  into the single `create` command.
 - **setx limits:** value < 1024 chars (fine here); doesn't affect the current shell (set `$env:` too).
 - **No behavior change off Windows:** guaranteed by the `import healpy` capability check, not an OS
   test — so nothing to special-case for WSL/Linux/macOS.
@@ -417,7 +470,7 @@ Remove-Item -Recurse -Force "C:\path\to\SpaceAndScienceFictionApp\data\dust"
 ## 5. Build order
 
 1. ✅ **B1** — shim added to `query.py` (`_needs_dust` / `_redispatch_to_dust_env`, wired into `main()`).
-2. ✅ **D** — `tests/test_dust_redispatch.py` (8 tests, all pass); `docs/testing.md` updated.
+2. ✅ **D** — `tests/test_dust_redispatch.py` (9 tests, all pass); `docs/testing.md` updated.
 3. ✅ **C** — docs (`requirements-dust.txt`, `docs/integration.md`, `CLAUDE.md`).
 4. ✅ **Requirements audit** — both files up to date, no packages missing (no change needed).
 5. ✅ **E1** — WSL no-op verified (shim returns in-process with healpy importable; non-dust dispatch intact).
