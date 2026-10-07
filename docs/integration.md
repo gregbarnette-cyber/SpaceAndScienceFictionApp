@@ -2314,7 +2314,7 @@ a different route.
   are blocked by the pre-existing star-regions error and handed to CR-27.
 - Commits: CR-32 `05a80c9`, CR-31 `cbe9571`, CR-24 `94f709d`.
 
-##### CR-27 — `--star` resolution gaps: zero-flux lookups, the median Teff / [Fe/H], the ladder not gated on luminosity, a system entry → component A (built 2026-10-07; `PHASE_CR27_PLAN.md`)
+##### CR-27 — `--star` resolution gaps: zero-flux lookups, the median Teff / [Fe/H], the ladder not gated on luminosity, a system entry → component A (built 2026-10-07; `completed_plans/PHASE_CR27_PLAN.md`)
 
 WB contract `spaceapp-change-request-CR27-star-resolution-gaps.md`; channel MSG 341–349; Q&A MSG 343 / 344 / 345 / 346.
 CR-27.1 / 27.2 (the SIMBAD lookup) are in the `simbad-lookup` section above.

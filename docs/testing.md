@@ -238,7 +238,7 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
     - `test_cr25.py`: EV Lac's walls → 3.786 `bow_shock` at Wood's 45 (A4).
     - `test_cr26_model.py`: the ⚑4 text.
 
-- **CR-27: `--star` resolution gaps (built 2026-10-07; `PHASE_CR27_PLAN.md`, `docs/integration.md` `simbad-lookup` +
+- **CR-27: `--star` resolution gaps (built 2026-10-07; `completed_plans/PHASE_CR27_PLAN.md`, `docs/integration.md` `simbad-lookup` +
   CR-27 block).**
   Isolation: `tests/conftest.py` gains `_cr27_identity_isolation`.
   - For every test **not** marked `@pytest.mark.cr27_identity` (registered in `pytest.ini`),
@@ -301,4 +301,4 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 
 **CR-24 (2026-09-30, `completed_plans/PHASE_CR24_31_32_PLAN.md` stage 3):** **3850 passed, 118 skipped, 609 subtests, 0 failures** (+58 offline, +48 subtests: `test_cr24_tables.py`, `test_cr24_velocity.py`, `test_cr24_range.py`, `test_cr24_wiring.py`; +4 opt-in live skips: `test_cr24_live.py`).
 
-**CR-27 (2026-10-07, `PHASE_CR27_PLAN.md`):** **3913 passed, 118 skipped, 626 subtests, 0 failures** (+63 offline, +17 subtests: `test_cr27_simbad.py`, `test_cr27_exclusion.py`; no new live file).
+**CR-27 (2026-10-07, `completed_plans/PHASE_CR27_PLAN.md`):** **3913 passed, 118 skipped, 626 subtests, 0 failures** (+63 offline, +17 subtests: `test_cr27_simbad.py`, `test_cr27_exclusion.py`; no new live file).
