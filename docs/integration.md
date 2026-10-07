@@ -1976,7 +1976,9 @@ Gaia DR3 FLAME > L-inversion), identical in tier order + result to `dossier --st
   star with no catalog row falls to the same L-inversion as before → **byte-identical**. **Also:** a **cataloged** single
   MS star via `--star` shifts inversion→catalog — including the internal seed (`Sirius A`/`α Cen A`/`α Cen B`) which loads
   with **no** `--star-mass-catalog` flag. (`Vega` is in the seed too, but pre-CR-23 it already errors on a no-Teff
-  `regions` data issue before any standoff computes — unrelated to CR-23's mass chain.)
+  `regions` data issue before any standoff computes — unrelated to CR-23's mass chain. **Resolved by CR-27:** the
+  median-filled Teff (27.2) and the ladder-first MS branch (27.3) give Vega `catalog` 2.135 → 64.3358082505636 at α 0.4,
+  with L 80.39434637781383 `regions_bc`.)
 - **CR-23.2 — `mass_provenance` on EVERY `exclusion-boundary` output** ∈ `{manual, catalog, gaia_flame,
   ms_luminosity_inversion, object_preset, spectral_type_table}` (or **`null`** on a no-mass domain — windless / unmodeled /
   evolved-no-mass, where `mass_msun` is null): `--mass-msun`→`manual`, `--object`→`object_preset` (preset always has a
@@ -2021,7 +2023,8 @@ active K/M star changes (quiet 0.424 → active **13.42 AU**, `wall_route wind_t
   was consulted when it is NOT the star itself — e.g. the letterless head `G 272-61` → `"G 272-61A"`; else `null`. N.B.
   `--star "GJ 65"` itself still errors before any wind is computed — a pre-existing no-Teff (`exclusion-boundary`) /
   no-mass (`exclusion-system`) resolution gap, not CR-25 — so that example is observed via the fetch / an offline
-  fixture); **`wind_class_note`** (or `null`):
+  fixture. **Resolved by CR-27.4:** `--star "GJ 65"` now resolves to component A `G 272-61A` on both subcommands,
+  `system_entry` set; its own otype list is then A's, so `wind_otype_source` is `null`); **`wind_class_note`** (or `null`):
   a Q8 domain-consistency note on a hot↔cool override (`hot` on an F/G/K/M star; `quiet`/`solar`/`active` on an O/B
   star — honored), a "does not set the wind bin" note on a non-MS host or when an explicit/preset wind_class supersedes
   the wind_state, + a `; at γ>0 the regulated standoff's Ẇ term still uses it` caveat when the FROZEN standoff did take
@@ -2220,6 +2223,9 @@ table: the same `row_key` / `simbad_main_id`. A bad file → `{"error"}` (exit 1
 - The lookup runs on every `--star` target / component, windless included. The one exception is a non-measured
   star whose V_ISM `--v-ism` / `--lb-cavity` already set (`not_run`). `--component`, `--spectral-type`, bare
   `--mass-msun` and `--object` never look up.
+  - **Since CR-27.4,** the head → A **identity** step runs on every letterless `--star` call where it decides
+    identity, `--v-ism` / `--lb-cavity` runs included. Only the *velocity* lookup is skipped there. A failed
+    identity step is the failed-A error (exit 1). See the CR-27 block.
 
 **Precedence (§CR-24.2; the first step that yields a value sets V_ISM):**
 1. `--v-ism` / `v_ism=` → `supplied`.
@@ -2312,6 +2318,9 @@ a different route.
     name the cloud.
 - A1 is scored 24 of 24 (WB MSG 335): median |Δ| 0.471 at WB's re-gate, largest 61 Cyg A +2.42. GJ 338 A / B and GJ 892
   are blocked by the pre-existing star-regions error and handed to CR-27.
+  - **CR-27 outcome:** GJ 892 (= HD 219134) now resolves; its median-filled Teff unblocks the regions inversion
+    (43.765427318548774). GJ 338 A / B (HD 79210 / HD 79211) now reach the mass ladder, but no tier holds a mass, so
+    they return the curated "could not resolve a mass" error.
 - Commits: CR-32 `05a80c9`, CR-31 `cbe9571`, CR-24 `94f709d`.
 
 ##### CR-27 — `--star` resolution gaps: zero-flux lookups, the median Teff / [Fe/H], the ladder not gated on luminosity, a system entry → component A (built 2026-10-07; `completed_plans/PHASE_CR27_PLAN.md`)
@@ -4215,6 +4224,20 @@ a `note`**, never a silent empty (failed-tool ≠ absent-capability).
 query.py binary-orbit --star "delta Trianguli"
 query.py binary-orbit --star "GJ 876"          # 61.36 d solution → class "planet"
 ```
+**CR-27 (2026-10-07).** Some `--star` objects resolve only through CR-27.1's zero-flux retry. When their spectral
+type decodes no primary mass, the m1-dependent companion masses are `null` rather than computed on the 1.0 M☉
+default:
+- **Which solutions:** the Gaia NSS astrometric / SB1 solutions, and SB9 SB1 solutions whose own `Sp1` decodes no
+  mass either.
+- **What the companion looks like:** `{method, m1_solar: null, m2_solar: null, class: "unknown",
+  low_significance: false, caveat: "companion mass not computed — SIMBAD holds no spectral type for this object (a
+  multiple-system entry?), so the primary mass is unknown"}`.
+- **What is kept:** the period and elements. Gaia's own `binary_masses` still fills a missing companion mass, or
+  rides as the cross-check block.
+
+So `binary-stability-auto` / `exclusion-system` never take such a row as a measured mass. Every object that resolved
+before is unchanged.
+
 Core: `binary.binary_orbit(star=None, ra=None, dec=None, source_id=None)`. Output:
 `{query, identity:{main_id, ra, dec, sp_type, parallax_mas, distance_ly, gaia_source_id, hip, designations},
 solutions:[{source, solution_type|seq, period_d, eccentricity, grade, primary_ref,
@@ -4497,6 +4520,15 @@ Core: `debris_disk.debris_disk(star=None, source_id=None, ra=None, dec=None)`. O
 upper_limit_L_IR_over_Lstar, system_L_IR_over_Lstar?, catalogs_matched?, upper_limit_basis?,
 upper_limit_regime?, route_tried}`. **Upper limits are warm-regime (WISE W4); cold Kuiper-analog dust needs
 the far-IR path** (carried by the Cotten cold components on a detection).
+- **CR-27 (2026-10-07).** Some objects resolve only through CR-27.1's zero-flux retry: SIMBAD system entries such as
+  `*  61 Cyg`, which returned "No results found" before. For these, a non-detection returns a **curated route
+  error** instead of computing the W4 limit on the 5778 K Teff default:
+  *"debris-disk: '<main_id>' has no Teff in SIMBAD and no flux row (a multiple-system entry?) — the W4 upper limit
+  needs the star's Teff; query a component (e.g. '<main_id> A')"*.
+  - `route_tried` keeps the VizieR routes.
+  - A Chen / Cotten detection at the position is still reported.
+  - Every object that resolved before keeps today's behaviour, including the 5778 K default when SIMBAD has no
+    Teff.
 
 #### `multiplicity` (CR-2 — LIVE)
 Multiplicity / spectroscopic-binary summary surfaced by default. Composes the cheap SIMBAD **otype** hint

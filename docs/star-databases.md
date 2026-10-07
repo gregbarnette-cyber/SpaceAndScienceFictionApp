@@ -75,7 +75,16 @@ All SIMBAD and NASA TAP queries use three shared helpers from `core/shared.py`:
     fails if a copy returns.
 - Parallax (mas) from `plx_value`; distance in parsecs = 1000 / plx; light years = parsecs × 3.26156; all rounded to 4 decimal places.
 - Missing/masked SIMBAD fields are handled by `_safe_get()` and shown as `N/A`.
-- `compute_simbad_lookup` in `core/databases.py` checks `len(result) == 0` in addition to `result is None`; SIMBAD can return an empty table (not `None`) for unknown star names, and both cases now return `{"error": "No results found for '...'"}` cleanly.
+- `compute_simbad_lookup` in `core/databases.py` checks `len(result) == 0` in addition to `result is None`; SIMBAD can return an empty table (not `None`) for unknown star names, and both cases return `{"error": "No results found for '...'"}` cleanly.
+- **CR-27.1 (2026-10-07) — a zero-flux object resolves.** astroquery builds `V` as an INNER JOIN on SIMBAD's `allfluxes` table. That join drops an object with no flux row in any band, such as the `*  61 Cyg` system entry.
+  - When the main query returns zero rows but `query_objectids` resolves the name, the lookup re-asks without `V`. The object then resolves with null fields.
+  - An unknown name makes the same two calls as before, and every object that resolved before is byte-identical.
+  - The body is `_simbad_lookup_impl`. `databases.simbad_lookup_ex(name) → (result, via_retry)` exposes the internal retry flag. debris-disk and binary-orbit use it so their missing-field defaults never fire on such an object. The flag is per thread.
+- **CR-27.2 — `teff` / `fe_h` read row 0, else the median.** The `mesfe_h` join returns one row per published measurement, and the rows are unranked.
+  - Each field reads row 0's value when it holds one (byte-identical).
+  - Otherwise it is the median of that field's non-null rows, the mean of the two central values for an even count.
+  - Otherwise it is `None`.
+  - Example: Vega's row 0 is empty, so its `teff` is 9509.0, the median of 47 rows.
 - **GUI (`SimbadPanel`)**: the background call runs `_simbad_with_hypatia()`, which calls `compute_simbad_lookup` then `compute_hypatia_data` in a single thread. Results are presented in tabs: **Star Properties** (designation banner + star properties table), **GCNS** (when `result["gcns"]` is present — M5; see below), **Hypatia** (Stellar Properties, Kinematics, and the full 104-species Elemental Abundances — grouped into per-nucleosynthetic-family sub-tables — via `build_hypatia_tab()`), and **Abundance Profile** (category-colored horizontal bar chart, scroll-wrapped; only shown when matplotlib is available and the star has elemental abundance data). A **Kinematics** tab (Phase O O11 — Toomre / galactic-kinematics diagram via `core.viz.prepare_toomre` → `make_toomre_canvas`, with an "ℹ What is this?" Explain button) is added beside Abundance Profile whenever Hypatia returns all three U/V/W velocities. See `docs/star-system-regions.md` for the canonical abundance shape and grouping.
 
 ## NASA Exoplanet Archive: All Tables Feature
