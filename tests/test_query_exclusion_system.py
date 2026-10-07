@@ -179,7 +179,8 @@ class Cr226MassGuardCliTest(unittest.TestCase):
                 self.assertEqual(rc, 0)
                 core = xb.compute_two_layer_boundary(mass_msun=float(tok), mass_provenance="manual",
                                                      alpha=alpha)
-                self.assertEqual(d, json.loads(json.dumps(core)))
+                # CR-27.4 (Q3): the CLI adds system_entry (null on a non---star path) to every result
+                self.assertEqual(d, json.loads(json.dumps({**core, "system_entry": None})))
                 self.assertIsNotNone(d["r_ex_au"])
 
     def test_wb_anchors_unchanged(self):

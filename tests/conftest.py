@@ -37,11 +37,11 @@ def _iso_cache_dir(factory):
 
 @pytest.fixture(autouse=True)
 def _cr26_socket_guard(request, monkeypatch):
-    """The offline ``test_cr26_*`` files (not ``test_cr26_live``) must never open a socket."""
+    """The offline ``test_cr26_*`` / ``test_cr27_*`` files (not ``*_live``) must never open a socket."""
     import os
     import socket
     name = os.path.basename(str(request.node.fspath))
-    if name.startswith("test_cr26_") and "live" not in name:
+    if name.startswith(("test_cr26_", "test_cr27_")) and "live" not in name:     # CR-27 plan §4.8 (CP0 F-C M2)
         def _no_socket(self, *a, **k):
             raise AssertionError(f"socket opened in an offline CR-26 test: {request.node.nodeid}")
         monkeypatch.setattr(socket.socket, "connect", _no_socket)
@@ -103,3 +103,19 @@ def _cr24_velocity_isolation(request, monkeypatch):
     yield
     if leaks:
         pytest.fail(f"CR-24 network seam(s) reached in an offline test: {sorted(set(leaks))}")
+
+
+# ── CR-27.4: the --star identity step (plan §4.6) ───────────────────────────────────────────────────────────────────
+# For every test NOT marked ``@pytest.mark.cr27_identity``: ``exclusion_system.resolve_star_identity`` keeps the head's
+# own identity and makes no lookup (``own``-equivalent) — so the pre-CR-27 offline ``--star`` tests keep their stubbed
+# identities and never reach the CR-24 / CR-26 identity seams (which stay leak stubs). A ``cr27_identity`` test drives
+# the real step and stubs ``ism_velocity.resolve_a_record`` (or the seams) itself.
+@pytest.fixture(autouse=True)
+def _cr27_identity_isolation(request, monkeypatch):
+    if request.node.get_closest_marker("cr27_identity"):
+        yield
+        return
+    import importlib
+    es = importlib.import_module("core.exclusion_system")
+    monkeypatch.setattr(es, "resolve_star_identity", lambda sl, *a, **k: (sl, None, None, None))
+    yield

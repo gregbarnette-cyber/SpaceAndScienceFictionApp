@@ -467,7 +467,8 @@ class IdentityTest(_Base):
 
     def test_no_results_prefix_drift(self):
         import inspect
-        src = inspect.getsource(databases.compute_simbad_lookup)
+        # CR-27.1: the lookup body moved into _simbad_lookup_impl (compute_simbad_lookup is its thin wrapper)
+        src = inspect.getsource(databases._simbad_lookup_impl)
         self.assertIn("SIMBAD_NO_RESULTS_PREFIX", src)
 
     def test_h1_and_k3(self):

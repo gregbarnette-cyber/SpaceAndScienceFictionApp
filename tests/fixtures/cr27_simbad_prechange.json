@@ -1,0 +1,267 @@
+{
+ "all_measurements_empty_single_row": {
+  "calls": [
+   "query_object",
+   "query_objectids"
+  ],
+  "result": {
+   "dec": 38.78,
+   "desig_str": "BL Cet, NAME X",
+   "designations": {
+    "2MASS": null,
+    "BD": null,
+    "Bayer": null,
+    "COCONUTS": null,
+    "CoRoT": null,
+    "Flamsteed": null,
+    "GJ": null,
+    "Gaia EDR3": null,
+    "HAT_P": null,
+    "HD": null,
+    "HIP": null,
+    "HR": null,
+    "K2": null,
+    "KOI": null,
+    "Kepler": null,
+    "LHS": null,
+    "MAIN_ID": "BL Cet",
+    "NAME": "NAME X",
+    "TIC": null,
+    "TOI": null,
+    "WASP": null,
+    "Wolf": null
+   },
+   "fe_h": null,
+   "gcns": null,
+   "gould": null,
+   "ly": 25.0445,
+   "main_id": "BL Cet",
+   "multiplicity": {
+    "basis": null,
+    "is_multiple": false,
+    "otype": "Er*",
+    "sb_flag": false,
+    "source": "simbad-otype"
+   },
+   "otype": "Er*",
+   "parsecs": 7.6787,
+   "plx_value": 130.23,
+   "ra": 279.23,
+   "sp_type": "M5.5V",
+   "teff": null,
+   "vmag": null
+  }
+ },
+ "multi_row_row0_full": {
+  "calls": [
+   "query_object",
+   "query_objectids"
+  ],
+  "result": {
+   "dec": 38.78,
+   "desig_str": "* alf Lyr, NAME X",
+   "designations": {
+    "2MASS": null,
+    "BD": null,
+    "Bayer": null,
+    "COCONUTS": null,
+    "CoRoT": null,
+    "Flamsteed": null,
+    "GJ": null,
+    "Gaia EDR3": null,
+    "HAT_P": null,
+    "HD": null,
+    "HIP": null,
+    "HR": null,
+    "K2": null,
+    "KOI": null,
+    "Kepler": null,
+    "LHS": null,
+    "MAIN_ID": "* alf Lyr",
+    "NAME": "NAME X",
+    "TIC": null,
+    "TOI": null,
+    "WASP": null,
+    "Wolf": null
+   },
+   "fe_h": -0.2,
+   "gcns": null,
+   "gould": null,
+   "ly": 25.0445,
+   "main_id": "* alf Lyr",
+   "multiplicity": {
+    "basis": null,
+    "is_multiple": false,
+    "otype": "dS*",
+    "sb_flag": false,
+    "source": "simbad-otype"
+   },
+   "otype": "dS*",
+   "parsecs": 7.6787,
+   "plx_value": 130.23,
+   "ra": 279.23,
+   "sp_type": "A0Va",
+   "teff": 4450.0,
+   "vmag": 0.03
+  }
+ },
+ "no_v_row_kept": {
+  "calls": [
+   "query_object",
+   "query_objectids"
+  ],
+  "result": {
+   "dec": 38.78,
+   "desig_str": "* rho CrB, NAME X",
+   "designations": {
+    "2MASS": null,
+    "BD": null,
+    "Bayer": null,
+    "COCONUTS": null,
+    "CoRoT": null,
+    "Flamsteed": null,
+    "GJ": null,
+    "Gaia EDR3": null,
+    "HAT_P": null,
+    "HD": null,
+    "HIP": null,
+    "HR": null,
+    "K2": null,
+    "KOI": null,
+    "Kepler": null,
+    "LHS": null,
+    "MAIN_ID": "* rho CrB",
+    "NAME": "NAME X",
+    "TIC": null,
+    "TOI": null,
+    "WASP": null,
+    "Wolf": null
+   },
+   "fe_h": -0.2,
+   "gcns": null,
+   "gould": null,
+   "ly": 25.0445,
+   "main_id": "* rho CrB",
+   "multiplicity": {
+    "basis": null,
+    "is_multiple": false,
+    "otype": "dS*",
+    "sb_flag": false,
+    "source": "simbad-otype"
+   },
+   "otype": "dS*",
+   "parsecs": 7.6787,
+   "plx_value": 130.23,
+   "ra": 279.23,
+   "sp_type": "A0Va",
+   "teff": 5800.0,
+   "vmag": null
+  }
+ },
+ "row0_full_later_rows_empty": {
+  "calls": [
+   "query_object",
+   "query_objectids"
+  ],
+  "result": {
+   "dec": 38.78,
+   "desig_str": "* alf Lyr, NAME X",
+   "designations": {
+    "2MASS": null,
+    "BD": null,
+    "Bayer": null,
+    "COCONUTS": null,
+    "CoRoT": null,
+    "Flamsteed": null,
+    "GJ": null,
+    "Gaia EDR3": null,
+    "HAT_P": null,
+    "HD": null,
+    "HIP": null,
+    "HR": null,
+    "K2": null,
+    "KOI": null,
+    "Kepler": null,
+    "LHS": null,
+    "MAIN_ID": "* alf Lyr",
+    "NAME": "NAME X",
+    "TIC": null,
+    "TOI": null,
+    "WASP": null,
+    "Wolf": null
+   },
+   "fe_h": 0.05,
+   "gcns": null,
+   "gould": null,
+   "ly": 25.0445,
+   "main_id": "* alf Lyr",
+   "multiplicity": {
+    "basis": null,
+    "is_multiple": false,
+    "otype": "dS*",
+    "sb_flag": false,
+    "source": "simbad-otype"
+   },
+   "otype": "dS*",
+   "parsecs": 7.6787,
+   "plx_value": 130.23,
+   "ra": 279.23,
+   "sp_type": "A0Va",
+   "teff": 3200.0,
+   "vmag": 0.03
+  }
+ },
+ "single_row_full": {
+  "calls": [
+   "query_object",
+   "query_objectids"
+  ],
+  "result": {
+   "dec": 38.78,
+   "desig_str": "* alf Lyr, NAME X",
+   "designations": {
+    "2MASS": null,
+    "BD": null,
+    "Bayer": null,
+    "COCONUTS": null,
+    "CoRoT": null,
+    "Flamsteed": null,
+    "GJ": null,
+    "Gaia EDR3": null,
+    "HAT_P": null,
+    "HD": null,
+    "HIP": null,
+    "HR": null,
+    "K2": null,
+    "KOI": null,
+    "Kepler": null,
+    "LHS": null,
+    "MAIN_ID": "* alf Lyr",
+    "NAME": "NAME X",
+    "TIC": null,
+    "TOI": null,
+    "WASP": null,
+    "Wolf": null
+   },
+   "fe_h": -0.5,
+   "gcns": null,
+   "gould": null,
+   "ly": 25.0445,
+   "main_id": "* alf Lyr",
+   "multiplicity": {
+    "basis": null,
+    "is_multiple": false,
+    "otype": "dS*",
+    "sb_flag": false,
+    "source": "simbad-otype"
+   },
+   "otype": "dS*",
+   "parsecs": 7.6787,
+   "plx_value": 130.23,
+   "ra": 279.23,
+   "sp_type": "A0Va",
+   "teff": 9600.0,
+   "vmag": 0.03
+  }
+ }
+}

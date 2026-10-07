@@ -350,6 +350,24 @@ query.py simbad-lookup --star "Tau Ceti"
 ```
 Core function: `databases.compute_simbad_lookup(star)`
 Output: `{main_id, ra, dec, sp_type, plx_value, teff, vmag, fe_h, ly, parsecs, desig_str, designations, gcns, gould}`. `fe_h` is the host `[Fe/H]` from SIMBAD's `mesfe_h` table (`null` when SIMBAD has no value); it is the real-anchor metallicity source for the `generate-system` v2 path. `designations` is a dict keyed by catalog (`MAIN_ID, NAME, Bayer, Flamsteed, GJ, HD, HIP, HR, Wolf, LHS, BD, K2, Kepler, KOI, TOI, CoRoT, COCONUTS, HAT_P, WASP, TIC, Gaia EDR3, 2MASS`); a catalog with no id is `null`. `Bayer`/`Flamsteed` are Phase AN2 (2026-07-29) — see **Bayer & Flamsteed designations** above for the verbatim-string, key-order and `desig_str`-dedupe notes. Numeric fields may be `null`.
+- **CR-27.1 / 27.2 (2026-10-07):**
+  - **Zero-flux objects resolve.** An object with no flux row in any band (the `*  61 Cyg` system entry) used to be
+    dropped by astroquery's `allfluxes` INNER JOIN, the only flux field being `V`, and returned "No results found".
+    When the main query answers zero rows **and** `query_objectids` resolves the name, the lookup re-asks without
+    `V`. The object then resolves with every missing field `null`, `vmag` included.
+  - **Byte-identical otherwise.** Every object that resolved before takes the unchanged first query, so its fields
+    are byte-identical. An unknown name makes the same two calls as before.
+  - **`teff` / `fe_h` are per field:** row 0's value when row 0 holds one (byte-identical); otherwise the median of
+    that field's non-null `mesfe_h` rows (an even count → the mean of the two central values); otherwise `null`. A
+    star's `teff` and `fe_h` may come from different rows. Example: Vega `teff` 9509.0, the median of 47 rows.
+  - **Caller rule (WB MSG 346).** An object that resolves **only** through that retry never feeds a substituted
+    default:
+    - `debris-disk` returns a curated route error ("has no Teff in SIMBAD and no flux row (a multiple-system
+      entry?) …") instead of the 5778 K Teff;
+    - `binary-orbit`'s Gaia NSS / SB9 SB1 companion masses are `null`, with the caveat "companion mass not computed
+      — SIMBAD holds no spectral type …", whenever no spectral type decodes a primary mass.
+
+    The flag is internal (`databases.simbad_lookup_ex`), never an output key.
 - **Gaia id**: the `"Gaia EDR3"` key holds the Gaia source id as SIMBAD now formats it — `"Gaia DR3 <id>"` (SIMBAD renamed EDR3→DR3 in its id output; the source_ids are identical). To get the bare numeric id, strip the `"Gaia DR3 "` / `"Gaia EDR3 "` prefix. This is the same id used as `--id` for `gcns-source`.
 - **`gcns`** (Phase M5): an **optional top-level GCNS cross-reference** — the matching `gcns_stars` row (same shape as `gcns-source`'s `star`: Bayesian `dist_pc` + `dist_lo_pc`/`dist_hi_pc`, `distance_method`, Gaia G/BP/RP, `astrom_reliable_prob`, `wd_prob`, `system_id`/`n_components`, …), giving a Bayesian distance **with 16th/84th-percentile uncertainty** beside the naive `1/ϖ` `ly`/`parsecs`. The key is **always present** but is `null` when the star has no Gaia id, is not in GCNS, or the `gcns_stars` table is empty/missing — **non-fatal and silent** (a single indexed local-DB read; no extra network). Built inside `compute_simbad_lookup`, so every `simbad`-embedding subcommand below carries it too.
 - **`gould`** (Phase AO): an **optional top-level Gould designation** — the star's *Uranometria Argentina* (Gould 1879) number, e.g. HD 102365 → **66 G. Centauri**. Shape: `{g_number, cst, constellation, designation, display, hd, sao, matched_on, source}`, where `designation` is the abbreviated form (`"66 G. Cen"`), `display` the genitive form (`"66 G. Centauri"`), `cst` the IAU 3-letter code, and `matched_on` is always `"hd"` (see the join note below). `constellation`/`display` fall back to the raw abbreviation for an unrecognised code — a name is never invented. The key is **always present** but is `null` when the star has no HD number, is absent from the catalogue, or the `gould_designations` table is empty/missing — **non-fatal and silent**, like `gcns`. **Joins on HD only:** an SAO fallback was built and then removed (code review, 2026-07-29) because `designations` never carries an `"SAO"` key, making the branch unreachable — so `matched_on` is a constant and **a consumer branching on `"sao"` would be writing dead code**. `sao` is still echoed from the matched row. Only 26 catalogue rows have an SAO number but no HD, and just 3 of those carry a Gould number. **Sourced from bundled VizieR `V/135A`, not SIMBAD** (SIMBAD's `ident` table contains zero Gould ids), so no extra network call. **`null` is the normal answer for most stars:** Gould listed only bright *southern* stars — 8471 rows, 7756 with a Gould number — so an absent designation is correct coverage, not a lookup failure. **Constellations use Gould's 1875 boundaries and may disagree with the modern IAU one for the same star** — HD 100623 is `Hya` here while SIMBAD's own Flamsteed id is `*  20 Crt` (Crater). Both are right; do not reconcile them.
@@ -1847,8 +1865,8 @@ Core: `query.py` calls `exclusion_boundary.compute_two_layer_boundary(...)` (CR-
 standoff generator `compute_exclusion_boundary(mass_msun, luminosity_lsun, mass_loss_msun_yr, wind_state,
 dial, calibration_au, alpha, beta, gamma, scan_alpha, object_name)`. **Body source (exactly one):** `--mass-msun`
 | `--object {sun, m-dwarf, o-star, brown-dwarf, rogue-planet}` | `--star <name>` (SIMBAD identity + the **shared mass
-tier ladder** manual > catalog > Gaia FLAME > L-inversion — CR-23; `regions` supplies the luminosity + the inversion
-tier; **network**) | `--spectral-type <type>` (main-sequence table, local DB). Optional environment: `--luminosity-lsun`,
+tier ladder** manual > catalog > Gaia FLAME > L-inversion — CR-23; `regions` supplies the inversion tier's luminosity,
+needed **only** for that tier — CR-27.3; a multiple-system entry resolves to its component A — CR-27.4; **network**) | `--spectral-type <type>` (main-sequence table, local DB). Optional environment: `--luminosity-lsun`,
 `--mass-loss-msun-yr` (Ẇ), `--wind-state {quiet, solar, active, hot}` (CR-25: sets the `wind_class` bin →
 `{quiet, solar, active, o_hot}` on a main-sequence host, overriding the colour default and the SIMBAD-otype
 auto-detect; ignored with a note on an evolved/windless/unmodeled host; an `--object` preset's bin is fixed — see
@@ -1859,10 +1877,13 @@ the CR-25 block. It is also the γ>0 standoff Ẇ preset (1e-16 / 2e-14 / 1e-13 
 luminosity_lsun, mass_loss_msun_yr, dial, alpha, beta, gamma, calibration_au, forcing_class, object,
 model_note}` (`r_ex_au_alpha_*` only with `--scan-alpha`); plus the CR-22 two-layer fields (`domain`,
 `standoff_au`, `wall_*`, the wind-input echoes), CR-23 `mass_provenance`/`mass_note`/`flame_status`, and CR-25
-`wind_class_provenance`/`wind_otype`/`wind_otype_source`/`wind_class_note`/`otype_status` — see the blocks below
+`wind_class_provenance`/`wind_otype`/`wind_otype_source`/`wind_class_note`/`otype_status`, and CR-27
+`luminosity_provenance`/`luminosity_status`/`system_entry` (`luminosity_lsun` is the best available or `null` — never a
+fabricated 1.0) — see the blocks below
 (the wall/medium and mass-ladder flags `--star-mass-catalog`, `--gaia-timeout`, `--wind-speed` … are listed in the
 CR-22/CR-23 blocks). **Validation:** `--mass-msun` ≤ 0 or NaN (`"--mass-msun (or a resolved object mass) must be
-> 0."`) or +inf (`"… must be finite."`), negative exponents, non-positive dial/calibration, `β ≠ 0` with L ≤ 0, or a
+> 0."`) or +inf (`"… must be finite."`), negative exponents, non-positive dial/calibration, `β ≠ 0` with L ≤ 0 or with
+no luminosity known (CR-27.3), or a
 wind exponent (`γ ≠ 0`) with no wind input → exit 1. The mass check runs first (CR-22.6 restored it — see the CR-22.6
 block below). **Anchors:** Sun 47.5 AU; 0.1 M☉ → 22.05/15.02 AU (α 1/3, 1/2); 10 M☉ → 102.3/150.2 AU (harbor); explicit
 `--dial` overrides auto-cal; solar-wind term = 1 at the Ẇ=2×10⁻¹⁴ preset.
@@ -2292,6 +2313,83 @@ a different route.
 - A1 is scored 24 of 24 (WB MSG 335): median |Δ| 0.471 at WB's re-gate, largest 61 Cyg A +2.42. GJ 338 A / B and GJ 892
   are blocked by the pre-existing star-regions error and handed to CR-27.
 - Commits: CR-32 `05a80c9`, CR-31 `cbe9571`, CR-24 `94f709d`.
+
+##### CR-27 — `--star` resolution gaps: zero-flux lookups, the median Teff / [Fe/H], the ladder not gated on luminosity, a system entry → component A (built 2026-10-07; `PHASE_CR27_PLAN.md`)
+
+WB contract `spaceapp-change-request-CR27-star-resolution-gaps.md`; channel MSG 341–349; Q&A MSG 343 / 344 / 345 / 346.
+CR-27.1 / 27.2 (the SIMBAD lookup) are in the `simbad-lookup` section above.
+
+**CR-27.3 — luminosity = best available + provenance; the mass ladder runs first.**
+- **`exclusion-boundary --star`, main sequence.** The regions step (Teff + V + parallax → `bcLuminosity`) is needed
+  **only** for the inversion tier. Its failure no longer returns before the ladder (manual > catalog > Gaia FLAME >
+  inversion), so a catalog or FLAME star with no V row resolves (BL Cet → catalog 0.1225).
+- **The curated mass error.** When every tier fails, the error is *"could not resolve a mass for '<star>' (SIMBAD:
+  <main_id>) — tried: the mass catalog, Gaia DR3 FLAME (<no FLAME mass | the Gaia FLAME fetch timed out / was
+  unreachable>), and the main-sequence luminosity inversion (<the regions reason>); pass --star-mass-catalog with a row
+  for it, or use --mass-msun <M☉> instead of --star"*, exit 1. It carries `flame_status` only when the FLAME fetch
+  was bounded.
+- **`exclusion-system`'s single-body mass error** and its off-MS lone-body note say "the Gaia FLAME fetch timed out /
+  was unreachable" (plus `flame_status`) only when bounded. Otherwise today's "no Gaia FLAME" text stands.
+- **`luminosity_lsun` (L☉ or `null`) + `luminosity_provenance`**, on every result that emits `luminosity_lsun` (a
+  result with a standoff). The provenance is:
+  - `manual` (`--luminosity-lsun`);
+  - else `regions_bc` (the regions derivation, main-sequence `--star` only);
+  - else `gaia_flame` (Gaia DR3 `lum_flame`; a bounded fetch that reuses the mass tier's call; new where the
+    catalog decided the mass);
+  - else `null`;
+  - on `--spectral-type` → `spectral_type_table`; on `--object` → `object_preset`.
+
+  Windless, unmodeled and evolved-no-mass results carry neither key and fetch nothing. **Never the old fabricated
+  1.0.**
+- **What feeds the inversion.** The inversion takes the `regions_bc` luminosity **only**. A supplied or FLAME
+  luminosity is reported, never inverted (FLAME computes L for some stars it declines to fit a mass for).
+- **`luminosity_status`** ∈ {`timeout`, `unreachable`} (top level) appears only when the luminosity-tier FLAME fetch
+  was bounded. It goes on a result, or on the β ≠ 0 luminosity error — never on `flame_status`, which keeps meaning
+  "the mass path degraded". It is outside the S6c `gaia_status|flame_status*|otype_status*` pattern.
+- **β ≠ 0.** Where a standoff is computed and no source holds a luminosity, the existing *"--luminosity-lsun must be >
+  0 when --beta ≠ 0."* fires (exit 1). This now covers a bare `--mass-msun` (was 29.345540401952064 on 1.0) and an
+  evolved host with no FLAME L. A FLAME luminosity replaces the old 1.0 on the evolved path (δ Pav β 0.5 ≈ 52.989).
+  The ladder runs first, so a star with no mass route gets the mass error. `exclusion-system`'s β ≠ 0 standoff is
+  unchanged (out of scope).
+- `--luminosity-lsun`'s help text lost "(default 1)".
+
+**CR-27.4 — a system entry resolves to its component A.**
+- **What a system entry is.** A letterless `main_id` runs the head → A step CR-24 runs
+  (`exclusion_system.resolve_star_identity` → `ism_velocity.resolve_a_record`). The outcomes are:
+  - `own` (already a component; no lookup);
+  - `same` / `empty` (the head is the star);
+  - **`a`** (a **system entry**: the A candidate resolves to a different object);
+  - `failed`.
+- **On `exclusion-boundary --star`** (every branch), a system entry's identity, mass, regions luminosity, wind and
+  velocity are all component A's: every numeric field equals `--star "<A>"`. `object` stays the user's input. α Cen
+  50.22047257058862 → 48.966852301574924. 70 Oph → A's FLAME mass, never the combined-light 45.468314671758925.
+- **On `exclusion-system --star`**, the branch is chosen on the head. The no-orbit / wide-bond fallback (GJ 65,
+  61 Cyg) and the off-main-sequence branch build their single body from A's record, with its domain classified on A.
+  `binary-orbit` is not re-run, and the head's `gaia_status` and no-orbit note are kept. Orbit-composed systems
+  (α Cen, 70 Oph) are unchanged.
+- **`system_entry`** is top level on **every** result of both subcommands: `null`, or `{"main_id": <head>,
+  "component_used": <A>, "note"}`. The note is *"resolved to component A of the multiple-system entry <head>"*, plus on
+  `exclusion-boundary` *"— for the merged system zone use exclusion-system (or --component when no fitted orbit
+  exists)"*. On `exclusion-system` the note is also appended to `resolution_notes`. Once a system entry resolved,
+  **every error of that call carries the non-null `system_entry`**. No error carries `system_entry: null`.
+- **A failed A lookup** gives exit 1 with *"could not resolve '<star>': the SIMBAD identity lookup for the A candidate
+  '<cand>' of '<head>' failed (<status>) — whether '<head>' is a multiple-system entry cannot be decided; retry when
+  SIMBAD answers"* and **`component_a_status`** ∈ {`timeout`, `unreachable`}. It applies to every letterless head
+  (`same` / `empty` included) on `exclusion-boundary --star` and on both `exclusion-system` single-body paths,
+  **`--v-ism` / `--lb-cavity` runs included** (the A step now always runs there; CR-24's velocity skip rule is
+  unchanged). Hook: `SPACE_APP_SIMBAD_IDENT_FORCE_UNREACHABLE`. An orbit-composed system keeps its result, with A's
+  `velocity_status` flagged as before.
+- **One identity lookup per call.** The step's answer is reused by CR-24's velocity (`reuse=`) and by CR-26's
+  candidate lookup, through an `a_prefetch` keyed by the candidate string, used online only.
+- **Ordering (disclosed, accepted MSG 347 / 348).** On a letterless head, the A lookup runs before the argument
+  checks. On the MS branch, a bad `--star-mass-catalog` now errors before a regions failure. The FLAME-luminosity
+  fetch runs only after every argument check but β/L.
+- **What the rule cannot see.** EZ Aqr (a blended triple), Luhman 16 (SIMBAD's `NAME Luhman 16A` vs the candidate
+  `NAME Luhman 16 A`) and Capella read as one object (CR-29's scope). `dossier` gets CR-27.1 only (no component-A
+  rule).
+
+**Tests:** `tests/test_cr27_simbad.py`, `tests/test_cr27_exclusion.py` (marker `cr27_identity`; the conftest keeps
+every other offline `--star` test on its stubbed identity).
 
 ### Power generation / storage / thermal (Phase AL — Group R, no network)
 

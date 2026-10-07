@@ -203,22 +203,25 @@ def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
     cat_hit = bool(catalog) and smt.match_mass(catalog, name, spec.get("designations")) is not None
     if allow_flame and not manual_hit and not cat_hit and spec.get("designations"):
         try:
-            from core import binary, catalog as catmod
-            sid = binary.gaia_source_id_from_designations(spec.get("designations"))
-            if sid:
-                ga = catmod.gaia_astrophysical(source_id=sid)
-                params = ga.get("parameters") if isinstance(ga, dict) else None
-                if params:
-                    mf = params.get("mass_flame")
-                    if smt.is_positive_finite(mf):
-                        flame_mass = mf
-                # CR-19: a bounded per-component FLAME call (timeout/unreachable) with no mass →
-                # record it so the caller can flag the mass-path degrade (else None → byte-identical).
-                if flame_mass is None and status_out is not None and isinstance(ga, dict) \
-                        and ga.get("gaia_bound_reason"):
-                    status_out["flame_status"] = ga["gaia_bound_reason"]
+            fetched, params, bound = _fetch_flame(spec.get("designations"))
         except Exception:
-            flame_mass = None
+            fetched, params, bound = True, None, None    # an attempt that raised still counts as the fetch
+        mf = (params or {}).get("mass_flame")
+        if smt.is_positive_finite(mf):
+            flame_mass = mf
+        if status_out is not None and fetched:
+            # CR-27.3: the same fetch's FLAME luminosity, for the luminosity tier to reuse (private keys —
+            # every status_out reader picks flame_status / otype_status by name). Never inverted.
+            status_out["_flame_fetched"] = True
+            lf = (params or {}).get("lum_flame")
+            if smt.is_positive_finite(lf):
+                status_out["_lum_flame"] = lf
+            elif bound:
+                status_out["_lum_flame_status"] = bound
+        # CR-19: a bounded per-component FLAME call (timeout/unreachable) with no mass →
+        # record it so the caller can flag the mass-path degrade (else None → byte-identical).
+        if flame_mass is None and status_out is not None and bound:
+            status_out["flame_status"] = bound
     block = resolve_mass(
         inversion, sp_type=spec.get("sp_type") or spec.get("class"), main_id=name,
         designations=spec.get("designations"), manual_mass=manual if manual_hit else None,
@@ -227,6 +230,50 @@ def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
         return None, None, (f"component '{name or '?'}' has no resolvable mass "
                             "(give mass=<M☉>, a catalogued name, or lum=<L☉>)")
     return block["mass_solar"], block["mass_provenance"], block["note"]
+
+
+def _fetch_flame(designations):
+    """The one Gaia DR3 FLAME fetch (``catalog.gaia_astrophysical``, CR-19 bounded) shared by the mass tier and the
+    CR-27.3 luminosity tier → ``(fetched, parameters_or_None, gaia_bound_reason_or_None)``; ``fetched`` is False
+    (and nothing is called) when ``designations`` carry no Gaia DR3 id."""
+    from core import binary, catalog as catmod
+    sid = binary.gaia_source_id_from_designations(designations)
+    if not sid:
+        return False, None, None
+    ga = catmod.gaia_astrophysical(source_id=sid)
+    if not isinstance(ga, dict):
+        return True, None, None
+    params = ga.get("parameters")
+    return True, (params if isinstance(params, dict) else None), ga.get("gaia_bound_reason")   # malformed → a miss
+
+
+_FLAME_BOUND_VERB = {"timeout": "timed out", "unreachable": "was unreachable"}
+
+
+def flame_fetch_phrase(status):
+    """CR-27.3 (Q8): the one wording for a bounded FLAME fetch in an error / note — "the Gaia FLAME fetch timed out"
+    (the CR-19 status stays greppable on the ``flame_status`` key)."""
+    return f"the Gaia FLAME fetch {_FLAME_BOUND_VERB.get(status, status)}"
+
+
+def flame_luminosity(designations, status_out=None):
+    """CR-27.3: Gaia DR3 FLAME's luminosity (``lum_flame``, L☉) for a star → ``(lum_or_None, status_or_None)``.
+
+    Reuses the mass tier's fetch when ``status_out`` (that call's side channel) records one; else one bounded
+    ``catalog.gaia_astrophysical`` call (CR-19 discipline — the same function as the mass tier). No Gaia DR3 id in
+    ``designations`` → ``(None, None)`` and no fetch. ``status`` is the CR-19 ``gaia_bound_reason`` (``timeout`` /
+    ``unreachable``) when the fetch was bounded. The luminosity is REPORTED only — never inverted into a mass
+    (CR-27 rulings 7 / 9(a): FLAME computes L for some stars it declines to fit a mass for)."""
+    if status_out is not None and status_out.get("_flame_fetched"):
+        return status_out.get("_lum_flame"), status_out.get("_lum_flame_status")
+    try:
+        _fetched, params, bound = _fetch_flame(designations)
+    except Exception:
+        return None, None
+    lf = (params or {}).get("lum_flame")
+    if smt.is_positive_finite(lf):
+        return lf, None
+    return None, bound
 
 
 def recompute_sma_kepler3(sma, sel_mtot, pref_mtot):

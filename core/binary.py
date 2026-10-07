@@ -273,11 +273,15 @@ def _resolve_binary_identity(star, ra, dec, source_id):
              "hip": None}
     gaia_status = None                                  # CR-19: set if the coords Gaia-TAP call is bounded
     if star:
-        sl = databases.compute_simbad_lookup(star)
+        sl, via_retry = databases.simbad_lookup_ex(star)
         if "error" in sl:
             if ra is None or dec is None:
                 return None, sl["error"], None
         else:
+            if via_retry:
+                # CR-27 (WB MSG 346): resolved only through CR-27.1's zero-flux retry (no spectral type, so no
+                # primary mass) — a private marker binary_orbit pops before ``ident`` is emitted.
+                ident["_zero_flux_retry"] = True
             desig = sl.get("designations") or {}
             ident.update({
                 "main_id": sl.get("main_id"), "ra": sl.get("ra"), "dec": sl.get("dec"),
@@ -339,9 +343,29 @@ def _apply_binary_masses(comp, bmass):
     return comp
 
 
-def _nss_two_body_solutions(source_id, sp_type, plx_fallback):
+_NOTE_M1_UNKNOWN = ("companion mass not computed — SIMBAD holds no spectral type for this object (a "
+                    "multiple-system entry?), so the primary mass is unknown")
+
+
+def _m1_unknown_companion(method):
+    """CR-27: the companion block for an orbit whose primary mass is unknown (no masses, the caveat)."""
+    return {"method": method, "m1_solar": None, "m2_solar": None, **classify_companion(None),
+            "caveat": _NOTE_M1_UNKNOWN}
+
+
+def _m1_decodes(sp_type):
+    """True when ``m1_from_spectral_type`` would decode a mass (not its 1.0 M☉ default)."""
+    return _parse_spectral_class(sp_type or "")[0] in _MS_MASS_ANCHORS
+
+
+def _nss_two_body_solutions(source_id, sp_type, plx_fallback, m1_unknown=False):
     """Gaia NSS two_body_orbit solutions for one source_id, each with a companion-mass estimate
-    plus the independent Gaia binary_masses cross-check (§3.3) where Gaia derived it."""
+    plus the independent Gaia binary_masses cross-check (§3.3) where Gaia derived it.
+
+    CR-27 (WB MSG 346): ``m1_unknown`` (an object resolved only through CR-27.1's zero-flux retry) → the
+    m1-dependent astrometric / SB1 companion masses are left null with a caveat — never computed on the
+    1.0 M☉ default, which the stability selection's tier 1 would take as a real mass. Period and elements
+    are kept; SB2 (q = K1/K2, no m1) is unchanged."""
     from core import catalog
     res = catalog.gaia_tap(adql=("SELECT * FROM gaiadr3.nss_two_body_orbit "
                                  f"WHERE source_id={source_id}"))
@@ -354,7 +378,7 @@ def _nss_two_body_solutions(source_id, sp_type, plx_fallback):
         period = row.get("period")
         ecc = row.get("eccentricity")
         plx = row.get("parallax") or plx_fallback
-        comp = None
+        comp, placeholder = None, None
         A, B, F, G = (row.get("a_thiele_innes"), row.get("b_thiele_innes"),
                       row.get("f_thiele_innes"), row.get("g_thiele_innes"))
         k1 = row.get("semi_amplitude_primary")
@@ -364,6 +388,10 @@ def _nss_two_body_solutions(source_id, sp_type, plx_fallback):
                 comp = {"method": "SB2", "class": "stellar", "low_significance": False,
                         "mass_ratio_q": (k1 / k2 if k2 else None),
                         "caveat": "double-lined (SB2): both components luminous → stellar; q = K1/K2"}
+            elif m1_unknown and all(v is not None for v in (A, B, F, G)) and period and plx:
+                placeholder = "astrom"
+            elif m1_unknown and k1 and period:
+                placeholder = "spec-min"
             elif all(v is not None for v in (A, B, F, G)) and period and plx:
                 cm = companion_mass_from_thiele_innes(A, B, F, G, plx, period / 365.25, m1)
                 comp = {**cm, **classify_companion(cm["m2_solar"], cm["a0_mas"])}
@@ -372,7 +400,9 @@ def _nss_two_body_solutions(source_id, sp_type, plx_fallback):
                 comp = {**cm, **classify_companion(cm["m2_solar"])}
         except ValueError:
             comp = None
-        comp = _apply_binary_masses(comp, bmass)
+        comp = _apply_binary_masses(comp, bmass)         # an m1-free Gaia binary_masses m2 still FILLS (CR-27)
+        if comp is None and placeholder:                 # keep Gaia's own m1 / m2 cross-check block on it (CP4)
+            comp = _apply_binary_masses(_m1_unknown_companion(placeholder), bmass)
         out.append({
             "source": "gaia-nss:two_body_orbit",
             "solution_type": row.get("nss_solution_type"),
@@ -628,8 +658,11 @@ def multiplicity_summary(star=None, source_id=None):
     return out
 
 
-def _sb9_solutions(ra, dec, sp_type):
-    """SB9 orbits for the system at (ra, dec): cone B/sb9/main → Seq → B/sb9/orbits."""
+def _sb9_solutions(ra, dec, sp_type, m1_unknown=False):
+    """SB9 orbits for the system at (ra, dec): cone B/sb9/main → Seq → B/sb9/orbits.
+
+    CR-27: ``m1_unknown`` (a zero-flux-retry object whose spectral type gives no mass) → an SB1 row whose own
+    ``Sp1`` decodes no mass either gets null masses + the caveat, never the 1.0 M☉ default."""
     from core import catalog
     main = catalog.vizier_query(catalog="B/sb9/main", cone=f"{ra} {dec} {_SB9_CONE_DEG}")
     if "error" in main:
@@ -639,6 +672,7 @@ def _sb9_solutions(ra, dec, sp_type):
     m0 = main["rows"][0]
     seq = m0.get("Seq")
     m1 = m1_from_spectral_type(sp_type or m0.get("Sp1"))
+    m1_unknown = m1_unknown and not _m1_decodes(sp_type or m0.get("Sp1"))
     # VizieR needs the leading "=" for an exact NUMERIC match ("=766"); a bare "766" matches nothing
     # (verified 2026-08-22: `Seq = 766` → 0 rows, `Seq:=766` → Spica's orbit Per=4.0145). The `Seq:=…`
     # passthrough form emits {"Seq": "=766"}. (`_parse_vizier_filters` drops the "=" for a plain `=`
@@ -657,6 +691,8 @@ def _sb9_solutions(ra, dec, sp_type):
                 comp = {"method": "SB2", "class": "stellar", "low_significance": False,
                         "mass_ratio_q": (k1 / k2 if k2 else None),
                         "caveat": "double-lined (SB2): both components luminous → stellar; q = K1/K2"}
+            elif k1 and per and m1_unknown:
+                comp = _m1_unknown_companion("spec-min")
             elif k1 and per:
                 cm = companion_mass_from_sb1(k1, per, e or 0.0, m1)
                 comp = {**cm, **classify_companion(cm["m2_solar"])}
@@ -769,6 +805,7 @@ def binary_orbit(star=None, ra=None, dec=None, source_id=None):
     # companion-mass derivation (`mass_sp`), keeping the queried star's identity echo (additive `primary`
     # + `mass_resolved_via_primary` markers). Coordinates stay the queried secondary's, so the SAME orbit
     # solutions are found — only the companion m1/m2 change. Stays a RAW reporter: no catalog, sp-type only.
+    zero_flux = bool(ident.pop("_zero_flux_retry", False))     # CR-27: never emitted
     mass_sp = ident.get("sp_type")
     if _secondary_needs_primary_sp(ident):
         from core import databases
@@ -782,18 +819,22 @@ def binary_orbit(star=None, ra=None, dec=None, source_id=None):
             mass_sp = psl.get("sp_type")
 
     route_tried, solutions, route_errors = [], [], []
+    # CR-27: a zero-flux-retry object whose spectral type decodes no primary mass → no m1-dependent mass
+    m1_unknown = zero_flux and not _m1_decodes(mass_sp)
 
     if ident.get("gaia_source_id"):
         route_tried.append("gaia-nss:two_body_orbit")
         nss, nss_err, nss_status = _nss_two_body_solutions(
-            ident["gaia_source_id"], mass_sp, ident.get("parallax_mas"))
+            ident["gaia_source_id"], mass_sp, ident.get("parallax_mas"),
+            m1_unknown=m1_unknown)
         solutions.extend(nss)
         if nss_err:
             route_errors.append(f"gaia-nss: {nss_err}")
         gaia_status = _worse_gaia_status(gaia_status, nss_status)   # CR-19
 
     route_tried.append("sb9")
-    sb9, sb9_err = _sb9_solutions(ident["ra"], ident["dec"], mass_sp)
+    sb9, sb9_err = (_sb9_solutions(ident["ra"], ident["dec"], mass_sp, m1_unknown=True) if m1_unknown
+                    else _sb9_solutions(ident["ra"], ident["dec"], mass_sp))
     solutions.extend(sb9)
     if sb9_err:
         route_errors.append(f"sb9: {sb9_err}")

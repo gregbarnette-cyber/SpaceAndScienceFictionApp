@@ -141,9 +141,9 @@ def debris_disk(star=None, source_id=None, ra=None, dec=None):
     import core.catalog as catalog
     from core import databases
 
-    main_id, teff = None, None
+    main_id, teff, via_retry = None, None, False
     if star:
-        sl = databases.compute_simbad_lookup(star)
+        sl, via_retry = databases.simbad_lookup_ex(star)
         if "error" in sl:
             return _route_error(sl["error"], ["simbad"])
         ra, dec, teff, main_id = sl.get("ra"), sl.get("dec"), sl.get("teff"), sl.get("main_id")
@@ -182,6 +182,13 @@ def debris_disk(star=None, source_id=None, ra=None, dec=None):
             out["route_errors"] = errs
         return out
 
+    # CR-27 (WB MSG 346): an object that resolves only through CR-27.1's zero-flux retry (a multiple-system entry
+    # such as '*  61 Cyg') returned "No results found" before — never give it the 5778 K Teff default below.
+    if via_retry and teff is None:
+        return _route_error(
+            f"debris-disk: '{main_id}' has no Teff in SIMBAD and no flux row (a multiple-system entry?) — "
+            f"the W4 upper limit needs the star's Teff; query a component (e.g. '{main_id} A')",
+            route_tried + ["simbad"])
     # Non-detection → per-star upper limit (never null).
     ul = _wise_upper_limit(catalog, ra, dec, teff)
     return {"star": main_id, "components": [], **ul,

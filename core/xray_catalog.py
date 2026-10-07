@@ -971,7 +971,11 @@ def resolve_star_wind_inputs(identity, supplied, *, catalog=None, allow_network=
         else:
             inp.measured_miss_not_authoritative = True
     if not hit and cand and not identity.get("sl_failed"):
-        rec, st = (_identity_lookup(cand) if allow_network else (None, None))
+        # CR-27.4: the --star identity step already asked SIMBAD for this same candidate (a_candidate(main_id)) —
+        # reuse its answer (one lookup per call); offline (allow_network False) it is ignored, as the call would be.
+        pre = identity.get("a_prefetch") or {}
+        ans = pre.get("answer") if pre.get("candidate") == cand else None
+        rec, st = ((ans if ans is not None else _identity_lookup(cand)) if allow_network else (None, None))
         if allow_network:
             inp.a_record = (rec, st)                    # CR-24 reuses it (the head → A record for the velocity)
         if rec and swt.collapse_ws(rec.get("main_id")) != swt.collapse_ws(identity.get("main_id")):

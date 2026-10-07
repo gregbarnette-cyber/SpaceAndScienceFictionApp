@@ -182,6 +182,11 @@ def _wind_echo(inputs, prov):
     return echo
 
 
+# The β/L message — the FROZEN generator's own literal, shared here so callers (CR-27.3's luminosity_status) compare
+# against one constant; tests/test_cr27_exclusion.py pins it equal to the frozen generator's text.
+BETA_LUM_ERROR = "--luminosity-lsun must be > 0 when --beta ≠ 0."
+
+
 def standoff_arg_error(luminosity_lsun=None, mass_loss_msun_yr=None, wind_state=None, dial=None,
                        calibration_au=_KUIPER_EDGE_AU, alpha=1.0 / 3.0, beta=0.0, gamma=0.0):
     """CR-26 (M-6) — the FROZEN generator's argument checks, in its order and with its messages, WITHOUT the
@@ -195,7 +200,7 @@ def standoff_arg_error(luminosity_lsun=None, mass_loss_msun_yr=None, wind_state=
     if alpha < 0 or beta < 0 or gamma < 0:
         return {"error": "Scaling exponents (--alpha/--beta/--gamma) must be ≥ 0."}
     if beta != 0.0 and (luminosity_lsun is None or luminosity_lsun <= 0):
-        return {"error": "--luminosity-lsun must be > 0 when --beta ≠ 0."}
+        return {"error": BETA_LUM_ERROR}
     if mass_loss_msun_yr is not None:
         if mass_loss_msun_yr <= 0:
             return {"error": "--mass-loss-msun-yr must be > 0."}
@@ -284,7 +289,7 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                                otypes=None, wind_class_provenance=None, wind_otype=None,
                                wind_class_note=None, wind_otype_source=None, wind_state_binned=None,
                                wind_model=None, mass_loss_tier=None, cr26_notes=None, cr26_flags=None,
-                               ism=None):
+                               ism=None, luminosity_provenance=None):
     """CR-22 two-layer boundary: the unchanged canon STANDOFF (the FROZEN
     ``compute_exclusion_boundary`` above) + the research-grade physical WALL
     (``exclusion_wall.compute_wall``), with the four-value domain classifier + free-harbor guard.
@@ -300,8 +305,15 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     ``compute_exclusion_boundary`` — this function never re-derives ``r_ex``; it only wraps it and
     adds the additive wall/domain/echo fields. Returns the result dict, or — only on the main_sequence /
     evolved domains, and only for a **positive** mass — the frozen generator's curated ``{"error": …}``
-    (out-of-band exponents, non-positive dial/calibration, ``β ≠ 0`` with L ≤ 0, ``mass_loss_msun_yr ≤ 0``
-    or an unknown ``wind_state``); windless / unmodeled bodies return before any of that validation.
+    (out-of-band exponents, non-positive dial/calibration, ``β ≠ 0`` with L ≤ 0 **or no luminosity at all**,
+    ``mass_loss_msun_yr ≤ 0`` or an unknown ``wind_state``); windless / unmodeled bodies return before any of that
+    validation.
+
+    **CR-27.3 (luminosity).** ``luminosity_lsun`` is the caller's best-available luminosity or ``None`` when none is
+    known; the with-standoff result echoes **that** value (never the generator's substituted 1.0) beside
+    ``luminosity_provenance`` (the caller's tag — ``manual`` / ``regions_bc`` / ``gaia_flame`` /
+    ``spectral_type_table`` / ``object_preset`` — ``None`` when the luminosity is ``None``). Paths with no standoff
+    (windless, unmodeled, evolved-no-mass) emit neither key.
 
     **Mass is NOT validated here.** A ``None``, non-positive or NaN ``mass_msun`` takes the null-standoff
     branch (the honest evolved-no-mass case), and +inf reaches the frozen generator unchecked. Validating a
@@ -419,9 +431,11 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
     standoff = None
     result = dict(base)
     if mass_msun is not None and mass_msun > 0:
+        # CR-27.3: the luminosity passes through as given — the FROZEN generator itself refuses β ≠ 0 with no
+        # luminosity (its own message, its own check order) and uses its internal 1.0 only where β = 0 ignores L.
         stand = compute_exclusion_boundary(
             mass_msun=mass_msun,
-            luminosity_lsun=(luminosity_lsun if luminosity_lsun is not None else 1.0),
+            luminosity_lsun=luminosity_lsun,
             mass_loss_msun_yr=st_rate, wind_state=st_ws, dial=dial,
             calibration_au=calibration_au, alpha=alpha, beta=beta, gamma=gamma,
             scan_alpha=scan_alpha, object_name=object_name)
@@ -432,6 +446,10 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
                   "forcing_class", "r_ex_au_alpha_third", "r_ex_au_alpha_half"):
             if k in stand:
                 result[k] = stand[k]
+        # CR-27.3: report the caller's luminosity (None when unknown) — never the generator's substituted 1.0 —
+        # with its provenance beside it (the key keeps its position; at β = 0 the standoff does not use L).
+        result["luminosity_lsun"] = luminosity_lsun
+        result["luminosity_provenance"] = luminosity_provenance if luminosity_lsun is not None else None
         result["standoff_au"] = standoff
         if domain == ew.EVOLVED:
             result["standoff_note"] = _EVOLVED_STANDOFF_NOTE

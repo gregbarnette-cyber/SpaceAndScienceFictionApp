@@ -11,7 +11,7 @@ import unittest
 from core import exclusion_boundary as eb
 from core import exclusion_system as es
 from core import exclusion_wall as ew
-from tests._cr24strip import strip
+from tests._cr24strip import cr27_normalise, strip
 from tests._queryharness import run_query_inproc
 
 _FIX = os.path.join(os.path.dirname(__file__), "fixtures", "cr31_no_wind_speed_baseline.json")
@@ -192,7 +192,10 @@ class Cr31ByteIdentityTest(unittest.TestCase):
                 code, payload, err = run_query_inproc(*case["args"])
                 self.assertEqual(code, case["exit"])
                 # from CR-24 (stage 3) on: CR-24's additive keys are stripped by name (the shared A0 helper)
-                self.assertEqual(strip(json.loads(json.dumps(payload, default=str))), case["payload"])
+                # from CR-27 on: CR-27's additive keys asserted + dropped (the baseline is kept, not re-recorded)
+                got, want = cr27_normalise(self, case["args"], strip(json.loads(json.dumps(payload, default=str))),
+                                           case["payload"])
+                self.assertEqual(got, want)
 
 
 if __name__ == "__main__":

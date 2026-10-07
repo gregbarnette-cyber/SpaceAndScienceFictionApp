@@ -241,8 +241,8 @@ def _cr24_lookup(c, comps, n_star_comps):
         return c["_cr24_vel_res"]
     plan = c["_cr24_vel"]
     if plan["role"] == "head":
-        vel, kind, _arec = iv.target_velocity(plan["target"],
-                                              reuse=getattr(c.get("wind_inputs"), "a_record", None))
+        reuse = plan.get("reuse") or getattr(c.get("wind_inputs"), "a_record", None)    # CR-27.4 first
+        vel, kind, _arec = iv.target_velocity(plan["target"], reuse=reuse)
         c["_cr24_a_kind"] = kind
         own_rv = bool(vel and ((vel.get("space_velocity") or {}).get("rv_source") == "own"))
         if kind == "empty" and n_star_comps >= 2 and own_rv:   # D-C1: >= 2 components, and its own RV really used
@@ -1096,7 +1096,38 @@ def _select_orbit_masses(solutions, sp_type):
     return binary.select_stability_elements(solutions, sp_type)
 
 
-def _cr26_identity(sl, *, candidate=None, sl_failed=False, component_a=False, borrow_plx=None):
+NOTE_SYSTEM_ENTRY = "resolved to component A of the multiple-system entry {head}"
+NOTE_SYSTEM_ENTRY_BOUNDARY = ("for the merged system zone use exclusion-system (or --component when no fitted orbit "
+                              "exists)")
+
+
+def resolve_star_identity(sl, star=None):
+    """CR-27.4 — the ``--star`` identity in use (the one place the decision is made; ``exclusion-boundary --star`` and
+    both ``exclusion-system`` single-body paths call it). A letterless head runs the head → A step CR-24 runs
+    (``ism_velocity.resolve_a_record``, SIMBAD's name resolver through CR-26's ``_identity_lookup``). Returns
+    ``(sl_used, system_entry_or_None, a_lookup_or_None, error_or_None)``:
+
+    - ``own`` (the main_id already names a component) → ``(sl, None, None, None)`` — no lookup;
+    - ``same`` / ``empty`` → ``(sl, None, (rec, None), None)`` — the head is the star; ``a_lookup`` is the head's
+      candidate answer, reused by CR-24 / CR-26 (one lookup per call);
+    - ``a`` (a **system entry**) → ``(A's lookup dict, {"main_id": head, "component_used": A}, None, None)`` — A's
+      record is used as returned, even if itself letterless (no recursion);
+    - ``failed`` → ``(None, None, None, {"error", "component_a_status"})`` — never the head's values (ruling 2)."""
+    head = sl.get("main_id")
+    kind, rec, st, cand = iv.resolve_a_record(head)
+    if kind == "failed":
+        return None, None, None, {
+            "error": (f"could not resolve '{star or head}': the SIMBAD identity lookup for the A candidate "
+                      f"'{cand}' of '{head}' failed ({st}) — whether '{head}' is a multiple-system entry cannot be "
+                      "decided; retry when SIMBAD answers"),
+            "component_a_status": st}
+    if kind == "a":
+        return rec, {"main_id": head, "component_used": rec.get("main_id"),
+                     "note": NOTE_SYSTEM_ENTRY.format(head=head)}, None, None
+    return sl, None, ((rec, st) if kind in ("same", "empty") else None), None
+
+
+def _cr26_identity(sl, *, candidate=None, sl_failed=False, component_a=False, borrow_plx=None, a_prefetch=None):
     """The identity a ``--star`` component hands the CR-26 orchestrator (all SIMBAD resolution for CR-26
     happens there, behind ``allow_network``)."""
     sl = sl or {}
@@ -1111,10 +1142,10 @@ def _cr26_identity(sl, *, candidate=None, sl_failed=False, component_a=False, bo
             "ra": sl.get("ra"), "dec": sl.get("dec"), "d_pc": (1000.0 / plx if plx else None),
             "candidate": candidate if candidate is not None else (None if component_a else
                                                                   xray_catalog.a_candidate(main_id)),
-            "sl_failed": sl_failed, "component_a": component_a, "notes": notes}
+            "sl_failed": sl_failed, "component_a": component_a, "notes": notes, "a_prefetch": a_prefetch}
 
 
-def _single_body_component(sl, catalog, star, status_out=None):
+def _single_body_component(sl, catalog, star, status_out=None, a_lookup=None):
     """Resolve a single / secondary / wide-member star to ONE component via the CR-11.2 mass chain,
     wiring the bolometric-L inversion (CR-13.2 / Q2) when a **main-sequence** star has no
     manual/catalog/FLAME mass, and leaving a lone **out-of-domain** body's mass unresolved for
@@ -1141,18 +1172,25 @@ def _single_body_component(sl, catalog, star, status_out=None):
             # L-inversion, so re-issuing the Gaia TAP call would be redundant network I/O.
             mass, prov, note = _resolve_component_mass(spec, catalog, allow_flame=False)
         if mass is None:
-            return {"error": (f"could not resolve a mass for '{star}' (SIMBAD: {name}) — no catalogued "
-                              "mass, no Gaia FLAME, and no usable luminosity for the MS inversion; pass "
-                              "--star-mass-catalog or use --component with mass=<M☉>")}
+            # CR-27.3 (Q8): a BOUNDED FLAME fetch says so and carries flame_status — never "no Gaia FLAME"
+            fs = (status_out or {}).get("flame_status")
+            err = {"error": (f"could not resolve a mass for '{star}' (SIMBAD: {name}) — no catalogued "
+                             "mass, " + (stellar_mass.flame_fetch_phrase(fs) if fs else "no Gaia FLAME")
+                             + ", and no usable luminosity for the MS inversion; pass "
+                             "--star-mass-catalog or use --component with mass=<M☉>")}
+            if fs:
+                err["flame_status"] = fs
+            return err
     comp = {"id": name, "name": sl.get("main_id"), "sp_type": sp, "class": class_tag,
             # CR-25 (contract 3(b)): the primary otype rides on the component (compose's classify
             # previously saw otype=None — its WR/AGB-by-otype now agrees with the domain above)
             "otype": sl.get("otype"),
             "designations": sl.get("designations"),
             # CR-26: the resolved SIMBAD record the orchestrator needs (resolved at the entry point)
-            "_cr26_identity": _cr26_identity(sl),
-            # CR-24: its own record's velocity (a letterless head takes its A record); no fallback (Q3)
-            "_cr24_vel": {"role": "head", "target": sl.get("main_id")}}
+            "_cr26_identity": _cr26_identity(sl, a_prefetch=a_prefetch(sl.get("main_id"), a_lookup)),
+            # CR-24: its own record's velocity (a letterless head takes its A record); no fallback (Q3).
+            # CR-27.4: the identity step's candidate answer is reused (one SIMBAD identity lookup per call).
+            "_cr24_vel": {"role": "head", "target": sl.get("main_id"), "reuse": a_lookup}}
     # CR-25.2: the FULL otype list — fetched only for an MS K/M body, and only now the mass resolved
     sw = resolve_star_wind(sp, sl.get("otype"), sl.get("main_id"), class_tag=class_tag)
     if sw["otypes"] is not None:
@@ -1168,6 +1206,27 @@ def _single_body_component(sl, catalog, star, status_out=None):
         if note:
             comp["mass_note"] = note    # CR-23.2 §2c (review F4): carry the resolver caution
     return comp, mass, domain, class_note
+
+
+def a_prefetch(main_id, a_lookup):
+    """CR-27.4: the identity step's answer for ``main_id``'s A candidate, keyed by that candidate string — CR-26's
+    candidate lookup (L974) reuses it only for the SAME candidate (one SIMBAD identity lookup per call)."""
+    if a_lookup is None:
+        return None
+    return {"candidate": xray_catalog.a_candidate(main_id), "answer": a_lookup}
+
+
+def _with_system_entry(err, sysent):
+    """CR-27.4 (one rule, both subcommands): a system entry's errors carry the non-null ``system_entry``."""
+    if sysent:
+        err = dict(err, system_entry=dict(sysent))
+    return err
+
+
+def _note_system_entry(notes, meta, sysent):
+    if sysent:
+        meta["system_entry"] = dict(sysent)
+        notes.append(sysent["note"])
 
 
 def _resolve_system_from_star(star, catalog):
@@ -1189,20 +1248,28 @@ def _resolve_system_from_star(star, catalog):
 
     # CR-13.1: a directly-named secondary (Sirius B → * alf CMa B) or an off-MS body → single body.
     if _is_secondary_component(main_id, sl.get("otype"), sl.get("sp_type")):
+        # CR-27.4: the branch is chosen on the head (Q9); a system entry's single body is its component A
+        sl_used, sysent, a_lookup, aerr = resolve_star_identity(sl, star=star)
+        if aerr:
+            return aerr
         _sf = {}                                          # CR-23.2: capture a bounded single-body FLAME degrade
-        built = _single_body_component(sl, catalog, star, status_out=_sf)
+        built = _single_body_component(sl_used, catalog, star, status_out=_sf, a_lookup=a_lookup)
         if isinstance(built, dict) and "error" in built:
-            return built
+            return _with_system_entry(built, sysent)
         comp, mass, domain, class_note = built
+        main_id = sl_used.get("main_id")
         if mass is None and domain != ew.MAIN_SEQUENCE:
+            _fs = _sf.get("flame_status")                 # CR-27.3 (Q8): a bounded fetch says so
             notes.append(f"'{star}' is a lone {class_note or domain} component with no resolvable mass "
-                         "(no catalog row, no Gaia FLAME) — the off-MS guard gives r_ex=null; pass "
-                         "--star-mass-catalog for its mass")
+                         "(no catalog row, " + (stellar_mass.flame_fetch_phrase(_fs) if _fs else "no Gaia FLAME")
+                         + ") — the off-MS guard gives r_ex=null; pass --star-mass-catalog for its mass")
         else:
             notes.append(f"'{star}' resolved to the single component {main_id}")
         # CR-23.2 3-tuple: surface flame_status (else {} → byte-identical to the pre-CR-23 meta);
         # CR-25: + a bounded otype-list degrade
-        return [comp], notes, {k: _sf[k] for k in ("flame_status", "otype_status") if _sf.get(k)}
+        meta = {k: _sf[k] for k in ("flame_status", "otype_status") if _sf.get(k)}
+        _note_system_entry(notes, meta, sysent)
+        return [comp], notes, meta
 
     # binary-orbit → real-ratio-preferring stability elements (CR-13.3)
     from core import binary
@@ -1216,12 +1283,17 @@ def _resolve_system_from_star(star, catalog):
     wide_member = bool(sel and sel.get("sma_au") and sel["sma_au"] > _WIDE_SMA_AU
                        and "equal-mass assumption" in (sel.get("mass_basis") or ""))
     if sel is None or wide_member:
+        # CR-27.4: the single body of a system entry (GJ 65, 61 Cyg) is its component A; a failed A lookup errors
+        sl_used, sysent, a_lookup, aerr = resolve_star_identity(sl, star=star)
+        if aerr:
+            return aerr
         _sf = {}                                          # CR-23.2: capture a bounded single-body FLAME degrade
-        built = _single_body_component(sl, catalog, star, status_out=_sf)
+        built = _single_body_component(sl_used, catalog, star, status_out=_sf, a_lookup=a_lookup)
         if isinstance(built, dict) and "error" in built:
             if sel is None and sel_note:
-                built = {"error": f"{built['error']} (no usable close-companion orbit: {sel_note})"}
-            return built
+                # CR-27: keep the error's marker keys (flame_status; system_entry is attached by the caller)
+                built = {**built, "error": f"{built['error']} (no usable close-companion orbit: {sel_note})"}
+            return _with_system_entry(built, sysent)
         comp, _mass, _domain, _cn = built
         notes.append(sel_note if sel is None else
                      "only a wide hierarchical bond resolved (no close companion) — single body")
@@ -1230,6 +1302,7 @@ def _resolve_system_from_star(star, catalog):
             _meta["flame_status"] = _sf["flame_status"]
         if _sf.get("otype_status"):                        # CR-25: + a bounded otype-list degrade
             _meta["otype_status"] = _sf["otype_status"]
+        _note_system_entry(notes, _meta, sysent)
         return [comp], notes, _meta
 
     # binary: primary A + companion B, BOTH routed through the per-component mass chain (CR-13.2).
@@ -1339,11 +1412,16 @@ def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=
     (with a ``resolution`` note block) or a curated ``{"error": str}``.
     """
     from core import stellar_wind_tables
+    cr27 = {}
     try:
-        return _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, alpha, calibration_au,
-                                         dial, beta, gamma, system_wind, wind_state, prot_days)
+        res = _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, alpha, calibration_au,
+                                        dial, beta, gamma, system_wind, wind_state, prot_days, cr27)
     except stellar_wind_tables.Cr26DataError as e:       # a corrupt / missing WB data file (CR-26 §1)
-        return {"error": str(e)}
+        res = {"error": str(e)}
+    # CR-27.4 (one rule, both subcommands): once a system entry resolved, every error of the call carries it
+    if cr27.get("system_entry") and isinstance(res, dict) and "error" in res:
+        res.setdefault("system_entry", cr27["system_entry"])
+    return res
 
 
 def _h4_inject(spec):
@@ -1371,7 +1449,7 @@ def _h4_inject(spec):
 
 
 def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, alpha, calibration_au, dial, beta,
-                              gamma, system_wind, wind_state, prot_days):
+                              gamma, system_wind, wind_state, prot_days, cr27=None):
     catalog = stellar_mass_tables.load_mass_catalog(star_mass_catalog)
     if isinstance(catalog, dict) and "error" in catalog:
         return {"error": catalog["error"]}
@@ -1389,6 +1467,8 @@ def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, a
         if isinstance(resolved, dict) and "error" in resolved:
             return resolved
         components, notes, star_meta = resolved
+        if cr27 is not None:
+            cr27["system_entry"] = star_meta.get("system_entry")
     elif component_specs:
         components = []
         for i, raw in enumerate(component_specs):
@@ -1462,4 +1542,7 @@ def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, a
                 result[_k] = star_meta[_k]
     if component_specs and comp_flame and "error" not in result:
         result.update(comp_flame)                        # CR-19 (MSG 209): --component FLAME degrade
+    if "error" not in result:
+        # CR-27.4 (Q3): on every result — the single-body system entry's {main_id, component_used, note}, else null
+        result["system_entry"] = (star_meta.get("system_entry") if star else None)
     return result

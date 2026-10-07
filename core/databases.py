@@ -6,6 +6,7 @@ import csv
 import math
 import os
 import re
+import statistics
 import threading
 import time
 
@@ -215,7 +216,7 @@ def _simbad_gould_block(designations):
 
 
 def compute_simbad_lookup(star_name: str) -> dict:
-    """Query SIMBAD for a star by name or designation.
+    """Query SIMBAD for a star by name or designation — ``simbad_lookup_ex(star_name)[0]``.
 
     Returns a dict with keys:
         main_id      — str: SIMBAD primary identifier
@@ -232,6 +233,42 @@ def compute_simbad_lookup(star_name: str) -> dict:
 
     Returns {"error": str} on any failure (no match, network error, etc.).
     """
+    res, via_retry = _simbad_lookup_impl(star_name)
+    _LOOKUP_TLS.via_retry = via_retry
+    return res
+
+
+# CR-27 (WB MSG 346): whether the last compute_simbad_lookup on this thread resolved only through CR-27.1's
+# zero-flux retry. Internal — never an emitted field (simbad-lookup's shape is unchanged).
+_LOOKUP_TLS = threading.local()
+
+
+def simbad_lookup_ex(star_name: str):
+    """``(compute_simbad_lookup(star_name), via_retry)`` — ``via_retry`` True when the record resolved only
+    through CR-27.1's zero-flux retry (an object that returned "No results found" before CR-27.1). Read by the
+    callers whose missing-field fallback must not fire on such an object (debris-disk's Teff, the binary NSS
+    m1). Goes through the module attribute, so a test that patches ``compute_simbad_lookup`` still applies
+    (the flag then stays False). The flag is per thread: call this on the thread that runs the lookup (never
+    through ``_bounded_call`` / ``run_in_thread`` — the flag would read False there)."""
+    _LOOKUP_TLS.via_retry = False
+    res = compute_simbad_lookup(star_name)
+    return res, bool(getattr(_LOOKUP_TLS, "via_retry", False))
+
+
+def _simbad_lookup_impl(star_name: str):
+    """The lookup body → ``(result_dict, via_retry)``.
+
+    CR-27.1: astroquery builds the ``V`` field as an INNER JOIN on SIMBAD's ``allfluxes`` (the only allfluxes
+    field requested), which drops an object with no flux row in any band (the ``*  61 Cyg`` system entry).
+    When the main query answers zero rows but ``query_objectids`` resolves the name, the query is re-asked
+    without ``V`` (``vmag`` then null). An object that resolves today takes the unchanged first query, so its
+    fields are byte-identical; an unknown name makes the same two calls as before.
+
+    CR-27.2: the per-measurement ``mesfe_h`` fields (``teff``, ``fe_h`` — the only ``mesfe_h.*`` values
+    surfaced) read row 0 when it holds a value (byte-identical), else the median of that field's non-null
+    values across the result's rows (an even count → the mean of the two central values), else None. The
+    rows carry no ``ORDER BY`` (SIMBAD's order); the median does not depend on it.
+    """
     from astroquery.simbad import Simbad
 
     try:
@@ -243,19 +280,28 @@ def compute_simbad_lookup(star_name: str) -> dict:
             custom_simbad = _make_simbad("sp_type", "plx_value", "V", "mesfe_h", "otype")
             result     = _with_retries(custom_simbad.query_object, star_name)
             ids_result = _with_retries(Simbad.query_objectids, star_name)
+            via_retry = False
+            if (result is None or len(result) == 0) and ids_result is not None and len(ids_result) > 0:
+                # CR-27.1: the name resolved but the allfluxes join dropped it (no flux row) — re-ask without V.
+                retry_simbad = _make_simbad("sp_type", "plx_value", "mesfe_h", "otype")
+                result = _with_retries(retry_simbad.query_object, star_name)
+                via_retry = True
     except Exception as e:
-        return {"error": _network_error_msg(e, "SIMBAD")}
+        return {"error": _network_error_msg(e, "SIMBAD")}, False
 
     if result is None or len(result) == 0:
-        return {"error": f"{SIMBAD_NO_RESULTS_PREFIX} '{star_name}'"}
+        return {"error": f"{SIMBAD_NO_RESULTS_PREFIX} '{star_name}'"}, False
 
-    row = result[0]
-    col_names = result.colnames
+    table = result          # the SIMBAD rows; `result` is re-bound to the output dict below
+    col_names = table.colnames
 
     def _safe(col):
+        return _safe_at(0, col)
+
+    def _safe_at(i, col):
         if col not in col_names:
             return None
-        val = row[col]
+        val = table[i][col]
         try:
             if hasattr(val, "mask") and val.mask:
                 return None
@@ -297,7 +343,22 @@ def compute_simbad_lookup(star_name: str) -> dict:
         except (ValueError, ZeroDivisionError):
             pass
 
-    teff_raw = _safe("mesfe_h.teff")
+    def _per_measurement(col):
+        """CR-27.2: row 0's value when it holds one, else the median of the field's non-null rows, else None."""
+        v0 = _safe(col)
+        if v0 is not None:
+            return v0
+        vals = []
+        for i in range(1, len(table)):
+            v = _safe_at(i, col)
+            if v is not None:
+                try:
+                    vals.append(float(v))
+                except (ValueError, TypeError):
+                    pass
+        return statistics.median(vals) if vals else None
+
+    teff_raw = _per_measurement("mesfe_h.teff")
     teff = None
     if teff_raw is not None:
         try:
@@ -316,7 +377,7 @@ def compute_simbad_lookup(star_name: str) -> dict:
     # Metallicity [Fe/H] from the mesfe_h table (already fetched for teff). Additive
     # key — None when SIMBAD has no value. Consumed by the R3-V2 real-anchor
     # metallicity-conditioned generation path (occurrence_by_metallicity).
-    feh_raw = _safe("mesfe_h.fe_h")
+    feh_raw = _per_measurement("mesfe_h.fe_h")
     fe_h = None
     if feh_raw is not None:
         try:
@@ -393,7 +454,7 @@ def compute_simbad_lookup(star_name: str) -> dict:
     _ot = _safe("otype")
     result["otype"] = str(_ot).strip() if _ot is not None else None
     result["multiplicity"] = _simbad_multiplicity_block(result["otype"])
-    return result
+    return result, via_retry
 
 
 # SIMBAD otype codes that imply multiplicity, mapped to a coarse basis hint. `**` is the generic

@@ -893,13 +893,12 @@ _OBJECT_WIND_CLASS = {"sun": "solar", "m-dwarf": "active", "o-star": "o_hot",
 
 
 def cmd_exclusion_boundary(args):
-    try:
-        res = _exclusion_boundary_result(args)
-    except stellar_wind_tables.Cr26DataError as e:           # a corrupt / missing WB data file (CR-26 §1)
-        res = {"error": str(e)}
+    res = _exclusion_boundary_result(args)                     # (a CR-26 data error is converted in there — CR-27)
     _cr26_stderr(res)
     if isinstance(res, dict):
         res.pop("_unused_wind_state", None)
+        if "error" not in res:
+            res.setdefault("system_entry", None)        # CR-27.4 (Q3): on every result (a --star system entry sets it)
     _out(res)
 
 
@@ -910,6 +909,19 @@ def _cr26_attach(res, model):
 
 
 def _exclusion_boundary_result(args):
+    """CR-27.4: a ``--star`` system entry's ``system_entry`` rides on every result AND every error of that call (one
+    rule for both subcommands); ``cmd_exclusion_boundary`` sets ``system_entry: null`` on every other success."""
+    cr27 = {}
+    try:
+        res = _exclusion_boundary_core(args, cr27)
+    except stellar_wind_tables.Cr26DataError as e:      # a corrupt / missing WB data file (CR-26 §1)
+        res = {"error": str(e)}
+    if cr27.get("system_entry") and isinstance(res, dict):
+        res["system_entry"] = cr27["system_entry"]
+    return res
+
+
+def _exclusion_boundary_core(args, cr27):
     sources = [args.mass_msun is not None, bool(args.object),
                bool(args.star), bool(args.spectral_type)]
     if sum(sources) == 0:
@@ -941,8 +953,10 @@ def _exclusion_boundary_result(args):
     def _ism(main_id, model, windless=False):
         """CR-24: the --star target's velocity (a letterless head takes its A record) + its V_ISM. The lookup is
         skipped (not_run) only when --v-ism / --lb-cavity sets V_ISM on a non-measured star (Q2)."""
+        # CR-27.4: the identity step's own candidate answer first (one SIMBAD identity lookup per call)
+        reuse = cr27.get("a_lookup") or (model or {}).get("_a_record")
         vres, vel = ism_velocity.star_v_ism(
-            lambda: ism_velocity.target_velocity(main_id, reuse=(model or {}).get("_a_record"))[0],
+            lambda: ism_velocity.target_velocity(main_id, reuse=reuse)[0],
             supplied=args.v_ism, lb_cavity=getattr(args, 'lb_cavity', False), cloud=getattr(args, 'cloud', None),
             clic_max_pc=getattr(args, 'clic_max_pc', None), model=model, has_wall=not windless)
         return {"vel": vel} if windless else {"vel": vel, "vres": vres}
@@ -962,6 +976,31 @@ def _exclusion_boundary_result(args):
         row = exclusion_wall.wind_row_for(cls_kw.get("wind_class"), sp)
         return row[0] if row else None
 
+    def _pre_lum_checks():
+        """CR-27.3 (CP0 F-A7, CP2): every argument check but β/L (the luminosity is not known yet) — run before the
+        FLAME-luminosity fetch so a bad argument never costs a Gaia call (CR-26 M-6)."""
+        return _cheap(1.0)
+
+    def _resolve_lum(regions_lum, designations, st):
+        """CR-27.3: the reported luminosity — --luminosity-lsun (manual) > the regions derivation (regions_bc) > Gaia
+        DR3 FLAME lum_flame (gaia_flame) > None. Returns (lum, provenance, luminosity_status). Reported only: the
+        mass inversion never sees a manual or FLAME luminosity (rulings 7 / 9(a))."""
+        if lum is not None:
+            return lum, "manual", None
+        if regions_lum is not None:
+            return regions_lum, "regions_bc", None
+        lf, lst = stellar_mass.flame_luminosity(designations, status_out=st)
+        if lf is not None:
+            return lf, "gaia_flame", None
+        return None, None, lst
+
+    def _with_lum_status(res, lst):
+        """CR-27.3 (Q1): a bounded luminosity-tier fetch → ``luminosity_status`` on a result or on the β ≠ 0
+        luminosity error — never on an unrelated argument error (CP2)."""
+        if lst and isinstance(res, dict) and ("error" not in res or res["error"] == exclusion_boundary.BETA_LUM_ERROR):
+            res["luminosity_status"] = lst
+        return res
+
     # ── bare mass: no class info (classifier → main_sequence, no wall) ──
     if args.mass_msun is not None:
         # CR-22.6: compute_two_layer_boundary treats a non-positive mass as "no mass" (null standoff, exit 0), so the
@@ -973,7 +1012,9 @@ def _exclusion_boundary_result(args):
         if not math.isfinite(args.mass_msun):
             return {"error": "--mass-msun (or a resolved object mass) must be finite."}
         # CR-26: legacy_row with --wind-state, else none (derived in core); CR-26 inputs ignored with a note
+        # CR-27.3: no fabricated 1.0 — β ≠ 0 with no luminosity is refused inside two_layer (frozen check order)
         return two_layer(mass_msun=args.mass_msun, luminosity_lsun=lum,
+                         luminosity_provenance=("manual" if lum is not None else None),
                          mass_provenance="manual", cr26_notes=ignored26 + ignored24, **wind_kw)       # CR-23.2 §2b
 
     # ── object preset: mass/lum/wind_class from the preset (windless presets caught by classify) ──
@@ -992,6 +1033,7 @@ def _exclusion_boundary_result(args):
         # object_preset; a windless preset (brown-dwarf / rogue-planet) has no bin → null.
         _p_wc = _OBJECT_WIND_CLASS.get(key)
         return two_layer(mass_msun=m_p, luminosity_lsun=(lum if lum is not None else l_p),
+                         luminosity_provenance=("manual" if lum is not None else "object_preset"),
                          object_name=key, wind_class=_p_wc,
                          wind_class_provenance=("object_preset" if _p_wc else None),
                          mass_provenance="object_preset",              # CR-23.2 §2b (preset always has a mass)
@@ -1027,6 +1069,7 @@ def _exclusion_boundary_result(args):
                             _sup(), allow_network=False)
         notes = _cr26_ignored(args.spectral_type, dom, ignored26) + ignored24
         return _cr26_attach(two_layer(mass_msun=mass, luminosity_lsun=lum_eff,
+                                      luminosity_provenance=("manual" if lum is not None else "spectral_type_table"),
                                       sp_type=args.spectral_type, object_name=key,
                                       mass_provenance="spectral_type_table", wind_model=model, cr26_notes=notes,
                                       **_h7_cls_kw(cls_kw, model), **wind_kw), model)     # CR-23.2 §2b
@@ -1036,6 +1079,14 @@ def _exclusion_boundary_result(args):
         sl = databases.compute_simbad_lookup(args.star)
         if isinstance(sl, dict) and "error" in sl:
             return sl
+        # CR-27.4: a letterless head runs the head → A step first (every branch, --v-ism / --lb-cavity runs
+        # included); a system entry's identity, mass, regions luminosity, wind and velocity are then component A's.
+        sl, sysent, a_lookup, aerr = exclusion_system.resolve_star_identity(sl, star=args.star)
+        if aerr:
+            return aerr
+        cr27["a_lookup"] = a_lookup
+        if sysent:
+            cr27["system_entry"] = dict(sysent, note=sysent["note"] + " — " + exclusion_system.NOTE_SYSTEM_ENTRY_BOUNDARY)
         sp, ot = sl.get("sp_type"), sl.get("otype")
         # CR-25.1: honor --wind-state (was dropped here — the pre-classified domain bypassed it). The
         # DOMAIN never depends on the otype list, so branch on this identity pass; the MS branch below
@@ -1051,7 +1102,8 @@ def _exclusion_boundary_result(args):
                     "cr25_letter": detection._sp_letter(sp), "candidate": xray_catalog.a_candidate(main_id),
                     "d_pc": (1000.0 / plx if (plx and plx > 0) else None), "ra": sl.get("ra"),
                     "dec": sl.get("dec"),
-                    "mass": mass, "noncoronal_rate": _row_rate(kw, sp), "catalog": catalog}
+                    "mass": mass, "noncoronal_rate": _row_rate(kw, sp), "catalog": catalog,
+                    "a_prefetch": exclusion_system.a_prefetch(main_id, cr27.get("a_lookup"))}   # CR-27.4: reuse
 
         if dom in (exclusion_wall.WINDLESS, exclusion_wall.UNMODELED):
             return two_layer(sp_type=sp, otype=ot, object_name=args.star, cr26_notes=ignored26,
@@ -1069,10 +1121,17 @@ def _exclusion_boundary_result(args):
             _st = {}
             mass, mprov, mnote = stellar_mass.resolve_component_mass(
                 spec, catalog, allow_flame=True, status_out=_st)   # CR-23.2: capture the degrade flag
+            lum_eff, lum_prov, lum_st = None, None, None
             if mass is not None:
-                err = _cheap(lum if lum is not None else 1.0)
+                # CR-27.3: manual > FLAME (no regions_bc on the evolved path) > None; no fabricated 1.0 — β ≠ 0 with
+                # no source → the luminosity error. Resolved only with a mass (no mass → no luminosity emitted, Q4).
+                err = _pre_lum_checks()
                 if err:
                     return err
+                lum_eff, lum_prov, lum_st = _resolve_lum(None, spec["designations"], _st)
+                err = _cheap(lum_eff)
+                if err:
+                    return _with_lum_status(err, lum_st)
             # CR-26: the measured tier also applies on the evolved domain (R5); else noncoronal_row. The
             # network is used only when a letterless head's A candidate could still find a measured row (G12).
             ident = _identity(dom, mass, cls_kw)
@@ -1084,12 +1143,15 @@ def _exclusion_boundary_result(args):
             if model["mass_loss_tier"] != "measured":
                 h1_notes, h1_flags = stellar_wind.h1_carry(model)        # RG9: an H1 miss keeps its note + flag
                 model = None
-            res = two_layer(mass_msun=mass, luminosity_lsun=lum, sp_type=sp, otype=ot,
+            res = two_layer(mass_msun=mass, luminosity_lsun=lum_eff, luminosity_provenance=lum_prov,
+                            sp_type=sp, otype=ot,
                             object_name=args.star, mass_provenance=mprov, mass_note=mnote,
                             wind_model=model, cr26_notes=ignored26 + [n for n in h1_notes if n not in ignored26],
                             cr26_flags=h1_flags, ism=ism, **cls_kw, **wind_kw)
             if _st.get("flame_status") and "error" not in res:
                 res["flame_status"] = _st["flame_status"]
+            if "error" not in res:
+                _with_lum_status(res, lum_st)
             return _cr26_attach(res, model)
 
         # main sequence: CR-23.1 — resolve mass through the shared tier ladder (manual > catalog >
@@ -1101,34 +1163,48 @@ def _exclusion_boundary_result(args):
         # seed/catalog/FLAME hit deliberately shifts (the intended Option-A harmonization). (Pre-CR-23
         # this branch used the raw inversion only, ignoring the catalog + FLAME — the ε Eri
         # 42.51-vs-dossier-43.69 divergence.)
+        # CR-27.3: the regions (Teff / V / parallax) luminosity is needed ONLY for the inversion tier — a failure no
+        # longer returns before the mass ladder; its reason names the tier in the curated mass error below.
         reg = regions.compute_star_system_regions_from_simbad(sl)
-        if isinstance(reg, dict) and "error" in reg:
-            return reg
-        star_lum = reg.get("bcLuminosity")
-        if star_lum is None:
-            return {"error": f"Could not derive luminosity for '{args.star}'."}
+        reg_reason = reg["error"] if (isinstance(reg, dict) and "error" in reg) else None
+        star_lum = None if reg_reason else reg.get("bcLuminosity")
         catalog = stellar_mass_tables.load_mass_catalog(args.star_mass_catalog)
         if isinstance(catalog, dict) and "error" in catalog:
             return catalog
+        # the inversion takes the regions_bc luminosity ONLY (never --luminosity-lsun or FLAME's — rulings 7 / 9(a))
         spec = {"name": main_id, "sp_type": sp, "luminosity_lsun": star_lum,
                 "designations": stellar_mass.augment_designations(
                     sl.get("designations"), {main_id})}
         _st = {}
-        # star_lum > 0 → the inversion tier is always available, so mass is never None on the MS path.
         mass, mprov, mnote = stellar_mass.resolve_component_mass(
             spec, catalog, allow_flame=True, status_out=_st)
+        if mass is None:
+            # CR-27.3 (Q8): every tier failed — the curated mass error (never a silent wrong value)
+            fs = _st.get("flame_status")
+            err = {"error": (f"could not resolve a mass for '{args.star}' (SIMBAD: {main_id}) — tried: the mass "
+                             f"catalog, Gaia DR3 FLAME ({stellar_mass.flame_fetch_phrase(fs) if fs else 'no FLAME mass'}), and "
+                             f"the main-sequence luminosity inversion ({reg_reason or 'no usable luminosity'}); "
+                             "pass --star-mass-catalog with a row for it, or use --mass-msun <M☉> instead of "
+                             "--star")}
+            if fs:
+                err["flame_status"] = fs
+            return err
         # CR-25.2: the FULL SIMBAD otype list (the primary is `PM*` for most flare M dwarfs), fetched only
         # where it can change the bin (MS K/M) — the SAME helper exclusion-system --star uses.
         sw = exclusion_system.resolve_star_wind(sp, ot, main_id, wind_state=args.wind_state,
                                                 cw=cw)          # reuse the identity pass above
-        lum_eff = lum if lum is not None else star_lum
+        if lum is None and star_lum is None:                   # the FLAME-luminosity fetch is next: args first
+            err = _pre_lum_checks()
+            if err:
+                return err
+        lum_eff, lum_prov, lum_st = _resolve_lum(star_lum, spec["designations"], _st)
         err = _cheap(lum_eff)                                  # CR-26 M-6: before any CR-26 network call
         if err:
-            return err
+            return _with_lum_status(err, lum_st)
         model = _cr26_model(_identity(dom, mass, sw["cls_kw"]),
                             _sup({"active_otype": bool(sw["cls_kw"].get("wind_otype"))}), allow_network=True)
         notes = _cr26_ignored(sp, dom, ignored26)
-        res = two_layer(mass_msun=mass, luminosity_lsun=lum_eff,
+        res = two_layer(mass_msun=mass, luminosity_lsun=lum_eff, luminosity_provenance=lum_prov,
                         sp_type=sp, otype=ot, object_name=args.star,
                         mass_provenance=mprov, mass_note=mnote, wind_model=model, cr26_notes=notes,
                         ism=_ism(main_id, model), **_h7_cls_kw(sw["cls_kw"], model), **wind_kw)
@@ -1136,6 +1212,8 @@ def _exclusion_boundary_result(args):
             res["flame_status"] = _st["flame_status"]
         if sw["status"] and "error" not in res:              # CR-25: a bounded otype-list degrade
             res["otype_status"] = sw["status"]
+        if "error" not in res:
+            _with_lum_status(res, lum_st)
         return _cr26_attach(res, model)
     return {"error": "Provide a body: --mass-msun, --object, --star, or --spectral-type."}
 
@@ -3611,7 +3689,8 @@ def main(argv=None):
     p.add_argument("--object", help="Body preset (sun, m-dwarf, o-star, brown-dwarf, rogue-planet)")
     p.add_argument("--star", help="Resolve mass/luminosity from a star name (SIMBAD + regions)")
     p.add_argument("--spectral-type", help="Resolve mass/luminosity from a spectral type (main-sequence)")
-    p.add_argument("--luminosity-lsun", type=float, help="Body luminosity, L_sun (default 1)")
+    p.add_argument("--luminosity-lsun", type=float, help="Body luminosity, L_sun (manual override; default: the best available — the SIMBAD "
+                        "Teff/V/parallax derivation, then Gaia DR3 FLAME — else none)")
     p.add_argument("--mass-loss-msun-yr", type=float, help="Wind mass-loss rate W-dot, M_sun/yr")
     p.add_argument("--wind-state", choices=["quiet", "solar", "active", "hot"],
                    help="Wind-state preset: sets the wind_class bin (CR-25: overrides the colour default "

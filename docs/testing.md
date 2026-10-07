@@ -238,6 +238,51 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
     - `test_cr25.py`: EV Lac's walls → 3.786 `bow_shock` at Wood's 45 (A4).
     - `test_cr26_model.py`: the ⚑4 text.
 
+- **CR-27: `--star` resolution gaps (built 2026-10-07; `PHASE_CR27_PLAN.md`, `docs/integration.md` `simbad-lookup` +
+  CR-27 block).**
+  Isolation: `tests/conftest.py` gains `_cr27_identity_isolation`.
+  - For every test **not** marked `@pytest.mark.cr27_identity` (registered in `pytest.ini`),
+    `exclusion_system.resolve_star_identity` keeps the head's identity with no lookup. So the pre-CR-27 offline
+    `--star` tests keep their stubbed identities and never reach the CR-24 / CR-26 identity seams.
+  - The CR-26 socket guard now also covers `test_cr27_*`.
+  - **`test_cr27_simbad.py`** (fakes in `tests/_cr27fakes.py`):
+    - CR-27.1 — the zero-flux retry (`*  61 Cyg` → nulls, `via_retry`, call order);
+    - byte-identity of five resolving shapes against `tests/fixtures/cr27_simbad_prechange.json`, captured from the
+      **unchanged** function;
+    - an unknown name (no retry, same error); a raising retry (the network error, never "No results");
+      `compute_simbad_lookup` = `simbad_lookup_ex[0]`;
+    - CR-27.2 — the Vega shape (median Teff, row-0 [Fe/H]); VB 10 2745.0; the even count −0.06000000052154064;
+      field independence; null; row 0 wins; masked / `"--"` / `"nan"` skipped;
+    - the §1.3 callers:
+      - debris-disk's curated error at the upper-limit branch (a detection is still reported; a non-retry null
+        record keeps 5778);
+      - the binary NSS / SB9 null masses + caveat (the Gaia `binary_masses` fill kept; an undecodable `DA`; the
+        SB1-row label and class);
+      - the dossier on an all-null record; compare-stars' all-null entry; batch mode A → `zero_planet`.
+  - **`test_cr27_exclusion.py`:**
+    - CR-27.3 (stubbed SIMBAD / regions / FLAME / catalog; every r_ex recomputed through the FROZEN generator):
+      - catalog stars with no V; `regions_bc`; the FLAME mass + luminosity on one fetch; precedence;
+      - the inversion takes `regions_bc` only (EZ Aqr `--luminosity-lsun`);
+      - the evolved `gaia_flame` / null and β 0.5;
+      - the curated mass error with and without `flame_status` (both subcommands); the no-route stars;
+      - `luminosity_status` on a result / the β error, never on an argument error;
+      - no Gaia call on a bad argument; a raising fetch is not repeated;
+      - bare / `--spectral-type` / `--object` provenances; the two-layer echo; the off-MS note.
+    - CR-27.4 (`cr27_identity`, the CR-24 identity seam stubbed):
+      - GJ 65 / α Cen / 70 Oph → A, with every field equal to `--star "<A>"`;
+      - `exclusion-system` single-body A; `same` / `empty` / `own` → `system_entry` null;
+      - the failed-A error on every path, `--v-ism` / `--lb-cavity` and Luhman 16 included; composed α Cen
+        unchanged;
+      - the Q9 mirror; a letterless A record; `system_entry` on errors, including a CR-26 data error;
+      - **one identity lookup per call** (red first: 2 without the reuse);
+      - the keyed CR-26 `a_prefetch` (online / offline / another candidate) and its end-to-end hand-off.
+  - Also updated:
+    - `tests/_cr24strip.py` gains `cr27_normalise`, which the A0 (28) and CR-31 (27) snapshot tests now apply. The
+      fixtures are unchanged. It asserts `system_entry` null and provenance-beside-luminosity, and the bare
+      `--mass-msun` 1.0 → `null`.
+    - `test_query_exclusion_system.py::Cr226MassGuardCliTest` now expects `system_entry: null` on the CLI side.
+    - `test_cr26_network.py::IdentityTest::test_no_results_prefix_drift` now reads `_simbad_lookup_impl`.
+
 ## Suite-count history (moved from CLAUDE.md, 2026-09-24)
 
 The running per-CR record of how the offline suite count grew, kept verbatim from the paragraph that used to live in CLAUDE.md's Tests section. CLAUDE.md now carries only the current count; append new history here.
@@ -255,3 +300,5 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 **CR-31 (2026-09-30, `completed_plans/PHASE_CR24_31_32_PLAN.md` stage 2):** **3792 passed, 114 skipped, 561 subtests, 0 failures** (+14 offline, +42 subtests: `test_cr31_wind_speed.py`).
 
 **CR-24 (2026-09-30, `completed_plans/PHASE_CR24_31_32_PLAN.md` stage 3):** **3850 passed, 118 skipped, 609 subtests, 0 failures** (+58 offline, +48 subtests: `test_cr24_tables.py`, `test_cr24_velocity.py`, `test_cr24_range.py`, `test_cr24_wiring.py`; +4 opt-in live skips: `test_cr24_live.py`).
+
+**CR-27 (2026-10-07, `PHASE_CR27_PLAN.md`):** **3913 passed, 118 skipped, 626 subtests, 0 failures** (+63 offline, +17 subtests: `test_cr27_simbad.py`, `test_cr27_exclusion.py`; no new live file).
