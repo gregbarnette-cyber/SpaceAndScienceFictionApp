@@ -1963,7 +1963,7 @@ extends it to non-finite masses. Only invalid input changes; every finite positi
   issue, outside this fix.
 
 ##### CR-22 — the two-layer boundary (standoff + research-grade physical WALL)
-`exclusion-boundary` now emits, alongside the unchanged canon **STANDOFF** (`r_ex = 47.5·M^0.4`, byte-identical),
+`exclusion-boundary` now emits, alongside the unchanged canon **STANDOFF** (`r_ex = 47.5·M^(1/3)` at the default α, byte-identical),
 a second **research-grade physical WALL** (the deeper medium-readability surface) + off-MS/evolved fixes. The
 standoff arithmetic is **untouched**; every new field is **additive**; the one consumer-visible break is the
 `domain` enum. Core entry: `exclusion_boundary.compute_two_layer_boundary(...)` (the frozen
@@ -1988,10 +1988,11 @@ standoff arithmetic is **untouched**; every new field is **additive**; the one c
 - **Additive output fields:** `standoff_au` (= `r_ex_au` alias), `standoff_note`, `domain`, `wind_class`,
   `class_note`, `wall_au` (scalar midpoint | null), `wall_band_au` `[lo,hi]`, `wall_route ∈ {wind_term, bow_shock,
   bow_shock_marginal, capped_astropause, capped_windtime, none_windless, none_no_wind, none_unmodeled}`
-  (`none_no_wind`/`none_unmodeled` are CR-22 additions), `wall_reason`, `wall_note` (always "research-grade"),
+  (`none_no_wind`/`none_unmodeled` are CR-22 additions; CR-30.7 adds `none_undetermined` on the
+  `undetermined_no_mass` domain), `wall_reason`, `wall_note` (always "research-grade"),
   `verdict_marginal`, `wall_exceeds_standoff` + `wall_to_standoff_ratio` (the load-bearing hazard driver, `null` if
   either layer null), `r_ap_au`, `mass_provenance` (CR-22: evolved only; **CR-23 generalizes it to every path** — the
-  6-value enum + `null` on a no-mass domain — plus `mass_note` and a bounded-degrade `flame_status`; see the CR-23 block
+  6-value enum, + CR-30's `ms_mks_relation`, + `null` on a no-mass domain — plus `mass_note` and a bounded-degrade `flame_status`; see the CR-23 block
   below), and the wind-input echoes (`wind_speed_kms`,
   `v_ism_kms`, `c_ms_kms`, `n_cloud_cm3`, `cloud_temp_k`, `wind_phase_yr`, `f_shock`, `m_shock_min`,
   `mass_loss_source`, `mass_loss_msun_yr`) each with a sibling provenance key (`mass_loss_provenance`,
@@ -2030,7 +2031,9 @@ Gaia DR3 FLAME > L-inversion), identical in tier order + result to `dossier --st
   mass), `--spectral-type`→`spectral_type_table` (MS) / `null` (windless/unmodeled), `--star`→the ladder tier. A bounded
   FLAME degrade surfaces top-level **`flame_status`** ∈ `{timeout, unreachable}` (never a silent fall-through);
   **`--gaia-timeout <s>`** (0 disables) is now accepted on `exclusion-boundary` too. `mass_note` (the resolver's over-read
-  caution / catalog citation) is surfaced alongside on the with-mass path.
+  caution / catalog citation) is surfaced alongside on the with-mass path. **CR-30 adds `ms_mks_relation`** (the M_Ks
+  tier between FLAME and the inversion); a mass placed substellar goes to the free harbor keeping its tier's
+  provenance, and `undetermined_no_mass` is `null`.
 - **CR-23 anchors:** `--star "epsilon Eridani" --alpha 0.4` → `mass_msun 0.811`, `mass_provenance gaia_flame`, `r_ex_au
   ≈43.69` (matches `dossier` + `exclusion-system --star`); a forced-short `--gaia-timeout` on an un-cataloged star →
   `ms_luminosity_inversion` **+ `flame_status`**; `--mass-msun 1` → `manual`/47.5 (byte-identical); `--object sun` →
@@ -2102,7 +2105,7 @@ star's current wind* (the §26.8 disclosures ride in `wind_model.notes`, verbati
   whitespace-collapsed SIMBAD `main_id`; also on the `evolved` domain) → `xray` (HEASARC 2RXS → eRASS1 → 5XMM-DR15, PM-propagated
   to each source's epoch; the guarded XMM rung; the censored Wood relation `log(Ṁ/A) = 0.245 + 0.592 (log F_X − 5)`;
   GCNS blends by equal surface flux) → `xray_nondetection` (the fork-9 tables at the survey limit) → `class_default`
-  (the class state × R★²) → `noncoronal_row` (A/B/O, evolved without a row, windless, unmodeled — CR-22 rows unchanged);
+  (the class state × R★²) → `noncoronal_row` (A/B/O, evolved without a row, windless, unmodeled, and CR-30's `undetermined_no_mass` — CR-22 rows unchanged);
   plus `object_preset`, `legacy_row` (a bare `--mass-msun --wind-state`), `none`.
 - **`--wind-state` selects the class-default state only** (`quiet`/`solar`→typical/`active`; `hot` → `noncoronal_row` o_hot
   at tier 5): a star whose rate a data tier set keeps it, a `wind_model.notes` entry + one stderr line say so (exit 0).
@@ -3108,7 +3111,7 @@ query.py dossier --star Sol                       # fully offline (Solar System)
 query.py dossier --star Sol --sections planets moons
 ```
 Core function: `report.build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion=False,
-star_mass_catalog=None, mass_solar=None)`
+star_mass_catalog=None, mass_solar=None, age=None)`
 (CR-10.5: `--force-ms-inversion` overrides the evolved-star region guard — see the CR-10 second-fire block below.
 CR-11.2: `--star-mass-catalog`/`--mass-solar` add stellar-mass provenance + measured-mass preference — see the CR-11 block below.)
 
@@ -4099,7 +4102,7 @@ bounds.
 ```bash
 query.py compare-stars --stars "Tau Ceti" Sol "18 Sco" "Delta Pavonis"
 ```
-Core function: `databases.compare_stars(names, star_mass_catalog=None)`; flags `--stars`, `--star-mass-catalog <path>`
+Core function: `databases.compare_stars(names, star_mass_catalog=None, ages=None)`; flags `--stars`, `--star-mass-catalog <path>`
 (CR-11.2), `--gaia-timeout <s>` (CR-19). Output: `{stars: [{name, sp_type, teff, luminosity, mass, radius,
 hz_inner_au, hz_outer_au, ly, app_magnitude, hypatia, error, mass_solar, mass_provenance, massL_inversion_caution,
 peculiar_star_flag, mass_note, flame_status?}, …]}` (the mass keys: see the CR-11.2 block) — `hypatia` is the raw `hypatia-data` result dict
@@ -4297,7 +4300,7 @@ is unlimited.
 query.py vizier-query --catalog B/cb/cbdata --filters "Name = GK Per"
 query.py vizier-query --catalog B/sb9/orbits --filters "Per < 365" --row-limit 500
 ```
-Core: `catalog.vizier_query(catalog, columns=None, filters=None, cone=None, row_limit=2000)`. Output:
+Core: `catalog.vizier_query(catalog, columns=None, filters=None, cone=None, row_limit=2000, timeout=60)`. Output:
 `{service:"vizier", catalog, count, row_limit, truncated, column_units:{…}, rows:[{col: val, …}]}`.
 Reuse targets: `B/sb9/*` (SB9), `B/wds/wds`, `B/orb6/orbits`, `B/cb/cbdata` (Ritter & Kolb CVs),
 `B/gcvs`, `I/311/hip2` (Hipparcos).
@@ -4311,14 +4314,14 @@ query.py gaia-tap --adql "SELECT source_id, parallax FROM gaiadr3.gaia_source WH
 query.py gaia-tap --table gaiadr3.nss_two_body_orbit --where "parallax > 50 AND period < 365" --async
 ```
 Core: `catalog.gaia_tap(adql=None, table=None, columns=None, where=None, cone=None, row_limit=2000,
-use_async=False)`. Output: `{service:"gaia", query, count, async, truncated, column_units, rows:[…]}`.
+use_async=False, timeout=300)`. Output: `{service:"gaia", query, count, async, truncated, column_units, rows:[…]}`.
 
 #### `heasarc-query`
 A HEASARC X-ray catalog by cone (`--catalog` + `--cone 'ra dec radius'`) or raw TAP (`--adql`).
 ```bash
 query.py heasarc-query --catalog rassbsc --cone "79.1723 45.998 0.5"
 ```
-Core: `catalog.heasarc_query(catalog, cone=None, radius=0.1, adql=None, row_limit=2000)`. Output:
+Core: `catalog.heasarc_query(catalog, cone=None, radius=0.1, adql=None, row_limit=2000, timeout=120)`. Output:
 `{service:"heasarc", catalog, count, column_units, rows:[…]}`. Serves the binary activity/flare +
 CV/compact-object identification story.
 
@@ -4395,7 +4398,7 @@ query.py close-binary-census --dist-max-ly 65 --period-max-d 365
 query.py close-binary-census --dist-max-ly 100 --period-max-d 365 --include nss,sb9 --exclude-known census.txt
 ```
 Core: `binary.close_binary_census(dist_max_ly, period_max_d, sep_max_au=None, include=("nss","sb9"),
-parallax_source="both", drop_planets=True, separate_wide=False, exclude_known=None)`. Output:
+parallax_source="both", classify=True, drop_planets=True, separate_wide=False, exclude_known=None)`. Output:
 `{query:{…}, count, counts_by_class:{stellar, brown-dwarf, …}, census:[<per-system rows, same shape as
 binary-orbit solutions + ra/dec/distance_ly/also_in>], excluded_planets:[…], wide:[…],
 coverage:{catalogs_swept, catalogs_not_swept, requested_not_implemented, dist_max_ly, period_max_d,
@@ -4464,7 +4467,7 @@ query.py besancon-query --local --dist-max-pc 150 --area 1.0
 query.py besancon-query --glon 120 --glat 30 --dist-max-pc 200 --mag-max 18
 ```
 Core: `besancon.besancon_query(glon=None, glat=None, local=False, area_deg2=1.0, dist_max_pc=100.0,
-mag_max=None, sample_max=1000, contact_email=None)`. Output: `{query, model_version:"m1612", n_stars,
+mag_max=None, sample_max=1000, contact_email=None, timeout_s=_MAX_WAIT_S)`. Output: `{query, model_version:"m1612", n_stars,
 columns:[…], catalogue_sample:[<per-star: Age, Mass, [M/H], [a/Fe], Pop, Teff, logg, Dist, UU/VV/WW, …>],
 catalogue_truncated, age_dist:{histogram, mean_age_gyr, median_age_gyr, mass_conditional_age,
 population_mix:{thin,thick,halo,bulge}, population_by_pop_code, age_metallicity_relation, feh_mean,
@@ -4705,7 +4708,7 @@ query.py binary-stability-auto --star "alpha Centauri" --test-sma-au 1.0   # SB9
 query.py binary-stability-auto --star "36 Ophiuchi"    --test-sma-au 1.0   # honest null (36 Oph not in orb6)
 ```
 Core: `binary.binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None,
-star_mass_catalog=None)` — **CR-14.3** `--star-mass-catalog <path>` (WB-owned tier-2 catalog; REPLACE semantics,
+star_mass_catalog=None, age=None)` — **CR-14.3** `--star-mass-catalog <path>` (WB-owned tier-2 catalog; REPLACE semantics,
 loud error on a bad path). Output:
 `{star, elements:{m1_solar, m2_solar, sma_au, ecc, source, grade, mass_basis, a_basis, mass_provenance_a,
 mass_provenance_b}|null, stype_critical_au, ptype_critical_au, mass_ratio, test_sma_au, test_verdict:
@@ -4797,7 +4800,8 @@ query.py detection-completeness --star "HD 69830" --rv-precision-catalog PATH   
 Core: `detection.compute_detection_completeness(app_mag, distance_pc, sp_type=None, star_mass_solar=None,
 star_radius_solar=None, methods=None, sma_grid=None, albedo=0.3, rv_precision_ms=None, rv_baseline_yr=None,
 transit_precision_ppm=None, transit_target=False, astrom_precision_uas=None, astrom_baseline_yr=None,
-star=None, activity=None, star_mass_provenance=None, rv_precision_provenance=None, rv_precision_meta=None)`.
+star=None, activity=None, star_mass_provenance=None, rv_precision_provenance=None, rv_precision_meta=None,
+catalog_row=None, call_age=None, otype=None, extra_notes=None)`.
 Output: `{star, app_mag, distance_pc, sp_type, host_class, star_mass_solar, star_mass_provenance,
 star_radius_solar, methods:[{method, applicable, detectable_vs_sma:[{sma_au, min_mass_earth?|min_radius_earth?,
 …}], floor_source, floor_provenance, value_kind, baseline_yr?, contrast_band?, mechanism_caveat?, jitter_advisory?,
@@ -5037,7 +5041,8 @@ threshold is a named constant `_DV5_FEH_SOFT_UPPER = 0.5` (strict `>`). Tests: `
 **archive M★** (the *same* NASA `ps` + `default_flag=1` `st_mass` `planetary-systems-batch` reports — read through
 `exoplanet_batch.fetch_archive_stellar_mass`, so the two can never disagree; never hard-coded) over the sp-type→mass
 estimate for the RV/astrometry √M★ floors. Precedence **manual `--star-mass-solar` > archive > sp_type_estimate**. New
-output field **`star_mass_provenance ∈ {"manual","archive","sp_type_estimate", null}`** beside `star_mass_solar`.
+output field **`star_mass_provenance ∈ {"manual","archive","sp_type_estimate", null}`** beside `star_mass_solar`
+(**CR-30.7 C** adds a `catalog` tier between manual and archive — `star_mass_provenance` gains `"catalog"`; see the CR-30 block).
 A **non-MS** host receives an archive mass **only if the archive radius is also present** (a mass-only injection would
 turn the CR-6-AMEND graceful-skip into an error). Anchor: `detection-completeness --star "HD 69830"` →
 `star_mass_solar ≈ 0.86`, `star_mass_provenance="archive"`, equal to batch's `mass_solar`. Tests:
@@ -5202,7 +5207,7 @@ Core: `core/exclusion_system.py` (composes the frozen `core/exclusion_boundary.p
 **CR-22 — the two-layer boundary on `exclusion-system` (multi-star wall merge).** `exclusion-system` gains the same
 two-layer output as `exclusion-boundary` (see the CR-22 block under `exclusion-boundary` for the shared additive fields +
 the `domain` enum + wind flags). **Standoff numeric anchors byte-identical** (Sirius A 63.5, α Cen 49.0/45.7 + bands 54/65,
-Proxima 20.5 — regression-anchored). Changes: the per-component `domain` is the **four-value enum** (a giant is now `evolved`
+Proxima 20.5 — regression-anchored). Changes: the per-component `domain` is the **four-value enum** (CR-30.7 adds a 5th, `undetermined_no_mass` — see the CR-30 block) (a giant is now `evolved`
 with a standoff from its measured mass, no longer `out_of_domain`/null; only `windless_free_harbor`/`unmodeled` — and a lone `evolved` component with no measured
 mass — are null; the string `out_of_domain` survives elsewhere: a zone with no standoff-bearing member has `forcing_class`
 `"free_harbor"` (all windless) or `"out_of_domain"` (unmodeled / no-mass evolved), and `mass_provenance` may be

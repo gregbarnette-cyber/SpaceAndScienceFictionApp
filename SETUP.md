@@ -106,7 +106,6 @@ The following CSV files must be present in the project directory. They are auto-
 
 | File | Used By |
 |---|---|
-| `propertiesOfMainSequenceStars.csv` | Options 8, 9, 12 — Star System Regions (SIMBAD/Semi-SIMBAD), Main Sequence Star Properties |
 | `spTypeHyperLM.csv` | Option 14 — Honorverse Hyper Limits |
 | `missionExocat.csv` | Options 2, 5 — Mission Exocat Stars |
 | `hwc.csv` | Option 6 — Habitable Worlds Catalog |
@@ -115,6 +114,8 @@ The following CSV files must be present in the project directory. They are auto-
 | `dwarfPlanetInfo.csv` | Seeds the `dwarf_planets` table → Option 11 — Dwarf Planets |
 | `asteroidsInfo.csv` | Seeds the `asteroids` table → Option 11 — Major Asteroids |
 | `gouldDesignations.csv` | Seeds the `gould_designations` table → the Gould designation block on the SIMBAD lookup (Phase AO; frozen 1879 data, no import option) |
+
+> **Main-sequence reference data (CR-30)** is not a root CSV: options 8, 9, 12 (and every main-sequence relation) read the WB-owned S1 / MIST v2.5 / BHAC15-factor files in `data/cr30/` directly, md5-checked at load (`core/ms_reference_tables.py`); the `ms_reference_*` DB tables are display mirrors only. The old `propertiesOfMainSequenceStars.csv` is still in the repo but is read by nothing.
 
 > These four are the **seed source only**. Option 11 (and `query.py solar-system`) read the SQLite tables, not the CSVs — see the auto-seed caveat under *Migrating to a New Machine* below. *(`main.py`'s CLI copy of option 11 still reads the CSVs directly; it was never migrated and the CLI menu is deprecated.)*
 
@@ -148,7 +149,7 @@ The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** trav
 > | `planetInfo.csv`, `moonInfo.csv`, `dwarfPlanetInfo.csv`, `asteroidsInfo.csv` | **Option 55** — Import Solar System Data |
 > | `hwc.csv` | **Option 52** — Import HWC Data |
 > | `missionExocat.csv` | **Option 53** — Import Mission Exocat Data |
-> | `propertiesOfMainSequenceStars.csv` | **Option 54** — Import Main Sequence Star Props |
+> | `data/cr30/*` | **Option 54** — Import CR-30 Reference Tables (optional — the `ms_reference_*` mirrors also re-seed on their own when a file's md5 changes) |
 > | `spTypeHyperLM.csv` | **Option 56** — Import Honorverse Hyper Limits |
 >
 > Each does `DELETE` + bulk `INSERT` in one transaction, so it picks up appended rows *and* corrected cells. (`gouldDesignations.csv` has no import option — it is frozen 1879 data; drop the `gould_designations` table to re-seed it.)
@@ -156,6 +157,6 @@ The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** trav
 ## Notes
 
 - An internet connection is required for SIMBAD, NASA Exoplanet Archive, JPL Horizons, and Hypatia Catalog queries.
-- The local SQLite database is created automatically on first run at `data/space_app.db` under the repo root (the `data/` directory is gitignored, except `data/cr26/` — the WB-owned CR-26 wind-model CSVs, committed and md5-checked at load). Set the `SPACE_APP_DB` environment variable to override this path (see `docs/integration.md`).
+- The local SQLite database is created automatically on first run at `data/space_app.db` under the repo root (the `data/` directory is gitignored, except `data/cr24/`, `data/cr26/` and `data/cr30/` — the WB-owned CR-24 V_ISM, CR-26 wind-model and CR-30 main-sequence reference files, committed and md5-checked at load). Set the `SPACE_APP_DB` environment variable to override this path (see `docs/integration.md`).
 - The `backups/` directory holds manual CSV snapshots (e.g. `starSystemsBackup-*.csv`, `templateStarSystems.csv`) that are **not** read by the app — they are retained for reference only.
 - The **dust / ISM path is optional and WSL/Linux-only** (`requirements-dust.txt`; see above — native Windows can reach the dust `query.py` subcommands only through the `SPACE_APP_DUST_PYTHON` micromamba re-dispatch). Without it installed, every other feature works normally and the dust subcommands/panel are simply gated off. The dust map cache lives at `data/dust/` (gitignored) and is fetch-once/offline-after.

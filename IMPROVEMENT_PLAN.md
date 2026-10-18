@@ -48,6 +48,9 @@ pattern before editing**; do not trust raw line numbers.
 - **D2 — legacy regions calibration (P1.5):** document, don't change. The `2.52` luminosity base,
   `4.85` zero-point, and mismatched M–L exponents (`0.2632` vs `3.5`) are legacy conventions the
   alternate-HZ divisors were tuned against. Changing them shifts every region table. Comment-only.
+  *(Superseded by CR-30, 2026-10-17: the `2.52`/`4.85` pairing and both power laws are retired —
+  `core/regions.py` now uses `L = 10^(−0.4 (M_bol − 4.74))` and `core/ms_sequence.py`'s relations; the
+  region divisors are unchanged. See `completed_plans/PHASE_CR30_PLAN.md`.)*
 - **D3 — CLAUDE.md context diet (P5.4):** creating `docs/testing.md` and trimming CLAUDE.md is
   in-scope; **demoting the five `@`-included docs is NOT** — leave the `@docs/...` lines alone
   unless the user separately approves.
@@ -131,6 +134,7 @@ pattern before editing**; do not trust raw line numbers.
   add a one-line comment where 5778 is used (`compute_star_luminosity`, regions `calculatedLuminosity`)
   that 5778 is the legacy convention vs IAU nominal 5772 used by `cooling`/`par_flux`. No numeric changes.
 - **Verify:** comments only; `git diff` must show no executable-line changes in this item.
+- *(Superseded by CR-30, 2026-10-17 — see D2: these legacy constants are no longer in `core/regions.py`.)*
 
 ---
 
@@ -548,6 +552,8 @@ All same-value duplicates — replace local definitions with imports from `core.
   `NULLIF(col,'')`. Write `None` instead. **Keep the `NULLIF` guards in `_range_clause`** (existing
   rows in user databases still contain `""`).
 - **Verify:** `tests/test_search.py` (range filters), `tests/test_db_backups.py`.
+- *(Obsolete since CR-30, 2026-10-17: `_MAIN_SEQUENCE_DATA` and the `main_sequence_stars` reads are gone —
+  main-sequence values come from the md5-checked `data/cr30/` files via `core/ms_reference_tables.py`.)*
 
 ---
 

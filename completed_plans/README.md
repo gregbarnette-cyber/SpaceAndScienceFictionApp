@@ -29,7 +29,7 @@ in here too, with the same history (moved with `git mv`).
 > the shipped modules — `core/par_flux.py`, `core/thermal.py`, `core/formation.py`, … —
 > not against the headers. Trust the code, then `CLAUDE.md`.
 
-## Index (73 files)
+## Index (78 entries; 79 files — the CR-30 name map is linked from its plan's row)
 
 | File | Title |
 |---|---|
