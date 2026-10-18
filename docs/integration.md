@@ -5652,10 +5652,10 @@ Two additive components; `is_multiple` and every existing key/value stay byte-fo
 
 Cores: `core/binary.py` (classifier + `multiplicity_summary`), `core/report.py` (dossier), `core/db.py` (schema + `_migrate_schema`), `core/databases.py` (ADQL/insert + `backfill_gcns_proper_motion`; `_GCNS_ROW_COLS` unchanged). Tests: `tests/test_cr20.py`.
 
-## CR-30 — a cited main-sequence reference table (S1), its relations, the MIST v2.5 lifetime, the hydrogen-burning limit and placement (built 2026-10-15 / 16; `PHASE_CR30_PLAN.md`)
+## CR-30 — a cited main-sequence reference table (S1), its relations, the MIST v2.5 lifetime, the hydrogen-burning limit and placement (built 2026-10-15 / 16; `completed_plans/PHASE_CR30_PLAN.md`)
 
 WB contract `spaceapp-change-request-CR30-main-sequence-reference-table.md`; channel MSG 356–364 (Q&A MSG 360 / 361 / 362).
-The field-name map WB's scorer reads is `PHASE_CR30_NAME_MAP.json`. Where this block and the contract differ, the
+The field-name map WB's scorer reads is `completed_plans/PHASE_CR30_NAME_MAP.json`. Where this block and the contract differ, the
 contract wins.
 
 CR-30 replaces the old `propertiesOfMainSequenceStars.csv` table and the Gillett power laws (`L^0.2632`, `M^3.5`,

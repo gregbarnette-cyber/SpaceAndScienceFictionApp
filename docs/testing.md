@@ -284,7 +284,7 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
     - `test_cr26_network.py::IdentityTest::test_no_results_prefix_drift` now reads `_simbad_lookup_impl`.
 
 - **CR-30: a cited main-sequence reference table, its relations, MIST, the hydrogen-burning limit and placement (built
-  2026-10-15 / 16; `PHASE_CR30_PLAN.md`, `docs/integration.md` CR-30 block).**
+  2026-10-15 / 16; `completed_plans/PHASE_CR30_PLAN.md`, `docs/integration.md` CR-30 block).**
   **Isolation** (`tests/conftest.py`):
   - **`_cr30_twomass_isolation`** (autouse). For every test **not** marked `@pytest.mark.cr30_twomass` (registered in
     `pytest.ini`), `twomass.resolve` reports "not run" — no ids, no status, no marker — so every pre-CR-30 offline
@@ -461,7 +461,7 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 
 **CR-27 (2026-10-07, `completed_plans/PHASE_CR27_PLAN.md`):** **3913 passed, 118 skipped, 626 subtests, 0 failures** (+63 offline, +17 subtests: `test_cr27_simbad.py`, `test_cr27_exclusion.py`; no new live file).
 
-**CR-30:** **4159 passed, 126 skipped, 698 subtests, 0 failures** (+246 offline, +72 subtests; +8 opt-in live skips) (2026-10-16, `PHASE_CR30_PLAN.md`; new offline files: `test_cr30_data.py`, `test_cr30_parse.py`, `test_cr30_luminosity.py`, `test_cr30_relations.py`, `test_cr30_placement.py`, `test_cr30_age_input.py`, `test_cr30_consumers.py`; new opt-in live file `test_cr30_live.py` — 8 anchors, gated on `SPACE_APP_RUN_LIVE=1`). Per-stage counts are in the plan's build log (post-CP5: 4144 passed / 118 skipped / 696 subtests / 0 failed).
+**CR-30:** **4159 passed, 126 skipped, 698 subtests, 0 failures** (+246 offline, +72 subtests; +8 opt-in live skips) (2026-10-16, `completed_plans/PHASE_CR30_PLAN.md`; new offline files: `test_cr30_data.py`, `test_cr30_parse.py`, `test_cr30_luminosity.py`, `test_cr30_relations.py`, `test_cr30_placement.py`, `test_cr30_age_input.py`, `test_cr30_consumers.py`; new opt-in live file `test_cr30_live.py` — 8 anchors, gated on `SPACE_APP_RUN_LIVE=1`). Per-stage counts are in the plan's build log (post-CP5: 4144 passed / 118 skipped / 696 subtests / 0 failed).
 
 **CR-30 re-gate fixes (WB MSG 366):** **4171 passed, 126 skipped, 701 subtests, 0 failures** (+12 offline, +3 subtests) (2026-10-17; `test_cr30_consumers.py::RegateFixesTest` — F-1 … F-9 and the `/code-review` fold).
 

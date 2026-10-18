@@ -1,0 +1,302 @@
+{
+ "cr": "CR-30",
+ "status": "re-checked against the built outputs 2026-10-16 (Stage 6) — supersedes the MSG 362 proposal where they differ",
+ "base": "2c22208",
+ "conventions": {
+  "paths": "dot paths into each subcommand's JSON; [] = per array element; '*' = every subcommand listed under 'placement_carriers'",
+  "nulls": "a field whose value is unknown is present as null with a sibling *_reason where the contract names a reason"
+ },
+ "spectral_parse": {
+  "carriers": [
+   "exclusion-boundary",
+   "exclusion-system components[]",
+   "dossier regions",
+   "star-regions",
+   "detection-completeness",
+   "binary-orbit identity",
+   "substellar rows[]",
+   "par-flux --spectral-type",
+   "compare-stars stars[]",
+   "circumbinary-hz",
+   "dyson-collector",
+   "generate-system",
+   "binary-orbit identity (all M1 sites)"
+  ],
+  "keys": {
+   "sp_type_raw": "string — the input / SIMBAD string",
+   "sp_type_read": "string — the type read (e.g. 'A5', 'M8', 'L3')",
+   "lum_class_token": "string|null — 'V', 'IV', 'III', 'sd', ...",
+   "s1_class_v_flag": "true on every S1 read (S1 is a class-V table)",
+   "subdwarf_flag": "bool",
+   "gravity_designation": "string|null — 'VL-G' | 'INT-G' | 'FLD-G' | 'beta' | 'gamma' | 'delta'",
+   "low_gravity_class": "bool — a III/IV read as a low-gravity designation (ruling 133 M5)",
+   "subtype_unknown": "bool",
+   "subtype_span_note": "string|null — letter-only F/G/K",
+   "s1_rows": "[string, string]|[string] — the S1 row(s) read",
+   "s1_fraction": "number|null — interpolation fraction between s1_rows",
+   "s1_null_reason": "string|null",
+   "bc_key": "string — kept; now the type read"
+  }
+ },
+ "region_luminosity": {
+  "carriers": [
+   "star-regions",
+   "star-regions-manual",
+   "dossier regions",
+   "exclusion-boundary",
+   "exclusion-system components[]",
+   "compare-stars stars[]"
+  ],
+  "keys": {
+   "bcLuminosity": "number|null — the region L (L_sun), unchanged key",
+   "lum_route": "'colour' | 'subtype'",
+   "lum_route_reason": "string — why the route (e.g. 'V-J outside 2.53-6.98', 'no 2MASS identifier in SIMBAD', 'more than one 2MASS identifier', 'giant/subgiant class')",
+   "lum_colour_lsun": "number|null — colour-route L",
+   "lum_subtype_lsun": "number|null — S1 subtype-route L",
+   "lum_colour_paths": "{bc_v: number, bc_k: number} — the two path L values",
+   "v_minus_j": "number|null",
+   "twomass": "{designation, j, e_j, ks, e_ks, ph_qual, rd_flg, quality_below_a: [bands]}|null",
+   "lum_route_disagreement": "bool — max/min of the two routes' L > 1.40",
+   "lum_route_note": "string — on a colour-route result only (absent on the subtype route): the colour route's disclosure — Mann et al. 2015 Table 3 base rows on V − J (no [Fe/H] term), the mean of the BC_V and BC_K paths at Mann's zero point 4.755 (×1.014 against S1's 4.74, disclosed) (MSG 366 F-4)"
+  }
+ },
+ "simbad_markers": {
+  "simbad_status_a": "'failed' — present ONLY when component A's SIMBAD lookup failed as a service error (not 'No results found') where the mass chain needed the record: the widening lookup of a reduced primary record (run only when the M_Ks tier is reached), or the primary lookup on binary-stability-auto coordinate / source-id input; with not_authoritative (MSG 368 O-1)",
+  "simbad_status_b": "'failed' — component B's lookup failed as a service error; on binary-stability-auto and the dossier multiplicity block only when no manual / catalog / FLAME tier gave B a mass, on exclusion-system --star whatever the tier (B's record also carries its WD / BD class), with a note in place of 'companion nature not confirmed'; with not_authoritative",
+  "where": "top level of binary-stability-auto; the dossier multiplicity block; exclusion-system --star binary (simbad_status_b only)"
+ },
+ "twomass_markers": {
+  "degrade_only": {
+   "twomass_status": "present ONLY on a degrade: 'unreachable' | 'empty' | 'ids_failed'",
+   "not_authoritative": "true, beside twomass_status"
+  },
+  "disclosure_not_degrade": {
+   "twomass_ids_multiple": "[string] — present only when SIMBAD lists more than one '2MASS' identifier (the route not taken)"
+  },
+  "forced_failure_env": "SPACE_APP_2MASS_FORCE_UNREACHABLE=1 -> twomass_status 'unreachable'",
+  "where": "top level of star-regions, dossier, exclusion-boundary, exclusion-system (single body), dyson-collector, par-flux, generate-system (an error carrying the marker — a deliberate deviation, reported to WB); per star on compare-stars stars[] and circumbinary-hz stars[]; twomass_status_a / _b + not_authoritative on exclusion-system (binary), binary-stability-auto and the dossier multiplicity block"
+ },
+ "mass": {
+  "mass_provenance_new_values": {
+   "ms_mks_relation": "the M_Ks route (Mann et al. 2019)",
+   "note": "unchanged: ms_luminosity_inversion (the L route), spectral_type_table (--spectral-type / type route), catalog, gaia_flame, manual, object_preset"
+  },
+  "detection_completeness_star_mass_provenance_new_values": {
+   "catalog": "the new catalog tier (--star-mass-catalog or the internal seed)",
+   "note": "unchanged: manual, archive, sp_type_estimate (now S1)"
+  },
+  "keys": {
+   "mass_route": "'mks' | 'luminosity' | 'sol_pinned' (sol-regions / the Sol dossier) | null (a tier above inference)",
+   "mass_relation": "'Eker2018_inverted' | 'S1_sequence' | 'Mann2019_n5' | null (a tier above inference; the --spectral-type path reads S1's Msun directly and emits no mass_relation)",
+   "mass_segment": "string|null — the S12 segment ('0.72-1.05', ...)",
+   "mass_switch_band": "string|null — '0.72' | '1.05' | '2.40' | '7.0_gap'",
+   "m_ks": "number|null",
+   "mass_mks_solar": "number|null",
+   "mass_lroute_solar": "number|null — the L route's mass, reported beside the M_Ks mass",
+   "mass_lroute_null_reason": "string|null",
+   "luminosity_from_mass": "number|null (existing dossier key; direction below)",
+   "radius_from_mass": "number|null",
+   "luminosity_from_mass_relation": "'Eker2018_forward' | 'S1_sequence'",
+   "luminosity_from_mass_null_reason": "string|null",
+   "radius_from_mass_relation": "'S1_sorted_by_mass'",
+   "radius_from_mass_null_reason": "string|null",
+   "mks_binary_disclosure": "string — S13 unresolved-binary hazard, on every M_Ks-route output",
+   "mks_activity_caveat": "string|null",
+   "mks": "{status, mass, m_ks, ...} — the region step's M_Ks-route record (star-regions top level; carried on a failed region step too)",
+   "mass_mks_solar (beside a higher tier)": "on dossier regions.mass and compare-stars stars[]: the M_Ks mass reported beside an adopted catalog / FLAME mass (not adopted), with mks_binary_disclosure",
+   "region_step_note": "string — exclusion-boundary --star: the region step's failure reason when the mass came from another tier (ruling 164)"
+  }
+ },
+ "lifetime": {
+  "carriers": [
+   "dossier regions",
+   "star-regions",
+   "sol-regions",
+   "compare-stars stars[]",
+   "exclusion-boundary",
+   "exclusion-system components[]"
+  ],
+  "keys": {
+   "ms_lifetime_yr | ms_lifetime_gyr": "number|null — as each site has its lifespan today (star-regions lifeSpan keeps its key)",
+   "ms_lifetime_end_point": "'first_Xc_lt_1e-4' | 'first_Xc_lt_1e-2' | 'interpolated_1e-2_to_1e-4'",
+   "ms_lifetime_direction": "'ge' | 'le' (an SB1-minimum orbit mass: ≤ t(X)) | null",
+   "ms_lifetime_status": "'value' | 'lower_bound' | 'upper_bound' | 'boundary_null' | 'substellar_null' | 'pre_ms' | 'above_300' | 'mass_null'",
+   "ms_lifetime_note": "string|null — e.g. 'if stellar, >= t(0.1082) = 2934.8 Gyr'",
+   "ms_lifetime_if_stellar_ge_yr": "number|null — the t(M_hi) of a boundary note",
+   "carriers_detail": "star-regions: mainSeqLifeSpan + ms_lifetime_* top level; dossier: regions.stellar.main_seq_lifespan_yr + ms_lifetime_*; every placement object: placement.lifetime.{ms_lifetime_*}"
+  },
+  "stellar-evolution": "T_ms and every stage duration move to MIST; additive t_ms_gyr + ms_lifetime_end_point (the 0.62 Msun band reads interpolated_1e-2_to_1e-4 — contract CR-30.5 acceptance 1; live pre-check)"
+ },
+ "placement": {
+  "placement_carriers": {
+   "exclusion-boundary": "placement (--star, --spectral-type, --mass-msun; not --object)",
+   "exclusion-system": "zones[].components[].placement (null for a white dwarf / rogue component)",
+   "dossier": "data.regions.mass.placement (the one path — WB MSG 363's request); multiplicity.placement_a",
+   "compare-stars": "stars[].placement (Sol included)",
+   "star-regions": "placement",
+   "detection-completeness": "star_placement",
+   "binary-stability-auto": "placement_a",
+   "binary-orbit / multiplicity / close-binary-census": "companion class + direction keys (no placement object)"
+  },
+  "keys": {
+   "status": "'stellar' | 'boundary' | 'substellar' | 'undetermined_no_mass'",
+   "status_text": "'stellar' | 'boundary — star or brown dwarf uncertain' | 'substellar' | 'stellar, pre-main-sequence' | 'undetermined — no mass' | 'undetermined (minimum mass)' (an SB1-minimum orbit mass)",
+   "reading": "'x' | 'le_x' | 'interval' | 'ge_x' (an SB1-minimum orbit mass — a lower bound)",
+   "reading_text": "e.g. '<= 0.4631 (young — the field relation over-reads)' | 'young — no measurable over-read here (BHAC15)' | 'young — the field relation under-reads here; no bound from the main-sequence relations' | 'pre-MS — no bound from the main-sequence relations'",
+   "x_msun": "number",
+   "basis": "'inference' | 'dynamical' | 'interferometric' | 'asteroseismic' | 'relation' | 'model' | 'model_age_inconsistent' | 'supplied' | 'gaia_flame' | 'archive' | 'orbit_minimum'",
+   "basis_unknown": "bool — a catalog row without mass_basis, or an archive mass",
+   "interval": "{lo, hi, kind}|null",
+   "x_equals_hi": "bool",
+   "takes_margin": "bool",
+   "youth_flag": "bool",
+   "youth_trigger": "[string] — 'call_age' | 'catalog_age' | 'gravity:<designation>'",
+   "youth_caveat": "string|null",
+   "pre_ms": "bool",
+   "pre_ms_signal": "string|null — 'simbad_otype:TT*' | 'component_otype:TT*' | 'gravity:delta' | 'call_age' | 'catalog_age'",
+   "cut_msun": "number — the cut used (0.080 unflagged)",
+   "cut_t_lo_gyr": "number|null",
+   "cut_age_source": "'call' | 'catalog' | 'none'",
+   "no_sizing_age_reason": "string|null — e.g. 'no lower age bound — boundary assumes the youngest ages are possible'",
+   "overread_route": "'mks' | 'luminosity' | 'type' | 'unknown'",
+   "overread_factor": "number|null",
+   "overread_factor_null_reasons": "[string]",
+   "overread_factor_by_route": "{mks, luminosity, type} — route-unknown rows only",
+   "x_over_factor": "number|null",
+   "reading_node_gyr": "number|null — the node whose factor set the reading (Greg's Q18 one-node case)",
+   "conflict_flag": "bool",
+   "conflict_trigger": "string|null — 'type:T7' | 'type:L6' | 'logL<-4.3'",
+   "windless_alternative": "{domain: 'windless_free_harbor', note}|null — boundary only (inside placement)",
+   "r_ex_direction": "'upper_bound' (reading le_x) | 'lower_bound' (reading ge_x) | null",
+   "r_ex_interval_au": "[lo, hi]|null — a boundary catalog row",
+   "derived_direction": "'upper_bound' | null — for L(M), R(M)",
+   "youth_rule_applies": "bool — inference / relation / archive rows only",
+   "catalog_age": "{lo_gyr, hi_gyr, basis, grade} — the matched catalog row's age, when it has one",
+   "age_input": "{lo_gyr, hi_gyr, basis} — on a component / dossier / detection placement when an age was given",
+   "lifetime": "{ms_lifetime_yr, ms_lifetime_direction, ms_lifetime_status, ms_lifetime_note, ms_lifetime_end_point, ms_lifetime_if_stellar_ge_yr}"
+  }
+ },
+ "age_input": {
+  "flags": {
+   "--age-lo-gyr": "float; omitted = no lower bound",
+   "--age-hi-gyr": "float; required to give an age",
+   "--age-basis": "membership | lithium | gravity_class | model_fit; required with an age"
+  },
+  "on": [
+   "exclusion-boundary (--star, --spectral-type; --mass-msun / --object → a curated error)",
+   "exclusion-system (--star and --component)",
+   "dossier (incl. Sol; reaches the multiplicity block — Q33)",
+   "star-regions",
+   "detection-completeness (--star, --sp-type)",
+   "binary-stability-auto"
+  ],
+  "exclusion-system --component keys": [
+   "age_lo=",
+   "age_hi=",
+   "age_basis="
+  ],
+  "compare-stars": "--star-age NAME LO HI BASIS (repeatable; LO may be 'none'; NAME matches a --stars entry, Sol included)",
+  "echo": "age_input {lo_gyr, hi_gyr, basis}: top level on exclusion-boundary / exclusion-system / star-regions / binary-stability-auto; inside placement on exclusion-system components, the dossier and detection-completeness; stars[].age_input on compare-stars",
+  "errors": "curated, exit 1, text prefixed 'age input: ' (an --age-basis outside the four is argparse exit 2)"
+ },
+ "domain": {
+  "enum_new_value": "undetermined_no_mass",
+  "enum_full": [
+   "main_sequence",
+   "evolved",
+   "windless_free_harbor",
+   "unmodeled",
+   "undetermined_no_mass"
+  ],
+  "undetermined_no_mass_fields": {
+   "standoff_au": "null",
+   "r_ex_au": "null",
+   "forcing_class": "null",
+   "wall_route": "'none_undetermined'",
+   "domain_note": "string"
+  },
+  "by_placement": "exclusion_wall.placed_domain_kw: placement substellar → windless_free_harbor (class_note 'substellar by placement …'); undetermined_no_mass → the 5th value; stellar / boundary keep main_sequence"
+ },
+ "binary": {
+  "companion_class_new_values": [
+   "boundary — star or brown dwarf uncertain",
+   "undetermined (minimum mass)",
+   "undetermined — at most <class(Y)>",
+   "undetermined — pre-MS primary"
+  ],
+  "keys": {
+   "m1_solar": "number|null (null replaces the 1.0 default)",
+   "m1_null_reason": "'no_spectral_type' | 'letter_only_type' | 'unreadable_type' | 'outside_s1_mass_span' | 'no_simbad_lookup' — on companion blocks, binary-orbit identity, and binary-stability-auto / the dossier multiplicity block when elements are null",
+   "m1_direction": "'le' | null",
+   "m2_direction": "'le' | null",
+   "m2_solar_lower_direction": "'le' | null (multiplicity components[])",
+   "m1_assumed_note": "string — bulk Gaia-NSS census rows (1.0 Msun assumed)",
+   "sb1_caveat_withheld": "bool",
+   "identity.lum_class_token / s1_class_v_flag": "binary-orbit identity: the type's luminosity-class token; s1_class_v_flag true whenever S1 (a class-V table) seeded M1 (read the class from lum_class_token)",
+   "elements.m1_direction / m2_direction / m2_class / sb1_caveat_withheld": "binary-stability-auto and the dossier multiplicity block, under a primary read 'le_x'",
+   "companion.substellar": "bool — a true mass under a flagged primary: Y < 0.067",
+   "placement_a": "binary-stability-auto / dossier multiplicity: the primary's placement"
+  }
+ },
+ "detection_completeness": {
+  "new_flag": "--star-mass-catalog",
+  "explicit_branch": "host_class null; methods[].applicable false; methods[].note names the cause — 'host placement: <status_text>' or 'host radius null — <reason>' and --star-mass-solar / --star-radius-solar; star_mass_solar = placed reading; star_radius_solar null + star_radius_null_reason; assumptions.out_of_domain true; L0-L5 with no mass: note 'undetermined — no mass', star_mass_solar null",
+  "keys": {
+   "catalog_mass_not_applied": "bool — non-MS host with no radius tier",
+   "limit_direction (methods[])": "'upper_bound' | null",
+   "star_radius_bound_note": "string|null",
+   "star_radius_null_reason": "string — on the explicit branch",
+   "notes": "[string] — catalog-beside-archive, archive basis unknown, catalog mass not applied"
+  }
+ },
+ "substellar": {
+  "keys": {
+   "placement_status_by_type": "'substellar' | 'undetermined_by_type'",
+   "census_label": "'an L/T/Y census by spectral type'",
+   "placement_note": "string — ruling 78's type rule"
+  }
+ },
+ "data_errors": {
+  "Cr30DataError": "curated error, exit 1 — missing / md5-mismatched / inconsistent CR-30 data file",
+  "catalog_field_error": "curated {\"error\": \"stellar-mass catalog '<path>': <row>: <field> …\"}, exit 1 — an invalid CR-30 catalog field (row + field named; validate_cr30_fields)",
+  "env_override": "SPACE_APP_CR30_DATA_DIR"
+ },
+ "paths_by_subcommand": {
+  "star-regions": "top level (region keys beside bcLuminosity/stellarMass); placement",
+  "star-regions-manual": "top level",
+  "sol-regions": "top level",
+  "dossier": "data.regions.* (region + parse + luminosity keys, also on a failed region step); data.regions.stellar.{luminosity_from_mass, stellar_radius} + their *_relation / *_null_reason; data.regions.mass.* (mass_route / mass_relation / mass_segment / mass_switch_band — null under a tier above inference — m_ks, mass_mks_solar, mass_lroute_solar, mass_lroute_null_reason, mks_binary_disclosure, mks_note, mks_activity_caveat); data.regions.mass.placement; on a failed region step data.regions = {region_step_failed, region_error, luminosity_class, evolved_star_flag, stellar, mass}; data.multiplicity.placement_a",
+  "exclusion-boundary": "top level (parse, luminosity, mass keys); placement; windless_alternative under placement",
+  "exclusion-system": "zones[].components[].* incl. placement; top-level age_input",
+  "compare-stars": "stars[].* ; stars[].placement",
+  "detection-completeness": "top level; star_placement; methods[].limit_direction",
+  "circumbinary-hz": "stars[] (per --star1/--star2) luminosity keys + markers",
+  "dyson-collector": "top level luminosity keys + markers",
+  "par-flux": "top level parse keys (--spectral-type Teff from S1); markers on --star",
+  "generate-system": "star.* real-anchor mass/radius keys; markers",
+  "main-sequence": "rows[] keys: SpT, Teff, B-V, Mv, BCv, logL, R_Rsun, Msun, s1_line, Mbol_computed, density_computed_gcc, density_computed_rho_sun, ms_lifetime_gyr_computed, ms_lifetime_end_point",
+  "stellar-evolution": "top level lifetime keys",
+  "binary-orbit / binary-stability-auto / multiplicity / close-binary-census": "identity.{lum_class_token, s1_class_v_flag, m1_null_reason}; solutions[].companion.{class, m1_direction, m2_direction, sb1_caveat_withheld, substellar, m1_null_reason}; binary-stability-auto placement_a + elements directions; multiplicity components[].m2_solar_lower_direction; census rows m1_assumed_note",
+  "substellar": "top level census_label, placement_note; stars[].placement_status_by_type"
+ },
+ "disclosures": {
+  "cr30_disclosures": "{topic: text} — static, additive, on success; topics s1 / luminosity / relations / lifetime / hbl / youth",
+  "by_subcommand": {
+   "exclusion-boundary": "all six on --star / --spectral-type; hbl on --mass-msun; none on --object",
+   "star-regions-manual, sol-regions": "s1, luminosity, relations, lifetime",
+   "detection-completeness": "s1, relations, hbl, youth",
+   "stellar-evolution": "lifetime",
+   "par-flux": "s1 (--star / --spectral-type only)",
+   "generate-system": "s1, relations",
+   "circumbinary-hz, dyson-collector": "s1, luminosity (--star calls only)",
+   "binary-orbit, binary-stability-auto": "s1, hbl, youth",
+   "multiplicity, close-binary-census": "s1, hbl",
+   "substellar": "hbl",
+   "main-sequence": "none (a list output; its rows carry the S1 / MIST keys)",
+   "star-regions, dossier, compare-stars": "all six",
+   "exclusion-system": "all six (--star, or a --component with a type / class / lum= / main_id=); hbl when every component is a supplied mass="
+  },
+  "per_run": "per-run disclosures ride in each output's existing notes / note fields beside the value they qualify (inventory: docs/integration.md CR-30 block)",
+  "per_note_inventory": "docs/integration.md — CR-30 block, 'Disclosure inventory' table (each contract disclosure → output note + subcommand + condition, static topic, or docs only)"
+ }
+}
