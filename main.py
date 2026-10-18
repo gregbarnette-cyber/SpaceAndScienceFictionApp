@@ -16,6 +16,7 @@ import astropy.time
 import core.calculators
 import core.databases
 import core.equations
+import core.regions
 import core.science
 import core.shared      # AN0: opt 50's designation parser (see _parse_designations_from_ids)
 from core.hypatia_elements import CATEGORIES, category_label, display_symbol
@@ -854,6 +855,8 @@ def _display_alternate_hz_regions(ffInner, ffOuter, fsInner, fsOuter, prwInner, 
     print()
 
     def au_fmt(val):
+        if val is None:                       # CR-30.4: a null mass nulls 0.2·M / 40·M (M5)
+            return "—"
         return f"{val:.4f} ({val * 8.3167:.3f} LM)"
 
     def t_fmt(val):
@@ -919,6 +922,8 @@ def _display_calculated_hz(bcLuminosity, luminosityFromMass, calculatedLuminosit
     seff = [seffsun[i] + a[i]*tstar + b[i]*tstar**2 + c[i]*tstar**3 + d[i]*tstar**4 for i in range(6)]
 
     def au_fmt(lum, i):
+        if lum is None:                       # CR-30.4: a null mass nulls L(M) / calculated L
+            return "—"
         au = math.sqrt(lum / seff[i])
         return f"{au:.3f} ({au * 8.3167:.3f} LM)"
 
@@ -955,7 +960,7 @@ def _display_earth_equivalent_orbit(distAU, distKM, planetaryYear, planetaryTemp
     rows = [[
         f"{distAU:.4f}",
         f"{distKM:.5e}",
-        f"{planetaryYear:.4f}",
+        core.shared.fmt_num(planetaryYear, ".4f"),
         f"{planetaryTemperature:.2f}",
         f"{planetaryTemperatureC:.2f}",
         f"{planetaryTemperatureF:.2f}",
@@ -981,6 +986,8 @@ def _display_solar_system_regions(sysilGrav, sysilSunlight, hzil, hzol, snowLine
     print()
 
     def au_fmt(val):
+        if val is None:                       # CR-30.4: a null mass nulls 0.2·M / 40·M (M5)
+            return "—"
         return f"{val:.4f} ({val * 8.3167:.3f} LM)"
 
     def t_fmt(val):
@@ -1039,11 +1046,11 @@ def _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, 
     headers1 = ["Stellar Mass", "Stellar Radius", "Stellar Diameter (Sol)", "Stellar Diameter (KM)", "Main Sequence Life Span"]
     headers2 = ["", "", "", "", ""]
     rows = [[
-        f"{stellarMass:.4f}",
-        f"{stellarRadius:.5f}",
+        core.shared.fmt_num(stellarMass, ".4f"),            # CR-30.4: a null mass renders "—", never a crash
+        core.shared.fmt_num(stellarRadius, ".5f"),
         f"{stellarDiameterSol:.4f}",
         f"{stellarDiameterKM:.5e}",
-        f"{mainSeqLifeSpan:.5e}",
+        core.shared.fmt_num(mainSeqLifeSpan, ".5e"),
     ]]
     aligns = ["r", "r", "r", "r", "r"]
     _print_table(headers1, headers2, rows, aligns)
@@ -1057,7 +1064,7 @@ def _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLumino
         ("Absolute Magnitude",            f"{absMagnitude:.3f}"),
         ("Bolometric Absolute Magnitude", f"{bcAbsMagnitude:.3f}"),
         ("Bolometric Luminosity",         f"{bcLuminosity:.6f}"),
-        ("Luminosity from Mass",          f"{luminosityFromMass:.5f}"),
+        ("Luminosity from Mass",          core.shared.fmt_num(luminosityFromMass, ".5f")),
         ("BC (Bolometric Correction)",    f"{boloLum:.1f}"),
         ("Star Temperature (K)",          f"{int(round(temp))}"),
     ]
@@ -1108,15 +1115,20 @@ def query_star_system_regions():
         sp_raw  = _safe_get(result[0], result.colnames, "sp_type")
         sp_type = str(sp_raw).strip() if sp_raw is not None else ""
 
-        letter, _ = _parse_spectral_class(sp_type)
+        _s1, _sp = core.regions._lookup_s1(sp_type)          # CR-30.2: S1 through the one parse
+        letter = _sp.letter if (_sp.letter and _sp.letter in "OBAFGKM") else None
         if not letter:
             print(f"Spectral type '{sp_type or 'N/A'}' is not a main-sequence class (O B A F G K M) — cannot determine star system region.")
             print()
             input("\nPress Enter to Return to the Main Menu")
             return
 
-        ms_row, key_used = _lookup_spectral_type(sp_type)
-        boloLum = float(ms_row["Bolo. Corr. (BC)"]) if ms_row else None
+        boloLum = _s1["BCv"]
+        if boloLum is None:
+            print(f"Could not read spectral type '{sp_type}' on S1: {_s1['s1_null_reason']}.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
 
         temp_raw = _safe_get(result[0], result.colnames, "mesfe_h.teff")
         try:
@@ -1163,46 +1175,9 @@ def query_star_system_regions():
 
     sunlightIntensity = 1.0
     bondAlbedo = 0.3
-    parsecs = 1000.0 / plx
-    absMagnitude = vmag + 5 - (5 * math.log10(parsecs))
-    bcAbsMagnitude = absMagnitude + boloLum
-    bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)
-    stellarMass = bcLuminosity ** 0.2632
-    luminosityFromMass = stellarMass ** 3.5
-    stellarRadius = stellarMass ** 0.57 if stellarMass >= 1 else stellarMass ** 0.8
-    stellarDiameterSol = ((5780**2) / (temp**2)) * math.sqrt(bcLuminosity)
-    stellarDiameterKM = stellarDiameterSol * 1391600
-    mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
-    trigParallax = plx / 1000
-    lightYears = 3.26156 / trigParallax
-    distAU = math.sqrt(bcLuminosity / sunlightIntensity)
-    distKM = distAU * 149000000
-    planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
-    planetaryTemperature = 314.9 * ((1 - bondAlbedo) ** 0.25) * (sunlightIntensity ** 0.25)
-    planetaryTemperatureC = planetaryTemperature - 273.15
-    planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
-    starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
-    sizeOfSun = f"{starAngularDiameter:.2f}\N{DEGREE SIGN}"
-    sysilGrav = 0.2 * stellarMass
-    sysilSunlight = math.sqrt(bcLuminosity / 16)
-    hzil = math.sqrt(bcLuminosity / 1.1)
-    hzol = math.sqrt(bcLuminosity / 0.53)
-    snowLine = math.sqrt(bcLuminosity / 0.139)
-    lh2Line = math.sqrt(bcLuminosity / 0.0025)
-    sysol = 40 * stellarMass
-    calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
-    ffInner  = math.sqrt(bcLuminosity / 52)
-    ffOuter  = math.sqrt(bcLuminosity / 29.9)
-    fsInner  = math.sqrt(bcLuminosity / 38.7)
-    fsOuter  = math.sqrt(bcLuminosity / 3.2)
-    prwInner = math.sqrt(bcLuminosity / 2.8)
-    prwOuter = math.sqrt(bcLuminosity / 0.8)
-    praInner = math.sqrt(bcLuminosity / 0.48)
-    praOuter = math.sqrt(bcLuminosity / 0.21)
-    pmInner  = math.sqrt(bcLuminosity / 0.023)
-    pmOuter  = math.sqrt(bcLuminosity / 0.0094)
-    phInner  = math.sqrt(bcLuminosity / 0.0000247)
-    phOuter  = math.sqrt(bcLuminosity / 0.0000053)
+    # CR-30 (ruling 27): every region / relation / lifetime value comes from core/ — no inline copy.
+    _r = core.regions.compute_star_system_regions(vmag, boloLum, temp, plx, sunlightIntensity, bondAlbedo)
+    (parsecs, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan, trigParallax, lightYears, distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun, sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol, calculatedLuminosity, ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter) = [_r[_k] for _k in _CORE_REGION_KEYS]
 
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
     _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
@@ -1301,108 +1276,10 @@ def query_star_system_regions():
 
 # ─── Main-Sequence Star Properties ────────────────────────────────────────────
 
-_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")
-_MAIN_SEQUENCE_DATA = None
+# CR-30 (ruling 27): the legacy main-sequence CSV loader / ceiling lookup is retired — main.py
+# reads S1 through core.regions._lookup_s1 and computes every region value in core.regions.
+_CORE_REGION_KEYS = ('parsecs', 'absMagnitude', 'bcAbsMagnitude', 'bcLuminosity', 'luminosityFromMass', 'stellarMass', 'stellarRadius', 'stellarDiameterSol', 'stellarDiameterKM', 'mainSeqLifeSpan', 'trigParallax', 'lightYears', 'distAU', 'distKM', 'planetaryYear', 'planetaryTemperature', 'planetaryTemperatureC', 'planetaryTemperatureF', 'sizeOfSun', 'sysilGrav', 'sysilSunlight', 'hzil', 'hzol', 'snowLine', 'lh2Line', 'sysol', 'calculatedLuminosity', 'ffInner', 'ffOuter', 'fsInner', 'fsOuter', 'prwInner', 'prwOuter', 'praInner', 'praOuter', 'pmInner', 'pmOuter', 'phInner', 'phOuter')
 
-
-def _load_main_sequence_data():
-    """Load propertiesOfMainSequenceStars.csv into a per-class lookup structure."""
-    global _MAIN_SEQUENCE_DATA
-    if _MAIN_SEQUENCE_DATA is not None:
-        return _MAIN_SEQUENCE_DATA
-
-    filepath = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "propertiesOfMainSequenceStars.csv",
-    )
-    data = {}
-
-    try:
-        with open(filepath, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                sc = row.get("Spectral Class", "").strip()
-                m = _SP_PATTERN.match(sc)
-                if not m:
-                    continue
-                letter  = m.group(1)
-                subtype = float(m.group(2))
-                data.setdefault(letter, []).append((subtype, row))
-        for letter in data:
-            data[letter].sort(key=lambda t: t[0])
-    except Exception as e:
-        print(f"Warning: Could not load propertiesOfMainSequenceStars.csv: {e}")
-        data = {}
-
-    _MAIN_SEQUENCE_DATA = data
-    return _MAIN_SEQUENCE_DATA
-
-
-def _parse_spectral_class(sp_str):
-    """Extract primary class letter and numeric subtype from a SIMBAD spectral string.
-
-    Returns (letter, subtype_float) or (None, None) if no OBAFGKM class found.
-    Uses search so prefixes like 'sd' in 'sdG5' are skipped transparently.
-    """
-    if not sp_str or sp_str in ("N/A", "None", ""):
-        return None, None
-    m = _SP_PATTERN.search(sp_str)
-    if not m:
-        return None, None
-    return m.group(1), float(m.group(2))
-
-
-_LETTER_SEQUENCE = ["O", "B", "A", "F", "G", "K", "M"]
-
-
-def _lookup_spectral_type(sp_str):
-    """Return (row_dict, key_used_str) for the nearest ceiling entry in the CSV.
-
-    Ceiling rule: smallest available subtype number >= requested subtype.
-    Within-class fallthrough: if all entries are cooler than requested (e.g. F9
-    with entries only up to F7), advance to the next cooler letter class and
-    return its hottest (lowest subtype) entry (e.g. G0).
-    Falls back to the last entry in the final available class if no next class exists.
-    Returns (None, None) if class letter not found in data.
-    """
-    letter, subtype = _parse_spectral_class(sp_str)
-    if letter is None:
-        return None, None
-
-    data = _load_main_sequence_data()
-
-    # Walk the letter sequence starting at the requested letter.
-    try:
-        start_idx = _LETTER_SEQUENCE.index(letter)
-    except ValueError:
-        return None, None
-
-    for idx in range(start_idx, len(_LETTER_SEQUENCE)):
-        current_letter = _LETTER_SEQUENCE[idx]
-        entries = data.get(current_letter)
-        if not entries:
-            continue
-
-        if idx == start_idx:
-            # Ceiling search within the requested letter.
-            for entry_subtype, row in entries:
-                if entry_subtype >= subtype:
-                    return row, row.get("Spectral Class", "").strip()
-            # All entries were below the requested subtype — fall through to next letter.
-        else:
-            # Next cooler letter: return its hottest (smallest subtype) entry.
-            row = entries[0][1]
-            return row, row.get("Spectral Class", "").strip()
-
-    # No match found at all — return last entry of the starting letter as fallback.
-    entries = data.get(letter)
-    if entries:
-        row = entries[-1][1]
-        return row, row.get("Spectral Class", "").strip()
-    return None, None
-
-
-# ─── NASA Exoplanet Archive: Planetary Systems Composite ─────────────────────
 
 def query_planetary_systems_composite():
     """Query NASA Exoplanet Archive (pscomppars) and display SIMBAD info, star/planet
@@ -1615,15 +1492,20 @@ def query_star_system_regions_semi_manual():
         sp_raw  = _safe_get(result[0], result.colnames, "sp_type")
         sp_type = str(sp_raw).strip() if sp_raw is not None else ""
 
-        letter, _ = _parse_spectral_class(sp_type)
+        _s1, _sp = core.regions._lookup_s1(sp_type)          # CR-30.2: S1 through the one parse
+        letter = _sp.letter if (_sp.letter and _sp.letter in "OBAFGKM") else None
         if not letter:
             print(f"Spectral type '{sp_type or 'N/A'}' is not a main-sequence class (O B A F G K M) — cannot determine star system region.")
             print()
             input("\nPress Enter to Return to the Main Menu")
             return
 
-        ms_row, key_used = _lookup_spectral_type(sp_type)
-        boloLum = float(ms_row["Bolo. Corr. (BC)"]) if ms_row else None
+        boloLum = _s1["BCv"]
+        if boloLum is None:
+            print(f"Could not read spectral type '{sp_type}' on S1: {_s1['s1_null_reason']}.")
+            print()
+            input("\nPress Enter to Return to the Main Menu")
+            return
 
         temp_raw = _safe_get(result[0], result.colnames, "mesfe_h.teff")
         try:
@@ -1683,46 +1565,9 @@ def query_star_system_regions_semi_manual():
         except ValueError:
             print("Invalid value. Please enter a number.")
 
-    parsecs = 1000.0 / plx
-    absMagnitude = vmag + 5 - (5 * math.log10(parsecs))
-    bcAbsMagnitude = absMagnitude + boloLum
-    bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)
-    stellarMass = bcLuminosity ** 0.2632
-    luminosityFromMass = stellarMass ** 3.5
-    stellarRadius = stellarMass ** 0.57 if stellarMass >= 1 else stellarMass ** 0.8
-    stellarDiameterSol = ((5780**2) / (temp**2)) * math.sqrt(bcLuminosity)
-    stellarDiameterKM = stellarDiameterSol * 1391600
-    mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
-    trigParallax = plx / 1000
-    lightYears = 3.26156 / trigParallax
-    distAU = math.sqrt(bcLuminosity / sunlightIntensity)
-    distKM = distAU * 149000000
-    planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
-    planetaryTemperature = 314.9 * ((1 - bondAlbedo) ** 0.25) * (sunlightIntensity ** 0.25)
-    planetaryTemperatureC = planetaryTemperature - 273.15
-    planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
-    starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
-    sizeOfSun = f"{starAngularDiameter:.2f}\N{DEGREE SIGN}"
-    sysilGrav = 0.2 * stellarMass
-    sysilSunlight = math.sqrt(bcLuminosity / 16)
-    hzil = math.sqrt(bcLuminosity / 1.1)
-    hzol = math.sqrt(bcLuminosity / 0.53)
-    snowLine = math.sqrt(bcLuminosity / 0.139)
-    lh2Line = math.sqrt(bcLuminosity / 0.0025)
-    sysol = 40 * stellarMass
-    calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
-    ffInner  = math.sqrt(bcLuminosity / 52)
-    ffOuter  = math.sqrt(bcLuminosity / 29.9)
-    fsInner  = math.sqrt(bcLuminosity / 38.7)
-    fsOuter  = math.sqrt(bcLuminosity / 3.2)
-    prwInner = math.sqrt(bcLuminosity / 2.8)
-    prwOuter = math.sqrt(bcLuminosity / 0.8)
-    praInner = math.sqrt(bcLuminosity / 0.48)
-    praOuter = math.sqrt(bcLuminosity / 0.21)
-    pmInner  = math.sqrt(bcLuminosity / 0.023)
-    pmOuter  = math.sqrt(bcLuminosity / 0.0094)
-    phInner  = math.sqrt(bcLuminosity / 0.0000247)
-    phOuter  = math.sqrt(bcLuminosity / 0.0000053)
+    # CR-30 (ruling 27): every region / relation / lifetime value comes from core/ — no inline copy.
+    _r = core.regions.compute_star_system_regions(vmag, boloLum, temp, plx, sunlightIntensity, bondAlbedo)
+    (parsecs, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan, trigParallax, lightYears, distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun, sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol, calculatedLuminosity, ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter) = [_r[_k] for _k in _CORE_REGION_KEYS]
 
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
     _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
@@ -1761,46 +1606,9 @@ def query_star_system_regions_manual():
         input("\nPress Enter to Return to the Main Menu")
         return
 
-    parsecs = 1000.0 / plx
-    absMagnitude = vmag + 5 - (5 * math.log10(parsecs))
-    bcAbsMagnitude = absMagnitude + boloLum
-    bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)
-    stellarMass = bcLuminosity ** 0.2632
-    luminosityFromMass = stellarMass ** 3.5
-    stellarRadius = stellarMass ** 0.57 if stellarMass >= 1 else stellarMass ** 0.8
-    stellarDiameterSol = ((5780**2) / (temp**2)) * math.sqrt(bcLuminosity)
-    stellarDiameterKM = stellarDiameterSol * 1391600
-    mainSeqLifeSpan = (10**10) * ((1 / stellarMass) ** 2.5)
-    trigParallax = plx / 1000
-    lightYears = 3.26156 / trigParallax
-    distAU = math.sqrt(bcLuminosity / sunlightIntensity)
-    distKM = distAU * 149000000
-    planetaryYear = math.sqrt((distAU ** 3) / stellarMass)
-    planetaryTemperature = 314.9 * ((1 - bondAlbedo) ** 0.25) * (sunlightIntensity ** 0.25)
-    planetaryTemperatureC = planetaryTemperature - 273.15
-    planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
-    starAngularDiameter = 57.3 ** (stellarDiameterKM / distKM)
-    sizeOfSun = f"{starAngularDiameter:.2f}\N{DEGREE SIGN}"
-    sysilGrav = 0.2 * stellarMass
-    sysilSunlight = math.sqrt(bcLuminosity / 16)
-    hzil = math.sqrt(bcLuminosity / 1.1)
-    hzol = math.sqrt(bcLuminosity / 0.53)
-    snowLine = math.sqrt(bcLuminosity / 0.139)
-    lh2Line = math.sqrt(bcLuminosity / 0.0025)
-    sysol = 40 * stellarMass
-    calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
-    ffInner  = math.sqrt(bcLuminosity / 52)
-    ffOuter  = math.sqrt(bcLuminosity / 29.9)
-    fsInner  = math.sqrt(bcLuminosity / 38.7)
-    fsOuter  = math.sqrt(bcLuminosity / 3.2)
-    prwInner = math.sqrt(bcLuminosity / 2.8)
-    prwOuter = math.sqrt(bcLuminosity / 0.8)
-    praInner = math.sqrt(bcLuminosity / 0.48)
-    praOuter = math.sqrt(bcLuminosity / 0.21)
-    pmInner  = math.sqrt(bcLuminosity / 0.023)
-    pmOuter  = math.sqrt(bcLuminosity / 0.0094)
-    phInner  = math.sqrt(bcLuminosity / 0.0000247)
-    phOuter  = math.sqrt(bcLuminosity / 0.0000053)
+    # CR-30 (ruling 27): every region / relation / lifetime value comes from core/ — no inline copy.
+    _r = core.regions.compute_star_system_regions(vmag, boloLum, temp, plx, sunlightIntensity, bondAlbedo)
+    (parsecs, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan, trigParallax, lightYears, distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun, sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol, calculatedLuminosity, ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter) = [_r[_k] for _k in _CORE_REGION_KEYS]
 
     print()
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
@@ -2459,25 +2267,23 @@ def import_mission_exocat_data():
 
 
 def import_main_sequence_data():
-    """Import propertiesOfMainSequenceStars.csv into the main_sequence_stars DB table."""
+    """Option 54 — verify and import the three CR-30 reference tables (data/cr30/) into their DB mirrors."""
     import core.databases
     os.system("cls" if os.name == "nt" else "clear")
     print("=" * 60)
-    print("   IMPORT MAIN SEQUENCE STAR PROPERTIES")
+    print("   IMPORT CR-30 REFERENCE TABLES")
     print("=" * 60)
     print()
 
-    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "propertiesOfMainSequenceStars.csv")
-    print(f"Looking for: {csv_path}")
-    result = core.databases.import_main_sequence_csv(csv_path)
+    result = core.databases.import_cr30_reference_tables()
 
     if "error" in result:
         print(f"Error: {result['error']}")
     else:
-        print(f"Imported {result['count']} rows.")
+        for t in result["tables"]:
+            print(f"{t['file']}: {t['rows']} rows, md5 {t['md5']}")
 
     input("\nPress Enter to Return to the Main Menu")
-
 
 def import_solar_system_data():
     """Import solar system CSVs from the project directory into the DB."""
@@ -5137,108 +4943,51 @@ def solar_system_data_tables():
 
 
 def main_sequence_star_properties():
-    """Display the Main Sequence Star Properties table from propertiesOfMainSequenceStars.csv."""
+    """Display S1 — Mamajek's main-sequence dwarf table (2022.04.16; CR-30.1) — with the computed columns."""
     os.system("cls" if os.name == "nt" else "clear")
 
-    rows = core.science.compute_main_sequence_table()
-
-    if not rows:
-        print("No data found in propertiesOfMainSequenceStars.csv.")
+    try:
+        rows = core.science.compute_main_sequence_table()
+    except Exception as e:
+        print(f"Error: {e}")
         input("\nPress Enter to Return to the Main Menu")
         return
 
-    title = "Main Sequence Star Properties"
+    title = "Main Sequence Star Properties (S1: Mamajek 2022.04.16)"
     print(f"\n{'-' * len(title)}")
     print(title)
     print(f"{'-' * len(title)}")
     print()
 
-    # Columns from CSV (in display order)
-    col_keys = [
-        "Spectral Class", "B-V", "Teeff(K)", "AbsMag Vis.", "AbsMag Bol.",
-        "Bolo. Corr. (BC)", "Lum", "R", "M", "p (g/cm3)", "Lifetime (years)",
-    ]
-    headers = [
-        "Spectral Class", "B-V", "Teff (K)", "Abs Mag Vis", "Abs Mag Bol",
-        "BC", "Lum", "R", "M", "p (g/cm3)", "Lifetime (years)",
-    ]
+    col_keys = ["SpT", "Teff", "B-V", "Mv", "BCv", "logL", "R_Rsun", "Msun",
+                "Mbol_computed", "density_computed_gcc", "ms_lifetime_gyr_computed"]
+    headers = ["SpT", "Teff (K)", "B-V", "Mv", "BCv", "log L", "R", "M",
+               "Mbol (comp.)", "rho g/cm3 (comp.)", "MS life Gyr (comp., MIST)"]
 
-    table_rows = []
-    for row in rows:
-        table_rows.append([row.get(k, "") for k in col_keys])
+    def _cell(v):
+        return "" if v is None else (f"{v:.4g}" if isinstance(v, float) else str(v))
 
+    table_rows = [[_cell(row.get(k)) for k in col_keys] for row in rows]
     _print_table(
         headers1=headers,
         headers2=[""] * len(headers),
         rows=table_rows,
-        aligns=["l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "l"],
+        aligns=["l"] + ["r"] * (len(headers) - 1),
     )
     print()
 
     input("\nPress Enter to Return to the Main Menu")
-
 
 def sol_solar_system_regions():
     """Display Star System Regions for Sol using hardcoded solar constants."""
     os.system("cls" if os.name == "nt" else "clear")
     print()
 
-    # Solar constants
-    # Apparent magnitude of Sun as seen from Earth
-    vmag              = -26.74
-    # Parallax: 1 AU = 1 parsec reference; Sun is at ~1/206265 parsecs, parallax = 206265 mas
-    # but for the distance formula we want parsecs = 1000/plx, so plx = 1000/parsecs.
-    # The Sun is trivially 0 parsecs away, so we use a conventional reference.
-    # Standard approach: use absMagnitude directly (4.83) and back-solve vmag/plx.
-    # Since absMagnitude = vmag + 5 - 5*log10(parsecs), and absMag_sun = 4.83, vmag_sun = -26.74,
-    # parsecs = 10^((vmag - absMag + 5) / 5) = 10^((-26.74 - 4.83 + 5)/5) = 10^(-26.57/5)
-    # = 10^(-5.314) ≈ 4.85e-6 parsecs, plx = 1000/parsecs ≈ 206265 mas (correct: 1 arcsec = Sun's parallax)
-    plx               = 1000.0 / (10 ** ((-26.74 - 4.83 + 5.0) / 5.0))
-    boloLum           = -0.07       # Bolometric correction for G2V Sun
-    temp              = 5778.0      # Effective temperature (K)
-    sunlightIntensity = 1.0         # Terra = 1.0
-    bondAlbedo        = 0.3         # Terra = 0.3
-
-    parsecs          = 1000.0 / plx
-    absMagnitude     = vmag + 5 - (5 * math.log10(parsecs))
-    bcAbsMagnitude   = absMagnitude + boloLum
-    bcLuminosity     = 2.52 ** (4.85 - bcAbsMagnitude)
-    stellarMass      = bcLuminosity ** 0.2632
-    luminosityFromMass = stellarMass ** 3.5
-    stellarRadius    = stellarMass ** 0.57 if stellarMass >= 1 else stellarMass ** 0.8
-    stellarDiameterSol = ((5780 ** 2) / (temp ** 2)) * math.sqrt(bcLuminosity)
-    stellarDiameterKM  = stellarDiameterSol * 1391600
-    mainSeqLifeSpan  = (10 ** 10) * ((1 / stellarMass) ** 2.5)
-    trigParallax     = plx / 1000
-    lightYears       = 3.26156 / trigParallax
-    distAU           = math.sqrt(bcLuminosity / sunlightIntensity)
-    distKM           = distAU * 149000000
-    planetaryYear    = math.sqrt((distAU ** 3) / stellarMass)
-    planetaryTemperature  = 314.9 * ((1 - bondAlbedo) ** 0.25) * (sunlightIntensity ** 0.25)
-    planetaryTemperatureC = planetaryTemperature - 273.15
-    planetaryTemperatureF = (planetaryTemperatureC * 9 / 5) + 32
-    starAngularDiameter   = 57.3 ** (stellarDiameterKM / distKM)
-    sizeOfSun        = f"{starAngularDiameter:.2f}\N{DEGREE SIGN}"
-    sysilGrav        = 0.2 * stellarMass
-    sysilSunlight    = math.sqrt(bcLuminosity / 16)
-    hzil             = math.sqrt(bcLuminosity / 1.1)
-    hzol             = math.sqrt(bcLuminosity / 0.53)
-    snowLine         = math.sqrt(bcLuminosity / 0.139)
-    lh2Line          = math.sqrt(bcLuminosity / 0.0025)
-    sysol            = 40 * stellarMass
-    calculatedLuminosity = stellarRadius ** 2 * (temp / 5778) ** 4
-    ffInner  = math.sqrt(bcLuminosity / 52)
-    ffOuter  = math.sqrt(bcLuminosity / 29.9)
-    fsInner  = math.sqrt(bcLuminosity / 38.7)
-    fsOuter  = math.sqrt(bcLuminosity / 3.2)
-    prwInner = math.sqrt(bcLuminosity / 2.8)
-    prwOuter = math.sqrt(bcLuminosity / 0.8)
-    praInner = math.sqrt(bcLuminosity / 0.48)
-    praOuter = math.sqrt(bcLuminosity / 0.21)
-    pmInner  = math.sqrt(bcLuminosity / 0.023)
-    pmOuter  = math.sqrt(bcLuminosity / 0.0094)
-    phInner  = math.sqrt(bcLuminosity / 0.0000247)
-    phOuter  = math.sqrt(bcLuminosity / 0.0000053)
+    # CR-30 (rulings 22, 27): Sol's constants and every value come from core.regions.compute_sol_regions().
+    _r = core.regions.compute_sol_regions()
+    vmag, boloLum, temp, plx = _r['vmag'], _r['boloLum'], _r['temp'], _r['plx']
+    sunlightIntensity, bondAlbedo = _r['sunlight_intensity'], _r['bond_albedo']
+    (parsecs, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan, trigParallax, lightYears, distAU, distKM, planetaryYear, planetaryTemperature, planetaryTemperatureC, planetaryTemperatureF, sizeOfSun, sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol, calculatedLuminosity, ffInner, ffOuter, fsInner, fsOuter, prwInner, prwOuter, praInner, praOuter, pmInner, pmOuter, phInner, phOuter) = [_r[_k] for _k in _CORE_REGION_KEYS]
 
     _display_star_system_properties(vmag, absMagnitude, bcAbsMagnitude, bcLuminosity, luminosityFromMass, boloLum, temp)
     _display_stellar_properties(stellarMass, stellarRadius, stellarDiameterSol, stellarDiameterKM, mainSeqLifeSpan)
@@ -5499,7 +5248,7 @@ MENU_OPTIONS = {
     "51": ("Export Star Systems to CSV",                              export_star_systems_csv),
     "52": ("Import HWC Data",                                         import_hwc_data),
     "53": ("Import Mission Exocat Data",                              import_mission_exocat_data),
-    "54": ("Import Main Sequence Star Properties",                    import_main_sequence_data),
+    "54": ("Import CR-30 Reference Tables",                           import_main_sequence_data),
     "55": ("Import Solar System Data",                                import_solar_system_data),
     "56": ("Import Honorverse Hyper Limits",                          import_honorverse_hyper_data),
     "58": ("Import GCNS Data",                                        import_gcns_data),

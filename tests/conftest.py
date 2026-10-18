@@ -41,7 +41,7 @@ def _cr26_socket_guard(request, monkeypatch):
     import os
     import socket
     name = os.path.basename(str(request.node.fspath))
-    if name.startswith(("test_cr26_", "test_cr27_")) and "live" not in name:     # CR-27 plan §4.8 (CP0 F-C M2)
+    if name.startswith(("test_cr26_", "test_cr27_", "test_cr30_")) and "live" not in name:     # CR-27 plan §4.8 (CP0 F-C M2)
         def _no_socket(self, *a, **k):
             raise AssertionError(f"socket opened in an offline CR-26 test: {request.node.nodeid}")
         monkeypatch.setattr(socket.socket, "connect", _no_socket)
@@ -119,3 +119,38 @@ def _cr27_identity_isolation(request, monkeypatch):
     es = importlib.import_module("core.exclusion_system")
     monkeypatch.setattr(es, "resolve_star_identity", lambda sl, *a, **k: (sl, None, None, None))
     yield
+
+
+# ── CR-30: the vendored-data override + the forced-failure hook never leak in from the environment ─────────────────
+@pytest.fixture(autouse=True)
+def _cr30_env_isolation(monkeypatch):
+    monkeypatch.delenv("SPACE_APP_CR30_DATA_DIR", raising=False)
+    monkeypatch.delenv("SPACE_APP_2MASS_FORCE_UNREACHABLE", raising=False)
+    yield
+
+
+# ── CR-30.3 / 30.4: the 2MASS routes (plan §13.2 T1) ────────────────────────────────────────────────────────────────
+# For every test NOT marked ``@pytest.mark.cr30_twomass``: ``twomass.resolve`` reports "not run" (no identifiers, no
+# status, no marker) so the subtype / L route runs as at HEAD for every pre-CR-30 offline ``--star`` test; the II/246
+# seam underneath is a leak stub; both memos start empty. A ``cr30_twomass`` test drives the real resolution and
+# stubs ``twomass._ii246_seam`` / the identifier memo itself.
+@pytest.fixture(autouse=True)
+def _cr30_twomass_isolation(request, monkeypatch):
+    import importlib
+    tm = importlib.import_module("core.twomass")
+    dbs = importlib.import_module("core.databases")
+    tm.clear_memo()
+    with dbs._TWOMASS_LOCK:
+        dbs._TWOMASS_IDS.clear()
+    leaks = []
+    if not request.node.get_closest_marker("cr30_twomass"):
+        monkeypatch.setattr(tm, "resolve", lambda *a, **k: {"status": "not_looked_up", "ids": [], "jks": None})
+
+        def _leak(*a, **k):
+            leaks.append("core.twomass._ii246_seam")
+            raise RuntimeError("CR-30 2MASS seam reached in an offline test")
+        monkeypatch.setattr(tm, "_ii246_seam", _leak)
+    yield
+    tm.clear_memo()
+    if leaks:
+        pytest.fail(f"CR-30 2MASS seam reached in an offline test: {leaks}")

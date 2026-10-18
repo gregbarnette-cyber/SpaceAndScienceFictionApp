@@ -172,6 +172,22 @@ def _create_schema(conn: sqlite3.Connection):
             lifetime       TEXT
         );
 
+        -- CR-30.1: display MIRRORS of the md5-verified WB tables in data/cr30/ (core.ms_reference_tables).
+        -- No runtime value is ever read from them; each row carries the verified file's md5 so a stale mirror is
+        -- re-seeded. The pre-CR-30 main_sequence_stars table above is left untouched and read by nothing.
+        CREATE TABLE IF NOT EXISTS ms_reference_s1 (
+            spt TEXT, teff REAL, b_v REAL, mv REAL, bcv REAL, logl REAL, r_rsun REAL, msun REAL,
+            s1_line INTEGER, source_md5 TEXT
+        );
+        CREATE TABLE IF NOT EXISTS ms_reference_mist (
+            initial_mass REAL, ms_duration_yr REAL, end_point TEXT, t_zams_yr REAL, t_end_yr REAL,
+            source_md5 TEXT
+        );
+        CREATE TABLE IF NOT EXISTS ms_reference_factor (
+            route TEXT, age_gyr REAL, true_mass REAL, inferred_read REAL, old_ref_read REAL, factor REAL,
+            null_reason TEXT, source_md5 TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS planets (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             planet_name    TEXT,
@@ -462,7 +478,6 @@ def _migrate_schema(conn: sqlite3.Connection):
 # ---------------------------------------------------------------------------
 
 _STATIC_TABLES = [
-    ("main_sequence_stars", "propertiesOfMainSequenceStars.csv", "_seed_main_sequence"),
     ("planets",             "planetInfo.csv",                    "_seed_planets"),
     ("moons",               "moonInfo.csv",                      "_seed_moons"),
     ("dwarf_planets",       "dwarfPlanetInfo.csv",               "_seed_dwarf_planets"),
@@ -486,38 +501,82 @@ def _auto_seed(conn: sqlite3.Connection):
                 seeder(conn, csv_path)
         except Exception as e:
             print(f"Warning: auto-seed of {table} failed: {e}")
+    seed_cr30_mirrors(conn)
+
+
+_CR30_MIRRORS = ("ms_reference_s1", "ms_reference_mist", "ms_reference_factor")
+
+
+def _cr30_warn(msg):
+    from core.shared import _stderr_warn          # the shared stderr seam (lazy: shared is not a db dependency)
+    _stderr_warn("cr30", msg)
+
+
+def seed_cr30_mirrors(conn: sqlite3.Connection, force: bool = False) -> dict:
+    """CR-30.1: (re-)seed the three display mirrors from the md5-verified tables — only when a mirror is empty
+    or its stored md5 differs from the verified file's (``force`` re-seeds regardless). A data-file failure is a
+    warning here (``get_conn`` never raises it); the runtime reads raise it loudly where a value is needed.
+    Returns ``{table: rows_written}`` (0 = already current)."""
+    from core import ms_reference_tables as mrt
+    try:
+        tables = {"ms_reference_s1": (mrt.S1_FILE, mrt.s1_rows()),
+                  "ms_reference_mist": (mrt.MIST_FILE, mrt.mist_tracks()),
+                  "ms_reference_factor": (mrt.FACTOR_FILE, mrt.factor_rows())}
+    except mrt.Cr30DataError as e:
+        if force:
+            raise
+        _cr30_warn(f"CR-30 mirror seed skipped: {e}")   # stderr — never ahead of query.py's JSON (CP6 #4)
+        return {}
+    written = {}
+    for table, (fname, rows) in tables.items():
+        md5 = mrt.CR30_MD5[fname]
+        if not force:
+            # a plain read first (CP1): a current mirror never takes the write lock, so a connect during a long
+            # import is not blocked behind it
+            cur = conn.execute(f"SELECT COUNT(*), MIN(source_md5), MAX(source_md5) FROM {table}").fetchone()
+            if cur[0] > 0 and cur[1] == md5 and cur[2] == md5:
+                written[table] = 0
+                continue
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(f"SELECT COUNT(*), MIN(source_md5), MAX(source_md5) FROM {table}").fetchone()
+            current = cur[0] > 0 and cur[1] == md5 and cur[2] == md5
+            if current and not force:
+                conn.execute("COMMIT")
+                written[table] = 0
+                continue
+            conn.execute(f"DELETE FROM {table}")
+            if table == "ms_reference_s1":
+                conn.executemany(
+                    "INSERT INTO ms_reference_s1 VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    [(r["SpT"], r["Teff"], r["B-V"], r["Mv"], r["BCv"], r["logL"], r["R_Rsun"], r["Msun"],
+                      r["s1_line"], md5) for r in rows])
+            elif table == "ms_reference_mist":
+                conn.executemany(
+                    "INSERT INTO ms_reference_mist VALUES (?,?,?,?,?,?)",
+                    [(r["initial_mass"], r["ms_duration_yr"], r["end_point"], r["t_zams_yr"], r["t_end_yr"],
+                      md5) for r in rows])
+            else:
+                conn.executemany(
+                    "INSERT INTO ms_reference_factor VALUES (?,?,?,?,?,?,?,?)",
+                    [(r["route"], r["age_gyr"], r["true_mass"], r["inferred_read"], r["old_ref_read"],
+                      r["factor"], r["null_reason"], md5) for r in rows])
+            conn.execute("COMMIT")
+            written[table] = len(rows)
+        except sqlite3.Error as e:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+            if force:
+                raise
+            _cr30_warn(f"CR-30 mirror seed of {table} failed: {e}")
+    return written
 
 
 # ---------------------------------------------------------------------------
 # Seed helpers
 # ---------------------------------------------------------------------------
-
-def _seed_main_sequence(conn: sqlite3.Connection, csv_path: pathlib.Path):
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-    conn.executemany(
-        """INSERT INTO main_sequence_stars
-           (spectral_class, b_v, teff_k, abs_mag_vis, abs_mag_bol, bc,
-            lum, radius, mass, density, lifetime)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        [
-            (
-                r.get("Spectral Class", ""),
-                r.get("B-V", ""),
-                r.get("Teeff(K)", ""),
-                r.get("AbsMag Vis.", ""),
-                r.get("AbsMag Bol.", ""),
-                r.get("Bolo. Corr. (BC)", ""),
-                r.get("Lum", ""),
-                r.get("R", ""),
-                r.get("M", ""),
-                r.get("p (g/cm3)", ""),
-                r.get("Lifetime (years)", ""),
-            )
-            for r in rows
-        ],
-    )
-
 
 def _seed_planets(conn: sqlite3.Connection, csv_path: pathlib.Path):
     with open(csv_path, newline="", encoding="utf-8") as f:
@@ -631,7 +690,9 @@ def get_table_status() -> list:
         ("hypatia_cache",      "Hypatia Cache"),
         ("hwc",                "Habitable Worlds Catalog"),
         ("mission_exocat",     "Mission Exocat"),
-        ("main_sequence_stars","Main Sequence Stars"),
+        ("ms_reference_s1",    "CR-30 S1 Dwarf Sequence"),
+        ("ms_reference_mist",  "CR-30 MIST v2.5 Lifetimes"),
+        ("ms_reference_factor","CR-30 BHAC15 Over-read Factors"),
         ("planets",            "Planets"),
         ("moons",              "Moons"),
         ("dwarf_planets",      "Dwarf Planets"),

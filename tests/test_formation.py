@@ -6,6 +6,7 @@
 #
 # AJ-1 (P1 disk-model, P2 isolation-mass) here; P3–P6 added in AJ-2.
 
+from core import ms_sequence as _ms   # CR-30.4 / 30.5 relations (re-pins)
 import unittest
 
 import core.formation as f
@@ -68,7 +69,7 @@ class DiskModelTest(unittest.TestCase):
                                2.0 * 1700.0, places=3)
         # --ms-luminosity: L = M^3.5 → snow line ∝ L^(1/2) = M^1.75
         d = f.compute_disk_model(r_au=1.0, mstar_msun=2.0, ms_luminosity=True)
-        self.assertAlmostEqual(d["snowline_au"], 2.713 * (2.0 ** 3.5) ** 0.5, delta=0.05)
+        self.assertAlmostEqual(d["snowline_au"], 2.713 * _ms.luminosity_from_mass(2.0)["lum"] ** 0.5, delta=0.05)
 
     def test_grid_mode(self):
         g = f.compute_disk_model(r_grid=(1.0, 30.0, 5))

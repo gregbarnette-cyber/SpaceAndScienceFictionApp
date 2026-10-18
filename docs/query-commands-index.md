@@ -18,7 +18,7 @@ documented in `docs/integration.md`).
 | `mission-exocat` | NASA Mission Exocat stellar data from the local DB table. |
 | `hwc` | Habitable Worlds Catalog planets from the local DB table. |
 | `hypatia-data` | Hypatia Catalog stellar properties + full elemental abundances (Lodders 2009 normalisation). |
-| `main-sequence` | Main-sequence star property table (spectral class → Teff / mass / radius / lum / lifetime). |
+| `main-sequence` | Main-sequence reference table — S1 (Mamajek 2022.04.16; 87 rows O3V–M9.5V) with computed M_bol / density / MIST v2.5 lifetime (CR-30; was the 24-row CSV). |
 | `solar-system` | Solar-system planets / moons / dwarf planets / asteroids, read from the local SQLite tables. |
 
 ## Open Exoplanet Catalogue (OEC)
@@ -39,15 +39,15 @@ documented in `docs/integration.md`).
 | `gcns-distance` | GCNS-backed 3D distance in light years between two stars (by name or Gaia id). |
 | `gcns-travel-time` | GCNS-backed FTL travel time between two stars. |
 | `gcns-stars-within-star` | All GCNS stars within N ly of a centre star, with Bayesian distances. |
-| `substellar` | Substellar (L/T/Y) census from `gcns_stars` by spectral-type prefix, with a completeness caveat. |
+| `substellar` | An L/T/Y census by spectral type from `gcns_stars` (each row's `placement_status_by_type`: L6+/T/Y substellar, else undetermined by type), with a completeness caveat. |
 | `solar-analogs` | Solar twins/analogs from the Hypatia cache via a tolerance box around the solar values (Teff/logg/[Fe/H]). |
 
 ## Star-system regions
 | Command | Description |
 |---|---|
-| `star-regions` | Stellar properties + all HZ / region / biochemistry-zone boundaries from a SIMBAD lookup (plus Hypatia). |
-| `star-regions-manual` | The manual-input variant — no SIMBAD, no Hypatia; you supply the six raw inputs. |
-| `sol-regions` | Sol's full system-regions computation from hardcoded solar constants. |
+| `star-regions` | Stellar properties + all HZ / region / biochemistry-zone boundaries from a SIMBAD lookup (plus Hypatia). CR-30: S1 lookup + 4.74 zero point (M-dwarf colour route via 2MASS), M_Ks / L-route mass, R(M), MIST lifetime, top-level `placement`, `--age-*` flags, 2MASS degrade marker (exit 0, `not_authoritative`). |
+| `star-regions-manual` | The manual-input variant — no SIMBAD, no Hypatia; you supply the six raw inputs. CR-30: the 4.74 zero point, the L-route mass, S1's R(M), the MIST lifetime. |
+| `sol-regions` | Sol's full system-regions computation from hardcoded solar constants. CR-30: 1.0000 L☉ (Willmer constants on 4.74), mass pinned 1.000. |
 
 ## Distance & stars-within
 | Command | Description |
@@ -84,7 +84,7 @@ documented in `docs/integration.md`).
 | `gravity-acceleration` | Centrifugal artificial gravity (m/s²) from rpm + radius. |
 | `gravity-distance` | Radius from the centre of rotation from rpm + target gravity. |
 | `gravity-rpm` | Rotation rate (rpm) from target gravity + radius. |
-| `stellar-evolution` | Evolutionary-stage durations + timeline for a star of a given mass (0.1–20 M☉). |
+| `stellar-evolution` | Evolutionary-stage durations + timeline for a star of a given mass (0.1–20 M☉). CR-30: T_ms is MIST v2.5. |
 
 ## Worldbuilding physics (Phase H + T)
 | Command | Description |
@@ -96,7 +96,7 @@ documented in `docs/integration.md`).
 | `atmosphere-retention` | Which atmospheric gases a planet retains against Jeans escape. |
 | `trojan-stability` | L4/L5 (Trojan) co-orbital linear-stability test (Gascheau / Routh, μ < 0.0385). |
 | `lorentz-factor` | Special-relativistic Lorentz / time-dilation factor for a sublight velocity. |
-| `circumbinary-hz` | Circumbinary (P-type) habitable zone from the two stars' combined light. |
+| `circumbinary-hz` | Circumbinary (P-type) habitable zone from the two stars' combined light. CR-30: `--star` mode uses the S1 / colour-route L; a 2MASS degrade → exit 0, `not_authoritative`, `hz: null`. |
 | `tidal-heating` | Tidal heating power + surface flux of a synchronous satellite (order-of-magnitude). |
 | `kozai-lidov` | Kozai–Lidov oscillation timescale of a hierarchical triple (order-of-magnitude). |
 
@@ -132,7 +132,7 @@ documented in `docs/integration.md`).
 | `search-hwc` | Filter the local Habitable Worlds Catalog (no network). |
 | `search-exoplanets` | Filter the live NASA pscomppars archive via TAP. |
 | `search-hypatia` | Filter the local Hypatia abundance cache (no network). |
-| `compare-stars` | Side-by-side comparison of 2–4 stars (SIMBAD + NASA supplement + HZ + Hypatia). CR-11.2: per-star mass-provenance block + `--star-mass-catalog`; measured mass preferred → `mass`/`radius` track it. CR-19: `--gaia-timeout` bounds the Gaia FLAME call; a bounded call degrades with a `flame_status` flag (never hangs). |
+| `compare-stars` | Side-by-side comparison of 2–4 stars (SIMBAD + NASA supplement + HZ + Hypatia). CR-11.2: per-star mass-provenance block + `--star-mass-catalog`; measured mass preferred → `mass`/`radius` track it. CR-19: `--gaia-timeout` bounds the Gaia FLAME call; a bounded call degrades with a `flame_status` flag (never hangs). CR-30: M_Ks tier, S1's R(M), per-star `placement`, `--star-age NAME LO HI BASIS`, per-star 2MASS marker. |
 
 ## Cooling, thermal, shielding & compute (U / V / AD / AR)
 | Command | Description |
@@ -165,7 +165,7 @@ documented in `docs/integration.md`).
 | `orbital-ring` | Orbital-ring rotor velocity & support balance (local gravity, orbital vs rotor velocity, rotor KE per length). |
 | `spin-stress` | Hoop-stress size limit: the max habitat radius/gravity a material can spin. |
 | `tether-taper` | Space-elevator / skyhook taper ratio for a material + body (Pearson uniform stress). |
-| `dyson-collector` | Collector area & mass to intercept a fraction of a star's luminosity. |
+| `dyson-collector` | Collector area & mass to intercept a fraction of a star's luminosity. CR-30: `--star` L is the S1 / colour-route L; a 2MASS degrade → exit 0, `not_authoritative`. |
 
 ## Habitats & life support (W / X / AA)
 | Command | Description |
@@ -174,7 +174,7 @@ documented in `docs/integration.md`).
 | `life-support` | Closed-loop crew consumables/waste budget (BVAD rates) + closure-scenario makeup mass. |
 | `bioregen-area` | Bioregenerative grow area + lighting power to feed a crew (PAR energy balance). |
 | `population-capacity` | Sustainable population from resource budgets, reporting the binding constraint. |
-| `par-flux` | PAR fraction / irradiance / PPFD and the red-star deficit vs G2 from a blackbody SED. |
+| `par-flux` | PAR fraction / irradiance / PPFD and the red-star deficit vs G2 from a blackbody SED. CR-30: `--spectral-type` Teff from S1 (interpolated in subtype). |
 
 ## Power generation & storage (AL)
 | Command | Description |
@@ -246,7 +246,7 @@ documented in `docs/integration.md`).
 ## Planet formation (AJ)
 | Command | Description |
 |---|---|
-| `disk-model` | MMSN-scalable disk Σ_gas / Σ_solid / T / (H/r) profile at a radius or over a grid. |
+| `disk-model` | MMSN-scalable disk Σ_gas / Σ_solid / T / (H/r) profile at a radius or over a grid. CR-30: `--ms-luminosity` uses L(M) (Eker 2018 / S1). |
 | `isolation-mass` | Oligarchic isolation mass M_iso (Armitage). |
 | `pebble-isolation-mass` | Pebble-accretion cutoff — the super-Earth ↔ giant switch (Bitsch 2018). |
 | `gap-opening-mass` | Type-II gap-opening threshold via the Crida criterion (root-find). |
@@ -257,8 +257,8 @@ documented in `docs/integration.md`).
 | Command | Description |
 |---|---|
 | `metric-drive-power` | Metric-drive field-rocket radiated power + fuel/mass bill (STL-mode law only). |
-| `exclusion-boundary` | FTL exclusion-boundary radius r_ex (the "Alcubierre Limit"); a Kuiper-calibrated in-universe dial. CR-22: a **two-layer** output — the unchanged canon **standoff** + a second **research-grade physical WALL** (`wall_au`/`wall_route`/`wall_exceeds_standoff`, wind flags `--wind-speed`/`--v-ism`/`--c-ms`/`--b-field`/…); a four-value `domain` enum (`main_sequence`/`evolved`/`windless_free_harbor`/`unmodeled`) with a windless free-harbor guard on every path + evolved-host standoff from a measured mass (`--star-mass-catalog`). CR-23: the `--star` mass chain is the **dossier tier ladder** (manual > catalog > Gaia FLAME > L-inversion — a non-cataloged FLAME star now matches `dossier`/`exclusion-system`, e.g. ε Eri ≈43.69); every output carries **`mass_provenance`** ∈ {manual,catalog,gaia_flame,ms_luminosity_inversion,object_preset,spectral_type_table} (or null on a no-mass domain); a bounded FLAME degrade surfaces **`flame_status`**; **`--gaia-timeout`** now accepted. CR-25: `--wind-state {quiet,solar,active,hot}` is a full bin override on any main-sequence colour (precedence: `--object` preset `wind_class` > `--wind-state` > active-otype auto-detect > colour default; ignored + noted on evolved/windless/unmodeled hosts); on `--star` an MS K/M star's **full** SIMBAD otype list is fetched (one bounded TAP call) → `active` iff any of `{Er*, Fl*, UV*, BY*, RS*}`; new keys on every output **`wind_class_provenance`** ∈ {manual, otype_auto, class_default, object_preset}/null + `wind_otype` + `wind_otype_source` + `wind_class_note`; a degraded otype fetch surfaces top-level **`otype_status`** ∈ {timeout, unreachable, error}. Standoff unchanged (γ=0); an active K/M wall 0.424 → 13.42 AU. CR-22.6: `--mass-msun` must be finite and > 0 again (≤ 0/NaN → "must be > 0", +inf → "must be finite", exit 1 — a CR-22 regression fix). CR-26: the WALL rate comes from a per-star tier ladder (supplied → Wood-measured → X-ray → non-detection → class default; `--radius-rsun`/`--log-fx`/`--log-fx-limit`/`--prot-days`; `mass_loss_tier` + `wind_model`). CR-24: per-star V_ISM (`--cloud` / `--clic-max-pc` / `--lb-cavity`; `velocity_*` + `v_ism_*` fields); CR-31: `--wind-speed` over a Wood class/preset rate ignored (forced 400). CR-27: `--star` runs the mass ladder before needing a luminosity (a catalog / FLAME star with no V resolves; the curated "could not resolve a mass" error otherwise); `luminosity_lsun` is the best available (manual > regions_bc > gaia_flame) or null + **`luminosity_provenance`** — never a fabricated 1.0 (β ≠ 0 with none → error); **`luminosity_status`** on a bounded FLAME-luminosity fetch; a multiple-system entry resolves to its component A (**`system_entry`** on every result; a failed A lookup → exit 1 + **`component_a_status`**). |
-| `exclusion-system` | CR-11.3: compose `exclusion-boundary` over a binary/multi-star system (`--star` or `--component`) into merge-grouped, phase-varying, asymmetric zones with per-component off-MS domain guards. CR-19: `--gaia-timeout` bounds the Gaia-archive TAP calls; a `--star` degrade flags `gaia_status` (binary path) + `flame_status_a`/`_b` (mass path), and a mass-resolving `--component` degrade flags per-component `flame_status_<a+i>`, never hangs. CR-22: the two-layer wall lands per component + a parallel top-level `wall_zones[]` (envelope + combined-wind on summed Ẇ + phase-eligibility); the four-value `domain` enum; per-`--component` wind keys + system-level wind flags. CR-23: per-component **`mass_note`** (parity with `exclusion-boundary`) + **`standoff_note`** (research-grade for an evolved component; null for MS/windless); the single-body `--star` FLAME degrade now surfaces `flame_status` too. CR-25.4: new system-level **`--wind-state`** (reaches MS components without their own `wind_state=`); per-`--component` `wind_state=` honored for all four values on any MS colour (`otype=` accepts a `|` list; `--component` never fetches); `--star` components carry their otype + (MS K/M) the full SIMBAD otype list; per-component `wind_class_provenance`/`wind_otype`/`wind_otype_source`/`wind_class_note` + resolved `mass_loss_msun_yr`/`mass_loss_provenance`; degrade flags `otype_status` (single body) / `otype_status_a`/`_b` (binary). CR-26: per-component tier ladder (`--component` `main_id=`/`log_fx=`/`log_fx_limit=`/`radius_rsun=`/`prot_days=`, system `--prot-days`) + the zone combined-wind band. CR-24: per-star V_ISM (`--cloud` / `--clic-max-pc` / `--lb-cavity`; `velocity_*` + `v_ism_*` fields); CR-31: `--wind-speed` over a Wood class/preset rate ignored (forced 400). CR-27: a system entry's single body (no-orbit / wide-bond / off-MS `--star` paths) is its component A (**`system_entry`** on every result, the note in `resolution_notes`; composed systems unchanged); a failed A lookup → exit 1 + **`component_a_status`**; a bounded FLAME fetch on the single-body mass error says so + `flame_status`. |
+| `exclusion-boundary` | FTL exclusion-boundary radius r_ex (the "Alcubierre Limit"); a Kuiper-calibrated in-universe dial. CR-22: a **two-layer** output — the unchanged canon **standoff** + a second **research-grade physical WALL** (`wall_au`/`wall_route`/`wall_exceeds_standoff`, wind flags `--wind-speed`/`--v-ism`/`--c-ms`/`--b-field`/…); a four-value `domain` enum (`main_sequence`/`evolved`/`windless_free_harbor`/`unmodeled`) with a windless free-harbor guard on every path + evolved-host standoff from a measured mass (`--star-mass-catalog`). CR-23: the `--star` mass chain is the **dossier tier ladder** (manual > catalog > Gaia FLAME > L-inversion — a non-cataloged FLAME star now matches `dossier`/`exclusion-system`, e.g. ε Eri ≈43.69); every output carries **`mass_provenance`** ∈ {manual,catalog,gaia_flame,ms_luminosity_inversion,object_preset,spectral_type_table} (or null on a no-mass domain); a bounded FLAME degrade surfaces **`flame_status`**; **`--gaia-timeout`** now accepted. CR-25: `--wind-state {quiet,solar,active,hot}` is a full bin override on any main-sequence colour (precedence: `--object` preset `wind_class` > `--wind-state` > active-otype auto-detect > colour default; ignored + noted on evolved/windless/unmodeled hosts); on `--star` an MS K/M star's **full** SIMBAD otype list is fetched (one bounded TAP call) → `active` iff any of `{Er*, Fl*, UV*, BY*, RS*}`; new keys on every output **`wind_class_provenance`** ∈ {manual, otype_auto, class_default, object_preset}/null + `wind_otype` + `wind_otype_source` + `wind_class_note`; a degraded otype fetch surfaces top-level **`otype_status`** ∈ {timeout, unreachable, error}. Standoff unchanged (γ=0); an active K/M wall 0.424 → 13.42 AU. CR-22.6: `--mass-msun` must be finite and > 0 again (≤ 0/NaN → "must be > 0", +inf → "must be finite", exit 1 — a CR-22 regression fix). CR-26: the WALL rate comes from a per-star tier ladder (supplied → Wood-measured → X-ray → non-detection → class default; `--radius-rsun`/`--log-fx`/`--log-fx-limit`/`--prot-days`; `mass_loss_tier` + `wind_model`). CR-24: per-star V_ISM (`--cloud` / `--clic-max-pc` / `--lb-cavity`; `velocity_*` + `v_ism_*` fields); CR-31: `--wind-speed` over a Wood class/preset rate ignored (forced 400). CR-27: `--star` runs the mass ladder before needing a luminosity (a catalog / FLAME star with no V resolves; the curated "could not resolve a mass" error otherwise); `luminosity_lsun` is the best available (manual > regions_bc > gaia_flame) or null + **`luminosity_provenance`** — never a fabricated 1.0 (β ≠ 0 with none → error); **`luminosity_status`** on a bounded FLAME-luminosity fetch; a multiple-system entry resolves to its component A (**`system_entry`** on every result; a failed A lookup → exit 1 + **`component_a_status`**). CR-30: `--spectral-type` reads S1; M_Ks tier on `--star`; top-level `placement` (+ `windless_alternative` / `r_ex_interval_au` on a boundary); 5th domain `undetermined_no_mass` (L0–L5, no mass); a mass placed substellar → free harbor; `--age-*` flags; 2MASS degrade marker. |
+| `exclusion-system` | CR-11.3: compose `exclusion-boundary` over a binary/multi-star system (`--star` or `--component`) into merge-grouped, phase-varying, asymmetric zones with per-component off-MS domain guards. CR-19: `--gaia-timeout` bounds the Gaia-archive TAP calls; a `--star` degrade flags `gaia_status` (binary path) + `flame_status_a`/`_b` (mass path), and a mass-resolving `--component` degrade flags per-component `flame_status_<a+i>`, never hangs. CR-22: the two-layer wall lands per component + a parallel top-level `wall_zones[]` (envelope + combined-wind on summed Ẇ + phase-eligibility); the four-value `domain` enum; per-`--component` wind keys + system-level wind flags. CR-23: per-component **`mass_note`** (parity with `exclusion-boundary`) + **`standoff_note`** (research-grade for an evolved component; null for MS/windless); the single-body `--star` FLAME degrade now surfaces `flame_status` too. CR-25.4: new system-level **`--wind-state`** (reaches MS components without their own `wind_state=`); per-`--component` `wind_state=` honored for all four values on any MS colour (`otype=` accepts a `|` list; `--component` never fetches); `--star` components carry their otype + (MS K/M) the full SIMBAD otype list; per-component `wind_class_provenance`/`wind_otype`/`wind_otype_source`/`wind_class_note` + resolved `mass_loss_msun_yr`/`mass_loss_provenance`; degrade flags `otype_status` (single body) / `otype_status_a`/`_b` (binary). CR-26: per-component tier ladder (`--component` `main_id=`/`log_fx=`/`log_fx_limit=`/`radius_rsun=`/`prot_days=`, system `--prot-days`) + the zone combined-wind band. CR-24: per-star V_ISM (`--cloud` / `--clic-max-pc` / `--lb-cavity`; `velocity_*` + `v_ism_*` fields); CR-31: `--wind-speed` over a Wood class/preset rate ignored (forced 400). CR-27: a system entry's single body (no-orbit / wide-bond / off-MS `--star` paths) is its component A (**`system_entry`** on every result, the note in `resolution_notes`; composed systems unchanged); a failed A lookup → exit 1 + **`component_a_status`**; a bounded FLAME fetch on the single-body mass error says so + `flame_status`. CR-30: M_Ks tier; `zones[].components[].placement`; domain by placement (substellar → free harbor, `undetermined_no_mass`); `--age-*` + `--component age_lo=/age_hi=/age_basis=`. |
 
 ## ISM dust / extinction (T2)
 | Command | Description |
@@ -273,28 +273,28 @@ documented in `docs/integration.md`).
 | `catalog-cache-clear` | Wipe the catalog caches (app `data/catalog_cache/` + any residual astroquery HTTP cache). Offline maintenance. |
 | `gaia-tap` | Any Gaia DR3 table by raw ADQL or a structured filter (live network). |
 | `heasarc-query` | A HEASARC X-ray catalog by cone or raw TAP/ADQL (live network). |
-| `binary-orbit` | Every orbital solution for a star (Gaia NSS + SB9 + WDS/orb6) with companion-mass star/BD/planet classification (live). CR-16: a degenerate/WD-secondary query resolves the primary's sp-type for the companion masses (additive `identity.primary`/`mass_resolved_via_primary`; `binary-orbit "Sirius B"` → 2.18/0.4577 = `"Sirius"`), staying a raw reporter (no catalog). |
-| `close-binary-census` | A systematic close-binary population sweep (Gaia NSS + SB9, X-Match dedup, planet filter) (live). |
+| `binary-orbit` | Every orbital solution for a star (Gaia NSS + SB9 + WDS/orb6) with companion-mass star/BD/planet classification (live). CR-16: a degenerate/WD-secondary query resolves the primary's sp-type for the companion masses (additive `identity.primary`/`mass_resolved_via_primary`; `binary-orbit "Sirius B"` → 2.18/0.4577 = `"Sirius"`), staying a raw reporter (no catalog). CR-30: M₁ = S1 at the type (null M₁ + `m1_null_reason` instead of 1.0); classifier ≥ 0.075 stellar, [0.067, 0.075) boundary, SB1 minimum < 0.075 undetermined; directions under a flagged primary. |
+| `close-binary-census` | A systematic close-binary population sweep (Gaia NSS + SB9, X-Match dedup, planet filter) (live). CR-30: S1 M₁ on SB9 rows (null → `unknown`); bulk NSS rows carry `m1_assumed_note` (1.0 M☉). |
 | `gaia-astrophysical` | Gaia GSP-Phot + FLAME stellar parameters incl. age for one source (live). |
 | `besancon-query` | Besançon Galaxy Model (m1612) synthetic field population + derived age distribution (live; needs credentials). |
 
 ## Dossier, projects & generation (Q / R / S)
 | Command | Description |
 |---|---|
-| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). CR-10.5: self-flags evolved hosts (luminosity-class region guard, `--force-ms-inversion`) + cross-checks `binary-orbit` for multiplicity (`multiplicity_basis`). CR-11.2: stellar-mass provenance block + `--star-mass-catalog`/`--mass-solar`; a preferred measured mass recomputes the mass-derived fields (radius/calc-L/limits) coherently. CR-16: a secondary-named target's `multiplicity` masses resolve via the primary (`"Sirius B"` → 2.063/0.4577, matching the system-name dossier). CR-19: `--gaia-timeout` bounds the Gaia FLAME + multiplicity-orbit calls; a bounded call renders a `⚠ Gaia FLAME <status>` mass row / a "Gaia archive — degraded" multiplicity row (`flame_status`/`gaia_status`), never hangs. |
+| `dossier` | Render a complete, self-contained system dossier by composing the existing readers (markdown / html / json). CR-10.5: self-flags evolved hosts (luminosity-class region guard, `--force-ms-inversion`) + cross-checks `binary-orbit` for multiplicity (`multiplicity_basis`). CR-11.2: stellar-mass provenance block + `--star-mass-catalog`/`--mass-solar`; a preferred measured mass recomputes the mass-derived fields (radius/calc-L/limits) coherently. CR-16: a secondary-named target's `multiplicity` masses resolve via the primary (`"Sirius B"` → 2.063/0.4577, matching the system-name dossier). CR-19: `--gaia-timeout` bounds the Gaia FLAME + multiplicity-orbit calls; a bounded call renders a `⚠ Gaia FLAME <status>` mass row / a "Gaia archive — degraded" multiplicity row (`flame_status`/`gaia_status`), never hangs. CR-30: S1 / colour-route regions, M_Ks tier, `regions.mass.placement`, lifetime by status, a failed region step still reports the mass, `multiplicity.placement_a`, `--age-*` flags, 2MASS degrade marker. |
 | `project-list` | List project workspaces (name, description, member count). |
 | `project-get` | A project workspace + its members (with `generated_spec` echoed parsed). |
-| `generate-system` | Deterministically generate a plausible planetary system (synthetic-from-seed or real-anchor). |
+| `generate-system` | Deterministically generate a plausible planetary system (synthetic-from-seed or real-anchor). CR-30: S1 rows for the draws; the real anchor's mass / R(M) (a null mass or a 2MASS degrade → error). |
 
 ## Star analysis (sister `star_analysis` skill — CR-1…10)
 | Command | Description |
 |---|---|
 | `debris-disk` | Observed IR-excess debris disk vs Chen 2014 + Cotten & Song 2016, else a per-star AllWISE-W4 warm-dust upper limit (never null). LIVE. |
-| `multiplicity` | Stellar-multiplicity summary — otype hint + `binary-orbit` tool-split + GCNS component count (SB1 masses = sin i=1 lower bound). LIVE. CR-16: a degenerate/WD-secondary query's `m2_solar_lower` is now solved at the correct primary mass (`"Sirius B"` → 0.4577, not 0.283). |
-| `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a **catalog-aware per-component mass chain** (`--star-mass-catalog`; same masses as `exclusion-system`/dossier) + real-ratio solution selection + `e_out_of_hw_range` flag. LIVE. CR-16: a degenerate/WD-secondary query resolves via the primary → `"Sirius B"` = `"Sirius"` (2.063/0.4577; 2.063/1.018 w/ catalog). CR-19: `--gaia-timeout` bounds the Gaia-archive TAP calls; a bounded call flags `gaia_status` + `flame_status_a`/`_b`, never hangs. |
+| `multiplicity` | Stellar-multiplicity summary — otype hint + `binary-orbit` tool-split + GCNS component count (SB1 masses = sin i=1 lower bound). LIVE. CR-16: a degenerate/WD-secondary query's `m2_solar_lower` is now solved at the correct primary mass (`"Sirius B"` → 0.4577, not 0.283). CR-30: `m2_solar_lower_direction` under a flagged primary. |
+| `binary-stability-auto` | Auto-pipe `binary-orbit` → Holman-Wiegert S/P-type stability with a **catalog-aware per-component mass chain** (`--star-mass-catalog`; same masses as `exclusion-system`/dossier) + real-ratio solution selection + `e_out_of_hw_range` flag. LIVE. CR-16: a degenerate/WD-secondary query resolves via the primary → `"Sirius B"` = `"Sirius"` (2.063/0.4577; 2.063/1.018 w/ catalog). CR-19: `--gaia-timeout` bounds the Gaia-archive TAP calls; a bounded call flags `gaia_status` + `flame_status_a`/`_b`, never hangs. CR-30: `--age-*` flags; `placement_a` + M₁ / M₂ directions; a null S1 M₁ → the no-masses result. |
 | `population-classify` | Thin/thick/halo Galactic-population verdict from U/V/W (Bensby velocity-ellipsoid on a Schönrich LSR). |
 | `nuclear-inventory` | Fusion + fissile (per-isotope GCE, WB 3c FINAL) + radiogenic-heat inventory from stellar [Fe/H]/age/[Eu/H]; CR-10.2 `[Fe/H]>+0.5` soft `feh_extrapolation` flag. |
-| `detection-completeness` | Per-method min-detectable-planet-vs-SMA map (RV/transit/astrometry/imaging), WB 3a FINAL defaults; CR-10.4 archive-M★ preference + `star_mass_provenance`; CR-10.3 per-star RV tier-2 catalog (`--rv-precision-catalog`) + per-method `floor_provenance`. |
+| `detection-completeness` | Per-method min-detectable-planet-vs-SMA map (RV/transit/astrometry/imaging), WB 3a FINAL defaults; CR-10.4 archive-M★ preference + `star_mass_provenance`; CR-10.3 per-star RV tier-2 catalog (`--rv-precision-catalog`) + per-method `floor_provenance`. CR-30: S1 host M / R; `--star-mass-catalog` tier (manual → catalog → archive); `star_placement`; the explicit branch (L0–L5 / boundary / null radius → exit 0, methods not computed); `limit_direction`; `--age-*` flags. |
 | `planetary-systems-batch` | Batch NASA `ps` pull — full per-planet + per-system fields for many hosts; CR-9 disposition/quality + CR-10.1 `survey_disposition`/`survey_siblings` (live TOI/KOI/K2 FP/candidate cross-match). LIVE. |
 
 ## Weapons & engagement physics (Phase AT)

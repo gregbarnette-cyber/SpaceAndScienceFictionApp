@@ -142,19 +142,17 @@ def _resolve_teff(teff_k, spectral_type, star):
         return {"teff": float(teff_k)}
 
     if spectral_type:
-        # Offline main-sequence table lookup via the shared ceiling rule.
+        # CR-30.2: S1's Teff at the type (the one parse; interpolated in subtype).
         from core import regions
-        row, _key = regions._lookup_spectral_type(spectral_type)
-        if not row:
+        s1, _parse = regions._lookup_s1(spectral_type)
+        teff = s1.get("Teff")
+        if teff is None:
             return {"error": f"Could not resolve spectral type '{spectral_type}' "
-                             f"to a main-sequence Teff."}
-        try:
-            teff = float(row["Teeff(K)"])
-        except (KeyError, TypeError, ValueError):
-            return {"error": f"Main-sequence row for '{spectral_type}' has no usable Teff."}
+                             f"to a main-sequence Teff ({s1.get('s1_null_reason')})."}
         if teff <= 0:
             return {"error": f"Main-sequence Teff for '{spectral_type}' is non-positive."}
-        return {"teff": teff}
+        # CR-30.2: the type read and S1's rows ride on the output (a letter-only F/G/K carries its disclosure)
+        return {"teff": float(teff), "s1": regions._s1_fields(s1, _parse)}
 
     # star → SIMBAD (the only networked path); lazy import keeps astroquery out
     # of the offline import graph.
@@ -163,6 +161,14 @@ def _resolve_teff(teff_k, spectral_type, star):
     if "error" in simbad:
         return simbad
     reg = regions.compute_star_system_regions_from_simbad(simbad)
+    from core import twomass
+    if twomass.degrade_marker(reg):
+        # CR-30.3: par-flux reads the region step's temp, which is SIMBAD's teff — a 2MASS degrade moves no value
+        # here (pre-fire ruling 7), so the Teff is used and the marker rides on the output (exit 0)
+        teff = simbad.get("teff")
+        if teff is None or teff <= 0:
+            return {"error": f"Could not derive a temperature for '{star}'."}
+        return {"teff": float(teff), "s1": twomass.degrade_marker(reg)}
     if "error" in reg:
         return reg
     teff = reg.get("temp")
@@ -264,4 +270,5 @@ def compute_par_flux(teff_k=None, spectral_type=None, star=None,
         "sed_model": sed_model,
         "feeds_note": _FEEDS_NOTE,
         "model_note": model_note,
+        **(tr.get("s1") or {}),
     }

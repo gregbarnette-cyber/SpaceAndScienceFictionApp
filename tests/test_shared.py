@@ -214,46 +214,19 @@ class ParseSpectralClassTest(unittest.TestCase):
             self.assertEqual(shared._parse_spectral_class(s), (None, None))
 
 
-# ── P7.1: _lookup_spectral_type (ceiling rule + cross-letter fallthrough) ─────
+# ── CR-30.1: the pre-CR-30 _lookup_spectral_type / CSV loader is retired from core.shared ─────────────────────
+# (S1's lookup lives in core.ms_sequence.s1_at — pinned in tests/test_cr30_parse.py.)
 
-class LookupSpectralTypeTest(unittest.TestCase):
-    """Reads the real propertiesOfMainSequenceStars.csv (classes present:
-    A0/A2/A5/A7, F0/F2/F5/F7, G0/G2/G5/G8, M0/M2/M4/M6/M8, …). The save/restore
-    guard clears shared._MAIN_SEQUENCE_DATA so a synthetic-seeding test elsewhere
-    can't poison the CSV load here, and restores it afterward (P3.3 hygiene)."""
+class RetiredMainSequenceLookupTest(unittest.TestCase):
+    def test_retired(self):
+        self.assertFalse(hasattr(shared, "_lookup_spectral_type"))
+        self.assertFalse(hasattr(shared, "_load_main_sequence_data"))
 
-    def setUp(self):
-        self._saved = save_main_sequence_cache()
-
-    def tearDown(self):
-        restore_main_sequence_cache(self._saved)
-
-    def test_ceiling_rule_within_class(self):
-        # smallest available subtype >= requested.
-        self.assertEqual(shared._lookup_spectral_type("G1V")[1], "G2")
-        self.assertEqual(shared._lookup_spectral_type("G6V")[1], "G8")
-        self.assertEqual(shared._lookup_spectral_type("A4V")[1], "A5")
-
-    def test_exact_subtype(self):
-        self.assertEqual(shared._lookup_spectral_type("G0V")[1], "G0")
-
-    def test_cross_letter_fallthrough(self):
-        # F9 is cooler than the coolest F entry (F7) → next class's hottest = G0.
-        self.assertEqual(shared._lookup_spectral_type("F9V")[1], "G0")
-
-    def test_clamp_to_last_entry_of_final_class(self):
-        # M9 exceeds the coolest M entry (M8) and there is no cooler letter → M8.
-        self.assertEqual(shared._lookup_spectral_type("M9V")[1], "M8")
-
-    def test_white_dwarf_returns_none(self):
-        row, key = shared._lookup_spectral_type("DA1.9")
-        self.assertIsNone(row)
-        self.assertIsNone(key)
-
-    def test_row_dict_carries_original_columns(self):
-        row, key = shared._lookup_spectral_type("G2V")
-        self.assertEqual(row["Spectral Class"].strip(), "G2")
-        self.assertIn("Bolo. Corr. (BC)", row)
+    def test_parse_wrapper_reads_through_the_one_parse(self):
+        self.assertEqual(shared._parse_spectral_class("kA2hA5mA7V"), ("A", 5.0))    # the Am h type
+        self.assertEqual(shared._parse_spectral_class("M8 INT-G"), ("M", 8.0))
+        self.assertEqual(shared._parse_spectral_class("K"), (None, None))          # letter-only
+        self.assertEqual(shared._parse_spectral_class("D+dM3"), ("M", 3.0))        # composite: legacy read
 
 
 # ── P7.1: _network_error_msg classification matrix ───────────────────────────

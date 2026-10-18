@@ -5,6 +5,7 @@
 #   StarRegionsSemiManualPanel — option 9:  star name + user-supplied sunlight/albedo
 #   StarRegionsManualPanel     — option 10: all six inputs manually; no SIMBAD
 
+from core.shared import fmt_num as _fmt   # CR-30.4: null-safe display (ruling 93 M5)
 import math
 
 from PySide6.QtWidgets import (
@@ -52,10 +53,14 @@ def _compute_semi_manual_regions(name: str, sunlight: float, albedo: float) -> d
 # ── AU formatting helpers ──────────────────────────────────────────────────────
 
 def _au_lm4(val: float) -> str:
+    if val is None:                            # CR-30.4: a null mass nulls 0.2·M / 40·M (M5)
+        return "—"
     return f"{val:.4f} ({val * 8.3167:.3f} LM)"
 
 
 def _au_lm3(val: float) -> str:
+    if val is None:
+        return "—"
     return f"{val:.3f} ({val * 8.3167:.3f} LM)"
 
 
@@ -188,10 +193,13 @@ def add_region_diagram_tabs(target, d: dict, hypatia=None):
     try:
         # HZ Diagram — Rings/Strip toggle (Phase 5). A single star, so the Strip shows
         # the HZ bands with no planet markers.
-        hz_w = _hz_toggle_tab(
-            None, d["temp"], d["calculatedLuminosity"],
-            title=f"Habitable Zone  (T={d['temp']:.0f} K,  L={d['calculatedLuminosity']:.4f} L☉)",
-            eeid_au=d.get("distAU"), planets=[])
+        # CR-30.4 (CP3): a null R(M) skips ONLY the calculated-L HZ diagram — every other tab still builds
+        hz_w = None
+        if d.get("calculatedLuminosity") is not None:
+            hz_w = _hz_toggle_tab(
+                None, d["temp"], d["calculatedLuminosity"],
+                title=f"Habitable Zone  (T={d['temp']:.0f} K,  L={_fmt(d.get('calculatedLuminosity'), '.4f')} L☉)",
+                eeid_au=d.get("distAU"), planets=[])
         if hz_w is not None:
             target.addTab(hz_w, "HZ Diagram")
 
@@ -247,7 +255,7 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
                 ["Absolute Magnitude",            f"{d['absMagnitude']:.3f}"],
                 ["Bolometric Absolute Magnitude", f"{d['bcAbsMagnitude']:.3f}"],
                 ["Bolometric Luminosity",         f"{d['bcLuminosity']:.6f}"],
-                ["Luminosity from Mass",          f"{d['luminosityFromMass']:.5f}"],
+                ["Luminosity from Mass",          _fmt(d.get('luminosityFromMass'), ".5f")],
                 ["BC",                            f"{d['boloLum']:.1f}"],
                 ["Star Temperature K",            f"{int(d['temp'])}"],
             ],
@@ -260,11 +268,11 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
             ["Stellar Mass", "Stellar Radius", "Stellar Diameter (Sol)",
              "Stellar Diameter (KM)", "Main Sequence Life Span"],
             [[
-                f"{d['stellarMass']:.4f}",
-                f"{d['stellarRadius']:.5f}",
+                _fmt(d.get('stellarMass'), ".4f"),
+                _fmt(d.get('stellarRadius'), ".5f"),
                 f"{d['stellarDiameterSol']:.4f}",
                 f"{d['stellarDiameterKM']:.5e}",
-                f"{d['mainSeqLifeSpan']:.5e}",
+                _fmt(d.get('mainSeqLifeSpan'), ".5e"),
             ]],
         ),
         "Stellar Properties",
@@ -290,7 +298,7 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
             [[
                 f"{d['distAU']:.4f}",
                 f"{d['distKM']:.5e}",
-                f"{d['planetaryYear']:.4f}",
+                _fmt(d.get('planetaryYear'), ".4f"),
                 f"{d['planetaryTemperature']:.2f}",
                 f"{d['planetaryTemperatureC']:.2f}",
                 f"{d['planetaryTemperatureF']:.2f}",
@@ -350,6 +358,8 @@ def _build_region_tabs(d: dict, viz_widget=None) -> QTabWidget:
             return [zone_name, "?", "?", "?"]
         seff = _kopparapu_seff(d["temp"], key)
         def fmt(lum):
+            if lum is None:                         # CR-30.4: a null mass nulls L(M) / calculated L
+                return "—"
             au = math.sqrt(lum / seff)
             return _au_lm3(au)
         return [zone_name, fmt(d["bcLuminosity"]), fmt(d["luminosityFromMass"]), fmt(d["calculatedLuminosity"])]

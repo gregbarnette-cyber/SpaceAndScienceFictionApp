@@ -9,12 +9,12 @@ CLAUDE.md; the full per-file catalog lives here.
 
 Tests live in `tests/`. The bulk are **offline** and need no network or Qt:
 
-- `test_equations.py`, `test_calculators.py`, `test_regions.py` — pure math/physics core (HZ + Kopparapu Seff, brachistochrone profiles, velocity/coordinate conversions, planetary & rotating-habitat equations, the spectral-type ceiling rule). `test_calculators.py` also carries **`HorizonsIdMapTest`** (offline, no network): it pins the `_HORIZONS_ID_MAP` shape after the 2026-08-02 barycenter-collision fix — every numbered small body must keep its trailing `;`, a bare integer is only legal in the 100–999 moon range, and comet ids must not gain a `;`. See `docs/calculators.md` (opt 22, object name resolution).
+- `test_equations.py`, `test_calculators.py`, `test_regions.py` — pure math/physics core (HZ + Kopparapu Seff, brachistochrone profiles, velocity/coordinate conversions, planetary & rotating-habitat equations; `test_regions.py` was rewritten for CR-30 — S1's lookup on the region step and the 4.74 zero point replace the old ceiling rule). `test_calculators.py` also carries **`HorizonsIdMapTest`** (offline, no network): it pins the `_HORIZONS_ID_MAP` shape after the 2026-08-02 barycenter-collision fix — every numbered small body must keep its trailing `;`, a bare integer is only legal in the 100–999 moon range, and comet ids must not gain a `;`. See `docs/calculators.md` (opt 22, object name resolution).
 - `test_worldbuilding.py` — the Phase H worldbuilding calculators (Roche limit, tidal-locking timescale, Hill sphere, binary orbit stability, atmosphere retention) in `core/equations.py`; anchored to reference values and locks the two formula corrections (rigid Roche coeff 1.26, binary P-type `+4.12μ`). **Phase T1a** adds the additive Hill-sphere **Domingos 2006 exomoon keys** (`stable_fraction`/`stable_moon_limit_km/au`, prograde leading 0.4895 / retrograde 0.9309, inclination deg→rad) plus a regression guard that the pre-existing Hill-sphere keys are unchanged when the new `moon_inclination_deg`/`prograde` args are omitted.
 - `test_solvent_zones.py` — the Phase P (Snow Lines & Alternative-Solvent HZs) core + query.py + viz contracts (offline). `compute_solvent_zone` (P4, M1 surface model): the legacy alt-HZ divisor anchors at A=0.3 (water/ammonia/methane), the corrected `(1−A)^0.25` albedo exponent, custom ranges, the CO₂ pressure-conditional flag, the corrected hydrogen band, the validation matrix, and the `solvent-zone` subcommand (subprocess happy-path/parity + the exit-code matrix — curated `{"error"}` exit-1, mutex/missing-arg exit-2). `compute_ice_lines` (P5, M2 equilibrium): the 278.5 K `T_ref`, the canonical 170 K / 2.68 AU water snow line, the CO₂/NH₃/N₂/CO fronts (N₂/CO flagged `disk_line`), no dual/formation line, + the `ice-lines` subcommand. The P1 value re-anchors (hydrogen ÷0.0000247/÷0.0000053, snowLine ÷0.139, `planetaryTemperature` `(1−A)^0.25`), the P2/P3 additive region keys (derivation parity + sound-bands regression guard), and the viz preps `prepare_solvent_ranges` (V5), `prepare_ice_line_diagram` (V4), `prepare_orbit_overlays` (V6/V7, all solvent zones default-off). The V1 10-band alt-HZ / V2 system-regions relabels are exercised via `core.viz`. (The Phase O `test_viz_phase_o.py` additivity guard covers `make_orbits_canvas` with no `snow_au`/`solvent_bands`.)
 - `test_db_backups.py` — the opt-50 backup pruner (`core.db.prune_star_systems_backups`).
 - `test_search.py` — the Phase G search/filter core: `core.shared.spectral_where` / `spectral_adql` (pure clause builders), the DB-backed `search_star_systems` / `search_hwc` (temp DB, auto-seed disabled, no network — incl. the `ss`-aliased query), and `search_exoplanets` with the NASA TAP fetch mocked. (The Phase L4 `search_star_systems` `fe_h` JOIN is exercised separately in `test_hypatia_cache.py`.) `test_designation_prefix_with_name_leading_designations` pins the `designation_prefix` clause against opt-50's NAME-first `designations`: a catalog prefix that is no longer the leading token still matches via the after-`", "` branch, and the common name itself becomes searchable. **Spectral-prefix work (2026-07-27, `completed_plans/SPECTRAL_CLASS_PLAN.md`):** `SpectralClauseTest` now pins the **GLOB** (case-sensitive) chip SQL — one term per `_SP_CLASS_PREFIXES` entry — plus `spectral_leading_class` over every prefix family (`d`/`sd`/`esd`/`usd`/`d/sd`/`sd:`/`s/sd`/`(sd)`/`k`/`h`/`kn`), the Am/Ap first-letter rule (`kA5hF0mF2` → A), and the **white-dwarf regression pins** (`DA`/`DZ7.5`/`DQ`/`DA+dM` must never reach a letter chip — SQLite `LIKE` is case-insensitive and would fuse the dwarf prefix `d` with the degenerate prefix `D`). `test_sql_and_python_rules_agree` cross-checks the SQL fragment against the Python helper over a sample covering **every** prefix (incl. the `(`/`)`/`/`-bearing ones where a GLOB-metacharacter mistake would hide) and asserts chips ∪ Other partitions the table with no overlap; it runs on the temp DB, not the real one. `SpectralDisplayClassTest` covers the Part 2 `letters=` parameterization: the wider `_SP_DISPLAY_LETTERS` set, the regression pin that `DA`/`L0`/`T8`/`Y0`/`WN` keep their colours (the naive fix would grey 19,674 rows), the default-arg guard that Part 1 is byte-identical, cross-site agreement with `plot_helpers._display_class`, the prefix-aware `sp_class`, and that non-spectral labels (`"Red Giant"`) do **not** resolve. `_seed_star_systems` carries prefixed rows (Wolf 359 `dM6`, Ross 128 `dM4`, Kapteyn `sdM1.0`, Van Maanen 2 `DZ7.5`, 65 UMa `hA5VkA2mA3`, Teide 1 `sdL0`) so the user-facing `search_star_systems` path is exercised end-to-end, not just the clause builder. **Palette unification (2026-07-27, `completed_plans/ROUTE_CHART_REFACTOR_PLAN.md` Phase 3):** `test_colour_helpers_agree_with_the_rule` no longer pins the divergent route-map hexes (it asserted `_star_map_color` kept its *own* G/M/D values); the new `test_there_is_exactly_one_spectral_palette` replaces that guarantee with the opposite one — `core.calculators._star_map_color` must not exist, `core.viz._SPECTRAL_COLORS`/`_sp_color` must **be** the `core.shared` objects, and every `_map_node` / O8 two-star-map node colour must equal `_sp_color` for the same spectral type. Guard-proved by reintroducing a local G/M/D palette inside `_map_node`.
-- `test_shared.py` — offline unit coverage for `core/shared.py` helpers (seeded IMPROVEMENT_PLAN Phase 6, expanded Phase 7; pure offline, no Qt/network). The P6.1 `_with_retries` (success/exhaustion + backoff) and its **`Retry-After`** honoring (`_retry_after_seconds`: integer-seconds, capped at 60, HTTP-date form falls back to backoff), plus (P7.1) `_parse_designations` / `_parse_designations_from_ids` (incl. the `Gaia DR3`→`EDR3` slot rule, DR2 exclusion, first-prefix-wins, the `keys=` subset), `_parse_spectral_class` (`sdG5` prefix-skip, DA/DZ white-dwarf rejection, fractional subtypes, sentinels), `_lookup_spectral_type` (ceiling rule G1→G2 / cross-letter fallthrough F9→G0 / clamp M9→M8 / white-dwarf→None, reading the real `propertiesOfMainSequenceStars.csv` under the `save/restore_main_sequence_cache` guard), and the `_network_error_msg` classification matrix (requests Timeout/ConnectionError, urllib URLError timeout-vs-generic, string fallbacks, raw passthrough).
+- `test_shared.py` — offline unit coverage for `core/shared.py` helpers (seeded IMPROVEMENT_PLAN Phase 6, expanded Phase 7; pure offline, no Qt/network). The P6.1 `_with_retries` (success/exhaustion + backoff) and its **`Retry-After`** honoring (`_retry_after_seconds`: integer-seconds, capped at 60, HTTP-date form falls back to backoff), plus (P7.1) `_parse_designations` / `_parse_designations_from_ids` (incl. the `Gaia DR3`→`EDR3` slot rule, DR2 exclusion, first-prefix-wins, the `keys=` subset), `_parse_spectral_class` (`sdG5` prefix-skip, DA/DZ white-dwarf rejection, fractional subtypes, sentinels), `_lookup_spectral_type` (**retired by CR-30** — the ceiling rule over the old main-sequence CSV is gone; the class now asserts the retired lookups stay gone, and S1's lookup is covered in `test_cr30_parse.py`), and the `_network_error_msg` classification matrix (requests Timeout/ConnectionError, urllib URLError timeout-vs-generic, string fallbacks, raw passthrough).
 - `test_databases.py` — offline unit coverage for `core/databases.py` (seeded Phase 6, expanded Phase 7; no network/Qt). The P6.2 `_adql_quote` (single-quote doubling + control-char strip + injection neutralization) and P6.3 `_validate_csv_headers` (+ `import_hwc_csv` rejecting a malformed header before any DDL), plus (P7.2) the archive readers with the network mocked — `compute_exoplanet_archive` (happy / no-designation / error-passthrough / no-planets / TAP-timeout-classified / HWO-non-fatal / `_adql_quote` applied in the built WHERE), `compute_planetary_systems_composite`, `compute_hwo_exep` (GJ-priority) via a mocked `_query_tap`; the DB-backed `compute_mission_exocat` (temp CSV through the real `import_mission_exocat_csv` path) and `compute_hwc` (the real `hwc.csv` imported into a temp DB — HD/HIP match, HD 28109 multi-planet SMA sort); and `_query_tap` retry-exhaustion (mocked `requests.get` → Timeout) surfacing → caller classification. Same temp-DB pattern as `test_search.py`.
 - `test_gcns.py` — GCNS ingest/query path with the GAVO TAP fetch mocked. Also pins the **opt-50 designation parser** (`databases._parse_designations_from_ids`): the `Gaia DR3`-captured / `DR1`+`DR2`-excluded rule, and the NAME-first rule — SIMBAD's common name is captured and listed first (`NAME Chara, GJ 475, HD 109358, …`), an unnamed star's output is byte-identical to pre-change, and a leading NAME token disturbs neither cross-match regex. `test_crossmatch_with_name_leading_designations` runs the same guarantee end-to-end through `compute_gcns_ingest` over a seeded `star_systems` whose `designations` lead with NAME (matching by Gaia source_id and by 2MASS core).
 - `test_oec.py` — offline Open Exoplanet Catalogue coverage (`_norm_oec_name`, `_oec_node` generic capture, `compute_oec`/`compute_oec_planet`, the shared display formatters). Monkeypatches `core.databases._oec_get_root` to parse an **inline fixture XML** (the index is still built off it) covering every real topology — single star, S-type binary, P-type circumbinary, hierarchical depth-2, rogue, zero-planet — plus the mockup-surfaced hazards: multi-`<list>` on a binary planet, arcsec+AU `separation`, a bound-only (`upperlimit`) value, `mass type="msini"`, a `<satellite>` moon, an unnamed binary, and alias/planet-name resolution. **Also the Phase-3 System Architecture layout** (`core.viz.prepare_oec_architecture`): `ArchitectureMathTests` unit-tests the pure barycenter/Kepler math on hand-built node dicts (mass-weighted offset, Kepler-from-period rung, missing-mass equal split, no-separation schematic fallback, AU-preferred-over-arcsec, arcsec→AU projection); `ArchitectureTopologyTests` runs it off the shared fixture (single-star-at-barycenter / no rings, depth-2 hierarchy places all stars + emits recenter handles, rogue → error, focus-recenter on a subsystem/star, white-dwarf spectral colour, and the Phase-3b `centers` regression: star-hosts emit none, the fixture circumbinary emits one). **Phase-3b interactive coverage:** `ArchitectureCentersTests` unit-tests the circumbinary (P-type) `centers` payload (emitted at the binary barycenter, planet absent from component stars, survives a focus on the binary, a nested pair keyed to its own offset barycenter). `ArchitectureCanvasTests` + `OecPanelRecenterTests` are **Qt/matplotlib-gated** headless smoke tests (offscreen `QApplication`): the canvas builds for every topology in both interactive/static modes, a simulated `pick_event` on a star / ◆ handle fires `on_select` with the right node, the circumbinary canvas draws its extra ring patch, and the real `OecPanel` recenter wiring (`_on_arch_select`/`_on_arch_reset`/`_rebuild_after_focus`, driven via a `_FakeWindow`) updates the map focus + host, keeps the Architecture map at viz tab 0, and the breadcrumb reflects the focus. **Click-a-planet parity:** planet dicts carry their `node`; a simulated pick on a planet dot fires `on_planet_click` (not a recenter) with the planet + host label (a star name, or the binary label for a circumbinary planet), planets aren't pickable without the callback, `_show_oec_planet_dialog` renders the fields (M·sin i, status), and a click on the live panel canvas opens a `QDialog` parented to the panel. Offline (no network); Qt/mpl skip cleanly when absent. **Phase-4 structural readers:** `OecSearchTests` (fixture-backed `compute_oec_search` — system + planet filters, `--circumbinary`, `--spectral-type` prefix, Jupiter-unit mass ranges, conjunctive planet filters, inverted-range/`--limit` validation, cap/`capped`) and `OecCensusTests` (`compute_oec_census`/`compute_oec_status` counts + distributions + `planet_attachment` off the fixture).
@@ -283,6 +283,164 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
     - `test_query_exclusion_system.py::Cr226MassGuardCliTest` now expects `system_entry: null` on the CLI side.
     - `test_cr26_network.py::IdentityTest::test_no_results_prefix_drift` now reads `_simbad_lookup_impl`.
 
+- **CR-30: a cited main-sequence reference table, its relations, MIST, the hydrogen-burning limit and placement (built
+  2026-10-15 / 16; `PHASE_CR30_PLAN.md`, `docs/integration.md` CR-30 block).**
+  **Isolation** (`tests/conftest.py`):
+  - **`_cr30_twomass_isolation`** (autouse). For every test **not** marked `@pytest.mark.cr30_twomass` (registered in
+    `pytest.ini`), `twomass.resolve` reports "not run" — no ids, no status, no marker — so every pre-CR-30 offline
+    `--star` test keeps the subtype / L route. The VizieR II/246 seam underneath is a leak stub, and both 2MASS memos
+    start empty.
+  - **`_cr30_env_isolation`** clears `SPACE_APP_CR30_DATA_DIR` / `SPACE_APP_2MASS_FORCE_UNREACHABLE`.
+  - The CR-26 socket guard now also covers `test_cr30_*`.
+  - Every `test_cr30_*` file is offline except the opt-in `test_cr30_live.py`. The DB tests use a tmp DB (`core.db._DB_PATH`
+    monkeypatched), so `data/space_app.db` is never touched.
+  - **`test_cr30_data.py`** (CR-30.1):
+    - the md5 gate: the three vendored files verify at 87 / 171 / 888 rows with the contract's md5s, and S1's raw file
+      is vendored with its md5 in `MANIFEST.txt`;
+    - a mismatched, missing or structurally bad file → `Cr30DataError`; `#` lines are skipped; an empty cell is `None`;
+      MIST's duration = `t_end − t_zams`;
+    - `main-sequence`'s 87 rows, O3V first and M9.5V last;
+    - the DB mirrors: a pre-CR-30 `main_sequence_stars` is left untouched and unread; the mirrors are seeded with
+      their md5 and re-seeded when stale; a current mirror takes no write lock; the import reports a failed seed;
+      `get_conn` survives a missing `data/cr30`; the import loads all three and `get_table_status` lists them;
+    - no runtime read of the old file or table, and no `2.52 **` / `4.85 -` region formula, in `core/`, `gui/`,
+      `query.py`, `main.py` or `gui_main.py`;
+    - the vendored files are tracked by git (or at least not ignored in a pre-commit tree);
+    - an offscreen smoke test of the opt 54 import panel (three files, three md5s, the row counts).
+  - **`test_cr30_parse.py`** (CR-30.2):
+    - the one parse: gravity designations stripped and flagged (`M8 INT-G`, `L3beta`, `M8.5 VL-G`, `L5gamma`); INT-G is
+      not class I; the low-gravity III on a flagged late M; the Am form (`kA2hA5mA7V` → A5, `A0mA1Va` → A0); the
+      prefixes; an L type has no colour letter; the CR-10.5 guard otherwise unchanged;
+    - the CP1 fixes: parenthesised notes and star names are not gravity designations; carbon / S / R giants keep
+      their class; an unknown lower-case prefix's colour;
+    - S1's lookup: G9.5V across the class edge, K2.25V, logL interpolated in log, the letter-only rules, the rows past
+      M8 and the hot rows (O5V / O9.5V / B0V), outside the span → `null` with a reason, never into a placeholder cell;
+    - `exclusion-boundary --spectral-type` on those types (G9.5V / K2.25V / B8.5V, the letter-only error / K5V, the Am
+      parse, a gravity type not evolved);
+    - a grep test that no private class parser (`_LUM_CLASS_RE` / `_SP_PATTERN`) is left.
+  - **`test_cr30_luminosity.py`** (CR-30.3):
+    - the 4.74 zero point and the exact step; Sol 1.0000 L☉ (also via `sol-regions`); `star-regions-manual` Lacaille;
+    - the colour route: Proxima's two paths, the VB 10 upper gate, an out-of-span K star, a giant → the subtype route,
+      the 1.40 disagreement threshold, a letter-only M in span;
+    - multiple ids are a disclosure, not a degrade; the three degrades fail loud; "not looked up" takes the subtype
+      route quietly;
+    - `TwomassResolutionTest` (`cr30_twomass`):
+      - only the `2MASS` acronym counts;
+      - an empty identifier query → `ids_failed` for K / M;
+      - one id fetches once and is shared;
+      - `empty` / `unreachable`;
+      - the force hook makes no call;
+      - two ids → `multiple`.
+    - the marker on every carrier: `star-regions`, `circumbinary-hz`, `dyson-collector`, `par-flux`, the generator's
+      real anchor, the dossier (and its 2MASS gate on `regions`), `compare-stars` per star;
+    - the CP2 fixes: the force hook beats a cached `ok`; the generator degrade is an error carrying the marker; the
+      `exclusion-boundary` β error keeps the marker; `circumbinary-hz` reports a hard star2 error as itself.
+  - **`test_cr30_relations.py`** (CR-30.4 + 30.5):
+    - S12 inverted: the breaks, the midpoint switches, the 7 M☉ gap, S1 below the switch, no clamp;
+    - L(M) on both sides of each break; R(M); `null` outside 0.078–59 M☉ with the reason;
+    - the M_Ks route: S13 hand anchors; the region path takes M_Ks; outside the gate → the L route; no V still reports
+      M_Ks; the resolver's tier order; a degraded M_Ks never falls to the L route; no caution on M_Ks; the caution for
+      O / B only;
+    - the L route on the live call path (breaks, no clamp);
+    - the MIST lifetime: the anchors, log–log interpolation at 0.125, `stellar-evolution`, Sol's lifetime and pinned
+      mass, L(1) is S12's;
+    - a region with no mass is `null`, not a crash;
+    - the CP3 fixes: `switch_band` on both sides; `stellar-evolution` NaN → error; the M_Ks activity caveat; a
+      null-mass region diagram doesn't crash; a composed component's 2MASS degrade marks the result.
+  - **`test_cr30_placement.py`** (CR-30.6, pure):
+    - the one limit (`binary._STELLAR_MIN_MSUN is placement.HBL_MSUN`);
+    - the cut's nodes, interpolation and the 0.8 Gyr hand-over;
+    - the band / margin for supplied, inference and M_Ks rows;
+    - the override and its triggers;
+    - the T1–T25 rows of WB's test catalog, from a byte copy in `tests/fixtures/cr30/cr30_test_mass_catalog.json`
+      (md5 `efa69ebb41c681cf3c8edc575bbe8cbb`, checked): the statuses, the cut-bearing rows, the readings,
+      basis-unknown, a model-fit age, TW Hya pre-MS stellar, two sizing ages, below / above every route, the boundary
+      clause, the lifetimes by status;
+    - the factor's hand anchors and nulls, including Greg's Q18 cases (61 Cyg B at 0.03 Gyr → 1.127615 at the 0.025
+      node; below at either node);
+    - the reading: over-read, under-read, the deadband, no sizing age read at 0.01, route-unknown, the boundary clause,
+      from 0.8;
+    - gravity designations (FLD-G never flags); pre-MS (δ, the split, RX J0506 TT*, TW Hya, G 44-42's ages, never on a
+      measured row);
+    - the lifetime by status;
+    - the boundary extras (`windless_alternative`, `r_ex_interval_au`).
+  - **`test_cr30_age_input.py`** (CR-30.6 age input + carriers):
+    - the `placement.age_input` validator;
+    - a bad age is exit 1 on each of the **seven** subcommands; `compare-stars --star-age` parsing; the basis choices
+      are argparse's; `--mass-msun` / `--object` refuse an age;
+    - `exclusion-boundary` placement: `--spectral-type` with an age, no age → no echo, a supplied mass placed by the
+      band with the standoff byte-identical, the `--object` preset not placed, the δ and gravity types;
+    - `exclusion-system`: a component's L route with the call age, the cut by the call age, an under-read, Q39 (a
+      component age replaces the call age), Q21 (a component `otype=` pre-MS), a component age error, the supplied
+      band and the overrides, a WD not placed;
+    - the `star-regions` / dossier (`regions.mass.placement` + the lifetime, the CLI age, the markdown line) /
+      `compare-stars` carriers;
+    - the catalog's new fields: errors name the row and field, a row without the fields loads, WB's test catalog loads
+      clean, a catalog error is exit 1 on the `--star` path;
+    - the seed's bases, including Sirius A `dynamical` on `exclusion-boundary --star` (stubbed);
+    - the CP4 fixes: σ interval lo floored at 0; the orbit provenances; σ validated at load; duplicate component ids
+      keep their own placement; a bare compose has no placement key; binary A's otype reads component A; the Sol
+      dossier is placed; one enum source; the catalog matched once.
+  - **`test_cr30_live.py`** (opt-in, `SPACE_APP_RUN_LIVE=1` + SIMBAD reachability; subprocess, `SPACE_APP_CATALOG_CACHE=0`)
+    — the live anchors: Proxima's colour-route L and the forced 2MASS failure; G 113-20 on the M_Ks route; Wolf 359's
+    boundary row and r_ex interval; Proxima's byte-identical standoff; G 44-42's membership pre-MS; HIP 76901's SB1
+    minimum at S1's M₁; LHS 288's S1 radius.
+  - **`test_cr30_consumers.py`** (CR-30.7; SIMBAD / Gaia / the archive stubbed; the no-identity paths run in-process
+    through `query.py`):
+    - **The exclusion domain:** an L0 placed stellar by mass gets a standoff; an L2 with no mass →
+      `undetermined_no_mass`; the band edges and the override; the `--spectral-type` paths; the presets and WD
+      unchanged; Wolf 359's boundary row; a `--star` L type with no mass → undetermined; a `--star` T type runs the
+      ladder for the conflict flag.
+    - **`binary.py`:**
+      - the classifier: SB1 minimums, the flagged-primary SB1 hand anchor (HIP 76901) and true mass;
+      - M₁ from S1;
+      - the null-M₁ reasons and caveats; a census row with a null M₁ kept as `unknown`; a letter-only NSS primary; the
+        source-id `no_simbad_lookup`; `m1_assumed_note`;
+      - the stability directions (HIP 76901 flagged SB1, LP 120-4 true mass, i Cen without "≤", a measured M₁ with no
+        direction, the null-M₁ no-masses result).
+    - **`detection-completeness`:** the type-only branches, LHS 288's S1 radius, Wolf 359's catalog tier, TRAPPIST's
+      archive youth, DENIS's null-radius branch, AU Mic's `--activity young` with no flag, Procyon's catalog not
+      applied, a TT* star's pre-MS branch, and the seed as the default catalog.
+    - **The census:** the status by type, the label and the note.
+    - **The composed α Cen check (§13.5 M9):** the standoffs byte-identical and the SMA within 1e-12.
+    - **The binary identity's** `lum_class_token` / `s1_class_v_flag` (C14).
+    - **The CP5 fixes:** an undetermined member merges without a TypeError; the log L override reroutes every path;
+      the undetermined mass-loss tier matches across both subcommands; the "no orbital solution" note is kept; an L
+      component's `lum=` is not an inference route; the A otype is one lookup with a disclosed fallback; a T dwarf's
+      FLAME degrade is surfaced; the detection branch names its cause.
+    - **The CP6 fixes** (the lazy M_Ks tier, the planetary SB1 minimum, the mirror warning on stderr, no 2MASS lookup
+      without a parallax, the log L override on exclusion-system, per-call disclosures) and **the live pre-check fixes**
+      (`LivePrecheckFixesTest`): a pre-MS placement reports its sized youth cut; a flagged primary's SB1 caveat is
+      withheld on `selected_solution` and `resolution_notes` too (an unflagged primary's left alone); the DENIS
+      branch note names the boundary placement; the dossier's `regions` names the L / mass route and each R(M) / L(M)
+      null's reason; `stellar-evolution` labels its lifetime end point (0.62 M☉ interpolated).
+    - **The re-gate fixes (WB MSG 366, `RegateFixesTest`):** a reduced primary record takes the M_Ks tier (F-1 a) and
+      an SB1 M₂ is re-solved at the settled M₁, the printed companion with it (F-1 b — HIP 76901 0.25865 / 0.0545752);
+      a non-main-sequence class keeps HEAD's dossier while a missing input or a 2MASS degrade still reports (F-5);
+      compare-stars' archive mass / radius never move for the M_Ks mass (F-2); an M_Ks single body keeps the region
+      L (F-9); the null mass names its reason (F-3); every no-mass `--spectral-type` output carries the type read
+      (F-6); detection's explicit branch keeps HEAD's fields (F-7); a forced 2MASS failure withholds only the region L
+      (F-8).
+    - **The O-1 fix (WB MSG 368, `SimbadFailLoudTest`):** a failed SIMBAD lookup (a service error, not "no results") on
+      the binary mass paths is marked `not_authoritative` + `simbad_status_a` / `_b` — A's widening lookup (and a
+      raising one), B's record without a measured tier, the coordinate-input primary lookup; `binary-stability-auto`,
+      the dossier's multiplicity block, and `exclusion-system` (B always marked, with its note in place of "nature not
+      confirmed"); "no results" everywhere stays unmarked.
+  - **Also updated (re-pinned to S1 / the new relations, each a deliberate change):**
+    - `test_regions` and `test_shared` (the retired lookups) were rewritten;
+    - re-pinned: `test_sol_result_row`, `test_viz_phase_o` (HR from S1; the O2 smoke on a tmp DB),
+      `test_query_expanded` (87 rows), `test_generate` / `test_query_generate`, `test_par_flux`, `test_solvent_zones`,
+      `test_report`, `test_stellar_mass`, `test_formation`, `test_comparison`, `test_oec_derived`, `test_cr23`,
+      `test_cr25` (the oracle keeps frozen pre-CR-30 helpers plus an intended-drift clause), `test_cr27_exclusion`,
+      `test_cr27_simbad`, `test_exclusion_system`, `test_query_exclusion_system`, `test_binary`,
+      `test_binary_stability_auto`, `test_cr22`, `test_detection`.
+    - The byte-identity snapshot tests (`test_cr24_wiring` A0, `test_cr31_wind_speed`) strip the CR-30 keys through
+      `tests/_cr24strip.py`'s `CR30_KEYS` / `cr30_strip`. Its `cr30_run` replays each `spectral_type_table` fixture case
+      under the baseline's own mass / L, so every other key is still byte-identical, and asserts that the real run
+      reads S1.
+    - `tests/_queryharness.py`'s cache helpers became `save_cr30_cache` / `restore_cr30_cache` (the old names kept as
+      aliases).
+
 ## Suite-count history (moved from CLAUDE.md, 2026-09-24)
 
 The running per-CR record of how the offline suite count grew, kept verbatim from the paragraph that used to live in CLAUDE.md's Tests section. CLAUDE.md now carries only the current count; append new history here.
@@ -302,3 +460,9 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 **CR-24 (2026-09-30, `completed_plans/PHASE_CR24_31_32_PLAN.md` stage 3):** **3850 passed, 118 skipped, 609 subtests, 0 failures** (+58 offline, +48 subtests: `test_cr24_tables.py`, `test_cr24_velocity.py`, `test_cr24_range.py`, `test_cr24_wiring.py`; +4 opt-in live skips: `test_cr24_live.py`).
 
 **CR-27 (2026-10-07, `completed_plans/PHASE_CR27_PLAN.md`):** **3913 passed, 118 skipped, 626 subtests, 0 failures** (+63 offline, +17 subtests: `test_cr27_simbad.py`, `test_cr27_exclusion.py`; no new live file).
+
+**CR-30:** **4159 passed, 126 skipped, 698 subtests, 0 failures** (+246 offline, +72 subtests; +8 opt-in live skips) (2026-10-16, `PHASE_CR30_PLAN.md`; new offline files: `test_cr30_data.py`, `test_cr30_parse.py`, `test_cr30_luminosity.py`, `test_cr30_relations.py`, `test_cr30_placement.py`, `test_cr30_age_input.py`, `test_cr30_consumers.py`; new opt-in live file `test_cr30_live.py` — 8 anchors, gated on `SPACE_APP_RUN_LIVE=1`). Per-stage counts are in the plan's build log (post-CP5: 4144 passed / 118 skipped / 696 subtests / 0 failed).
+
+**CR-30 re-gate fixes (WB MSG 366):** **4171 passed, 126 skipped, 701 subtests, 0 failures** (+12 offline, +3 subtests) (2026-10-17; `test_cr30_consumers.py::RegateFixesTest` — F-1 … F-9 and the `/code-review` fold).
+
+**CR-30 re-gate fix 2 (WB MSG 368 O-1):** **4180 passed, 126 skipped, 703 subtests, 0 failures** (+9 offline, +2 subtests) (2026-10-17; `test_cr30_consumers.py::SimbadFailLoudTest`).

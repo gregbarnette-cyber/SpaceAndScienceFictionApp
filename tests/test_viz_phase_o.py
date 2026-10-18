@@ -299,7 +299,7 @@ class O1SkyFromStarTest(unittest.TestCase):
 
 
 class O2HrTest(unittest.TestCase):
-    """prepare_hr_main_sequence + prepare_hr_from_stars (tmp DB w/ seeded MS table)."""
+    """prepare_hr_main_sequence + prepare_hr_from_stars (S1 reference points; tmp DB for the catalog lookups)."""
 
     def setUp(self):
         from tests._queryharness import save_main_sequence_cache
@@ -310,19 +310,7 @@ class O2HrTest(unittest.TestCase):
         db._conn = None
         db._auto_seed = lambda conn: None
         self.conn = db.get_conn()
-        for sc, bv, teff, amv in [
-            ("A0", "0.00", "9790", "0.7"),
-            ("G2", "0.63", "5778", "4.83"),
-            ("K0", "0.81", "5150", "5.9"),
-            ("M0", "1.40", "3840", "8.8"),
-        ]:
-            self.conn.execute(
-                "INSERT INTO main_sequence_stars "
-                "(spectral_class, b_v, teff_k, abs_mag_vis, abs_mag_bol, bc, lum, "
-                " radius, mass, density, lifetime) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (sc, bv, teff, amv, amv, "0", "1", "1", "1", "1", "1e10"),
-            )
-        self.conn.commit()
+        # CR-30.1: the HR reference points come from the md5-verified S1 table, never a DB table.
 
     def tearDown(self):
         from tests._queryharness import restore_main_sequence_cache
@@ -336,19 +324,26 @@ class O2HrTest(unittest.TestCase):
         self.assertNotIn("error", res)
         teffs = [p["teff"] for p in res["points"]]
         self.assertEqual(teffs, sorted(teffs, reverse=True))   # hot → cool
-        g2 = next(p for p in res["points"] if p["label"] == "G2")
-        self.assertEqual(g2["teff"], 5778.0)
-        self.assertAlmostEqual(g2["abs_mag"], 4.83)
+        self.assertEqual(len(res["points"]), 87)                # S1's rows
+        g2 = next(p for p in res["points"] if p["label"] == "G2V")
+        self.assertEqual(g2["teff"], 5770.0)
+        self.assertAlmostEqual(g2["abs_mag"], 4.80)
         self.assertEqual(g2["color"], viz._SPECTRAL_COLORS["G"])
 
-    def test_main_sequence_empty_table_error(self):
-        self.conn.execute("DELETE FROM main_sequence_stars")
-        self.conn.commit()
-        self.assertIn("error", viz.prepare_hr_main_sequence())
+    def test_main_sequence_unverified_data_error(self):
+        import os
+        from core import ms_reference_tables as mrt
+        os.environ["SPACE_APP_CR30_DATA_DIR"] = self.tmpdir          # no CR-30 files there
+        mrt.clear_cr30_cache()
+        try:
+            self.assertIn("error", viz.prepare_hr_main_sequence())
+        finally:
+            os.environ.pop("SPACE_APP_CR30_DATA_DIR", None)
+            mrt.clear_cr30_cache()
 
     def test_hr_from_stars_mv_and_teff(self):
         result = {"stars": [
-            # M_V = 4.83 + 5 - 5log10(10) = 4.83; Teff from G2 ceiling = 5778
+            # M_V = 4.83 + 5 - 5log10(10) = 4.83; Teff = S1's G2V 5770 (CR-30.2)
             {"Star Name": "Sunlike", "Spectral Type": "G2V",
              "app_magnitude": 4.83, "parsecs": 10.0},
             {"Star Name": "NoMag", "Spectral Type": "K0",
@@ -365,7 +360,7 @@ class O2HrTest(unittest.TestCase):
         self.assertEqual(len(result_stars), 1)
         self.assertEqual(result_stars[0]["name"], "Sunlike")
         self.assertAlmostEqual(result_stars[0]["abs_mag"], 4.83, places=4)
-        self.assertEqual(result_stars[0]["teff"], 5778.0)
+        self.assertEqual(result_stars[0]["teff"], 5770.0)
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0]["name"], "Sun")
         self.assertEqual(refs[0]["teff"], 5778.0)
@@ -384,7 +379,7 @@ class O2HrTest(unittest.TestCase):
         refs = [p for p in res["points"] if p.get("highlight")]
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0]["name"], "Centre Star")
-        self.assertEqual(refs[0]["teff"], 5150.0)            # K0 ceiling row
+        self.assertEqual(refs[0]["teff"], 5270.0)            # S1's K0V (CR-30.2)
         self.assertAlmostEqual(refs[0]["abs_mag"], 5.9, places=4)  # 5.9+5-5log10(10)
 
     def test_hr_from_stars_center_not_in_catalog(self):
@@ -430,13 +425,25 @@ class O2CanvasSmokeTest(unittest.TestCase):
 class O2PanelWiringSmokeTest(unittest.TestCase):
     """Construct the host panels offscreen and exercise the O-2 tab builders.
 
-    Uses the real (auto-seeded) DB so the main-sequence HR reference is available.
+    CR-30 (plan §13.1 T3): a tmp DB — the HR reference is S1's (md5-verified file), so the real DB is never
+    touched.
     """
 
     @classmethod
     def setUpClass(cls):
         from PySide6.QtWidgets import QApplication
         cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self._saved = (db._DB_PATH, db._conn)
+        db.close_conn()
+        db._DB_PATH = pathlib.Path(self.tmpdir) / "o2.db"
+
+    def tearDown(self):
+        db.close_conn()
+        db._DB_PATH, db._conn = self._saved
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     class _StubWindow:
         pass

@@ -164,7 +164,12 @@ def compute_disk_model(r_au=None, r_grid=None, mstar_msun=1.0,
     if lstar_lsun is not None and ms_luminosity:
         return {"error": "Provide only one of --lstar-lsun or --ms-luminosity."}
     if ms_luminosity:
-        lstar = mstar_msun ** 3.5
+        # CR-30.4: L from M — Eker et al. 2018 forward / S1's sequence (was Gillett's M^3.5)
+        from core import ms_sequence
+        lfm = ms_sequence.luminosity_from_mass(mstar_msun)
+        if lfm["lum"] is None:
+            return {"error": f"--ms-luminosity: {lfm['reason']}."}
+        lstar = lfm["lum"]
     else:
         lstar = 1.0 if lstar_lsun is None else lstar_lsun
         if lstar <= 0:

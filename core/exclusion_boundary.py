@@ -222,11 +222,11 @@ def derive_mass_loss_tier(domain, wind_class_provenance, mass_loss_msun_yr, wind
         if mass_loss_msun_yr is None or (preset is not None and mass_loss_msun_yr == preset[2]):
             return "object_preset"
         return "supplied"
-    if domain in (ew.WINDLESS, ew.UNMODELED):
+    if domain in (ew.WINDLESS, ew.UNMODELED, ew.UNDETERMINED_NO_MASS):
         return "noncoronal_row"                    # no wind at all — a supplied rate is unused (noted)
     if mass_loss_msun_yr is not None:
         return "supplied"
-    if domain in (ew.WINDLESS, ew.UNMODELED, ew.EVOLVED) or object_name:
+    if domain in (ew.WINDLESS, ew.UNMODELED, ew.UNDETERMINED_NO_MASS, ew.EVOLVED) or object_name:
         return "noncoronal_row"
     from core import stellar_wind as sw
     letter = sw.parse_sp(sp_type or class_tag)[0]
@@ -411,6 +411,19 @@ def compute_two_layer_boundary(mass_msun=None, luminosity_lsun=None, *,
         base.update(_cr26_fields(mass_loss_tier or "noncoronal_row", None, None, None, None,
                                  _skeleton_notes(wind_model, cr26_notes, mass_loss_msun_yr), typeless_flags))
         base.update(iv.velocity_fields(vel))                   # CR-24: the velocity, but no V_ISM (no medium block)
+        return base
+
+    # ── CR-30.7 A: an L0–L5 type with no mass — undetermined, no standoff, no wall (never the free harbor) ──
+    if domain == ew.UNDETERMINED_NO_MASS:
+        base.update({"standoff_au": None, "r_ex_au": None, "forcing_class": None,
+                     "mass_provenance": mass_provenance,
+                     "wall_au": None, "wall_band_au": None, "wall_route": "none_undetermined",
+                     "wall_reason": "undetermined — no mass", "wall_note": ew._WALL_NOTE,
+                     "verdict_marginal": False, "wall_exceeds_standoff": None, "wall_to_standoff_ratio": None,
+                     "r_ap_au": None, "domain_note": ew._CLASS_NOTES[ew.UNDETERMINED_NO_MASS]})
+        base.update(_cr26_fields(mass_loss_tier or "noncoronal_row", None, None, None, None,
+                                 _skeleton_notes(wind_model, cr26_notes, mass_loss_msun_yr), typeless_flags))
+        base.update(iv.velocity_fields(vel))
         return base
 
     # ── unmodeled (hot subdwarf sdB/sdO): honest null on both layers (NOT free harbor) ──

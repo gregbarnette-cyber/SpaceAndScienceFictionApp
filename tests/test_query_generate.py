@@ -29,7 +29,8 @@ def _run(*cmd_args):
     return run_query(*cmd_args, env=_ENV)
 
 
-_TOP_KEYS = {"seed", "mode", "anchor_star", "star", "planets", "warnings", "notes"}
+_TOP_KEYS = {"seed", "mode", "anchor_star", "star", "planets", "warnings", "notes",
+             "cr30_disclosures"}   # CR-30 §7: the generator draws from S1 (static disclosures, additive)
 
 
 class GenerateSystemHappyPath(unittest.TestCase):
@@ -41,10 +42,10 @@ class GenerateSystemHappyPath(unittest.TestCase):
         self.assertEqual(payload["mode"], "synthetic")
         self.assertIsNone(payload["anchor_star"])
         self.assertEqual(payload["seed"], 88)
-        # K2V matches a table row exactly → known stellar values (CSV seed).
+        # K2V matches an S1 row exactly → known stellar values (CR-30.1).
         self.assertEqual(payload["star"]["spectral_class"], "K2V")
-        self.assertAlmostEqual(payload["star"]["teff"], 4800.0, places=1)
-        self.assertAlmostEqual(payload["star"]["mass_solar"], 0.72, places=2)
+        self.assertAlmostEqual(payload["star"]["teff"], 5100.0, places=1)   # S1 K2V (CR-30.1)
+        self.assertAlmostEqual(payload["star"]["mass_solar"], 0.82, places=2)   # S1 K2V
         self.assertEqual(len(payload["planets"]), 5)
         for p in payload["planets"]:
             self.assertEqual(p["source"], "synthetic")

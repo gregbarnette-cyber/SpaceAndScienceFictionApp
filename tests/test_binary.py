@@ -83,7 +83,11 @@ class ClassifyTest(unittest.TestCase):
     def test_thresholds(self):
         self.assertEqual(binary.classify_companion(0.5)["class"], "stellar")
         self.assertEqual(binary.classify_companion(0.08)["class"], "stellar")
-        self.assertEqual(binary.classify_companion(0.075)["class"], "brown-dwarf")   # not > 0.075
+        # CR-30.7 B (ruling 80): ≥ 0.075 stellar (the limit inclusive); [0.067, 0.075) boundary
+        self.assertEqual(binary.classify_companion(0.075)["class"], "stellar")
+        self.assertEqual(binary.classify_companion(0.0749)["class"], binary.CLASS_BOUNDARY)
+        self.assertEqual(binary.classify_companion(0.067)["class"], binary.CLASS_BOUNDARY)
+        self.assertEqual(binary.classify_companion(0.0669)["class"], "brown-dwarf")
         self.assertEqual(binary.classify_companion(0.03)["class"], "brown-dwarf")
         self.assertEqual(binary.classify_companion(0.013)["class"], "brown-dwarf")
         self.assertEqual(binary.classify_companion(0.0129)["class"], "planet")
@@ -98,22 +102,30 @@ class ClassifyTest(unittest.TestCase):
 
 
 class M1FromSpectralTypeTest(unittest.TestCase):
-    def test_known_types(self):
-        self.assertAlmostEqual(binary.m1_from_spectral_type("G2V"), 1.02, places=2)
-        self.assertAlmostEqual(binary.m1_from_spectral_type("A0V"), 2.18, places=2)
-        self.assertAlmostEqual(binary.m1_from_spectral_type("M5V"), 0.16, places=2)
-        self.assertAlmostEqual(binary.m1_from_spectral_type("K0V"), 0.88, places=2)
+    def test_known_types(self):                    # CR-30.7 B (ruling 91): S1's mass at the type
+        from core import ms_sequence, shared
+        for sp in ("G2V", "A0V", "M5V", "K0V", "M4.5V", "F2V", "B3V", "O9.5II-III(n)"):
+            self.assertEqual(binary.m1_from_spectral_type(sp),
+                             ms_sequence.s1_at(shared.parse_spectral_type(sp))["Msun"], sp)
+        self.assertEqual(binary.m1_from_spectral_type("M4.5V"), 0.184)      # HIP 76901 / LP 120-4
+        self.assertEqual(binary.m1_from_spectral_type("F2V"), 1.46)         # i Cen
+        self.assertEqual(binary.m1_from_spectral_type("B3V"), 5.4)          # lam Lib
+        self.assertEqual(binary.m1_from_spectral_type("O9.5II-III(n)"), 18.7)   # HD 37737
+        self.assertEqual(binary.m1_from_spectral_type("O7Iafpvar"), 28.0)   # 29 CMa
 
     def test_interpolation_between_anchors(self):
-        # G3 sits between G2 (1.02) and G5 (0.93).
+        # G3 sits between S1's G2V and G5V
         m = binary.m1_from_spectral_type("G3V")
-        self.assertTrue(0.93 < m < 1.02)
+        self.assertTrue(binary.m1_from_spectral_type("G5V") < m < binary.m1_from_spectral_type("G2V"))
 
-    def test_unknown_or_degenerate_falls_back_to_default(self):
-        self.assertEqual(binary.m1_from_spectral_type("DA1.9"), 1.0)   # white dwarf → default
-        self.assertEqual(binary.m1_from_spectral_type(""), 1.0)
-        self.assertEqual(binary.m1_from_spectral_type(None), 1.0)
-        self.assertEqual(binary.m1_from_spectral_type("T6"), 1.0)      # brown dwarf, non-OBAFGKM
+    def test_unknown_or_degenerate_is_null_with_its_reason(self):   # CR-30.7 B (rulings 96, 168): no 1.0 M☉
+        cases = {"DA1.9": "outside_s1_mass_span", "": "no_spectral_type", None: "no_spectral_type",
+                 "T6": "outside_s1_mass_span", "A": "letter_only_type", "M": "letter_only_type",
+                 "xyz": "unreadable_type"}
+        for sp, why in cases.items():
+            with self.subTest(sp=sp):
+                self.assertIsNone(binary.m1_from_spectral_type(sp))
+                self.assertEqual(binary.m1_read(sp)[:2], (None, why))
 
 
 class VerificationTagTest(unittest.TestCase):

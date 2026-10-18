@@ -35,6 +35,9 @@ import core.ism_velocity as ism_velocity           # CR-24 per-star V_ISM (veloc
 import core.ism_velocity_tables as ism_velocity_tables
 import core.stellar_mass as stellar_mass           # CR-22 evolved-host measured-mass resolve
 import core.stellar_mass_tables as stellar_mass_tables
+import core.twomass as twomass                       # CR-30.3 / 30.4 2MASS J/Ks (II/246)
+import core.placement as placement                   # CR-30.6 the hydrogen-burning limit + placement (pure)
+import core.shared as shared                         # CR-30.2 the one spectral-type parse
 import core.exotic_physics as exotic_physics
 import core.feasibility as feasibility
 import core.formation as formation
@@ -77,8 +80,54 @@ def _add_object_mass_args(p):
                    help="Object preset (Sun, Sgr A*, M87*, …)")
 
 
+_CR30_TOPICS = None        # {handler: topics or a callable(args) -> topics} — built lazily (handlers defined below)
+_CURRENT_ARGS = None       # the dispatched Namespace (set by main)
+
+
+def _cr30_topics():
+    """CR-30 §7 (C5): which every-run disclosure topics a call carries — only where it reads S1, MIST or the factor
+    table (a numeric-only call reads none, so carries none)."""
+    global _CR30_TOPICS
+    if _CR30_TOPICS is None:
+        reg = ("s1", "luminosity", "relations", "lifetime")
+        full = reg + ("hbl", "youth")
+
+        def _eb(a):
+            if a.object:
+                return None                                  # a preset: no table read, not placed
+            return ("hbl",) if a.mass_msun is not None else full
+        def _es(a):
+            if a.star:
+                return full
+            specs = [exclusion_system._parse_component_spec(c) if isinstance(c, str) else dict(c)
+                     for c in (a.component or [])]
+            reads = any(isinstance(sp, dict) and any(sp.get(k) for k in ("sp_type", "class", "luminosity_lsun",
+                                                                          "main_id")) for sp in specs)
+            return full if reads else ("hbl",)          # supplied masses only: placed by the band (CP6 #10)
+        _CR30_TOPICS = {
+            cmd_star_regions: full, cmd_star_regions_manual: reg, cmd_sol_regions: reg, cmd_dossier: full,
+            cmd_exclusion_boundary: _eb, cmd_exclusion_system: _es, cmd_compare_stars: full,
+            cmd_detection_completeness: ("s1", "relations", "hbl", "youth"),
+            # (main-sequence returns a list — its rows carry the S1 / MIST keys; no dict to hang the block on)
+            cmd_stellar_evolution: ("lifetime",), cmd_generate_system: ("s1", "relations"),
+            cmd_par_flux: lambda a: ("s1",) if (a.star or a.spectral_type) else None,
+            cmd_circumbinary_hz: lambda a: ("s1", "luminosity") if (a.star1 or a.star2) else None,
+            cmd_dyson_collector: lambda a: ("s1", "luminosity") if a.star else None,
+            cmd_binary_orbit: ("s1", "hbl", "youth"), cmd_binary_stability_auto: ("s1", "hbl", "youth"),
+            cmd_multiplicity: ("s1", "hbl"), cmd_close_binary_census: ("s1", "hbl"), cmd_substellar: ("hbl",),
+        }
+    return _CR30_TOPICS
+
+
 def _out(result):
     """Serialize result to stdout and exit with the appropriate code."""
+    if isinstance(result, dict) and "error" not in result and _CURRENT_ARGS is not None:
+        topics = _cr30_topics().get(getattr(_CURRENT_ARGS, "func", None))
+        if callable(topics):
+            topics = topics(_CURRENT_ARGS)
+        if topics:                                          # CR-30 §7: the every-run disclosures (additive)
+            from core import ms_sequence
+            result.setdefault("cr30_disclosures", ms_sequence.cr30_disclosures(*topics))
     print(json.dumps(result, indent=2, default=str))
     if isinstance(result, dict) and "error" in result:
         sys.exit(1)
@@ -156,13 +205,57 @@ def cmd_simbad_lookup(args):
     _out(databases.compute_simbad_lookup(args.star))
 
 
+def _twomass_degraded(res, star=None):
+    """CR-30.3 (Q8, F4): a region step that failed on a 2MASS degrade → an exit-0, ``not_authoritative`` result that
+    carries ``twomass_status`` and the reason — never a subtype-route value, never a generic error. ``None`` when the
+    result is not a 2MASS degrade."""
+    mk = twomass.degrade_marker(res)
+    if not mk:
+        return None
+    out = {k: v for k, v in res.items() if k != "error"}
+    out.update(mk)
+    if star is not None:
+        out["star"] = star
+    return out
+
+
+_REGION_ROUTE_PROV = {"mks": "ms_mks_relation", "luminosity": "ms_luminosity_inversion"}
+
+
+def _region_placement(result, simbad, age):
+    """CR-30.6 (Q25): ``star-regions``' top-level ``placement`` on the region-path mass (the M_Ks / L route; no
+    catalog tier) — signals: the call's age, the designation, SIMBAD's primary type. The lifetime takes the status's
+    treatment (#26) on ``mainSeqLifeSpan`` and the ``ms_lifetime_*`` keys."""
+    pl = placement.place_resolved(result.get("stellarMass"), _REGION_ROUTE_PROV.get(result.get("mass_route")),
+                                  sp_type=simbad.get("sp_type"), lum_lsun=result.get("bcLuminosity"),
+                                  call_age=age, otype=simbad.get("otype"))
+    placement.apply_lifetime(result, pl, "mainSeqLifeSpan")
+    result["placement"] = pl
+    if age:
+        result["age_input"] = age
+
+
 def cmd_star_regions(args):
+    age, aerr = _call_age(args)                          # CR-30.6
+    if aerr:
+        _out(aerr)
+        return
     simbad = databases.compute_simbad_lookup(args.star)
     if "error" in simbad:
         _out(simbad)
         return
     result = regions.compute_star_system_regions_from_simbad(simbad)
+    deg = _twomass_degraded(result)
+    if deg is not None:
+        # MSG 366 F-8: the degrade withholds only the region L — every field that does not depend on it stays
+        deg.update(regions.l_independent_fields(simbad))
+        deg["bcLuminosity"] = None
+        deg["simbad"] = simbad
+        deg["hypatia"] = databases.compute_hypatia_data(simbad)
+        _out(deg)
+        return
     if "error" not in result:
+        _region_placement(result, simbad, age)
         result["hypatia"] = databases.compute_hypatia_data(simbad)
     _out(result)
 
@@ -902,9 +995,19 @@ def cmd_exclusion_boundary(args):
     _out(res)
 
 
-def _cr26_attach(res, model):
+def _cr26_attach(res, model, s1=None):
     if isinstance(res, dict) and "error" not in res and model and model.get("unused_wind_state"):
         res["_unused_wind_state"] = model["unused_wind_state"]
+    if s1 is not None and isinstance(res, dict) and "error" not in res:
+        res.update(regions._s1_fields(*s1))              # CR-30.2: the type read, the class token, S1's rows
+    return res
+
+
+def _with_type_read(res, parse):
+    """CR-30.2 (MSG 366 F-6): the type read's additive keys (``parse.as_fields()``) on a ``--spectral-type`` output that
+    takes no S1 row (an L0–L5 type, or a windless / evolved / unmodeled type — no mass)."""
+    if isinstance(res, dict) and "error" not in res:
+        res.update(parse.as_fields())
     return res
 
 
@@ -929,6 +1032,23 @@ def _exclusion_boundary_core(args, cr27):
     if sum(sources) > 1:
         return {"error": "Provide only one body source "
                          "(--mass-msun / --object / --star / --spectral-type)."}
+    # CR-30.6: the call's age (--star / --spectral-type only — a supplied mass or a preset is placed by the band)
+    age, aerr = _call_age(args)
+    if aerr:
+        return aerr
+    if age and (args.mass_msun is not None or args.object):
+        return {"error": placement.AGE_INPUT_ERROR_PREFIX + "--age-* apply to --star / --spectral-type (a supplied "
+                         "mass is placed by the band alone; an --object preset is not placed)"}
+
+    def _placed(res, mass, prov, catalog_row=None, sp_type=None, parse=None, lum_l=None, otype=None):
+        """CR-30.6: the top-level ``placement`` (+ the boundary's windless alternative / catalog r_ex interval)."""
+        if isinstance(res, dict) and "error" not in res:
+            pl = placement.place_resolved(mass, prov, catalog_row=catalog_row, sp_type=sp_type, parse=parse,
+                                          lum_lsun=lum_l, call_age=age, otype=otype)
+            res["placement"] = _exclusion_place_extras(res, pl)
+            if age:
+                res["age_input"] = age
+        return res
 
     # CR-22 two-layer wall/medium kwargs shared by every path
     wind_kw = dict(
@@ -1013,9 +1133,15 @@ def _exclusion_boundary_core(args, cr27):
             return {"error": "--mass-msun (or a resolved object mass) must be finite."}
         # CR-26: legacy_row with --wind-state, else none (derived in core); CR-26 inputs ignored with a note
         # CR-27.3: no fabricated 1.0 — β ≠ 0 with no luminosity is refused inside two_layer (frozen check order)
-        return two_layer(mass_msun=args.mass_msun, luminosity_lsun=lum,
-                         luminosity_provenance=("manual" if lum is not None else None),
-                         mass_provenance="manual", cr26_notes=ignored26 + ignored24, **wind_kw)       # CR-23.2 §2b
+        if placement.place_resolved(args.mass_msun, "manual", lum_lsun=lum)["status"] == "substellar":
+            # CR-30.7 A: a supplied mass placed substellar (hi < 0.067, or log L < −4.3) → the free harbor
+            return _placed(two_layer(mass_msun=args.mass_msun, mass_provenance="manual",
+                                     cr26_notes=ignored26 + ignored24, **_WINDLESS_PLACED_KW, **wind_kw),
+                           args.mass_msun, "manual", lum_l=lum)
+        return _placed(two_layer(mass_msun=args.mass_msun, luminosity_lsun=lum,
+                                 luminosity_provenance=("manual" if lum is not None else None),
+                                 mass_provenance="manual", cr26_notes=ignored26 + ignored24, **wind_kw),  # CR-23.2 §2b
+                       args.mass_msun, "manual", lum_l=lum)                 # CR-30.6 C6: supplied — the band alone
 
     # ── object preset: mass/lum/wind_class from the preset (windless presets caught by classify) ──
     if args.object:
@@ -1047,18 +1173,37 @@ def _exclusion_boundary_core(args, cr27):
         cw = exclusion_wall.classify_wind(sp_type=args.spectral_type, wind_state=args.wind_state)
         dom = cw["domain"]
         cls_kw = exclusion_wall.wind_cls_kw(cw)
+        st_parse = shared.parse_spectral_type(args.spectral_type)
+        if placement.is_l0_l5(st_parse):
+            # CR-30.7 A (§13.5 M8): no identity → no catalog / FLAME tier, and no inference route for an L type
+            # MSG 366 F-6: the type read (CR-30.2's additive keys — raw string, read, gravity designation) rides on
+            # the no-mass output too, as on an S1 read
+            return _placed(_with_type_read(two_layer(sp_type=args.spectral_type, cr26_notes=ignored26 + ignored24,
+                                                     **_UNDETERMINED_KW, **wind_kw), st_parse),
+                           None, None, parse=st_parse)
         if dom in (exclusion_wall.WINDLESS, exclusion_wall.UNMODELED, exclusion_wall.EVOLVED):
             # windless → free harbor; evolved → no MS-table mass → standoff refused, wall still emitted
-            return two_layer(sp_type=args.spectral_type, cr26_notes=ignored26 + ignored24, **cls_kw, **wind_kw)
-        row, key = regions._lookup_spectral_type(args.spectral_type)
-        if row is None:
-            return {"error": f"Could not resolve spectral type '{args.spectral_type}'."}
-        try:
-            mass = float(row.get("M"))
-            row_lum = float(row.get("Lum"))
-        except (TypeError, ValueError):
-            return {"error": f"Main-sequence row for '{key}' lacks a numeric mass/luminosity."}
+            res = _with_type_read(two_layer(sp_type=args.spectral_type, cr26_notes=ignored26 + ignored24, **cls_kw,
+                                            **wind_kw), st_parse)            # + the type read (F-6)
+            if placement.is_substellar_type(st_parse):          # CR-30.6: the override reported (no mass)
+                return _placed(res, None, None, parse=st_parse)
+            return res
+        # CR-30.2: S1 at the type by the one parse (interpolated in subtype; letter-only F/G/K at F5V/G5V/K5V).
+        # The mass is S1's Msun at the type (ruling 93 L4 — the direct read, disclosed); L = 10^logL.
+        s1, sp_parse = regions._lookup_s1(args.spectral_type)
+        if s1["Msun"] is None or s1["logL"] is None:
+            if s1["subtype_unknown"]:
+                return {"error": f"Spectral type '{args.spectral_type}' has no subtype — S1 (the CR-30 main-sequence "
+                                 f"table) needs one (e.g. {sp_parse.letter}4V)."}
+            return {"error": f"Could not resolve spectral type '{args.spectral_type}': {s1['s1_null_reason']}."}
+        mass, row_lum, key = s1["Msun"], s1["L_lsun"], s1["sp_type_read"]
         lum_eff = lum if lum is not None else row_lum
+        pkw = exclusion_wall.placed_domain_kw(placement.place_resolved(
+            mass, "spectral_type_table", parse=st_parse, lum_lsun=lum_eff, call_age=age))
+        if pkw:                                         # CR-30.7 A (CP5 #2): placed substellar → the free harbor
+            return _placed(two_layer(mass_msun=mass, sp_type=args.spectral_type, object_name=key,
+                                     mass_provenance="spectral_type_table", cr26_notes=ignored26 + ignored24,
+                                     **pkw, **wind_kw), mass, "spectral_type_table", parse=st_parse, lum_l=lum_eff)
         err = _cheap(lum_eff)
         if err:
             return err
@@ -1068,11 +1213,14 @@ def _exclusion_boundary_core(args, cr27):
                              "noncoronal_rate": _row_rate(cls_kw, args.spectral_type)},
                             _sup(), allow_network=False)
         notes = _cr26_ignored(args.spectral_type, dom, ignored26) + ignored24
-        return _cr26_attach(two_layer(mass_msun=mass, luminosity_lsun=lum_eff,
-                                      luminosity_provenance=("manual" if lum is not None else "spectral_type_table"),
-                                      sp_type=args.spectral_type, object_name=key,
-                                      mass_provenance="spectral_type_table", wind_model=model, cr26_notes=notes,
-                                      **_h7_cls_kw(cls_kw, model), **wind_kw), model)     # CR-23.2 §2b
+        return _placed(_cr26_attach(two_layer(mass_msun=mass, luminosity_lsun=lum_eff,
+                                              luminosity_provenance=("manual" if lum is not None
+                                                                     else "spectral_type_table"),
+                                              sp_type=args.spectral_type, object_name=key,
+                                              mass_provenance="spectral_type_table", wind_model=model,
+                                              cr26_notes=notes, **_h7_cls_kw(cls_kw, model), **wind_kw),
+                                    model, s1=(s1, sp_parse)),
+                       mass, "spectral_type_table", parse=sp_parse, lum_l=lum_eff)      # CR-30.6: the type route
 
     # ── star name: SIMBAD identity → classify → route the mass resolve (MS regions / evolved catalog) ──
     if args.star:
@@ -1105,9 +1253,25 @@ def _exclusion_boundary_core(args, cr27):
                     "mass": mass, "noncoronal_rate": _row_rate(kw, sp), "catalog": catalog,
                     "a_prefetch": exclusion_system.a_prefetch(main_id, cr27.get("a_lookup"))}   # CR-27.4: reuse
 
+        sp_parse = shared.parse_spectral_type(sp)
         if dom in (exclusion_wall.WINDLESS, exclusion_wall.UNMODELED):
-            return two_layer(sp_type=sp, otype=ot, object_name=args.star, cr26_notes=ignored26,
-                             ism=_ism(main_id, None, windless=True), **cls_kw, **wind_kw)
+            res = two_layer(sp_type=sp, otype=ot, object_name=args.star, cr26_notes=ignored26,
+                            ism=_ism(main_id, None, windless=True), **cls_kw, **wind_kw)
+            if placement.is_substellar_type(sp_parse):
+                # CR-30.7 A (Q28): a T / Y / L6+ runs the mass ladder without inference (catalog → FLAME) — for
+                # the conflict flag only; the free harbor stands whatever the mass
+                cat_w = stellar_mass_tables.load_mass_catalog(args.star_mass_catalog)
+                if isinstance(cat_w, dict) and "error" in cat_w:
+                    return cat_w
+                _mdw, _stw = {}, {}
+                m_w, p_w, _n = stellar_mass.resolve_component_mass(
+                    {"name": main_id, "sp_type": sp, "designations": stellar_mass.augment_designations(
+                        sl.get("designations"), {main_id})}, cat_w, allow_flame=True, status_out=_stw,
+                    detail_out=_mdw)
+                if _stw.get("flame_status"):            # CP5 #8: a bounded FLAME tier is a degrade, not a miss
+                    res["flame_status"] = _stw["flame_status"]
+                return _placed(res, m_w, p_w, catalog_row=_mdw.get("catalog_row"), parse=sp_parse, otype=ot)
+            return res
 
         catalog = None
         if dom == exclusion_wall.EVOLVED:
@@ -1118,9 +1282,9 @@ def _exclusion_boundary_core(args, cr27):
             spec = {"name": main_id, "sp_type": sp,
                     "designations": stellar_mass.augment_designations(
                         sl.get("designations"), {main_id})}
-            _st = {}
+            _st, _mde = {}, {}
             mass, mprov, mnote = stellar_mass.resolve_component_mass(
-                spec, catalog, allow_flame=True, status_out=_st)   # CR-23.2: capture the degrade flag
+                spec, catalog, allow_flame=True, status_out=_st, detail_out=_mde)   # CR-23.2: the degrade flag
             lum_eff, lum_prov, lum_st = None, None, None
             if mass is not None:
                 # CR-27.3: manual > FLAME (no regions_bc on the evolved path) > None; no fabricated 1.0 — β ≠ 0 with
@@ -1152,12 +1316,13 @@ def _exclusion_boundary_core(args, cr27):
                 res["flame_status"] = _st["flame_status"]
             if "error" not in res:
                 _with_lum_status(res, lum_st)
-            return _cr26_attach(res, model)
+            return _placed(_cr26_attach(res, model), mass, mprov, catalog_row=_mde.get("catalog_row"), sp_type=sp,
+                           lum_l=lum_eff, otype=ot)
 
         # main sequence: CR-23.1 — resolve mass through the shared tier ladder (manual > catalog >
         # Gaia FLAME > L-inversion), identical in tier order + result to exclusion-system --star and
         # dossier for the same star. bcLuminosity feeds BOTH the L-inversion tier (= the old
-        # regions.stellarMass = bcLuminosity**0.2632) and the wall/luminosity term. Byte-identity holds
+        # regions L-route mass — CR-30.4: Eker 2018 / S1) and the wall/luminosity term. Byte-identity holds
         # ONLY when the star falls to that inversion tier — i.e. a FLAME-miss star that is NOT in the
         # catalog OR the 4-star internal seed (load_mass_catalog(None) → Sirius A / Vega / α Cen A/B); a
         # seed/catalog/FLAME hit deliberately shifts (the intended Option-A harmonization). (Pre-CR-23
@@ -1168,6 +1333,9 @@ def _exclusion_boundary_core(args, cr27):
         reg = regions.compute_star_system_regions_from_simbad(sl)
         reg_reason = reg["error"] if (isinstance(reg, dict) and "error" in reg) else None
         star_lum = None if reg_reason else reg.get("bcLuminosity")
+        # CR-30.3: a 2MASS degrade in the region step marks the whole result (exit 0) — the luminosity stays null
+        # (no FLAME stand-in: that would be the silent switch the contract forbids — plan §13.5 L5)
+        tw = twomass.degrade_marker(reg)
         catalog = stellar_mass_tables.load_mass_catalog(args.star_mass_catalog)
         if isinstance(catalog, dict) and "error" in catalog:
             return catalog
@@ -1175,9 +1343,44 @@ def _exclusion_boundary_core(args, cr27):
         spec = {"name": main_id, "sp_type": sp, "luminosity_lsun": star_lum,
                 "designations": stellar_mass.augment_designations(
                     sl.get("designations"), {main_id})}
-        _st = {}
+        # CR-30.4 (ruling 52, 164): the M_Ks tier — from the region step, which carries it even when the step
+        # failed (no V / Teff); a 2MASS degrade carries its status (the L route is then not substituted)
+        if isinstance(reg, dict):
+            spec["mks"] = reg.get("mks") or ({"status": reg["twomass_status"], "mass": None}
+                                             if reg.get("twomass_status") else None)
+        l0_l5 = placement.is_l0_l5(sp_parse)
+        if l0_l5:                       # CR-30.7 A (Q28): catalog → FLAME only — no inference route for an L type
+            spec["luminosity_lsun"], spec["mks"] = None, None
+        _st, _md = {}, {}
         mass, mprov, mnote = stellar_mass.resolve_component_mass(
-            spec, catalog, allow_flame=True, status_out=_st)
+            spec, catalog, allow_flame=True, status_out=_st, detail_out=_md)
+        if mass is None and l0_l5:
+            res = two_layer(sp_type=sp, otype=ot, object_name=args.star, cr26_notes=ignored26,
+                            ism=_ism(main_id, None, windless=True), **_UNDETERMINED_KW, **wind_kw)
+            if _st.get("flame_status"):
+                res["flame_status"] = _st["flame_status"]
+            return _placed(res, None, None, parse=sp_parse, otype=ot)
+        def _substellar_harbor(lum_l):
+            """CR-30.7 A: a mass placed substellar (by the band, or log L < −4.3 on the luminosity used) → the free
+            harbor, the mass and its placement reported; else None."""
+            pkw = exclusion_wall.placed_domain_kw(placement.place_resolved(
+                mass, mprov, catalog_row=_md.get("catalog_row"), parse=sp_parse, lum_lsun=lum_l, call_age=age,
+                otype=ot))
+            if not pkw:
+                return None
+            r = two_layer(mass_msun=mass, sp_type=sp, otype=ot, object_name=args.star, mass_provenance=mprov,
+                          mass_note=mnote, cr26_notes=ignored26, ism=_ism(main_id, None, windless=True),
+                          **pkw, **wind_kw)
+            r.update(tw)
+            if _st.get("flame_status"):
+                r["flame_status"] = _st["flame_status"]
+            return _placed(r, mass, mprov, catalog_row=_md.get("catalog_row"), parse=sp_parse, lum_l=lum_l,
+                           otype=ot)
+
+        if mass is not None:
+            harbor = _substellar_harbor(lum if lum is not None else star_lum)   # by mass, before any L fetch
+            if harbor is not None:
+                return harbor
         if mass is None:
             # CR-27.3 (Q8): every tier failed — the curated mass error (never a silent wrong value)
             fs = _st.get("flame_status")
@@ -1188,6 +1391,7 @@ def _exclusion_boundary_core(args, cr27):
                              "--star")}
             if fs:
                 err["flame_status"] = fs
+            err.update(tw)
             return err
         # CR-25.2: the FULL SIMBAD otype list (the primary is `PM*` for most flare M dwarfs), fetched only
         # where it can change the bin (MS K/M) — the SAME helper exclusion-system --star uses.
@@ -1197,10 +1401,18 @@ def _exclusion_boundary_core(args, cr27):
             err = _pre_lum_checks()
             if err:
                 return err
-        lum_eff, lum_prov, lum_st = _resolve_lum(star_lum, spec["designations"], _st)
+        lum_eff, lum_prov, lum_st = ((lum, "manual" if lum is not None else None, None) if tw
+                                     else _resolve_lum(star_lum, spec["designations"], _st))
+        harbor = _substellar_harbor(lum_eff)                   # CP5 #2: the luminosity the placement reports
+        if harbor is not None:
+            return harbor
         err = _cheap(lum_eff)                                  # CR-26 M-6: before any CR-26 network call
         if err:
-            return _with_lum_status(err, lum_st)
+            err = _with_lum_status(err, lum_st)
+            if tw and isinstance(err, dict):
+                # CR-30.3 (CP2): a β error caused by the degrade's null luminosity carries the marker
+                err.update(tw)
+            return err
         model = _cr26_model(_identity(dom, mass, sw["cls_kw"]),
                             _sup({"active_otype": bool(sw["cls_kw"].get("wind_otype"))}), allow_network=True)
         notes = _cr26_ignored(sp, dom, ignored26)
@@ -1214,8 +1426,66 @@ def _exclusion_boundary_core(args, cr27):
             res["otype_status"] = sw["status"]
         if "error" not in res:
             _with_lum_status(res, lum_st)
-        return _cr26_attach(res, model)
+            res.update(tw)
+            if isinstance(reg, dict):
+                res.update(regions.region_lum_fields(reg))
+            res.update(_mass_route_fields(_md, reg))
+            if (_md.get("mass_route") == "mks" and sw["cls_kw"].get("wind_otype")
+                    and "mks_activity_caveat" not in res):
+                # ruling 134 W-7: CR-26 / CR-25's active class (the full otype list) also carries S13's caveat
+                from core import ms_sequence as _msq
+                res["mks_activity_caveat"] = _msq.MKS_ACTIVITY_CAVEAT
+        return _placed(_cr26_attach(res, model), mass, mprov, catalog_row=_md.get("catalog_row"), sp_type=sp,
+                       lum_l=lum_eff, otype=ot)
     return {"error": "Provide a body: --mass-msun, --object, --star, or --spectral-type."}
+
+
+
+
+# CR-30.7 A: the pre-classified kwargs for a placed-substellar free harbor and for an L0–L5 with no mass
+_WINDLESS_PLACED_KW = exclusion_wall.placed_domain_kw({"status": "substellar"})
+_UNDETERMINED_KW = exclusion_wall.placed_domain_kw({"status": "undetermined_no_mass"})
+
+
+def _exclusion_place_extras(res, pl):
+    """CR-30.6 / 30.7 A: the boundary extras on ``exclusion-boundary``'s placement (``placement.boundary_extras``)."""
+    return placement.boundary_extras(pl, res.get("r_ex_au"), res.get("alpha"))
+
+
+def _mass_route_fields(md, reg=None):
+    """CR-30.4: the mass route's output fields (name map ``mass``) from ``resolve_component_mass``'s detail."""
+    out = {k: md.get(k) for k in ("mass_route", "mass_relation", "mass_segment", "mass_switch_band",
+                                  "mass_mks_solar", "mass_lroute_solar", "m_ks") if k in md}
+    mks = (reg or {}).get("mks") if isinstance(reg, dict) else None
+    if md.get("mass_route") == "mks" or (mks and mks.get("mass") is not None):
+        from core import ms_sequence
+        out["mks_binary_disclosure"] = ms_sequence.MKS_BINARY_DISCLOSURE
+    if mks and mks.get("note"):
+        out["mks_note"] = mks["note"]
+    if md.get("mass_route") == "mks" and mks and mks.get("activity_caveat"):
+        out["mks_activity_caveat"] = mks["activity_caveat"]
+    if isinstance(reg, dict) and reg.get("error") and not reg.get("twomass_status"):
+        out["region_step_note"] = reg["error"]               # ruling 164: region fields null with the reason
+    return out
+
+
+# ── CR-30.6 — the age input (ruling 141; F2; Q23) ────────────────────────────────────────────────────────────────
+def _add_age_flags(p):
+    """CR-30.6: the call's age on a placed subcommand (one call age applies to every component it resolves — Q23)."""
+    p.add_argument("--age-lo-gyr", dest="age_lo_gyr", type=float, default=None,
+                   help="CR-30.6: the star's age, lower bound (Gyr; omitted = no lower bound)")
+    p.add_argument("--age-hi-gyr", dest="age_hi_gyr", type=float, default=None,
+                   help="CR-30.6: the star's age, upper bound (Gyr; required to give an age). An upper bound ≤ 1 Gyr "
+                        "flags the star young (the youth rule near the hydrogen-burning limit)")
+    p.add_argument("--age-basis", dest="age_basis", default=None, choices=sorted(placement.AGE_BASES),
+                   help="CR-30.6: the age's basis (required with an age); a model_fit age never sizes the cut")
+
+
+def _call_age(args):
+    """CR-30.6 → ``(age_or_None, error_dict_or_None)`` from ``--age-*`` (getattr: older Namespaces lack them)."""
+    age, err = placement.age_input(getattr(args, "age_lo_gyr", None), getattr(args, "age_hi_gyr", None),
+                                   getattr(args, "age_basis", None))
+    return age, ({"error": err} if err else None)
 
 
 # CR-11.3 — binary / multi-star exclusion-boundary composition (+ CR-22 two-layer wall).
@@ -1226,8 +1496,12 @@ def cmd_exclusion_system(args):
         f_shock=args.f_shock, m_shock_min=args.m_shock_min, mass_loss_source=args.mass_loss_source,
         # CR-24 (read by the per-component V_ISM, not by the wall-input resolver)
         cloud=getattr(args, 'cloud', None), clic_max_pc=getattr(args, 'clic_max_pc', None), lb_cavity=bool(getattr(args, 'lb_cavity', False)))
+    age, aerr = _call_age(args)                          # CR-30.6: one call age to every component (Q23)
+    if aerr:
+        _out(aerr)
+        return
     res = exclusion_system.compute_exclusion_system(
-        star=args.star, component_specs=args.component,
+        star=args.star, component_specs=args.component, age=age,
         star_mass_catalog=args.star_mass_catalog, phase=args.phase,
         alpha=args.alpha, calibration_au=args.calibration_au, dial=args.dial,
         beta=args.beta, gamma=args.gamma, system_wind=system_wind,
@@ -1272,10 +1546,23 @@ def cmd_circumbinary_hz(args):
         return
     if both_star:
         r1 = _resolve_star_teff_lum(args.star1)
+        r2 = None if (r1.get("error") and not r1.get("twomass_status")) else _resolve_star_teff_lum(args.star2)
+        # a hard (non-2MASS) error on either star is reported as itself (CP2)
+        for r in (r1, r2):
+            if isinstance(r, dict) and "error" in r and not twomass.degrade_marker(r):
+                _out(r)
+                return
+        # CR-30.3: a 2MASS degrade on either star → exit 0, not_authoritative, the marker per star (no HZ)
+        degs = [d for d in (_twomass_degraded(r1, args.star1), _twomass_degraded(r2, args.star2)) if d]
+        if degs:
+            st = sorted({d["twomass_status"] for d in degs})
+            _out({"not_authoritative": True, "twomass_status": st[0] if len(st) == 1 else st,
+                  "stars": [{"star": d["star"], "twomass_status": d["twomass_status"], "twomass_note": d["twomass_note"]}
+                            for d in degs], "hz": None})
+            return
         if "error" in r1:
             _out(r1)
             return
-        r2 = _resolve_star_teff_lum(args.star2)
         if "error" in r2:
             _out(r2)
             return
@@ -1475,8 +1762,14 @@ def cmd_dyson_collector(args):
     lum = args.luminosity_lsun
     if args.star:
         resolved = _resolve_star_teff_lum(args.star)   # SIMBAD + regions (like circumbinary-hz)
+        deg = _twomass_degraded(resolved, args.star)    # CR-30.3: exit 0, not_authoritative, no collector values
+        if deg is not None:
+            _out({"star": args.star, "not_authoritative": True, "twomass_status": deg["twomass_status"],
+                  "twomass_note": deg["twomass_note"], "luminosity_lsun": None})
+            return
         if "error" in resolved:
             _out(resolved)
+            return
         lum = resolved["lum"]
     _out(megastructure.compute_dyson_collector(
         luminosity_lsun=lum, fraction=args.fraction, orbit_au=args.orbit_au,
@@ -1587,9 +1880,19 @@ def cmd_population_classify(args):
 
 # ── Star-analysis CR-6 — detection-completeness (pure-math; network only on --star) ──
 def cmd_detection_completeness(args):
+    age, aerr = _call_age(args)                          # CR-30.6 (placed in CR-30.7 C's star_placement)
+    if aerr:
+        _out(aerr)
+        return
     app_mag, distance_pc, sp_type = args.app_mag, args.distance_pc, args.sp_type
     star_mass, star_rad = args.star_mass_solar, args.star_radius_solar
     mass_prov = "manual" if star_mass is not None else None
+    # CR-30.7 C (ruling 131): the catalog tier — --star-mass-catalog, else the internal seed; loud on a bad path
+    mcat = stellar_mass_tables.load_mass_catalog(getattr(args, "star_mass_catalog", None))
+    if isinstance(mcat, dict) and "error" in mcat:
+        _out(mcat)
+        return
+    cat_row, otype, dc_notes, cat_not_applied = None, None, [], False
     if args.star:
         sl = databases.compute_simbad_lookup(args.star)
         if "error" in sl:
@@ -1601,18 +1904,37 @@ def cmd_detection_completeness(args):
             distance_pc = sl.get("parsecs")
         if sp_type is None:
             sp_type = sl.get("sp_type")
-        # CR-10.4: prefer the archive M★ (the same ps + default_flag=1 value planetary-systems-batch
-        # reports) over the sp_type→mass estimate. A manual --star-mass-solar still supersedes.
+        otype = sl.get("otype")                           # CR-30.6 E: SIMBAD's primary type (a pre-MS signal)
+        # CR-30.7 C (rulings 95, 131, 143): tiers manual → catalog → archive (no FLAME); the archive row's radius
+        # stands beside a catalog or archive mass for an MS host too (ruling 95). CR-10.4's archive M★ is the same
+        # ps + default_flag=1 value planetary-systems-batch reports.
+        non_ms = detection._host_class(sp_type) is not None
+        arch = exoplanet_batch.fetch_archive_stellar_mass(args.star, simbad=sl) if star_mass is None else None
+        arch_r = (arch or {}).get("radius_solar")
         if star_mass is None:
-            arch = exoplanet_batch.fetch_archive_stellar_mass(args.star, simbad=sl)
-            if arch and arch.get("mass_solar") is not None:
-                if detection._host_class(sp_type) is None:          # MS host → mass from archive
-                    star_mass, mass_prov = arch["mass_solar"], "archive"
-                elif arch.get("radius_solar") is not None:          # non-MS: inject BOTH (a mass-only
-                    star_mass = arch["mass_solar"]                  # injection would turn the graceful
-                    if star_rad is None:                            # skip into an error — red-team #5)
-                        star_rad = arch["radius_solar"]
-                    mass_prov = "archive"
+            row = stellar_mass_tables.match_mass(mcat, sl.get("main_id"), sl.get("designations"))
+            if row is not None:
+                if not non_ms or star_rad is not None or arch_r is not None:
+                    star_mass, mass_prov, cat_row = float(row["mass_solar"]), "catalog", row
+                    if star_rad is None and arch_r is not None:
+                        star_rad = arch_r
+                    if arch and arch.get("mass_solar") is not None:
+                        dc_notes.append(NOTE_DC_CATALOG_BESIDE_ARCHIVE)
+                else:                                     # a non-MS host takes a catalog mass only with a radius
+                    cat_not_applied = True
+                    dc_notes.append(NOTE_DC_CATALOG_NOT_APPLIED)
+        if star_mass is None and arch and arch.get("mass_solar") is not None:
+            if not non_ms:                                         # MS host → mass (+ radius) from the archive
+                star_mass, mass_prov = arch["mass_solar"], "archive"
+                if star_rad is None and arch_r is not None:
+                    star_rad = arch_r
+            elif arch_r is not None:                               # non-MS: inject BOTH (a mass-only
+                star_mass = arch["mass_solar"]                     # injection would turn the graceful
+                if star_rad is None:                               # skip into an error — red-team #5)
+                    star_rad = arch_r
+                mass_prov = "archive"
+        if mass_prov == "archive":
+            dc_notes.append(NOTE_DC_ARCHIVE_BASIS)
     # CR-10.3: tier-2 per-star RV-precision catalog. Precedence manual --rv-precision-ms > catalog >
     # generic-3a. A manual value short-circuits (no catalog load). A passed --rv-precision-catalog is
     # validated even without --star (a bad path is loud, WB MSG 097 Q2); the match itself needs the
@@ -1632,7 +1954,7 @@ def cmd_detection_completeness(args):
             row = rv_precision_tables.match_rv_precision(cat, sl.get("main_id"), sl.get("designations"))
             if row:
                 rv_prec, rv_prov, rv_meta = row["rv_precision_ms"], "catalog", row
-    _out(detection.compute_detection_completeness(
+    res = detection.compute_detection_completeness(
         app_mag=app_mag, distance_pc=distance_pc, sp_type=sp_type,
         star_mass_solar=star_mass, star_radius_solar=star_rad,
         methods=args.methods, sma_grid=args.sma_grid, albedo=args.albedo,
@@ -1641,7 +1963,20 @@ def cmd_detection_completeness(args):
         transit_precision_ppm=args.transit_precision_ppm, transit_target=args.transit_target,
         astrom_precision_uas=args.astrom_precision_uas, astrom_baseline_yr=args.astrom_baseline_yr,
         star=args.star, activity=args.activity, star_mass_provenance=mass_prov,
-    ))
+        catalog_row=cat_row, call_age=age, otype=otype, extra_notes=dc_notes)
+    if cat_not_applied and isinstance(res, dict) and "error" not in res:
+        res["catalog_mass_not_applied"] = True
+    _out(res)
+
+
+NOTE_DC_CATALOG_BESIDE_ARCHIVE = ("the host mass is the catalog's (CR-30.7 C) while the archive's planet parameters "
+                                  "were derived on the archive's own stellar mass")
+NOTE_DC_CATALOG_NOT_APPLIED = ("catalog mass not applied — a non-main-sequence host takes a catalog mass only where a "
+                               "tier also supplies its radius (pass --star-radius-solar); the methods skip as without "
+                               "the catalog")
+NOTE_DC_ARCHIVE_BASIS = ("basis unknown — archive st_mass, placed as relation-basis (the margin, and the youth rule "
+                         "when flagged — CR-30.7 C)")
+
 
 
 # ── Star-analysis CR-4 — nuclear-fuel & radiogenic inventory (pure-math) ───────
@@ -1733,10 +2068,14 @@ def cmd_binary_orbit(args):
 
 def cmd_binary_stability_auto(args):
     import core.binary as binary
+    age, aerr = _call_age(args)                          # CR-30.6 (the flagged primary — CR-30.7 B)
+    if aerr:
+        _out(aerr)
+        return
     _out(binary.binary_stability_auto(
         star=args.star, ra=args.ra, dec=args.dec, source_id=args.source_id,
         test_sma_au=args.test_sma_au,
-        star_mass_catalog=args.star_mass_catalog,
+        star_mass_catalog=args.star_mass_catalog, age=age,
     ))
 
 
@@ -1816,10 +2155,14 @@ def cmd_ice_lines(args):
 # Markdown/HTML emit a `document`; JSON emits structured `data`. `--star Sol`/`Sun` is the
 # offline reference-origin path. Bad fmt/section or a SIMBAD-lookup failure → {"error"} exit 1.
 def cmd_dossier(args):
+    age, aerr = _call_age(args)                          # CR-30.6: the call's age (placement's youth / pre-MS rule)
+    if aerr:
+        _out(aerr)
+        return
     _out(report.build_system_dossier(args.star, sections=args.sections, fmt=args.fmt,
                                      force_ms_inversion=args.force_ms_inversion,
                                      star_mass_catalog=args.star_mass_catalog,
-                                     mass_solar=args.mass_solar))
+                                     mass_solar=args.mass_solar, age=age))
 
 
 # Phase S — project workspaces (read-only; mutations are GUI-only). Local-DB reads,
@@ -2068,8 +2411,32 @@ def cmd_search_hypatia(args):
     _out(databases.search_hypatia_cache(f))
 
 
+def _star_ages(stars, star_age):
+    """CR-30.6: ``--star-age NAME LO HI BASIS`` (repeatable) → ``({name_lower: age}, error_dict_or_None)``. NAME
+    matches a ``--stars`` entry (Sol included); LO may be ``none``."""
+    known = {(s or "").strip().lower() for s in stars or []}
+    out = {}
+    for name, lo, hi, basis in star_age or []:
+        key = name.strip().lower()
+        if key not in known:
+            return None, {"error": placement.AGE_INPUT_ERROR_PREFIX + f"--star-age names '{name}', which is not "
+                                   "one of the --stars entries"}
+        if key in out:
+            return None, {"error": placement.AGE_INPUT_ERROR_PREFIX + f"--star-age given twice for '{name}'"}
+        lo_v = None if lo.strip().lower() == "none" else lo
+        age, err = placement.age_input(lo_v, hi, basis)
+        if err:
+            return None, {"error": f"{err} (--star-age {name})"}
+        out[key] = age
+    return out, None
+
+
 def cmd_compare_stars(args):
-    _out(databases.compare_stars(args.stars, star_mass_catalog=args.star_mass_catalog))
+    ages, aerr = _star_ages(args.stars, getattr(args, "star_age", None))
+    if aerr:
+        _out(aerr)
+        return
+    _out(databases.compare_stars(args.stars, star_mass_catalog=args.star_mass_catalog, ages=ages))
 
 
 # ── Reference data ────────────────────────────────────────────────────────────
@@ -2381,6 +2748,7 @@ def main(argv=None):
     # star-regions
     p = sub.add_parser("star-regions", help="Star system regions + HZ boundaries")
     p.add_argument("--star", required=True)
+    _add_age_flags(p)
     p.set_defaults(func=cmd_star_regions)
 
     # star-regions-manual
@@ -3298,7 +3666,12 @@ def main(argv=None):
     p.add_argument("--astrom-baseline-yr", type=float)
     p.add_argument("--activity", choices=["active", "young", "quiet"],
                    help="Chromospheric activity/age hint (Companion CR#1: active/young cool-dwarf RV "
-                        "jitter bump — advisory placeholder magnitude)")
+                        "jitter bump — advisory placeholder magnitude). Jitter only — never a youth flag "
+                        "(CR-30.7 C; give an age with --age-*)")
+    p.add_argument("--star-mass-catalog", dest="star_mass_catalog", default=None,
+                   help="CR-30.7 C: path to a WB-owned per-star measured-mass catalog JSON (the tier after "
+                        "--star-mass-solar, ahead of the archive; REPLACES the internal seed; loud on a bad path)")
+    _add_age_flags(p)
     p.set_defaults(func=cmd_detection_completeness)
 
     # ── Phase AE (Group K) — arrival geometry & gravitation (Pkt 20) ──────────
@@ -3563,7 +3936,7 @@ def main(argv=None):
     p.add_argument("--disk-mass-msun", type=float, help="Disk mass in M⊙ (alt to --disk-mass-mmsn)")
     p.add_argument("--lstar-lsun", type=float, help="Stellar luminosity (L⊙, default 1, for T scaling)")
     p.add_argument("--ms-luminosity", action="store_true",
-                   help="Derive L★ from M★ via the main-sequence L∝M^3.5 relation")
+                   help="Derive L★ from M★ via the main-sequence L(M) relation (CR-30.4: Eker 2018 / S1)")
     p.add_argument("--feh", type=float, help="Metallicity [Fe/H] dex (Z = Z_⊙·10^[Fe/H])")
     p.add_argument("--z", type=float, help="Dust-to-gas ratio Z (default Z_⊙=0.0134)")
     p.add_argument("--snowline-au", type=float, help="Override the water snow-line radius (AU)")
@@ -3747,6 +4120,7 @@ def main(argv=None):
                           "non-detection at this limit (replaces the ladder and the survey-limit lookup)")
     p.add_argument("--prot-days", dest="prot_days", type=_cr26_prot,
                    help="CR-26: rotation period, days (0 < P <= 1e5); <= 0.5 d flags fast_rotator")
+    _add_age_flags(p)
     p.set_defaults(func=cmd_exclusion_boundary)
 
     # exclusion-system (CR-11.3) — binary / multi-star composition of the frozen single-body generator
@@ -3809,6 +4183,7 @@ def main(argv=None):
     p.add_argument("--mass-loss-source", dest="mass_loss_source",
                    choices=["astrosphere_wood", "recipe", "measured_direct"],
                    help="System-level mass-loss source (astrosphere_wood forces v_wind=400)")
+    _add_age_flags(p)
     p.set_defaults(func=cmd_exclusion_system)
 
     # ── Phase AL (Group R) — power generation / storage / thermal (Pkt 27) ────
@@ -4085,7 +4460,8 @@ def main(argv=None):
 
     # substellar (E3)
     p = sub.add_parser("substellar",
-                       help="Substellar (L/T/Y) census from gcns_stars by spectral-type prefix")
+                       help="An L/T/Y census by spectral type from gcns_stars (CR-30.7 D: each row's "
+                            "placement_status_by_type — substellar for L6+/T/Y, else undetermined by type)")
     p.add_argument("--ly-max", type=float, default=None, help="Max distance (light years)")
     p.add_argument("--include-late-m", action="store_true",
                    help="Also include late-M dwarfs (M7/M8/M9, the M/L boundary)")
@@ -4211,6 +4587,7 @@ def main(argv=None):
                    help="CR-19: wall-clock bound (s) on the tier-3 Gaia-archive-TAP calls (FLAME/NSS/"
                         "coords); 0 disables. Default 60 (or $SPACE_APP_GAIA_TIMEOUT). On a bound the call "
                         "degrades (flame_status/gaia_status flag) instead of hanging.")
+    _add_age_flags(p)
     p.set_defaults(func=cmd_binary_stability_auto)
 
     # multiplicity (CR-2): SB flag + per-component multiplicity summary (otype + binary-orbit + GCNS).
@@ -4587,6 +4964,10 @@ def main(argv=None):
                    help="CR-19: wall-clock bound (s) on the tier-3 Gaia-archive-TAP FLAME call; 0 "
                         "disables. Default 60 (or $SPACE_APP_GAIA_TIMEOUT). On a bound the mass degrades "
                         "to the inversion tier with a flame_status flag instead of hanging.")
+    p.add_argument("--star-age", dest="star_age", nargs=4, action="append", default=None,
+                   metavar=("NAME", "LO", "HI", "BASIS"),
+                   help="CR-30.6: a star's age (repeatable): NAME matches a --stars entry (Sol included), LO / HI "
+                        "in Gyr (LO may be 'none'), BASIS one of " + ", ".join(sorted(placement.AGE_BASES)))
     p.set_defaults(func=cmd_compare_stars)
 
     # ── Reference data ───────────────────────────────────────────────────────
@@ -4685,6 +5066,7 @@ def main(argv=None):
     p.add_argument("--mass-solar", type=float,
                    help="CR-11.2: manual stellar mass (M_sun) override — tier-1, supersedes "
                         "catalog / FLAME / inversion")
+    _add_age_flags(p)
     p.set_defaults(func=cmd_dossier)
 
     # project-list (Phase S — read-only)
@@ -4878,6 +5260,8 @@ def main(argv=None):
         _catalog.set_gaia_timeout(args.gaia_timeout)
     if _needs_dust(args):                                   # Windows: route dust cmds to SPACE_APP_DUST_PYTHON
         _redispatch_to_dust_env(raw_argv)                  # no-op where healpy imports (WSL/Linux/macOS)
+    global _CURRENT_ARGS
+    _CURRENT_ARGS = args
     try:
         args.func(args)
     except Exception as e:

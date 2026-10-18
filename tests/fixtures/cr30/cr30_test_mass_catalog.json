@@ -1,0 +1,628 @@
+{
+ "schema_version": "1.1.0",
+ "catalog": "CR-30 re-gate synthetic test catalog (WB-owned; NOT a real catalog - every mass here is a test value)",
+ "status": "Draft - built session 104 (2026-10-10), rulings 114 and 153 (record research/star-analysis-cr-queue/cr30-data-half-and-spec.md section 24); hosts confirmed at the session-106 anchor checkpoint (2026-10-11, record section 26) - T1, T6 and T7 swapped (their named objects have no SIMBAD entry of their own), T15 and T16 given SIMBAD's exact main_id; every row reaches the catalog tier on exclusion-boundary --star and exclusion-system --star at sister 2c22208.; T18-T21 added session 109 (2026-10-11), the pre-fire review's CP0 (record research/star-analysis-cr-queue/cr30-prefire-review.md, ruling 2): T18 two sizing ages (the smallest t_lo sizes the cut), T19-T21 the route-unknown reading (X below every route's factor domain, X above every domain, a row placed boundary); each reaches the catalog tier on exclusion-boundary --star and exclusion-system --star at sister 2c22208.; session 114 (2026-10-12), the pre-fire review's CP2 fix batch (record section 19): T22-T25 added - T22 a model - age-inconsistent row, T23 a candidate-grade age, T24 a boundary row whose hi is not its X, T25 lo equal to the cut at t_lo 0.8 - each reaching the catalog tier on both subcommands at sister 2c22208; T11's test_expected gains the 0.3 Gyr cut node 0.095062 and T21's cut reads 0.309062 (pre-fire ruling 9 (2)).",
+ "purpose": "Passed as --star-mass-catalog <this file> (REPLACE semantics - it replaces the real catalog wholesale for the run) to exercise CR-30.6 B-E's placement of catalog rows by basis, interval and age: the spec's acceptance items 1, 4, 5, 6, 7, 8, 9, 11 and 12 plus two WB-added anchors (T8 the margin-leak discriminator under ruling 128; T17 a row without the new fields). Each row's test_expected is the status WB's reference placer gives under the ruled rule; test_anchor names the acceptance item.",
+ "fields": "Same row format as design-lab/star-system-analysis/deliverables/stellar-mass-catalog.json (schema 1.1.0, contract.cr30_fields): mass_basis, mass_interval {lo, hi, kind}, age_interval {lo_gyr, hi_gyr, basis, grade}; for a basis other than membership the grade is member (ruling 154). test_id, test_anchor, test_expected, test_simbad_otypes (the host's SIMBAD type the row relies on, checked at session 105) and host_status are test bookkeeping the tool ignores.",
+ "stars": [
+  {
+   "test_id": "T1",
+   "main_id": "LP  731-58",
+   "aliases": [
+    "LHS 292",
+    "GJ 3622"
+   ],
+   "mass_solar": 0.07484,
+   "mass_basis": "dynamical",
+   "mass_interval": {
+    "lo": 0.073504,
+    "hi": 0.076176,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; S23's dynamical 78.4 +/- 1.4 M_Jup",
+   "test_anchor": "CR-30.6 acc. 1 (S23's 78.4 +/- 1.4 M_Jup)",
+   "test_expected": {
+    "status": "boundary"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation; swapped session 106 from 2MASS J07464256+2000321B (no SIMBAD entry of its own - SIMBAD holds only the system, LSPM J0746+2000, otype BD*); the row keeps S23's B values"
+  },
+  {
+   "test_id": "T2",
+   "main_id": "NAME Proxima Centauri",
+   "aliases": [
+    "Proxima Centauri"
+   ],
+   "mass_solar": 0.075,
+   "mass_basis": "dynamical",
+   "mass_interval": {
+    "lo": 0.075,
+    "hi": 0.075,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; exact edge",
+   "test_anchor": "CR-30.6 acc. 1 (a stored 0.075)",
+   "test_expected": {
+    "status": "stellar"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T3",
+   "main_id": "NAME Barnard's star",
+   "aliases": [
+    "Barnard's Star"
+   ],
+   "mass_solar": 0.0749999,
+   "mass_basis": "dynamical",
+   "mass_interval": {
+    "lo": 0.0749999,
+    "hi": 0.0749999,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; just below the edge",
+   "test_anchor": "CR-30.6 acc. 1 (0.0749999)",
+   "test_expected": {
+    "status": "boundary"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T4",
+   "main_id": "HD 95735",
+   "aliases": [
+    "Lalande 21185",
+    "GJ 411"
+   ],
+   "mass_solar": 0.15,
+   "mass_basis": "model",
+   "mass_interval": {
+    "lo": 0.14,
+    "hi": 0.16,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": 0.1,
+    "hi_gyr": 0.3,
+    "basis": "model_fit",
+    "grade": "member"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; model row, 0.1-0.3 Gyr model-fit age",
+   "test_anchor": "CR-30.6 acc. 4 (ruling 114 M2)",
+   "test_expected": {
+    "status": "stellar"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T5",
+   "main_id": "Ross  248",
+   "aliases": [
+    "Ross 248",
+    "GJ 905"
+   ],
+   "mass_solar": 0.079,
+   "mass_basis": "model",
+   "mass_interval": {
+    "lo": 0.077,
+    "hi": 0.081,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; model row inside the margin",
+   "test_anchor": "CR-30.6 acc. 4",
+   "test_expected": {
+    "status": "boundary"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T6",
+   "main_id": "LP  816-60",
+   "aliases": [
+    "LP 816-60"
+   ],
+   "mass_solar": 0.0811,
+   "mass_basis": "dynamical",
+   "mass_interval": {
+    "lo": 0.0773,
+    "hi": 0.0849,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; LP 349-25 A's dynamical mass",
+   "test_anchor": "CR-30.6 acc. 4 (Dupuy & Liu 2017)",
+   "test_expected": {
+    "status": "stellar"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation; swapped session 106 from LP 349-25A (no SIMBAD entry of its own - SIMBAD holds only the system, LP  349-25); the row keeps Dupuy & Liu 2017's A values"
+  },
+  {
+   "test_id": "T7",
+   "main_id": "G 157-77",
+   "aliases": [
+    "GJ 1286"
+   ],
+   "mass_solar": 0.0764,
+   "mass_basis": "dynamical",
+   "mass_interval": {
+    "lo": 0.0735,
+    "hi": 0.0793,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; LP 349-25 B's dynamical mass",
+   "test_anchor": "CR-30.6 acc. 4 (Dupuy & Liu 2017)",
+   "test_expected": {
+    "status": "boundary"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation; swapped session 106 from LP 349-25B (no SIMBAD entry of its own - SIMBAD holds only the system, LP  349-25); the row keeps Dupuy & Liu 2017's B values"
+  },
+  {
+   "test_id": "T8",
+   "main_id": "HD 217987",
+   "aliases": [
+    "Lacaille 9352",
+    "GJ 887"
+   ],
+   "mass_solar": 0.078,
+   "mass_basis": "dynamical",
+   "mass_interval": {
+    "lo": 0.076,
+    "hi": 0.08,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; dynamical, X inside the margin, lo above the edge",
+   "test_anchor": "WB addition - the margin-leak discriminator under ruling 128",
+   "test_expected": {
+    "status": "stellar"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T9",
+   "main_id": "Ross  128",
+   "aliases": [
+    "Ross 128",
+    "GJ 447"
+   ],
+   "mass_solar": 0.085,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.079,
+    "hi": 0.091,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": 0.8,
+    "hi_gyr": 1.0,
+    "basis": "membership",
+    "grade": "member"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, flagged t_lo 0.8",
+   "test_anchor": "CR-30.6 acc. 5 (H1 case 1, flagged)",
+   "test_expected": {
+    "status": "boundary"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T10",
+   "main_id": "Wolf 359",
+   "aliases": [
+    "GJ 406"
+   ],
+   "mass_solar": 0.085,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.079,
+    "hi": 0.091,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, unflagged",
+   "test_anchor": "CR-30.6 acc. 5 (H1 case 1, unflagged)",
+   "test_expected": {
+    "status": "stellar"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T11",
+   "main_id": "GJ 1061",
+   "aliases": [
+    "GJ 1061"
+   ],
+   "mass_solar": 0.097,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.077,
+    "hi": 0.117,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": 0.3,
+    "hi_gyr": 0.5,
+    "basis": "membership",
+    "grade": "member"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, flagged t_lo 0.3",
+   "test_anchor": "CR-30.6 acc. 5 (flagged t_lo 0.3); acc. 6 (the 0.3 Gyr cut node, pre-fire ruling 9 (2))",
+   "test_expected": {
+    "status": "boundary",
+    "cut": 0.095062
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T12",
+   "main_id": "YZ Cet",
+   "aliases": [
+    "YZ Ceti",
+    "GJ 54.1"
+   ],
+   "mass_solar": 0.085,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.075,
+    "hi": 0.095,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, lo on the edge",
+   "test_anchor": "CR-30.6 acc. 5 (0.085 +/- 0.010 unflagged)",
+   "test_expected": {
+    "status": "stellar"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T13",
+   "main_id": "GJ 273",
+   "aliases": [
+    "Luyten's Star"
+   ],
+   "mass_solar": 0.079,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.077,
+    "hi": 0.081,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation inside the margin",
+   "test_anchor": "CR-30.6 acc. 5 (0.079 +/- 0.002)",
+   "test_expected": {
+    "status": "boundary"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T14",
+   "main_id": "CD-23 14742",
+   "aliases": [
+    "Ross 154",
+    "GJ 729"
+   ],
+   "mass_solar": 0.177,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.173,
+    "hi": 0.181,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": null,
+    "hi_gyr": 1.0,
+    "basis": "membership",
+    "grade": "member"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, flagged, no sizing age",
+   "test_anchor": "CR-30.6 acc. 7, 8, 11 (membership '< 1 Gyr', no lower bound)",
+   "test_expected": {
+    "status": "boundary",
+    "reading": "<= X",
+    "lifetime": "if stellar >= t(0.177)",
+    "factor": "none (relation-basis row)"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T15",
+   "main_id": "V* TW Hya",
+   "aliases": [
+    "TW Hya",
+    "TW Hydrae"
+   ],
+   "mass_solar": 0.3,
+   "mass_basis": "dynamical",
+   "mass_interval": {
+    "lo": 0.29,
+    "hi": 0.31,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; dynamical on a TT* host",
+   "test_simbad_otypes": [
+    "TT*"
+   ],
+   "test_anchor": "CR-30.6 acc. 9 (ruling 140)",
+   "test_expected": {
+    "status": "stellar",
+    "pre_ms": true,
+    "reading": "X",
+    "lifetime": "pre-MS - not on the main sequence"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; SIMBAD's type TT* is the row's pre-main-sequence signal (test_simbad_otypes; corrected session 111, W1-2 - simbad-lookup: V* TW Hya, K6Ve, TT*) and its sp_type carries no gravity designation; main_id corrected session 106 from 'TW Hya' to SIMBAD's main_id (the old row matched no designation - the tool inverted 0.812 instead)"
+  },
+  {
+   "test_id": "T16",
+   "main_id": "NAME Teegarden's Star",
+   "aliases": [
+    "Teegarden's Star",
+    "SO J025300.5+165258"
+   ],
+   "mass_solar": 0.25,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.24,
+    "hi": 0.26,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": 0.005,
+    "hi_gyr": 0.02,
+    "basis": "model_fit",
+    "grade": "member"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, model-fit-only age [0.005, 0.02]",
+   "test_anchor": "CR-30.6 acc. 9 (ruling 139)",
+   "test_expected": {
+    "status": "boundary",
+    "pre_ms": false
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation; main_id corrected session 106 from \"Teegarden's Star\" to SIMBAD's main_id (the old row matched no designation - the tool inverted 0.0928 instead)"
+  },
+  {
+   "test_id": "T17",
+   "main_id": "GJ 1002",
+   "aliases": [
+    "GJ 1002"
+   ],
+   "mass_solar": 0.079,
+   "mass_uncertainty_solar": 0.002,
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; no mass_basis / mass_interval / age_interval",
+   "test_anchor": "WB addition - a row without the new fields (CR-30.6 C last bullet)",
+   "test_expected": {
+    "status": "boundary",
+    "basis_read": "relation, basis unknown"
+   },
+   "host_status": "confirmed session 106 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T18",
+   "main_id": "HD 204961",
+   "aliases": [
+    "GJ 832"
+   ],
+   "mass_solar": 0.11,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.1,
+    "hi": 0.12,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": 0.1,
+    "hi_gyr": 0.5,
+    "basis": "membership",
+    "grade": "member"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, catalog age [0.1, 0.5] Gyr, run with a supplied age older and younger than it",
+   "test_anchor": "CR-30.6 acc. 6 (two sizing ages - the smallest t_lo sizes the cut; pre-fire ruling 2 (b))",
+   "test_expected": {
+    "with the supplied age [0.5, 1] membership": {
+     "t_lo": 0.1,
+     "t_lo_from": "the catalog row",
+     "cut": 0.129,
+     "status": "boundary",
+     "reading": "<= X",
+     "wrong_build": "the call's age first: t_lo 0.5, cut 0.0861, stellar"
+    },
+    "with the supplied age [0.05, 1] membership": {
+     "t_lo": 0.05,
+     "t_lo_from": "the call",
+     "cut": 0.1631,
+     "status": "boundary",
+     "reading": "<= X",
+     "wrong_build": "the catalog's age first: t_lo 0.1, cut 0.129"
+    }
+   },
+   "host_status": "confirmed session 109 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T19",
+   "main_id": "BD+68   946",
+   "aliases": [
+    "GJ 687"
+   ],
+   "mass_solar": 0.089,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.087,
+    "hi": 0.091,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, X below every route's factor domain at t_lo 0.5 (the age supplied on the call)",
+   "test_anchor": "CR-30.6 acc. 12 (route unknown, X below every route's factor domain; session 108's gap (a))",
+   "test_expected": {
+    "with the supplied age [0.5, 1] membership": {
+     "cut": 0.0861,
+     "status": "stellar",
+     "reading": "<= X",
+     "factor": "none on any route - X 0.089 below every domain at 0.5 Gyr (M_Ks 0.093112, luminosity 0.090328, type 0.090790)",
+     "wrong_build": "a route-unknown rule needing at least one factor, without the below-every-domain clause: X with the caveat"
+    }
+   },
+   "host_status": "confirmed session 109 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T20",
+   "main_id": "* e Eri",
+   "aliases": [
+    "82 Eri",
+    "HD 20794"
+   ],
+   "mass_solar": 1.2,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 1.15,
+    "hi": 1.25,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, X above every route's factor domain at t_lo 0.1 (the age supplied on the call)",
+   "test_anchor": "CR-30.6 acc. 12 (route unknown, X above every route's factor domain; pre-fire ruling 2 (a1))",
+   "test_expected": {
+    "with the supplied age [0.1, 1] membership": {
+     "cut": 0.129,
+     "status": "stellar",
+     "reading": "X with the caveat, no <=",
+     "factor": "none on any route - X 1.20 above every domain at 0.1 Gyr (M_Ks 0.644594, luminosity 1.023117, type 1.041042)",
+     "wrong_build": "a vacuous route-unknown rule (every route with a factor, of none): <= X"
+    }
+   },
+   "host_status": "confirmed session 109 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T21",
+   "main_id": "CD-46 11540",
+   "aliases": [
+    "GJ 674"
+   ],
+   "mass_solar": 0.25,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.24,
+    "hi": 0.26,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": null,
+    "hi_gyr": 1.0,
+    "basis": "membership",
+    "grade": "member"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, flagged, no sizing age, placed boundary; at t_lo 0.01 only the type route has a factor (0.942391)",
+   "test_anchor": "CR-30.6 acc. 12 (route unknown, placed boundary - the boundary clause; pre-fire ruling 2 (a2))",
+   "test_expected": {
+    "status": "boundary",
+    "cut": 0.309062,
+    "reading": "<= X",
+    "lifetime": "if stellar >= t(0.25)",
+    "factor": "none on the M_Ks and luminosity routes (X 0.25 below their 0.01 Gyr domains, 0.329636 / 0.316070); type route 0.942391",
+    "wrong_build": "the route-unknown rule without the boundary clause: X with the caveat (lifetime if stellar >= t(0.26), the row's hi)"
+   },
+   "host_status": "confirmed session 109 (2026-10-11) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T22",
+   "main_id": "G 268-38",
+   "aliases": [
+    "LHS 1140"
+   ],
+   "mass_solar": 0.09,
+   "mass_basis": "model_age_inconsistent",
+   "mass_interval": {
+    "lo": 0.085,
+    "hi": 0.095,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": 0.3,
+    "hi_gyr": 0.5,
+    "basis": "membership",
+    "grade": "member"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; model - age-inconsistent (a single-age fit younger than the row's age interval), catalog age [0.3, 0.5]",
+   "test_anchor": "CR-30.6 acc. 4 (model - age-inconsistent: interval and margin, never the youth rule; ruling 134; pre-fire record section 19, B-A9)",
+   "test_expected": {
+    "status": "stellar",
+    "reading": "X (no '<='; the youth rule never reaches the row)",
+    "wrong_build": "the youth rule applied (read as relation-basis): cut 0.095062 at t_lo 0.3, lo 0.085 -> boundary"
+   },
+   "host_status": "confirmed session 114 (2026-10-12) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T23",
+   "main_id": "Ross  619",
+   "aliases": [
+    "Ross 619"
+   ],
+   "mass_solar": 0.09,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.085,
+    "hi": 0.095,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": 0.3,
+    "hi_gyr": 0.5,
+    "basis": "membership",
+    "grade": "candidate"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, a candidate-grade membership age [0.3, 0.5]",
+   "test_anchor": "CR-30.6 acc. 8 (the triggers: a candidate grade sets the flag; ruling 105; pre-fire record section 19, B-A9)",
+   "test_expected": {
+    "status": "boundary",
+    "cut": 0.095062,
+    "reading": "<= X",
+    "wrong_build": "a build reading only grade member: unflagged, the margin, X 0.090 > 0.080 -> stellar"
+   },
+   "host_status": "confirmed session 114 (2026-10-12) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T24",
+   "main_id": "G 130-4",
+   "aliases": [
+    "GJ 1289"
+   ],
+   "mass_solar": 0.079,
+   "mass_basis": "model",
+   "mass_interval": {
+    "lo": 0.049,
+    "hi": 0.109,
+    "kind": "sigma_1"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; model, unflagged, a boundary row whose hi (0.109) is not its X (0.079)",
+   "test_anchor": "CR-30.5 acc. 4 / CR-30.6 acc. 4 (a boundary row's lifetime from its hi; pre-fire record section 19, B-A12)",
+   "test_expected": {
+    "status": "boundary",
+    "lifetime": "null, if stellar >= t(0.109) = 2902.4 Gyr",
+    "wrong_build": "M_hi taken from X: if stellar >= t(0.10) = 3304.9 Gyr"
+   },
+   "host_status": "confirmed session 114 (2026-10-12) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  },
+  {
+   "test_id": "T25",
+   "main_id": "L  788-37",
+   "aliases": [
+    "GJ 1265"
+   ],
+   "mass_solar": 0.085,
+   "mass_basis": "relation",
+   "mass_interval": {
+    "lo": 0.08,
+    "hi": 0.09,
+    "kind": "sigma_1"
+   },
+   "age_interval": {
+    "lo_gyr": 0.8,
+    "hi_gyr": 1.0,
+    "basis": "membership",
+    "grade": "member"
+   },
+   "mass_kind": "SYNTHETIC CR-30 TEST ROW - not a measurement; relation, flagged at t_lo 0.8, lo exactly the cut 0.080",
+   "test_anchor": "CR-30.6 acc. 5 (stellar iff lo > the cut - lo equal to the cut is boundary; pre-fire record section 19, B-A13)",
+   "test_expected": {
+    "status": "boundary",
+    "cut": 0.08,
+    "reading": "X with the caveat, no '<=' (from t_lo 0.8)",
+    "wrong_build": "lo >= cut: stellar"
+   },
+   "host_status": "confirmed session 114 (2026-10-12) - SIMBAD resolution, catalog match and the catalog tier reached on exclusion-boundary --star and exclusion-system --star at sister 2c22208, no degrade marker; the full SIMBAD type list carries no pre-main-sequence code or gravity designation"
+  }
+ ]
+}

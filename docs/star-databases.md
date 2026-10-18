@@ -415,10 +415,13 @@ Report is a static PNG export, so it keeps Rings. See `docs/gui-architecture.md`
 - Core function: `core.databases.import_mission_exocat_csv(csv_path)` → `{"count": ..., "path": ...}` or `{"error": ...}`.
 - GUI panel: `ImportMissionExocatPanel` in `gui/panels/csv_utility.py`.
 
-## Import Main Sequence Star Properties Feature (opt 54)
+## Import CR-30 Reference Tables Feature (opt 54)
 
-- Menu option 54: `import_main_sequence_data()` — loads `propertiesOfMainSequenceStars.csv` from the project directory into the `main_sequence_stars` DB table, replacing all existing rows.
-- Core function: `core.databases.import_main_sequence_csv(csv_path)` → `{"count": ..., "path": ...}` or `{"error": ...}`.
+- CR-30.1: option 54 (GUI "Import CR-30 Reference Tables") re-seeds the three DB **mirror** tables of the vendored, md5-checked
+  `data/cr30/` files (S1 / Mamajek 2022.04.16, MIST v2.5 lifetimes, the BHAC15 over-read factor) via
+  `core.databases.import_cr30_reference_tables()`; the computation never reads the DB — it reads the files through
+  `core/ms_reference_tables.py`. The old `propertiesOfMainSequenceStars.csv` / `main_sequence_stars` table is left
+  untouched and unread (see `docs/integration.md`, CR-30 block).
 - GUI panel: `ImportMainSequencePanel` in `gui/panels/csv_utility.py`.
 
 ## Import Solar System Data Feature (opt 55)
@@ -502,7 +505,7 @@ designation parsing can surface them.
   unreachable — see the Join bullet — but the column is exported and stored, so the flag still
   matters for a re-export.)*
 - **Storage:** the `gould_designations` table (`core/db.py`), **auto-seeded** via
-  `_STATIC_TABLES` like `main_sequence_stars` / `planets` / `honorverse_hyper` — it
+  `_STATIC_TABLES` like `planets` / `honorverse_hyper` (and, until CR-30, `main_sequence_stars`) — it
   populates itself on first `get_conn()`, with no import step, since frozen data needs no
   refresh path. Indexed on `hd` and `sao`. Listed in the **Database Table Status** panel.
 - **Type coercion is load-bearing** (`_gould_num`): blanks become **`NULL`, never
@@ -799,7 +802,7 @@ archive/regions value) → Conservative HZ inner (`rg`) / outer (`mg`) via
   stellar-mass provenance block (`mass_solar`, `mass_provenance ∈
   {manual|catalog|gaia_flame|ms_luminosity_inversion}`, `massL_inversion_caution`,
   `peculiar_star_flag`, `mass_note`) via the shared `core.stellar_mass` resolver
-  (precedence catalog → Gaia FLAME → the `L^0.2632` inversion; `--star-mass-catalog
+  (precedence catalog → Gaia FLAME → CR-30.4's M_Ks route → the luminosity route (Eker 2018 inverted / S1); `--star-mass-catalog
   <path>` supplies a WB-owned tier-2 catalog, REPLACE semantics + loud bad-path
   error; since CR-22.6 a tier value must be finite and > 0 — a `NaN`/`Infinity`
   catalog row is skipped and resolution falls through to the next tier). The resolution matches the `dossier`'s block for the same star (parity).

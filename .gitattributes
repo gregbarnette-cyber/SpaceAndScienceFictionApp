@@ -40,3 +40,6 @@
 data/cr26/*.csv -text
 # CR-24: the WB-owned V_ISM file, md5-checked at load — byte-identical on every OS (no CRLF).
 data/cr24/*.csv -text
+# CR-30: the WB-owned reference tables (+ S1's raw file), md5-checked at load — byte-identical on every OS (no CRLF).
+data/cr30/* -text
+tests/fixtures/cr30/* -text

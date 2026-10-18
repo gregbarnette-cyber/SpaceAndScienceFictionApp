@@ -118,7 +118,7 @@ NAVIGATION = [
         ("Export Star Systems to CSV",     "ExportStarSystemsPanel"),
         ("Import HWC Data",                "ImportHwcPanel"),
         ("Import Mission Exocat Data",     "ImportMissionExocatPanel"),
-        ("Import Main Sequence Star Props","ImportMainSequencePanel"),
+        ("Import CR-30 Reference Tables", "ImportMainSequencePanel"),
         ("Import Solar System Data",       "ImportSolarSystemPanel"),
         ("Import Honorverse Hyper Limits", "ImportHonorversePanel"),
         ("Import GCNS Data",               "ImportGcnsPanel"),

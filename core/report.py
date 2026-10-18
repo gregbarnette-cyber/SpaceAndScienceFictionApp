@@ -219,7 +219,7 @@ def _regions_data(reg):
     bands.sort(key=lambda b: b["inner_au"] if b["inner_au"] is not None else float("inf"))
     ice = [{"species": nm, "t_cond_k": t, "au": reg.get(k), "kind": kind, "disk_line": disk}
            for nm, k, t, kind, disk in _ICE_LINES]
-    return {
+    out = {
         "sunlight_intensity": reg.get("sunlight_intensity"),
         "bond_albedo": reg.get("bond_albedo"),
         "stellar": {
@@ -230,6 +230,11 @@ def _regions_data(reg):
             "luminosity_from_mass": reg.get("luminosityFromMass"),
             "calculated_luminosity": reg.get("calculatedLuminosity"),
             "main_seq_lifespan_yr": reg.get("mainSeqLifeSpan"),
+            # CR-30.4 (name map ``mass``): each relation beside its value, a null with its reason
+            "luminosity_from_mass_relation": reg.get("luminosity_from_mass_relation"),
+            "luminosity_from_mass_null_reason": reg.get("luminosity_from_mass_null_reason"),
+            "radius_from_mass_relation": reg.get("radius_from_mass_relation"),
+            "radius_from_mass_null_reason": reg.get("radius_from_mass_null_reason"),
         },
         "system_regions": {
             "inner_limit_gravity_au": reg.get("sysilGrav"),
@@ -244,6 +249,8 @@ def _regions_data(reg):
         "alt_solvent": bands,
         "ice_lines": ice,
     }
+    out.update(regions.region_lum_fields(reg))      # CR-30.2 / 30.3: the type read + the L route, named
+    return out
 
 
 def _hz_data(reg):
@@ -251,9 +258,10 @@ def _hz_data(reg):
     cols = [("Bolometric L", reg.get("bcLuminosity")),
             ("Luminosity from mass", reg.get("luminosityFromMass")),
             ("Calculated L", reg.get("calculatedLuminosity"))]
-    per_col = [compute_habitable_zone(teff, L) for _, L in cols]
+    # CR-30.4: a null L(M) / calculated L (a mass outside S1's span) gives a null column, never a crash
+    per_col = [compute_habitable_zone(teff, L) if L else None for _, L in cols]
     base = per_col[0]
-    zones = [{"zone": z["zone_name"], "au": [pc[i]["au"] for pc in per_col]}
+    zones = [{"zone": z["zone_name"], "au": [(pc[i]["au"] if pc else None) for pc in per_col]}
              for i, z in enumerate(base)]
     return {"columns": [c[0] for c in cols], "zones": zones}
 
@@ -362,6 +370,18 @@ def _consistency_blocks(lc):
 
 
 def _blocks_regions(d):
+    # CR-30.6 F (F4) — a failed region step: the resolved mass and what it gives, the region values null
+    if d.get("region_step_failed"):
+        s = d.get("stellar") or {}
+        mb = d.get("mass") or {}
+        return _SECTION_TITLES["regions"], [
+            ("em", f"Region step failed: {d.get('region_error')} — the mass, its placement and the "
+                   "main-sequence lifetime are still reported; every region value is null."),
+            ("kv", [("Stellar mass", f"{_n(s.get('stellar_mass'))} M☉ ({mb.get('mass_provenance') or '—'})"),
+                    ("Stellar radius (R(M))", f"{_n(s.get('stellar_radius'))} R☉"),
+                    ("Luminosity from mass", f"{_g(s.get('luminosity_from_mass'))} L☉"),
+                    ("Main-sequence lifespan", f"{_g(s.get('main_seq_lifespan_yr'))} yr")])] + (
+            [("em", f"ℹ Stellar mass: {mb['note']}.")] if mb.get("note") else []) + _placement_blocks(mb)
     # CR-10.5 Part 1 — evolved star whose MS mass-inversion was refused: no bogus number tables.
     if d.get("ms_inversion_withheld"):
         blocks = [("em", d.get("region_basis") or "MS mass-inversion refused (evolved star)."),
@@ -403,7 +423,7 @@ def _blocks_regions(d):
             ("N₂/CO (1-atm) condensation", _au(sr.get("n2_co_condensation_au"), lm=True)),
             ("Outer system limit", _au(sr.get("outer_limit_au"))),
         ]),
-    ]
+    ] + _placement_blocks(mb)
     # Alternate Solvent Habitable Zones (Phase P · M1)
     blocks.append(("h3", "Alternate Solvent Habitable Zones (Phase P · M1 surface model)"))
     has_pc = False
@@ -439,9 +459,9 @@ def _blocks_regions(d):
     # CR-11.2 — stellar-mass provenance caveat. A caution / a note is surfaced; a clean MS star with a
     # plain inversion and no caution adds nothing (markdown stays byte-identical for those).
     if mb.get("massL_inversion_caution"):
-        blocks.append(("em", f"⚠ Stellar mass from the L^0.2632 inversion is unreliable here — "
+        blocks.append(("em", f"⚠ Stellar mass from the luminosity route is unreliable here — "
                              f"{mb.get('note') or 'known over-read regime'}."))
-    elif mb.get("note") and mb.get("mass_provenance") in ("catalog", "manual", "gaia_flame"):
+    elif mb.get("note") and mb.get("mass_provenance") in ("catalog", "manual", "gaia_flame", "ms_mks_relation"):
         blocks.append(("em", f"ℹ Stellar mass: {mb['note']}."))
     return _SECTION_TITLES["regions"], blocks
 
@@ -662,7 +682,7 @@ def _augment_gcns_multiplicity(data, simbad, has_fitted_orbit=False):
     return data
 
 
-def _multiplicity_data_star(simbad, star, mass_catalog=None):
+def _multiplicity_data_star(simbad, star, mass_catalog=None, age=None):
     """CR-2 otype hint + **CR-10.5 Part 2 catalog cross-check**: run `binary-orbit` (SB9 / WDS-ORB6 /
     Gaia-DR3-NSS) ONCE regardless of otype, so a spectroscopic binary whose primary otype is a
     variability class (Spica `bC*`) is still flagged. `is_multiple`/`sb_flag` reflect the cross-check;
@@ -712,7 +732,7 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
     # tags a sub-13-M_Jup companion as `planet` (§3.3), and a planet-only host (e.g. GJ 876's 61 d NSS
     # "orbit") must NOT read as a stellar multiple. A companion with no class (a visual WDS pair) is a
     # resolved stellar pair and still counts.
-    stellar = [s for s in solutions if (s.get("companion") or {}).get("class") != "planet"]
+    stellar = [s for s in solutions if not binary.is_planetary_companion(s.get("companion"))]
     if not stellar:
         return _augment_gcns_multiplicity(data, simbad)
     # A catalogued stellar orbit ⇒ multiple (even against a variability otype). SB flag if any is
@@ -749,9 +769,12 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
         preferred = stellar_mass.resolve_binary_components(
             (prim_sl if prim_sl is not None else simbad), sel, mass_catalog, status_out=fs,
             system_name=(prim_name if prim_name is not None else star))
-    for _k in ("flame_status_a", "flame_status_b"):      # CR-19: per-component FLAME degrade (mass path)
-        if fs.get(_k):
+    for _k in ("flame_status_a", "flame_status_b", "twomass_status_a", "twomass_status_b", "simbad_status_a",
+               "simbad_status_b"):
+        if fs.get(_k):                                    # CR-19 FLAME / CR-30.3 2MASS / O-1 SIMBAD per-component degrade
             data[_k] = fs[_k]
+    if fs.get("not_authoritative"):
+        data["not_authoritative"] = True
     # Thread the SAME selection through (code-review findings 1/2) — the preferred masses and the
     # sma/element recompute must come from one selection, not two off possibly-different sp_type sources.
     stab = binary.stability_from_solutions(result.get("query"), ident, stellar,
@@ -771,6 +794,16 @@ def _multiplicity_data_star(simbad, star, mass_catalog=None):
         if stab.get("e_out_of_hw_range"):
             data["note"] = ("eccentricity outside the Holman-Wiegert fit domain — the "
                             "critical SMA is an extrapolation")
+    if isinstance(stab, dict):
+        # CR-30.7 B (Q33): the call's age reaches the multiplicity block as binary-stability-auto's does — the
+        # primary's placement and the directions on the elements; a null M₁ → the no-masses result, disclosed
+        binary.apply_primary_directions(stab, prim_sp if prim_sp is not None else simbad.get("sp_type"),
+                                        fs.get("_catalog_row_a"), age, ident.get("m1_null_reason"))
+        if stab.get("placement_a"):
+            data["placement_a"] = stab["placement_a"]
+        if stab.get("m1_null_reason") and not stab.get("elements"):
+            data["m1_null_reason"] = stab["m1_null_reason"]
+            data["note"] = stab["note"]
     # CR-20: the ONLY return with fitted orbits in scope — pass the planet-filtered fitted-orbit signal
     # (`stellar` is already non-planet; is_orbit_solution also re-excludes planets, so it's idempotent).
     return _augment_gcns_multiplicity(
@@ -1051,8 +1084,19 @@ def _render_html(star, rendered, data, warnings, notes):
 
 # ── assembly ──────────────────────────────────────────────────────────────────
 
-def _resolve_star_mass_block(simbad, inversion_mass, mass_catalog, manual_mass, want_gaia, memo):
-    """CR-11.2: resolve the mass block (manual → catalog → Gaia FLAME → the L^0.2632 inversion).
+def _mass_only_stellar(m):
+    """CR-30.6 F (F4): the mass-derived stellar values a failed region step can still report."""
+    from core import ms_sequence
+    life, rfm, lfm = ms_sequence.ms_lifetime(m), ms_sequence.radius_from_mass(m), ms_sequence.luminosity_from_mass(m)
+    return {"stellar_mass": m, "stellar_radius": rfm["radius"], "luminosity_from_mass": lfm["lum"],
+            "main_seq_lifespan_yr": life["yr"], "ms_lifetime_end_point": life["end_point"],
+            "luminosity_from_mass_relation": lfm["relation"], "luminosity_from_mass_null_reason": lfm["reason"],
+            "radius_from_mass_relation": rfm["relation"], "radius_from_mass_null_reason": rfm["reason"]}
+
+
+def _resolve_star_mass_block(simbad, inversion_mass, mass_catalog, manual_mass, want_gaia, memo, mks_mass=None):
+    """CR-11.2: resolve the mass block (manual → catalog → Gaia FLAME → CR-30.4's M_Ks route → the luminosity
+    route).
     FLAME is consulted only when manual + catalog both miss and a region-bearing dossier is requested
     (`want_gaia`), keeping a cheap `--sections identity` dossier network-free. The catalog is matched
     once here and passed to `resolve_mass` so it is not scanned twice."""
@@ -1070,30 +1114,104 @@ def _resolve_star_mass_block(simbad, inversion_mass, mass_catalog, manual_mass, 
     block = stellar_mass.resolve_mass(
         inversion_mass, sp_type=simbad.get("sp_type"), main_id=simbad.get("main_id"),
         designations=simbad.get("designations"), manual_mass=manual_mass, catalog=mass_catalog,
-        flame_mass=flame_mass, catalog_row=cat_row)
+        flame_mass=flame_mass, catalog_row=cat_row, mks_mass=mks_mass)
+    block["mass_mks_solar"] = mks_mass                  # CR-30.4: reported beside a higher tier (Wolf 359)
     # CR-19: surface the FLAME degrade ONLY when the mass actually fell to the inversion tier
     # (degrade-branch only → success + genuine-miss stay byte-identical).
     if flame_status and block["mass_provenance"] == stellar_mass.MS_INVERSION:
         block["flame_status"] = flame_status
+    memo["catalog_row"] = cat_row                       # CR-30.6: the matched row reaches placement
     return block
+
+
+def _dossier_placement(mass_block, simbad, lum_lsun, age, memo):
+    """CR-30.6 — the dossier's ``regions.mass.placement``: the mass block's reading (catalog row / FLAME / M_Ks / L
+    route / manual), the call's age, SIMBAD's primary type (E); FLAME's age is never a signal."""
+    from core import placement
+    pl = placement.place_resolved(mass_block.get("mass_solar"), mass_block.get("mass_provenance"),
+                                  catalog_row=memo.get("catalog_row"), sp_type=simbad.get("sp_type"),
+                                  lum_lsun=lum_lsun, call_age=age, otype=simbad.get("otype"))
+    if age:
+        pl["age_input"] = age
+    return pl
+
+
+def _apply_placement_lifetime(stellar, pl):
+    """CR-30.5 / 30.6 (#26): the lifetime by placement status on the dossier's stellar table."""
+    from core import placement
+    placement.apply_lifetime(stellar, pl, "main_seq_lifespan_yr")
+
+
+def _placement_blocks(mb):
+    """CR-30.6: one rendered line for a placement that is not a plain stellar X (markdown / HTML)."""
+    pl = (mb or {}).get("placement")
+    if not pl or (pl.get("status") == "stellar" and pl.get("reading") in ("x", "interval")
+                  and not pl.get("youth_caveat") and not pl.get("pre_ms")):
+        return []
+    row = f"Placement: {pl.get('status_text')}"
+    if pl.get("reading_text"):
+        row += f" — {pl['reading_text']}"
+    if pl.get("conflict_flag"):
+        row += f" (⚠ conflict: a stellar mass with {pl.get('conflict_trigger')})"
+    if pl.get("youth_caveat"):
+        row += f". {pl['youth_caveat']}"
+    note = (pl.get("lifetime") or {}).get("ms_lifetime_note")
+    if note:
+        row += f". Main-sequence lifetime: {note}"
+    return [("em", "ℹ " + row + ".")]
 
 
 def _patch_regions_for_mass(reg, m):
     """CR-11.2 (WB decision B, MSG 006): recompute reg's **mass-derived** fields from the PREFERRED
     mass so the dossier's stellar table AND the mass-derived HZ columns (Luminosity-from-mass,
     Calculated-L → the secondary Calculated HZ) all correspond to it (mass ↔ radius coherent). Called
-    ONLY when a measured mass (manual/catalog/FLAME) is preferred over the L^0.2632 inversion; a star
+    ONLY when a measured mass (manual/catalog/FLAME) or an M_Ks mass is preferred over the luminosity route; a star
     still on the inversion mass is byte-unchanged. The bcLuminosity-based **primary** HZ / snow line /
     ice lines never use mass and are left untouched. Mirrors the regions.py formulas exactly."""
+    from core import ms_sequence
+    lfm, rfm, life = (ms_sequence.luminosity_from_mass(m), ms_sequence.radius_from_mass(m),
+                      ms_sequence.ms_lifetime(m))
     reg["stellarMass"] = m
-    reg["stellarRadius"] = m ** 0.57 if m >= 1.0 else m ** 0.8
-    reg["luminosityFromMass"] = m ** 3.5
-    reg["mainSeqLifeSpan"] = (10.0 ** 10) * ((1.0 / m) ** 2.5)
+    reg["stellarRadius"] = rfm["radius"]                      # CR-30.4: S1's R(M), null outside 0.078–59 M☉
+    reg["luminosityFromMass"] = lfm["lum"]                    # CR-30.4: S12 / S1
+    reg["mainSeqLifeSpan"] = life["yr"]                       # CR-30.5: MIST v2.5
+    reg.update({"luminosity_from_mass_relation": lfm["relation"], "luminosity_from_mass_null_reason":
+                lfm["reason"], "radius_from_mass_relation": rfm["relation"], "radius_from_mass_null_reason":
+                rfm["reason"], "ms_lifetime_end_point": life["end_point"], "ms_lifetime_status": life["status"],
+                "ms_lifetime_note": life["note"]})
     reg["sysilGrav"] = 0.2 * m
     reg["sysol"] = 40.0 * m
     temp = reg.get("temp")
     if temp:                                   # calculated_luminosity → the secondary Calculated HZ
-        reg["calculatedLuminosity"] = reg["stellarRadius"] ** 2 * (temp / 5778.0) ** 4
+        reg["calculatedLuminosity"] = (reg["stellarRadius"] ** 2 * (temp / 5778.0) ** 4
+                                       if reg["stellarRadius"] is not None else None)
+
+
+def _dossier_mass_route_fields(block, reg):
+    """CR-30.4 (name map ``mass``, carrier ``dossier regions.mass``): the region step's route record beside the
+    adopted mass — the route / relation / segment / switch band only where the adopted mass *is* the region step's
+    inference (the L route or the M_Ks route; Sol's pinned route), null under a tier above it; the M_Ks and L-route
+    masses and their notes always (as ``query._mass_route_fields`` reports them on the exclusion subcommands)."""
+    reg = reg if isinstance(reg, dict) else {}
+    prov = block.get("mass_provenance") if block.get("mass_solar") is not None else None
+    # the route by the adopted tier (a failed region step carries no route record — SCR J1845-6357); Sol's pinned
+    route = ({stellar_mass.MS_MKS: "mks", stellar_mass.MS_INVERSION: "luminosity"}.get(prov)
+             if reg.get("mass_route") != "sol_pinned" or prov != stellar_mass.MS_INVERSION else "sol_pinned")
+    same = route is not None and reg.get("mass_route") == route
+    out = {"mass_route": route,
+           "mass_relation": (reg.get("mass_relation") if same else ("Mann2019_n5" if route == "mks" else None)),
+           "mass_segment": reg.get("mass_segment") if same else None,
+           "mass_switch_band": reg.get("mass_switch_band") if same else None}
+    out.update({k: reg.get(k) for k in ("m_ks", "mass_lroute_solar", "mass_lroute_null_reason")})
+    mks = reg.get("mks") if isinstance(reg.get("mks"), dict) else None
+    if out["mass_route"] == "mks" or (mks and mks.get("mass") is not None):
+        from core import ms_sequence
+        out["mks_binary_disclosure"] = ms_sequence.MKS_BINARY_DISCLOSURE
+    if mks and mks.get("note"):
+        out["mks_note"] = mks["note"]
+    if out["mass_route"] == "mks" and mks and mks.get("activity_caveat"):
+        out["mks_activity_caveat"] = mks["activity_caveat"]
+    return out
 
 
 def _attach_mass_block(data, mass_block):
@@ -1104,7 +1222,7 @@ def _attach_mass_block(data, mass_block):
 
 
 def _assemble_star(star, requested=None, force_ms_inversion=False,
-                   mass_catalog=None, manual_mass=None):
+                   mass_catalog=None, manual_mass=None, age=None):
     """Run the readers for a real star. Returns {"error"} (hard) or {data, status}.
 
     `status` maps each section key → (state, reason) where state is "ok" (in data),
@@ -1128,25 +1246,35 @@ def _assemble_star(star, requested=None, force_ms_inversion=False,
     # evolved_star_flag / region_basis / luminosity_consistency (Gaia FLAME L_bol, graceful-null when
     # FLAME is absent, e.g. saturated supergiants). Guard lives HERE, not in regions.py, so opts 8/9
     # and the GUI region features are byte-identical.
-    reg = regions.compute_star_system_regions_from_simbad(simbad)
-    lum_token, evolved = shared.luminosity_class(simbad.get("sp_type"))
     want_gaia = ("regions" in requested) or ("age_population" in requested)
+    # CR-30.3: the 2MASS lookup (colour / M_Ks routes) only where the regions are requested (plan §13.2 M2 — an
+    # identity-only dossier stays network-free)
+    reg = regions.compute_star_system_regions_from_simbad(
+        simbad, twomass_lookup=("regions" in requested or "habitable_zone" in requested))   # every reg consumer (CP2)
+    lum_token, evolved = shared.luminosity_class(simbad.get("sp_type"))
+    from core import twomass
+    data.update(twomass.degrade_marker(reg))        # CR-30.3: a 2MASS degrade marks the dossier (exit 0)
 
     # CR-11.2 — resolve the preferred stellar mass BEFORE the region tables are built. When a measured
-    # mass (manual/catalog/FLAME) is preferred over the L^0.2632 inversion, patch reg's mass-derived
+    # mass (manual/catalog/FLAME/M_Ks) is preferred over the luminosity route, patch reg's mass-derived
     # fields (radius, luminosity-from-mass, calculated-L → the secondary Calculated HZ, MS-lifespan,
     # 0.2·M / 40·M) so every downstream table corresponds to that mass (WB decision B, MSG 006). A star
     # still on the inversion mass is byte-unchanged (patch skipped). The bcLuminosity-based primary HZ /
     # snow line / ice lines never use mass and are untouched. The block is attached after the branch.
     reg_ok = "error" not in reg
     _withheld = evolved and not force_ms_inversion
-    _inversion_mass = reg.get("stellarMass") if (reg_ok and not _withheld) else None
-    _inversion_radius = reg.get("stellarRadius") if reg_ok else None   # pin the CR-10.5 consistency to it
+    # CR-30.4: the inversion tier is the L route's mass (Eker 2018 / S1); the M_Ks route is its own tier, read
+    # from the region step even when the step failed (no V / Teff — ruling 164; F4)
+    _inversion_mass = reg.get("mass_lroute_solar") if (reg_ok and not _withheld) else None
+    _mks_mass = reg.get("mass_mks_solar") if not _withheld else None
     mass_block = _resolve_star_mass_block(simbad, _inversion_mass, mass_catalog, manual_mass,
-                                          ("regions" in requested), memo)
+                                          ("regions" in requested), memo, mks_mass=_mks_mass)
+    mass_block.update(_dossier_mass_route_fields(mass_block, reg if not _withheld else None))
     if (reg_ok and not _withheld and mass_block["mass_solar"] is not None
             and mass_block["mass_provenance"] != stellar_mass.MS_INVERSION):
         _patch_regions_for_mass(reg, mass_block["mass_solar"])
+    # Q12: the CR-10.5 consistency's calculated L uses R(M) at the ADOPTED mass (after the patch)
+    _adopted_radius = reg.get("stellarRadius") if reg_ok else None
 
     if "error" in reg:
         if evolved:
@@ -1164,6 +1292,18 @@ def _assemble_star(star, requested=None, force_ms_inversion=False,
             status["habitable_zone"] = ("note", f"evolved star; habitable zone withheld — regions "
                                         f"require literature M/R/L and SIMBAD data is incomplete "
                                         f"({reg['error']})")
+        elif mass_block.get("mass_solar") is not None and regions.is_input_failure(reg):
+            # CR-30.6 F (F4): a region step that fails on a missing Teff, V or parallax still reports the resolved
+            # mass, its placement and #26 — the region values null with the step's own reason. Only those three
+            # (MSG 366 F-5) and a 2MASS degrade (only the region L withheld — F-8): a non-main-sequence class
+            # (Sirius B's DA1.9) keeps HEAD's output, never MS values
+            data["regions"] = {"region_step_failed": True, "region_error": reg["error"],
+                               "luminosity_class": lum_token, "evolved_star_flag": False,
+                               "stellar": _mass_only_stellar(mass_block["mass_solar"])}
+            data["regions"].update(regions.region_lum_fields(reg))
+            status["regions"] = ("ok", None)
+            status["habitable_zone"] = ("warn", "depends on the regions computation (unavailable: "
+                                        f"{reg['error']})")
         else:
             status["regions"] = ("warn", reg["error"])
             status["habitable_zone"] = ("warn", "depends on the regions computation (unavailable)")
@@ -1173,9 +1313,9 @@ def _assemble_star(star, requested=None, force_ms_inversion=False,
             ga = _gaia_astro(simbad, memo)
             if isinstance(ga, dict):
                 l_bol = (ga.get("parameters") or {}).get("lum_flame")
-        # CR-10.5 consistency is a diagnostic OF THE INVERSION (does the region-derived L match FLAME?),
-        # so it stays on the inversion radius even when B has patched reg to a preferred measured mass.
-        teff, r_star = reg.get("temp"), _inversion_radius
+        # CR-10.5 consistency (does the calculated L match FLAME?) — CR-30.4 Q12: its calculated L is R(M)²(T/5772)⁴
+        # at the ADOPTED mass (the radius read after the patch above), not the inversion's
+        teff, r_star = reg.get("temp"), _adopted_radius
         calc_l = (r_star ** 2 * (teff / 5772.0) ** 4) if (r_star and teff) else None
         ratio = (calc_l / l_bol) if (calc_l is not None and l_bol not in (None, 0)) else None
         consistency = {"calc_L": calc_l, "L_bol": l_bol, "ratio": ratio,
@@ -1206,6 +1346,11 @@ def _assemble_star(star, requested=None, force_ms_inversion=False,
 
     # CR-11.2 — attach the stellar-mass provenance block to the regions section (the numeric recompute
     # from the preferred mass was already applied to reg above, before the region tables were built).
+    # CR-30.6: the mass block carries its placement; the stellar table's lifetime follows its status (#26)
+    if "regions" in data:
+        mass_block["placement"] = _dossier_placement(
+            mass_block, simbad, (reg.get("bcLuminosity") if reg_ok else None), age, memo)
+        _apply_placement_lifetime(data["regions"].get("stellar"), mass_block["placement"])
     _attach_mass_block(data, mass_block)
 
     nasa = databases.compute_planetary_systems_composite(simbad)
@@ -1239,7 +1384,7 @@ def _assemble_star(star, requested=None, force_ms_inversion=False,
     # network reader (binary-orbit tool-split / Gaia FLAME / VizieR debris catalogues) — a dossier
     # that does not ask for them should not pay for them.
     if "multiplicity" in requested:
-        data["multiplicity"] = _multiplicity_data_star(simbad, star, mass_catalog=mass_catalog)
+        data["multiplicity"] = _multiplicity_data_star(simbad, star, mass_catalog=mass_catalog, age=age)
         status["multiplicity"] = ("ok", None)
     if "age_population" in requested:
         data["age_population"] = _age_population_data_star(simbad, hyp, star, _gaia_astro(simbad, memo))
@@ -1251,7 +1396,7 @@ def _assemble_star(star, requested=None, force_ms_inversion=False,
     return {"data": data, "status": status}
 
 
-def _assemble_sol(mass_catalog=None, manual_mass=None):
+def _assemble_sol(mass_catalog=None, manual_mass=None, age=None):
     """The Sol / Solar System reference-origin path — fully offline (local DB + constants).
 
     Maps each section to its Sol-special-case source: identity = solar constants, regions/HZ
@@ -1273,6 +1418,7 @@ def _assemble_sol(mass_catalog=None, manual_mass=None):
         reg.get("stellarMass"), sp_type="G2V", main_id="Sol",
         designations={"NAME": "Sun", "MAIN_ID": "Sol"}, manual_mass=manual_mass,
         catalog=mass_catalog, flame_mass=None)
+    mass_block.update(_dossier_mass_route_fields(mass_block, reg))
     if mass_block["mass_solar"] is not None and mass_block["mass_provenance"] != stellar_mass.MS_INVERSION:
         _patch_regions_for_mass(reg, mass_block["mass_solar"])
 
@@ -1280,6 +1426,15 @@ def _assemble_sol(mass_catalog=None, manual_mass=None):
     status["regions"] = ("ok", None)
     data["habitable_zone"] = _hz_data(reg)
     status["habitable_zone"] = ("ok", None)
+    # CR-30.6 (CP4 #6): Sol is placed as compare-stars places it (Q26 "Sol included"), with the call's age
+    from core import placement
+    mass_block["placement"] = placement.place_resolved(
+        mass_block.get("mass_solar"), mass_block.get("mass_provenance"),
+        catalog_row=(stellar_mass_tables.match_mass(mass_catalog, "Sol", {"NAME": "Sun", "MAIN_ID": "Sol"})
+                     if mass_catalog else None), sp_type="G2V", lum_lsun=reg.get("bcLuminosity"), call_age=age)
+    if age:
+        mass_block["placement"]["age_input"] = age
+    _apply_placement_lifetime(data["regions"].get("stellar"), mass_block["placement"])
     _attach_mass_block(data, mass_block)
 
     ss = science.compute_solar_system_tables()
@@ -1332,7 +1487,7 @@ def render_document(envelope, fmt):
 
 
 def build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion=False,
-                         star_mass_catalog=None, mass_solar=None):
+                         star_mass_catalog=None, mass_solar=None, age=None):
     """Compose a full system dossier from the existing readers.
 
     Pure (no Qt / file I/O / new astronomy). Returns one of:
@@ -1364,13 +1519,15 @@ def build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion
 
     requested = list(sections) if sections else list(_ALL_SECTIONS)
     if (star or "").strip().lower() in {"sol", "sun"}:
-        assembled = _assemble_sol(mass_catalog=mass_catalog, manual_mass=mass_solar)
+        assembled = _assemble_sol(mass_catalog=mass_catalog, manual_mass=mass_solar, age=age)
     else:
         assembled = _assemble_star(star, requested, force_ms_inversion=force_ms_inversion,
-                                   mass_catalog=mass_catalog, manual_mass=mass_solar)
+                                   mass_catalog=mass_catalog, manual_mass=mass_solar, age=age)
         if "error" in assembled:
             return {"error": assembled["error"]}
     data, status = assembled["data"], assembled["status"]
+    # CR-30.3: a 2MASS degrade marks the whole dossier (top level, every format) — never a section of its own
+    degrade = {k: data.pop(k) for k in ("not_authoritative", "twomass_status", "twomass_note") if k in data}
     warnings, notes = [], []
     rendered = []
     for key in _SECTION_ORDER:
@@ -1387,12 +1544,12 @@ def build_system_dossier(star, sections=None, fmt="markdown", force_ms_inversion
     if fmt == "json":
         return {"star": star, "fmt": "json", "sections": rendered,
                 "warnings": warnings, "notes": notes,
-                "data": {k: data[k] for k in rendered}}
+                "data": {k: data[k] for k in rendered}, **degrade}
 
     render = _render_html if fmt == "html" else _render_markdown
     document = render(star, rendered, data, warnings, notes)
     return {"star": star, "fmt": fmt, "sections": rendered,
-            "warnings": warnings, "notes": notes, "document": document}
+            "warnings": warnings, "notes": notes, "document": document, **degrade}
 
 
 # ── Generated-system dossier (Phase S-C2 — the R→Q "Send to Dossier" link) ────
@@ -1624,6 +1781,12 @@ def _member_dossier(member, sections, fmt):
     return build_system_dossier(member["star_name"], sections=sections, fmt=fmt)
 
 
+def _member_marker(result):
+    """CR-30.3: a member dossier's top-level 2MASS degrade marker, carried onto its project row."""
+    return {k: result[k] for k in ("not_authoritative", "twomass_status", "twomass_note")
+            if isinstance(result, dict) and k in result}
+
+
 def build_project_dossier(project_name, sections=None, fmt="markdown", combined=True):
     """Compose a whole project workspace as a dossier (the Phase S export fan-out).
 
@@ -1667,6 +1830,8 @@ def build_project_dossier(project_name, sections=None, fmt="markdown", combined=
         members = []
         for e in rendered:
             row = {"star_name": e["star_name"], "source": e["source"], "ok": e["ok"]}
+            if e["ok"]:
+                row.update(_member_marker(e["result"]))          # CR-30.3 (CP2): a member's 2MASS degrade
             if not e["ok"]:
                 row["error"] = e["error"]
             elif fmt == "json":
@@ -1678,8 +1843,8 @@ def build_project_dossier(project_name, sections=None, fmt="markdown", combined=
                 "members": members, "warnings": warnings}
 
     # combined
-    member_summ = [{"star_name": e["star_name"], "source": e["source"], "ok": e["ok"]}
-                   for e in rendered]
+    member_summ = [{"star_name": e["star_name"], "source": e["source"], "ok": e["ok"],
+                    **(_member_marker(e["result"]) if e["ok"] else {})} for e in rendered]
     if fmt == "json":
         data = {"project": proj["project"],
                 "members": [{"star_name": e["star_name"], "source": e["source"],

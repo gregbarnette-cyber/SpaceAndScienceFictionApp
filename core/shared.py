@@ -587,11 +587,6 @@ def format_designation_names(designations):
             out.append((key, display))
     return out
 
-# ─── Module-level cache for main sequence data ────────────────────────────────
-
-_MAIN_SEQUENCE_DATA = None
-
-
 # ─── Helper Functions ─────────────────────────────────────────────────────────
 
 def _format_travel_time(total_hours):
@@ -803,94 +798,22 @@ def _parse_designations_from_ids(ids_string, keys=None):
     return _join_designations(_match_designations(ids_string.split("|"), keys), keys)
 
 
+def fmt_num(v, spec, none="—"):
+    """CR-30.4 (ruling 93 M5): a display formatter that renders the status text for a null value — never a
+    formatting error (every print site of a value a null mass can null)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return none
+    return format(v, spec)
+
+
 def _parse_spectral_class(sp_str):
-    """Extract primary class letter and numeric subtype from a SIMBAD spectral string.
-
-    Returns (letter, subtype_float) or (None, None) if no OBAFGKM class found.
-    Uses search so prefixes like 'sd' in 'sdG5' are skipped transparently.
-    """
-    if not sp_str or sp_str in ("N/A", "None", ""):
-        return None, None
-    m = _SP_PATTERN.search(sp_str)
-    if not m:
-        return None, None
-    return m.group(1), float(m.group(2))
-
-
-def _lookup_spectral_type(sp_str):
-    """Return (row_dict, key_used_str) for the nearest ceiling entry in the CSV.
-
-    Ceiling rule: smallest available subtype number >= requested subtype.
-    Within-class fallthrough: if all entries are cooler than requested (e.g. F9
-    with entries only up to F7), advance to the next cooler letter class and
-    return its hottest (lowest subtype) entry (e.g. G0).
-    Falls back to the last entry in the final available class if no next class exists.
-    Returns (None, None) if class letter not found in data.
-    """
-    letter, subtype = _parse_spectral_class(sp_str)
-    if letter is None:
-        return None, None
-
-    data = _load_main_sequence_data()
-
-    try:
-        start_idx = _LETTER_SEQUENCE.index(letter)
-    except ValueError:
-        return None, None
-
-    for idx in range(start_idx, len(_LETTER_SEQUENCE)):
-        current_letter = _LETTER_SEQUENCE[idx]
-        entries = data.get(current_letter)
-        if not entries:
-            continue
-
-        if idx == start_idx:
-            for entry_subtype, row in entries:
-                if entry_subtype >= subtype:
-                    return row, row.get("Spectral Class", "").strip()
-        else:
-            row = entries[0][1]
-            return row, row.get("Spectral Class", "").strip()
-
-    entries = data.get(letter)
-    if entries:
-        row = entries[-1][1]
-        return row, row.get("Spectral Class", "").strip()
+    """``(letter, subtype_float)`` of a main-sequence (OBAFGKM) type with a numeric subtype, else
+    ``(None, None)``. CR-30.2: a thin view of ``parse_spectral_type`` (the one parse) — gravity designations
+    stripped, an Am string's explicit ``h`` type read; a letter-only or L/T/Y/D type gives ``(None, None)``."""
+    p = parse_spectral_type(sp_str)
+    if p.letter in _LETTER_SEQUENCE and p.subtype is not None:
+        return p.letter, p.subtype
     return None, None
-
-
-def _load_main_sequence_data():
-    """Load propertiesOfMainSequenceStars.csv into a per-class lookup structure."""
-    global _MAIN_SEQUENCE_DATA
-    if _MAIN_SEQUENCE_DATA is not None:
-        return _MAIN_SEQUENCE_DATA
-
-    filepath = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..",
-        "propertiesOfMainSequenceStars.csv",
-    )
-    data = {}
-
-    try:
-        with open(filepath, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                sc = row.get("Spectral Class", "").strip()
-                m = _SP_PATTERN.match(sc)
-                if not m:
-                    continue
-                letter  = m.group(1)
-                subtype = float(m.group(2))
-                data.setdefault(letter, []).append((subtype, row))
-        for letter in data:
-            data[letter].sort(key=lambda t: t[0])
-    except Exception as e:
-        print(f"Warning: Could not load propertiesOfMainSequenceStars.csv: {e}")
-        data = {}
-
-    _MAIN_SEQUENCE_DATA = data
-    return _MAIN_SEQUENCE_DATA
 
 
 # _kopparapu_seff is imported from core.equations (P4.6 — one canonical copy).
@@ -1014,7 +937,7 @@ def spectral_leading_class(sp_str, letters=_SPECTRAL_CHIP_LETTERS):
 
 
 # ── Luminosity class (Roman numeral) parser — CR-10.5 Part 1 (F1 / OQ-SA-LUM1) ──
-# A PURPOSE-BUILT parser, distinct from detection.py's single-token `_LUM_CLASS_RE`: it must
+# A PURPOSE-BUILT parser (pre-CR-30 detection.py had a single-token regex; CR-30.2 routes it here): it must
 # capture a hyphen/slash-joined COMPOUND span (`M1-M2Ia-Iab` → "Ia-Iab") that the single-token
 # regex cannot (that one stops at the first suffix, yielding "Ia"). It borrows the boundary-
 # anchoring idiom (`(?<![A-Za-z])`) that keeps the roman numeral from matching inside a spectral
@@ -1033,7 +956,26 @@ _LUM_UNIT_RE = re.compile(r"^(VII|VI|IV|V|III|II|I)(ab|a|b|0)?$")
 _LUM_EVOLVED_CORES = frozenset({"I", "II", "III", "IV"})
 
 
-def luminosity_class(sp_type):
+def _lum_span(s):
+    """``(token, evolved, core)`` of the first luminosity-class span in ``s`` (CR-10.5's rule), else
+    ``(None, False, None)``; ``core`` = the first unit's roman core (``IV-V`` → ``IV``)."""
+    m = _LUM_SPAN_RE.search(s or "")
+    if not m:
+        return None, False, None
+    span = m.group(1)
+    units = re.split(r"[-/]", span)
+    cores = [um.group(1) for um in (_LUM_UNIT_RE.match(u) for u in units) if um]
+    evolved = any(c in _LUM_EVOLVED_CORES for c in cores)
+    first = cores[0] if cores else None
+    if len(units) > 1:                       # compound / range span → verbatim
+        return span, evolved, first
+    um = _LUM_UNIT_RE.match(span)
+    core, _sub = um.group(1), um.group(2)
+    token = span if core == "I" else core   # keep suffix for I-family; core only for II–VII
+    return token, evolved, core
+
+
+def luminosity_class(sp_type, youth=False):
     """``(token, evolved)`` — the luminosity-class token of a spectral type, or ``(None, False)``.
 
         luminosity_class("F8Ib")          -> ("Ib",     True)   # supergiant, suffix kept
@@ -1043,22 +985,138 @@ def luminosity_class(sp_type):
         luminosity_class("G6V")           -> ("V",      False)  # MS dwarf
         luminosity_class("G8:V")          -> ("V",      False)  # colon satisfies the boundary
         luminosity_class("DA2") / "" / None -> (None,   False)
+        luminosity_class("M8 INT-G")      -> (None,     False)  # CR-30.2: a gravity designation, not class I
+        luminosity_class("M8 III VL-G")   -> (None,     False)  # CR-30.2: low gravity on a late M, not a giant
+
+    CR-30.2: read through ``parse_spectral_type`` — gravity designations are stripped first, and with the youth
+    flag set (a VL-G / INT-G / β / γ designation, or ``youth=True`` from the caller) a III / IV on an M5+ or L
+    type is a low-gravity designation (ruling 133 M5). Otherwise the CR-10.5 rule is unchanged.
     """
-    if not sp_type:
-        return None, False
-    m = _LUM_SPAN_RE.search(sp_type)
-    if not m:
-        return None, False
-    span = m.group(1)
-    units = re.split(r"[-/]", span)
-    cores = [um.group(1) for um in (_LUM_UNIT_RE.match(u) for u in units) if um]
-    evolved = any(c in _LUM_EVOLVED_CORES for c in cores)
-    if len(units) > 1:                       # compound / range span → verbatim
-        return span, evolved
-    um = _LUM_UNIT_RE.match(span)
-    core, sub = um.group(1), um.group(2)
-    token = span if core == "I" else core   # keep suffix for I-family; core only for II–VII
-    return token, evolved
+    p = parse_spectral_type(sp_type, youth=youth)
+    return p.lum_class_roman, bool(p.lum_evolved)
+
+
+# ── CR-30.2: the one spectral-type parse ──────────────────────────────────────────────────────────────
+# Every spectral-type read in CR-30's reach goes through ``parse_spectral_type`` (the region lookup, the
+# ``--spectral-type`` direct read, ``binary.py``'s M₁ sites, ``detection-completeness``, ``exclusion_system``,
+# the ``substellar`` census, the Teff-by-type reads in ``par_flux`` / ``viz``). Order (contract CR-30.2):
+#   1. gravity designations (VL-G, INT-G, FLD-G; β γ δ; beta gamma delta) are recognised and STRIPPED before
+#      any class-token or letter read — VL-G / INT-G / β / γ set the youth flag, δ the pre-MS status, FLD-G
+#      nothing (rulings 104, 105, 129, 133, 144). A missing designation never clears a flag set elsewhere.
+#   2. the Am form — a string carrying an explicit hydrogen type (``h…``, ``kA2hA5mA7V``) reads the ``h`` type
+#      (ruling 19); otherwise the first type, as before (``A0mA1Va`` → A0).
+#   3. the class letter and numeric subtype, skipping one known prefix (``d`` dwarf, ``sd`` / ``esd`` / ``usd``
+#      subdwarfs and the uncertain ``d/sd`` forms — ``_SP_CLASS_PREFIXES``); the letters are OBAFGKM, the
+#      substellar L / T / Y and the degenerate D (uppercase — never the dwarf ``d``). A range takes its first
+#      type (``K7-M0`` → K7); ``:`` / ``e`` / ``n`` / ``p`` / ``+…`` after the subtype are ignored.
+#   4. the luminosity class — CR-10.5's span rule on the stripped string; with the youth flag a III / IV on
+#      an M5+ (S28's "M5–L7 dwarfs", ruling 144) or L type is a low-gravity designation, not an evolved class.
+# VL-G / INT-G / FLD-G are distinctive anywhere; a Greek letter or its word counts only as a gravity suffix — not
+# inside a parenthesised peculiarity note ("F0IIIp(delta Del)") and not as a star-name prefix ("gamma Dor"): it must
+# not be letter-adjacent and must not be followed by a capitalised word (CP1).
+_GRAVITY_RE = re.compile(r"VL-G|INT-G|FLD-G|(?<![A-Za-z])(?:β|γ|δ|beta|gamma|delta)(?![A-Za-z])(?!\s*[A-Z][a-z])"
+                         r"|(?<=\d)(?:beta|gamma|delta)(?![A-Za-z])|(?<=[0-9.])[βγδ]")
+_PAREN_RE = re.compile(r"\([^()]*\)")
+_GRAVITY_NORM = {"β": "beta", "γ": "gamma", "δ": "delta"}
+_GRAVITY_YOUTH = frozenset({"VL-G", "INT-G", "beta", "gamma"})
+_PARSE_LETTERS = ("O", "B", "A", "F", "G", "K", "M", "L", "T", "Y", "D")
+_SUBDWARF_PREFIXES = frozenset({"sd", "esd", "usd", "d/sd", "sd:", "s/sd", "(sd)"})
+_AM_H_RE = re.compile(r"h([OBAFGKM])(\d+(?:\.\d+)?)?")
+_SUBTYPE_RE = re.compile(r"(\d+(?:\.\d+)?)")
+
+
+class SpParse(tuple):
+    """The result of ``parse_spectral_type`` (an immutable record; fields by name)."""
+    __slots__ = ()
+    _fields = ("raw", "read", "letter", "subtype", "lum_class_token", "lum_class_roman", "lum_class_core",
+               "lum_evolved", "subdwarf", "gravity", "youth_from_gravity", "pre_ms_from_gravity", "am_h_form",
+               "low_gravity_class", "legacy_fallback", "degenerate_lead", "lead_letter")
+
+    def __new__(cls, **kw):
+        return tuple.__new__(cls, tuple(kw.get(f) for f in cls._fields))
+
+    def __getattr__(self, name):
+        try:
+            return self[self._fields.index(name)]
+        except ValueError:
+            raise AttributeError(name) from None
+
+    def as_fields(self):
+        """The CR-30.2 output fields (name map ``spectral_parse``)."""
+        return {"sp_type_raw": self.raw, "sp_type_read": self.read, "lum_class_token": self.lum_class_token,
+                "subdwarf_flag": bool(self.subdwarf), "gravity_designation": self.gravity,
+                "low_gravity_class": bool(self.low_gravity_class)}
+
+
+def _fmt_subtype(x):
+    return str(int(x)) if float(x).is_integer() else repr(float(x)).rstrip("0").rstrip(".")
+
+
+def parse_spectral_type(sp_str, youth=False):
+    """CR-30.2 — the one parse of a spectral-type string → ``SpParse`` (see the block comment above).
+
+    ``read`` is the type read (``"A5"``, ``"M8"``, ``"L3"``, ``"K"`` for a letter-only K; ``None`` if no class);
+    ``letter`` ∈ OBAFGKM / L / T / Y / D or ``None``; ``subtype`` a float or ``None`` (letter-only);
+    ``lum_class_roman`` / ``lum_evolved`` are CR-10.5's token / flag; ``lum_class_token`` is the roman token, or
+    ``"sd"`` for a subdwarf prefix with no roman token; ``youth`` (the caller's youth flag) joins the
+    designation's for the low-gravity class rule only."""
+    raw = sp_str if isinstance(sp_str, str) else (None if sp_str is None else str(sp_str))
+    s = (raw or "").strip()
+    if not s or s in ("N/A", "None"):
+        return SpParse(raw=raw)
+    gravity = None
+    gscan = _PAREN_RE.sub(" ", s)                    # peculiarity notes in parentheses never carry the designation
+    for gm in _GRAVITY_RE.finditer(gscan):
+        g = _GRAVITY_NORM.get(gm.group(0), gm.group(0))
+        if gravity is None or (g in _GRAVITY_YOUTH or g == "delta") and gravity == "FLD-G":
+            gravity = g
+    stripped = _GRAVITY_RE.sub(" ", gscan).strip() if gravity else s
+    youth_g = gravity in _GRAVITY_YOUTH
+    letter = subtype = None
+    subdwarf = am = False
+    if stripped[:1] in ("k", "h"):
+        hm = _AM_H_RE.search(stripped)
+        if hm:
+            letter, am = hm.group(1), True
+            subtype = float(hm.group(2)) if hm.group(2) else None
+    if letter is None:
+        for prefix in _SP_CLASS_PREFIXES:
+            if prefix and not stripped.startswith(prefix):
+                continue
+            rest = stripped[len(prefix):]
+            if rest and rest[0] in _PARSE_LETTERS:
+                letter = rest[0]
+                sm = _SUBTYPE_RE.match(rest[1:])
+                subtype = float(sm.group(1)) if sm else None
+                subdwarf = prefix in _SUBDWARF_PREFIXES
+                break
+    degenerate_lead = letter == "D"
+    lead_letter = letter
+    legacy_fallback = False
+    if (letter is None or letter == "D" or subtype is None) and not am:
+        # legacy read kept where no CR-30 rule speaks: a missing, degenerate or letter-only leading read defers to
+        # the first full OBAFGKM+subtype type elsewhere in the string (composites: D+dM3 → M3, DA3+F6V → F6,
+        # M?+M5V → M5, Am+F7/8V → F7). A plain DA2 (no later type) stays D; a genuine letter-only K stays K.
+        fm = _SP_PATTERN.search(stripped)
+        if fm:
+            letter, subtype, subdwarf, legacy_fallback = fm.group(1), float(fm.group(2)), False, True
+    if letter is None:
+        # no class letter (a carbon / S / R type — C5II, S4/2III): the luminosity class is still CR-10.5's (CP1)
+        roman, evolved, core = _lum_span(stripped)
+        return SpParse(raw=raw, gravity=gravity, youth_from_gravity=youth_g, pre_ms_from_gravity=gravity == "delta",
+                       lum_class_token=roman, lum_class_roman=roman, lum_class_core=core, lum_evolved=evolved)
+    roman, evolved, core = _lum_span(stripped)
+    low_g = False
+    if (youth or youth_g) and core in ("III", "IV") and (
+            letter == "L" or (letter == "M" and subtype is not None and subtype >= 5)):
+        roman, evolved, core, low_g = None, False, None, True
+    token = roman if roman is not None else ("sd" if subdwarf else None)
+    read = letter + (_fmt_subtype(subtype) if subtype is not None else "")
+    return SpParse(raw=raw, read=read, letter=letter, subtype=subtype, lum_class_token=token,
+                   lum_class_roman=roman, lum_class_core=core, lum_evolved=evolved, subdwarf=subdwarf,
+                   gravity=gravity, youth_from_gravity=youth_g, pre_ms_from_gravity=gravity == "delta",
+                   am_h_form=am, low_gravity_class=low_g, legacy_fallback=legacy_fallback,
+                   degenerate_lead=degenerate_lead, lead_letter=lead_letter)
 
 
 # ── The one spectral-class colour palette (completed_plans/ROUTE_CHART_REFACTOR_PLAN.md Phase 3) ──

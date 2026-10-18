@@ -166,7 +166,7 @@ class StarDerivedAnchorTests(unittest.TestCase):
     def test_evolution_for_a_sun_like_star(self):
         r = oec_derived.derive("star", {"mass": 1.0, "radius": 1.0,
                                         "temperature": 5778.0, "age": 4.6})
-        self.assertAlmostEqual(r["ms_lifetime_gyr"]["value"], 10.1, places=1)
+        self.assertAlmostEqual(r["ms_lifetime_gyr"]["value"], 8.98, places=2)   # CR-30.5: MIST 1.01 × 8.894
         self.assertEqual(r["stage"]["value"], "Main Sequence")
 
     def test_stage_needs_a_catalogued_age(self):

@@ -246,13 +246,13 @@ class TestSyntheticGeneration(unittest.TestCase):
         self.assertEqual(len(generate_system(3, spectral_class="G2V", n_planets=0)["planets"]), 0)
 
     def test_star_props_match_table_and_luminosity(self):
-        # 'K2V' matches a table row exactly → no interpolation; teff/M/R are the
+        # 'K2V' matches an S1 row exactly → no interpolation; teff/M/R are the
         # row values, and luminosity follows compute_star_luminosity.
         r = generate_system(88, spectral_class="K2V", n_planets=1)
         s = r["star"]
         self.assertEqual(s["spectral_class"], "K2V")
-        self.assertAlmostEqual(s["teff"], 4800.0, places=1)
-        self.assertAlmostEqual(s["mass_solar"], 0.72, places=2)
+        self.assertAlmostEqual(s["teff"], 5100.0, places=1)          # S1 K2V (CR-30.1)
+        self.assertAlmostEqual(s["mass_solar"], 0.82, places=2)        # S1 K2V
         self.assertAlmostEqual(s["radius_solar"], 0.78, places=2)
         expected_l = compute_star_luminosity(s["radius_solar"], s["teff"])["luminosity"]
         self.assertAlmostEqual(s["luminosity"], round(expected_l, 6), places=6)

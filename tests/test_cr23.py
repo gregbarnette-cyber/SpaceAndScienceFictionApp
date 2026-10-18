@@ -10,6 +10,7 @@
 #
 # The live ε Eri FLAME anchors (0.811 / gaia_flame / 43.69) run in test_query_exclusion_system_live.py.
 
+from core import ms_sequence as _ms   # CR-30.4 / 30.5 relations (re-pins)
 import argparse
 import unittest
 from unittest import mock
@@ -28,7 +29,7 @@ _EPS_ERI_SIMBAD = {"epsilon Eridani": {
     "main_id": "* eps Eri", "sp_type": "K2V", "otype": "star",
     "designations": {"HD": "HD 22049", "Gaia EDR3": "5164707970261890560"}}}
 _EPS_ERI_BCLUM = 0.32            # ~ε Eri L; only used by the L-inversion tier / the wall's luminosity term
-_EPS_ERI_INVERSION = _EPS_ERI_BCLUM ** 0.2632   # the exact old regions.stellarMass = the FLAME-miss mass
+_EPS_ERI_INVERSION = _ms.mass_from_luminosity(_EPS_ERI_BCLUM)["mass"]   # CR-30.4: the L route = the FLAME-miss mass
 
 _SEED_SIRIUS_A = {"Sirius A": {
     "main_id": "* alf CMa", "sp_type": "A0mA1Va", "otype": "star",
@@ -99,7 +100,7 @@ class Cr231ExclusionBoundaryStarLadderTest(unittest.TestCase):
         finally:
             for p in reversed(patches):
                 p.stop()
-        self.assertEqual(r["mass_msun"], _EPS_ERI_INVERSION)   # exact float identity to bcLum**0.2632
+        self.assertEqual(r["mass_msun"], _EPS_ERI_INVERSION)   # exact float identity to the L route (CR-30.4)
         self.assertEqual(r["mass_provenance"], "ms_luminosity_inversion")
         self.assertAlmostEqual(r["r_ex_au"], 47.5 * _EPS_ERI_INVERSION ** 0.4, places=9)
 
@@ -236,7 +237,8 @@ class Cr232MassNoteTest(unittest.TestCase):
     """CR-23.2 §2c: the resolver's over-read caution surfaces on the with-mass path (was discarded)."""
 
     def test_hot_ms_inversion_surfaces_over_read_caution(self):
-        simbad = {"Vega-like": {"main_id": "* test A star", "sp_type": "A1V", "otype": "star",
+        # CR-30.4: under Eker 2018 the A-star over-read is gone; the O–B upper tail keeps the caution
+        simbad = {"Vega-like": {"main_id": "* test B star", "sp_type": "B3V", "otype": "star",
                                 "designations": {"HD": "HD 999999"}}}
         patches = [
             mock.patch("core.databases.compute_simbad_lookup", _fake_simbad(simbad)),
@@ -257,7 +259,7 @@ class Cr232MassNoteTest(unittest.TestCase):
         self.assertIn("over-read", r["mass_note"])               # the hot-upper-MS caution
 
     def test_exclusion_system_component_carries_mass_note_parity(self):   # review F4: shape parity
-        r = es.compute_exclusion_system(component_specs=["id=A,lum=40,type=A1V"])   # hot-MS inversion
+        r = es.compute_exclusion_system(component_specs=["id=A,lum=400,type=B3V"])   # hot-MS (O–B) inversion
         c = r["zones"][0]["components"][0]
         self.assertEqual(c["mass_provenance"], "ms_luminosity_inversion")
         self.assertIn("mass_note", c)                            # exclusion-system now carries it too

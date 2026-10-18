@@ -26,7 +26,7 @@ import math
 # mirroring the WB JSON shape. Sirius A / Vega are precisely the bright stars Gaia FLAME saturates
 # on, so the catalog — not FLAME — is their authoritative measured-mass source.
 _SEED_CATALOG = {
-    "schema_version": "1.0.0",
+    "schema_version": "1.1.0",      # CR-30.6 C: mass_basis / mass_interval (pre-fire ruling 19 R-10); no age
     "source": ("internal seed (CR-11.2) — the four verified anchors; pass --star-mass-catalog "
                "for the WB-owned file (rows-are-data, REPLACE semantics)"),
     "stars": [
@@ -35,6 +35,7 @@ _SEED_CATALOG = {
             "aliases": ["HD 48915A", "HD 48915", "HIP 32349", "GJ 244 A", "HR 2491"],
             "sp_type": "A0mA1Va", "mass_solar": 2.063, "mass_uncertainty_solar": 0.023,
             "mass_kind": "dynamical", "citation": "Bond et al. 2017",
+            "mass_basis": "dynamical", "mass_interval": {"lo": 2.040, "hi": 2.086, "kind": "sigma_1"},
             "source": "Bond et al. 2017, ApJ 840:70 (arXiv:1703.10625) — visual+astrometric dynamical orbit",
         },
         {
@@ -42,6 +43,7 @@ _SEED_CATALOG = {
             "aliases": ["HD 172167", "HIP 91262", "HR 7001", "GJ 721"],
             "sp_type": "A0Va", "mass_solar": 2.135, "mass_uncertainty_solar": 0.074,
             "mass_kind": "gravity-darkened Roche model", "citation": "Yoon et al. 2010",
+            "mass_basis": "interferometric", "mass_interval": {"lo": 2.061, "hi": 2.209, "kind": "sigma_1"},
             "source": "Yoon, Peterson & Kurucz 2010, ApJ 708:71 — NPOI Roche-model fit",
         },
         {
@@ -49,6 +51,7 @@ _SEED_CATALOG = {
             "aliases": ["HD 128620", "HIP 71683", "GJ 559 A", "HR 5459"],
             "sp_type": "G2V", "mass_solar": 1.079, "mass_uncertainty_solar": 0.0029,
             "mass_kind": "dynamical", "citation": "Akeson et al. 2021",
+            "mass_basis": "dynamical", "mass_interval": {"lo": 1.0761, "hi": 1.0819, "kind": "sigma_1"},
             "source": "Akeson et al. 2021, AJ 162:14 (arXiv:2104.10086) Table 8 'Present work' m_A=1.0788",
         },
         {
@@ -56,6 +59,7 @@ _SEED_CATALOG = {
             "aliases": ["HD 128621", "HIP 71681", "GJ 559 B", "HR 5460"],
             "sp_type": "K1V", "mass_solar": 0.909, "mass_uncertainty_solar": 0.0025,
             "mass_kind": "dynamical", "citation": "Akeson et al. 2021",
+            "mass_basis": "dynamical", "mass_interval": {"lo": 0.9065, "hi": 0.9115, "kind": "sigma_1"},
             "source": "Akeson et al. 2021, AJ 162:14 (arXiv:2104.10086) Table 8 'Present work' m_B=0.9092",
         },
     ],
@@ -94,7 +98,61 @@ def load_mass_catalog(path=None):
         return {"error": f"could not read stellar-mass catalog '{path}': {e}"}
     if not isinstance(data, dict) or not isinstance(data.get("stars"), list):
         return {"error": f"stellar-mass catalog '{path}' has no 'stars' array."}
+    err = validate_cr30_fields(data)
+    if err:
+        return {"error": f"stellar-mass catalog '{path}': {err}"}
     return data
+
+
+# CR-30.6 C: the contract's enums — one source (core.placement), sorted for the error text (CP4 #7)
+from core import placement as _placement   # noqa: E402 (pure; imports only the vendored-table loader)
+_MASS_BASES = tuple(sorted(_placement.CATALOG_BASES))
+_INTERVAL_KINDS = tuple(sorted(_placement.INTERVAL_KINDS))
+_AGE_BASES = tuple(sorted(_placement.AGE_BASES))
+_AGE_GRADES = tuple(sorted(_placement.AGE_GRADES))
+
+
+def validate_cr30_fields(catalog):
+    """CR-30.6 C (Q24): the new structured fields, checked when present — an unknown ``mass_basis`` / interval
+    ``kind`` / age ``basis`` / ``grade``, ``lo > hi``, X outside ``[lo, hi]`` or ``lo_gyr > hi_gyr`` → the error text
+    naming the row and field (a loud load error — WB owns the catalog; REPLACE semantics would place every row on
+    a silent misread). A row without the fields is valid (read as relation / ± σ / no age). ``None`` when clean."""
+    for i, row in enumerate(catalog.get("stars") or []):
+        if not isinstance(row, dict):
+            continue
+        rid = row.get("main_id") or row.get("id") or f"row {i + 1}"
+        sig = row.get("mass_uncertainty_solar")
+        if sig is not None and not (isinstance(sig, (int, float)) and not isinstance(sig, bool)
+                                    and math.isfinite(sig) and sig >= 0):
+            return f"{rid}: mass_uncertainty_solar must be a finite number >= 0 (got {sig!r})"
+        b = row.get("mass_basis")
+        if b is not None and b not in _MASS_BASES:
+            return f"{rid}: mass_basis {b!r} is not one of {', '.join(_MASS_BASES)}"
+        iv = row.get("mass_interval")
+        if iv is not None:
+            if not isinstance(iv, dict) or iv.get("kind") not in _INTERVAL_KINDS:
+                return f"{rid}: mass_interval.kind must be one of {', '.join(_INTERVAL_KINDS)}"
+            lo, hi, x = iv.get("lo"), iv.get("hi"), row.get("mass_solar")
+            if not (is_positive_finite(lo) and is_positive_finite(hi)) or lo > hi:
+                return f"{rid}: mass_interval needs finite 0 < lo <= hi (got {lo!r}, {hi!r})"
+            if is_positive_finite(x) and not (lo - 1e-12 <= x <= hi + 1e-12):
+                return f"{rid}: mass_solar {x} lies outside mass_interval [{lo}, {hi}]"
+        ag = row.get("age_interval")
+        if ag is not None:
+            if not isinstance(ag, dict):
+                return f"{rid}: age_interval must be an object"
+            lo_g, hi_g = ag.get("lo_gyr"), ag.get("hi_gyr")
+            for nm, v in (("lo_gyr", lo_g), ("hi_gyr", hi_g)):
+                if v is not None and not (isinstance(v, (int, float)) and not isinstance(v, bool)
+                                          and math.isfinite(v) and v >= 0):
+                    return f"{rid}: age_interval.{nm} must be a finite number >= 0 or null"
+            if lo_g is not None and hi_g is not None and lo_g > hi_g:
+                return f"{rid}: age_interval lo_gyr {lo_g} > hi_gyr {hi_g}"
+            if ag.get("basis") not in _AGE_BASES:
+                return f"{rid}: age_interval.basis must be one of {', '.join(_AGE_BASES)}"
+            if ag.get("grade") not in _AGE_GRADES:
+                return f"{rid}: age_interval.grade must be one of {', '.join(_AGE_GRADES)}"
+    return None
 
 
 def match_mass(catalog, main_id, designations=None):

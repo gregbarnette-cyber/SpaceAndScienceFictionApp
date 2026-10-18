@@ -76,11 +76,14 @@ class TeffSourceTest(unittest.TestCase):
         self.assertAlmostEqual(r_sp["teff_k"], 5770.0, places=1)
         self.assertAlmostEqual(r_sp["par_fraction"], r_t["par_fraction"], places=4)
 
-    def test_spectral_ceiling_rule(self):
-        # G1 → the ceiling entry G2 (smallest subtype ≥ requested) → 5770 K.
+    def test_spectral_s1_interpolation(self):
+        # CR-30.2: S1's own rows (G1V 5860 K) and linear interpolation in subtype (G1.5V → 5815 K) — no
+        # ceiling rule.
         r = par_flux.compute_par_flux(spectral_type="G1V", insolation_wm2=1361)
         self.assertNotIn("error", r)
-        self.assertAlmostEqual(r["teff_k"], 5770.0, places=1)
+        self.assertAlmostEqual(r["teff_k"], 5860.0, places=1)
+        r = par_flux.compute_par_flux(spectral_type="G1.5V", insolation_wm2=1361)
+        self.assertAlmostEqual(r["teff_k"], 5815.0, places=1)
 
     def test_star_path_mocked(self):
         simbad = {"main_id": "Fake"}
@@ -235,3 +238,13 @@ class C1TableIntegrityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Cr30LetterOnlyDisclosureTest(unittest.TestCase):
+    def test_letter_only_carries_subtype_unknown(self):
+        # CP1: a letter-only G reads S1's G5V and carries the disclosure (CR-30.2 ruling 21)
+        r = par_flux.compute_par_flux(spectral_type="G", insolation_wm2=1361)
+        self.assertAlmostEqual(r["teff_k"], 5660.0)
+        self.assertTrue(r["subtype_unknown"])
+        self.assertIn("2.5x", r["subtype_span_note"])
+        self.assertEqual(r["sp_type_read"], "G")

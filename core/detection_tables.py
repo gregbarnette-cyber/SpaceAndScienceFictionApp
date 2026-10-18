@@ -128,9 +128,5 @@ _DETECTION_DEFAULTS = {
     "confidence": "extrapolation",
 }
 
-# Main-sequence (mass, radius) in solar units, keyed by leading spectral class — used to derive
-# star mass/radius when the caller gives only a spectral type. Illustrative anchors.
-_MS_MASS_RADIUS = {
-    "O": (16.0, 6.6), "B": (2.9, 1.8), "A": (1.6, 1.4), "F": (1.15, 1.15),
-    "G": (0.95, 0.95), "K": (0.7, 0.72), "M": (0.3, 0.35),
-}
+# (CR-30.7 C: the per-letter main-sequence (mass, radius) table is retired — detection-completeness reads S1 at the
+# star's subtype through CR-30.2's lookup, and R(M) for a mass with no radius.)

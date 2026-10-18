@@ -855,7 +855,9 @@ class Cr105Part1RegionGuard(unittest.TestCase):
         self.assertFalse(reg["evolved_star_flag"])
         self.assertEqual(reg["luminosity_class"], "V")
         base = report._regions_data(_regions_fixture(sb))
-        self.assertEqual(reg["stellar"], base["stellar"])       # existing values untouched
+        # existing values untouched; CR-30.5 / 30.6 adds the ms_lifetime_* keys (the lifetime by placement status)
+        self.assertEqual({k: reg["stellar"][k] for k in base["stellar"]}, base["stellar"])
+        self.assertEqual(reg["stellar"]["ms_lifetime_status"], "value")
         self.assertEqual(reg["system_regions"], base["system_regions"])
         self.assertEqual(reg["alt_solvent"], base["alt_solvent"])
 

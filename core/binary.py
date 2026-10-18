@@ -19,51 +19,47 @@ is flagged ``low-significance`` regardless of class — that is where the estima
 import math
 import re
 
-from core.shared import _parse_spectral_class, _route_error
+from core import placement
+from core.placement import HBL_MSUN
+from core.shared import _route_error
 
 # ── constants ────────────────────────────────────────────────────────────────
 _MJUP_PER_MSUN = 1047.5673          # M☉ / M_Jup (IAU) — M_Jup echo per spec §5 (mass in M☉ + M_Jup)
-_STELLAR_MIN_MSUN = 0.075           # hydrogen-burning limit
+_STELLAR_MIN_MSUN = HBL_MSUN         # hydrogen-burning limit (CR-30.6 — the one constant)
 _BD_MIN_MSUN = 0.013                # ~13 M_Jup deuterium-burning limit
 _LOW_SIGNIF_A0_MAS = 1.0            # a₀ at/under this (mas) → low-significance flag (Gaia floor)
 
 # SB1 mass-function constant: f(m) = 1.0361e-7 · K1³ · P_d · (1−e²)^1.5  (M☉; K1 km/s, P days).
 _SB1_MASS_FUNC_CONST = 1.0361e-7
 
-# Coarse main-sequence mass ladder (M☉) for M₁ from spectral type — Pecaut & Mamajek (2013)
-# anchor points, linearly interpolated within a letter by subtype. Used only to seed the cubic
-# (M₂ is the classified quantity); a missing/undecodable type falls back to solar.
-_MS_MASS_ANCHORS = {
-    "O": [(3, 60.0), (5, 32.0), (9, 16.0)],
-    "B": [(0, 17.5), (1, 11.0), (3, 7.6), (5, 5.4), (8, 3.4), (9, 2.9)],
-    "A": [(0, 2.18), (2, 1.98), (5, 1.86), (7, 1.74), (9, 1.66)],
-    "F": [(0, 1.61), (2, 1.48), (5, 1.33), (8, 1.13), (9, 1.08)],
-    "G": [(0, 1.06), (2, 1.02), (5, 0.93), (8, 0.87)],
-    "K": [(0, 0.88), (2, 0.79), (5, 0.70), (7, 0.62), (9, 0.59)],
-    "M": [(0, 0.57), (1, 0.50), (2, 0.44), (3, 0.36), (4, 0.23),
-          (5, 0.16), (6, 0.10), (8, 0.08), (9, 0.075)],
-}
-_DEFAULT_M1_MSUN = 1.0
+# CR-30.7 B (ruling 91): M₁ from a spectral type is S1's mass at the type by CR-30.2's lookup (the coarse
+# Pecaut & Mamajek anchor ladder retired). A type that gives no S1 mass → a null M₁ with its reason (rulings 96, 168) —
+# never a 1.0 M☉ default. The bulk Gaia-NSS census keeps its disclosed 1.0 M☉ assumption (``_CENSUS_M1_MSUN``).
+_CENSUS_M1_MSUN = 1.0
+_NOTE_CENSUS_M1 = ("primary mass assumed 1.0 M☉ (the bulk Gaia NSS census reads no spectral type) — the companion "
+                   "mass scales with it")
 
 
-def m1_from_spectral_type(sp_type, default: float = _DEFAULT_M1_MSUN) -> float:
-    """Approximate main-sequence primary mass (M☉) from a spectral type string.
+def m1_read(sp_type):
+    """CR-30.7 B: ``(m1_or_None, null_reason_or_None, parse_or_None)`` — S1's mass at the type. Null reasons:
+    ``no_spectral_type`` / ``letter_only_type`` / ``unreadable_type`` / ``outside_s1_mass_span``."""
+    if not (sp_type or "").strip():
+        return None, "no_spectral_type", None
+    from core import regions
+    s1, p = regions._lookup_s1(sp_type)
+    if s1.get("Msun") is not None:
+        return s1["Msun"], None, p
+    if s1.get("subtype_unknown"):
+        return None, "letter_only_type", p
+    if p.letter is None:
+        return None, "unreadable_type", p
+    return None, "outside_s1_mass_span", p
 
-    Linear interpolation within the letter's anchor list by subtype; clamps to the endpoints;
-    returns `default` when the type carries no decodable OBAFGKM class (white dwarfs, unknowns)."""
-    letter, subtype = _parse_spectral_class(sp_type or "")
-    if letter is None or letter not in _MS_MASS_ANCHORS:
-        return default
-    anchors = _MS_MASS_ANCHORS[letter]
-    if subtype <= anchors[0][0]:
-        return anchors[0][1]
-    if subtype >= anchors[-1][0]:
-        return anchors[-1][1]
-    for (s0, m0), (s1, m1) in zip(anchors, anchors[1:]):
-        if s0 <= subtype <= s1:
-            frac = (subtype - s0) / (s1 - s0) if s1 != s0 else 0.0
-            return m0 + frac * (m1 - m0)
-    return default
+
+def m1_from_spectral_type(sp_type, default=None):
+    """S1's primary mass (M☉) at a spectral type (CR-30.7 B), else ``default`` (None — no 1.0 M☉ fallback)."""
+    m, _r, _p = m1_read(sp_type)
+    return m if m is not None else default
 
 
 def _solve_mass_function(mass_function: float, m1_solar: float) -> float:
@@ -153,22 +149,44 @@ def companion_mass_from_sb1(k1_kms, period_d, ecc, m1_solar) -> dict:
     }
 
 
-def classify_companion(m2_solar, a0_mas=None) -> dict:
+CLASS_BOUNDARY = "boundary — star or brown dwarf uncertain"
+CLASS_MIN_UNDETERMINED = "undetermined (minimum mass)"
+CLASS_PRE_MS_PRIMARY = "undetermined — pre-MS primary"
+
+
+def classify_companion(m2_solar, a0_mas=None, minimum=False) -> dict:
     """Star / brown-dwarf / planet class from companion mass, with the low-significance flag.
 
-    Thresholds (§3.3): >0.075 → ``stellar``; 0.013–0.075 → ``brown-dwarf``; <0.013 → ``planet``.
-    ``low_significance`` is set when an astrometric a₀ ≲ 1 mas (near the Gaia floor), where the
-    mass estimate is least reliable — regardless of the class it lands in."""
+    CR-30.7 B (rulings 80, 142): **≥ 0.075 → ``stellar``** (the hydrogen-burning limit, inclusive);
+    **[0.067, 0.075) → boundary**; 0.013–0.067 → ``brown-dwarf``; < 0.013 → ``planet``. An SB1 minimum mass
+    (``minimum=True``, M₂ sin i) below 0.075 → **"undetermined (minimum mass)"** (the true mass is unbounded
+    above); at or above 0.075 the minimum already proves stellar. ``low_significance`` is set when an
+    astrometric a₀ ≲ 1 mas (near the Gaia floor) — regardless of the class it lands in."""
     if m2_solar is None:
         cls = "unknown"
-    elif m2_solar > _STELLAR_MIN_MSUN:
+    elif m2_solar >= _STELLAR_MIN_MSUN:
         cls = "stellar"
+    elif minimum:
+        cls = CLASS_MIN_UNDETERMINED
+    elif m2_solar >= placement.BAND_LO_MSUN:
+        cls = CLASS_BOUNDARY
     elif m2_solar >= _BD_MIN_MSUN:
         cls = "brown-dwarf"
     else:
         cls = "planet"
     low = a0_mas is not None and a0_mas <= _LOW_SIGNIF_A0_MAS
     return {"class": cls, "low_significance": low}
+
+
+def is_planetary_companion(comp):
+    """The planet carve-out every multiplicity / census filter uses: a ``planet``-class companion, or (CR-30.7 B,
+    CP6 #2) an SB1 minimum M₂ sin i below the deuterium limit — its class reads "undetermined (minimum mass)" by
+    ruling 142, but a planetary minimum was, and stays, outside stellar multiplicity."""
+    comp = comp or {}
+    if comp.get("class") == "planet":
+        return True
+    m2 = comp.get("m2_solar")
+    return comp.get("method") == "spec-min" and m2 is not None and m2 < _BD_MIN_MSUN
 
 
 def verification_tag(source: str, source_id=None, grade=None, bibcode=None, ref=None) -> str:
@@ -345,20 +363,73 @@ def _apply_binary_masses(comp, bmass):
 
 _NOTE_M1_UNKNOWN = ("companion mass not computed — SIMBAD holds no spectral type for this object (a "
                     "multiple-system entry?), so the primary mass is unknown")
+# CR-30.7 B (pre-fire ruling 19 R-5): the caveat names the reason the type gave no M₁ (CR-27's text byte-identical
+# where that is the reason)
+_M1_NULL_NOTES = {
+    "no_spectral_type": _NOTE_M1_UNKNOWN,
+    "letter_only_type": ("companion mass not computed — the primary's spectral type is letter-only (no subtype), so "
+                         "S1 (the CR-30 main-sequence table) gives no primary mass"),
+    "unreadable_type": ("companion mass not computed — the primary's spectral type could not be read, so S1 gives no "
+                        "primary mass"),
+    "outside_s1_mass_span": ("companion mass not computed — the primary's spectral type lies outside S1's O3V–M9.5V "
+                             "main-sequence span, so S1 gives no primary mass"),
+    "no_simbad_lookup": ("companion mass not computed — the call made no SIMBAD lookup (a Gaia source_id / "
+                         "coordinates only), so there is no spectral type and the primary mass is unknown"),
+}
 
 
-def _m1_unknown_companion(method):
-    """CR-27: the companion block for an orbit whose primary mass is unknown (no masses, the caveat)."""
+def _m1_unknown_companion(method, reason="no_spectral_type"):
+    """CR-27 / CR-30.7 B: the companion block for an orbit whose primary mass is unknown (no masses, the caveat
+    naming the reason; class ``unknown``)."""
     return {"method": method, "m1_solar": None, "m2_solar": None, **classify_companion(None),
-            "caveat": _NOTE_M1_UNKNOWN}
+            "caveat": _M1_NULL_NOTES.get(reason, _NOTE_M1_UNKNOWN), "m1_null_reason": reason}
 
 
 def _m1_decodes(sp_type):
-    """True when ``m1_from_spectral_type`` would decode a mass (not its 1.0 M☉ default)."""
-    return _parse_spectral_class(sp_type or "")[0] in _MS_MASS_ANCHORS
+    """True when S1 gives a primary mass at the type (CR-30 §13.4 M5: "the S1 read yields an M₁")."""
+    return m1_from_spectral_type(sp_type) is not None
 
 
-def _nss_two_body_solutions(source_id, sp_type, plx_fallback, m1_unknown=False):
+def _with_class(cm, a0_mas=None):
+    """A computed companion block + its class (an SB1 ``spec-min`` is a minimum mass — ruling 142)."""
+    return {**cm, **classify_companion(cm["m2_solar"], a0_mas, minimum=(cm.get("method") == "spec-min"))}
+
+
+def primary_placement(m1, prov, parse=None, sp_type=None, catalog_row=None, call_age=None):
+    """CR-30.7 B: the primary's placement for the companion's direction — the type string's signals (the gravity
+    designation; δ) at the binary-orbit layer; + the call / catalog age at ``binary-stability-auto`` and the dossier's
+    multiplicity block (Q33). SIMBAD types never reach ``binary.py`` (Q20)."""
+    if m1 is None:
+        return None
+    return placement.place_resolved(m1, prov, catalog_row=catalog_row, parse=parse, sp_type=sp_type,
+                                    call_age=call_age)
+
+
+def flag_companion(comp, m1_pl):
+    """CR-30.7 B (rulings 132, 167; pre-fire rulings 21 D2, 26): a flagged primary's companion. M₁ "≤ X" → M₂ "≤ Y":
+    a true mass (astrometric / Gaia ``binary_masses``) "undetermined — at most <class(Y)>" (substellar iff Y < 0.067);
+    an SB1 minimum "undetermined (minimum mass)" whatever Y, its "true M₂ ≥ this" caveat withheld. An unbounded
+    pre-MS primary (stellar, pre-main-sequence) → "undetermined — pre-MS primary". M₁ without "≤" → unchanged."""
+    if not comp or not m1_pl or comp.get("method") == "SB2" or comp.get("m2_solar") is None:
+        return comp
+    comp = dict(comp)
+    y = comp["m2_solar"]
+    if m1_pl.get("reading") == "le_x":
+        comp["m1_direction"] = comp["m2_direction"] = "le"
+        if comp.get("method") == "spec-min":
+            comp["class"] = CLASS_MIN_UNDETERMINED
+            comp["sb1_caveat_withheld"] = True
+            comp["caveat"] = ("SB1 minimum mass (sin i = 1 lower bound) under a flagged primary (M₁ an upper bound): "
+                              "M₂ ≤ this minimum, and nothing bounds the true M₂ above")
+        else:
+            comp["class"] = f"undetermined — at most {classify_companion(y)['class']}"
+            comp["substellar"] = y < placement.BAND_LO_MSUN
+    elif m1_pl.get("pre_ms") and m1_pl.get("status") == "stellar":
+        comp["class"] = CLASS_PRE_MS_PRIMARY
+    return comp
+
+
+def _nss_two_body_solutions(source_id, sp_type, plx_fallback, m1_unknown=False, m1_reason=None):
     """Gaia NSS two_body_orbit solutions for one source_id, each with a companion-mass estimate
     plus the independent Gaia binary_masses cross-check (§3.3) where Gaia derived it.
 
@@ -371,7 +442,10 @@ def _nss_two_body_solutions(source_id, sp_type, plx_fallback, m1_unknown=False):
                                  f"WHERE source_id={source_id}"))
     if "error" in res:
         return [], res["error"], res.get("gaia_bound_reason")     # CR-19: propagate a bounded NSS call
-    m1 = m1_from_spectral_type(sp_type)
+    m1, reason, parse = m1_read(sp_type)                       # CR-30.7 B: S1's M₁, else null with its reason
+    if m1 is None:
+        m1_unknown, reason = True, (m1_reason or reason)
+    m1_pl = primary_placement(m1, "spectral_type_table", parse=parse)
     bmass, bm_status = catalog.gaia_binary_masses(source_id)   # §3.3 cross-check (+ CR-19 degrade marker)
     out = []
     for row in res.get("rows", []):
@@ -394,15 +468,16 @@ def _nss_two_body_solutions(source_id, sp_type, plx_fallback, m1_unknown=False):
                 placeholder = "spec-min"
             elif all(v is not None for v in (A, B, F, G)) and period and plx:
                 cm = companion_mass_from_thiele_innes(A, B, F, G, plx, period / 365.25, m1)
-                comp = {**cm, **classify_companion(cm["m2_solar"], cm["a0_mas"])}
+                comp = _with_class(cm, cm["a0_mas"])
             elif k1 and period:                            # single-lined spectroscopic
                 cm = companion_mass_from_sb1(k1, period, ecc or 0.0, m1)
-                comp = {**cm, **classify_companion(cm["m2_solar"])}
+                comp = _with_class(cm)
         except ValueError:
             comp = None
         comp = _apply_binary_masses(comp, bmass)         # an m1-free Gaia binary_masses m2 still FILLS (CR-27)
         if comp is None and placeholder:                 # keep Gaia's own m1 / m2 cross-check block on it (CP4)
-            comp = _apply_binary_masses(_m1_unknown_companion(placeholder), bmass)
+            comp = _apply_binary_masses(_m1_unknown_companion(placeholder, reason or "no_spectral_type"), bmass)
+        comp = flag_companion(comp, m1_pl)               # CR-30.7 B: directions under a flagged primary
         out.append({
             "source": "gaia-nss:two_body_orbit",
             "solution_type": row.get("nss_solution_type"),
@@ -460,7 +535,7 @@ def is_orbit_solution(sol):
     # is a definitely-PLANET companion (a planetary orbit is not stellar multiplicity). So a companion of
     # None (orb6/visual, no mass derived) or an unknown/absent class still reads bound: the orbit itself is
     # the bound signal; we are not asserting the companion is stellar, only that the system is bound.
-    return not comp or comp.get("class") != "planet"
+    return not comp or not is_planetary_companion(comp)
 
 
 def classify_multiplicity(is_multiple, *, has_fitted_orbit, has_binary_otype, gcns_comps,
@@ -530,13 +605,15 @@ def multiplicity_summary(star=None, source_id=None):
     bo = binary_orbit(star=star, source_id=source_id)
     by_basis = {}                                          # dedupe: one component per detection basis
 
-    def _add(basis, sb, sep_au=None, m2_lower=None):
+    def _add(basis, sb, sep_au=None, m2_lower=None, m2_dir=None):
         cur = by_basis.get(basis)
         entry = cur or {"basis": basis, "sb_flag": sb}
         if sep_au is not None and "sep_au" not in entry:
             entry["sep_au"] = sep_au
         if m2_lower is not None and "m2_solar_lower" not in entry:
             entry["m2_solar_lower"] = m2_lower
+            if m2_dir:                                     # CR-30.7 B (Q36): under a flagged primary, "≤"
+                entry["m2_solar_lower_direction"] = m2_dir
         by_basis[basis] = entry
 
     for sol in bo.get("solutions", []) if isinstance(bo, dict) else []:
@@ -556,7 +633,8 @@ def multiplicity_summary(star=None, source_id=None):
             basis = "spectroscopic"
         _add(basis, basis in ("SB1", "SB2"),
              sep_au=sol.get("separation_au"),
-             m2_lower=(comp.get("m2_solar") if basis == "SB1" else None))
+             m2_lower=(comp.get("m2_solar") if basis == "SB1" else None),
+             m2_dir=(comp.get("m2_direction") if basis == "SB1" else None))
 
     # Fold in the otype hint (eclipsing has no orbit route; spectroscopic when the split missed it).
     if otype_block and otype_block.get("basis") == "eclipsing":
@@ -658,7 +736,7 @@ def multiplicity_summary(star=None, source_id=None):
     return out
 
 
-def _sb9_solutions(ra, dec, sp_type, m1_unknown=False):
+def _sb9_solutions(ra, dec, sp_type, m1_unknown=False, m1_reason=None):
     """SB9 orbits for the system at (ra, dec): cone B/sb9/main → Seq → B/sb9/orbits.
 
     CR-27: ``m1_unknown`` (a zero-flux-retry object whose spectral type gives no mass) → an SB1 row whose own
@@ -671,8 +749,12 @@ def _sb9_solutions(ra, dec, sp_type, m1_unknown=False):
         return [], None
     m0 = main["rows"][0]
     seq = m0.get("Seq")
-    m1 = m1_from_spectral_type(sp_type or m0.get("Sp1"))
-    m1_unknown = m1_unknown and not _m1_decodes(sp_type or m0.get("Sp1"))
+    # CR-30.7 B: S1's M₁ at the type (SB9's own Sp1 when the call carries none — Q35); else null with its reason
+    m1, reason, parse = m1_read(sp_type or m0.get("Sp1"))
+    m1_unknown = m1 is None
+    if m1_unknown and m1_reason and not (sp_type or m0.get("Sp1")):
+        reason = m1_reason
+    m1_pl = primary_placement(m1, "spectral_type_table", parse=parse)
     # VizieR needs the leading "=" for an exact NUMERIC match ("=766"); a bare "766" matches nothing
     # (verified 2026-08-22: `Seq = 766` → 0 rows, `Seq:=766` → Spica's orbit Per=4.0145). The `Seq:=…`
     # passthrough form emits {"Seq": "=766"}. (`_parse_vizier_filters` drops the "=" for a plain `=`
@@ -692,10 +774,10 @@ def _sb9_solutions(ra, dec, sp_type, m1_unknown=False):
                         "mass_ratio_q": (k1 / k2 if k2 else None),
                         "caveat": "double-lined (SB2): both components luminous → stellar; q = K1/K2"}
             elif k1 and per and m1_unknown:
-                comp = _m1_unknown_companion("spec-min")
+                comp = _m1_unknown_companion("spec-min", reason)
             elif k1 and per:
                 cm = companion_mass_from_sb1(k1, per, e or 0.0, m1)
-                comp = {**cm, **classify_companion(cm["m2_solar"])}
+                comp = flag_companion(_with_class(cm), m1_pl)
         except ValueError:
             comp = None
         out.append({
@@ -772,17 +854,14 @@ def redirected_primary(ident):
 
 
 def _secondary_needs_primary_sp(ident):
-    """CR-16 trigger: the query resolved to a **secondary** whose spectral type carries **no OBAFGKM
-    class** (a white dwarf / degenerate / blank type — ``DA1.9``, ``DQZ``). Such a secondary cannot seed
-    the orbit's primary mass (``m1_from_spectral_type`` returns the default), so the mass/orbit derivation
-    must borrow the **primary's** spectral type + identity. Gated on the SECONDARY's degeneracy (NOT a
-    "letterless primary" check) so an MS secondary (α Cen B ``K1V``) never trips it → the letter-symmetric
-    CR-13/CR-14 battery runs unchanged code and stays byte-identical **by construction**. ``⚠``
-    ``_parse_spectral_class`` returns a 2-tuple ``(letter, subtype)`` that is ALWAYS truthy (``(None,
-    None)`` included) — test element ``[0]``, never the tuple itself."""
+    """CR-16 trigger: the query resolved to a **secondary** whose spectral type gives **no S1 primary mass** (a white
+    dwarf / degenerate / blank / letter-only type — ``DA1.9``, ``DQZ``; CR-30 §13.4 M5: "the S1 read yields no M₁").
+    Such a secondary cannot seed the orbit's primary mass, so the mass/orbit derivation borrows the **primary's**
+    spectral type + identity. Gated on the SECONDARY (NOT a "letterless primary" check) so an MS secondary (α Cen B
+    ``K1V``) never trips it → the letter-symmetric CR-13/CR-14 battery runs unchanged code."""
     if not _is_secondary_component(ident.get("main_id")):
         return False
-    return _parse_spectral_class(ident.get("sp_type") or "")[0] is None
+    return not _m1_decodes(ident.get("sp_type"))          # CR-30 §13.4 M5: "the S1 read yields no M₁"
 
 
 def binary_orbit(star=None, ra=None, dec=None, source_id=None):
@@ -812,29 +891,34 @@ def binary_orbit(star=None, ra=None, dec=None, source_id=None):
         bare = _SECONDARY_RE.sub("", ident["main_id"].strip())   # strip FIRST (trailing ws defeats $)
         psl = databases.compute_simbad_lookup(bare)
         if (isinstance(psl, dict) and "error" not in psl
-                and _parse_spectral_class(psl.get("sp_type") or "")[0] is not None):
+                and _m1_decodes(psl.get("sp_type"))):          # CR-30 §13.4 M5
             ident["primary"] = {"main_id": psl.get("main_id"), "sp_type": psl.get("sp_type"),
                                 "designations": psl.get("designations") or {}}
             ident["mass_resolved_via_primary"] = psl.get("main_id")
             mass_sp = psl.get("sp_type")
 
     route_tried, solutions, route_errors = [], [], []
-    # CR-27: a zero-flux-retry object whose spectral type decodes no primary mass → no m1-dependent mass
-    m1_unknown = zero_flux and not _m1_decodes(mass_sp)
+    # CR-27 / CR-30.7 B: a type that gives no S1 mass → no m1-dependent mass (never the 1.0 M☉ default); a call with
+    # no SIMBAD lookup (--source-id / --ra --dec) names that as the reason
+    m1_unknown = not _m1_decodes(mass_sp)
+    m1_ctx = "no_simbad_lookup" if (not star and not mass_sp) else None
+    _m1, _m1_reason, _m1_parse = m1_read(mass_sp)
+    ident["lum_class_token"] = _m1_parse.lum_class_token if _m1_parse is not None else None   # C14
+    ident["s1_class_v_flag"] = _m1 is not None       # S1 (a class-V table) seeded M₁ — read with lum_class_token
+    ident["m1_null_reason"] = (m1_ctx or _m1_reason) if _m1 is None else None
 
     if ident.get("gaia_source_id"):
         route_tried.append("gaia-nss:two_body_orbit")
         nss, nss_err, nss_status = _nss_two_body_solutions(
             ident["gaia_source_id"], mass_sp, ident.get("parallax_mas"),
-            m1_unknown=m1_unknown)
+            m1_unknown=m1_unknown, m1_reason=m1_ctx)
         solutions.extend(nss)
         if nss_err:
             route_errors.append(f"gaia-nss: {nss_err}")
         gaia_status = _worse_gaia_status(gaia_status, nss_status)   # CR-19
 
     route_tried.append("sb9")
-    sb9, sb9_err = (_sb9_solutions(ident["ra"], ident["dec"], mass_sp, m1_unknown=True) if m1_unknown
-                    else _sb9_solutions(ident["ra"], ident["dec"], mass_sp))
+    sb9, sb9_err = _sb9_solutions(ident["ra"], ident["dec"], mass_sp, m1_reason=m1_ctx)
     solutions.extend(sb9)
     if sb9_err:
         route_errors.append(f"sb9: {sb9_err}")
@@ -993,13 +1077,33 @@ def _mass_flags(elements):
                  "solution); a placeholder, not a measured mass"])
     if "spec-min" in basis:                        # tier-1 "companion classifier (spec-min)" = SB1
         return ("binary_orbit_m1", "binary_orbit_sb1_min",
-                ["companion mass is an SB1 minimum (sin i = 1 lower bound); true M₂ ≥ this — a lower "
-                 "bound, not a measured mass"])
+                [NOTE_SB1_MIN_RESOLUTION])
     if ("SB2 mass ratio" in basis and m1 and m2 and abs(m2 / m1 - 1.0) < _Q_DEGEN_EPS):
         return ("binary_orbit_m1", "binary_orbit_equal_split_unresolved",
                 ["orbit solution reports q exactly 1.0 (a placeholder equal split — a real measured "
                  "ratio is never exactly unity); treated as unresolved, not a measured mass ratio"])
     return ("binary_orbit_m1", "binary_orbit_m2", [])
+
+
+def sb1_m2_at(sel, m1):
+    """CR-30.7 B (WB MSG 366 F-1 (b), Greg's ruling): an SB1-minimum orbit's M₂ re-solved from the selected orbit's
+    own mass function at the M₁ the mass chain settled on (any tier — catalog, FLAME, M_Ks), not the orbit's M₂
+    solved at the orbit's M₁ → the M₂ (sin i = 1). The orbit's M₂ unchanged when the orbit is not an SB1 minimum,
+    M₁ is the orbit's own, or no mass function is carried."""
+    m2 = sel.get("m2_solar")
+    if sel.get("mass_prov_b") != "binary_orbit_sb1_min" or m1 is None or m1 == sel.get("m1_solar"):
+        return m2
+    f = ((sel.get("selected_solution") or {}).get("companion") or {}).get("mass_function")
+    if not (isinstance(f, (int, float)) and f > 0 and m1 > 0):
+        return m2
+    return _solve_mass_function(f, m1)
+
+
+NOTE_SB1_MIN_RESOLUTION = ("companion mass is an SB1 minimum (sin i = 1 lower bound); true M₂ ≥ this — a lower "
+                           "bound, not a measured mass")
+NOTE_SB1_MIN_RESOLUTION_FLAGGED = ("companion mass is an SB1 minimum (sin i = 1 lower bound) under a flagged primary "
+                                   "(M₁ an upper bound): M₂ ≤ this minimum, and nothing bounds the true M₂ above — "
+                                   "not a measured mass (CR-30.7 B)")
 
 
 def select_stability_elements(solutions, sp_type):
@@ -1138,7 +1242,7 @@ def stability_from_solutions(star_label, ident, solutions, route_tried, test_sma
 
 
 def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma_au=None,
-                          star_mass_catalog=None):
+                          star_mass_catalog=None, age=None):
     """CR-3 + CR-14.3: fetch a binary's orbital elements (``binary_orbit``) and feed them into the
     Holman-Wiegert stability calculator — now routing the per-component **masses** through the shared
     CR-11.2/CR-13.2 chain (manual > ``--star-mass-catalog`` / internal seed > Gaia FLAME > orbit-ratio /
@@ -1186,6 +1290,8 @@ def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma
                           "designations": ident.get("designations")}
         else:
             primary_sl = databases.compute_simbad_lookup(star or ident.get("main_id"))
+        if stellar_mass.simbad_service_failed(primary_sl):
+            stellar_mass.mark_simbad_failure(fs, "a")    # MSG 368 O-1: the mass chain could not run — never silent
         if isinstance(primary_sl, dict) and "error" not in primary_sl:
             preferred = stellar_mass.resolve_binary_components(
                 primary_sl, sel, catalog, status_out=fs,
@@ -1200,7 +1306,9 @@ def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma
     if isinstance(out, dict) and result.get("gaia_status"):
         out["gaia_status"] = result["gaia_status"]
     if isinstance(out, dict):                  # CR-19: per-component FLAME degrade (mass path)
-        for _k in ("flame_status_a", "flame_status_b"):
+        for _k in ("flame_status_a", "flame_status_b", "not_authoritative", "twomass_status_a",
+                   "twomass_status_b",               # + CR-30.3 (CP3): a component's 2MASS degrade
+                   "simbad_status_a", "simbad_status_b"):     # + MSG 368 O-1: a component's failed SIMBAD lookup
             if fs.get(_k):
                 out[_k] = fs[_k]
     # CR-16 transparency: when the masses resolved via a redirected primary, flag it additively so a
@@ -1208,13 +1316,78 @@ def binary_stability_auto(star=None, ra=None, dec=None, source_id=None, test_sma
     # why. Only present on the redirect path — absent (byte-identical) for every letter-symmetric/primary query.
     if isinstance(out, dict) and ident.get("primary"):
         out["mass_resolved_via_primary"] = ident["primary"].get("main_id")
+    if isinstance(out, dict):
+        apply_primary_directions(out, prim_sp if prim_sp is not None else ident.get("sp_type"),
+                                 fs.get("_catalog_row_a"), age, ident.get("m1_null_reason"))
+    return out
+
+
+NOTE_NULL_M1_NO_MASSES = ("no orbit carries usable masses — the primary mass M₁ is null ({why}); the stability "
+                          "selection needs M₁ on every tier, so there are no elements, no S-/P-type radius and no "
+                          "verdict (CR-30.7 B; a measured M₁ in the mass chain acts only on a selected orbit)")
+
+
+def apply_primary_directions(out, sp_type, catalog_row_a, age, m1_null_reason):
+    """CR-30.7 B on a stability block (``binary-stability-auto`` and the dossier's multiplicity — Q33): the
+    primary's ``placement_a`` (its type's signals + the call / catalog age), and under M₁ "≤ X" the elements'
+    ``m1_direction`` / ``m2_direction`` with an orbit-derived M₂'s class (an SB1 minimum "undetermined (minimum
+    mass)"; an SB2-ratio / equal-split M₂ "undetermined — at most <class(Y)>" — Q36). A null M₁ → the no-masses
+    result, disclosed (R-6). ``age`` is echoed as ``age_input``."""
+    if age:
+        out["age_input"] = age
+    el = out.get("elements")
+    if not el:
+        # a null M₁ explains the empty elements only where an orbit exists (CP5 #4) — "no orbital solution found …
+        # does not imply single" stands as it is when there is none
+        if m1_null_reason and out.get("route_tried") is not None and not str(out.get("note") or "").startswith(
+                "no orbital solution found"):
+            out["m1_null_reason"] = m1_null_reason
+            out["note"] = NOTE_NULL_M1_NO_MASSES.format(why=_M1_NULL_NOTES.get(m1_null_reason, m1_null_reason)
+                                                        .split(" — ", 1)[-1])
+        return out
+    sol = out.get("selected_solution")
+    comp = (sol or {}).get("companion") if isinstance(sol, dict) else None
+    if (el.get("mass_provenance_b") == "binary_orbit_sb1_min" and isinstance(comp, dict)
+            and comp.get("method") == "spec-min" and el.get("m2_solar") is not None
+            and comp.get("m2_solar") != el["m2_solar"]):
+        # MSG 366 F-1 (b): the printed orbit's companion carries the M₂ re-solved at the settled M₁ and its class
+        m2 = el["m2_solar"]
+        out["selected_solution"] = dict(sol, companion={
+            **comp, "m1_solar": el.get("m1_solar"), "m2_solar": m2, "m2_mjup": m2 * _MJUP_PER_MSUN,
+            **classify_companion(m2, minimum=True)})
+    pl = primary_placement(el.get("m1_solar"), el.get("mass_provenance_a"), sp_type=sp_type,
+                           catalog_row=catalog_row_a, call_age=age)
+    out["placement_a"] = pl
+    if not pl:
+        return out
+    prov_b = el.get("mass_provenance_b") or ""
+    orbit_b = prov_b.startswith("binary_orbit")
+    if pl.get("reading") == "le_x":
+        el["m1_direction"] = "le"
+        if orbit_b:                                       # M₂ rests on M₁ (the orbit's mass function / ratio / split)
+            el["m2_direction"] = "le"
+            y = el.get("m2_solar")
+            if prov_b == "binary_orbit_sb1_min":
+                el["m2_class"] = CLASS_MIN_UNDETERMINED
+                el["sb1_caveat_withheld"] = True
+                if out.get("resolution_notes"):           # the "true M₂ ≥ this" caveat is withheld on every surface
+                    out["resolution_notes"] = [NOTE_SB1_MIN_RESOLUTION_FLAGGED if n == NOTE_SB1_MIN_RESOLUTION
+                                               else n for n in out["resolution_notes"]]
+            elif y is not None:
+                el["m2_class"] = f"undetermined — at most {classify_companion(y)['class']}"
+    elif pl.get("pre_ms") and pl.get("status") == "stellar" and orbit_b:
+        el["m2_class"] = CLASS_PRE_MS_PRIMARY
+    sol = out.get("selected_solution")
+    if orbit_b and isinstance(sol, dict) and sol.get("companion"):   # the printed orbit's companion agrees
+        out["selected_solution"] = dict(sol, companion=flag_companion(sol["companion"], pl))
     return out
 
 
 # ── Tier-2 orchestrator: close-binary-census (the population sweep, spec §3.2) ─
 
-def _companion_from_row(period_d, ecc, ti, k1, k2, plx, m1):
-    """Companion-mass block for one census row (Thiele-Innes → SB1 → SB2), or None."""
+def _companion_from_row(period_d, ecc, ti, k1, k2, plx, m1, m1_reason=None):
+    """Companion-mass block for one census row (Thiele-Innes → SB1 → SB2), or None. CR-30 §13.5 M6: a null M₁ →
+    the explicit null branch (class ``unknown`` + the reason caveat; the row kept), never a swallowed error."""
     A, B, F, G = ti
     try:
         if k1 and k2:
@@ -1222,11 +1395,15 @@ def _companion_from_row(period_d, ecc, ti, k1, k2, plx, m1):
                     "mass_ratio_q": (k1 / k2 if k2 else None),
                     "caveat": "double-lined → stellar; q = K1/K2"}
         if all(v is not None for v in (A, B, F, G)) and period_d and plx:
+            if m1 is None:
+                return _m1_unknown_companion("astrom", m1_reason or "no_spectral_type")
             cm = companion_mass_from_thiele_innes(A, B, F, G, plx, period_d / 365.25, m1)
-            return {**cm, **classify_companion(cm["m2_solar"], cm["a0_mas"])}
+            return _with_class(cm, cm["a0_mas"])
         if k1 and period_d:
+            if m1 is None:
+                return _m1_unknown_companion("spec-min", m1_reason or "no_spectral_type")
             cm = companion_mass_from_sb1(k1, period_d, ecc or 0.0, m1)
-            return {**cm, **classify_companion(cm["m2_solar"])}
+            return _with_class(cm)
     except ValueError:
         return None
     return None
@@ -1254,8 +1431,9 @@ def _census_nss(plx_min, period_max_d):
             (row.get("a_thiele_innes"), row.get("b_thiele_innes"),
              row.get("f_thiele_innes"), row.get("g_thiele_innes")),
             row.get("semi_amplitude_primary"), row.get("semi_amplitude_secondary"),
-            plx, _DEFAULT_M1_MSUN)                       # bulk: solar-mass primary assumption
+            plx, _CENSUS_M1_MSUN)                        # bulk: solar-mass primary assumption (disclosed)
         out.append({
+            "m1_assumed_note": _NOTE_CENSUS_M1,           # CR-30 §13.5 C16
             "source": "gaia-nss:two_body_orbit", "source_id": str(row.get("source_id")),
             "solution_type": row.get("nss_solution_type"),
             "name": None, "ra": row.get("ra"), "dec": row.get("dec"),
@@ -1425,9 +1603,9 @@ def _census_sb9(period_max_d, dist_max_ly, parallax_source):
         if dist_ly > dist_max_ly:
             continue
         ra, dec, name, sp1 = coords[seq]
-        m1 = m1_from_spectral_type(sp1)
+        m1, m1_reason, _p = m1_read(sp1)                 # CR-30.7 B: S1's M₁ (null with its reason)
         comp = _companion_from_row(row.get("Per"), row.get("e"), (None, None, None, None),
-                                   row.get("K1"), row.get("K2"), plx, m1)
+                                   row.get("K1"), row.get("K2"), plx, m1, m1_reason=m1_reason)
         grade = row.get("Grade")
         out.append({
             "source": "sb9", "source_id": None, "seq": seq, "name": name,
@@ -1601,7 +1779,7 @@ def close_binary_census(dist_max_ly, period_max_d, sep_max_au=None,
         if _is_excluded(e, excl):
             continue
         cls = (e.get("companion") or {}).get("class", "unknown")
-        if drop_planets and cls == "planet":
+        if drop_planets and is_planetary_companion(e.get("companion")):
             excluded_planets.append(e)
             continue
         if separate_wide and sep_max_au and e.get("separation_au") \

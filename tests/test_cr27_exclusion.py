@@ -1,6 +1,7 @@
 """CR-27.3 (+ CR-27.4 from stage 3) — exclusion: the mass ladder is not gated on the luminosity; luminosity = best
 available + provenance (plan §3). Offline, in-process: SIMBAD / regions / FLAME / the catalog are stubbed at their
 module seams; every expected standoff is recomputed through the FROZEN generator from the stubbed inputs."""
+from core import ms_sequence as _ms   # CR-30.4 L route (re-pins)
 import argparse
 import json
 import os
@@ -206,7 +207,7 @@ class Cr273FlameAndInversionTest(unittest.TestCase):
     def test_inversion_of_regions_bc(self):                  # acc 5 / 6
         s = _Star("HD 219134", "HD 219134", "K3V", regions={"bcLuminosity": 0.4594210608083141})
         r = _boundary(s)
-        m = 0.4594210608083141 ** 0.2632
+        m = _ms.mass_from_luminosity(0.4594210608083141)["mass"]
         self.assertEqual(r["mass_provenance"], "ms_luminosity_inversion")
         self.assertEqual(r["mass_msun"], m)
         self.assertEqual(r["r_ex_au"], _rex(m))
@@ -270,7 +271,7 @@ class Cr273FlameAndInversionTest(unittest.TestCase):
     def test_supplied_luminosity_never_feeds_the_inversion(self):   # acc 17 (EZ Aqr)
         s = _Star("EZ Aqr", "EZ Aqr", "M5V", regions={"bcLuminosity": 0.0012})
         r = _boundary(s, luminosity_lsun=0.5)
-        m = 0.0012 ** 0.2632
+        m = _ms.mass_from_luminosity(0.0012)["mass"]
         self.assertEqual((r["mass_msun"], r["mass_provenance"]), (m, "ms_luminosity_inversion"))
         self.assertEqual((r["luminosity_lsun"], r["luminosity_provenance"]), (0.5, "manual"))
         self.assertEqual(r["r_ex_au"], _rex(m))
@@ -301,7 +302,7 @@ class Cr273OtherPathsTest(unittest.TestCase):
     def test_spectral_type_and_object(self):
         r = self._run(spectral_type="M5V")
         self.assertEqual((r["luminosity_lsun"], r["luminosity_provenance"], r["r_ex_au"]),
-                         (0.013, "spectral_type_table", 30.112970656761156))
+                         (0.003019951720402016, "spectral_type_table", 22.935045995995026))   # CR-30.2: S1 M5V
         r = self._run(object="sun")
         self.assertEqual((r["luminosity_lsun"], r["luminosity_provenance"], r["r_ex_au"]), (1.0, "object_preset", 47.5))
         r = self._run(object="brown-dwarf")
@@ -470,7 +471,7 @@ class Cr274SystemEntryTest(unittest.TestCase):
         self.assertEqual((r["mass_provenance"], r["mass_msun"]), ("gaia_flame", 0.8256458044052124))
         self.assertEqual(r["r_ex_au"], _rex(0.8256458044052124))
         self.assertEqual((r["luminosity_lsun"], r["luminosity_provenance"]), (0.5142145156860352, "gaia_flame"))
-        self.assertNotEqual(r["r_ex_au"], _rex(0.6 ** 0.2632))
+        self.assertNotEqual(r["r_ex_au"], _rex(_ms.mass_from_luminosity(0.6)["mass"]))
 
     def test_exclusion_system_single_body_a(self):                   # acc 5
         w = _World({"GJ 65": _HEAD_GJ65}, idents={"G 272-61 A": _A_GJ65})

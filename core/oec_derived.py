@@ -140,7 +140,7 @@ _SRC_LOGG = "log g = log g☉ + log M − 2 log R (cgs dex)"
 _SRC_RHO = "ρ = ρ☉ · M/R³ (uniform-sphere mean density)"
 _SRC_ABSMAG = "M_V = V + 5 − 5·log₁₀(d_pc); no extinction correction"
 _SRC_COLOUR = "catalogue magnitude difference"
-_SRC_EVOL = "core.equations.compute_stellar_evolution (T_ms = 10¹⁰·M^−2.5 yr)"
+_SRC_EVOL = "core.equations.compute_stellar_evolution (T_ms = MIST v2.5, non-rotating, [Fe/H] 0 — CR-30.5)"
 _SRC_ICE = "core.equations.compute_ice_lines (M2 equilibrium model, A = 0)"
 _SRC_CBHZ = ("core.equations.compute_circumbinary_hz — combined light, "
              "luminosity-weighted effective Teff")
@@ -228,8 +228,8 @@ def _derive_evolution(values):
         out["ms_lifetime_gyr"] = _absent(result["error"], "Gyr", _SRC_EVOL)
         out["stage"] = _absent(result["error"], "", _SRC_EVOL)
         return out
-    # `compute_stellar_evolution` extrapolates T_ms = 10¹⁰·M^−2.5 without a cap, so
-    # a 0.20 M☉ star reports 564 Gyr — a number with no physical content, since no
+    # `compute_stellar_evolution`'s MIST v2.5 T_ms runs far past a Hubble time for a low-mass star (0.30 M☉ →
+    # ≈ 441 Gyr) — a model figure with no observable content yet, since no
     # such star has left the main sequence in the age of the universe. The function
     # flags this as `low_mass`; honour the flag rather than printing the figure
     # (the Stellar Evolution panel renders the same case as "> 13.8 Gyr").
@@ -241,11 +241,9 @@ def _derive_evolution(values):
         # lifetime — no star with a model lifetime past a Hubble time has yet left
         # the main sequence, so the figure is an extrapolation, not a prediction.
         #
-        # The threshold is the VALUE, not `low_mass`. `T_ms = 10¹⁰·M^−2.5` crosses
-        # 13.8 Gyr at ≈0.883 M☉ while `low_mass` is set only below 0.8 M☉, so
-        # keying on the flag left the well-populated 0.80–0.88 M☉ band showing a
-        # bare "> 13.8 Gyr" with nothing to say whether it was a real figure or a
-        # caveat.
+        # The threshold is the VALUE, not `low_mass` (CR-30.5, Q16): MIST's T_ms crosses 13.8 Gyr near 0.9 M☉
+        # while `low_mass` (the < 0.8 line — CR-34's) is set only below 0.8 M☉, so keying on the flag would
+        # leave the 0.8–0.9 M☉ band unqualified.
         entry["reason"] = (f"model lifetime {ms:.0f} Gyr exceeds a Hubble time — "
                            "an extrapolation, not a prediction")
         if result.get("low_mass"):

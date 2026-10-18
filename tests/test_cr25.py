@@ -9,6 +9,7 @@
 #   CR-25.4 — exclusion-system coverage (system --wind-state, per-component otype threading).
 # The live anchors (EV Lac 13.42, GJ 65 via G 272-61A, …) run in tests/test_cr25_live.py.
 
+from core import ms_sequence as _ms   # CR-30.4 L route (re-pins)
 import os
 import tempfile
 import time
@@ -302,8 +303,61 @@ def _old_classify_domain_wind(sp_type=None, otype=None, class_tag=None, wind_cla
     return dom, wc, note
 
 
+# CR-30 (plan §13.4 T8): the oracle's old classifier must not move with the new parse — frozen pre-CR-30 copies of
+# detection._sp_letter / _host_class / _LUM_CLASS_RE (verbatim at 2c22208), so new-vs-old still detects drift.
+import re as _re
+
+_OLD_LUM_CLASS_RE = _re.compile(r"[^A-Za-z](VII|VI|IV|V|III|II|I)(?:ab|a|b|0)?")
+
+
+class _OldDetection:
+    _LUM_CLASS_RE = _OLD_LUM_CLASS_RE
+
+    @staticmethod
+    def _sp_letter(sp_type):
+        if not sp_type:
+            return None
+        for ch in sp_type:
+            if ch.upper() in "OBAFGKM":
+                return ch.upper()
+        return None
+
+    @staticmethod
+    def _host_class(sp_type):
+        from core import shared
+        if not sp_type:
+            return None
+        s = sp_type.strip()
+        lead = shared.spectral_leading_class(s, letters=shared._SP_DISPLAY_LETTERS)
+        if lead in ("L", "T", "Y"):
+            return "brown_dwarf"
+        if lead == "D":
+            return "white_dwarf"
+        if s[:2] == "sd" and s[2:3] in ("B", "O"):
+            return "subdwarf"
+        m = _OLD_LUM_CLASS_RE.search(s)
+        if m:
+            lc = m.group(1)
+            if lc == "IV":
+                return "subgiant"
+            if lc == "VI":
+                return "subdwarf"
+            if lc == "VII":
+                return "white_dwarf"
+            if lc == "V":
+                return None
+            return "giant"
+        return None
+
+
+# CR-30's intended drift on the oracle's spectral types (CR-30.2): an Am string reads its h type (kA5hF0mF2 → F0;
+# the old character scan read its lower-case 'k' as K). Checked separately, never silently.
+_CR30_DRIFT_SP = {"kA5hF0mF2", "L5"}       # + CR-30.7 A: an L0–L5 is placed by mass, no longer windless by type
+
+
 def _old_classify_identity(sp_type, otype, class_tag, object_name, wind_state):   # pre-CR-25, verbatim
-    from core import detection, shared
+    from core import shared
+    detection = _OldDetection
     obj = (object_name or "").strip().lower()
     if obj in ("brown-dwarf", "brown_dwarf", "rogue-planet", "rogue_planet", "rogue"):
         return ew.WINDLESS, None, ew._CLASS_NOTES[ew.WINDLESS]
@@ -378,6 +432,8 @@ class Cr25ByteIdentityOracleTest(unittest.TestCase):
         bad = []
         n = 0
         for sp in self._SP:
+            if sp in _CR30_DRIFT_SP:
+                continue                                  # CR-30's intended drift — test_cr30_intended_drift
             for tag in self._TAGS:
                 for ot in self._OTYPES:
                     for obj in self._OBJ:
@@ -399,6 +455,17 @@ class Cr25ByteIdentityOracleTest(unittest.TestCase):
                                     bad.append((k, old, new))
         self.assertGreater(n, 50000)
         self.assertEqual(bad[:5], [], f"{len(bad)} drifting cells")
+
+    def test_cr30_intended_drift(self):
+        # the Am h type: kA5hF0mF2 reads F0 → an F main-sequence colour (was K by the old character scan)
+        self.assertEqual(ew._classify_identity("kA5hF0mF2", None, None, None)[3], "F")
+        self.assertEqual(ew._classify_identity("kA5hF0mF2", None, None, None)[0], ew.MAIN_SEQUENCE)
+        # CR-30.7 A (ruling 78 (iii), Q28): L5 is not later than L5 → main-sequence-for-now (placed by its mass), with
+        # no colour (Q31); T6 stays windless; a user's class=brown-dwarf keeps the windless tag (Q30)
+        self.assertEqual(ew._classify_identity("L5", None, None, None)[0], ew.MAIN_SEQUENCE)
+        self.assertIsNone(ew._classify_identity("L5", None, None, None)[3])
+        self.assertEqual(ew._classify_identity("T6", None, None, None)[0], ew.WINDLESS)
+        self.assertEqual(ew._classify_identity("L5", None, "brown-dwarf", None)[0], ew.WINDLESS)
 
     def test_three_tuple_shape(self):
         r = ew.classify_domain_wind(sp_type="M4V", wind_state="active")
@@ -753,7 +820,7 @@ class Cr25BoundaryWiringTest(_Cr25EnvMixin, unittest.TestCase):
                 p.stop()
 
     def _rex(self, alpha=1.0 / 3.0):
-        return 47.5 * (_EVLAC_BCLUM ** 0.2632) ** alpha             # the FLAME-miss inversion standoff
+        return 47.5 * _ms.mass_from_luminosity(_EVLAC_BCLUM)["mass"] ** alpha             # the FLAME-miss inversion standoff
 
     def test_spectral_type_wind_state_now_honored(self):
         # CR-26 contracted change: --wind-state selects the CR-26 class-default STATE (M4+ active: 10^1.0373 ×
@@ -965,7 +1032,7 @@ class Cr25SystemWiringTest(_Cr25EnvMixin, unittest.TestCase):
         # CR-26 contracted change: EV Lac is Wood-measured (1.0 Ṁ⊙ = 2e-14 → wall 6.00, A2)
         self.assertEqual((c["mass_loss_msun_yr"], c["mass_loss_tier"]), (2e-14, "measured"))
         self.assertAlmostEqual(c["wall_au"], _EVLAC_CR24, places=9)          # CR-24: at Wood's V_ISM 45 (A4)
-        self.assertAlmostEqual(c["r_ex_au"], 47.5 * (_EVLAC_BCLUM ** 0.2632) ** 0.4, places=9)
+        self.assertAlmostEqual(c["r_ex_au"], 47.5 * _ms.mass_from_luminosity(_EVLAC_BCLUM)["mass"] ** 0.4, places=9)
         self.assertNotIn("otype_status", r)
         q = self._comps(self._sys(self._evlac_seam, star="EV Lac", alpha=0.4, wind_state="quiet"))["V* EV Lac"]
         self.assertEqual((q["wind_class"], q["wind_class_provenance"], q["wind_otype"]), ("quiet", "manual", ["Er*"]))

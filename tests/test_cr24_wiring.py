@@ -14,7 +14,7 @@ import pytest
 
 from core import exclusion_system as es
 from core import ism_velocity as iv
-from tests._cr24strip import cr27_normalise, strip
+from tests._cr24strip import cr27_normalise, cr30_run, strip
 from tests._queryharness import run_query_inproc
 from tests.test_cr24_velocity import identity_seam, velocity_seam
 from tests.test_cr25 import _LISTS, _Cr25EnvMixin, _run_boundary, _star_mocks
@@ -51,7 +51,7 @@ class A0ByteIdentityTest(unittest.TestCase):
             cases = json.load(fh)
         for case in cases:
             with self.subTest(args=case["args"]):
-                code, payload, err = run_query_inproc(*case["args"])
+                code, payload, err = cr30_run(self, case, run_query_inproc)   # CR-30 (plan §13.6 T6)
                 self.assertEqual(code, case["exit"])
                 got, want = cr27_normalise(self, case["args"], strip(json.loads(json.dumps(payload, default=str))),
                                            case["payload"])

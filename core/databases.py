@@ -10,6 +10,7 @@ import statistics
 import threading
 import time
 
+from . import ms_sequence
 from .shared import (_make_simbad, _network_error_msg, _timeout_ctx, _with_retries, collapse_ws,
                      _bounded_call, _env_timeout, _stderr_warn, _WatchdogTimeout,
                      _escape_like, spectral_where, spectral_adql, LY_PER_PC,
@@ -243,6 +244,33 @@ def compute_simbad_lookup(star_name: str) -> dict:
 _LOOKUP_TLS = threading.local()
 
 
+# CR-30.3 / 30.4: the raw SIMBAD `2MASS J…` identifiers per resolved main_id (process memo — a lookup made on a
+# watchdog thread, e.g. CR-27's A-record, is still seen by the caller). Internal; never an emitted field.
+_TWOMASS_IDS = {}
+_TWOMASS_LOCK = threading.Lock()
+_TWOMASS_MEMO_MAX = 4096
+
+
+def _remember_twomass_ids(main_id, raw_ids):
+    from core import twomass
+    key = collapse_ws(main_id)
+    val = twomass.twomass_ids_from_rows(raw_ids) if raw_ids else "ids_failed"
+    with _TWOMASS_LOCK:
+        if len(_TWOMASS_IDS) >= _TWOMASS_MEMO_MAX:
+            _TWOMASS_IDS.clear()
+        _TWOMASS_IDS[key] = val
+
+
+def simbad_twomass_ids(main_id):
+    """CR-30: the ``2MASS J…`` identifiers SIMBAD listed for ``main_id`` on this process's last lookup of it →
+    a list (possibly empty), ``"ids_failed"`` (the identifier query returned nothing for a resolved star), or
+    ``twomass.NOT_LOOKED_UP`` (no real lookup ran — e.g. a test that stubs ``compute_simbad_lookup``)."""
+    from core import twomass
+    with _TWOMASS_LOCK:
+        v = _TWOMASS_IDS.get(collapse_ws(main_id))
+    return twomass.NOT_LOOKED_UP if v is None else (list(v) if isinstance(v, list) else v)
+
+
 def simbad_lookup_ex(star_name: str):
     """``(compute_simbad_lookup(star_name), via_retry)`` — ``via_retry`` True when the record resolved only
     through CR-27.1's zero-flux retry (an object that returned "No results found" before CR-27.1). Read by the
@@ -400,9 +428,13 @@ def _simbad_lookup_impl(star_name: str):
     keys_order = ["MAIN_ID"] + list(_CSV_DESIG_KEYS_SHARED)
     designations = {k: None for k in keys_order}
     designations["MAIN_ID"] = main_id
+    _raw_ids = _designation_ids_from_rows(ids_result)
     designations.update(
-        _match_designations(_designation_ids_from_rows(ids_result), _CSV_DESIG_KEYS_SHARED)
+        _match_designations(_raw_ids, _CSV_DESIG_KEYS_SHARED)
     )
+    # CR-30.3 / 30.4: the raw `2MASS J…` identifiers, out-of-band (the output dict is unchanged — Q/T2). An empty
+    # identifier query for a star SIMBAD resolved is recorded as such (fails loud downstream for a K / M star).
+    _remember_twomass_ids(main_id, _raw_ids)
 
     # AN2e / D5: the empty case is "" — this was the last of the five §6 drifts, and the
     # only one judged a bug rather than a deliberate difference. Three of the five copies
@@ -2137,59 +2169,32 @@ def import_mission_exocat_csv(csv_path: str) -> dict:
     return {"count": len(rows), "path": csv_path}
 
 
-def import_main_sequence_csv(csv_path: str) -> dict:
-    """Replace main_sequence_stars table with data from csv_path.
+def import_cr30_reference_tables() -> dict:
+    """CR-30.1 (ruling 82) — the Utilities import of the three WB-owned CR-30 tables (S1 dwarf sequence, MIST
+    v2.5 lifetimes, BHAC15 over-read factors): re-verify every file's md5 and structure (the loader cache is
+    cleared first, so the files on disk are re-read), then re-seed the three DB display mirrors.
 
-    Returns {"count": int, "path": str} or {"error": str}.
+    Returns ``{"tables": [{"file", "md5", "rows", "table"}], "path": data_dir}`` or ``{"error": str}``.
     """
-    from core.db import get_conn
+    from core import ms_reference_tables as mrt
+    from core.db import get_conn, seed_cr30_mirrors
 
-    if not os.path.exists(csv_path):
-        return {"error": f"File not found: {csv_path}"}
-
+    mrt.clear_cr30_cache()
     try:
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            headers = reader.fieldnames or []
-            rows = list(reader)
-    except Exception as e:
-        return {"error": f"Could not read file: {e}"}
-
-    required = {"Spectral Class", "Bolo. Corr. (BC)"}
-    missing = required - set(headers)
-    if missing:
-        return {"error": f"Missing required columns: {', '.join(sorted(missing))}"}
-
-    conn = get_conn()
+        verified = mrt.verify_all()
+    except mrt.Cr30DataError as e:
+        return {"error": str(e)}
     try:
-        with conn:
-            conn.execute("DELETE FROM main_sequence_stars")
-            conn.executemany(
-                """INSERT INTO main_sequence_stars
-                   (spectral_class, b_v, teff_k, abs_mag_vis, abs_mag_bol, bc,
-                    lum, radius, mass, density, lifetime)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [
-                    (
-                        r.get("Spectral Class", ""),
-                        r.get("B-V", ""),
-                        r.get("Teeff(K)", ""),
-                        r.get("AbsMag Vis.", ""),
-                        r.get("AbsMag Bol.", ""),
-                        r.get("Bolo. Corr. (BC)", ""),
-                        r.get("Lum", ""),
-                        r.get("R", ""),
-                        r.get("M", ""),
-                        r.get("p (g/cm3)", ""),
-                        r.get("Lifetime (years)", ""),
-                    )
-                    for r in rows
-                ],
-            )
+        written = seed_cr30_mirrors(get_conn(), force=True)
     except Exception as e:
         return {"error": f"Database error: {e}"}
-
-    return {"count": len(rows), "path": csv_path}
+    if set(written) != {"ms_reference_s1", "ms_reference_mist", "ms_reference_factor"}:
+        return {"error": f"Database error: CR-30 mirrors not all written ({sorted(written)})"}
+    table_of = {mrt.S1_FILE: "ms_reference_s1", mrt.MIST_FILE: "ms_reference_mist",
+                mrt.FACTOR_FILE: "ms_reference_factor"}
+    return {"tables": [{"file": f, "md5": v["md5"], "rows": v["rows"], "table": table_of[f]}
+                       for f, v in verified.items()],
+            "path": mrt.data_dir()}
 
 
 def import_solar_system_csvs(data_dir: str) -> dict:
@@ -4421,6 +4426,14 @@ def compute_solar_analogs(mode="twin", teff_tol=None, logg_tol=None, feh_tol=Non
     }
 
 
+# CR-30.7 D (ruling 90): the census places by type only (ruling 78 (iii)) — later than L5, T or Y → substellar; every
+# other row (L0–L5, a late M, a D …) → undetermined by type (no S1 mass read, no youth or pre-MS signal)
+NOTE_CENSUS_PLACEMENT = ("an L/T/Y census by spectral type — each row's placement_status_by_type is ruling 78's type "
+                         "rule only: an L later than L5, a T or a Y is substellar; any other row (L0–L5, M7–M9, …) "
+                         "is undetermined by type (placed by its mass elsewhere — the hydrogen-burning limit 0.075 "
+                         "M☉); no mass, youth or pre-main-sequence signal is read here")
+
+
 def compute_substellar_census(ly_max=None, include_late_m=False, classes=None) -> dict:
     """Substellar (L/T/Y) census from gcns_stars by spectral-type prefix (Phase T1c E3).
 
@@ -4489,6 +4502,11 @@ def compute_substellar_census(ly_max=None, include_late_m=False, classes=None) -
         tuple(params + [_SEARCH_CAP + 1]),
     ).fetchall()
     stars = [_gcns_row_to_dict(r) for r in rows]
+    from core import placement, shared
+    for st in stars:                                  # CR-30.7 D (ruling 90): a status by type — no S1 mass read
+        p = shared.parse_spectral_type(st.get("spectral_type"))
+        st["placement_status_by_type"] = ("substellar" if placement.is_substellar_type(p)
+                                          else "undetermined_by_type")
     capped = len(stars) > _SEARCH_CAP
     if capped:
         stars = stars[:_SEARCH_CAP]
@@ -4503,6 +4521,8 @@ def compute_substellar_census(ly_max=None, include_late_m=False, classes=None) -
         "capped": capped,
         "cap": _SEARCH_CAP,
         "completeness_note": _SUBSTELLAR_NOTE,
+        "census_label": "an L/T/Y census by spectral type",
+        "placement_note": NOTE_CENSUS_PLACEMENT,
         "population": {
             "total_in_gcns": total,
             "with_spectral_type": with_type,
@@ -4594,7 +4614,18 @@ def _flame_mass_for(sl):
     return None, None
 
 
-def compare_stars(names: list, star_mass_catalog=None) -> dict:
+def _compare_placement(entry, cat_row, otype, age):
+    """CR-30.6 (Q26): a compared star's ``placement`` on its ``mass_solar`` (+ the call's ``age_input`` echo)."""
+    from core import placement
+    pl = placement.place_resolved(entry.get("mass_solar"), entry.get("mass_provenance"), catalog_row=cat_row,
+                                  sp_type=entry.get("sp_type"), lum_lsun=entry.get("luminosity"), call_age=age,
+                                  otype=otype)
+    entry["placement"] = pl
+    if age:
+        entry["age_input"] = age
+
+
+def compare_stars(names: list, star_mass_catalog=None, ages=None) -> dict:
     """Side-by-side comparison of 2–4 stars.
 
     Per star: a SIMBAD lookup, an optional NASA pscomppars supplement to fill
@@ -4608,13 +4639,16 @@ def compare_stars(names: list, star_mass_catalog=None) -> dict:
     **CR-11.2** — each star additionally carries a stellar-mass provenance block
     (`mass_solar`, `mass_provenance ∈ {manual|catalog|gaia_flame|ms_luminosity_inversion}`,
     `massL_inversion_caution`, `peculiar_star_flag`, `mass_note`) resolved by the shared
-    `core.stellar_mass` resolver (precedence catalog → Gaia FLAME → the L^0.2632 inversion;
+    `core.stellar_mass` resolver (precedence catalog → Gaia FLAME → CR-30.4's M_Ks route → the luminosity route;
     no per-star manual override on the multi-star command). **Decision B (WB MSG 008):** when a
     measured mass is preferred over the inversion, the headline `mass` and `radius` (= `M^0.57`) track
     it too, so mass ↔ radius are coherent and `dossier ≡ compare-stars` on `mass`/`radius` — not just
     `mass_solar`. An inversion-sourced star is byte-unchanged; `luminosity` (bolometric/archive) and
     the L-based `hz_inner/outer_au` are unaffected. `star_mass_catalog` is a `--star-mass-catalog` path
     (REPLACE semantics, loud error on a bad path).
+
+    **CR-30.6** — each star carries ``placement`` on its ``mass_solar`` (Q26); ``ages`` maps a ``--stars`` entry
+    (lower-cased, stripped) to its ``--star-age`` (``{lo_gyr, hi_gyr, basis}``).
 
     Returns {"stars": [ {name, sp_type, teff, luminosity, mass, radius,
     hz_inner_au, hz_outer_au, ly, app_magnitude, hypatia, error, mass_solar,
@@ -4648,8 +4682,12 @@ def compare_stars(names: list, star_mass_catalog=None) -> dict:
             stars.append(entry)
             continue
 
+        age = (ages or {}).get(name.lower())
         if name.lower() in ("sol", "sun"):
-            stars.append(_sol_compare_entry(mass_catalog))
+            sol = _sol_compare_entry(mass_catalog)
+            _compare_placement(sol, (stellar_mass_tables.match_mass(mass_catalog, "Sol", {"NAME": "Sun"})
+                                     if mass_catalog else None), None, age)
+            stars.append(sol)
             continue
 
         sl = compute_simbad_lookup(name)
@@ -4692,16 +4730,30 @@ def compare_stars(names: list, star_mass_catalog=None) -> dict:
         # most stars miss it. Derive mass/radius/luminosity from V mag + parallax +
         # teff + bolometric correction — the same method as the Star System Regions
         # feature — which works for any main-sequence star.
+        # CR-30 (CP2): ONE region step per star, shared by the photometric fallback and the provenance block
+        try:
+            from core.regions import compute_star_system_regions_from_simbad
+            from core import twomass
+            reg = compute_star_system_regions_from_simbad(sl)
+        except Exception:
+            reg = None
+        if isinstance(reg, dict):
+            entry.update(twomass.degrade_marker(reg))   # CR-30.3 (Q8): the 2MASS degrade surfaces per star
         if radius is None or mass is None:
             try:
-                from core.regions import compute_star_system_regions_from_simbad
-                reg = compute_star_system_regions_from_simbad(sl)
                 if isinstance(reg, dict) and "error" not in reg:
                     if mass is None:
                         mass = reg.get("stellarMass")
+                    r_null = None
                     if radius is None:
                         radius = reg.get("stellarRadius")
-                    if lum is None:
+                        r_null = reg.get("radius_from_mass_null_reason") if radius is None else None
+                    if r_null and lum is None:
+                        # CR-30.4 (Q13, ruled): compare-stars' luminosity is R(M)²(T/5778)⁴ (set below whenever R and
+                        # Teff exist; bcLuminosity only seeds it here) — a null R(M) gives a null L with its reason,
+                        # never a silent fallback to the bolometric value (an archive L is kept — CP3)
+                        entry["luminosity_null_reason"] = r_null
+                    elif lum is None:
                         lum = reg.get("bcLuminosity")
             except Exception:
                 pass
@@ -4715,25 +4767,25 @@ def compare_stars(names: list, star_mass_catalog=None) -> dict:
         entry["mass"]       = mass
         entry["luminosity"] = lum
 
-        # CR-11.2 — stellar-mass provenance block. inversion_mass = the L^0.2632 regions value (same
+        # CR-11.2 — stellar-mass provenance block. inversion_mass = the regions L-route value (same
         # input as dossier → parity). Precedence catalog → Gaia FLAME → inversion (no per-star manual
         # override on the multi-star command).
-        inv_mass = None
-        try:
-            from core.regions import compute_star_system_regions_from_simbad
-            regc = compute_star_system_regions_from_simbad(sl)
-            if isinstance(regc, dict) and "error" not in regc:
-                inv_mass = regc.get("stellarMass")
-        except Exception:
-            pass
+        # CR-30.4: the L route is the inversion tier; the M_Ks route its own tier (read even from a failed step)
+        inv_mass = reg.get("mass_lroute_solar") if (isinstance(reg, dict) and "error" not in reg) else None
+        mks_m = reg.get("mass_mks_solar") if isinstance(reg, dict) else None
         cat_row = (stellar_mass_tables.match_mass(mass_catalog, sl.get("main_id"),
                                                   sl.get("designations")) if mass_catalog else None)
         flame_mass, flame_status = (_flame_mass_for(sl) if cat_row is None else (None, None))
         mblock = stellar_mass.resolve_mass(
             inv_mass, sp_type=sl.get("sp_type"), main_id=sl.get("main_id"),
             designations=sl.get("designations"), manual_mass=None,
-            catalog=mass_catalog, flame_mass=flame_mass, catalog_row=cat_row)   # reuse the match (#4)
+            catalog=mass_catalog, flame_mass=flame_mass, catalog_row=cat_row,   # reuse the match (#4)
+            mks_mass=mks_m)
         entry["mass_solar"]              = mblock["mass_solar"]
+        # CR-30.4 (C3): the M_Ks mass reported beside a higher tier (dossier parity)
+        entry["mass_mks_solar"] = mks_m
+        if mks_m is not None:
+            entry["mks_binary_disclosure"] = ms_sequence.MKS_BINARY_DISCLOSURE
         entry["mass_provenance"]         = mblock["mass_provenance"]
         entry["massL_inversion_caution"] = mblock["massL_inversion_caution"]
         entry["peculiar_star_flag"]      = mblock["peculiar_star_flag"]
@@ -4747,10 +4799,13 @@ def compare_stars(names: list, star_mass_catalog=None) -> dict:
         # the dossier — not just `mass_solar`). ONLY then — an inversion-sourced star is byte-unchanged.
         # `luminosity` is left as-is (it is the bolometric/archive value; the L-based HZ below uses the
         # local `lum` and so does NOT shift).
-        if mblock["mass_solar"] is not None and mblock["mass_provenance"] != stellar_mass.MS_INVERSION:
+        # CR-30.4 (MSG 366 F-2): a measured mass only — an archive mass / radius never moves for an inference tier
+        # (the L route or the M_Ks route)
+        if mblock["mass_solar"] is not None and mblock["mass_provenance"] in (
+                stellar_mass.MANUAL, stellar_mass.CATALOG, stellar_mass.GAIA_FLAME):
             _m = mblock["mass_solar"]
             entry["mass"] = _m
-            entry["radius"] = _m ** 0.57 if _m >= 1.0 else _m ** 0.8
+            entry["radius"] = ms_sequence.radius_from_mass(_m)["radius"]      # CR-30.4: S1's R(M)
 
         # Conservative HZ inner (Runaway Greenhouse 'rg') / outer (Max Greenhouse 'mg'). Uses the local
         # `lum` (unaffected by the mass↔radius override above), so hz_inner/outer do not shift.
@@ -4761,6 +4816,8 @@ def compare_stars(names: list, star_mass_catalog=None) -> dict:
                 entry["hz_outer_au"] = zmap.get("mg")
             except Exception:
                 pass
+
+        _compare_placement(entry, cat_row, sl.get("otype"), age)          # CR-30.6 (Q26)
 
         # Hypatia (per-star, non-fatal).
         try:

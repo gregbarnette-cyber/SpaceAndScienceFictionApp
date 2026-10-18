@@ -87,9 +87,10 @@ class TransitApplicabilityTest(unittest.TestCase):
 
 class ResolveAndValidationTest(unittest.TestCase):
     def test_sp_type_resolves_mass_radius(self):
-        res = _sun10(methods=["rv"])
-        self.assertAlmostEqual(res["star_mass_solar"], 0.95)
-        self.assertAlmostEqual(res["star_radius_solar"], 0.95)
+        res = _sun10(methods=["rv"])                      # CR-30.7 C: S1 at the subtype (G2V 1.00 / 1.012)
+        from core import regions
+        s1, _p = regions._lookup_s1(res["sp_type"])
+        self.assertEqual((res["star_mass_solar"], res["star_radius_solar"]), (s1["Msun"], s1["R_Rsun"]))
 
     def test_explicit_mr_overrides(self):
         res = detection.compute_detection_completeness(
@@ -150,7 +151,7 @@ class RvJitterBySptypeTest(unittest.TestCase):
         rv = _method(detection.compute_detection_completeness(
             app_mag=4.83, distance_pc=10, sp_type="A0V", methods=["rv"], sma_grid=[1.0]),
             "rv")["detectable_vs_sma"]
-        k = calculators.compute_rv_semi_amplitude(1.0, 1.6, sma_au=1.0)["k_ms"]   # A0V → 1.6 M☉
+        k = calculators.compute_rv_semi_amplitude(1.0, 2.18, sma_au=1.0)["k_ms"]   # A0V → S1's 2.18 M☉ (CR-30.7 C)
         self.assertAlmostEqual(rv[0]["min_mass_earth"], 5.0 / k, places=9)
 
     def test_a_star_floor_exceeds_g_star_jitter(self):
@@ -258,13 +259,18 @@ class NonMsHostGuardTest(unittest.TestCase):
         self.assertFalse(res["assumptions"]["out_of_domain"])      # MS dwarf unchanged
 
     def test_cell5_brown_dwarf(self):
-        res = detection.compute_detection_completeness(app_mag=14, distance_pc=8, sp_type="L5")
+        res = detection.compute_detection_completeness(app_mag=14, distance_pc=8, sp_type="T6")
         self.assertEqual(res["host_class"], "brown_dwarf")
         self.assertTrue(res["assumptions"]["out_of_domain"])
+        # CR-30.7 C: an L0–L5 with no tier mass takes the explicit branch (not brown_dwarf) — exit 0, undetermined
+        res = detection.compute_detection_completeness(app_mag=14, distance_pc=8, sp_type="L5")
+        self.assertIsNone(res["host_class"])
+        self.assertTrue(res["assumptions"]["out_of_domain"])
+        self.assertEqual(res["star_placement"]["status"], "undetermined_no_mass")
 
     def test_host_class_classifier(self):
         cases = {"DA2": "white_dwarf", "DZ7.5": "white_dwarf", "sdB": "subdwarf", "sdO": "subdwarf",
-                 "K0III": "giant", "M2Iab": "giant", "A0IV": "subgiant", "L5": "brown_dwarf",
+                 "K0III": "giant", "M2Iab": "giant", "A0IV": "subgiant", "L5": None, "L6": "brown_dwarf",
                  "T6": "brown_dwarf", "Y2": "brown_dwarf",
                  "G2V": None, "K5V": None, "B3V": None, "dM6": None, "sdM3.0": None, "M5V": None}
         for sp, exp in cases.items():

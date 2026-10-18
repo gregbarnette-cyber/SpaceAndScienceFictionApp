@@ -5,6 +5,8 @@
 # curated / exit 2 argparse). The live --star path is gated in test_query_exclusion_system_live.py.
 
 import json
+
+import query
 import unittest
 
 import core.exclusion_boundary as xb
@@ -177,11 +179,15 @@ class Cr226MassGuardCliTest(unittest.TestCase):
             with self.subTest(mass=tok):
                 rc, d, _ = self._boundary(tok, "--alpha", repr(alpha))
                 self.assertEqual(rc, 0)
+                sub = float(tok) < 0.067        # CR-30.7 A: a supplied mass placed substellar → the free harbor
                 core = xb.compute_two_layer_boundary(mass_msun=float(tok), mass_provenance="manual",
-                                                     alpha=alpha)
-                # CR-27.4 (Q3): the CLI adds system_entry (null on a non---star path) to every result
+                                                     alpha=alpha, **(query._WINDLESS_PLACED_KW if sub else {}))
+                # CR-27.4 (Q3): the CLI adds system_entry (null on a non---star path) to every result;
+                # CR-30.6 (§13.5 C6): + the supplied mass's placement (band only) — additive
+                self.assertEqual(d.pop("placement")["basis"], "supplied")
+                self.assertEqual(list(d.pop("cr30_disclosures")), ["hbl"])     # CR-30 §7 (placement reads the limit)
                 self.assertEqual(d, json.loads(json.dumps({**core, "system_entry": None})))
-                self.assertIsNotNone(d["r_ex_au"])
+                self.assertEqual(d["r_ex_au"] is None, sub)
 
     def test_wb_anchors_unchanged(self):
         rc, d, _ = self._boundary("0.3", "--alpha", "0.4")

@@ -218,10 +218,11 @@ class SolarSystemPanel(DiagramToggleMixin, ResultPanel):
 
 
 class MainSequencePanel(DiagramToggleMixin, ResultPanel):
-    """Option 12 — Main Sequence Star Properties from propertiesOfMainSequenceStars.csv.
+    """Option 12 — Main Sequence Star Properties: S1 (Mamajek's dwarf sequence, 2022.04.16 — CR-30.1).
 
     Phase O · O2a: gains an "HR Diagram" viz tab (Teff vs absolute visual magnitude)
     via the Show Diagrams toggle. No inputs — the table + diagram are built once.
+    S1's own columns as published; M_bol, density and the MIST v2.5 lifetime are labelled as computed.
     """
 
     def build_inputs(self):
@@ -244,16 +245,27 @@ class MainSequencePanel(DiagramToggleMixin, ResultPanel):
         tlay = QVBoxLayout(self._tables_widget)
         tlay.setContentsMargins(0, 0, 0, 0)
 
-        rows_data = core.science.compute_main_sequence_table()
+        try:
+            rows_data = core.science.compute_main_sequence_table()
+        except Exception as e:                        # a CR-30 data-file failure — shown, never a stale table
+            self.show_error(str(e))
+            rows_data = []
         col_keys = [
-            "Spectral Class", "B-V", "Teeff(K)", "AbsMag Vis.", "AbsMag Bol.",
-            "Bolo. Corr. (BC)", "Lum", "R", "M", "p (g/cm3)", "Lifetime (years)",
+            "SpT", "Teff", "B-V", "Mv", "BCv", "logL", "R_Rsun", "Msun",
+            "Mbol_computed", "density_computed_gcc", "ms_lifetime_gyr_computed",
         ]
         headers = [
-            "Spectral Class", "B-V", "Teff (K)", "Abs Mag Vis", "Abs Mag Bol",
-            "BC", "Lum", "R", "M", "p (g/cm³)", "Lifetime (years)",
+            "SpT", "Teff (K)", "B-V", "Mv", "BCv", "log L (L☉)", "R (R☉)", "M (M☉)",
+            "Mbol (computed)", "ρ (g/cm³, computed)", "MS lifetime (Gyr, computed, MIST v2.5)",
         ]
-        table_rows = [[row.get(k, "") for k in col_keys] for row in rows_data]
+
+        def _cell(v):
+            if v is None:
+                return ""
+            if isinstance(v, float):
+                return f"{v:.4g}"
+            return v
+        table_rows = [[_cell(row.get(k)) for k in col_keys] for row in rows_data]
         view = self.make_table(headers, table_rows)
         view.setSortingEnabled(False)  # preserve spectral order
         tlay.addWidget(view)

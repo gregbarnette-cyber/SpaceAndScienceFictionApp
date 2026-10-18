@@ -183,7 +183,7 @@ class ClassifierWindlessAndUnmodeledTest(unittest.TestCase):
     def test_windless(self):
         for kw in (dict(object_name="brown-dwarf"), dict(object_name="rogue-planet"),
                    dict(class_tag="wd"), dict(class_tag="brown-dwarf"),
-                   dict(sp_type="DA2"), dict(sp_type="T5"), dict(sp_type="L3")):
+                   dict(sp_type="DA2"), dict(sp_type="T5"), dict(sp_type="L6")):   # CR-30.7 A: L3 → by mass
             dom, w, note = ew.classify_domain_wind(**kw)
             self.assertEqual(dom, ew.WINDLESS, kw)
             self.assertIsNone(w)

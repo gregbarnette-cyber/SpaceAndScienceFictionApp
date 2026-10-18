@@ -1,0 +1,13 @@
+CR-30 vendored reference data (WB-owned; vendored byte-identical; never edited here)
+Source: scifiWorldBuilding-Claude research/star-analysis-cr-queue/cr30-data/ (+ S1's raw file from /home/greg/Claude/source-pdfs/)
+Contract: design-lab/star-system-analysis/spaceapp-change-request-CR30-main-sequence-reference-table.md (CR-30.1, rulings 2, 28, 29, 58-69, 138, 156)
+
+md5                               file                                                         role
+2b7746f6339b8b72fb589351c54c0594  cr30_mamajek2022_dwarf_sequence.csv                          S1 (Mamajek 2022.04.16) 87 rows O3V-M9.5V — read at run time (core/ms_reference_tables.py)
+b212537685cf8d5787df23a03e1f262a  cr30_mist_v25_ms_lifetime.csv                                MIST v2.5 non-rotating [Fe/H] 0 MS lifetimes, 171 tracks — read at run time
+1ce818caf06a5a1d99b70dfabed9068b  cr30_bhac15_overread_factor.csv                              BHAC15 over-read factor table, 888 rows — read at run time
+afa3e0c8b249e8b9511b917c03aceb84  mamajek-EEM_dwarf_UBVIJHK_colors_Teff-2022.04.16.txt         S1's raw file (http://www.pas.rochester.edu/~emamajek/EEM_dwarf_UBVIJHK_colors_Teff.txt) — provenance only; NOTHING parses it at run time
+
+MIST source package: MIST_v2.5_feh_p000_afe_p0_vvcrit0.0_EEPS.txz md5 89511c33221e33364c6f2691eebe5a42 (MESA r11701)
+BHAC15 source: BHAC15_iso.2mass md5 75c6d9c0c3c5d6337a44dee71b46c919
+A data change is a model change: it goes through WB with a new md5 (the pins live in core/ms_reference_tables.py CR30_MD5).

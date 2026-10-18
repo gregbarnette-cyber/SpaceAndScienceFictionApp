@@ -73,3 +73,52 @@ def cr27_normalise(test, args, payload, baseline):
         payload.pop("luminosity_lsun", None)
         baseline.pop("luminosity_lsun", None)
     return payload, baseline
+
+
+# ── CR-30 (plan §13.6 T6): the pre-CR-30 baselines are kept, not re-recorded ──────────────────────────────────────
+# CR-30's additive keys are stripped by name; a ``--spectral-type`` case (``mass_provenance: spectral_type_table``)
+# moves by design (CR-30.2: S1's mass and luminosity at the type) — ``cr30_run`` REPLAYS it with the S1 lookup
+# returning the baseline's own (pre-CR-30 table) mass and luminosity, so every other key must still equal the
+# baseline byte-for-byte, and separately asserts the real run reads S1.
+CR30_KEYS = frozenset({
+    "sp_type_raw", "sp_type_read", "lum_class_token", "subdwarf_flag", "gravity_designation", "low_gravity_class",
+    "s1_class_v_flag", "subtype_unknown", "subtype_span_note", "s1_rows", "s1_fraction",
+    # CR-30.6: the placement object (top level and per component) and the age echo — asserted in test_cr30_*
+    "placement", "age_input", "cr30_disclosures",
+})
+
+
+def cr30_strip(obj):
+    if isinstance(obj, dict):
+        return {k: cr30_strip(v) for k, v in obj.items() if k not in CR30_KEYS}
+    if isinstance(obj, list):
+        return [cr30_strip(x) for x in obj]
+    return obj
+
+
+def cr30_run(test, case, run):
+    """``run(*args) -> (code, payload, err)``. Returns the payload to compare with ``case["payload"]`` (CR-30 keys
+    stripped). For a ``spectral_type_table`` baseline: the replay under the baseline's own mass / L (and its
+    ``object`` key), plus the S1 assertion on the real run."""
+    import math
+    from unittest import mock
+    from core import ms_sequence, regions
+    base = case["payload"]
+    code, payload, err = run(*case["args"])
+    if not (isinstance(base, dict) and base.get("mass_provenance") == "spectral_type_table"):
+        return code, cr30_strip(payload), err
+    sp = case["args"][case["args"].index("--spectral-type") + 1]
+    s1 = ms_sequence.s1_at(sp)
+    test.assertAlmostEqual(payload["mass_msun"], s1["Msun"], places=12)          # the real run reads S1
+    real_lookup = regions._lookup_s1
+
+    def _old_table(sp_str):
+        r, p = real_lookup(sp_str)
+        r = dict(r, Msun=base["mass_msun"], sp_type_read=base["object"])
+        if base.get("luminosity_lsun") is not None:
+            r["L_lsun"] = base["luminosity_lsun"]
+            r["logL"] = math.log10(base["luminosity_lsun"])
+        return r, p
+    with mock.patch.object(regions, "_lookup_s1", _old_table):
+        code2, payload2, err2 = run(*case["args"])
+    return code2, cr30_strip(payload2), err2

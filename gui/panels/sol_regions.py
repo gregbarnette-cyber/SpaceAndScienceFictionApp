@@ -9,6 +9,7 @@ from gui.panels.star_regions import (
     add_region_diagram_tabs, _t_surf, _t_eq, _alt_hz_rows,
     _ALT_HZ_NOTE, _SYS_REGIONS_NOTE,
 )
+from core.shared import fmt_num as _fmt   # CR-30.4: null-safe display (ruling 93 M5)
 import core.regions
 import core.equations
 
@@ -27,10 +28,14 @@ def _wrap_note(view, note: str) -> QWidget:
 
 
 def _au_lm4(val: float) -> str:
+    if val is None:                            # CR-30.4: a null mass nulls 0.2·M / 40·M (M5)
+        return "—"
     return f"{val:.4f} ({val * 8.3167:.3f} LM)"
 
 
 def _au_lm3(val: float) -> str:
+    if val is None:
+        return "—"
     return f"{val:.3f} ({val * 8.3167:.3f} LM)"
 
 
@@ -91,11 +96,11 @@ class SolRegionsPanel(DiagramToggleMixin, ResultPanel):
         headers = ["Stellar Mass", "Stellar Radius", "Stellar Diameter (Sol)",
                    "Stellar Diameter (KM)", "Main Sequence Life Span"]
         rows = [[
-            f"{d['stellarMass']:.4f}",
-            f"{d['stellarRadius']:.5f}",
+            _fmt(d.get('stellarMass'), ".4f"),
+            _fmt(d.get('stellarRadius'), ".5f"),
             f"{d['stellarDiameterSol']:.4f}",
             f"{d['stellarDiameterKM']:.5e}",
-            f"{d['mainSeqLifeSpan']:.5e}",
+            _fmt(d.get('mainSeqLifeSpan'), ".5e"),
         ]]
         tabs.addTab(self.make_table(headers, rows), "Stellar Properties")
 
@@ -115,7 +120,7 @@ class SolRegionsPanel(DiagramToggleMixin, ResultPanel):
         rows = [[
             f"{d['distAU']:.4f}",
             f"{d['distKM']:.5e}",
-            f"{d['planetaryYear']:.4f}",
+            _fmt(d.get('planetaryYear'), ".4f"),
             f"{d['planetaryTemperature']:.2f}",
             f"{d['planetaryTemperatureC']:.2f}",
             f"{d['planetaryTemperatureF']:.2f}",
@@ -166,6 +171,8 @@ class SolRegionsPanel(DiagramToggleMixin, ResultPanel):
                 return [zone_name, "?", "?", "?"]
             seff = _kopparapu_seff(teff, key)
             def fmt(lum):
+                if lum is None:                     # CR-30.4: a null mass nulls L(M) / calculated L
+                    return "—"
                 au = math.sqrt(lum / seff)
                 return _au_lm3(au)
             return [zone_name, fmt(bc_lum), fmt(mass_lum), fmt(calc_lum)]

@@ -1,8 +1,9 @@
 """core/stellar_mass.py — CR-11.2 shared stellar-mass provenance resolver.
 
-`dossier` and `compare-stars` derive stellar mass by inverting a single global mass–luminosity
-power law (`regions.py`: ``stellarMass = bcLuminosity ** 0.2632``, i.e. ``L ∝ M^3.8``). That law
-**over-reads on the upper main sequence** and for chemically-peculiar Am/Ap stars (Sirius A →
+`dossier` and `compare-stars` derive stellar mass by inverting a mass–luminosity relation — since CR-30.4
+Eker et al. 2018 inverted / S1's sequence (``core.ms_sequence.mass_from_luminosity``), or Mann et al. 2019's M_Ks
+route for a K / M dwarf; pre-CR-30 a single power law (``L^0.2632``), which **over-read on the upper main
+sequence** and for chemically-peculiar Am/Ap stars (Sirius A →
 ~2.34–2.59 vs the dynamical 2.063), and it was emitted **silently**. This module brings both to
 parity with the CR-10.4/CR-10.5 provenance the tool already carries elsewhere: it resolves the mass
 with an explicit **provenance** and flags the two regimes where the inversion is known unreliable.
@@ -43,6 +44,7 @@ MANUAL = "manual"
 CATALOG = "catalog"
 GAIA_FLAME = "gaia_flame"
 MS_INVERSION = "ms_luminosity_inversion"
+MS_MKS = "ms_mks_relation"          # CR-30.4: Mann et al. 2019's M_Ks route (ruling 52; Q10)
 
 _UNSET = object()   # sentinel: caller did not pre-match the catalog row (match internally)
 
@@ -67,17 +69,19 @@ def hot_upper_ms_from_sp_type(sp_type):
 
 
 def resolve_mass(inversion_mass, sp_type=None, main_id=None, designations=None,
-                 manual_mass=None, catalog=None, flame_mass=None, catalog_row=_UNSET):
+                 manual_mass=None, catalog=None, flame_mass=None, catalog_row=_UNSET, mks_mass=None):
     """Resolve the stellar mass + provenance + caution flags. Pure — see the module docstring.
 
     Args:
-      inversion_mass : the ``L^0.2632`` mass (regions ``stellarMass``), or None if regions couldn't
+      inversion_mass : the luminosity-route mass (CR-30.4; regions' L-route mass), or None if regions couldn't
                        compute one (non-MS host) — the tier-4 fallback.
       sp_type        : SIMBAD spectral type (drives the peculiar / hot-MS flags).
       main_id, designations : identity, for the catalog match.
       manual_mass    : tier-1 ``--mass-solar`` override (dossier only), or None.
       catalog        : a loaded catalog dict (``load_mass_catalog`` result); None → no catalog tier.
       flame_mass     : the Gaia DR3 FLAME mass the caller already fetched, or None.
+      mks_mass       : CR-30.4's M_Ks-route mass (Mann et al. 2019), or None — the tier after FLAME, ahead of the
+                       luminosity route (provenance ``ms_mks_relation``; no over-read caution).
       catalog_row    : an already-matched catalog row (or explicit ``None`` for a known miss) so a
                        caller that pre-matched to decide whether to fetch FLAME does not pay the
                        ``match_mass`` scan twice; left unset → match internally from ``catalog``.
@@ -88,7 +92,6 @@ def resolve_mass(inversion_mass, sp_type=None, main_id=None, designations=None,
     the inversion mass is still returned when it is the source.
     """
     peculiar = peculiar_from_sp_type(sp_type)
-    hot_ms = hot_upper_ms_from_sp_type(sp_type)
 
     if catalog_row is _UNSET:
         catalog_row = None
@@ -105,12 +108,18 @@ def resolve_mass(inversion_mass, sp_type=None, main_id=None, designations=None,
         mass, prov = float(catalog_row["mass_solar"]), CATALOG
     elif _pos(flame_mass):
         mass, prov = float(flame_mass), GAIA_FLAME
+    elif _pos(mks_mass):
+        # CR-30.4 (ruling 52): the M_Ks route sits in the L route's ladder position, ahead of it
+        mass, prov = float(mks_mass), MS_MKS
     elif _pos(inversion_mass):
         mass, prov = float(inversion_mass), MS_INVERSION
     else:
         mass, prov = None, MS_INVERSION   # no tier available — non-MS host, no measured mass
 
-    caution = (prov == MS_INVERSION and mass is not None and (peculiar or hot_ms))
+    # CR-30.4: under S12 the A-star over-read is gone; an O–B upper tail remains (84th percentile 1.165) — the
+    # caution fires for an O / B luminosity-route mass only (never on the M_Ks route — Q10)
+    hot_ob = shared.spectral_leading_class(sp_type) in ("O", "B") if sp_type else False
+    caution = (prov == MS_INVERSION and mass is not None and hot_ob)
 
     note = None
     cite = None
@@ -122,14 +131,13 @@ def resolve_mass(inversion_mass, sp_type=None, main_id=None, designations=None,
         note = f"{kind} mass from catalog" + (f" [{cite}]" if cite else "")
     elif prov == GAIA_FLAME:
         note = "Gaia DR3 FLAME mass (model-dependent)"
+    elif prov == MS_MKS:
+        from core import ms_sequence
+        note = "Mann et al. 2019 M_Ks mass (n = 5, no [Fe/H] term); " + ms_sequence.MKS_BINARY_DISCLOSURE
     elif caution:
-        reasons = []
-        if hot_ms:
-            reasons.append(f"hot upper-MS (leading class {shared.spectral_leading_class(sp_type)})")
-        if peculiar:
-            reasons.append("chemically-peculiar (Am/Ap)")
-        note = ("L^0.2632 mass-inversion over-reads for a " + " + ".join(reasons)
-                + " star; no measured mass available — treat the mass as an upper estimate")
+        note = (f"luminosity-route mass (Eker et al. 2018 inverted) for a hot upper-MS star (leading class "
+                f"{shared.spectral_leading_class(sp_type)}): an O–B upper tail over-reads (84th percentile 1.165 "
+                "on the benchmark); no measured mass available — treat the mass as an upper estimate")
     elif mass is None:
         note = "no main-sequence mass-inversion available (non-MS host) and no measured mass"
 
@@ -175,12 +183,13 @@ def augment_designations(designations, extra_ids):
     return d
 
 
-def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
+def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None, detail_out=None):
     """Resolve one component's preferred mass via the CR-11.2 chain. Returns
     ``(mass_solar, mass_provenance, note)`` or ``(None, None, error_str)``.
 
     manual ``mass_solar`` → ``--star-mass-catalog`` / internal seed (by name+designations) → Gaia FLAME
-    (by designations, if allowed) → the ``L^0.2632`` inversion from an explicit ``luminosity_lsun``. A
+    (by designations, if allowed) → CR-30.4's M_Ks route (``spec["mks"]``) → the luminosity route from an explicit
+    ``luminosity_lsun``. A
     pure ``--component`` with only a ``mass_solar`` resolves as ``manual``; a name lets the catalog/FLAME
     tiers fire (so ``--star`` components carry ``catalog``).
 
@@ -189,9 +198,16 @@ def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
     ``exclusion_system._resolve_component_mass`` delegates to this (behavior byte-identical). The FLAME
     imports stay **function-local** so ``stellar_mass`` keeps its clean module-top imports (no cycle).
     """
+    from core import ms_sequence
     lum = spec.get("luminosity_lsun")
-    inversion = (lum ** 0.2632) if (isinstance(lum, (int, float)) and not isinstance(lum, bool)
-                                    and lum > 0) else None
+    lroute = (ms_sequence.mass_from_luminosity(lum) if (isinstance(lum, (int, float)) and not isinstance(lum, bool)
+                                                         and lum > 0) else None)
+    inversion = lroute["mass"] if lroute else None
+    # CR-30.4: the M_Ks route — a caller with a SIMBAD identity passes ``spec["mks"]`` (``regions.mks_route``'s
+    # record, or a zero-arg callable that fetches it — evaluated only when no manual / catalog / FLAME tier wins, so a
+    # catalog star makes no 2MASS call and carries no 2MASS marker: CP6 #1); a pure ``--component`` carries none
+    mks_spec = spec.get("mks")
+    mks = mks_spec if isinstance(mks_spec, dict) else None
     name = spec.get("name") or spec.get("id")
     flame_mass = None
     manual = spec.get("mass_solar")
@@ -200,7 +216,8 @@ def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
     # too (not only in resolve_mass's `_pos`) because `manual_hit` also gates the FLAME fetch below — keeping inf
     # on NaN's exact path. (`lum=inf` → an inf inversion, which `_pos` then rejects.)
     manual_hit = smt.is_positive_finite(manual)
-    cat_hit = bool(catalog) and smt.match_mass(catalog, name, spec.get("designations")) is not None
+    cat_row = smt.match_mass(catalog, name, spec.get("designations")) if catalog else None   # matched once (CP4 #9)
+    cat_hit = cat_row is not None
     if allow_flame and not manual_hit and not cat_hit and spec.get("designations"):
         try:
             fetched, params, bound = _fetch_flame(spec.get("designations"))
@@ -222,10 +239,44 @@ def resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
         # record it so the caller can flag the mass-path degrade (else None → byte-identical).
         if flame_mass is None and status_out is not None and bound:
             status_out["flame_status"] = bound
+    if callable(mks_spec) and not (manual_hit or cat_hit or smt.is_positive_finite(flame_mass)):
+        try:
+            mks = mks_spec()
+        except Exception:
+            mks = None
+        mks = mks if isinstance(mks, dict) else None
+    mks_mass = mks.get("mass") if mks else None
+    from core import twomass
+    # the marker only where the M_Ks tier was reached — a higher tier's mass never used 2MASS (CP6 #1)
+    mks_degrade = (bool(mks) and mks.get("status") in twomass.DEGRADE_STATUSES
+                   and not (manual_hit or cat_hit or smt.is_positive_finite(flame_mass)))
     block = resolve_mass(
-        inversion, sp_type=spec.get("sp_type") or spec.get("class"), main_id=name,
+        None if mks_degrade else inversion, sp_type=spec.get("sp_type") or spec.get("class"), main_id=name,
         designations=spec.get("designations"), manual_mass=manual if manual_hit else None,
-        catalog=catalog, flame_mass=flame_mass)
+        catalog=catalog, flame_mass=flame_mass, mks_mass=mks_mass, catalog_row=cat_row)
+    if detail_out is not None:
+        # CR-30 (plan §13.3): the placement / reporting inputs, on a side channel (CR-14.3's 3-tuple unchanged)
+        detail_out.update({
+            "catalog_row": cat_row,
+            "mass_route": ({MS_MKS: "mks", MS_INVERSION: "luminosity"}.get(block["mass_provenance"])
+                           if block["mass_solar"] is not None else None),
+            "mass_mks_solar": mks_mass, "m_ks": (mks or {}).get("m_ks"), "mks_status": (mks or {}).get("status"),
+            "mass_lroute_solar": inversion,
+            "mass_relation": (lroute or {}).get("relation") if block["mass_provenance"] == MS_INVERSION else (
+                "Mann2019_n5" if block["mass_provenance"] == MS_MKS else None),
+            "mass_segment": (lroute or {}).get("segment") if block["mass_provenance"] == MS_INVERSION else None,
+            "mass_switch_band": (lroute or {}).get("switch_band") if block["mass_provenance"] == MS_INVERSION
+            else None,
+        })
+        if mks_degrade:
+            detail_out.update(twomass.degrade_fields(mks.get("status")))
+    if block["mass_solar"] is None and mks_degrade:
+        return None, None, (f"component '{name or '?'}' has no resolvable mass — {twomass.NOTE_DEGRADE[mks['status']]}")
+    if block["mass_solar"] is None and lroute and str(lroute.get("reason") or "").startswith("log L"):
+        # CR-30.4 (MSG 366 F-3): a supplied L outside S1's span → a null mass with its reason named (no clamp);
+        # the "or lum=" hint is dropped — the call already gave one
+        return None, None, (f"component '{name or '?'}' has no resolvable mass — {lroute['reason']} "
+                            "(give mass=<M☉> or a catalogued name)")
     if block["mass_solar"] is None:
         return None, None, (f"component '{name or '?'}' has no resolvable mass "
                             "(give mass=<M☉>, a catalogued name, or lum=<L☉>)")
@@ -288,6 +339,26 @@ def recompute_sma_kepler3(sma, sel_mtot, pref_mtot):
     return sma
 
 
+SIMBAD_FAILED = "failed"
+
+
+def simbad_service_failed(sl):
+    """CR-30.3 / 30.4 (MSG 368 O-1): True when a SIMBAD lookup failed as a service error — not SIMBAD's own "no
+    results" (a component SIMBAD has no record of stays as before)."""
+    from core import databases
+    return (isinstance(sl, dict) and "error" in sl
+            and not str(sl.get("error") or "").startswith(databases.SIMBAD_NO_RESULTS_PREFIX))
+
+
+def mark_simbad_failure(status_out, tag):
+    """The fail-loud marker for a component whose SIMBAD lookup failed where its M_Ks tier needed the record (MSG 368
+    O-1, CR-30.3's convention): ``not_authoritative`` + ``simbad_status_<tag>: "failed"`` — never the next tier's /
+    the orbit's mass in silence."""
+    if status_out is not None:
+        status_out["not_authoritative"] = True
+        status_out[f"simbad_status_{tag}"] = SIMBAD_FAILED
+
+
 def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system_name=None,
                               status_out=None):
     """CR-14.3 orchestrator: resolve the **preferred** masses of a binary's two components (A + B)
@@ -296,10 +367,12 @@ def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system
     all report the **same** masses for a given star (cross-path consistency #3).
 
     Args:
-      primary_sl : the primary's SIMBAD result dict. **Only ``main_id`` / ``sp_type`` / ``designations``
-                   are read**, so a reduced ``{main_id, sp_type, designations}`` dict is a valid input —
+      primary_sl : the primary's SIMBAD result dict. ``main_id`` / ``sp_type`` / ``designations`` are read
+                   directly, so a reduced ``{main_id, sp_type, designations}`` dict is a valid input —
                    ``binary_stability_auto`` passes exactly that, built from the orbit identity (CR-15.4).
-                   A future tier that reads another key (e.g. ``luminosity_lsun``) MUST widen every caller.
+                   CR-30.4's M_Ks tier also needs the parallax: a record without a ``plx_value`` key (the
+                   reduced one) is widened here by one SIMBAD lookup of ``main_id``, made only when that tier is
+                   reached (WB MSG 366 F-1 (a)), so every caller takes the tier.
       sel        : the selected-orbit dict from ``binary.select_stability_elements`` — supplies the
                    orbit-mass fallback (``m1_solar``/``m2_solar``/``mass_prov_a``/``mass_prov_b``/``notes``)
                    used when a component has no measured (manual/catalog/FLAME) mass.
@@ -317,11 +390,34 @@ def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system
     """
     main_id = primary_sl.get("main_id") if isinstance(primary_sl, dict) else None
 
+    from core import regions, binary
+
+    _prim_failed = []
+
+    def _prim_mks():
+        # CR-30.4 (Q11): the M_Ks tier ahead of the orbit fallback. A reduced record (no ``plx_value`` key) is
+        # widened by the primary's full SIMBAD record (F-1 (a)); no 2MASS lookup without a parallax (CP6 #5). A failed
+        # widening lookup fails loud (MSG 368 O-1) — the tier was reached, so the orbit's M₁ is marked
+        rec = primary_sl
+        if "plx_value" not in rec and main_id:
+            from core import databases
+            try:
+                full = databases.compute_simbad_lookup(main_id)
+            except Exception as e:                      # a raising lookup is a failed one (review #8)
+                full = {"error": f"SIMBAD lookup raised: {e}"}
+            if isinstance(full, dict) and "error" not in full:
+                rec = full
+            elif simbad_service_failed(full) or not isinstance(full, dict):
+                _prim_failed.append(True)
+        return regions.mks_route(rec) if rec.get("plx_value") else None
+
     prim_spec = {"name": main_id, "sp_type": primary_sl.get("sp_type"),
                  "designations": augment_designations(primary_sl.get("designations"),
-                                                      component_candidate_ids(main_id, "A"))}
-    _sa = {}
-    m1, prov_a, _n = resolve_component_mass(prim_spec, catalog, allow_flame=allow_flame, status_out=_sa)
+                                                      component_candidate_ids(main_id, "A")),
+                 "mks": _prim_mks}
+    _sa, _da = {}, {}
+    m1, prov_a, _n = resolve_component_mass(prim_spec, catalog, allow_flame=allow_flame, status_out=_sa,
+                                            detail_out=_da)
     if m1 is None:
         m1, prov_a = sel.get("m1_solar"), sel.get("mass_prov_a")
 
@@ -329,7 +425,7 @@ def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system
     # both paths derive the identical component-B id — not None (which skipped the B lookup → orbit split).
     comp_id = next(iter(component_candidate_ids(main_id, "B")),
                    (f"{system_name} B" if system_name else None))
-    comp_sp = comp_desig = None
+    comp_sp = comp_desig = comp_sl = None
     if comp_id:
         from core import databases
         comp_sl = databases.compute_simbad_lookup(comp_id)
@@ -337,12 +433,16 @@ def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system
             comp_sp = comp_sl.get("sp_type")
             comp_desig = comp_sl.get("designations")
     comp_spec = {"name": comp_id, "sp_type": comp_sp,
-                 "designations": augment_designations(comp_desig, {comp_id} if comp_id else set())}
+                 "designations": augment_designations(comp_desig, {comp_id} if comp_id else set()),
+                 "mks": ((lambda: regions.mks_route(comp_sl)) if (comp_id and isinstance(comp_sl, dict)
+                                                                   and "error" not in comp_sl) else None)}
     b_orbit = False
-    _sb = {}
-    m2, prov_b, _n = resolve_component_mass(comp_spec, catalog, allow_flame=allow_flame, status_out=_sb)
+    _sb, _db = {}, {}
+    m2, prov_b, _n = resolve_component_mass(comp_spec, catalog, allow_flame=allow_flame, status_out=_sb,
+                                            detail_out=_db)
     if m2 is None:
-        m2, prov_b, b_orbit = sel.get("m2_solar"), sel.get("mass_prov_b"), True
+        # F-1 (b): an SB1 minimum is re-solved at the settled M₁
+        m2, prov_b, b_orbit = binary.sb1_m2_at(sel, m1), sel.get("mass_prov_b"), True
 
     # The orbit-flag notes (from _mass_flags) describe the SECONDARY / the pair (they key off prov_b —
     # equal-split / SB1-min), so attach them only when B itself is orbit-derived. When only A falls back
@@ -356,6 +456,18 @@ def resolve_binary_components(primary_sl, sel, catalog, allow_flame=True, system
             status_out["flame_status_a"] = _sa["flame_status"]
         if _sb.get("flame_status"):
             status_out["flame_status_b"] = _sb["flame_status"]
+        # CR-30.3 (CP3): a 2MASS degrade on A or B (its mass then fell to the orbit) is surfaced, never silent
+        for _tag, _d in (("a", _da), ("b", _db)):
+            if _d.get("twomass_status"):
+                status_out["not_authoritative"] = True
+                status_out[f"twomass_status_{_tag}"] = _d["twomass_status"]
+        # MSG 368 O-1: a failed SIMBAD lookup where the M_Ks tier needed the record — A's widening lookup (run only when
+        # the tier was reached), or B's record when no measured tier gave B a mass — fails loud
+        if _prim_failed:
+            mark_simbad_failure(status_out, "a")
+        if simbad_service_failed(comp_sl) and prov_b not in (MANUAL, CATALOG, GAIA_FLAME):
+            mark_simbad_failure(status_out, "b")
+        status_out["_catalog_row_a"] = _da.get("catalog_row")   # CR-30.7 B: the primary's row reaches placement
     return m1, prov_a, m2, prov_b, notes
 
 
@@ -377,10 +489,11 @@ def mass_dependent_outputs(mass_solar):
     if not (isinstance(mass_solar, (int, float)) and not isinstance(mass_solar, bool) and mass_solar > 0):
         return {"luminosity_from_mass": None, "main_seq_lifespan_yr": None,
                 "inner_limit_gravity_au": None, "outer_limit_au": None}
+    from core import ms_sequence
     m = float(mass_solar)
     return {
-        "luminosity_from_mass": m ** 3.5,
-        "main_seq_lifespan_yr": (10.0 ** 10) * ((1.0 / m) ** 2.5),
+        "luminosity_from_mass": ms_sequence.luminosity_from_mass(m)["lum"],      # CR-30.4 (S12 / S1)
+        "main_seq_lifespan_yr": ms_sequence.ms_lifetime(m)["yr"],                # CR-30.5 (MIST v2.5)
         "inner_limit_gravity_au": 0.2 * m,
         "outer_limit_au": 40.0 * m,
     }

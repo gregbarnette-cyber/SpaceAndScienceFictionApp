@@ -80,21 +80,22 @@ def run_query_inproc(*args):
     return code, payload, err.getvalue()
 
 
-def save_main_sequence_cache():
-    """Snapshot BOTH module-level main-sequence caches (core.regions AND core.shared,
-    each populated independently by their own _lookup_spectral_type) and clear them,
-    forcing a reload from the current _DB_PATH. Pair with restore_main_sequence_cache
-    in setUp/tearDown so an in-process test seeding its own main_sequence_stars can't
-    poison the caches for a later test (IMPROVEMENT_PLAN P3.3)."""
-    import core.regions as regions
-    import core.shared as shared
-    saved = (regions._MAIN_SEQUENCE_DATA, shared._MAIN_SEQUENCE_DATA)
-    regions._MAIN_SEQUENCE_DATA = None
-    shared._MAIN_SEQUENCE_DATA = None
+def save_cr30_cache():
+    """CR-30: snapshot and clear the md5-verified reference-table cache (``core.ms_reference_tables``) so a test
+    pointing ``SPACE_APP_CR30_DATA_DIR`` elsewhere re-reads the files; pair with ``restore_cr30_cache``. (The
+    pre-CR-30 main-sequence DB caches are gone — the region lookup reads S1, never a DB table.)"""
+    import core.ms_reference_tables as mrt
+    saved = dict(mrt._CACHE)
+    mrt._CACHE.clear()
     return saved
 
 
-def restore_main_sequence_cache(saved):
-    import core.regions as regions
-    import core.shared as shared
-    regions._MAIN_SEQUENCE_DATA, shared._MAIN_SEQUENCE_DATA = saved
+def restore_cr30_cache(saved):
+    import core.ms_reference_tables as mrt
+    mrt._CACHE.clear()
+    mrt._CACHE.update(saved)
+
+
+# Pre-CR-30 names, kept for the existing callers (the old caches no longer exist).
+save_main_sequence_cache = save_cr30_cache
+restore_main_sequence_cache = restore_cr30_cache

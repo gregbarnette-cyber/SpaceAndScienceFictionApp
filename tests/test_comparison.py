@@ -15,6 +15,7 @@
 # L2 (ESI ranking) adds no core function — it reuses search_hwc, already covered
 # by tests/test_query_expanded.py — so it gets no core test here.
 
+from core import ms_sequence as _ms   # CR-30.4 / 30.5 relations (re-pins)
 import json
 import os
 import subprocess
@@ -44,8 +45,8 @@ class StellarEvolutionTest(unittest.TestCase):
     def test_sun_main_sequence_anchor(self):
         r = equations.compute_stellar_evolution(1.0)
         self.assertNotIn("error", r)
-        # T_ms = 10^10 * (1/1)^2.5 = 10 Gyr; MS is the second stage (after 0.01·T_ms).
-        self.assertAlmostEqual(r["ms_end_gyr"], 0.1 + 10.0, places=6)
+        # CR-30.5: T_ms = MIST v2.5's 8.894 Gyr at 1.00 M☉; MS is the second stage (after 0.01·T_ms).
+        self.assertAlmostEqual(r["ms_end_gyr"], 1.01 * _ms.ms_lifetime(1.0)["yr"] / 1e9, places=6)
         self.assertEqual(len(r["stages"]), 6)
         self.assertFalse(r["low_mass"])
         self.assertFalse(r["high_mass"])
@@ -203,14 +204,14 @@ class CompareStarsTest(unittest.TestCase):
 
     def test_cr112_decision_b_mass_radius_parity(self):
         # WB MSG 008: a measured (catalog) mass preferred over the inversion makes the headline
-        # mass ↔ radius track it (mass == mass_solar, radius = M^0.57) — coherent with the dossier's
+        # mass ↔ radius track it (mass == mass_solar, radius = S1's R(M) — CR-30.4) — coherent with the dossier's
         # decision B — while an inversion-sourced star stays byte-unchanged and the HZ does NOT shift.
         r = databases.compare_stars(["Sirius", "Tau Ceti"])   # Sirius ("* alf CMa") is in the seed catalog
         sir = next(e for e in r["stars"] if e["name"] == "* alf CMa")
         self.assertEqual(sir["mass_provenance"], "catalog")
         self.assertAlmostEqual(sir["mass_solar"], 2.063, places=3)
         self.assertAlmostEqual(sir["mass"], sir["mass_solar"], places=6)     # headline == provenance mass
-        self.assertAlmostEqual(sir["radius"], 2.063 ** 0.57, places=4)       # radius ↔ preferred mass
+        self.assertAlmostEqual(sir["radius"], 2.1418, places=4)              # CR-30.4: S1's R(2.063)
         # HZ unaffected: still computed from the original (pscomppars-radius 1.71) luminosity
         from core.equations import compute_habitable_zone
         lum_old = 1.71 ** 2 * (9940 / 5778.0) ** 4

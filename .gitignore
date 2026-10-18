@@ -8,6 +8,8 @@ data/*
 !data/cr26/
 # CR-24: the WB-owned Wood 2021 V_ISM file, vendored + committed (md5-checked at load)
 !data/cr24/
+# CR-30: the WB-owned S1 / MIST v2.5 / BHAC15-factor tables + S1's raw file + MANIFEST, vendored + committed
+!data/cr30/
 
 # stray root DB (the real DB is data/space_app.db, covered by data/ above)
 /space_app.db

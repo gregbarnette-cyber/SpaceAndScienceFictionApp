@@ -62,6 +62,7 @@ MAIN_SEQUENCE = "main_sequence"
 EVOLVED = "evolved"
 WINDLESS = "windless_free_harbor"
 UNMODELED = "unmodeled"       # a class outside the wind model (hot subdwarf sdB/sdO) → honest null
+UNDETERMINED_NO_MASS = "undetermined_no_mass"   # CR-30.7 A: an L0–L5 type with no mass — no standoff, no wall
 
 # ── per-class wind rows (spec CR-22.4 — Ẇ M☉/yr, v_wind km/s, t_phase yr, mass_loss_source) ──
 # Keyed by internal row name; the two giant_overwindy rows share the EMITTED wind_class string
@@ -96,7 +97,28 @@ _CLASS_NOTES = {
     WINDLESS: "windless (WD / brown dwarf / rogue) — free harbor, no boundary on either layer",
     UNMODELED: ("hot subdwarf — weak radiatively-driven wind, outside the current wind_class model; "
                 "standoff/wall not computed"),
+    UNDETERMINED_NO_MASS: ("undetermined — no mass: an L0–L5 type is placed by its mass (CR-30.6), and no tier "
+                           "gave one (catalog / Gaia FLAME / supplied; no inference route for an L type) — no "
+                           "standoff, no wall, never the free harbor; pass --star-mass-catalog or a mass"),
 }
+# CR-30.7 A: a mass placed substellar (ruling 78 (i) / (iii)) → the windless free harbor
+NOTE_SUBSTELLAR_PLACED = "substellar by placement (CR-30.6) — windless free harbor, no boundary on either layer"
+
+
+def placed_domain_kw(pl):
+    """CR-30.7 A — the ONE domain-after-placement rule both exclusion subcommands use: a placement ``substellar`` →
+    the windless free harbor; ``undetermined_no_mass`` → the 5th domain value; else ``None`` (the classification
+    stands — stellar / boundary keep main_sequence). Returns the pre-classified kwargs ``compute_two_layer_boundary``
+    takes (the ``wind_cls_kw`` shape) with no wind bin."""
+    st = pl.get("status") if isinstance(pl, dict) else None
+    if st == "substellar":
+        dom, note = WINDLESS, NOTE_SUBSTELLAR_PLACED
+    elif st == "undetermined_no_mass":
+        dom, note = UNDETERMINED_NO_MASS, _CLASS_NOTES[UNDETERMINED_NO_MASS]
+    else:
+        return None
+    return dict(domain=dom, wind_class=None, class_note=note, wind_class_provenance=None, wind_otype=None,
+                wind_class_note=None, wind_otype_source=None, wind_state_binned=False)
 
 
 # ── the b-field → c_ms derivation (spec CR-22.4) ─────────────────────────────────
@@ -441,8 +463,7 @@ def _classify_identity(sp_type, otype, class_tag, object_name):
         return EVOLVED, "subgiant_mild", "subgiant", None
 
     if host == "giant":                          # lum I/II/III (collapsed by _host_class)
-        m = detection._LUM_CLASS_RE.search(sp)
-        lc = m.group(1) if m else "III"
+        lc = shared.parse_spectral_type(sp).lum_class_core or "III"     # CR-30.2: the one parse
         if lc == "I":                            # supergiant
             wc = "rsg_overwindy" if colour in ("K", "M") else "bsg_overwindy"
             return EVOLVED, wc, "supergiant", None

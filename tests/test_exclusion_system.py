@@ -5,6 +5,7 @@
 # prolate envelope, the in-domain-only point-mass, the degenerate single-star reproduction of
 # exclusion-boundary, and validation. The live --star path is gated in test_query_exclusion_system_live.py.
 
+from core import ms_sequence as _ms   # CR-30.4 / 30.5 relations (re-pins)
 import unittest
 from unittest import mock
 
@@ -247,8 +248,12 @@ class Cr13SecondaryDetectorTest(unittest.TestCase):
     def test_classify_off_ms(self):
         self.assertEqual(es._classify_off_ms("white dwarf", None), "wd")
         self.assertEqual(es._classify_off_ms(None, "DA2"), "wd")
-        self.assertEqual(es._classify_off_ms(None, "T6"), "brown-dwarf")
-        self.assertEqual(es._classify_off_ms("brown dwarf", None), "brown-dwarf")
+        # CR-30.7 A (§13.4 H4, Q29–Q30): the tag never auto-assigns brown-dwarf; the routing predicate keeps both
+        self.assertIsNone(es._classify_off_ms(None, "T6"))
+        self.assertIsNone(es._classify_off_ms("brown dwarf", None))
+        self.assertTrue(es._routes_off_ms(None, "T6"))
+        self.assertTrue(es._routes_off_ms("brown dwarf", None))
+        self.assertTrue(es._routes_off_ms(None, "L3"))
         self.assertIsNone(es._classify_off_ms(None, "G2V"))
         self.assertIsNone(es._classify_off_ms(None, None))
 
@@ -430,12 +435,13 @@ class Cr13ResolverTest(unittest.TestCase):
     def test_proxima_bare_uses_bolometric_inversion(self):      # CR-13.2 / Q2 no-catalog
         m = {"Proxima Centauri": {"main_id": "NAME Proxima Centauri", "sp_type": "M5.5Ve",
                                   "otype": "star", "designations": {"GJ": "GJ 551"}}}
-        bclum = 0.139 ** (1.0 / 0.2632)
+        bclum = 0.0016                                     # CR-30.4: S1's sequence below the switch
         comps, notes = self._run("Proxima Centauri", None, m, solutions=[], bclum=bclum, no_flame=True)
-        self.assertAlmostEqual(comps[0]["mass_solar"], 0.139, places=3)
+        self.assertAlmostEqual(comps[0]["mass_solar"], _ms.mass_from_luminosity(bclum)["mass"], places=9)
         self.assertEqual(comps[0]["mass_provenance"], "ms_luminosity_inversion")
         r = es.compose_exclusion_system(comps, alpha=0.4)
-        self.assertAlmostEqual(r["zones"][0]["components"][0]["r_ex_au"], 21.5725, places=3)
+        self.assertAlmostEqual(r["zones"][0]["components"][0]["r_ex_au"],
+                               47.5 * _ms.mass_from_luminosity(bclum)["mass"] ** 0.4, places=9)
 
     def test_proxima_component_id_form_also_single_body(self):  # WB plan-review m7
         m = {"Proxima Centauri": {"main_id": "* alf Cen C", "sp_type": "M5.5Ve", "otype": "star",

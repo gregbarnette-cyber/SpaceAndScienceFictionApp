@@ -189,20 +189,25 @@ def _parse_spectral_class(sc):
 def _usable_ms_rows():
     """Main-sequence interpolation table: (index, teff, radius, mass), ascending.
 
-    Rows whose Teff/R/M are missing or non-numeric are dropped — notably the
-    bundled CSV's O5/B0 rows carry a corrupt radius placeholder, so the usable
-    range starts at B5. Empty → caller surfaces a data-unavailable error.
+    CR-30.1: S1's rows (Mamajek 2022.04.16, O3V–M9.5V) from the md5-verified table — the generator keeps its
+    own letter-only rule (``_parse_spectral_class``: a bare letter → subtype 0; ruling 93 L9) and its own
+    interpolation over these rows. A data-file failure surfaces as the empty-table error.
     """
+    from core.ms_reference_tables import Cr30DataError
     rows = []
-    for r in compute_main_sequence_table():
-        parsed = _parse_spectral_class(str(r.get("Spectral Class", "")))
+    try:
+        table = compute_main_sequence_table()
+    except Cr30DataError:
+        return rows
+    for r in table:
+        parsed = _parse_spectral_class(str(r.get("SpT", "")))
         if not parsed:
             continue
         letter, sub = parsed
         try:
-            teff = float(r["Teeff(K)"])
-            rad = float(r["R"])
-            mass = float(r["M"])
+            teff = float(r["Teff"])
+            rad = float(r["R_Rsun"])
+            mass = float(r["Msun"])
         except (ValueError, TypeError, KeyError):
             continue
         if teff <= 0 or rad <= 0 or mass <= 0:
@@ -1929,7 +1934,7 @@ def _generate_synthetic(seed, spectral_class, n_planets, require_habitable,
     rows = _usable_ms_rows()
     if not rows:
         return {"error": "Main-sequence reference data unavailable "
-                         "(run option 54 to import propertiesOfMainSequenceStars.csv)."}
+                         "(the CR-30 S1 table in data/cr30/ is missing or fails its md5)."}
 
     built = _synth_star(rng, priors, seed, spectral_class, rows)
     if "error" in built:
@@ -2122,14 +2127,24 @@ def _generate_real_anchor(seed, anchor_star, n_planets, require_habitable,
         return simbad
 
     regions = compute_star_system_regions_from_simbad(simbad)
+    from core import twomass
+    mk = twomass.degrade_marker(regions)
+    if mk:
+        # CR-30.3: a 2MASS degrade — the anchor has no luminosity, so no system can be built: an error that carries
+        # the marker (never the subtype route; every generator consumer keys on "error" — CP2)
+        return {"error": f"Cannot anchor on '{anchor_star}': {mk['twomass_note']}", **mk}
     if "error" in regions:
         # Non-OBAFGKM primary / missing teff·vmag·plx → can't extend without HZ.
         return regions
 
     teff = regions["temp"]
-    mass_solar = regions["stellarMass"]
-    radius_solar = regions["stellarRadius"]
+    mass_solar = regions["stellarMass"]          # CR-30.4: the region path's mass (M_Ks route where it resolves)
+    radius_solar = regions["stellarRadius"]      # CR-30.4: S1's R(M)
     luminosity = regions["bcLuminosity"]
+    if mass_solar is None or radius_solar is None:
+        # CR-30.4 (null handling, M5): a mass outside S1's span (or below M9.5V's L) — no anchor can be built
+        return {"error": f"Cannot anchor on '{anchor_star}': "
+                         f"{regions.get('mass_null_reason') or regions.get('radius_from_mass_null_reason')}"}
     hzmap, snow_line = _hz_and_snow(teff, luminosity)
 
     star_name = simbad.get("main_id") or anchor_star

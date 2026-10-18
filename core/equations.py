@@ -1034,8 +1034,8 @@ def compute_atmosphere_retention(planet_mass_earth: float, planet_radius_earth: 
 # Pure-math, self-validating (like the Phase H calculators) so it can back both
 # the GUI panel and the `stellar-evolution` query.py subcommand.
 
-# Stage fractions are multiples of the main-sequence lifetime T_ms. T_ms itself
-# uses the same 10^10 × (1/M)^2.5 relation as core/regions.py (`mainSeqLifeSpan`).
+# Stage fractions are multiples of the main-sequence lifetime T_ms. T_ms itself is CR-30.5's MIST v2.5 lifetime
+# (core.ms_sequence.ms_lifetime) — the same as core/regions.py's `mainSeqLifeSpan`.
 _EVOLUTION_STAGES = [
     ("Pre-Main Sequence",        0.01, "#aaaaaa"),
     ("Main Sequence",            1.00, "#ffe066"),
@@ -1063,12 +1063,15 @@ def compute_stellar_evolution(mass_solar: float, current_age_gyr: float = None) 
     Returns {mass_solar, stages:[{name, start_gyr, end_gyr, duration_gyr, color}],
     total_gyr, ms_end_gyr, current_age_gyr, current_stage, low_mass, high_mass}.
     """
-    if mass_solar is None or mass_solar < 0.1 or mass_solar > 20:
+    if mass_solar is None or not (0.1 <= mass_solar <= 20):        # CR-30.5 (CP3): NaN fails too
         return {"error": "Stellar mass must be between 0.1 and 20 M☉."}
     if current_age_gyr is not None and current_age_gyr < 0:
         return {"error": "Current age must be ≥ 0 Gyr."}
 
-    t_ms_gyr  = (1e10 * (1.0 / mass_solar) ** 2.5) / 1e9
+    # CR-30.5: MIST v2.5's main-sequence lifetime (non-rotating, [Fe/H] 0, from ZAMS) — was 1e10·M^-2.5
+    from core import ms_sequence
+    life      = ms_sequence.ms_lifetime(mass_solar)
+    t_ms_gyr  = life["yr"] / 1e9
     low_mass  = mass_solar < 0.8
     high_mass = mass_solar > 8.0
 
@@ -1112,4 +1115,7 @@ def compute_stellar_evolution(mass_solar: float, current_age_gyr: float = None) 
         "current_stage":   current_stage,
         "low_mass":        low_mass,
         "high_mass":       high_mass,
+        # CR-30.5: MIST's t_MS and its end point, labelled (an interpolated 10⁻²→10⁻⁴ track pair across the band)
+        "t_ms_gyr":        t_ms_gyr,
+        "ms_lifetime_end_point": life["end_point"],
     }

@@ -1,0 +1,895 @@
+# CR-30 over-read factor table - WB-owned, vendored byte-identical by APP (record research/star-analysis-cr-queue/cr30-data-half-and-spec.md, rulings 138, 145, 156; built session 105 by two WB paths, Python and awk, identical)
+# Source S27: Baraffe, Homeier, Allard & Chabrier 2015, A&A 577, A42 (arXiv:1503.04107) - isochrones BHAC15_iso.2mass (2MASS, solar metallicity), md5 75c6d9c0c3c5d6337a44dee71b46c919
+# Routes: mks = S13 (Mann et al. 2019, Table 6, n = 5, zero point 7.5) inside the 4.5 to 10.5 gate inclusive; luminosity = CR-30.4's mass from L (S1's sequence below log L -1.066, S12 Eker et al. 2018 inverted from it with the midpoint switches; null below M9.5V's -3.57); type = S1's mass at BHAC15's Teff, log M linear in Teff (ruling 102's proxy)
+# S1 = cr30_mamajek2022_dwarf_sequence.csv, md5 2b7746f6339b8b72fb589351c54c0594
+# Rows: route x age node (the cut's, 0.01 to 0.625 Gyr) x every BHAC15 grid mass at that node; true_mass = BHAC15's mass (Msun); inferred_read = the route's mass from that row (Msun); old_ref_read = the route's mass from the same grid mass's 5 Gyr row (Msun, ruling 145); factor = inferred_read / old_ref_read, from unrounded values; reads and factor to 6 decimals
+# An empty cell is a null; null_reason names why. input_at_age / input_at_ref (M_K mag, log L in Lsun, or Teff in K - BHAC15's own strings) and iso_line / ref_iso_line (line numbers in BHAC15_iso.2mass) cite the source and carry no value the tool uses
+route,age_gyr,true_mass,inferred_read,old_ref_read,factor,null_reason,input_at_age,input_at_ref,iso_line,ref_iso_line
+mks,0.0100,0.010,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.98,,289,
+mks,0.0100,0.015,0.106437,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.28,,290,
+mks,0.0100,0.020,0.151232,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,8.38,,291,
+mks,0.0100,0.030,0.192034,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,7.86,,292,
+mks,0.0100,0.040,0.208211,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,7.69,,293,
+mks,0.0100,0.050,0.233559,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,7.45,,294,
+mks,0.0100,0.060,0.256936,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,7.25,,295,
+mks,0.0100,0.070,0.280993,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,7.06,12.09,296,975
+mks,0.0100,0.072,0.286278,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,7.02,11.69,297,976
+mks,0.0100,0.075,0.294345,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,6.96,11.32,298,977
+mks,0.0100,0.080,0.308147,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,6.86,10.63,299,978
+mks,0.0100,0.090,0.329636,0.089226,3.694405,,6.71,9.90,300,979
+mks,0.0100,0.100,0.342943,0.099918,3.432226,,6.62,9.48,301,980
+mks,0.0100,0.110,0.362646,0.109719,3.305232,,6.49,9.19,302,981
+mks,0.0100,0.130,0.400229,0.129345,3.094268,,6.25,8.75,303,982
+mks,0.0100,0.150,0.430727,0.147951,2.911270,,6.06,8.43,304,983
+mks,0.0100,0.170,0.461499,0.166199,2.776784,,5.87,8.17,305,984
+mks,0.0100,0.200,0.495404,0.194783,2.543360,,5.66,7.83,306,985
+mks,0.0100,0.300,0.580908,0.288949,2.010417,,5.11,7.00,307,986
+mks,0.0100,0.400,0.640346,0.378140,1.693411,,4.70,6.39,308,987
+mks,0.0100,0.500,,0.477684,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.37,5.77,309,988
+mks,0.0100,0.600,,0.577917,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.11,5.13,310,989
+mks,0.0100,0.700,,0.657312,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.88,4.58,311,990
+mks,0.0100,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.67,4.15,312,991
+mks,0.0100,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.48,3.71,313,992
+mks,0.0100,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.28,3.24,314,993
+mks,0.0100,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.10,2.71,315,994
+mks,0.0100,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.89,,316,
+mks,0.0100,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.65,,317,
+mks,0.0100,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.33,,318,
+mks,0.0250,0.015,0.098157,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.54,,401,
+mks,0.0250,0.020,0.101767,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.42,,402,
+mks,0.0250,0.030,0.113639,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.09,,403,
+mks,0.0250,0.040,0.134177,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,8.66,,404,
+mks,0.0250,0.050,0.154619,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,8.33,,405,
+mks,0.0250,0.060,0.173226,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,8.08,,406,
+mks,0.0250,0.070,0.192034,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,7.86,12.09,407,975
+mks,0.0250,0.072,0.195710,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,7.82,11.69,408,976
+mks,0.0250,0.075,0.201373,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,7.76,11.32,409,977
+mks,0.0250,0.080,0.211218,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,7.66,10.63,410,978
+mks,0.0250,0.090,0.229129,0.089226,2.567970,,7.49,9.90,411,979
+mks,0.0250,0.100,0.243827,0.099918,2.440261,,7.36,9.48,412,980
+mks,0.0250,0.110,0.261854,0.109719,2.386587,,7.21,9.19,413,981
+mks,0.0250,0.130,0.292989,0.129345,2.265172,,6.97,8.75,414,982
+mks,0.0250,0.150,0.322373,0.147951,2.178913,,6.76,8.43,415,983
+mks,0.0250,0.170,0.350457,0.166199,2.108660,,6.57,8.17,416,984
+mks,0.0250,0.200,0.385981,0.194783,1.981591,,6.34,7.83,417,985
+mks,0.0250,0.300,0.479300,0.288949,1.658770,,5.76,7.00,418,986
+mks,0.0250,0.400,0.541283,0.378140,1.431435,,5.37,6.39,419,987
+mks,0.0250,0.500,0.588343,0.477684,1.231655,,5.06,5.77,420,988
+mks,0.0250,0.600,0.633249,0.577917,1.095743,,4.75,5.13,421,989
+mks,0.0250,0.700,,0.657312,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.42,4.58,422,990
+mks,0.0250,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.07,4.15,423,991
+mks,0.0250,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.72,3.71,424,992
+mks,0.0250,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.32,3.24,425,993
+mks,0.0250,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.85,2.71,426,994
+mks,0.0250,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.91,,427,
+mks,0.0250,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.66,,428,
+mks,0.0250,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.34,,429,
+mks,0.0500,0.015,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.63,,512,
+mks,0.0500,0.020,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.64,,513,
+mks,0.0500,0.030,0.091214,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.81,,514,
+mks,0.0500,0.040,0.104373,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.34,,515,
+mks,0.0500,0.050,0.119642,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,8.95,,516,
+mks,0.0500,0.060,0.134177,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,8.66,,517,
+mks,0.0500,0.070,0.147308,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.44,12.09,518,975
+mks,0.0500,0.072,0.150567,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.39,11.69,519,976
+mks,0.0500,0.075,0.155309,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.32,11.32,520,977
+mks,0.0500,0.080,0.161722,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.23,10.63,521,978
+mks,0.0500,0.090,0.176472,0.089226,1.977815,,8.04,9.90,522,979
+mks,0.0500,0.100,0.188439,0.099918,1.885926,,7.90,9.48,523,980
+mks,0.0500,0.110,0.201373,0.109719,1.835357,,7.76,9.19,524,981
+mks,0.0500,0.130,0.226945,0.129345,1.754565,,7.51,8.75,525,982
+mks,0.0500,0.150,0.249710,0.147951,1.687783,,7.31,8.43,526,983
+mks,0.0500,0.170,0.271926,0.166199,1.636144,,7.13,8.17,527,984
+mks,0.0500,0.200,0.305352,0.194783,1.567649,,6.88,7.83,528,985
+mks,0.0500,0.300,0.393877,0.288949,1.363137,,6.29,7.00,529,986
+mks,0.0500,0.400,0.463119,0.378140,1.224729,,5.86,6.39,530,987
+mks,0.0500,0.500,0.525635,0.477684,1.100382,,5.47,5.77,531,988
+mks,0.0500,0.600,0.592775,0.577917,1.025709,,5.03,5.13,532,989
+mks,0.0500,0.700,,0.657312,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.47,4.58,533,990
+mks,0.0500,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.04,4.15,534,991
+mks,0.0500,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.89,3.71,535,992
+mks,0.0500,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.58,3.24,536,993
+mks,0.0500,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.25,2.71,537,994
+mks,0.0500,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.91,,538,
+mks,0.0500,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.62,,539,
+mks,0.0500,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.38,,540,
+mks,0.0800,0.030,0.079985,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,10.44,,549,
+mks,0.0800,0.040,0.091445,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.80,,550,
+mks,0.0800,0.050,0.103049,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.38,,551,
+mks,0.0800,0.060,0.114047,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.08,,552,
+mks,0.0800,0.070,0.126789,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.80,12.09,553,975
+mks,0.0800,0.072,0.128827,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.76,11.69,554,976
+mks,0.0800,0.075,0.131993,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.70,11.32,555,977
+mks,0.0800,0.080,0.138147,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.59,10.63,556,978
+mks,0.0800,0.090,0.149251,0.089226,1.672734,,8.41,9.90,557,979
+mks,0.0800,0.100,0.159544,0.099918,1.596745,,8.26,9.48,558,980
+mks,0.0800,0.110,0.170056,0.109719,1.549929,,8.12,9.19,559,981
+mks,0.0800,0.130,0.191128,0.129345,1.477658,,7.87,8.75,560,982
+mks,0.0800,0.150,0.211218,0.147951,1.427616,,7.66,8.43,561,983
+mks,0.0800,0.170,0.231334,0.166199,1.391908,,7.47,8.17,562,984
+mks,0.0800,0.200,0.260617,0.194783,1.337983,,7.22,7.83,563,985
+mks,0.0800,0.300,0.341450,0.288949,1.181697,,6.63,7.00,564,986
+mks,0.0800,0.400,0.416224,0.378140,1.100714,,6.15,6.39,565,987
+mks,0.0800,0.500,0.497009,0.477684,1.040454,,5.65,5.77,566,988
+mks,0.0800,0.600,0.595718,0.577917,1.030802,,5.01,5.13,567,989
+mks,0.0800,0.700,0.654487,0.657312,0.995702,,4.60,4.58,568,990
+mks,0.0800,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.28,4.15,569,991
+mks,0.0800,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.91,3.71,570,992
+mks,0.0800,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.57,3.24,571,993
+mks,0.0800,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.23,2.71,572,994
+mks,0.0800,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.90,,573,
+mks,0.0800,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.61,,574,
+mks,0.0800,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.38,,575,
+mks,0.1000,0.030,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.73,,584,
+mks,0.1000,0.040,0.086798,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,10.02,,585,
+mks,0.1000,0.050,0.096752,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.59,,586,
+mks,0.1000,0.060,0.106791,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.27,,587,
+mks,0.1000,0.070,0.117863,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.99,12.09,588,975
+mks,0.1000,0.072,0.120095,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.94,11.69,589,976
+mks,0.1000,0.075,0.122881,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.88,11.32,590,977
+mks,0.1000,0.080,0.128312,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.77,10.63,591,978
+mks,0.1000,0.090,0.138147,0.089226,1.548292,,8.59,9.90,592,979
+mks,0.1000,0.100,0.147951,0.099918,1.480722,,8.43,9.48,593,980
+mks,0.1000,0.110,0.157407,0.109719,1.434639,,8.29,9.19,594,981
+mks,0.1000,0.130,0.176472,0.129345,1.364348,,8.04,8.75,595,982
+mks,0.1000,0.150,0.195710,0.147951,1.322797,,7.82,8.43,596,983
+mks,0.1000,0.170,0.214271,0.166199,1.289243,,7.63,8.17,597,984
+mks,0.1000,0.200,0.240358,0.194783,1.233978,,7.39,7.83,598,985
+mks,0.1000,0.300,0.322373,0.288949,1.115676,,6.76,7.00,599,986
+mks,0.1000,0.400,0.398638,0.378140,1.054208,,6.26,6.39,600,987
+mks,0.1000,0.500,0.490584,0.477684,1.027004,,5.69,5.77,601,988
+mks,0.1000,0.600,0.591300,0.577917,1.023157,,5.04,5.13,602,989
+mks,0.1000,0.700,0.644594,0.657312,0.980651,,4.67,4.58,603,990
+mks,0.1000,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.27,4.15,604,991
+mks,0.1000,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.90,3.71,605,992
+mks,0.1000,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.56,3.24,606,993
+mks,0.1000,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.22,2.71,607,994
+mks,0.1000,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.90,,608,
+mks,0.1000,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.61,,609,
+mks,0.1000,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.38,,610,
+mks,0.1200,0.030,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,11.00,,619,
+mks,0.1200,0.040,0.083098,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,10.23,,620,
+mks,0.1200,0.050,0.092148,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.77,,621,
+mks,0.1200,0.060,0.101767,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.42,,622,
+mks,0.1200,0.070,0.111251,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.15,12.09,623,975
+mks,0.1200,0.072,0.113233,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.10,11.69,624,976
+mks,0.1200,0.075,0.116563,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.02,11.32,625,977
+mks,0.1200,0.080,0.121010,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,8.92,10.63,626,978
+mks,0.1200,0.090,0.130393,0.089226,1.461386,,8.73,9.90,627,979
+mks,0.1200,0.100,0.139317,0.099918,1.394305,,8.57,9.48,628,980
+mks,0.1200,0.110,0.148599,0.109719,1.354362,,8.42,9.19,629,981
+mks,0.1200,0.130,0.166199,0.129345,1.284925,,8.17,8.75,630,982
+mks,0.1200,0.150,0.184055,0.147951,1.244025,,7.95,8.43,631,983
+mks,0.1200,0.170,0.201373,0.166199,1.211639,,7.76,8.17,632,984
+mks,0.1200,0.200,0.226945,0.194783,1.165113,,7.51,7.83,633,985
+mks,0.1200,0.300,0.306748,0.288949,1.061598,,6.87,7.00,634,986
+mks,0.1200,0.400,0.387556,0.378140,1.024901,,6.33,6.39,635,987
+mks,0.1200,0.500,0.485753,0.477684,1.016892,,5.72,5.77,636,988
+mks,0.1200,0.600,0.573413,0.577917,0.992206,,5.16,5.13,637,989
+mks,0.1200,0.700,0.644594,0.657312,0.980651,,4.67,4.58,638,990
+mks,0.1200,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.27,4.15,639,991
+mks,0.1200,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.90,3.71,640,992
+mks,0.1200,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.56,3.24,641,993
+mks,0.1200,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.22,2.71,642,994
+mks,0.1200,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.90,,643,
+mks,0.1200,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.61,,644,
+mks,0.1200,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.37,,645,
+mks,0.2000,0.040,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.89,,654,
+mks,0.2000,0.050,0.081700,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,10.32,,655,
+mks,0.2000,0.060,0.089014,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,9.91,,656,
+mks,0.2000,0.070,0.096206,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.61,12.09,657,975
+mks,0.2000,0.072,0.097871,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.55,11.69,658,976
+mks,0.2000,0.075,0.099619,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.49,11.32,659,977
+mks,0.2000,0.080,0.103706,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.36,10.63,660,978
+mks,0.2000,0.090,0.112035,0.089226,1.255639,,9.13,9.90,661,979
+mks,0.2000,0.100,0.119642,0.099918,1.197394,,8.95,9.48,662,980
+mks,0.2000,0.110,0.127293,0.109719,1.160173,,8.79,9.19,663,981
+mks,0.2000,0.130,0.143534,0.129345,1.109700,,8.50,8.75,664,982
+mks,0.2000,0.150,0.159544,0.147951,1.078356,,8.26,8.43,665,983
+mks,0.2000,0.170,0.176472,0.166199,1.061811,,8.04,8.17,666,984
+mks,0.2000,0.200,0.202335,0.194783,1.038768,,7.75,7.83,667,985
+mks,0.2000,0.300,0.283626,0.288949,0.981579,,7.04,7.00,668,986
+mks,0.2000,0.400,0.368812,0.378140,0.975331,,6.45,6.39,669,987
+mks,0.2000,0.500,0.469597,0.477684,0.983071,,5.82,5.77,670,988
+mks,0.2000,0.600,0.568887,0.577917,0.984375,,5.19,5.13,671,989
+mks,0.2000,0.700,0.646008,0.657312,0.982803,,4.66,4.58,672,990
+mks,0.2000,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.26,4.15,673,991
+mks,0.2000,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.89,3.71,674,992
+mks,0.2000,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.55,3.24,675,993
+mks,0.2000,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.21,2.71,676,994
+mks,0.2000,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.89,,677,
+mks,0.2000,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.60,,678,
+mks,0.2000,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.36,,679,
+mks,0.3000,0.040,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,11.51,,688,
+mks,0.3000,0.050,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.84,,689,
+mks,0.3000,0.060,0.081256,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,10.35,,690,
+mks,0.3000,0.070,0.087580,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.98,12.09,691,975
+mks,0.3000,0.072,0.088804,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.92,11.69,692,976
+mks,0.3000,0.075,0.090535,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.84,11.32,693,977
+mks,0.3000,0.080,0.093857,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.70,10.63,694,978
+mks,0.3000,0.090,0.101453,0.089226,1.137036,,9.43,9.90,695,979
+mks,0.3000,0.100,0.108970,0.099918,1.090588,,9.21,9.48,696,980
+mks,0.3000,0.110,0.116563,0.109719,1.062377,,9.02,9.19,697,981
+mks,0.3000,0.130,0.133626,0.129345,1.033093,,8.67,8.75,698,982
+mks,0.3000,0.150,0.150567,0.147951,1.017680,,8.39,8.43,699,983
+mks,0.3000,0.170,0.168500,0.166199,1.013842,,8.14,8.17,700,984
+mks,0.3000,0.200,0.195710,0.194783,1.004756,,7.82,7.83,701,985
+mks,0.3000,0.300,0.279683,0.288949,0.967933,,7.07,7.00,702,986
+mks,0.3000,0.400,0.367266,0.378140,0.971244,,6.46,6.39,703,987
+mks,0.3000,0.500,0.469597,0.477684,0.983071,,5.82,5.77,704,988
+mks,0.3000,0.600,0.568887,0.577917,0.984375,,5.19,5.13,705,989
+mks,0.3000,0.700,0.647422,0.657312,0.984954,,4.65,4.58,706,990
+mks,0.3000,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.26,4.15,707,991
+mks,0.3000,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.89,3.71,708,992
+mks,0.3000,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.54,3.24,709,993
+mks,0.3000,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.20,2.71,710,994
+mks,0.3000,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.88,,711,
+mks,0.3000,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.58,,712,
+mks,0.3000,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.34,,713,
+mks,0.4000,0.050,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,11.24,,722,
+mks,0.4000,0.060,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.70,,723,
+mks,0.4000,0.070,0.082464,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,10.27,12.09,724,975
+mks,0.4000,0.072,0.083754,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,10.19,11.69,725,976
+mks,0.4000,0.075,0.085492,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,10.09,11.32,726,977
+mks,0.4000,0.080,0.088804,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,9.92,10.63,727,978
+mks,0.4000,0.090,0.095669,0.089226,1.072216,,9.63,9.90,728,979
+mks,0.4000,0.100,0.104373,0.099918,1.044580,,9.34,9.48,729,980
+mks,0.4000,0.110,0.112831,0.109719,1.028365,,9.11,9.19,730,981
+mks,0.4000,0.130,0.130393,0.129345,1.008102,,8.73,8.75,731,982
+mks,0.4000,0.150,0.148599,0.147951,1.004377,,8.42,8.43,732,983
+mks,0.4000,0.170,0.166961,0.166199,1.004586,,8.16,8.17,733,984
+mks,0.4000,0.200,0.193862,0.194783,0.995270,,7.84,7.83,734,985
+mks,0.4000,0.300,0.279683,0.288949,0.967933,,7.07,7.00,735,986
+mks,0.4000,0.400,0.368812,0.378140,0.975331,,6.45,6.39,736,987
+mks,0.4000,0.500,0.469597,0.477684,0.983071,,5.82,5.77,737,988
+mks,0.4000,0.600,0.568887,0.577917,0.984375,,5.19,5.13,738,989
+mks,0.4000,0.700,0.647422,0.657312,0.984954,,4.65,4.58,739,990
+mks,0.4000,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.25,4.15,740,991
+mks,0.4000,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.88,3.71,741,992
+mks,0.4000,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.54,3.24,742,993
+mks,0.4000,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.19,2.71,743,994
+mks,0.4000,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.86,,744,
+mks,0.4000,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.57,,745,
+mks,0.4000,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.32,,746,
+mks,0.5000,0.050,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,11.55,,755,
+mks,0.5000,0.060,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.98,,756,
+mks,0.5000,0.070,0.079186,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,10.50,12.09,757,975
+mks,0.5000,0.072,0.080399,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,10.41,11.69,758,976
+mks,0.5000,0.075,0.082002,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,10.30,11.32,759,977
+mks,0.5000,0.080,0.085674,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,10.08,10.63,760,978
+mks,0.5000,0.090,0.093112,0.089226,1.043561,,9.73,9.90,761,979
+mks,0.5000,0.100,0.102084,0.099918,1.021672,,9.41,9.48,762,980
+mks,0.5000,0.110,0.110864,0.109719,1.010436,,9.16,9.19,763,981
+mks,0.5000,0.130,0.129345,0.129345,1.000000,,8.75,8.75,764,982
+mks,0.5000,0.150,0.147951,0.147951,1.000000,,8.43,8.43,765,983
+mks,0.5000,0.170,0.166199,0.166199,1.000000,,8.17,8.17,766,984
+mks,0.5000,0.200,0.193862,0.194783,0.995270,,7.84,7.83,767,985
+mks,0.5000,0.300,0.279683,0.288949,0.967933,,7.07,7.00,768,986
+mks,0.5000,0.400,0.368812,0.378140,0.975331,,6.45,6.39,769,987
+mks,0.5000,0.500,0.469597,0.477684,0.983071,,5.82,5.77,770,988
+mks,0.5000,0.600,0.568887,0.577917,0.984375,,5.19,5.13,771,989
+mks,0.5000,0.700,0.648836,0.657312,0.987105,,4.64,4.58,772,990
+mks,0.5000,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.25,4.15,773,991
+mks,0.5000,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.88,3.71,774,992
+mks,0.5000,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.53,3.24,775,993
+mks,0.5000,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.18,2.71,776,994
+mks,0.5000,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.85,,777,
+mks,0.5000,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.56,,778,
+mks,0.5000,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.30,,779,
+mks,0.6250,0.050,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,12.02,,788,
+mks,0.6250,0.060,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,11.31,,789,
+mks,0.6250,0.070,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.77,12.09,790,975
+mks,0.6250,0.072,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,10.62,11.69,791,976
+mks,0.6250,0.075,0.079448,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,10.48,11.32,792,977
+mks,0.6250,0.080,0.083098,,,5 Gyr read outside the relations: M_K outside the 4.5 to 10.5 gate,10.23,10.63,793,978
+mks,0.6250,0.090,0.091214,0.089226,1.022289,,9.81,9.90,794,979
+mks,0.6250,0.100,0.100832,0.099918,1.009140,,9.45,9.48,795,980
+mks,0.6250,0.110,0.110098,0.109719,1.003452,,9.18,9.19,796,981
+mks,0.6250,0.130,0.129345,0.129345,1.000000,,8.75,8.75,797,982
+mks,0.6250,0.150,0.147951,0.147951,1.000000,,8.43,8.43,798,983
+mks,0.6250,0.170,0.166199,0.166199,1.000000,,8.17,8.17,799,984
+mks,0.6250,0.200,0.193862,0.194783,0.995270,,7.84,7.83,800,985
+mks,0.6250,0.300,0.279683,0.288949,0.967933,,7.07,7.00,801,986
+mks,0.6250,0.400,0.370360,0.378140,0.979425,,6.44,6.39,802,987
+mks,0.6250,0.500,0.471216,0.477684,0.986459,,5.81,5.77,803,988
+mks,0.6250,0.600,0.570398,0.577917,0.986990,,5.18,5.13,804,989
+mks,0.6250,0.700,0.648836,0.657312,0.987105,,4.64,4.58,805,990
+mks,0.6250,0.800,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,4.24,4.15,806,991
+mks,0.6250,0.900,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.87,3.71,807,992
+mks,0.6250,1.000,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.52,3.24,808,993
+mks,0.6250,1.100,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,3.18,2.71,809,994
+mks,0.6250,1.200,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.84,,810,
+mks,0.6250,1.300,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.54,,811,
+mks,0.6250,1.400,,,,no read at this age: M_K outside the 4.5 to 10.5 gate,2.28,,812,
+luminosity,0.0100,0.010,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.87,,289,
+luminosity,0.0100,0.015,0.094443,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.08,,290,
+luminosity,0.0100,0.020,0.139016,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.67,,291,
+luminosity,0.0100,0.030,0.178235,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.43,,292,
+luminosity,0.0100,0.040,0.192068,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.35,,293,
+luminosity,0.0100,0.050,0.212903,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.23,,294,
+luminosity,0.0100,0.060,0.228034,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.15,,295,
+luminosity,0.0100,0.070,0.258447,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.06,-4.30,296,975
+luminosity,0.0100,0.072,0.266093,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.04,-4.12,297,976
+luminosity,0.0100,0.075,0.273568,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.02,-3.89,298,977
+luminosity,0.0100,0.080,0.288318,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-1.98,-3.58,299,978
+luminosity,0.0100,0.090,0.316070,0.087240,3.622981,,-1.91,-3.25,300,979
+luminosity,0.0100,0.100,0.333111,0.095908,3.473231,,-1.87,-3.06,301,980
+luminosity,0.0100,0.110,0.355711,0.108212,3.287165,,-1.82,-2.92,302,981
+luminosity,0.0100,0.130,0.383709,0.130763,2.934385,,-1.72,-2.73,303,982
+luminosity,0.0100,0.150,0.400000,0.152382,2.624974,,-1.64,-2.58,304,983
+luminosity,0.0100,0.170,0.431692,0.172650,2.500390,,-1.56,-2.46,305,984
+luminosity,0.0100,0.200,0.460791,0.197077,2.338127,,-1.47,-2.32,306,985
+luminosity,0.0100,0.300,0.550722,0.295988,1.860619,,-1.23,-1.96,307,986
+luminosity,0.0100,0.400,0.620370,0.385709,1.608390,,-1.05,-1.71,308,987
+luminosity,0.0100,0.500,0.665690,0.470000,1.416362,,-0.91,-1.44,309,988
+luminosity,0.0100,0.600,0.730567,0.573286,1.274351,,-0.79,-1.15,310,989
+luminosity,0.0100,0.700,0.766576,0.689577,1.111661,,-0.67,-0.84,311,990
+luminosity,0.0100,0.800,0.797935,0.804359,0.992013,,-0.57,-0.55,312,991
+luminosity,0.0100,0.900,0.833914,0.899923,0.926651,,-0.46,-0.27,313,992
+luminosity,0.0100,1.000,0.875017,1.006839,0.869073,,-0.34,0.01,314,993
+luminosity,0.0100,1.100,0.921834,1.148312,0.802773,,-0.21,0.27,315,994
+luminosity,0.0100,1.200,0.975057,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-0.07,,316,
+luminosity,0.0100,1.300,1.039657,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.09,,317,
+luminosity,0.0100,1.400,1.160593,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.29,,318,
+luminosity,0.0250,0.015,0.089596,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.20,,401,
+luminosity,0.0250,0.020,0.092325,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.12,,402,
+luminosity,0.0250,0.030,0.105060,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.95,,403,
+luminosity,0.0250,0.040,0.126822,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.76,,404,
+luminosity,0.0250,0.050,0.149305,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.60,,405,
+luminosity,0.0250,0.060,0.169024,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.48,,406,
+luminosity,0.0250,0.070,0.187186,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.38,-4.30,407,975
+luminosity,0.0250,0.072,0.190426,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.36,-4.12,408,976
+luminosity,0.0250,0.075,0.193723,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.34,-3.89,409,977
+luminosity,0.0250,0.080,0.200489,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.30,-3.58,410,978
+luminosity,0.0250,0.090,0.214738,0.087240,2.461459,,-2.22,-3.25,411,979
+luminosity,0.0250,0.100,0.226086,0.095908,2.357316,,-2.16,-3.06,412,980
+luminosity,0.0250,0.110,0.243809,0.108212,2.253069,,-2.10,-2.92,413,981
+luminosity,0.0250,0.130,0.280846,0.130763,2.147748,,-2.00,-2.73,414,982
+luminosity,0.0250,0.150,0.320246,0.152382,2.101596,,-1.90,-2.58,415,983
+luminosity,0.0250,0.170,0.351071,0.172650,2.033429,,-1.83,-2.46,416,984
+luminosity,0.0250,0.200,0.381720,0.197077,1.936907,,-1.73,-2.32,417,985
+luminosity,0.0250,0.300,0.457762,0.295988,1.546554,,-1.48,-1.96,418,986
+luminosity,0.0250,0.400,0.526323,0.385709,1.364561,,-1.31,-1.71,419,987
+luminosity,0.0250,0.500,0.564424,0.470000,1.200902,,-1.18,-1.44,420,988
+luminosity,0.0250,0.600,0.623502,0.573286,1.087595,,-1.04,-1.15,421,989
+luminosity,0.0250,0.700,0.675824,0.689577,0.980056,,-0.88,-0.84,422,990
+luminosity,0.0250,0.800,0.760453,0.804359,0.945415,,-0.69,-0.55,423,991
+luminosity,0.0250,0.900,0.837264,0.899923,0.930374,,-0.45,-0.27,424,992
+luminosity,0.0250,1.000,0.944279,1.006839,0.937864,,-0.15,0.01,425,993
+luminosity,0.0250,1.100,1.094637,1.148312,0.953257,,0.18,0.27,426,994
+luminosity,0.0250,1.200,1.118176,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.22,,427,
+luminosity,0.0250,1.300,1.198230,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.35,,428,
+luminosity,0.0250,1.400,1.332724,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.55,,429,
+luminosity,0.0500,0.015,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.74,,512,
+luminosity,0.0500,0.020,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.72,,513,
+luminosity,0.0500,0.030,0.085000,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.28,,514,
+luminosity,0.0500,0.040,0.096649,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.05,,515,
+luminosity,0.0500,0.050,0.112562,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.88,,516,
+luminosity,0.0500,0.060,0.130763,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.73,,517,
+luminosity,0.0500,0.070,0.144805,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.63,-4.30,518,975
+luminosity,0.0500,0.072,0.147790,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.61,-4.12,519,976
+luminosity,0.0500,0.075,0.153945,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.57,-3.89,520,977
+luminosity,0.0500,0.080,0.160356,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.53,-3.58,521,978
+luminosity,0.0500,0.090,0.174492,0.087240,2.000130,,-2.45,-3.25,522,979
+luminosity,0.0500,0.100,0.187186,0.095908,1.951718,,-2.38,-3.06,523,980
+luminosity,0.0500,0.110,0.197077,0.108212,1.821214,,-2.32,-2.92,524,981
+luminosity,0.0500,0.130,0.216589,0.130763,1.656348,,-2.21,-2.73,525,982
+luminosity,0.0500,0.150,0.233377,0.152382,1.531522,,-2.13,-2.58,526,983
+luminosity,0.0500,0.170,0.266093,0.172650,1.541228,,-2.04,-2.46,527,984
+luminosity,0.0500,0.200,0.303863,0.197077,1.541849,,-1.94,-2.32,528,985
+luminosity,0.0500,0.300,0.389739,0.295988,1.316737,,-1.69,-1.96,529,986
+luminosity,0.0500,0.400,0.451763,0.385709,1.171255,,-1.50,-1.71,530,987
+luminosity,0.0500,0.500,0.516293,0.470000,1.098497,,-1.34,-1.44,531,988
+luminosity,0.0500,0.600,0.579914,0.573286,1.011562,,-1.13,-1.15,532,989
+luminosity,0.0500,0.700,0.693059,0.689577,1.005049,,-0.83,-0.84,533,990
+luminosity,0.0500,0.800,0.823944,0.804359,1.024348,,-0.49,-0.55,534,991
+luminosity,0.0500,0.900,0.868028,0.899923,0.964559,,-0.36,-0.27,535,992
+luminosity,0.0500,1.000,0.936737,1.006839,0.930374,,-0.17,0.01,536,993
+luminosity,0.0500,1.100,1.014945,1.148312,0.883858,,0.03,0.27,537,994
+luminosity,0.0500,1.200,1.124139,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.23,,538,
+luminosity,0.0500,1.300,1.230524,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.40,,539,
+luminosity,0.0500,1.400,1.339831,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.56,,540,
+luminosity,0.0800,0.030,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.58,,549,
+luminosity,0.0800,0.040,0.086487,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.26,,550,
+luminosity,0.0800,0.050,0.095908,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.06,,551,
+luminosity,0.0800,0.060,0.108212,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-2.92,,552,
+luminosity,0.0800,0.070,0.124261,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.78,-4.30,553,975
+luminosity,0.0800,0.072,0.126822,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.76,-4.12,554,976
+luminosity,0.0800,0.075,0.130763,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.73,-3.89,555,977
+luminosity,0.0800,0.080,0.136209,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.69,-3.58,556,978
+luminosity,0.0800,0.090,0.149305,0.087240,1.711427,,-2.60,-3.25,557,979
+luminosity,0.0800,0.100,0.158729,0.095908,1.655006,,-2.54,-3.06,558,980
+luminosity,0.0800,0.110,0.170828,0.108212,1.578638,,-2.47,-2.92,559,981
+luminosity,0.0800,0.130,0.190426,0.130763,1.456270,,-2.36,-2.73,560,982
+luminosity,0.0800,0.150,0.207491,0.152382,1.361649,,-2.26,-2.58,561,983
+luminosity,0.0800,0.170,0.222238,0.172650,1.287218,,-2.18,-2.46,562,984
+luminosity,0.0800,0.200,0.251022,0.197077,1.273722,,-2.08,-2.32,563,985
+luminosity,0.0800,0.300,0.355711,0.295988,1.201772,,-1.82,-1.96,564,986
+luminosity,0.0800,0.400,0.411602,0.385709,1.067132,,-1.61,-1.71,565,987
+luminosity,0.0800,0.500,0.493851,0.470000,1.050746,,-1.40,-1.44,566,988
+luminosity,0.0800,0.600,0.597361,0.573286,1.041996,,-1.09,-1.15,567,989
+luminosity,0.0800,0.700,0.693059,0.689577,1.005049,,-0.83,-0.84,568,990
+luminosity,0.0800,0.800,0.785240,0.804359,0.976231,,-0.61,-0.55,569,991
+luminosity,0.0800,0.900,0.864555,0.899923,0.960699,,-0.37,-0.27,570,992
+luminosity,0.0800,1.000,0.936737,1.006839,0.930374,,-0.17,0.01,571,993
+luminosity,0.0800,1.100,1.023117,1.148312,0.890974,,0.05,0.27,572,994
+luminosity,0.0800,1.200,1.130134,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.24,,573,
+luminosity,0.0800,1.300,1.237087,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.41,,574,
+luminosity,0.0800,1.400,1.339831,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.56,,575,
+luminosity,0.1000,0.030,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.74,,584,
+luminosity,0.1000,0.040,0.082858,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.36,,585,
+luminosity,0.1000,0.050,0.091321,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.15,,586,
+luminosity,0.1000,0.060,0.100442,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.00,,587,
+luminosity,0.1000,0.070,0.113677,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.87,-4.30,588,975
+luminosity,0.1000,0.072,0.117087,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.84,-4.12,589,976
+luminosity,0.1000,0.075,0.120600,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.81,-3.89,590,977
+luminosity,0.1000,0.080,0.126822,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.76,-3.58,591,978
+luminosity,0.1000,0.090,0.137605,0.087240,1.577315,,-2.68,-3.25,592,979
+luminosity,0.1000,0.100,0.147790,0.095908,1.540954,,-2.61,-3.06,593,980
+luminosity,0.1000,0.110,0.158729,0.108212,1.466829,,-2.54,-2.92,594,981
+luminosity,0.1000,0.130,0.178235,0.130763,1.363035,,-2.43,-2.73,595,982
+luminosity,0.1000,0.150,0.195393,0.152382,1.282254,,-2.33,-2.58,596,983
+luminosity,0.1000,0.170,0.209280,0.172650,1.212163,,-2.25,-2.46,597,984
+luminosity,0.1000,0.200,0.230000,0.197077,1.167056,,-2.14,-2.32,598,985
+luminosity,0.1000,0.300,0.333111,0.295988,1.125419,,-1.87,-1.96,599,986
+luminosity,0.1000,0.400,0.397926,0.385709,1.031676,,-1.65,-1.71,600,987
+luminosity,0.1000,0.500,0.487777,0.470000,1.037823,,-1.41,-1.44,601,988
+luminosity,0.1000,0.600,0.597361,0.573286,1.041996,,-1.09,-1.15,602,989
+luminosity,0.1000,0.700,0.675824,0.689577,0.980056,,-0.88,-0.84,603,990
+luminosity,0.1000,0.800,0.785240,0.804359,0.976231,,-0.61,-0.55,604,991
+luminosity,0.1000,0.900,0.864555,0.899923,0.960699,,-0.37,-0.27,605,992
+luminosity,0.1000,1.000,0.940500,1.006839,0.934112,,-0.16,0.01,606,993
+luminosity,0.1000,1.100,1.023117,1.148312,0.890974,,0.05,0.27,607,994
+luminosity,0.1000,1.200,1.130134,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.24,,608,
+luminosity,0.1000,1.300,1.237087,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.41,,609,
+luminosity,0.1000,1.400,1.339831,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.56,,610,
+luminosity,0.1200,0.030,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.88,,619,
+luminosity,0.1200,0.040,0.080256,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.46,,620,
+luminosity,0.1200,0.050,0.088396,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.23,,621,
+luminosity,0.1200,0.060,0.095908,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.06,,622,
+luminosity,0.1200,0.070,0.106100,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.94,-4.30,623,975
+luminosity,0.1200,0.072,0.109284,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.91,-4.12,624,976
+luminosity,0.1200,0.075,0.112562,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.88,-3.89,625,977
+luminosity,0.1200,0.080,0.118246,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-2.83,-3.58,626,978
+luminosity,0.1200,0.090,0.129436,0.087240,1.483674,,-2.74,-3.25,627,979
+luminosity,0.1200,0.100,0.139016,0.095908,1.449472,,-2.67,-3.06,628,980
+luminosity,0.1200,0.110,0.149305,0.108212,1.379748,,-2.60,-2.92,629,981
+luminosity,0.1200,0.130,0.169024,0.130763,1.292600,,-2.48,-2.73,630,982
+luminosity,0.1200,0.150,0.187186,0.152382,1.228393,,-2.38,-2.58,631,983
+luminosity,0.1200,0.170,0.200489,0.172650,1.161247,,-2.30,-2.46,632,984
+luminosity,0.1200,0.200,0.220339,0.197077,1.118034,,-2.19,-2.32,633,985
+luminosity,0.1200,0.300,0.316070,0.295988,1.067844,,-1.91,-1.96,634,986
+luminosity,0.1200,0.400,0.391770,0.385709,1.015715,,-1.68,-1.71,635,987
+luminosity,0.1200,0.500,0.481778,0.470000,1.025059,,-1.42,-1.44,636,988
+luminosity,0.1200,0.600,0.573286,0.573286,1.000000,,-1.15,-1.15,637,989
+luminosity,0.1200,0.700,0.675824,0.689577,0.980056,,-0.88,-0.84,638,990
+luminosity,0.1200,0.800,0.785240,0.804359,0.976231,,-0.61,-0.55,639,991
+luminosity,0.1200,0.900,0.864555,0.899923,0.960699,,-0.37,-0.27,640,992
+luminosity,0.1200,1.000,0.940500,1.006839,0.934112,,-0.16,0.01,641,993
+luminosity,0.1200,1.100,1.023117,1.148312,0.890974,,0.05,0.27,642,994
+luminosity,0.1200,1.200,1.130134,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.24,,643,
+luminosity,0.1200,1.300,1.237087,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.41,,644,
+luminosity,0.1200,1.400,1.339831,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.56,,645,
+luminosity,0.2000,0.040,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.78,,654,
+luminosity,0.2000,0.050,0.079799,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.48,,655,
+luminosity,0.2000,0.060,0.085000,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.28,,656,
+luminosity,0.2000,0.070,0.091655,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.14,-4.30,657,975
+luminosity,0.2000,0.072,0.092662,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.11,-4.12,658,976
+luminosity,0.2000,0.075,0.094443,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.08,-3.89,659,977
+luminosity,0.2000,0.080,0.098907,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.02,-3.58,660,978
+luminosity,0.2000,0.090,0.109284,0.087240,1.252673,,-2.91,-3.25,661,979
+luminosity,0.2000,0.100,0.118246,0.095908,1.232914,,-2.83,-3.06,662,980
+luminosity,0.2000,0.110,0.128122,0.108212,1.183994,,-2.75,-2.92,663,981
+luminosity,0.2000,0.130,0.146290,0.130763,1.118742,,-2.62,-2.73,664,982
+luminosity,0.2000,0.150,0.163728,0.152382,1.074456,,-2.51,-2.58,665,983
+luminosity,0.2000,0.170,0.182058,0.172650,1.054491,,-2.41,-2.46,666,984
+luminosity,0.2000,0.200,0.203960,0.197077,1.034926,,-2.28,-2.32,667,985
+luminosity,0.2000,0.300,0.288318,0.295988,0.974085,,-1.98,-1.96,668,986
+luminosity,0.2000,0.400,0.381720,0.385709,0.989659,,-1.73,-1.71,669,987
+luminosity,0.2000,0.500,0.463841,0.470000,0.986895,,-1.46,-1.44,670,988
+luminosity,0.2000,0.600,0.567205,0.573286,0.989394,,-1.17,-1.15,671,989
+luminosity,0.2000,0.700,0.675824,0.689577,0.980056,,-0.88,-0.84,672,990
+luminosity,0.2000,0.800,0.785240,0.804359,0.976231,,-0.61,-0.55,673,991
+luminosity,0.2000,0.900,0.864555,0.899923,0.960699,,-0.37,-0.27,674,992
+luminosity,0.2000,1.000,0.944279,1.006839,0.937864,,-0.15,0.01,675,993
+luminosity,0.2000,1.100,1.027227,1.148312,0.894553,,0.06,0.27,676,994
+luminosity,0.2000,1.200,1.130134,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.24,,677,
+luminosity,0.2000,1.300,1.243684,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.42,,678,
+luminosity,0.2000,1.400,1.346977,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.57,,679,
+luminosity,0.3000,0.040,,,,no read at this age: log L below S1 M9.5V (-3.57),-4.09,,688,
+luminosity,0.3000,0.050,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.72,,689,
+luminosity,0.3000,0.060,0.079799,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,-3.48,,690,
+luminosity,0.3000,0.070,0.084190,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.31,-4.30,691,975
+luminosity,0.3000,0.072,0.085000,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.28,-4.12,692,976
+luminosity,0.3000,0.075,0.088000,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.24,-3.89,693,977
+luminosity,0.3000,0.080,0.090658,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.17,-3.58,694,978
+luminosity,0.3000,0.090,0.097396,0.087240,1.116413,,-3.04,-3.25,695,979
+luminosity,0.3000,0.100,0.106100,0.095908,1.106271,,-2.94,-3.06,696,980
+luminosity,0.3000,0.110,0.115939,0.108212,1.071407,,-2.85,-2.92,697,981
+luminosity,0.3000,0.130,0.136209,0.130763,1.041646,,-2.69,-2.73,698,982
+luminosity,0.3000,0.150,0.155523,0.152382,1.020610,,-2.56,-2.58,699,983
+luminosity,0.3000,0.170,0.174492,0.172650,1.010668,,-2.45,-2.46,700,984
+luminosity,0.3000,0.200,0.197077,0.197077,1.000000,,-2.32,-2.32,701,985
+luminosity,0.3000,0.300,0.284558,0.295988,0.961380,,-1.99,-1.96,702,986
+luminosity,0.3000,0.400,0.381720,0.385709,0.989659,,-1.73,-1.71,703,987
+luminosity,0.3000,0.500,0.463841,0.470000,0.986895,,-1.46,-1.44,704,988
+luminosity,0.3000,0.600,0.567205,0.573286,0.989394,,-1.17,-1.15,705,989
+luminosity,0.3000,0.700,0.675824,0.689577,0.980056,,-0.88,-0.84,706,990
+luminosity,0.3000,0.800,0.785240,0.804359,0.976231,,-0.61,-0.55,707,991
+luminosity,0.3000,0.900,0.864555,0.899923,0.960699,,-0.37,-0.27,708,992
+luminosity,0.3000,1.000,0.948072,1.006839,0.941632,,-0.14,0.01,709,993
+luminosity,0.3000,1.100,1.027227,1.148312,0.894553,,0.06,0.27,710,994
+luminosity,0.3000,1.200,1.136161,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.25,,711,
+luminosity,0.3000,1.300,1.243684,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.42,,712,
+luminosity,0.3000,1.400,1.354160,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.58,,713,
+luminosity,0.4000,0.050,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.96,,722,
+luminosity,0.4000,0.060,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.62,,723,
+luminosity,0.4000,0.070,0.081028,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.43,-4.30,724,975
+luminosity,0.4000,0.072,0.081807,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.40,-4.12,725,976
+luminosity,0.4000,0.075,0.083123,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.35,-3.89,726,977
+luminosity,0.4000,0.080,0.085740,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.27,-3.58,727,978
+luminosity,0.4000,0.090,0.091989,0.087240,1.054434,,-3.13,-3.25,728,979
+luminosity,0.4000,0.100,0.100442,0.095908,1.047270,,-3.00,-3.06,729,980
+luminosity,0.4000,0.110,0.111458,0.108212,1.030001,,-2.89,-2.92,730,981
+luminosity,0.4000,0.130,0.132104,0.130763,1.010253,,-2.72,-2.73,731,982
+luminosity,0.4000,0.150,0.152382,0.152382,1.000000,,-2.58,-2.58,732,983
+luminosity,0.4000,0.170,0.172650,0.172650,1.000000,,-2.46,-2.46,733,984
+luminosity,0.4000,0.200,0.197077,0.197077,1.000000,,-2.32,-2.32,734,985
+luminosity,0.4000,0.300,0.284558,0.295988,0.961380,,-1.99,-1.96,735,986
+luminosity,0.4000,0.400,0.381720,0.385709,0.989659,,-1.73,-1.71,736,987
+luminosity,0.4000,0.500,0.463841,0.470000,0.986895,,-1.46,-1.44,737,988
+luminosity,0.4000,0.600,0.567205,0.573286,0.989394,,-1.17,-1.15,738,989
+luminosity,0.4000,0.700,0.679236,0.689577,0.985005,,-0.87,-0.84,739,990
+luminosity,0.4000,0.800,0.785240,0.804359,0.976231,,-0.61,-0.55,740,991
+luminosity,0.4000,0.900,0.868028,0.899923,0.964559,,-0.36,-0.27,741,992
+luminosity,0.4000,1.000,0.948072,1.006839,0.941632,,-0.14,0.01,742,993
+luminosity,0.4000,1.100,1.027227,1.148312,0.894553,,0.06,0.27,743,994
+luminosity,0.4000,1.200,1.136161,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.25,,744,
+luminosity,0.4000,1.300,1.250317,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.43,,745,
+luminosity,0.4000,1.400,1.354160,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.58,,746,
+luminosity,0.5000,0.050,,,,no read at this age: log L below S1 M9.5V (-3.57),-4.12,,755,
+luminosity,0.5000,0.060,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.76,,756,
+luminosity,0.5000,0.070,0.078799,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.53,-4.30,757,975
+luminosity,0.5000,0.072,0.079598,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.49,-4.12,758,976
+luminosity,0.5000,0.075,0.080769,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.44,-3.89,759,977
+luminosity,0.5000,0.080,0.083388,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.34,-3.58,760,978
+luminosity,0.5000,0.090,0.090328,0.087240,1.035400,,-3.18,-3.25,761,979
+luminosity,0.5000,0.100,0.098149,0.095908,1.023362,,-3.03,-3.06,762,980
+luminosity,0.5000,0.110,0.109284,0.108212,1.009902,,-2.91,-2.92,763,981
+luminosity,0.5000,0.130,0.132104,0.130763,1.010253,,-2.72,-2.73,764,982
+luminosity,0.5000,0.150,0.152382,0.152382,1.000000,,-2.58,-2.58,765,983
+luminosity,0.5000,0.170,0.172650,0.172650,1.000000,,-2.46,-2.46,766,984
+luminosity,0.5000,0.200,0.197077,0.197077,1.000000,,-2.32,-2.32,767,985
+luminosity,0.5000,0.300,0.284558,0.295988,0.961380,,-1.99,-1.96,768,986
+luminosity,0.5000,0.400,0.381720,0.385709,0.989659,,-1.73,-1.71,769,987
+luminosity,0.5000,0.500,0.463841,0.470000,0.986895,,-1.46,-1.44,770,988
+luminosity,0.5000,0.600,0.567205,0.573286,0.989394,,-1.17,-1.15,771,989
+luminosity,0.5000,0.700,0.679236,0.689577,0.985005,,-0.87,-0.84,772,990
+luminosity,0.5000,0.800,0.788395,0.804359,0.980153,,-0.60,-0.55,773,991
+luminosity,0.5000,0.900,0.868028,0.899923,0.964559,,-0.36,-0.27,774,992
+luminosity,0.5000,1.000,0.948072,1.006839,0.941632,,-0.14,0.01,775,993
+luminosity,0.5000,1.100,1.031354,1.148312,0.898147,,0.07,0.27,776,994
+luminosity,0.5000,1.200,1.142221,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.26,,777,
+luminosity,0.5000,1.300,1.250317,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.43,,778,
+luminosity,0.5000,1.400,1.361382,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.59,,779,
+luminosity,0.6250,0.050,,,,no read at this age: log L below S1 M9.5V (-3.57),-4.29,,788,
+luminosity,0.6250,0.060,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.94,,789,
+luminosity,0.6250,0.070,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.63,-4.30,790,975
+luminosity,0.6250,0.072,,,,no read at this age: log L below S1 M9.5V (-3.57),-3.58,-4.12,791,976
+luminosity,0.6250,0.075,0.079000,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.52,-3.89,792,977
+luminosity,0.6250,0.080,0.081546,,,5 Gyr read outside the relations: log L below S1 M9.5V (-3.57),-3.41,-3.58,793,978
+luminosity,0.6250,0.090,0.089195,0.087240,1.022402,,-3.21,-3.25,794,979
+luminosity,0.6250,0.100,0.096649,0.095908,1.007727,,-3.05,-3.06,795,980
+luminosity,0.6250,0.110,0.108212,0.108212,1.000000,,-2.92,-2.92,796,981
+luminosity,0.6250,0.130,0.130763,0.130763,1.000000,,-2.73,-2.73,797,982
+luminosity,0.6250,0.150,0.152382,0.152382,1.000000,,-2.58,-2.58,798,983
+luminosity,0.6250,0.170,0.172650,0.172650,1.000000,,-2.46,-2.46,799,984
+luminosity,0.6250,0.200,0.197077,0.197077,1.000000,,-2.32,-2.32,800,985
+luminosity,0.6250,0.300,0.284558,0.295988,0.961380,,-1.99,-1.96,801,986
+luminosity,0.6250,0.400,0.383709,0.385709,0.994816,,-1.72,-1.71,802,987
+luminosity,0.6250,0.500,0.463841,0.470000,0.986895,,-1.46,-1.44,803,988
+luminosity,0.6250,0.600,0.567205,0.573286,0.989394,,-1.17,-1.15,804,989
+luminosity,0.6250,0.700,0.679236,0.689577,0.985005,,-0.87,-0.84,805,990
+luminosity,0.6250,0.800,0.788395,0.804359,0.980153,,-0.60,-0.55,806,991
+luminosity,0.6250,0.900,0.868028,0.899923,0.964559,,-0.36,-0.27,807,992
+luminosity,0.6250,1.000,0.948072,1.006839,0.941632,,-0.14,0.01,808,993
+luminosity,0.6250,1.100,1.031354,1.148312,0.898147,,0.07,0.27,809,994
+luminosity,0.6250,1.200,1.142221,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.26,,810,
+luminosity,0.6250,1.300,1.256985,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.44,,811,
+luminosity,0.6250,1.400,1.361382,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,0.59,,812,
+type,0.0100,0.010,,,,no read at this age: Teff outside S1's span,1570.,,289,
+type,0.0100,0.015,,,,no read at this age: Teff outside S1's span,2261.,,290,
+type,0.0100,0.020,0.083266,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2519.,,291,
+type,0.0100,0.030,0.090098,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2682.,,292,
+type,0.0100,0.040,0.096501,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2768.,,293,
+type,0.0100,0.050,0.107389,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2843.,,294,
+type,0.0100,0.060,0.117376,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2900.,,295,
+type,0.0100,0.070,0.127241,,,5 Gyr read outside the relations: Teff outside S1's span,2946.,1627.,296,975
+type,0.0100,0.072,0.129416,,,5 Gyr read outside the relations: Teff outside S1's span,2954.,1790.,297,976
+type,0.0100,0.075,0.133029,,,5 Gyr read outside the relations: Teff outside S1's span,2967.,2038.,298,977
+type,0.0100,0.080,0.138787,,,5 Gyr read outside the relations: Teff outside S1's span,2987.,2343.,299,978
+type,0.0100,0.090,0.149153,0.088555,1.684289,,3021.,2644.,300,979
+type,0.0100,0.100,0.158604,0.102159,1.552518,,3050.,2811.,301,980
+type,0.0100,0.110,0.168308,0.120343,1.398577,,3075.,2916.,302,981
+type,0.0100,0.130,0.187314,0.157266,1.191068,,3118.,3046.,303,982
+type,0.0100,0.150,0.205260,0.192827,1.064473,,3159.,3131.,304,983
+type,0.0100,0.170,0.223424,0.220945,1.011220,,3197.,3192.,305,984
+type,0.0100,0.200,0.249199,0.264289,0.942903,,3240.,3262.,306,985
+type,0.0100,0.300,0.324266,0.359939,0.900891,,3363.,3416.,307,986
+type,0.0100,0.400,0.416425,0.422198,0.986327,,3508.,3521.,308,987
+type,0.0100,0.500,0.493087,0.507756,0.971111,,3651.,3682.,309,988
+type,0.0100,0.600,0.544029,0.616933,0.881830,,3781.,3984.,310,989
+type,0.0100,0.700,0.584431,0.699281,0.835760,,3908.,4430.,311,990
+type,0.0100,0.800,0.629194,0.789594,0.796858,,4041.,4896.,312,991
+type,0.0100,0.900,0.662284,0.889944,0.744187,,4191.,5325.,313,992
+type,0.0100,1.000,0.694482,0.992391,0.699807,,4363.,5732.,314,993
+type,0.0100,1.100,0.721057,1.073626,0.671609,,4553.,5971.,315,994
+type,0.0100,1.200,0.766194,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,4768.,,316,
+type,0.0100,1.300,0.810637,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,5038.,,317,
+type,0.0100,1.400,0.896880,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,5363.,,318,
+type,0.0250,0.015,,,,no read at this age: Teff outside S1's span,2181.,,401,
+type,0.0250,0.020,,,,no read at this age: Teff outside S1's span,2306.,,402,
+type,0.0250,0.030,0.082629,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2500.,,403,
+type,0.0250,0.040,0.088994,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2655.,,404,
+type,0.0250,0.050,0.099606,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2792.,,405,
+type,0.0250,0.060,0.112710,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2874.,,406,
+type,0.0250,0.070,0.124310,,,5 Gyr read outside the relations: Teff outside S1's span,2935.,1627.,407,975
+type,0.0250,0.072,0.127241,,,5 Gyr read outside the relations: Teff outside S1's span,2946.,1790.,408,976
+type,0.0250,0.075,0.131349,,,5 Gyr read outside the relations: Teff outside S1's span,2961.,2038.,409,977
+type,0.0250,0.080,0.138200,,,5 Gyr read outside the relations: Teff outside S1's span,2985.,2343.,410,978
+type,0.0250,0.090,0.150741,0.088555,1.702225,,3026.,2644.,411,979
+type,0.0250,0.100,0.162413,0.102159,1.589803,,3061.,2811.,412,980
+type,0.0250,0.110,0.176653,0.120343,1.467917,,3094.,2916.,413,981
+type,0.0250,0.130,0.200283,0.157266,1.273531,,3148.,3046.,414,982
+type,0.0250,0.150,0.221933,0.192827,1.150942,,3194.,3131.,415,983
+type,0.0250,0.170,0.241334,0.220945,1.092282,,3228.,3192.,416,984
+type,0.0250,0.200,0.273209,0.264289,1.033752,,3276.,3262.,417,985
+type,0.0250,0.300,0.355711,0.359939,0.988254,,3410.,3416.,418,986
+type,0.0250,0.400,0.415984,0.422198,0.985283,,3507.,3521.,419,987
+type,0.0250,0.500,0.461806,0.507756,0.909504,,3604.,3682.,420,988
+type,0.0250,0.600,0.525465,0.616933,0.851738,,3731.,3984.,421,989
+type,0.0250,0.700,0.586450,0.699281,0.838647,,3916.,4430.,422,990
+type,0.0250,0.800,0.661040,0.789594,0.837190,,4186.,4896.,423,991
+type,0.0250,0.900,0.730210,0.889944,0.820513,,4601.,5325.,424,992
+type,0.0250,1.000,0.846646,0.992391,0.853138,,5147.,5732.,425,993
+type,0.0250,1.100,1.008576,1.073626,0.939411,,5796.,5971.,426,994
+type,0.0250,1.200,1.149741,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6102.,,427,
+type,0.0250,1.300,1.207269,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6271.,,428,
+type,0.0250,1.400,1.359778,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6622.,,429,
+type,0.0500,0.015,,,,no read at this age: Teff outside S1's span,1760.,,512,
+type,0.0500,0.020,,,,no read at this age: Teff outside S1's span,1838.,,513,
+type,0.0500,0.030,,,,no read at this age: Teff outside S1's span,2304.,,514,
+type,0.0500,0.040,0.083468,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2525.,,515,
+type,0.0500,0.050,0.089637,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2671.,,516,
+type,0.0500,0.060,0.101196,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2804.,,517,
+type,0.0500,0.070,0.114126,,,5 Gyr read outside the relations: Teff outside S1's span,2882.,1627.,518,975
+type,0.0500,0.072,0.116646,,,5 Gyr read outside the relations: Teff outside S1's span,2896.,1790.,519,976
+type,0.0500,0.075,0.120343,,,5 Gyr read outside the relations: Teff outside S1's span,2916.,2038.,520,977
+type,0.0500,0.080,0.126972,,,5 Gyr read outside the relations: Teff outside S1's span,2945.,2343.,521,978
+type,0.0500,0.090,0.141459,0.088555,1.597404,,2996.,2644.,522,979
+type,0.0500,0.100,0.154296,0.102159,1.510343,,3037.,2811.,523,980
+type,0.0500,0.110,0.167453,0.120343,1.391471,,3073.,2916.,524,981
+type,0.0500,0.130,0.193690,0.157266,1.231610,,3133.,3046.,525,982
+type,0.0500,0.150,0.216069,0.192827,1.120532,,3182.,3131.,526,983
+type,0.0500,0.170,0.239407,0.220945,1.083560,,3225.,3192.,527,984
+type,0.0500,0.200,0.275370,0.264289,1.041927,,3280.,3262.,528,985
+type,0.0500,0.300,0.353615,0.359939,0.982433,,3407.,3416.,529,986
+type,0.0500,0.400,0.418193,0.422198,0.990514,,3512.,3521.,530,987
+type,0.0500,0.500,0.468453,0.507756,0.922594,,3617.,3682.,531,988
+type,0.0500,0.600,0.558937,0.616933,0.905994,,3821.,3984.,532,989
+type,0.0500,0.700,0.682258,0.699281,0.975657,,4270.,4430.,533,990
+type,0.0500,0.800,0.795760,0.789594,1.007810,,4938.,4896.,534,991
+type,0.0500,0.900,0.873148,0.889944,0.981127,,5236.,5325.,535,992
+type,0.0500,1.000,0.947992,0.992391,0.955260,,5536.,5732.,536,993
+type,0.0500,1.100,1.020907,1.073626,0.950896,,5833.,5971.,537,994
+type,0.0500,1.200,1.161673,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6133.,,538,
+type,0.0500,1.300,1.283395,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6435.,,539,
+type,0.0500,1.400,1.442556,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6759.,,540,
+type,0.0800,0.030,,,,no read at this age: Teff outside S1's span,2047.,,549,
+type,0.0800,0.040,0.079174,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2387.,,550,
+type,0.0800,0.050,0.085790,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2586.,,551,
+type,0.0800,0.060,0.091438,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2709.,,552,
+type,0.0800,0.070,0.105069,,,5 Gyr read outside the relations: Teff outside S1's span,2829.,1627.,553,975
+type,0.0800,0.072,0.107724,,,5 Gyr read outside the relations: Teff outside S1's span,2845.,1790.,554,976
+type,0.0800,0.075,0.111834,,,5 Gyr read outside the relations: Teff outside S1's span,2869.,2038.,555,977
+type,0.0800,0.080,0.118295,,,5 Gyr read outside the relations: Teff outside S1's span,2905.,2343.,556,978
+type,0.0800,0.090,0.131628,0.088555,1.486388,,2962.,2644.,557,979
+type,0.0800,0.100,0.145717,0.102159,1.426374,,3010.,2811.,558,980
+type,0.0800,0.110,0.159277,0.120343,1.323533,,3052.,2916.,559,981
+type,0.0800,0.130,0.188152,0.157266,1.196396,,3120.,3046.,560,982
+type,0.0800,0.150,0.211773,0.192827,1.098253,,3173.,3131.,561,983
+type,0.0800,0.170,0.234343,0.220945,1.060640,,3217.,3192.,562,984
+type,0.0800,0.200,0.272672,0.264289,1.031718,,3275.,3262.,563,985
+type,0.0800,0.300,0.352920,0.359939,0.980500,,3406.,3416.,564,986
+type,0.0800,0.400,0.422645,0.422198,1.001060,,3522.,3521.,565,987
+type,0.0800,0.500,0.502806,0.507756,0.990253,,3668.,3682.,566,988
+type,0.0800,0.600,0.628831,0.616933,1.019286,,4039.,3984.,567,989
+type,0.0800,0.700,0.710543,0.699281,1.016106,,4497.,4430.,568,990
+type,0.0800,0.800,0.780000,0.789594,0.987850,,4830.,4896.,569,991
+type,0.0800,0.900,0.868344,0.889944,0.975729,,5212.,5325.,570,992
+type,0.0800,1.000,0.947562,0.992391,0.954827,,5533.,5732.,571,993
+type,0.0800,1.100,1.036781,1.073626,0.965682,,5876.,5971.,572,994
+type,0.0800,1.200,1.173729,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6164.,,573,
+type,0.0800,1.300,1.289780,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6451.,,574,
+type,0.0800,1.400,1.444547,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6766.,,575,
+type,0.1000,0.030,,,,no read at this age: Teff outside S1's span,1912.,,584,
+type,0.1000,0.040,,,,no read at this age: Teff outside S1's span,2311.,,585,
+type,0.1000,0.050,0.083468,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2525.,,586,
+type,0.1000,0.060,0.089596,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2670.,,587,
+type,0.1000,0.070,0.099869,,,5 Gyr read outside the relations: Teff outside S1's span,2794.,1627.,588,975
+type,0.1000,0.072,0.102479,,,5 Gyr read outside the relations: Teff outside S1's span,2813.,1790.,589,976
+type,0.1000,0.075,0.106721,,,5 Gyr read outside the relations: Teff outside S1's span,2839.,2038.,590,977
+type,0.1000,0.080,0.113593,,,5 Gyr read outside the relations: Teff outside S1's span,2879.,2343.,591,978
+type,0.1000,0.090,0.126167,0.088555,1.424724,,2942.,2644.,592,979
+type,0.1000,0.100,0.140563,0.102159,1.375917,,2993.,2811.,593,980
+type,0.1000,0.110,0.154623,0.120343,1.284854,,3038.,2916.,594,981
+type,0.1000,0.130,0.184823,0.157266,1.175228,,3112.,3046.,595,982
+type,0.1000,0.150,0.208957,0.192827,1.083646,,3167.,3131.,596,983
+type,0.1000,0.170,0.232472,0.220945,1.052171,,3214.,3192.,597,984
+type,0.1000,0.200,0.271065,0.264289,1.025641,,3272.,3262.,598,985
+type,0.1000,0.300,0.355011,0.359939,0.986310,,3409.,3416.,599,986
+type,0.1000,0.400,0.425790,0.422198,1.008508,,3529.,3521.,600,987
+type,0.1000,0.500,0.515992,0.507756,1.016222,,3705.,3682.,601,988
+type,0.1000,0.600,0.640000,0.616933,1.037390,,4100.,3984.,602,989
+type,0.1000,0.700,0.697271,0.699281,0.997126,,4402.,4430.,603,990
+type,0.1000,0.800,0.779102,0.789594,0.986712,,4826.,4896.,604,991
+type,0.1000,0.900,0.867745,0.889944,0.975056,,5209.,5325.,605,992
+type,0.1000,1.000,0.948708,0.992391,0.955983,,5541.,5732.,606,993
+type,0.1000,1.100,1.041042,1.073626,0.969651,,5886.,5971.,607,994
+type,0.1000,1.200,1.176077,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6170.,,608,
+type,0.1000,1.300,1.290580,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6453.,,609,
+type,0.1000,1.400,1.444547,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6766.,,610,
+type,0.1200,0.030,,,,no read at this age: Teff outside S1's span,1779.,,619,
+type,0.1200,0.040,,,,no read at this age: Teff outside S1's span,2225.,,620,
+type,0.1200,0.050,0.081666,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2471.,,621,
+type,0.1200,0.060,0.088198,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2635.,,622,
+type,0.1200,0.070,0.095110,,,5 Gyr read outside the relations: Teff outside S1's span,2757.,1627.,623,975
+type,0.1200,0.072,0.098041,,,5 Gyr read outside the relations: Teff outside S1's span,2780.,1790.,624,976
+type,0.1200,0.075,0.102000,,,5 Gyr read outside the relations: Teff outside S1's span,2810.,2038.,625,977
+type,0.1200,0.080,0.109077,,,5 Gyr read outside the relations: Teff outside S1's span,2853.,2343.,626,978
+type,0.1200,0.090,0.121854,0.088555,1.376019,,2924.,2644.,627,979
+type,0.1200,0.100,0.136166,0.102159,1.332880,,2978.,2811.,628,980
+type,0.1200,0.110,0.150741,0.120343,1.252601,,3026.,2916.,629,981
+type,0.1200,0.130,0.181672,0.157266,1.155190,,3105.,3046.,630,982
+type,0.1200,0.150,0.206638,0.192827,1.071623,,3162.,3131.,631,983
+type,0.1200,0.170,0.230000,0.220945,1.040983,,3210.,3192.,632,984
+type,0.1200,0.200,0.270000,0.264289,1.021609,,3270.,3262.,633,985
+type,0.1200,0.300,0.356412,0.359939,0.990202,,3411.,3416.,634,986
+type,0.1200,0.400,0.428958,0.422198,1.016012,,3536.,3521.,635,987
+type,0.1200,0.500,0.523996,0.507756,1.031985,,3727.,3682.,636,988
+type,0.1200,0.600,0.627199,0.616933,1.016642,,4030.,3984.,637,989
+type,0.1200,0.700,0.697128,0.699281,0.996921,,4400.,4430.,638,990
+type,0.1200,0.800,0.778877,0.789594,0.986428,,4825.,4896.,639,991
+type,0.1200,0.900,0.867546,0.889944,0.974832,,5208.,5325.,640,992
+type,0.1200,1.000,0.949569,0.992391,0.956850,,5547.,5732.,641,993
+type,0.1200,1.100,1.042324,1.073626,0.970845,,5889.,5971.,642,994
+type,0.1200,1.200,1.176860,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6172.,,643,
+type,0.1200,1.300,1.291381,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6455.,,644,
+type,0.1200,1.400,1.444832,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6767.,,645,
+type,0.2000,0.040,,,,no read at this age: Teff outside S1's span,1940.,,654,
+type,0.2000,0.050,,,,no read at this age: Teff outside S1's span,2268.,,655,
+type,0.2000,0.060,0.082229,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,2488.,,656,
+type,0.2000,0.070,0.088357,,,5 Gyr read outside the relations: Teff outside S1's span,2639.,1627.,657,975
+type,0.2000,0.072,0.089355,,,5 Gyr read outside the relations: Teff outside S1's span,2664.,1790.,658,976
+type,0.2000,0.075,0.090890,,,5 Gyr read outside the relations: Teff outside S1's span,2698.,2038.,659,977
+type,0.2000,0.080,0.094984,,,5 Gyr read outside the relations: Teff outside S1's span,2756.,2343.,660,978
+type,0.2000,0.090,0.109077,0.088555,1.231740,,2853.,2644.,661,979
+type,0.2000,0.100,0.122235,0.102159,1.196512,,2926.,2811.,662,980
+type,0.2000,0.110,0.137325,0.120343,1.141115,,2982.,2916.,663,981
+type,0.2000,0.130,0.168738,0.157266,1.072946,,3076.,3046.,664,982
+type,0.2000,0.150,0.198503,0.192827,1.029434,,3144.,3131.,665,983
+type,0.2000,0.170,0.223923,0.220945,1.013479,,3198.,3192.,666,984
+type,0.2000,0.200,0.265705,0.264289,1.005359,,3264.,3262.,667,985
+type,0.2000,0.300,0.358524,0.359939,0.996069,,3414.,3416.,668,986
+type,0.2000,0.400,0.429412,0.422198,1.017088,,3537.,3521.,669,987
+type,0.2000,0.500,0.514550,0.507756,1.013382,,3701.,3682.,670,988
+type,0.2000,0.600,0.615405,0.616933,0.997523,,3981.,3984.,671,989
+type,0.2000,0.700,0.696412,0.699281,0.995897,,4390.,4430.,672,990
+type,0.2000,0.800,0.778653,0.789594,0.986144,,4824.,4896.,673,991
+type,0.2000,0.900,0.867346,0.889944,0.974608,,5207.,5325.,674,992
+type,0.2000,1.000,0.956753,0.992391,0.964089,,5567.,5732.,675,993
+type,0.2000,1.100,1.044892,1.073626,0.973237,,5895.,5971.,676,994
+type,0.2000,1.200,1.178822,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6177.,,677,
+type,0.2000,1.300,1.291782,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6456.,,678,
+type,0.2000,1.400,1.444547,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6766.,,679,
+type,0.3000,0.040,,,,no read at this age: Teff outside S1's span,1667.,,688,
+type,0.3000,0.050,,,,no read at this age: Teff outside S1's span,2063.,,689,
+type,0.3000,0.060,,,,no read at this age: Teff outside S1's span,2331.,,690,
+type,0.3000,0.070,0.083266,,,5 Gyr read outside the relations: Teff outside S1's span,2519.,1627.,691,975
+type,0.3000,0.072,0.084384,,,5 Gyr read outside the relations: Teff outside S1's span,2552.,1790.,692,976
+type,0.3000,0.075,0.086188,,,5 Gyr read outside the relations: Teff outside S1's span,2594.,2038.,693,977
+type,0.3000,0.080,0.089195,,,5 Gyr read outside the relations: Teff outside S1's span,2660.,2343.,694,978
+type,0.3000,0.090,0.098300,0.088555,1.110038,,2782.,2644.,695,979
+type,0.3000,0.100,0.112710,0.102159,1.103278,,2874.,2811.,696,980
+type,0.3000,0.110,0.127241,0.120343,1.057321,,2946.,2916.,697,981
+type,0.3000,0.130,0.160293,0.157266,1.019250,,3055.,3046.,698,982
+type,0.3000,0.150,0.194123,0.192827,1.006717,,3134.,3131.,699,983
+type,0.3000,0.170,0.220945,0.220945,1.000000,,3192.,3192.,700,984
+type,0.3000,0.200,0.263584,0.264289,0.997331,,3261.,3262.,701,985
+type,0.3000,0.300,0.359230,0.359939,0.998033,,3415.,3416.,702,986
+type,0.3000,0.400,0.425339,0.422198,1.007441,,3528.,3521.,703,987
+type,0.3000,0.500,0.510248,0.507756,1.004910,,3689.,3682.,704,988
+type,0.3000,0.600,0.610339,0.616933,0.989312,,3971.,3984.,705,989
+type,0.3000,0.700,0.696269,0.699281,0.995693,,4388.,4430.,706,990
+type,0.3000,0.800,0.778205,0.789594,0.985576,,4822.,4896.,707,991
+type,0.3000,0.900,0.867745,0.889944,0.975056,,5209.,5325.,708,992
+type,0.3000,1.000,0.958749,0.992391,0.966100,,5572.,5732.,709,993
+type,0.3000,1.100,1.046179,1.073626,0.974435,,5898.,5971.,710,994
+type,0.3000,1.200,1.179607,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6179.,,711,
+type,0.3000,1.300,1.291782,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6456.,,712,
+type,0.3000,1.400,1.443125,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6761.,,713,
+type,0.4000,0.050,,,,no read at this age: Teff outside S1's span,1836.,,722,
+type,0.4000,0.060,,,,no read at this age: Teff outside S1's span,2207.,,723,
+type,0.4000,0.070,0.079975,,,5 Gyr read outside the relations: Teff outside S1's span,2419.,1627.,724,975
+type,0.4000,0.072,0.081205,,,5 Gyr read outside the relations: Teff outside S1's span,2457.,1790.,725,976
+type,0.4000,0.075,0.082897,,,5 Gyr read outside the relations: Teff outside S1's span,2508.,2038.,726,977
+type,0.4000,0.080,0.086188,,,5 Gyr read outside the relations: Teff outside S1's span,2594.,2343.,727,978
+type,0.4000,0.090,0.092291,0.088555,1.042185,,2726.,2644.,728,979
+type,0.4000,0.100,0.107556,0.102159,1.052831,,2844.,2811.,729,980
+type,0.4000,0.110,0.122808,0.120343,1.020488,,2929.,2916.,730,981
+type,0.4000,0.130,0.157933,0.157266,1.004246,,3048.,3046.,731,982
+type,0.4000,0.150,0.192827,0.192827,1.000000,,3131.,3131.,732,983
+type,0.4000,0.170,0.220452,0.220945,0.997771,,3191.,3192.,733,984
+type,0.4000,0.200,0.262880,0.264289,0.994670,,3260.,3262.,734,985
+type,0.4000,0.300,0.359230,0.359939,0.998033,,3415.,3416.,735,986
+type,0.4000,0.400,0.424439,0.422198,1.005309,,3526.,3521.,736,987
+type,0.4000,0.500,0.508823,0.507756,1.002101,,3685.,3682.,737,988
+type,0.4000,0.600,0.609330,0.616933,0.987677,,3969.,3984.,738,989
+type,0.4000,0.700,0.696197,0.699281,0.995590,,4387.,4430.,739,990
+type,0.4000,0.800,0.777981,0.789594,0.985292,,4821.,4896.,740,991
+type,0.4000,0.900,0.867945,0.889944,0.975281,,5210.,5325.,741,992
+type,0.4000,1.000,0.959548,0.992391,0.966905,,5574.,5732.,742,993
+type,0.4000,1.100,1.047467,1.073626,0.975635,,5901.,5971.,743,994
+type,0.4000,1.200,1.180296,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6181.,,744,
+type,0.4000,1.300,1.290580,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6453.,,745,
+type,0.4000,1.400,1.440000,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6750.,,746,
+type,0.5000,0.050,,,,no read at this age: Teff outside S1's span,1698.,,755,
+type,0.5000,0.060,,,,no read at this age: Teff outside S1's span,2082.,,756,
+type,0.5000,0.070,,,,no read at this age: Teff outside S1's span,2335.,1627.,757,975
+type,0.5000,0.072,0.078933,,,5 Gyr read outside the relations: Teff outside S1's span,2378.,1790.,758,976
+type,0.5000,0.075,0.080486,,,5 Gyr read outside the relations: Teff outside S1's span,2435.,2038.,759,977
+type,0.5000,0.080,0.083942,,,5 Gyr read outside the relations: Teff outside S1's span,2539.,2343.,760,978
+type,0.5000,0.090,0.090790,0.088555,1.025238,,2696.,2644.,761,979
+type,0.5000,0.100,0.104905,0.102159,1.026876,,2828.,2811.,762,980
+type,0.5000,0.110,0.121285,0.120343,1.007831,,2921.,2916.,763,981
+type,0.5000,0.130,0.157266,0.157266,1.000000,,3046.,3046.,764,982
+type,0.5000,0.150,0.192398,0.192827,0.997771,,3130.,3131.,765,983
+type,0.5000,0.170,0.220452,0.220945,0.997771,,3191.,3192.,766,984
+type,0.5000,0.200,0.262880,0.264289,0.994670,,3260.,3262.,767,985
+type,0.5000,0.300,0.359230,0.359939,0.998033,,3415.,3416.,768,986
+type,0.5000,0.400,0.423541,0.422198,1.003182,,3524.,3521.,769,987
+type,0.5000,0.500,0.507756,0.507756,1.000000,,3682.,3682.,770,988
+type,0.5000,0.600,0.608827,0.616933,0.986861,,3968.,3984.,771,989
+type,0.5000,0.700,0.696126,0.699281,0.995488,,4386.,4430.,772,990
+type,0.5000,0.800,0.777981,0.789594,0.985292,,4821.,4896.,773,991
+type,0.5000,0.900,0.868144,0.889944,0.975505,,5211.,5325.,774,992
+type,0.5000,1.000,0.960348,0.992391,0.967711,,5576.,5732.,775,993
+type,0.5000,1.100,1.048756,1.073626,0.976836,,5904.,5971.,776,994
+type,0.5000,1.200,1.180593,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6182.,,777,
+type,0.5000,1.300,1.289780,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6451.,,778,
+type,0.5000,1.400,1.433884,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6742.,,779,
+type,0.6250,0.050,,,,no read at this age: Teff outside S1's span,1555.,,788,
+type,0.6250,0.060,,,,no read at this age: Teff outside S1's span,1908.,,789,
+type,0.6250,0.070,,,,no read at this age: Teff outside S1's span,2248.,1627.,790,975
+type,0.6250,0.072,,,,no read at this age: Teff outside S1's span,2301.,1790.,791,976
+type,0.6250,0.075,0.078665,,,5 Gyr read outside the relations: Teff outside S1's span,2370.,2038.,792,977
+type,0.6250,0.080,0.082130,,,5 Gyr read outside the relations: Teff outside S1's span,2485.,2343.,793,978
+type,0.6250,0.090,0.089637,0.088555,1.012209,,2671.,2644.,794,979
+type,0.6250,0.100,0.103120,0.102159,1.009405,,2817.,2811.,795,980
+type,0.6250,0.110,0.120531,0.120343,1.001561,,2917.,2916.,796,981
+type,0.6250,0.130,0.156933,0.157266,0.997884,,3045.,3046.,797,982
+type,0.6250,0.150,0.192398,0.192827,0.997771,,3130.,3131.,798,983
+type,0.6250,0.170,0.220452,0.220945,0.997771,,3191.,3192.,799,984
+type,0.6250,0.200,0.262880,0.264289,0.994670,,3260.,3262.,800,985
+type,0.6250,0.300,0.359230,0.359939,0.998033,,3415.,3416.,801,986
+type,0.6250,0.400,0.422645,0.422198,1.001060,,3522.,3521.,802,987
+type,0.6250,0.500,0.507401,0.507756,0.999301,,3681.,3682.,803,988
+type,0.6250,0.600,0.609330,0.616933,0.987677,,3969.,3984.,804,989
+type,0.6250,0.700,0.696054,0.699281,0.995386,,4385.,4430.,805,990
+type,0.6250,0.800,0.777981,0.789594,0.985292,,4821.,4896.,806,991
+type,0.6250,0.900,0.868544,0.889944,0.975953,,5213.,5325.,807,992
+type,0.6250,1.000,0.961950,0.992391,0.969326,,5580.,5732.,808,993
+type,0.6250,1.100,1.050048,1.073626,0.978038,,5907.,5971.,809,994
+type,0.6250,1.200,1.180889,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6183.,,810,
+type,0.6250,1.300,1.287781,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6446.,,811,
+type,0.6250,1.400,1.422488,,,no BHAC15 5 Gyr row: the track ends before 5 Gyr,6727.,,812,

@@ -399,7 +399,7 @@ class RegionsP1Test(unittest.TestCase):
         self.assertLess(self.d["snowLine"], math.sqrt(L / 0.04))
         # A bcLum≈1 star puts it at the canonical ~2.68 AU.
         one = self.regions.compute_star_system_regions(
-            vmag=-0.15, boloLum=0.0, temp=5778, plx=1000.0)   # bcLum ≈ 1
+            vmag=-0.26, boloLum=0.0, temp=5778, plx=1000.0)   # bcLum = 1 (CR-30.3: M_bol 4.74)
         self.assertAlmostEqual(one["bcLuminosity"], 1.0, delta=0.02)
         self.assertAlmostEqual(one["snowLine"], 2.68, delta=0.03)
 

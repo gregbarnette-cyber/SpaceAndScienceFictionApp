@@ -131,7 +131,7 @@ class _ExpandedQueryTest(unittest.TestCase):
         code, payload, _ = self._run("main-sequence")
         self.assertEqual(code, 0)
         self.assertIsInstance(payload, list)
-        self.assertEqual(len(payload), 24)
+        self.assertEqual(len(payload), 87)            # CR-30.1: S1, O3V–M9.5V
 
     def test_solar_system(self):
         code, payload, _ = self._run("solar-system")

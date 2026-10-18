@@ -169,12 +169,7 @@ class Opt19SolRowTest(_TmpDbTest):
         self.assertEqual([s for s in stars if s.get("is_sol")], [])
 
     def test_hr_diagram_carries_sol_at_its_true_point(self):
-        # The HR prep needs a Teff for "G2V", which comes from `main_sequence_stars`
-        # — auto-seeding is off in this tmp DB, so seed the one row it looks up.
-        db._seed_main_sequence(
-            self.conn, pathlib.Path(__file__).resolve().parents[1]
-            / "propertiesOfMainSequenceStars.csv")
-        self.conn.commit()
+        # The HR prep's Teff for "G2V" comes from S1 (CR-30.2) — no DB table needed.
         hr = viz.prepare_hr_from_stars(self._run(15.0))
         sol = [p for p in hr["points"] if p["name"] == "Sol"]
         self.assertEqual(len(sol), 1)

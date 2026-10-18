@@ -5,6 +5,7 @@
 # (the Sol reference path + the loud bad-path error). The live dossier/compare-stars anchors
 # (Sirius A / Vega / α Cen A/B against SIMBAD) are gated in test_query_stellar_mass_live.py.
 
+from core import ms_sequence as _ms   # CR-30.4 / 30.5 relations (re-pins)
 import json
 import os
 import tempfile
@@ -48,16 +49,19 @@ class ResolveTest(unittest.TestCase):
             self.assertFalse(r["massL_inversion_caution"], mid)  # catalog source → no caution
 
     def test_inversion_source_caution_sirius_and_vega(self):
-        # Sirius A: peculiar + hot-MS → caution via both; no measured mass available
+        # CR-30.4: under Eker 2018 the A-star over-read is gone (Sirius / Vega no longer cautioned); the O–B upper
+        # tail keeps it. The peculiar flag is still reported.
         r = sm.resolve_mass(2.59, sp_type="A0mA1Va", main_id="X", catalog=None)
         self.assertEqual(r["mass_provenance"], "ms_luminosity_inversion")
-        self.assertTrue(r["massL_inversion_caution"])
+        self.assertFalse(r["massL_inversion_caution"])
         self.assertTrue(r["peculiar_star_flag"])
         self.assertEqual(r["mass_solar"], 2.59)   # never null — advisory, not a refusal
-        # Vega: caution via the hot-MS path, peculiar flag stays False
         r = sm.resolve_mass(3.17, sp_type="A0Va", main_id="X", catalog=None)
-        self.assertTrue(r["massL_inversion_caution"])
+        self.assertFalse(r["massL_inversion_caution"])
         self.assertFalse(r["peculiar_star_flag"])
+        r = sm.resolve_mass(5.0, sp_type="B3V", main_id="X", catalog=None)
+        self.assertTrue(r["massL_inversion_caution"])
+        self.assertIn("84th percentile 1.165", r["note"])
 
     def test_well_behaved_no_false_caution(self):
         for sp, m in (("G2V", 1.1), ("K1V", 0.9)):
@@ -84,12 +88,12 @@ class ResolveTest(unittest.TestCase):
 
     def test_downstream_outputs(self):
         o = sm.mass_dependent_outputs(1.0)
-        self.assertAlmostEqual(o["luminosity_from_mass"], 1.0)
-        self.assertAlmostEqual(o["main_seq_lifespan_yr"], 1e10)
+        self.assertAlmostEqual(o["luminosity_from_mass"], 10 ** -0.007)                 # CR-30.4: S12 at 1 M☉
+        self.assertAlmostEqual(o["main_seq_lifespan_yr"], _ms.ms_lifetime(1.0)["yr"])    # CR-30.5: MIST
         self.assertAlmostEqual(o["inner_limit_gravity_au"], 0.2)
         self.assertAlmostEqual(o["outer_limit_au"], 40.0)
         o2 = sm.mass_dependent_outputs(2.0)
-        self.assertAlmostEqual(o2["luminosity_from_mass"], 2.0 ** 3.5)
+        self.assertAlmostEqual(o2["luminosity_from_mass"], _ms.luminosity_from_mass(2.0)["lum"])
         self.assertAlmostEqual(o2["inner_limit_gravity_au"], 0.4)
         self.assertEqual(sm.mass_dependent_outputs(None)["luminosity_from_mass"], None)
 
@@ -155,7 +159,7 @@ class DossierWiringOfflineTest(unittest.TestCase):
         # downstream recomputes from the preferred mass
         st = r["data"]["regions"]["stellar"]
         self.assertAlmostEqual(st["stellar_mass"], 1.0)
-        self.assertAlmostEqual(st["luminosity_from_mass"], 1.0)
+        self.assertAlmostEqual(st["luminosity_from_mass"], 10 ** -0.007)      # CR-30.4: S12 at 1.0 M☉
 
     def test_dossier_bad_catalog_path_loud(self):
         from core.report import build_system_dossier
@@ -193,9 +197,9 @@ class DossierWiringOfflineTest(unittest.TestCase):
             self.assertEqual((mb["mass_provenance"], mb["mass_solar"]), ("catalog", 1.2))
             self.assertNotIn("stellar_radius_basis", mb)          # disclosure dropped under B
             self.assertAlmostEqual(st["stellar_mass"], 1.2)
-            self.assertAlmostEqual(st["stellar_radius"], 1.2 ** 0.57)   # radius ↔ preferred mass (coherent)
+            self.assertAlmostEqual(st["stellar_radius"], _ms.radius_from_mass(1.2)["radius"])   # radius ↔ preferred mass
             self.assertAlmostEqual(st["calculated_luminosity"],
-                                   (1.2 ** 0.57) ** 2 * (st["teff"] / 5778.0) ** 4)
+                                   _ms.radius_from_mass(1.2)["radius"] ** 2 * (st["teff"] / 5778.0) ** 4)
             self.assertNotAlmostEqual(st["stellar_radius"], base_st["stellar_radius"])  # actually moved
             # primary bcLuminosity-based HZ is untouched
             self.assertAlmostEqual(r["data"]["regions"]["system_regions"]["hz_inner_au"], base_hz_inner)
@@ -209,7 +213,7 @@ class DossierWiringOfflineTest(unittest.TestCase):
         reg = build_system_dossier("Sol", sections=["regions"], fmt="json")["data"]["regions"]
         self.assertNotIn("stellar_radius_basis", reg["mass"])           # disclosure never appears under B
         st = reg["stellar"]
-        self.assertAlmostEqual(st["stellar_radius"], st["stellar_mass"] ** 0.57)
+        self.assertAlmostEqual(st["stellar_radius"], _ms.radius_from_mass(st["stellar_mass"])["radius"])
 
 
 class CatalogRowParamTest(unittest.TestCase):
@@ -313,7 +317,7 @@ class Cr226NonFiniteMassTest(unittest.TestCase):
             m, prov, _ = sm.resolve_component_mass({"name": "HD 1", "luminosity_lsun": 0.5}, cat,
                                                    allow_flame=False)
             self.assertEqual(prov, "ms_luminosity_inversion")      # next tier, NOT catalog
-            self.assertAlmostEqual(m, 0.5 ** 0.2632)
+            self.assertAlmostEqual(m, _ms.mass_from_luminosity(0.5)["mass"])
             m, prov, _ = sm.resolve_component_mass({"name": "HD 4"}, cat, allow_flame=False)
             self.assertEqual((m, prov), (0.8, "catalog"))          # a finite row is unchanged
         finally:

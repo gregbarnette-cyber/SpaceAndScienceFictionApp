@@ -201,7 +201,7 @@ sections below; `docs/query-commands-index.md` lists all 182.
 | `oec-search` | all optional (`--min-stars/--max-stars`, `--status`, `--circumbinary`, `--discovery-method`, `--discovery-year-min/max`, `--mass-min/max`, `--radius-min/max`, `--period-min/max`, `--sma-min/max`, `--spectral-type`, `--limit`) | none (local cache)‡ | `count, capped, cap, filters, systems[]` |
 | `oec-census` | none | none (local cache)‡ | topology stats (`n_systems/stars/planets/binaries/satellites`, distributions, `planet_attachment`, `circumbinary/rogue/planetless`, histograms) |
 | `oec-status` | none | none (local cache)‡ | cache snapshot (`cached, cache_size_bytes, cache_mtime_utc, cache_age_days, stale`) + element counts |
-| `star-regions` | `--star` | SIMBAD + Hypatia | region values (see below) + `simbad` + `hypatia` |
+| `star-regions` | `--star` [`--age-lo-gyr --age-hi-gyr --age-basis`] | SIMBAD + Hypatia (+ VizieR II/246 2MASS for a K / M dwarf — CR-30) | region values (see below) + `simbad` + `hypatia` (+ CR-30 `placement`, type-read / luminosity-route / mass-route keys) |
 | `star-regions-manual` | `--vmag --bc --teff --parallax` [`--sunlight-intensity --bond-albedo`] | none | flat dict of region values (`hzil, hzol, snowLine, stellarMass, distAU, …`) + echoed inputs |
 | `distance` | `--star1 --star2` | SIMBAD† | `star1_info, star2_info, distance_ly, distance_au` (each `*_info` carries `sp_type`) |
 | `stars-within-sol` | `--ly` | none (local DB) | `limit_ly, count, stars[]` |
@@ -273,11 +273,11 @@ sections below; `docs/query-commands-index.md` lists all 182.
 | `population-capacity` | ≥1 budget of (`--crop-area-m2` \| `--power-w` \| `--water-kg-day` \| `--fixed-nitrogen-kg-yr` \| `--food-dry-kg-day`) [per-person `--per-person-*` overrides] | none (X1/X2 defaults) | `per_resource{…{budget,per_person,source,population}}, sustainable_population, binding_constraint, slack{…}` |
 | `solvent-zone` | `--luminosity` + (`--solvent NAME` \| `--t-low --t-high`) [`--albedo`] | none | `solvent, name, inner_au, outer_au, inner_lm, outer_lm, s_eff_inner, s_eff_outer, t_eq_inner, t_eq_outer, pressure_conditional, assumed_pressure_atm, citation, t_ref_k` |
 | `ice-lines` | `--luminosity` [`--albedo`] | none | `luminosity_solar, albedo, t_ref_k, lines[]` |
-| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion` `--star-mass-catalog <path>` `--mass-solar <M☉>` `--gaia-timeout <s>`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis`; **CR-11.2** adds `regions.mass{mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,inversion_mass_solar,note}` (a preferred measured mass recomputes radius/calc-L/limits — decision B); **CR-15.1** a secondary-named target (e.g. `alpha Cen B`) now resolves the **correct** per-component masses in the `multiplicity` section — the H1 `primary_override` was dropped, so component A resolves via the shared chain (matching `binary-stability-auto`: `alpha Cen B` → 1.079/0.909, not the buggy 0.909/0.909); **CR-16** resolves a **degenerate-secondary** letterless-primary target (`Sirius B` — a WD secondary) via the primary → **2.063/0.4577** (±catalog 1.018), matching the system-name dossier (see the CR-16 block below) |
+| `dossier` | `--star` [`--fmt markdown\|html\|json` `--sections …` `--force-ms-inversion` `--star-mass-catalog <path>` `--mass-solar <M☉>` `--gaia-timeout <s>` `--age-lo-gyr --age-hi-gyr --age-basis`] | SIMBAD + NASA + Hypatia + Gaia FLAME + binary-orbit (none for `Sol`/`Sun`) | `star, fmt, sections, warnings, notes` + `document` (md/html) \| `data` (json); CR-10.5 adds `regions.{luminosity_class,evolved_star_flag,region_basis,luminosity_consistency}` + `multiplicity.multiplicity_basis`; **CR-11.2** adds `regions.mass{mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,inversion_mass_solar,note}` (a preferred measured mass recomputes radius/calc-L/limits — decision B); **CR-15.1** a secondary-named target (e.g. `alpha Cen B`) now resolves the **correct** per-component masses in the `multiplicity` section — the H1 `primary_override` was dropped, so component A resolves via the shared chain (matching `binary-stability-auto`: `alpha Cen B` → 1.079/0.909, not the buggy 0.909/0.909); **CR-16** resolves a **degenerate-secondary** letterless-primary target (`Sirius B` — a WD secondary) via the primary → **2.063/0.4577** (±catalog 1.018), matching the system-name dossier (see the CR-16 block below); **CR-30** adds the parse + region-luminosity keys at `regions.*` (`lum_route`, `twomass`, …), `regions.stellar.{luminosity,radius}_from_mass_{relation,null_reason}`, and `regions.mass.{mass_route, mass_relation, mass_segment, mass_switch_band, m_ks, mass_mks_solar, mass_lroute_solar, mass_lroute_null_reason, mks_*, placement}` (the route keys null under a tier above inference) |
 | `generate-system` | `--seed` [`--anchor-star` `--spectral-class` `--planets` `--require-habitable` `--constraint…` `--companion` `--nbody` `--research-policy`] | none (synthetic) · SIMBAD + NASA + HWC (with `--anchor-star`) | `seed, mode, anchor_star, star, planets[], warnings, notes` — plus `feasible, constraints[]` with `--constraint` |
 | `habitable-zone-sma` | `--teff --luminosity --sma` | none | `zones[], planet_seff, verdict` |
 | `star-luminosity` | `--radius --teff` | none | `radius, temp, luminosity` |
-| `stellar-evolution` | `--mass-solar` [`--current-age-gyr`] | none | `stages[], total_gyr, ms_end_gyr, current_stage, low_mass, high_mass` |
+| `stellar-evolution` | `--mass-solar` [`--current-age-gyr`] | none | `stages[], total_gyr, ms_end_gyr, current_stage, low_mass, high_mass, t_ms_gyr, ms_lifetime_end_point` |
 | `brachistochrone-au` | `--accel-g --au` | none | `accel_g, distance_au, distance_lm, profiles[]` |
 | `brachistochrone-lm` | `--accel-g --lm` | none | `accel_g, distance_au, distance_lm, profiles[]` |
 | `distance-at-acceleration` | `--accel-g --hours` | none | `accel_g, hours, travel_time_str, profiles[]` |
@@ -300,13 +300,13 @@ sections below; `docs/query-commands-index.md` lists all 182.
 | `search-exoplanets` | _(all optional filters)_ | **NASA TAP (live)** | `count, capped, cap, stars[]` |
 | `search-hypatia` | _(all optional filters)_ | none (local DB) | `count, capped, cap, stars[]` |
 | `solar-analogs` | [`--mode twin\|analog --teff-tol --logg-tol --feh-tol --ly-max --gcns-distance`] | none (local DB) | `mode, criteria, population, count, capped, cap, stars[]` |
-| `substellar` | [`--ly-max --include-late-m --classes …`] | none (local DB) | `classes, ly_max, count, capped, cap, completeness_note, population, stars[]` |
+| `substellar` | [`--ly-max --include-late-m --classes …`] | none (local DB) | `classes, ly_max, count, capped, cap, completeness_note, population, stars[]` (+ CR-30 `census_label`, `placement_note`, `stars[].placement_status_by_type`) |
 | `dust-sightline` | one of (`--l --b`)\|(`--ra --dec`)\|(`--star`\|`--id`) `--dist-end` [`--dist-start --steps`\|`--step-pc` `--map`] | none (local dust cache)§ | `map, frame, l, b, dist_start_pc, dist_end_pc, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
 | `dust-between` | (`--star1`\|`--id1`) (`--star2`\|`--id2`) [`--steps`\|`--step-pc` `--map`] | SIMBAD‡ (local dust cache)§ | `map, frame, star1_info, star2_info, separation_pc/ly, n_steps, bins[], cumulative_a_v(_lo/_hi), units, rv, notes` |
-| `compare-stars` | `--stars N [N …]` (2–4) [`--star-mass-catalog <path>` `--gaia-timeout <s>`] | SIMBAD + NASA + Hypatia + Gaia FLAME | `stars[]` (per-star error isolation) + **CR-11.2** per-star `mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,mass_note` (measured mass preferred → `mass`/`radius` track it, decision B) |
+| `compare-stars` | `--stars N [N …]` (2–4) [`--star-mass-catalog <path>` `--gaia-timeout <s>` `--star-age NAME LO HI BASIS` …] | SIMBAD + NASA + Hypatia + Gaia FLAME | `stars[]` (per-star error isolation) + **CR-11.2** per-star `mass_solar,mass_provenance,massL_inversion_caution,peculiar_star_flag,mass_note` (measured mass preferred → `mass`/`radius` track it, decision B) |
 | `project-list` | _(none)_ | none (local DB) | `projects[]` (name, description, member_count, created_date) |
 | `project-get` | `--name` | none (local DB) | `project, members[]` (each member's `generated_spec` echoed parsed) |
-| `main-sequence` | _(none)_ | none (local DB) | **list** of 24 spectral-class rows |
+| `main-sequence` | _(none)_ | none (the md5-verified `data/cr30/` S1 file — CR-30) | **list** of 87 S1 rows (O3V–M9.5V) |
 | `solar-system` | _(none)_ | none (local DB) | `planets[], moons[], dwarf_planets[], asteroids[]` |
 | `sol-regions` | _(none)_ | none | flat dict of Sol region values (`hzil, hzol, snowLine, …`) |
 | `orbit-distance` | `--sma --ecc` | none | `sma, ecc, periastron, apastron, ecc_au` |
@@ -467,6 +467,29 @@ Core functions: `databases.compute_simbad_lookup` → `regions.compute_star_syst
 Output: a flat dict of computed region values — stellar (`stellarMass, stellarRadius, bcLuminosity, luminosityFromMass, calculatedLuminosity, temp, …`), distance (`parsecs, lightYears, distAU, distKM`), Earth-equivalent orbit (`planetaryYear, planetaryTemperature{,C,F}, sizeOfSun`), and zone boundaries in AU (`hzil, hzol, snowLine, lh2Line, sysol, sysilGrav, sysilSunlight`, plus the alternate-biochemistry pairs `ffInner/ffOuter, fsInner/fsOuter, prwInner/prwOuter, praInner/praOuter, pmInner/pmOuter, phInner/phOuter`) — plus `spectral_type`, `bc_key`, and the embedded `simbad` dict.
 The result dict also includes a top-level `"hypatia"` key: `{"star_name", "properties", "abundances"}` on success, or `{"error": str}` if the Hypatia API call fails. The regions result is always returned even when Hypatia fails.
 
+**CR-30 (see the CR-30 block).** The values move, and the keys are additive:
+- **The type read.** S1 is read at the type through the one parse, interpolated in subtype. `bc_key` is the type read;
+  it was the CSV key.
+- **The luminosity.** `bcLuminosity = 10^(−0.4 (M_bol − 4.74))`, or the M-dwarf colour route for a K / M dwarf with one
+  2MASS id.
+- **The mass.** `stellarMass` comes from the M_Ks route where it resolves, else the L route (Eker 2018 / S1; `null`
+  below M9.5V, never clamped).
+- **The derived values.** `stellarRadius` is S1's R(M), `luminosityFromMass` is S12 / S1, and `mainSeqLifeSpan` is MIST
+  v2.5, by the placement status.
+
+New keys:
+- the type-read keys (`sp_type_read`, `lum_class_token`, `s1_rows`, …);
+- the luminosity-route keys (`lum_route`, `lum_colour_lsun`, `lum_subtype_lsun`, `twomass`, …);
+- the mass keys (`mass_route`, `mass_mks_solar`, `mass_lroute_solar`, `m_ks`, the `mks` object, the relation /
+  null-reason keys);
+- the `ms_lifetime_*` keys;
+- top-level `placement` (on the region-path mass; no catalog tier);
+- `age_input`;
+- `cr30_disclosures`.
+
+New flags: `--age-lo-gyr` / `--age-hi-gyr` / `--age-basis`. A 2MASS degrade → exit 0 with `not_authoritative` +
+`twomass_status` and `bcLuminosity: null`. Any other failed region step keeps its error exit.
+
 #### `star-regions-manual`
 The **manual-input** variant of `star-regions` (the opt-10 calculation): no SIMBAD, no Hypatia — you supply the six raw inputs directly. Returns the same flat region-values dict as `star-regions`/`sol-regions`, **without** the `spectral_type`/`bc_key`/`simbad`/`hypatia` extras (those come only from the SIMBAD path).
 ```bash
@@ -475,6 +498,11 @@ query.py star-regions-manual --vmag 5.5 --bc -0.1 --teff 5500 --parallax 100 --s
 ```
 Core function: `regions.compute_star_system_regions(vmag, boloLum, temp, plx, sunlight_intensity=1.0, bond_albedo=0.3)`. `--bc` maps to the function's `boloLum` (bolometric correction); `--sunlight-intensity` / `--bond-albedo` default to `1.0` / `0.3`. **No network.** Output: the echoed inputs (`vmag, boloLum, temp, plx, sunlight_intensity, bond_albedo`) plus every computed region value — stellar (`stellarMass, stellarRadius, bcLuminosity, luminosityFromMass, calculatedLuminosity, …`), distance (`parsecs, lightYears, trigParallax`), Earth-equivalent orbit (`distAU, distKM, planetaryYear, planetaryTemperature{,C,F}, sizeOfSun`), and the zone boundaries (`sysilGrav, sysilSunlight, hzil, hzol, snowLine, lh2Line, sysol` + the alternate-biochemistry pairs `ffInner/ffOuter, …, phInner/phOuter`).
 > **Validation:** this wraps a **non-self-validating** legacy function (like the Phase-N pure-compute wrappers). Out-of-range numerics surface as a **raw-exception** `{"error": str(e)}` (exit 1) — e.g. `--parallax 0` → `"division by zero"`, a negative parallax → `"math domain error"` — **not** a curated message; argparse rejects missing/non-numeric args (exit 2). Key on `"error"` + exit code, not the message text.
+
+**CR-30:** the same function and formula as `star-regions`: L = 10^(−0.4 (M_bol − 4.74)), the L-route mass, S1's
+R(M), S12 / S1's L(M) and the MIST lifetime. A null mass nulls its derived values; it is never a crash. The Lacaille
+inputs give 0.03646 L☉. It gains the mass / relation / lifetime keys and `cr30_disclosures` (s1, luminosity, relations,
+lifetime). It has no placement and no 2MASS.
 
 ### Distance and proximity
 
@@ -621,6 +649,10 @@ clamped:** when `eff_teff` falls outside the Kopparapu validity (~2600–7200 K)
   handler-validation cases were previously a stderr/exit-2 message; only argparse's own missing/non-numeric
   errors remain exit 2). A SIMBAD/regions failure on either star is likewise returned as `{"error"}` exit 1.
   `--star` mode adds a SIMBAD network call; the numeric mode stays fully offline.
+  - **CR-30.3:** the resolved `bcLuminosity` is now S1's / the colour route's. A 2MASS degrade on either star → exit
+    0, `{not_authoritative: true, twomass_status (a list when the two differ), stars:[{star, twomass_status,
+    twomass_note}], hz: null}`. A non-2MASS error on either star is still that star's `{"error"}`, exit 1. The
+    `--star` result carries `cr30_disclosures` (s1, luminosity).
 
 ### Detectability / exomoon / triple / relativistic calculators (Phase T1b — no network)
 
@@ -1721,6 +1753,7 @@ variant recovered via `--z`/`--ice-factor`. **Validation:** neither/both radius 
 radius/M★/μ/ice-factor/snow-temp, both metallicity/disk-mass/luminosity modes, bad grid (HI≤LO, N<2) → exit
 1; non-numeric → exit 2. **Anchors:** 1 AU → Σ_gas **1700**, T **280**, H/r **0.0334**, Σ_solid **22.78**;
 5.2 AU → **143.4 g/cm²**, **122.8 K**; snow line **2.71 AU** (L=4 → 5.43, L=0.1 → 0.858).
+**CR-30.4:** `--ms-luminosity` derives L★ from M★ by the main-sequence L(M) relation (Eker 2018 forward 0.615–31 M☉, S1's sequence outside it; was `M^3.5`). A mass outside S1's 0.078–59 M☉ span → `{"error": "--ms-luminosity: <reason>."}` (exit 1).
 
 #### `isolation-mass` (P2) ⭐
 Oligarchic `M_iso = (8/√3)·π^{3/2}·C^{3/2}·M★^{−1/2}·Σ_p^{3/2}·a³` (Armitage Eq. 201).
@@ -1866,7 +1899,7 @@ standoff generator `compute_exclusion_boundary(mass_msun, luminosity_lsun, mass_
 dial, calibration_au, alpha, beta, gamma, scan_alpha, object_name)`. **Body source (exactly one):** `--mass-msun`
 | `--object {sun, m-dwarf, o-star, brown-dwarf, rogue-planet}` | `--star <name>` (SIMBAD identity + the **shared mass
 tier ladder** manual > catalog > Gaia FLAME > L-inversion — CR-23; `regions` supplies the inversion tier's luminosity,
-needed **only** for that tier — CR-27.3; a multiple-system entry resolves to its component A — CR-27.4; **network**) | `--spectral-type <type>` (main-sequence table, local DB). Optional environment: `--luminosity-lsun`,
+needed **only** for that tier — CR-27.3; a multiple-system entry resolves to its component A — CR-27.4; **network**) | `--spectral-type <type>` (S1's mass and luminosity at the type — CR-30.2; no network). Optional environment: `--luminosity-lsun`,
 `--mass-loss-msun-yr` (Ẇ), `--wind-state {quiet, solar, active, hot}` (CR-25: sets the `wind_class` bin →
 `{quiet, solar, active, o_hot}` on a main-sequence host, overriding the colour default and the SIMBAD-otype
 auto-detect; ignored with a note on an evolved/windless/unmodeled host; an `--object` preset's bin is fixed — see
@@ -1887,6 +1920,18 @@ no luminosity known (CR-27.3), or a
 wind exponent (`γ ≠ 0`) with no wind input → exit 1. The mass check runs first (CR-22.6 restored it — see the CR-22.6
 block below). **Anchors:** Sun 47.5 AU; 0.1 M☉ → 22.05/15.02 AU (α 1/3, 1/2); 10 M☉ → 102.3/150.2 AU (harbor); explicit
 `--dial` overrides auto-cal; solar-wind term = 1 at the Ẇ=2×10⁻¹⁴ preset.
+
+**CR-30 (see the CR-30 block):**
+- **`--spectral-type`** reads S1's `Msun` / 10^logL at the type. A letter-only O / B / A / M is a curated error; a
+  letter-only K reads K5V.
+- **`--star`** adds the M_Ks tier (manual → catalog → FLAME → M_Ks → L route) and the S1 / colour-route region
+  luminosity.
+- **Every placed result** carries a top-level `placement`, plus `windless_alternative` / `r_ex_interval_au` on a
+  boundary placement. This covers `--star`, `--spectral-type` and `--mass-msun` (band only).
+- **The 5th domain value is `undetermined_no_mass`** (an L0–L5 with no mass).
+- **A mass placed substellar** goes to the free harbor. That includes a bare `--mass-msun` below 0.067.
+- **New flags:** `--age-lo-gyr` / `--age-hi-gyr` / `--age-basis`, valid on `--star` / `--spectral-type` only.
+- **The 2MASS degrade marker** on `--star`, and `cr30_disclosures`.
 
 ##### CR-22.6 — finite, positive masses only (a CR-22 regression fix, 2026-09-24)
 Since CR-22, the bare `--mass-msun` path went through `compute_two_layer_boundary`, which treats a non-positive mass as
@@ -1923,7 +1968,7 @@ a second **research-grade physical WALL** (the deeper medium-readability surface
 standoff arithmetic is **untouched**; every new field is **additive**; the one consumer-visible break is the
 `domain` enum. Core entry: `exclusion_boundary.compute_two_layer_boundary(...)` (the frozen
 `compute_exclusion_boundary` is unchanged; `query.py` calls the two-layer orchestrator).
-- **`domain ∈ {main_sequence, evolved, windless_free_harbor, unmodeled}`** (replaces the implicit MS/off-MS):
+- **`domain ∈ {main_sequence, evolved, windless_free_harbor, unmodeled}`** (replaces the implicit MS/off-MS; **CR-30.7 adds a 5th value, `undetermined_no_mass`, and decides an L / T / Y type's domain after its mass is placed** — an L type is no longer windless by its letter; see the CR-30 block):
   WD/BD/rogue (and lum VII) → `windless_free_harbor` (`standoff/r_ex null`, `forcing_class "free_harbor"`, no
   wall — the `--object brown-dwarf`/`rogue-planet` and `--spectral-type DA2` free-harbor fixes); **hot subdwarf
   sdB/sdO → `unmodeled`** (honest null, weak wind, outside the model — NOT free-harbor); cool subdwarf (lum VI)
@@ -2781,6 +2826,9 @@ luminosity_lsun, areal_mass_kgm2, model_note}`. **Validation:** `L≤0`; `fracti
 `areal_mass≤0` → curated `{"error"}` exit 1; `--luminosity-lsun` **and** `--star` both, or neither,
 or missing `--fraction`/`--orbit-au` → argparse exit 2. **Anchor:** Sun, f 0.01, 1 AU → P ≈ 3.828×10²⁴
 W, area ≈ 2.81×10²¹ m², incident flux ≈ 1361 W/m² (the solar constant).
+**CR-30.3:** the `--star` luminosity is the S1 / colour-route region L. A 2MASS degrade → exit 0, `{star,
+not_authoritative: true, twomass_status, twomass_note, luminosity_lsun: null}`, with no collector values. Carries
+`cr30_disclosures` (s1, luminosity).
 
 #### `orbital-ring` (Phase AD C4 — no network)
 Orbital-ring rotor velocity & support balance: a stationary ring/sheath at altitude is held up
@@ -2846,9 +2894,11 @@ query.py par-flux --star "Tau Ceti" --insolation-wm2 1361 --par-band-nm 400 750
 ```
 Core: `par_flux.compute_par_flux(teff_k=None, spectral_type=None, star=None, insolation_wm2=None,
 luminosity_lsun=None, distance_au=None, par_band_nm=(400.0, 700.0), sed="blackbody")`.
-- **Teff — exactly one source:** `--teff-k` (offline) / `--spectral-type` (→ `main_sequence_stars`
-  ceiling-rule lookup, offline local DB) / `--star` (→ SIMBAD + regions, **the only networked path**;
-  resolved inside the core, lazily). **Insolation — exactly one source:** `--insolation-wm2` (direct)
+- **Teff — exactly one source:** `--teff-k` (offline) / `--spectral-type` (→ S1's Teff at the type, interpolated
+  in subtype — CR-30.2, offline; the output carries the type-read keys `sp_type_read` / `s1_rows` /
+  `subtype_unknown` / …; a type S1 cannot read → the curated error with S1's reason) / `--star` (→ SIMBAD + regions,
+  **the only networked path**; resolved inside the core, lazily; a 2MASS degrade in the region step carries
+  `not_authoritative` + `twomass_status` while SIMBAD's Teff is still used). **Insolation — exactly one source:** `--insolation-wm2` (direct)
   / (`--luminosity-lsun` + `--distance-au`, → `S = L_sun·L/(4π(d·AU)²)`; 1 L☉ @ 1 AU ≈ 1361 W/m²).
 - **`--par-band-nm LO HI`** (nm, default `400 700`).
 - **Output (units on every field):** `{teff_k (K), par_fraction, insolation_wm2 (W/m²),
@@ -3095,8 +3145,27 @@ CR-11.2: `--star-mass-catalog`/`--mass-solar` add stellar-mass provenance + meas
   (`0.00141`, `0.000552`, `0.555`, `50`). **Values below ~1e-4 L☉ render in scientific notation**
   (e.g. `6e-05 L☉`), so a parser extracting the numeric token from a `| <label> | <value> L☉ |`
   row **must accept an `e±NN` exponent**. The row shape is unchanged. The **`json` `data`** payload
-  is unaffected — it carries full float precision (e.g. `bc_luminosity = 1.0867409911518908`), so
+  is unaffected — it carries full float precision (e.g. `bc_luminosity = 1.0867409911518908` — Sol's pre-CR-30 value; Sol now computes to 1.0000), so
   prefer `--fmt json` for numeric consumption.
+
+**CR-30 (see the CR-30 block):**
+- **`regions`** takes S1 / the colour-route luminosity, the M_Ks tier (dossier tier order: manual → catalog → FLAME →
+  M_Ks → L route), S12 / S1's L(M), R(M) at the adopted mass (the trust flag's calculated L too) and the MIST lifetime.
+- **New keys:**
+  - `regions.mass.mass_mks_solar` (reported beside a higher tier);
+  - **`regions.mass.placement`**;
+  - the lifetime-by-status keys on `regions.stellar` (`main_seq_lifespan_yr`, `ms_lifetime_*`);
+  - `age_input`;
+  - `multiplicity.placement_a` (+ the CR-30.7 B directions; `m1_null_reason` / `note` on a null M₁);
+  - `cr30_disclosures`.
+- **A failed region step with a resolved mass** (e.g. a K / M star with no V, massed by M_Ks) is no longer dropped.
+  `regions` becomes `{region_step_failed: true, region_error, luminosity_class, evolved_star_flag, stellar{…mass-derived
+  values}, mass{…, placement}}`, and `habitable_zone` is warned.
+- **A 2MASS degrade** marks the top level (`not_authoritative`, `twomass_status`, `twomass_note`; exit 0). The 2MASS
+  lookup runs only when `regions` or `habitable_zone` is requested.
+- **The Sol dossier** pins the mass at 1.000 M☉ and places Sol as G2V.
+- **New flags:** `--age-lo-gyr` / `--age-hi-gyr` / `--age-basis`.
+- **The markdown / HTML document** renders a non-plain placement line.
 
 > **Validation (self-validating — Phase H contract):** a **SIMBAD-lookup failure** for a real
 > star, an unknown `--sections` value, or (via the core) a bad call → `{"error": str}` on
@@ -3129,6 +3198,16 @@ Core function: `generate.generate_system(seed, anchor_star=None, spectral_class=
   specs via SIMBAD + `compute_star_system_regions_from_simbad`, the real known planets via
   NASA pscomppars / HWC flagged `source:"observed"`, then extends with synthetic infill
   flagged `source:"synthetic"`). Omit → **synthetic mode** (fully offline).
+
+  **CR-30:**
+  - The anchor's mass is the region step's (M_Ks / L route) and its radius is S1's R(M).
+  - A `null` mass or radius → `{"error": "Cannot anchor on '<star>': <reason>"}`.
+  - A 2MASS degrade → `{"error": "Cannot anchor on '<star>': <twomass_note>", not_authoritative, twomass_status,
+    twomass_note}` (**exit 1**: with no anchor luminosity no system can be built — the one carrier that is not
+    exit 0).
+  - The synthetic draws read S1's rows (the generator keeps its own letter-only rule: a bare letter → subtype 0), so
+    seeded systems moved (re-baselined), and the MIST lifetime clamps the age.
+  - A successful result carries `cr30_disclosures` (s1, relations).
 - **`--spectral-class`** (synthetic only): e.g. `K2V`; sampled from `DefaultPriors` weights
   if omitted. Ignored in real-anchor mode (the anchor's real class is used). `O`-class is
   rejected.
@@ -3340,7 +3419,7 @@ Evolutionary-stage durations and timeline for a star of a given mass (Phase L3).
 query.py stellar-evolution --mass-solar 1.0
 query.py stellar-evolution --mass-solar 1.0 --current-age-gyr 4.6
 ```
-Core function: `equations.compute_stellar_evolution(mass_solar, current_age_gyr=None)`. No network. `--current-age-gyr` is optional (marks the stage containing that age, or `"Beyond AGB"` past all stages). Output: `{mass_solar, stages:[{name, start_gyr, end_gyr, duration_gyr, color}], total_gyr, ms_end_gyr, current_age_gyr, current_stage, low_mass, high_mass}`. `T_ms = 10¹⁰ × (1/M)^2.5 yr`; stage fractions Pre-MS 0.01 · MS 1.0 · Subgiant 0.15 · RGB 0.10 · HB 0.10 · AGB 0.02. Special cases are **values, not errors**: `mass < 0.8` → `low_mass=true`, only Pre-MS + MS stages emitted (post-MS not reachable in a Hubble time); `mass > 8` → `high_mass=true`, the AGB stage becomes `"Supergiant → Supernova"`.
+Core function: `equations.compute_stellar_evolution(mass_solar, current_age_gyr=None)`. No network. `--current-age-gyr` is optional (marks the stage containing that age, or `"Beyond AGB"` past all stages). Output: `{mass_solar, stages:[{name, start_gyr, end_gyr, duration_gyr, color}], total_gyr, ms_end_gyr, current_age_gyr, current_stage, low_mass, high_mass, t_ms_gyr, ms_lifetime_end_point}` (the last two additive, CR-30.5: MIST's `T_ms` and its end point — `first_Xc_lt_1e-4` / `first_Xc_lt_1e-2` / `interpolated_1e-2_to_1e-4`, e.g. 0.62 M☉ → 50.31 Gyr interpolated). `T_ms` = **MIST v2.5**'s main-sequence lifetime at the mass (CR-30.5; was `10¹⁰ × (1/M)^2.5 yr` — every `ms_end_gyr` / stage moves; a NaN mass now fails the 0.1–20 guard); stage fractions Pre-MS 0.01 · MS 1.0 · Subgiant 0.15 · RGB 0.10 · HB 0.10 · AGB 0.02. Special cases are **values, not errors**: `mass < 0.8` → `low_mass=true`, only Pre-MS + MS stages emitted (post-MS not reachable in a Hubble time); `mass > 8` → `high_mass=true`, the AGB stage becomes `"Supergiant → Supernova"`.
 
 #### `brachistochrone-au` and `brachistochrone-lm`
 All three brachistochrone acceleration profiles for a given distance (the opt-29 / opt-30 calculations).
@@ -3813,6 +3892,9 @@ query.py substellar --classes L T            # override the prefix set
 ```
 Core: `databases.compute_substellar_census(ly_max=None, include_late_m=False, classes=None)`. Selects rows whose `spectral_type` begins with one of `classes` **or with one of those classes behind a luminosity prefix** (`d`/`sd`/`esd`/`usd`/`k`/`h`/…), so `--classes L` also returns `sdL0`/`esdL7` (changed 2026-07-27; default `L T Y`; `--include-late-m` adds `M7/M8/M9` and now also finds `dM7`/`sdM7.0` — 73 rows the previous prefix-blind form missed); `spectral_type IS NOT NULL` (only cross-matched rows carry a type); `--ly-max` filters `light_years`; sorted by distance, capped at 500. Output: `{classes, ly_max, count, capped, cap, completeness_note, population{total_in_gcns, with_spectral_type, returned}, snapshot_date, gcns_version, stars[]}` — `stars` are the standard GCNS row shape. **`completeness_note`** is the mandatory lower-bound disclosure (GCNS substellar completeness falls off beyond ~10–25 pc; only cross-matched rows carry types).
 - **Validation:** empty `gcns_stars` → `{"error"}` exit 1; `--ly-max ≤ 0` → curated `{"error"}` exit 1; non-numeric `--ly-max` → argparse exit 2; a `--classes` token that is not a class letter with an optional subtype (`L`, `T`, `Y`, `M7`, `M7.5`) → curated `{"error"}` exit 1 — the token is concatenated into a GLOB pattern and SQLite's GLOB has **no ESCAPE clause**, so `--classes '*'` would otherwise match every typed row and present arbitrary G/K/M stars as a substellar census.
+- **CR-30.7 D.** Each `stars[]` row gains `placement_status_by_type`: `substellar` for L6+ / T / Y, else
+  `undetermined_by_type`. It is ruling 78's type rule only: no mass, youth or pre-MS read. The result gains
+  `census_label: "an L/T/Y census by spectral type"`, `placement_note` and `cr30_disclosures` (hbl).
 - **Matching is case-sensitive (GLOB, changed 2026-07-27).** Previously `LIKE` fused the uppercase *degenerate* prefix with the lowercase *dwarf* one: `--classes D` returned 4,918 rows = 2,561 real white dwarfs **plus 2,357 lowercase-`d` M dwarfs** (`dM6`, `dM4.0`, …). `--classes D` now returns white dwarfs only.
 
 ### Dust / ISM (Phase T2 Part A — optional `dustmaps` extra; WSL/Linux venv)
@@ -4027,6 +4109,18 @@ numerics `null`; the **only top-level `{"error"}` (exit 1)** is the arg-count ch
 `--stars Sol Sun` resolves fully offline. Missing/non-numeric `--stars` (or fewer than one value) is an argparse
 **exit 2**.
 
+**CR-30 (see the CR-30 block).** Each star takes the M_Ks tier (catalog → FLAME → M_Ks → L route). `radius` is S1's R(M).
+An R-derived `luminosity` is `null` when R(M) is `null` (`luminosity_null_reason`); an archive / SIMBAD L is kept.
+
+New per-star keys:
+- `mass_mks_solar` (reported beside a catalog / FLAME win) + `mks_binary_disclosure`;
+- **`placement`** (on `mass_solar`; Sol included);
+- `age_input`;
+- the 2MASS degrade marker (`not_authoritative` / `twomass_status` / `twomass_note` — that star only).
+
+The result also carries `cr30_disclosures`. New flag: repeatable `--star-age NAME LO HI BASIS` (`LO` may be `none`;
+NAME must match a `--stars` entry; a bad age → `{"error": "age input: …"}`, exit 1).
+
 ### Project workspaces (Phase S — local DB, read-only)
 
 Read-only views of the **project workspaces** (named sets of real + procedurally-generated
@@ -4067,12 +4161,20 @@ exit 2.
 ### Reference data (Phase B — local DB / hardcoded, no arguments)
 
 #### `main-sequence`
-Main-sequence star properties table. Returns a **list** of 24 rows, one per spectral class, with the raw CSV columns
-(`Spectral Class, B-V, Teeff(K), AbsMag Vis., AbsMag Bol., Bolo. Corr. (BC), Lum, R, M, p (g/cm3), Lifetime (years)`).
+Main-sequence star properties table — **S1** (Mamajek's dwarf sequence, 2022.04.16; CR-30.1), read from the
+md5-verified `data/cr30/` file (never a DB table). It returns a **list** of **87** rows, O3V first and M9.5V last. The
+keys are S1's header names as published: `SpT, Teff, B-V, Mv, BCv, logL, R_Rsun, Msun, s1_line`, with an empty cell →
+`null` (M9.5V's `B-V`, for example). The computed columns are labelled as computed:
+- `Mbol_computed` (M_V + BC_V);
+- `density_computed_gcc` / `density_computed_rho_sun` (from M and R);
+- `ms_lifetime_gyr_computed` (MIST v2.5 at S1's mass) + `ms_lifetime_end_point`.
+
+**Changed by CR-30:** this was 24 rows with the old CSV's keys (`Spectral Class, Teeff(K), …, Lifetime (years)`).
 ```bash
 query.py main-sequence
 ```
-Core function: `science.compute_main_sequence_table()`.
+Core function: `science.compute_main_sequence_table()` (→ `ms_sequence.s1_display_rows()`). A missing or
+md5-mismatched data file → the curated `Cr30DataError` `{"error"}`, exit 1.
 
 #### `solar-system`
 Solar-system reference data, read from the local SQLite tables (`planets`/`moons`/`dwarf_planets`/`asteroids`) — **not**
@@ -4107,6 +4209,9 @@ biochemistry pairs, …`) but for the Sun, with no SIMBAD/Hypatia step.
 query.py sol-regions
 ```
 Core function: `regions.compute_sol_regions()`.
+**CR-30.3:** V☉ −26.76, M_V☉ 4.81, BC −0.07 on S1's zero point 4.74 → `bcLuminosity` **1.0000 L☉** (was 1.086741).
+`stellarMass` is pinned at **1.000** (`mass_route: "sol_pinned"`). It adds `sol_constants_note` (temp 5778 K is kept and
+disclosed), the relation / lifetime keys (MIST) and `cr30_disclosures`.
 
 ### Planetary / rotating-habitat equations (Phase B — pure math, no network)
 
@@ -4177,9 +4282,12 @@ same class as the `dust-*` / GCNS network paths, **not** the pure-math calculato
   paste-ready `verification` tag (`[V-PRIMARY-Gaia-DR3-NSS source_id=…]` / `[V-SECONDARY SB9 gr<N>
   <bibcode>]` / `[V-SECONDARY WDS/orb6 <ref>]`).
 - **Companion masses are estimates, always labelled** with their `method` (`astrom` Thiele-Innes /
-  `spec-min` SB1 sin i=1 lower bound / `SB2` double-lined) and a `caveat`. Class thresholds:
-  M₂ > 0.075 M☉ → `stellar`; 0.013–0.075 → `brown-dwarf`; < 0.013 → `planet`; astrometric a₀ ≲ 1 mas →
-  `low_significance: true`.
+  `spec-min` SB1 sin i=1 lower bound / `SB2` double-lined) and a `caveat`. Class thresholds (**CR-30.7 B**):
+  M₂ **≥ 0.075** M☉ (the hydrogen-burning limit, inclusive; was > 0.075) → `stellar`; **[0.067, 0.075) →
+  `boundary — star or brown dwarf uncertain`**; 0.013–0.067 → `brown-dwarf`; < 0.013 → `planet`; an **SB1 minimum**
+  below 0.075 → `undetermined (minimum mass)`; astrometric a₀ ≲ 1 mas → `low_significance: true`. The primary mass M₁
+  is S1's mass at the spectral type; a type with no S1 mass gives a `null` M₁ (no 1.0 M☉ default), except in the bulk
+  NSS census.
 
 #### `vizier-query`
 Any VizieR catalog by id → JSON rows. `--filters` is repeatable (`'col op val'`, e.g. `'Per < 365'`);
@@ -4259,6 +4367,25 @@ from the primary (`binary-orbit "Sirius B"` → 2.18/0.4577 = `binary-orbit "Sir
 `main_id`/`ra`/`dec`/`sp_type` + the `query` echo stay unchanged. Still a **raw reporter** (no catalog); a
 non-degenerate-secondary / primary / system query is byte-identical (no `primary` key). See the **CR-16 block** below.
 
+**CR-30.7 B (see the CR-30 block).** M₁ is **S1's mass at the type** (the anchor ladder and the 1.0 M☉ default are
+retired), so every typed companion mass moves slightly.
+- **A type with no S1 mass** → `m1_solar: null`, `class: "unknown"`, a reason-specific `caveat` and
+  `companion.m1_null_reason`. The reasons are:
+  - `no_spectral_type` (CR-27's text);
+  - `letter_only_type`;
+  - `unreadable_type`;
+  - `outside_s1_mass_span`;
+  - `no_simbad_lookup` (on `--source-id` / `--ra --dec`).
+
+  A Gaia `binary_masses` M₂ still fills the companion.
+- **The classifier** has the edge and band above.
+- **A primary whose type string flags it young** (a gravity designation, δ) and reads "≤ X" gives:
+  - `companion.m1_direction` / `m2_direction: "le"`;
+  - a true M₂ class `"undetermined — at most <class(Y)>"` (+ `substellar`);
+  - an SB1 minimum class `"undetermined (minimum mass)"` with `sb1_caveat_withheld: true`.
+- **`identity` gains** `lum_class_token`, `s1_class_v_flag` and `m1_null_reason`.
+- **The result** carries `cr30_disclosures` (s1, hbl, youth).
+
 #### `close-binary-census`
 The systematic population sweep (Gaia NSS faint + SB9 bright with Hipparcos/Gaia parallax → X-Match
 dedup → companion classification → planet filter). Planet dropping is **on by default** (core `drop_planets=True`); opt out with
@@ -4279,7 +4406,12 @@ sweep sources** — a requested but unimplemented `wds`/`cv` is reported honestl
 `vizier-query --catalog B/wds/wds` / `B/cb/cbdata`), and an **unknown** `--include` token → a curated
 `{"error"}`. The `coverage` block is **never** empty and never implies exhaustive. Bulk NSS companion
 masses assume a solar-mass primary (per-system `binary-orbit` gives the spectral-typed refinement + the
-`binary_masses` cross-check).
+`binary_masses` cross-check). **CR-30.7 B:**
+- Each bulk NSS row now carries `m1_assumed_note`, which discloses that 1.0 M☉ assumption.
+- SB9 rows take S1's M₁ from `Sp1`.
+- A row whose type gives no S1 mass is kept, with the companion `class: "unknown"`, a `caveat` and `m1_null_reason`.
+- The class thresholds are those in the catalog-tier notes above.
+- The result carries `cr30_disclosures` (s1, hbl).
 
 **Dedup — a census row is one SYSTEM, not one catalogue row.** Two mechanisms, plus an accounting block:
 
@@ -4548,6 +4680,9 @@ i=1 lower bound**.
 solved at the correct **primary** mass (`multiplicity "Sirius B"` → **0.4577**, not the WD-mis-seeded 0.283) — the
 orbit companion masses inherit `binary_orbit`'s primary-sp-type redirect (see the CR-16 block); a letter-symmetric
 query is unchanged.
+**CR-30.7 B:** under a flagged primary whose M₁ reads "≤", an SB1 component's `m2_solar_lower` carries
+`m2_solar_lower_direction: "le"`. M₁ comes from S1 (a `null` M₁ gives no mass). The result carries
+`cr30_disclosures` (s1, hbl).
 
 #### `binary-stability-auto` (CR-3 — LIVE)
 Auto-pipes `binary-orbit` → Holman-Wiegert stability in one call (no manual re-entry). **CR-14.1** selects a
@@ -4584,6 +4719,27 @@ primary / system query — α Cen B unchanged). Generality: `"Procyon B"` = `"Pr
 **`e_out_of_hw_range`** flags an eccentricity past the
 Holman-Wiegert 1999 fit domain (e≤0.8) — the verdict stays robust, the exact critical SMA is an extrapolation.
 `--test-sma-au 0` (or negative) is a curated `{"error"}` before the network call.
+
+**CR-30 (see the CR-30 block):**
+- **New flags:** `--age-lo-gyr` / `--age-hi-gyr` / `--age-basis` (validated before any network call; echoed as
+  `age_input`).
+- **`placement_a`** is the selected M₁'s placement, from its type string's signals plus the call / catalog age.
+- **Under M₁ "≤ X":**
+  - `elements.m1_direction: "le"`;
+  - for an orbit-derived M₂, `elements.m2_direction: "le"` and `elements.m2_class`: `"undetermined (minimum mass)"`
+    with `sb1_caveat_withheld` for an SB1 minimum, else `"undetermined — at most <class(Y)>"`.
+- **An unbounded pre-MS primary** → `m2_class: "undetermined — pre-MS primary"`.
+- **A `null` S1 M₁ → the no-masses result** (`elements: null`, no radii, no verdict) with `m1_null_reason` and a
+  `note`, even where the mass chain holds a measured M₁. "no orbital solution found …" still stands when there is no
+  orbit.
+- **A component's 2MASS degrade** → `not_authoritative` + `twomass_status_a` / `_b`.
+- **A component's failed SIMBAD lookup** (a service error — not SIMBAD's "No results found", which stays as before;
+  WB MSG 368 O-1) → `not_authoritative` + `simbad_status_a` / `_b` = `"failed"`, never the orbit's mass in silence. It
+  is set where the M_Ks tier needed the record: A's widening lookup (a reduced primary record, F-1 (a)), the primary
+  lookup on coordinate / source-id input, or B's record when no manual / catalog / FLAME tier gave B a mass. On
+  `binary-stability-auto` it sits at the top level, and on the dossier on the `multiplicity` block.
+- **The M_Ks tier** sits in the per-component mass chain.
+- **`cr30_disclosures`** (s1, hbl, youth).
 
 #### `nuclear-inventory` (CR-4 — pure-math; fissile consumes the WB 3c bundle)
 Fusion-fuel + fissile (U/Th) + radiogenic-heat inventory from stellar scalars.
@@ -4654,6 +4810,23 @@ subdwarf / giant / subgiant / brown dwarf**, `host_class` is set, `out_of_domain
 sp_type→jitter defaults are **not faked** (`DA2` no longer → a 1.6 M☉ A star); it still computes on explicit
 `--star-mass-solar`/`--star-radius-solar` (flagged, flat RV jitter), else the methods are flagged/skipped with a
 `note`. A normal dwarf (`…V`) is unchanged (`host_class:null`, `out_of_domain:false`).
+
+**CR-30.7 C (see the CR-30 block):**
+- **The host mass and radius** are S1's at the subtype; the per-letter table is retired (A0V → 2.18 M☉, for
+  example). A mass with no radius → R(M). `brown_dwarf` is now only T / Y / L6+.
+- **New `--star-mass-catalog <path>`** (default: the internal seed; loud on a bad path). The `--star` tiers are
+  **manual → catalog → archive** (no FLAME), and `star_mass_provenance` gains `catalog`.
+  - An MS host keeps the archive radius beside the mass.
+  - A non-MS host takes a catalog mass only with a radius (else `catalog_mass_not_applied: true` + a note).
+- **New `notes`** carry the catalog-beside-archive and archive-basis disclosures.
+- **New `star_placement`.**
+- **The explicit branch** (exit 0). It fires for a host with no tier mass that is L0–L5, or placed boundary by its S1
+  inference, or whose radius resolves `null`. Every method is `applicable: false` with a note, `host_class: null`,
+  `star_mass_solar` is the placed reading, `star_radius_solar: null` + `star_radius_null_reason`, and
+  `out_of_domain: true`.
+- **Under a host mass read "≤ X":** `methods[].limit_direction: "upper_bound"` + `star_radius_bound_note`.
+- **New flags:** `--age-lo-gyr` / `--age-hi-gyr` / `--age-basis` (on `--star` and `--sp-type`).
+- **`cr30_disclosures`** (s1, relations, hbl, youth).
 **Monotonicity is per-method** (RV min-mass hardens with SMA; transit min-radius is SMA-independent;
 astrometry/imaging ease, gated at P>baseline / inside the IWA). **Transit is `applicable:false` unless
 `--transit-target` / `--transit-precision-ppm`** is given (honest "not covered").
@@ -4670,7 +4843,7 @@ the CR-10 second-fire block below.
 **CR-9 rider — Companion CR#1 (RV jitter bumps, advisory placeholder).** Two symmetric jitter floors beyond
 the MS Kraft-break map: an **evolved-star** bump (subgiant/giant p-mode+granulation — fires for `host_class`
 subgiant/giant with explicit M/R) and an **active/young cool-dwarf** bump (fires when `--activity {active,young}`
-is given on a G/K/M host). When either applies, the RV method dict carries `jitter_advisory:true` + a
+is given on a G/K/M host; **CR-30: `--activity` is jitter only — never a youth flag**). When either applies, the RV method dict carries `jitter_advisory:true` + a
 `jitter_note`. **The bump magnitudes are an un-cleared LEAD — advisory PLACEHOLDER only** (WB pins the jitter–L/M
 scaling in Phase 5); the consumer treats an un-pinned bump as advisory (flag, not a hard `likely-absent`), and a
 `--rv-precision-ms` override supersedes. A normal MS star with no `--activity` is byte-identical to pre-CR#1.
@@ -4949,7 +5122,13 @@ query.py cooling-hz --track wd --mass-solar 1.45                  # error: excee
 ```
 Tests: `tests/test_cooling_hz.py::Cr111HighMassWDTest`.
 
-**CR-11.2 — stellar-mass provenance on `dossier` + `compare-stars`.** Both now resolve stellar mass with an explicit
+**CR-11.2 — stellar-mass provenance on `dossier` + `compare-stars`.** (**Partly superseded by CR-30.** The text below is the CR-11.2 record. Since CR-30 the relations are different:
+- the `L^0.2632` inversion is the L route (Eker 2018 / S1), with the M_Ks tier (`ms_mks_relation`) between FLAME and it;
+- `M^0.57` / `M^3.5` / `10¹⁰·M^−2.5` are S1's R(M) / S12–S1's L(M) / MIST v2.5;
+- `massL_inversion_caution` fires only for an O / B L-route mass;
+- the CR-10.5 consistency check uses R(M) at the adopted mass.
+
+See the CR-30 block.) Both now resolve stellar mass with an explicit
 **provenance** and two caution flags, mirroring CR-10.4/CR-10.5. **Precedence: manual `--mass-solar` (dossier only) → catalog
 row (`--star-mass-catalog <path>`) → Gaia DR3 FLAME → the `L^0.2632` inversion.** A tier's value counts only if it is
 finite and > 0 (CR-22.6, `stellar_mass_tables.is_positive_finite`); otherwise that tier is a miss and resolution falls
@@ -5089,6 +5268,28 @@ classifier as `exclusion-boundary` (see its CR-25 block) now reaches every compo
   zones, `wall_zones`, separations and the point mass at γ=0 (α Cen 48.9669/45.7214 with B
   `quiet` — its list is {`*`,`**`,`PM*`}; Sirius A 63.46 + B windless; Proxima 20.4824 with the WB catalog, now `active`).
   `--alpha`/`--phase` are validated before any `--star` network call.
+
+**CR-30 on `exclusion-system` (see the CR-30 block):**
+- **The mass chain** gains the M_Ks tier (single body, composed A / B, `--star` only; `--component` specs have no M_Ks
+  input).
+- **Each composed component** carries **`zones[].components[].placement`** (`null` for a WD / rogue component; absent on
+  a bare compose call).
+- **Domain by placement** (`exclusion_wall.placed_domain_kw`): substellar → `windless_free_harbor`; an L0–L5 with no
+  mass → **`undetermined_no_mass`** (null standoff / wall, `wall_route: "none_undetermined"`). A massless member adds
+  no barycentre weight.
+- **The class tag** auto-assigns only `wd`; a BD otype or an L letter no longer tags `brown-dwarf`.
+- **The age input:** the call flags `--age-lo-gyr` / `--age-hi-gyr` / `--age-basis` apply to every component. The
+  `--component` keys `age_lo=` / `age_hi=` / `age_basis=` replace the call age for that component. The age is echoed as
+  top-level `age_input` and in each placement.
+- **Pre-MS signals:** a `--component otype=` whose first code is pre-MS is a signal. On the binary path, component A's
+  own SIMBAD otype is used; a failed A lookup falls back to the head's, with a note.
+- **The single-body mass error** gains the region step's reason, and a 2MASS degrade marks it.
+- **A composed component's 2MASS degrade** → `not_authoritative` + `twomass_status_a` / `_b`.
+- **Component B's failed SIMBAD lookup** on a `--star` binary (a service error, not "No results found"; MSG 368 O-1)
+  → `not_authoritative` + `simbad_status_b: "failed"` and a note (`NOTE_SIMBAD_FAILED_B`) in place of "companion nature
+  not confirmed". It is set whatever tier gave B its mass, because B's record also carries its WD / BD class. Component
+  A is the head's own record (a failed head lookup errors), so there is no `simbad_status_a` here.
+- **`cr30_disclosures`** (all six topics).
 
 ## CR-12 — WD cooling-grid ≤1.00 M☉ cooling-age re-derivation (Bedard 2020 unification) + criterion-1 correction
 
@@ -5450,6 +5651,631 @@ Two additive components; `is_multiple` and every existing key/value stay byte-fo
 - **Component 2 — astrometric backbone.** `gcns_stars` now persists **`pmra, pmdec, pmra_error, pmdec_error, ruwe`** from the `gcns.main` GAVO query. **Schema-additive only** — these columns are **NOT** added to `_GCNS_ROW_COLS`, so **no** GCNS subcommand output changes (`gcns-source`/`gcns-system`/`gcns-within-sol`/`gcns-stars-within-star`/`dossier` byte-identical); PM is a backbone for CR-21, not surfaced in CR-20. `missing_10mas` rows carry **null** PM (no PM in source; never fabricated). Population is a **targeted backfill** — `core.databases.backfill_gcns_proper_motion()` (a core function, invoked directly for delivery — **no `query.py` subcommand**, matching the CLI/GUI-only convention of the GCNS ingest) does an `ALTER` (via `_migrate_schema`) + a PM-only `UPDATE` keyed by `source_id`, touching only the 5 PM columns → existing `gcns_stars` values + the resolved-system tables (hence the CR-18 anchors) byte-identical by construction. The full `_GCNS_MAIN_ADQL`/insert is also extended so a future opt-58 re-ingest carries PM. **Machine-local caveat:** `data/space_app.db` is gitignored — the backfill fulfils CR-20 for the box it runs on; another machine gains PM only when the git-synced extended ADQL/INSERT is re-run (a full opt-58 re-ingest) there.
 
 Cores: `core/binary.py` (classifier + `multiplicity_summary`), `core/report.py` (dossier), `core/db.py` (schema + `_migrate_schema`), `core/databases.py` (ADQL/insert + `backfill_gcns_proper_motion`; `_GCNS_ROW_COLS` unchanged). Tests: `tests/test_cr20.py`.
+
+## CR-30 — a cited main-sequence reference table (S1), its relations, the MIST v2.5 lifetime, the hydrogen-burning limit and placement (built 2026-10-15 / 16; `PHASE_CR30_PLAN.md`)
+
+WB contract `spaceapp-change-request-CR30-main-sequence-reference-table.md`; channel MSG 356–364 (Q&A MSG 360 / 361 / 362).
+The field-name map WB's scorer reads is `PHASE_CR30_NAME_MAP.json`. Where this block and the contract differ, the
+contract wins.
+
+CR-30 replaces the old `propertiesOfMainSequenceStars.csv` table and the Gillett power laws (`L^0.2632`, `M^3.5`,
+`M^0.57 / M^0.8`, `10¹⁰·M^−2.5`) with cited tables for **every** numeric consumer. It also adds a hydrogen-burning limit,
+one placement rule (stellar / boundary / substellar) and an age input. It touches about 25 code sites, so most
+`--star` numbers move (see **Behaviour changes** below). Every new key is additive. Most existing keys keep their name
+and change their value.
+
+The code:
+- `core/ms_reference_tables.py`: the md5-checked loader.
+- `core/ms_sequence.py`: S1's lookup, the relations, the MIST lifetime and the colour route. It is the one relations
+  module.
+- `core/placement.py`: the limit, placement, the youth / pre-MS rules, the age validator and the lifetime by status.
+- `core/twomass.py`: 2MASS J / Ks.
+- `shared.parse_spectral_type`: the one spectral-type parse.
+
+### CR-30.1 — the data (WB-owned — never edit)
+
+`data/cr30/` is vendored byte-identical (`-text` in `.gitattributes`; `!data/cr30/` in `.gitignore`). The pins live
+in `core/ms_reference_tables.py` `CR30_MD5`, and `data/cr30/MANIFEST.txt` lists each file with its md5, source and role.
+
+| File | md5 | Rows | Role |
+|---|---|---|---|
+| `cr30_mamajek2022_dwarf_sequence.csv` | `2b7746f6339b8b72fb589351c54c0594` | 87 (O3V–M9.5V) | **S1**: Mamajek's dwarf sequence, version 2022.04.16 |
+| `cr30_mist_v25_ms_lifetime.csv` | `b212537685cf8d5787df23a03e1f262a` | 171 tracks (0.10–300 M☉) | MIST v2.5, non-rotating, [Fe/H] 0: the main-sequence duration from ZAMS |
+| `cr30_bhac15_overread_factor.csv` | `1ce818caf06a5a1d99b70dfabed9068b` | 888 | the BHAC15 over-read factor (routes `mks` / `luminosity` / `type`, eleven age nodes) |
+| `mamajek-EEM_dwarf_UBVIJHK_colors_Teff-2022.04.16.txt` | `afa3e0c8b249e8b9511b917c03aceb84` | — | S1's raw file. Provenance only; **nothing parses it at run time** |
+
+- **The loader.** It hashes each file's bytes **before** parsing. Then it skips `#` lines, reads columns by header name
+  and checks the structure:
+  - S1: 87 rows, the nine columns, `SpT` unique class-V types from O3V to M9.5V, every `Msun` present and distinct.
+  - MIST: 171 rows, masses strictly increasing, `ms_duration_yr = t_end_yr − t_zams_yr`, a known end point.
+  - The factor table: 888 rows, routes ⊆ {mks, luminosity, type}, ages on the eleven nodes, and every null factor
+    carrying a `null_reason`.
+
+  An empty cell is `None` for that cell only.
+- **A missing, md5-mismatched or inconsistent file** raises **`Cr30DataError`**. It surfaces as a curated `{"error":
+  "CR-30 data file …"}`, exit 1. There is never a fallback to another table.
+- **`SPACE_APP_CR30_DATA_DIR`** overrides the directory (tests).
+- **The DB.** Three **display mirrors** — `ms_reference_s1`, `ms_reference_mist` and `ms_reference_factor` — each carry a
+  `source_md5` column. They are seeded on connect when empty or stale, and a loader failure there is only a warning.
+  **No runtime value is read from any DB table.**
+  - The pre-CR-30 `main_sequence_stars` table is left untouched (never written or deleted).
+  - That table is read by nothing, and it is dropped from the auto-seed list and from opt 57's status list.
+  - `propertiesOfMainSequenceStars.csv` stays in the repo root, unedited and unread.
+- **The GUI import.** Opt 54 is now **Import CR-30 Reference Tables** (`databases.import_cr30_reference_tables()`). It
+  clears the cache, re-verifies all three files, force-re-seeds the three mirrors and returns
+  `{tables: [{file, md5, rows, table}], path}`. It errors if any mirror was not written.
+
+### CR-30.2 — reading a spectral type
+
+**One parse:** `shared.parse_spectral_type(raw)` → `SpParse`. Every reader in reach uses it:
+- `shared.luminosity_class` (the CR-10.5 guard, otherwise unchanged);
+- `detection._host_class` / `_sp_letter`;
+- `exclusion_wall._classify_identity`;
+- `binary` M₁, the census, `par_flux`, `viz` and `regions`.
+
+The old `_LUM_CLASS_RE` / `_SP_PATTERN` readers and the `shared` / `regions` main-sequence loaders are gone.
+Spectral-class SQL (`spectral_where`, GLOB) is untouched.
+
+The parse runs in this order:
+1. Strip the gravity designations: `VL-G`, `INT-G`, `FLD-G`, `beta` / `gamma` / `delta` (β γ δ).
+2. Read the Am form: an explicit `h<type>` wins (`kA2hA5mA7V` → A5; `A0mA1Va` → A0).
+3. Read the letter + subtype (`L5gamma` → L5).
+4. Read the class token.
+
+A flagged late-M (M5+) or L with `III` / `IV` reads as **low gravity**, not a giant. Composites that the new read
+cannot place keep the legacy first-full-type fallback.
+
+Output fields on every S1-derived output: `sp_type_raw`, `sp_type_read`, `lum_class_token` (`V`, `IV`, `III`, `sd`, …
+or `null`), `subdwarf_flag`, `gravity_designation`, `low_gravity_class`, `s1_class_v_flag` (always `true` on an S1
+read — S1 is a class-V table; the flag changes no value), `subtype_unknown`, `subtype_span_note`, `s1_rows`
+(the row or the two rows read) and `s1_fraction`. `bc_key` is kept and is now the type read.
+
+**S1's lookup** (`ms_sequence.s1_at`):
+- **An exact row** (`<read>V`) is used as published.
+- **Otherwise** values are interpolated linearly in subtype along S1's ordered rows, across a class edge (G9.5 between
+  G9V and K0V; K2.25 → 0.25 of K2V–K3V). `logL` is interpolated in log, every other column linearly. The lookup never
+  interpolates into a placeholder cell: that column is `null` (M9.5V's `B-V`, for example).
+- **A letter-only F / G / K** reads F5V / G5V / K5V with `subtype_unknown: true` and a `subtype_span_note` (S1's class
+  spans F 4.8×, G 2.5×, K 5.8× in L).
+- **A letter-only O / B / A / M** gives no row (`subtype_unknown: true`, `s1_null_reason`).
+- **A type outside O3V–M9.5V** (any L / T / Y / D) gives no row, with its reason.
+- Now resolved: **M8.5V, M9V, M9.5V, O5V, O9.5V and B0V**, and gravity-designated types (`"M8 INT-G"` is no longer read
+  as class I → evolved).
+- **L / T / Y have no colour letter** (`_sp_letter("L3beta")` → `null`), so an L type never picks up a B / G wind row or
+  RV jitter. An Am string's colour letter is now its `h` type.
+
+### CR-30.3 — the region luminosity, Sol and the colour route
+
+- **The formula.** `bcLuminosity = 10^(−0.4 (M_bol − 4.74))`, where M_bol = M_V + S1's BC_V. `M_BOL_SUN_S1 = 4.74` is
+  the vendored table's own zero point. This retires `2.52 ** (4.85 − M_bol)`; the region divisors are unchanged.
+  `star-regions-manual` and `main.py` run the same function.
+- **Sol** (`compute_sol_regions`, `sol-regions`, the Sol dossier): V☉ −26.76, M_V☉ 4.81, BC −0.07 → **1.0000 L☉** (was
+  1.086741). `temp = 5778` K is kept. The mass is **pinned at 1.000 M☉** (`mass_route: "sol_pinned"`,
+  `mass_relation: "pinned_1.000"`). There is a new `sol_constants_note`.
+- **2MASS** (`core/twomass.py`; K / M types only, letter-only included):
+  - **The identifier.** It comes from SIMBAD's `query_objectids` rows under the acronym `2MASS` (`2MASS J…` only; never
+    `2MASSI` / `2MASSW`). It is carried out-of-band in a per-process memo (`databases.simbad_twomass_ids`), so
+    **`simbad-lookup`'s output dict is unchanged**.
+  - **Exactly one id** → the J / Ks fetch from VizieR **II/246** by designation (`Jmag/e_Jmag/Kmag/e_Kmag/Qflg/Rflg`,
+    3 decimals). The fetch is memoised per designation, failures for 300 s, and shared by the colour route and the M_Ks
+    route.
+  - **No id** → no 2MASS route, disclosed in `lum_route_reason`.
+  - **More than one id** → no 2MASS route, and **`twomass_ids_multiple: [ids]`**. This is a disclosure, not a degrade.
+  - **A giant / subgiant** (class I–IV) makes no 2MASS lookup.
+- **The colour route** (Mann et al. 2015 Table 3 base rows on X = V − J, no [Fe/H] term):
+  - **Gate:** a K / M type with no class token I–IV and V − J in **[2.53, 6.98]**.
+  - **L** is the mean of the BC_V and BC_K paths at Mann's zero point 4.755 (×1.014 against 4.74, disclosed).
+  - **Where it applies, the region L _is_ the colour route's.** The subtype route's L is reported beside it.
+  - Proxima: 0.0015721 L☉ (paths 0.0015246 / 0.0016195; subtype 0.0012741).
+- **Region-luminosity keys** (`star-regions`, `star-regions-manual`, dossier `regions`, `exclusion-boundary --star`,
+  `compare-stars` per star):
+  - `lum_route` (`colour` / `subtype`) and `lum_route_reason`;
+  - `lum_colour_lsun`, `lum_subtype_lsun`, `lum_colour_paths {bc_v, bc_k}`, `v_minus_j`;
+  - `twomass {designation, j, e_j, ks, e_ks, ph_qual, rd_flg, quality_below_a}` (`quality_below_a` lists J / Ks when its
+    `ph_qual` letter is below A);
+  - `lum_route_disagreement` (max / min of the two routes' L > **1.40**);
+  - `lum_route_note` — a colour-route result only (absent on the subtype route): the colour route's disclosure (Mann
+    2015 Table 3 base rows on V − J, no [Fe/H] term; the mean of the BC_V and BC_K paths at Mann's zero point
+    **4.755**, ×1.014 against S1's 4.74).
+- **The degrade marker (fails loud).** The marker is set when:
+  - SIMBAD lists an id but II/246 returns no row → **`twomass_status: "empty"`**;
+  - the fetch errors after retries → **`"unreachable"`**;
+  - SIMBAD's identifier query returns nothing for a K / M star it resolved → **`"ids_failed"`**.
+
+  The result is **exit 0** with **`not_authoritative: true`** + `twomass_status` + `twomass_note`. The region L is
+  `null` and the L-route mass is `null`. The subtype or L route is **never** substituted. `twomass_status` is present
+  **only** on a degrade.
+- **Where the marker goes:**
+  - top level on `star-regions`, the dossier (its 2MASS call runs only when `regions` or `habitable_zone` is
+    requested), `exclusion-boundary --star` (the result, the mass error and the β ≠ 0 error; the luminosity stays null,
+    with no FLAME stand-in), `exclusion-system` (the single-body mass error, which also gains the region step's reason;
+    a composed system → `twomass_status_a` / `_b`), `dyson-collector --star` and `par-flux --star` (SIMBAD's Teff is
+    still used);
+  - per star on `compare-stars stars[]` and `circumbinary-hz` (`stars[]`, `hz: null`);
+  - `binary-stability-auto` and the dossier multiplicity block (`twomass_status_a` / `_b`);
+  - project dossier member rows.
+  - **`generate-system`'s real anchor is the one exception:** a degrade is an `{"error"}` carrying the marker (exit 1),
+    because there is no anchor L and so no system.
+- **Test hook:** **`SPACE_APP_2MASS_FORCE_UNREACHABLE=1`** forces `unreachable` at the seam. It makes no network call,
+  wins over a cached answer and is never memoised.
+
+### CR-30.4 — the relations (`core/ms_sequence.py`)
+
+- **Mass from L** (`mass_from_luminosity`; the L route, `mass_provenance: ms_luminosity_inversion`):
+  - **S12** is Eker et al. 2018 Table 4, inverted, from log L −1.066 to 5.37775.
+  - It switches at the midpoints −0.790308 / 0.108209 / 1.628616 (the 0.72 / 1.05 / 2.40 M☉ breaks; the lower-mass
+    segment below the midpoint, the higher-mass segment at or above it).
+  - An L in the 7 M☉ up-step gap (log L 3.4455–3.5262) → 7.0.
+  - S1's sequence (log M linear in log L) is used below the switch and above 31 M☉.
+  - **No clamp:** below M9.5V's log L −3.57 → `null` with the reason.
+  - Keys: `mass_relation` (`Eker2018_inverted` / `S1_sequence`), `mass_segment`, `mass_switch_band` (`0.72` / `1.05` /
+    `2.40` / `7.0_gap`).
+- **L from M** (`luminosity_from_mass`): S12 forward from 0.615391 M☉ to 31 M☉ (inclusive upper edges), S1 outside that.
+  Null outside S1's mass span **0.078–59 M☉**. Keys: `luminosity_from_mass_relation` (`Eker2018_forward` /
+  `S1_sequence`) and `luminosity_from_mass_null_reason` (on the dossier: `regions.stellar`, beside the value).
+- **R from M** (`radius_from_mass`): S1's (Msun, R) pairs sorted by mass, log R linear in log M. Null outside
+  0.078–59 M☉. Keys: `radius_from_mass_relation` (`S1_sorted_by_mass`) and `radius_from_mass_null_reason`.
+- **The M_Ks route** (S13: Mann et al. 2019, n = 5, zero point 7.5, no [Fe/H]):
+  - It applies to a K / M dwarf with exactly one 2MASS id and a parallax. M_Ks must lie in **[4.5, 10.5]** inclusive;
+    it is never clipped, and outside the gate the L route runs.
+  - New `mass_provenance` value **`ms_mks_relation`**. No over-read caution applies.
+  - Tier order: **manual → catalog → Gaia FLAME → M_Ks → L route**. It sits in `stellar_mass.resolve_mass(mks_mass=)`
+    and `resolve_component_mass(spec["mks"], detail_out=)`, ahead of `resolve_binary_components`' orbit fallback.
+  - **It needs no V:** a K / M star whose region step fails (no SIMBAD Teff or V) is still massed by M_Ks.
+  - A 2MASS degrade on that tier **never** falls to the L route.
+- **The M_Ks output:**
+  - **The region step** (`star-regions`, which keeps its own error exit on a failed step) carries an **`mks`** object
+    `{status, mass, m_ks, ks, ph_qual, rd_flg, note, binary_disclosure, activity_caveat?}`, also on a failed step.
+    `status` is `ok`, `outside_gate`, `no_parallax`, `not_km`, `giant` or the 2MASS status.
+  - **Mass keys:** `mass_route` (`mks` / `luminosity`), `mass_mks_solar`, `mass_lroute_solar` (the L route's mass,
+    reported beside it), `mass_lroute_null_reason` and `m_ks`.
+  - **`exclusion-boundary --star`** carries `mks_binary_disclosure` (S13's unresolved-binary hazard; on every M_Ks
+    output), `mks_note`, `mks_activity_caveat` (an active SIMBAD otype or CR-25's active class: S13's ≈ 2 %) and
+    `region_step_note` (a failed region step's reason).
+  - **Beside a higher tier:** for a K / M star whose catalog or FLAME mass wins, `mass_mks_solar` is still reported
+    (not adopted) on the dossier and `compare-stars` (Wolf 359).
+- **Everything a mass feeds follows it:** R(M), L(M), the MIST lifetime, 0.2·M / 40·M, the planetary year and the
+  calculated L. A `null` mass nulls every derived field, and every GUI / CLI print site renders the status instead of
+  crashing.
+  - The dossier trust flag's calculated L uses R(M) at the **adopted** mass.
+  - `compare-stars`' radius is S1's R(M). Its R-derived L is `null` when R is `null` (`luminosity_null_reason`).
+  - `formation --ms-luminosity` uses L(M) and errors outside S1's span.
+  - The generator's real anchor errors on a null mass or radius.
+- **The over-read caution** (`massL_inversion_caution`) now fires **only** for an O / B L-route mass (the A-star / Am
+  over-read is gone; the note cites the 84th percentile 1.165). `peculiar_star_flag` is unchanged.
+- **`exclusion-boundary --spectral-type`** reads S1's `Msun` at the type directly (`mass_provenance:
+  spectral_type_table`), with L = 10^logL.
+  - A letter-only O / B / A / M → the curated error *"Spectral type '<t>' has no subtype — S1 (the CR-30 main-sequence
+    table) needs one (e.g. M4V)."* (exit 1).
+  - A letter-only K reads K5V.
+
+### CR-30.5 — the MIST v2.5 lifetime
+
+`ms_sequence.ms_lifetime(M)`:
+- log t is linear in log M between tracks. The 1.15 → 1.16 M☉ reversal is kept as published.
+- Range: 0.10–300 M☉ (`below_0.10` / `above_300` → `null` with a status).
+- Each value names its end point: `first_Xc_lt_1e-4` (0.65 M☉ up), `first_Xc_lt_1e-2` (below), or
+  `interpolated_1e-2_to_1e-4` (0.60–0.65 M☉).
+
+It replaces `10¹⁰·M^−2.5` everywhere:
+- the region step (`mainSeqLifeSpan`);
+- the dossier (`main_seq_lifespan_yr`);
+- `stellar_mass.mass_dependent_outputs`;
+- **`stellar-evolution`'s `T_ms`** (echoed as `t_ms_gyr` with its `ms_lifetime_end_point`). The 0.1–20 M☉ guard is
+  unchanged (NaN now fails it); the stage fractions and the `< 0.8` line are untouched (CR-34's);
+- `main-sequence`'s `ms_lifetime_gyr_computed`;
+- the generator's `ms_end_gyr` clamp;
+- `oec_derived`'s label;
+- the comparison panel's "> 13.8 Gyr".
+
+Keys: `ms_lifetime_end_point`, `ms_lifetime_status`, `ms_lifetime_note`. Procyon A now reads Subgiant Branch.
+
+**The lifetime by placement** (`placement.lifetime_for_placement`, applied by `placement.apply_lifetime` to each
+carrier's own lifespan key plus `ms_lifetime_end_point / _direction / _status / _note / _if_stellar_ge_yr`):
+
+| Placement | Lifetime |
+|---|---|
+| stellar below 0.10 M☉ | `ms_lifetime_direction: "ge"`, `ms_lifetime_status: "lower_bound"`, ≥ t(0.10) |
+| stellar "≤ X" | ≥ t(X) (`lower_bound`) |
+| boundary | `null` (`boundary_null`) + *"if stellar, ≥ t(M_hi)"* (M_hi = X if "≤ X", else the interval's hi; at least 0.10) in `ms_lifetime_if_stellar_ge_yr`. When M_hi < 0.15 the note adds *"MIST's 0.10 → 0.15 Msun step disclosed"* |
+| substellar | `null` (`substellar_null`) |
+| pre-MS with no bound | `null` (`pre_ms`) |
+| no mass | `null` (`mass_null`) |
+| an SB1 minimum (`ge_x`) | ≤ t(X) (`ms_lifetime_direction: "le"`, `upper_bound`) |
+
+### CR-30.6 — the hydrogen-burning limit and placement (`core/placement.py`)
+
+**Constants:**
+- **`HBL_MSUN = 0.075`**, inclusive. It is the one limit, and `binary._STELLAR_MIN_MSUN` *is* it.
+- Band 0.067; margin 0.080; pre-MS split 0.625504; the override at log L −4.3; the deadband 1.01 / 0.99.
+- The youth cut's eleven nodes: 0.01 → 0.309062 … 0.625 → 0.083420. The cut is held from 0.625 to 0.8 and is 0.080
+  from 0.8. `NO_AGE_CUT` is 0.309062.
+
+**One placement rule** (`place` / `place_resolved`). A mass reading is an interval [lo, hi], a point X and a basis:
+- **stellar** needs lo ≥ 0.075, plus X > 0.080 for a margin-taking basis (inference / relation / model /
+  model_age_inconsistent / gaia_flame / archive);
+- **substellar** iff hi < 0.067;
+- **boundary** otherwise.
+
+How each kind of mass is read:
+- **A supplied mass** is placed by the band alone.
+- **The override:** a leading T / Y, an L later than L5, or log L < −4.3 → substellar whatever the mass. A stellar mass
+  carried with a trigger sets `conflict_flag` / `conflict_trigger` (`type:T7`, `type:L6`, `logL<-4.3`).
+- **Provenance → basis:**
+
+  | Provenance | Basis |
+  |---|---|
+  | `manual` | supplied |
+  | `gaia_flame` | gaia_flame |
+  | M_Ks / L / type routes, `binary_orbit_m1` | inference (route named) |
+  | `catalog` | the row's own `mass_basis` / `mass_interval` / `age_interval` |
+  | `archive` | archive (basis unknown) |
+  | `binary_orbit_m2`, the equal split, any unknown provenance | relation (basis unknown) |
+  | `binary_orbit_sb1_min` | `orbit_minimum` |
+
+- **An SB1 minimum** reads `ge_x`: ≥ 0.075 → stellar; else boundary, "undetermined (minimum mass)". Its
+  `r_ex_direction` is `lower_bound`.
+
+**The catalog's new fields** (`stellar_mass_tables.validate_cr30_fields`, at load):
+- `mass_basis` ∈ {dynamical, interferometric, asteroseismic, relation, model, model_age_inconsistent};
+- `mass_interval {lo, hi, kind ∈ source_range | sigma_1 | wb_derivation}`, with 0 < lo ≤ X ≤ hi;
+- `age_interval {lo_gyr, hi_gyr, basis ∈ membership | lithium | gravity_class | model_fit, grade ∈ member | candidate}`;
+- `mass_uncertainty_solar`, finite ≥ 0.
+
+An invalid field → the curated `{"error": "stellar-mass catalog '<path>': <row>: <field> …"}` (exit 1), naming the row
+and the field. A row without the fields reads as relation / "basis unknown", ± σ (lo floored at 0), with no age. The
+internal seed is now schema 1.1.0: Sirius A / α Cen A / α Cen B are `dynamical`, Vega `interferometric`, each with a
+`sigma_1` interval.
+
+**The youth rule (D):**
+- **What flags a star young:** a call age or catalog age (grade member / candidate) with hi ≤ 1 Gyr, or a gravity
+  designation (VL-G, INT-G, beta, gamma). These do **not**: hi > 1 or no hi, activity, rotation, `--activity young` and
+  FLAME's age.
+- **Sizing:** the smallest non-`model_fit` t_lo of the call's and the catalog's ages (`cut_t_lo_gyr`,
+  `cut_age_source`). With none, the cut is 0.309062 and the reading is taken at the 0.01 node
+  (`no_sizing_age_reason`).
+- **Which rows it applies to:** inference, relation and archive rows only (`youth_rule_applies`). Model, FLAME,
+  measured and supplied rows carry the flag but never the rule.
+- **The placement:** stellar iff lo ≥ 0.075 and lo > cut.
+- **The over-read factor** (`overread_factor` / `_by_route` / `_null_reasons`, `x_over_factor`):
+  - It is linear in log X between the rows bracketing X, and linear in t_lo between nodes. There is no factor from
+    0.8 Gyr.
+  - **Greg's Q18:** X is below a route's domain if it is below at either node read, and above only if above at both.
+    Inside at one node and above at the other → that node's factor sets the reading, the factor stays `null` with
+    *"outside the table at the <t> Gyr node"*, and `reading_node_gyr` names the node. 61 Cyg B at 0.03 Gyr → "≤ X"
+    via 1.127615 at 0.025.
+- **The reading** (`reading` ∈ **`x` / `le_x` / `interval` / `ge_x`**, plus `reading_text`):
+  - **"≤ X"** applies when the factor ≥ 1.01, when X is below the route's factor domain, or when the placed boundary is
+    below t_lo 0.8.
+  - A factor in (0.99, 1.01) → *"no measurable over-read"*; ≤ 0.99 → *"under-reads … no bound"*.
+  - A route-unknown row is read on every route.
+  - A flagged inferred / relation mass carries `youth_caveat`.
+
+**Pre-MS (E governs D):**
+- **Signals:**
+  - SIMBAD's primary otype ∈ {`Y*O`, `Y*?`, `TT*`, `TT?`, `Or*`, `Ae*`, `Ae?`} (component A's on a system entry);
+  - a `--component otype=` whose first code is one of those;
+  - δ;
+  - a flagging non-`model_fit` age with t_lo < 0.01.
+- **Effect on youth-rule rows:**
+  - X ≤ 0.625504 → boundary + "≤ X";
+  - X > 0.625504 → `status_text: "stellar, pre-main-sequence"`, with no bound.
+  - Under E, X with hi < 0.067 is still substellar.
+- **Keys:** `pre_ms` and `pre_ms_signal` (`simbad_otype:TT*`, `component_otype:…`, `gravity:delta`, `call_age`,
+  `catalog_age`).
+
+**The `placement` object:**
+- **Status:** `status` (`stellar` / `boundary` / `substellar` / **`undetermined_no_mass`**) and `status_text`.
+- **The mass read:** `reading` and `reading_text`; `x_msun`; `basis` and `basis_unknown`; `interval {lo, hi, kind}`;
+  `x_equals_hi`; `takes_margin`; `youth_rule_applies`.
+- **Youth:** `youth_flag`, `youth_trigger`, `youth_caveat`.
+- **Pre-MS:** `pre_ms`, `pre_ms_signal`.
+- **The cut:** `cut_msun`, `cut_t_lo_gyr`, `cut_age_source`, `no_sizing_age_reason`.
+- **The factor:** `overread_route`, `overread_factor`, `overread_factor_null_reasons`, `overread_factor_by_route`
+  (route-unknown rows), `x_over_factor`, `reading_node_gyr`.
+- **The override:** `conflict_flag`, `conflict_trigger`.
+- **Directions:** **`r_ex_direction`** (`upper_bound` iff `reading == le_x`; `lower_bound` on an SB1 minimum; else
+  `null`) and `derived_direction`.
+- **The rest:** `lifetime {…}`; `catalog_age` (from a catalog row); `age_input` (when an age was given);
+  **`windless_alternative`**; **`r_ex_interval_au`**.
+
+On an exclusion output, a boundary placement gains `windless_alternative {domain: "windless_free_harbor", note}`. A
+boundary **catalog** row also gains `r_ex_interval_au [lo, hi]`: the FROZEN standoff at the row's lo / hi
+(r_ex ∝ M^α).
+
+**Where placement is carried:**
+
+| Subcommand | Path | Mass placed |
+|---|---|---|
+| `exclusion-boundary` | `placement` (top level) | `--star` (catalog row / FLAME / M_Ks / L route; evolved path too), `--spectral-type` (type route), `--mass-msun` (supplied, band only). Not on `--object` presets, WD / sdO, or windless classifications other than T / Y / L6+ |
+| `exclusion-system` | `zones[].components[].placement` | every component; `null` for a WD / rogue component; absent on a bare compose |
+| `dossier` | `regions.mass.placement` (Sol included, placed as G2V) | the mass block's tier; FLAME's age never a signal |
+| `compare-stars` | `stars[].placement` (Sol included) | `mass_solar` |
+| `star-regions` | `placement` (top level) | the region-path mass (M_Ks / L route; no catalog tier); signals = the call age, the designation, SIMBAD's primary type |
+| `detection-completeness` | `star_placement` | the tier mass (manual / catalog / archive) or S1's type inference |
+| `binary-stability-auto`, dossier `multiplicity` | `placement_a` | the selected orbit's M₁ |
+
+Lifetime keys follow the status on `star-regions` (`mainSeqLifeSpan`) and on the dossier (`regions.stellar.main_seq_lifespan_yr`,
+including the failed-step block).
+
+### The age input (seven subcommands)
+
+- **The call flags:** `--age-lo-gyr` (omitted = no lower bound), `--age-hi-gyr` (required to give an age), and
+  `--age-basis {gravity_class, lithium, membership, model_fit}` (required with an age; argparse rejects any other value,
+  exit 2).
+- **Which subcommands take them:** `exclusion-boundary` (`--star` / `--spectral-type`), `exclusion-system`, `dossier`,
+  `star-regions`, `detection-completeness` (`--star` / `--sp-type`) and `binary-stability-auto`.
+- **`compare-stars`** takes a repeatable **`--star-age NAME LO HI BASIS`** instead. `LO` may be `none`; NAME must match a
+  `--stars` entry (Sol included), once.
+- **`exclusion-system --component`** gains the keys `age_lo=`, `age_hi=` and `age_basis=`. One call age applies to every
+  component the call resolves (Q23). A component's own keys **replace** the call age for that component (Q39).
+- **Validation** (`placement.age_input`) runs **before any network call**. A bound must be finite and ≥ 0, with
+  lo ≤ hi. A bad age → a curated `{"error": "age input: …"}` (exit 1). The errors are:
+  - *"giving an age requires an upper bound (--age-hi-gyr / age_hi=)"*;
+  - *"an age needs its basis …"*;
+  - *"the lo bound must be a finite number >= 0 Gyr …"*;
+  - *"lo 0.5 Gyr > hi 0.4 Gyr"*;
+  - *"--star-age names '<n>', which is not one of the --stars entries"*;
+  - *"--star-age given twice for '<n>'"*;
+  - *"component '<id>': age input: …"*;
+  - on `exclusion-boundary`, *"--age-* apply to --star / --spectral-type …"* with `--mass-msun` / `--object`.
+- **The echo:** **`age_input {lo_gyr, hi_gyr, basis}`** on every output that took one — top level, per star on
+  `compare-stars`, and on the placement objects.
+
+### CR-30.7 — placement's consumers
+
+**A. The exclusion domain** (`exclusion-boundary`, `exclusion-system`):
+- **A 5th domain value, `undetermined_no_mass`.** It means an L0–L5 (or letter-only L) type with no mass from any
+  tier (catalog → FLAME → supplied; there is **no inference route for an L type**). The result has:
+  - `standoff_au` / `r_ex_au` / `wall_au` `null`, `forcing_class: null`, `wall_route: "none_undetermined"` and a
+    `domain_note`;
+  - exit 0.
+
+  It is **never** the free harbor.
+- **The one domain-after-placement rule is `exclusion_wall.placed_domain_kw`:**
+  - **substellar → `windless_free_harbor`** (class note *"substellar by placement (CR-30.6) — windless free harbor, no
+    boundary on either layer"*);
+  - **`undetermined_no_mass` → the 5th value**;
+  - **stellar and boundary keep `main_sequence`.** A boundary gets the operative standoff from X, the CR-26 wall,
+    `windless_alternative` and, on a catalog row, `r_ex_interval_au`.
+- **Order** (Q28; only for an L / T / Y leading type or a BD otype):
+  - The mass ladder now runs before the windless return.
+  - **L0–L5** → the ladder (no M_Ks or L route) → placed, or `undetermined_no_mass`.
+  - **T / Y / L6+** → the ladder without inference (catalog → FLAME, with `flame_status` surfaced), for the conflict
+    flag only. Then the free harbor with `mass_msun` `null` and the override's `placement`.
+  - WD, sdO / sdB, the presets and `--object` keep their early returns, byte-identical.
+- **On `--spectral-type`**, which has no identity, so no catalog / FLAME tier: `L3` → `undetermined_no_mass`, while
+  `T7` → windless as before, with the override reported.
+- **`--mass-msun` placed substellar** (hi < 0.067, or log L < −4.3 with `--luminosity-lsun`) → the free harbor, with
+  the mass echoed. The routine **0.3** → stellar, with the standoff and wall byte-identical. **0.07** → boundary: the
+  standoff is unchanged and `windless_alternative` is added.
+- **The identity class tag** (`exclusion_system._classify_off_ms`) now sets only `wd`. A BD otype or an L letter no
+  longer auto-tags `brown-dwarf`; only an explicit `class=brown-dwarf` / `bd` or `--object brown-dwarf` does. The
+  routing predicate (`_routes_off_ms`: WD / BD otype, `D` / `L` / `T` / `Y` lead) is unchanged.
+  `derive_mass_loss_tier` treats the 5th value like windless (`noncoronal_row`).
+- **In a merged zone**, an `undetermined_no_mass` member adds no barycentre weight.
+- **The FROZEN `compute_exclusion_boundary` is untouched.** It is called with the placed X, as before.
+
+**B. `core/binary.py`:**
+- **M₁** is **S1's mass at the type** (`m1_read` / `m1_from_spectral_type`) at every M₁ site: NSS, SB9 (SB9's own `Sp1`
+  when the call has no type), the stability tiers and the SB9 census rows. The Pecaut & Mamajek anchor ladder is
+  retired, and **so is the 1.0 M☉ default**.
+- **A type that gives no S1 mass → `m1_solar: null`**, `class: "unknown"`, with a reason-specific `caveat` and
+  `m1_null_reason`:
+  - `no_spectral_type` (CR-27's text, byte-identical);
+  - `letter_only_type`;
+  - `unreadable_type`;
+  - `outside_s1_mass_span`;
+  - `no_simbad_lookup` (`--source-id` / `--ra --dec`).
+
+  A Gaia `binary_masses` M₂ still fills the companion. A census row with a null M₁ is kept and counted `unknown`.
+- **The bulk Gaia-NSS census** keeps its disclosed 1.0 M☉ primary, now with **`m1_assumed_note`** on each NSS row.
+- **`classify_companion`:**
+  - **≥ 0.075 → `stellar`** (was > 0.075);
+  - **[0.067, 0.075) → `"boundary — star or brown dwarf uncertain"`**;
+  - 0.013–0.067 → `brown-dwarf`;
+  - < 0.013 → `planet`;
+  - an **SB1 minimum** below 0.075 → **`"undetermined (minimum mass)"`**; at or above 0.075 it is stellar.
+- **A flagged primary** (`binary-orbit`: the type string's gravity designation / δ; `binary-stability-auto` and the
+  dossier multiplicity block: plus the call / catalog age). With M₁ read "≤ X":
+  - the companion gains `m1_direction: "le"` / `m2_direction: "le"`;
+  - a true M₂ (astrometric / Gaia `binary_masses`) becomes `"undetermined — at most <class(Y)>"`, with `substellar`
+    true iff Y < 0.067;
+  - an SB1 minimum becomes `"undetermined (minimum mass)"` with **`sb1_caveat_withheld: true`**;
+  - an SB2-ratio / equal-split M₂ under a "≤" M₁ reads `"undetermined — at most <class(Y)>"`;
+  - an unbounded pre-MS primary → `"undetermined — pre-MS primary"`.
+
+  A measured / model / FLAME / supplied M₁ takes no direction. SIMBAD types never reach `binary.py`.
+- **`binary-stability-auto` / the dossier multiplicity block:**
+  - `placement_a`;
+  - `elements.m1_direction` / `m2_direction` / `m2_class` / `sb1_caveat_withheld`;
+  - **a null M₁ → the no-masses result** (`elements: null`, no radii, no verdict), with `m1_null_reason` and a `note`.
+    The note appears only where an orbit exists; "no orbital solution found …" stands as before.
+- **`multiplicity`:** `components[].m2_solar_lower_direction`.
+- **`binary-orbit identity`:** `lum_class_token`, `s1_class_v_flag` and `m1_null_reason`.
+
+**C. `detection-completeness`:**
+- **The host mass and radius.** `_resolve_star_mr` reads S1's mass and radius at the subtype; the per-letter
+  `_MS_MASS_RADIUS` table is retired. A mass with no radius → R(M).
+- **New `--star-mass-catalog <path>`.** It defaults to the internal seed and is loud on a bad path. The tiers are
+  **manual → catalog → archive** (no FLAME), with the catalog matched on `--star` only. `star_mass_provenance` gains
+  **`catalog`**.
+  - An MS host takes the archive radius beside a catalog or archive mass.
+  - A non-MS host takes a catalog mass only when a tier also supplies its radius. Otherwise it gets
+    **`catalog_mass_not_applied: true`** + a note.
+- **New `notes` list.** It carries the catalog-beside-archive note (*"the host mass is the catalog's … the archive's
+  planet parameters were derived on the archive's own stellar mass"*) and the archive-basis note (*"basis unknown —
+  archive st_mass, placed as relation-basis …"*).
+- **`star_placement`.** SIMBAD's primary otype is a pre-MS signal here.
+- **The explicit branch** (exit 0). It fires for a host with no tier mass that is L0–L5, or whose S1 inference places
+  boundary (band / margin, the youth cut, the pre-MS split), or whose radius resolves `null`. The result has:
+  - every method `applicable: false`, with a note naming the cause (*"host placement: <status_text> …"* or *"host
+    radius null — <reason>"*) and the two flags `--star-mass-solar` / `--star-radius-solar`;
+  - `host_class: null`;
+  - `star_mass_solar` = the placed reading (`null` for L0–L5), and `star_radius_solar: null` with
+    `star_radius_null_reason`;
+  - `assumptions.out_of_domain: true`.
+
+  An unreadable type with no mass is still the curated error.
+- **Directions.** Under a host mass read "≤ X", each method carries **`limit_direction: "upper_bound"`** and the result
+  carries **`star_radius_bound_note`**.
+- **Other changes:**
+  - `_host_class` → `brown_dwarf` only for T / Y / L6+.
+  - `--activity` is jitter only; it is never a youth flag.
+
+**D. The census (`substellar`).**
+- Each row gains `placement_status_by_type`: `substellar` for L6+ / T / Y, else `undetermined_by_type` (by the parse; no
+  mass, youth or pre-MS read).
+- The result gains `census_label: "an L/T/Y census by spectral type"` and `placement_note`.
+
+### `cr30_disclosures` — the every-run disclosures
+
+The every-run disclosures are carried as a static **`cr30_disclosures`** object, `{topic: text}`, added by `query.py`
+`_out` on each **non-error dict** result of the subcommands below. The per-run disclosures stay in each output's own
+notes, beside the value they qualify. Topics (`ms_sequence.CR30_DISCLOSURES`): `s1`, `luminosity`, `relations`,
+`lifetime`, `hbl`, `youth`.
+
+| Subcommand | Topics |
+|---|---|
+| `star-regions`, `dossier`, `compare-stars` | all six |
+| `exclusion-system` | all six (`--star`, or a `--component` with a type / class / `lum=` / `main_id=`); `hbl` only when every component is a supplied `mass=` |
+| `exclusion-boundary` | all six (`--star` / `--spectral-type`); `hbl` only on `--mass-msun`; none on `--object` |
+| `star-regions-manual`, `sol-regions` | s1, luminosity, relations, lifetime |
+| `detection-completeness` | s1, relations, hbl, youth |
+| `binary-orbit`, `binary-stability-auto` | s1, hbl, youth |
+| `multiplicity`, `close-binary-census` | s1, hbl |
+| `generate-system` | s1, relations |
+| `circumbinary-hz`, `dyson-collector` | s1, luminosity (a `--star` call only; a numeric call reads no table) |
+| `stellar-evolution` | lifetime |
+| `par-flux` | s1 (`--star` / `--spectral-type` only) |
+| `substellar` | hbl |
+
+`main-sequence` returns a **list** (its rows carry the S1 / MIST keys themselves), so it carries no block.
+
+### Disclosure inventory
+
+Each disclosure in the contract's "Disclosures the outputs and docs carry" is carried in one of three ways: as a
+**per-run note** (on the output, with its subcommand and condition), as a **static topic** (`cr30_disclosures.<topic>`
+on the carriers above), or in **docs only** (this block).
+
+| Contract disclosure | Where carried |
+|---|---|
+| S1 is class-V, solar composition; subdwarfs flagged | static `s1`; per-run `s1_class_v_flag`, `lum_class_token`, `subdwarf_flag` on every S1 read |
+| Metal-poor stars score 1.05–1.50 on every relation | static `s1` |
+| The HBL rises at low metallicity (S24: 0.083 M☉ at [M/H] −2.0) | static `hbl` |
+| S12's population (disc stars, 0.008 ≤ Z ≤ 0.040) and steps at 0.72 / 1.05 / 2.4 / 7 M☉ | static `relations`; per-run `mass_segment` / `mass_switch_band`. S12's "parameters published up to 2017-01-02": docs only |
+| L-route vs M_Ks offset (S12 6–12 % above S13) | static `relations`; per-run `mass_lroute_solar` beside `mass_mks_solar` |
+| A K / M star whose region step fails, placed by M_Ks alone, its region fields and L-route mass null with the reason | per-run: `exclusion-boundary --star` `region_step_note`; dossier `regions.region_step_failed` + `region_error` (HZ warned); `exclusion-system` single-body mass error names the region reason; `star-regions` keeps its error exit but carries the `mks` object |
+| On the M_Ks route, L(M) is S1's L at the M_Ks mass and can differ from the region L | docs only |
+| S13's activity caveat (≈ 2 %) | per-run `mks_activity_caveat` (`exclusion-boundary --star`, an M_Ks mass with an active otype / CR-25 active class); `mks.activity_caveat` on the region-step `mks` object |
+| S13's unresolved-binary hazard | per-run `mks_binary_disclosure` (`exclusion-boundary --star`, `compare-stars stars[]`); the `ms_mks_relation` mass `note` / `mass_note` (dossier, `exclusion-system`); `mks.binary_disclosure` |
+| R(M) is a mean-sequence radius (out-of-sample 16th–84th 0.748–1.084) | static `relations`; per-run `radius_from_mass_null_reason` outside 0.078–59 M☉ |
+| S1's A-star dip in R(M) | docs only |
+| `--spectral-type` reads S1's mass directly | static `relations` |
+| The BC path cannot tell interpolation from nearest-row | static `luminosity` |
+| The colour route's ×1.014 zero-point offset; ±2 % against measured M-dwarf L (mostly in-sample) vs ±15 % for the subtype BC | static `luminosity` (the ±15 % figure: docs only); per-run `lum_route_note` on a colour-route result |
+| Letter-only F / G / K read at the middle row (span in L) | static `s1`; per-run `subtype_span_note` |
+| MIST end point by mass; the 10⁻² shortfall below 0.65 M☉ (≈ 5 % seam at 0.60–0.65) | static `lifetime`; per-run `ms_lifetime_end_point`, and `ms_lifetime_note` "interpolated from a 10^-2 track to a 10^-4 track" in the seam |
+| 0.10–0.60 M☉ crossing = each track's last EEP; the 0.30–0.40 transition band; the 1.15 → 1.16 M☉ reversal; the non-rotating set | static `lifetime` |
+| "Solar" = MIST [Fe/H] 0 (Z 0.016358); [Fe/H] / [α/Fe] not modelled | static `lifetime`. The −0.057 dex against MIST's calibrated Sun and the 1.0 M☉ track's +0.031 dex in L: docs only |
+| No low-mass validation in MIST II; MIST brighter than eclipsing M dwarfs | static `lifetime` (the "K3" offset label: docs only) |
+| MIST's version link | docs only (`data/cr30/MANIFEST.txt` names the source package and its md5) |
+| The HBL definition (S22 L190, with S24 L757–759) | static `hbl` (paraphrase: "below it nuclear equilibrium is never reached"); the verbatim quote: docs only |
+| S23's empirical log L −4.3 vs S22's model −4.19 | static `hbl` |
+| The cut is model-based (BHAC15; ×1.05 margin from LP 349-25) | static `youth`. "Untested at 0.1–1 Gyr and against dynamical masses": docs only |
+| The 0.309062 no-age value is model output at an untested age | static `youth`; per-run `no_sizing_age_reason` + `cut_msun` |
+| The unflagged gap below ≈ 0.625 Gyr | docs only |
+| S28's loose gravity-class ages; the dusty-photosphere false positive | docs only |
+| Solar composition only | static `s1` |
+| Activity is not youth (S29); rotation is not an age basis | static `youth`; the `detection-completeness --activity` help text |
+| σ overlapping the ×1.05 margin; the row-vs-inference asymmetry on the flagged side | docs only |
+| MIST's 0.10 → 0.15 M☉ step under t(M_hi) | per-run, in a boundary placement's `ms_lifetime_note` when M_hi < 0.15 |
+| One measurement placed two ways | docs only |
+| "≤ X" exact for true masses ≲ 0.6 M☉ (≲ 0.5 on the type route) | static `youth` |
+| Gaia FLAME's age is not a youth signal (dossier) | static `youth` (carried on the dossier) |
+| SIMBAD's pre-MS codes as mapped, read from the primary type only | static `youth`; per-run `pre_ms_signal` |
+| The over-read factor is model-based, null below ≈ 0.09 M☉ true mass, absent for a route-unknown row | per-run `overread_factor_null_reasons` (the table's `null_reason`; "route unknown … no single-route factor"); static `youth` (BHAC15) |
+| A model-fit-only age never sets the pre-MS status | docs only (the `--age-basis` help and `no_sizing_age_reason` say a model-fit age never sizes the cut) |
+| The "≤" from the factor with a 0.01 deadband, bounding the field relation's old-star read | static `youth`; per-run `reading_text` |
+| The cut sized on the tool's route, over-protective on the type route at the youngest nodes | docs only |
+| At an older age the relation can under-read the old-star read by up to 6.1 % (L) / 3.2 % (M_Ks) / 1.3 % (type) | docs only |
+| The bulk Gaia-NSS census's assumed 1.0 M☉ primary vs a single-object null M₁ | per-run `m1_assumed_note` (`close-binary-census` NSS rows); `m1_null_reason` + `caveat` (`binary-orbit`) |
+| An SB1 minimum under a flagged "≤" primary bounds only the minimum | per-run `sb1_caveat_withheld` + the companion `caveat` (`binary-orbit`); `elements.m2_class` (`binary-stability-auto`, dossier) |
+| A Gaia `binary_masses` M₂'s "≤" rests on Gaia's own M₁ — directional only | docs only |
+| The generator's own letter-only rule | docs only |
+| `binary.py`'s youth-flag reach (the type string at `binary-orbit`; + the age at `binary-stability-auto` / the dossier) | docs only |
+| An archive mass's unknown basis | per-run `detection-completeness` `notes` (archive-basis note) + `star_placement.basis_unknown` |
+| `detection-completeness`: a catalog mass beside the archive's planet parameters | per-run `notes` (catalog-beside-archive note) |
+| The SIMBAD BD otype no longer sets the domain | docs only (this test never set a tag — SIMBAD's code is `BD*` — so no output moves) |
+| A null M₁'s no-masses result on `binary-stability-auto` | per-run `note` + `m1_null_reason` (`binary-stability-auto`, dossier multiplicity) |
+| The dossier trust flag's changed behaviour (calculated L on R(M) at the adopted mass; null without FLAME) | docs only |
+
+### Behaviour changes (deliberate; keys additive)
+
+1. Every non-FLAME `--star` region luminosity, and everything it feeds, moves: S1's BC on 4.74, plus the colour route
+   for K / M dwarfs.
+2. `sol-regions` 1.086741 → 1.0000 L☉. The Sol dossier mass is pinned at 1.000.
+3. Every relation output moves:
+   - every inversion mass (S12 / S1 / M_Ks), L(M) and R(M);
+   - the trust flag;
+   - `compare-stars`' R and its R-derived L and HZ;
+   - the generator's real anchor and its seeded draws.
+4. Every lifetime moves to MIST: `ms_end_gyr` and the `stellar-evolution` stages. Procyon A → Subgiant Branch.
+5. New resolutions: M8.5V+, O5V / O9.5V / B0V, letter-only K, gravity-designated types, and no-V K / M stars on the
+   M_Ks route.
+6. Placement fields on every placed output; the 5th domain value; L0–L5 are no longer the free harbor; a boundary's
+   windless alternative; a supplied mass placed substellar → the free harbor.
+7. `binary.py`: S1 M₁ everywhere; the classifier's edge (≥ 0.075) and band; a null M₁ instead of 1.0; directions under
+   a flagged M₁.
+8. `detection-completeness`: S1 masses and radii; the catalog tier; the explicit branch.
+9. The census: a status per row, and its label.
+10. `main-sequence`: S1's **87** rows (was 24); its keys change (see that entry).
+11. The order: the mass ladder runs before the windless / L0–L5 domain decision for L / T / Y leading types.
+
+**Re-gate fixes (WB MSG 366, 2026-10-17):**
+- **F-1 (a).** `binary-stability-auto` takes the M_Ks tier like the dossier. A reduced primary record (one with no
+  `plx_value`) is widened by one SIMBAD lookup, made only when the tier is reached. HIP 76901: M₁ 0.25865
+  (`ms_mks_relation`) on all three binary paths.
+- **F-1 (b), Greg's ruling.** An SB1-minimum M₂ is re-solved from the selected orbit's mass function at the settled
+  M₁, whatever tier gave it (catalog, FLAME or M_Ks). This applies on `binary-stability-auto`, the dossier's
+  multiplicity block and `exclusion-system`. The printed `selected_solution.companion` carries the re-solved
+  `m1_solar` / `m2_solar` / `m2_mjup` and its class (`binary.sb1_m2_at`). HIP 76901: M₂ 0.0545752. This changes
+  CR-14.3's catalog / FLAME behaviour on an SB1 orbit.
+- **F-5.** The dossier's failed-region-step branch (the resolved mass, its placement and #26) runs only when the step
+  failed on a missing Teff, V or parallax, or on a 2MASS degrade (`regions.is_input_failure`). A non-main-sequence
+  class keeps HEAD's output: Sirius B and Procyon B no longer get MS R(M) / L(M) / lifetime values.
+- **F-2.** `compare-stars`' `mass` / `radius` override takes a measured mass only (manual, catalog or FLAME). The M_Ks
+  mass never moves an archive mass or radius.
+- **F-9.** On `exclusion-system --star`, a single body on the M_Ks route keeps the region L (`bcLuminosity`) as
+  `luminosity_lsun`, so the β term matches `exclusion-boundary --star`. EZ Aqr at β 0.5 gives 1.4756 on both. The
+  catalog / FLAME single-body β gap (δ Pav 47.33 vs 52.99) is left as at HEAD and routed to CR-28 + CR-33. An M_Ks
+  body whose region step fails also has no region L, so it shares that gap.
+- **F-3.** An `exclusion-system --component … lum=` below M9.5V (log L < −3.57) exits 1. The error names the reason
+  (no clamp) and drops the "or lum=" hint.
+- **F-6.** Every `exclusion-boundary --spectral-type` output that takes no S1 row now carries CR-30.2's type-read keys
+  (`sp_type_raw`, `sp_type_read`, `lum_class_token`, `subdwarf_flag`, `gravity_designation`, `low_gravity_class`).
+  That covers L0–L5, windless, evolved, unmodeled and substellar types.
+- **F-7, Greg's ruling.** `detection-completeness`'s explicit branch keeps HEAD's fields: `assumptions.{mag_domain,
+  sma_grid_au, albedo, monotonicity, host_class_note}`, `methods[].baseline_yr` (rv / astrometry), and the imaging
+  `contrast_band` / `mechanism_caveat`.
+- **F-8, Greg's ruling.** `star-regions` under a 2MASS degrade withholds only the region L. It keeps the fields that
+  do not depend on it: `vmag`, `temp`, `plx`, `parsecs`, `trigParallax`, `lightYears`, `absMagnitude`,
+  `spectral_type`, `bond_albedo`, `sunlight_intensity`, `planetaryTemperature*` and `hypatia`
+  (`regions.l_independent_fields`).
+- **F-4.** `lum_route_note` is named (CR-30.3's region-luminosity keys above).
+
+**Byte-identical** (asserted offline and in the live pre-check): Sol 47.5 / wall 6.0 (`--object sun`); the
+`brown-dwarf` / `rogue-planet` presets; `--mass-msun 0.3 --alpha 0.4` 29.345540401952064; α Cen A 48.966852301574924 /
+B 45.72136239364217 (composed); Sirius A 63.45901120705829; ε Eri 43.68623962821011; BL Cet 20.509168118090486; Proxima
+20.482354346604538, and their walls. These are the standoff and wall values under WB's 23-row catalog. Their
+`luminosity_lsun` (`regions_bc`) moves with the region L by design. `simbad-lookup` is byte-identical on every card.
+
+**Tests:**
+- `tests/test_cr30_data.py`, `test_cr30_parse.py`, `test_cr30_luminosity.py`, `test_cr30_relations.py`,
+  `test_cr30_placement.py`, `test_cr30_age_input.py`, `test_cr30_consumers.py` (offline; see `docs/testing.md`).
+- **Isolation.** `tests/conftest.py`'s `_cr30_twomass_isolation` makes `twomass.resolve` "not run" for every test not
+  marked `cr30_twomass`, so pre-CR-30 offline `--star` tests keep the subtype / L route. `_cr30_env_isolation` clears
+  `SPACE_APP_CR30_DATA_DIR` / `SPACE_APP_2MASS_FORCE_UNREACHABLE`.
 
 ## Implementation notes
 

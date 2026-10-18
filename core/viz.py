@@ -599,9 +599,13 @@ def prepare_system_regions_diagram(d: dict) -> dict:
         ("N₂/CO (1-atm)",                  d["lh2Line"],      "#9933FF"),
         ("System Outer Limit",             d["sysol"],        "#888888"),
     ]
-    hz_zones = _compute_hz_zones(d["temp"], d["calculatedLuminosity"])
+    # CR-30.4 (CP3): a null mass nulls 0.2·M / 40·M — those rings are dropped, the scale falls back to the last
+    # remaining ring; a null calculated L gives no HZ zones
+    regions = [r for r in regions if r[1] is not None]
+    hz_zones = (_compute_hz_zones(d["temp"], d["calculatedLuminosity"])
+                if d.get("calculatedLuminosity") is not None else [])
     eeid_au  = d.get("distAU", 0.0)
-    max_au   = d["sysol"] * 1.05
+    max_au   = (d["sysol"] if d.get("sysol") is not None else max(r[1] for r in regions)) * 1.05
     result = {
         "regions":  [{"label": l, "au": au, "color": c} for l, au, c in regions],
         "hz_zones": hz_zones,
@@ -1880,30 +1884,23 @@ def prepare_sky_from_star(result: dict, mag_limit: float = 6.5) -> dict:
 def prepare_hr_main_sequence() -> dict:
     """Main-sequence reference points for an HR diagram (Phase O · O2a).
 
-    Reads the local `main_sequence_stars` table. Returns
-    {"points": [{label, teff, abs_mag, bv, lum, color}]} (sorted hot→cool) or
-    {"error": str} when the table is empty / unusable.
+    CR-30.1: S1's rows from the md5-verified table (``core.ms_reference_tables``) — never a DB table. Returns
+    {"points": [{label, teff, abs_mag, bv, lum, color}]} (sorted hot→cool) or {"error": str}.
     """
-    from core.db import get_conn
+    from core import ms_reference_tables as mrt
     try:
-        rows = get_conn().execute(
-            "SELECT spectral_class, b_v, teff_k, abs_mag_vis, lum FROM main_sequence_stars"
-        ).fetchall()
-    except Exception as e:
-        return {"error": f"Error reading main_sequence_stars table: {e}"}
-    if not rows:
-        return {"error": "main_sequence_stars table is empty — run option 54 to import it."}
-
+        rows = mrt.s1_rows()
+    except mrt.Cr30DataError as e:
+        return {"error": str(e)}
     points = []
     for r in rows:
-        teff = _num(r["teff_k"])
-        abs_mag = _num(r["abs_mag_vis"])
+        teff, abs_mag = r["Teff"], r["Mv"]
         if teff is None or abs_mag is None or teff <= 0:
             continue
-        sc = (r["spectral_class"] or "").strip()
+        sc = r["SpT"]
         points.append({
             "label": sc, "teff": teff, "abs_mag": abs_mag,
-            "bv": _num(r["b_v"]), "lum": _num(r["lum"]),
+            "bv": r["B-V"], "lum": (10 ** r["logL"]) if r["logL"] is not None else None,
             "color": _sp_color(sc),
         })
     if not points:
@@ -1916,14 +1913,14 @@ def prepare_hr_from_stars(result: dict) -> dict:
     """Overlay points for an HR diagram from a stars-within result (Phase O · O2b).
 
     Per result star: `M_V = app_magnitude + 5 − 5·log₁₀(parsecs)` (uses the F1 keys);
-    Teff from the canonical `core.regions._lookup_spectral_type` ceiling rule. Stars
+    Teff from S1 at the type (`core.regions._lookup_s1`, CR-30.2). Stars
     missing a V magnitude/parsecs or without a parseable OBAFGKM Teff are skipped and
     counted. Returns {"points": [{name, teff, abs_mag, color, sp_type}], "skipped": int}
     or {"error": str}.
     """
     if not isinstance(result, dict) or "error" in result:
         return {"error": (result or {}).get("error", "No star-list data")}
-    from core.regions import _lookup_spectral_type
+    from core.regions import _lookup_s1
 
     pts, skipped = [], 0
     for s in result.get("stars", []):
@@ -1933,8 +1930,7 @@ def prepare_hr_from_stars(result: dict) -> dict:
         if vmag is None or pc is None or pc <= 0:
             skipped += 1
             continue
-        row, _key = _lookup_spectral_type(sp)
-        teff = _num(row.get("Teeff(K)")) if row else None
+        teff = _lookup_s1(sp)[0].get("Teff")
         if teff is None or teff <= 0:
             skipped += 1
             continue
@@ -1968,7 +1964,7 @@ def _hr_center_point(name: str):
     if not name:
         return None
     from core.db import get_conn
-    from core.regions import _lookup_spectral_type
+    from core.regions import _lookup_s1
     try:
         row = get_conn().execute(
             "SELECT spectral_type, app_magnitude, parsecs FROM star_systems "
@@ -1983,8 +1979,7 @@ def _hr_center_point(name: str):
     sp = (row["spectral_type"] or "").strip()
     if vmag is None or pc is None or pc <= 0:
         return None
-    r2, _k = _lookup_spectral_type(sp)
-    teff = _num(r2.get("Teeff(K)")) if r2 else None
+    teff = _lookup_s1(sp)[0].get("Teff")
     if teff is None or teff <= 0:
         return None
     return {"name": name, "teff": teff, "abs_mag": vmag + 5.0 - 5.0 * math.log10(pc),

@@ -8,15 +8,22 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
 
 ### Option 8: Star System Regions (SIMBAD) — `query_star_system_regions()`
 
-- Menu option 8: fully automated — SIMBAD lookup + BC DB lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
+- Menu option 8: fully automated — SIMBAD lookup + S1 BC lookup; `sunlightIntensity = 1.0`, `bondAlbedo = 0.3` hardcoded.
 - After the Calculated HZ table, the CLI queries the Hypatia Catalog for stellar properties and elemental abundances (see Hypatia Catalog section below). Hypatia errors are shown inline but do not abort the function.
-- **Spectral type validation:** extracted from SIMBAD `sp_type`. If the type does not contain an OBAFGKM class letter (e.g. white dwarfs like DA, DZ), a message is printed and the function returns early.
-- **DB lookup:** `core.regions._load_main_sequence_data()` (GUI/`query.py`) queries the `main_sequence_stars` DB table (lazy, cached in `_MAIN_SEQUENCE_DATA`) and builds `{letter: [(subtype_float, row_dict), ...]}` sorted ascending by subtype. Row dicts use the original CSV column names so all callers work unchanged. (The deprecated CLI's own `main.py` copy reads `propertiesOfMainSequenceStars.csv` directly.)
-  - `_SP_PATTERN = re.compile(r"(?<![A-Z])([OBAFGKM])(\d+(?:\.\d+)?)")` — negative lookbehind prevents matching an OBAFGKM letter that is preceded by another uppercase letter (e.g. the `A` in `DA1.9` is excluded).
-  - `_parse_spectral_class(sp_str)` uses `_SP_PATTERN.search()` to extract `(letter, subtype_float)`.
-  - `_lookup_spectral_type(sp_str)` applies a **ceiling rule**: finds the smallest available subtype number ≥ the requested subtype (e.g. G1 → G2, G6 → G8, A4 → A5). If all entries in the class are cooler than requested (subtype exceeds all), advances to the next cooler letter class's hottest entry (e.g. F9 → G0). `_LETTER_SEQUENCE = ["O","B","A","F","G","K","M"]` defines the cross-letter fallthrough order.
+- **Spectral type validation:** extracted from SIMBAD `sp_type` and read by CR-30.2's one parse (`core.shared.parse_spectral_type`). If the type has no OBAFGKM class letter (white dwarfs like DA or DZ; L / T / Y), the region step returns its error.
+- **S1 lookup (CR-30.2, built 2026-10-15; replaces the DB ceiling lookup).** `core.regions._lookup_s1(sp_str)` → `core.ms_sequence.s1_at`. It reads **S1** (Mamajek 2022.04.16, 87 rows O3V–M9.5V) from the md5-verified, WB-owned `data/cr30/` file. **No DB table is read**: the pre-CR-30 `main_sequence_stars` table and `propertiesOfMainSequenceStars.csv` are read by nothing, and the deprecated CLI delegates to `core.regions` too.
+  - **An exact S1 row** (`<type>V`) is used as published.
+  - **Otherwise** values are interpolated linearly in subtype along S1's ordered rows, across a class edge (G9.5 → between G9V and K0V). `logL` is interpolated in log, the other columns linearly, and never into a placeholder cell.
+  - **Letter-only types:** F / G / K read F5V / G5V / K5V (`subtype_unknown`, with a span note). Letter-only O / B / A → the region step fails with the curated reason. A letter-only M fails too, unless the colour route applies.
+  - **A type outside O3V–M9.5V** gives no row.
+  - **Gravity designations** (`VL-G`, `INT-G`, β / γ / δ) are stripped first, so `M8 INT-G` is an M8 dwarf, not class I.
+  - `bc_key` is now the type read (e.g. `G9.5`), not a CSV key. Every S1 read adds the type-read keys (`sp_type_read`, `lum_class_token`, `s1_class_v_flag`, `s1_rows`, `s1_fraction`, …). See `docs/integration.md` (CR-30 block).
+- **The M-dwarf colour route (CR-30.3).** It applies to a K / M dwarf (no class I–IV) with exactly one SIMBAD `2MASS J…` identifier and V − J in [2.53, 6.98].
+  - The J / Ks come from VizieR II/246.
+  - The luminosity is Mann et al. 2015's mean of the BC_V and BC_K paths, which replaces the subtype route's L (still reported as `lum_subtype_lsun`).
+  - A failed 2MASS lookup marks the result `not_authoritative` with a null luminosity, never a substituted route. The GUI panel shows the degrade reason as its error.
 - **Values extracted and validated** (all required; each triggers message + early return if missing):
-  - `boloLum` — `Bolo. Corr. (BC)` from the matched DB row (float)
+  - `boloLum` — S1's `BCv` at the type (CR-30.2)
   - `temp` — temperature in K from SIMBAD `mesfe_h.teff`
   - `vmag` — apparent magnitude from SIMBAD `V`
   - `plx` — parallax in mas from SIMBAD `plx_value`; also rejected if `<= 0`
@@ -24,14 +31,14 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
 
 ### Option 9: Star System Regions (Semi-SIMBAD) — `query_star_system_regions_semi_manual()`
 
-- Menu option 9: same SIMBAD lookup, checks, and BC DB lookup as option 8, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
+- Menu option 9: same SIMBAD lookup, checks, and S1 BC lookup as option 8, but prompts the user for `sunlightIntensity` and `bondAlbedo` after all validations pass.
 - Prompts (loop until valid float entered):
   - `Enter Sunlight Intensity (Terra = 1.0):` — blank defaults to `1.0`
   - `Enter Bond Albedo (Terra = 0.3, Venus = 0.9):` — blank defaults to `0.3`
 
 ### Option 10: Star System Regions (Manual) — `query_star_system_regions_manual()`
 
-- Menu option 10: no SIMBAD lookup, no checks, no CSV lookup. All six input values are entered manually.
+- Menu option 10: no SIMBAD lookup, no checks, no S1 lookup. All six input values are entered manually.
 - Prompts (loop until valid float entered, no defaults):
   - `Apparent Magnitude (V)`
   - `Parallax (mas)` — rejected if `<= 0`
@@ -49,16 +56,22 @@ All three Star System Regions variants (options 8, 9, 10) produce identical outp
   - `parsecs = 1000.0 / plx`
   - `absMagnitude = vmag + 5 - (5 × log10(parsecs))`
   - `bcAbsMagnitude = absMagnitude + boloLum`
-  - `bcLuminosity = 2.52 ** (4.85 - bcAbsMagnitude)`
-  - `stellarMass = bcLuminosity ** 0.2632` (intermediate, not displayed)
-  - `luminosityFromMass = stellarMass ** 3.5`
+  - `bcLuminosity = 10 ** (-0.4 × (bcAbsMagnitude - 4.74))` (**CR-30.3**: S1's own zero point M_bol,☉ 4.74 with the exact 10^0.4 step; was `2.52 ** (4.85 - bcAbsMagnitude)`). On the SIMBAD path the colour route's L replaces it for a K / M dwarf where it applies.
+  - `stellarMass` (**CR-30.4**, `core.ms_sequence`):
+    - the **M_Ks route** (Mann et al. 2019, n = 5; a K / M dwarf with one 2MASS id, a parallax and M_Ks in 4.5–10.5) where it resolves;
+    - else the **L route**: Eker et al. 2018 inverted with the midpoint switches, and S1's sequence below the switch / above 31 M☉;
+    - `null` below M9.5V's log L −3.57, never clamped;
+    - it was `bcLuminosity ** 0.2632`.
+
+    A null mass nulls every value derived from it, and the displays show "—" / the status instead of crashing.
+  - `luminosityFromMass` = L(M) (**CR-30.4**): Eker 2018 forward 0.615–31 M☉, S1's sequence outside; `null` outside S1's 0.078–59 M☉ span. It was `stellarMass ** 3.5`.
   - Table rows (label | value): Apparent Magnitude (3dp), Absolute Magnitude (3dp), Bolometric Absolute Magnitude (3dp), Bolometric Luminosity (6dp), Luminosity from Mass (5dp), BC (1dp), Star Temperature K (integer)
   - Column widths computed dynamically; labels left-justified, values right-justified, separated by ` | `
 - **Stellar Properties table** — rendered by `_display_stellar_properties()` after the Star System Properties table; uses `_print_table()` (single header row, all columns right-aligned):
-  - `stellarRadius = stellarMass ** 0.57` if `stellarMass >= 1`, else `stellarMass ** 0.8`
+  - `stellarRadius` = R(M) (**CR-30.4**): S1's (mass, radius) pairs sorted by mass, log R linear in log M; `null` outside 0.078–59 M☉. It was `stellarMass ** 0.57` / `** 0.8`.
   - `stellarDiameterSol = ((5780²) / (temp²)) × √bcLuminosity`
   - `stellarDiameterKM = stellarDiameterSol × 1391600`
-  - `mainSeqLifeSpan = 10¹⁰ × (1 / stellarMass) ** 2.5`
+  - `mainSeqLifeSpan` = the **MIST v2.5** main-sequence lifetime at the mass (**CR-30.5**; log–log between tracks, 0.10–300 M☉). On `star-regions` it follows the placement status: "≥ t(X)" for a "≤ X" or < 0.10 M☉ star, `null` for a boundary / substellar one. It was `10¹⁰ × (1 / stellarMass) ** 2.5`.
   - Columns: Stellar Mass (4dp), Stellar Radius (5dp), Stellar Diameter Sol (4dp), Stellar Diameter KM (5e), Main Sequence Life Span (5e)
 - **Star Distance table** — rendered by `_display_star_distance()`; uses `_print_table()` (single header row, all columns right-aligned):
   - `trigParallax = plx / 1000`

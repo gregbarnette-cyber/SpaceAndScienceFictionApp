@@ -143,7 +143,10 @@ def _zone_envelope(members, phase):
     in_dom = [m for m in members if m["r_ex_au"] is not None]
     if not in_dom:
         return None, None, "no in-domain member — no sphere"
-    m_tot = sum(m["mass_solar"] for m in members)
+    # CR-30.7 A (CP5 #1): an undetermined_no_mass member has no mass — it adds no barycentre weight (nor a sphere)
+    def _mw(m):
+        return m["mass_solar"] or 0.0
+    m_tot = sum(_mw(m) for m in members)
 
     if len(members) == 1:
         m = members[0]
@@ -156,8 +159,8 @@ def _zone_envelope(members, phase):
             # merged without a resolved close-pair separation — treat as concentric (offsets 0)
             long_axis = max(m["r_ex_au"] for m in in_dom)
         else:
-            off_a = d * b["mass_solar"] / m_tot     # a's distance from barycenter (other mass in num.)
-            off_b = d * a["mass_solar"] / m_tot
+            off_a = d * _mw(b) / m_tot              # a's distance from barycenter (other mass in num.)
+            off_b = d * _mw(a) / m_tot
             # Only IN-DOMAIN members contribute a sphere edge to the envelope; an out-of-domain
             # member (no sphere, r=0) sets the barycenter via its real mass but its bare offset is
             # NOT an exclusion-field edge, so it must not set long_axis (matches the >2-member branch).
@@ -175,7 +178,7 @@ def _zone_envelope(members, phase):
         # distance from barycenter ≈ its separation to the nearest other member × (m_others / m_tot)
         seps = [_pair_sep(m, o, phase) for o in members if o is not m]
         d = min((s for s in seps if math.isfinite(s)), default=0.0)
-        off = d * (m_tot - m["mass_solar"]) / m_tot if d else 0.0
+        off = d * (m_tot - _mw(m)) / m_tot if d else 0.0
         reaches.append(off + m["r_ex_au"])
     long_axis = max(reaches)
     minor = max(m["r_ex_au"] for m in in_dom)
@@ -576,11 +579,13 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         # mass" error; this backstops a directly-built component dict (inf would otherwise reach r_ex as Infinity).
         m_ok = stellar_mass_tables.is_positive_finite(m)
         cw, eff_ws, sys_withheld = _classify_component(c, system_wind_state)
+        cw = _domain_by_placement(cw, c.get("_placement"))          # CR-30.7 A: the domain after the mass
         domain, wind_class, class_note = cw["domain"], cw["wind_class"], cw["class_note"]
         # CR-13 C1 → Option (A), CR-22-widened: a LONE non-main-sequence component with an unresolved
         # mass is numerically inert (windless/unmodeled carry no standoff; an evolved host with no
         # measured mass emits only the mass-free wall) — needs no mass, so flag it rather than erroring.
-        lone_ood_unresolved = (n_comp == 1 and domain != ew.MAIN_SEQUENCE and not m_ok)
+        lone_ood_unresolved = ((n_comp == 1 and domain != ew.MAIN_SEQUENCE and not m_ok)
+                               or domain == ew.UNDETERMINED_NO_MASS)    # CR-30.7 A: no mass by definition
         m_given = isinstance(m, (int, float)) and not isinstance(m, bool)
         if not m_ok and not lone_ood_unresolved:
             if m_given and m > 0:    # CR-22.6: +inf is positive, so say what is actually wrong with it
@@ -591,6 +596,7 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             # CR-22.6: a rejected numeric mass (non-finite / ≤ 0) must not keep the tier provenance it arrived with
             prov = "unresolved_out_of_domain"
         comps.append({
+            "_placement": c.get("_placement", _NO_PLACEMENT),          # CR-30.6 (set by the entry point)
             "id": cid, "mass_solar": float(m) if m_ok else None,
             "mass_provenance": prov,
             "mass_note": c.get("mass_note"),   # CR-23.2 §2c (review F4): parity with exclusion-boundary
@@ -703,7 +709,7 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             t_phase=inputs["t_phase"], f_shock=inputs["f_shock"], m_shock_min=inputs["m_shock_min"],
             c_ms_band=inputs["c_ms_band"]) if c["domain"] in (ew.MAIN_SEQUENCE, ew.EVOLVED) else {
                 "wall_au": None, "wall_band_au": None,
-                "wall_route": "none_windless" if c["domain"] == ew.WINDLESS else "none_unmodeled",
+                "wall_route": _NO_WALL_ROUTE.get(c["domain"], "none_unmodeled"),
                 "wall_reason": (c.get("class_note") or ("windless — free harbor"
                                 if c["domain"] == ew.WINDLESS else "class outside the wind model")),
                 "wall_note": ew._WALL_NOTE, "verdict_marginal": False, "r_ap_au": None}
@@ -723,7 +729,7 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
         c["wall_exceeds_standoff"] = exceeds
         c["wall_to_standoff_ratio"] = ratio
         # CR-26 additive fields (§26.7) — the tier was derived above (CR-31)
-        if c["domain"] in (ew.WINDLESS, ew.UNMODELED) and c.get("mass_loss_msun_yr") is not None:
+        if c["domain"] in (ew.WINDLESS, ew.UNMODELED, ew.UNDETERMINED_NO_MASS) and c.get("mass_loss_msun_yr") is not None:
             c["cr26_notes"].append(eb.NOTE_RATE_UNUSED)
         c["cr26_fields"] = eb._cr26_fields(tier, m, c["wall_inputs"], c["r_ex_au"], c["wind_class"],
                                            c["cr26_notes"], c.get("cr26_carry_flags", ()),
@@ -798,6 +804,8 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
             forcing = eb._forcing_class(rep)
         elif all(m["domain"] == ew.WINDLESS for m in members):
             forcing = "free_harbor"
+        elif all(m["domain"] == ew.UNDETERMINED_NO_MASS for m in members):
+            forcing = None                                    # CR-30.7 A: undetermined — no mass (no standoff)
         else:
             forcing = "out_of_domain"
         zones.append({
@@ -835,6 +843,7 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
                 "wall_to_standoff_ratio": m["wall_to_standoff_ratio"],
                 **m["cr26_fields"],                                  # CR-26 §26.7 (additive)
                 **_cr24_component_fields(m),                         # CR-24 D6 echo + V_ISM + velocity
+                **_placement_field(m, alpha),                        # CR-30.6 (additive; absent on a bare compose)
             } for m in members],
             "point_mass_r_ex_au": point_mass,
             "forcing_class": forcing,
@@ -956,12 +965,41 @@ def compose_exclusion_system(components, phase="both", alpha=_DEFAULT_ALPHA,
 
 
 # ── per-component mass resolution (CR-11.2 chain) ─────────────────────────────
-def _resolve_component_mass(spec, catalog, allow_flame=True, status_out=None):
+def _resolve_component_mass(spec, catalog, allow_flame=True, status_out=None, detail_out=None):
     """CR-14.3 (L7): thin delegate to the shared ``stellar_mass.resolve_component_mass`` — the single
     per-component mass chain now used by ``exclusion-system``, ``binary-stability-auto`` and the dossier
     ``multiplicity`` section (so they report the same masses for a given star). Behavior byte-identical
     to the CR-11.2/CR-13.2 body it replaced."""
-    return stellar_mass.resolve_component_mass(spec, catalog, allow_flame, status_out=status_out)
+    return stellar_mass.resolve_component_mass(spec, catalog, allow_flame, status_out=status_out,
+                                               detail_out=detail_out)
+
+
+def _mks_for(sl):
+    """CR-30.4 (ruling 52, Q11): the M_Ks tier's input for a component with a SIMBAD record (``regions.mks_route``
+    — one 2MASS fetch per designation, shared with the region step)."""
+    from core import regions
+    try:
+        return regions.mks_route(sl) if isinstance(sl, dict) and "error" not in sl else None
+    except Exception:
+        return None
+
+
+def _override_lum(sl):
+    """CR-30.6 (CP6 #6): the region luminosity placement's log L < −4.3 override reads — the same L
+    ``exclusion-boundary --star`` / the dossier / compare-stars use. Computed only for a late M (M7+) or an L / T / Y
+    record, the only types whose L can reach 10^−4.3 (S1's M7V is log L −3.2), so no early-type component pays a
+    region step; None otherwise or on a failed step."""
+    from core import regions, shared
+    if not isinstance(sl, dict) or "error" in sl:
+        return None
+    p = shared.parse_spectral_type(sl.get("sp_type"))
+    if not (p.letter in ("L", "T", "Y") or (p.letter == "M" and (p.subtype or 0) >= 7)):
+        return None
+    try:
+        reg = regions.compute_star_system_regions_from_simbad(sl)
+    except Exception:
+        return None
+    return reg.get("bcLuminosity") if isinstance(reg, dict) and "error" not in reg else None
 
 
 def _bool_key(v):
@@ -980,7 +1018,9 @@ def _parse_component_spec(s):
             "wind_speed", "v_ism", "c_ms", "b_field", "n_cloud", "cloud_temp",
             "wind_phase_yr", "f_shock", "m_shock_min",
             # CR-26 per-star wind-model inputs (their G14 ranges are exit-2-validated by query.py)
-            "radius_rsun", "log_fx", "log_fx_limit", "prot_days"}
+            "radius_rsun", "log_fx", "log_fx_limit", "prot_days",
+            # CR-30.6 (Q39): a component's own age — replaces the call's --age-* for that component
+            "age_lo", "age_hi"}
     _alias = {"mass": "mass_solar", "lum": "luminosity_lsun", "sma": "sma_au",
               "type": "sp_type", "sptype": "sp_type", "sp": "sp_type", "otype": "otype"}
     _known = {"id", "name", "mass_solar", "luminosity_lsun", "sp_type", "otype", "class", "pair",
@@ -991,7 +1031,9 @@ def _parse_component_spec(s):
               # CR-26 (main_id= is the measured-table identity key — distinct from the free-text id / name)
               "radius_rsun", "log_fx", "log_fx_limit", "prot_days", "main_id",
               # CR-24: a Local-Bubble-cavity host (V_ISM 26 assumed; true/false)
-              "lb_cavity"}
+              "lb_cavity",
+              # CR-30.6 (Q39): age_lo= / age_hi= (Gyr) / age_basis= — the component's own age
+              "age_lo", "age_hi", "age_basis"}
     for tok in str(s).split(","):
         tok = tok.strip()
         if not tok:
@@ -1058,19 +1100,27 @@ def _is_secondary_component(main_id, otype=None, sp_type=None):
     (``* alf Cen A`` / ``* alf Cen``) → False, so a primary-named input is not caught (WB MSG 126)."""
     if re.search(r"\s[B-Z]$", (main_id or "").strip()):
         return True
-    return _classify_off_ms(otype, sp_type) is not None
+    return _routes_off_ms(otype, sp_type)
+
+
+def _routes_off_ms(otype=None, sp_type=None):
+    """The identity ROUTING predicate (CR-30 §13.4 H4, Q29 — unchanged from CR-13): a WD / BD otype, or a degenerate
+    ``D*`` / ``L`` / ``T`` / ``Y`` leading letter, resolves as its own single body. Routing only — it sets no tag."""
+    ot = (otype or "").lower()
+    sp = (sp_type or "").strip()
+    return "white dwarf" in ot or "brown dwarf" in ot or sp[:1] in ("D", "L", "T", "Y")
 
 
 def _classify_off_ms(otype=None, sp_type=None):
-    """The explicit off-MS class tag (``wd`` / ``brown-dwarf``) from a SIMBAD otype or spectral type,
-    else None. otype ("white dwarf"/"brown dwarf") is preferred; the degenerate ``D*`` / substellar
-    ``L``/``T``/``Y`` leading letter is the fallback."""
+    """The explicit off-MS class TAG from a SIMBAD otype or spectral type: ``wd`` (a white-dwarf otype or a ``D*``
+    type), else None. CR-30.7 A (§13.4 H4, Q29–Q30): the tag never auto-assigns ``brown-dwarf`` — an L0–L5 is placed
+    by its mass, and T / Y / L6+ are substellar by placement's override (the domain classifier's own type rule), not
+    by a tag; only a user's ``class=brown-dwarf`` / ``--object brown-dwarf`` reaches the windless tag set. (SIMBAD's
+    otype codes — ``BD*`` — never matched the old "brown dwarf" label test, so its retirement moves no output.)"""
     ot = (otype or "").lower()
     sp = (sp_type or "").strip()
     if "white dwarf" in ot or sp[:1] == "D":
         return "wd"
-    if "brown dwarf" in ot or sp[:1] in ("L", "T", "Y"):
-        return "brown-dwarf"
     return None
 
 
@@ -1157,30 +1207,49 @@ def _single_body_component(sl, catalog, star, status_out=None, a_lookup=None):
     sp = sl.get("sp_type")
     class_tag = _classify_off_ms(sl.get("otype"), sp)
     spec = {"name": sl.get("main_id"), "sp_type": sp, "class": class_tag,
-            "designations": _augment_designations(sl.get("designations"), {sl.get("main_id")})}
+            "designations": _augment_designations(sl.get("designations"), {sl.get("main_id")}),
+            "mks": (lambda: _mks_for(sl))}                           # CR-30.4: ahead of the L route (lazy — CP6 #1)
     # CR-23.2: pass status_out on the FLAME-eligible first call so a bounded single-body FLAME degrade is
     # surfaced (previously dropped). The L-inversion retry below uses allow_flame=False → never resets it.
-    mass, prov, note = _resolve_component_mass(spec, catalog, status_out=status_out)
+    _md = {}
+    from core import placement, shared
+    l0_l5 = placement.is_l0_l5(shared.parse_spectral_type(sp))
+    if l0_l5:
+        spec["mks"] = None              # CR-30.7 A (Q28): catalog → FLAME only — no inference route for an L type
+    mass, prov, note = _resolve_component_mass(spec, catalog, status_out=status_out, detail_out=_md)
     domain, class_note = _component_domain(sp, class_tag, otype=sl.get("otype"))   # broad guard, matches compose
-    if mass is None and domain == "main_sequence":
+    reg_reason, tw = None, {}
+    if mass is None and domain == "main_sequence" and not l0_l5:
         # MS single body with no measured mass — reuse the dossier's bolometric-L inversion (Q2).
-        from core import regions
+        from core import regions, twomass
         reg = regions.compute_star_system_regions_from_simbad(sl)
+        if isinstance(reg, dict) and "error" in reg:
+            reg_reason = reg["error"]                    # CR-30 (Q14): named in the mass error (additive)
+            tw = twomass.degrade_marker(reg)
         if isinstance(reg, dict) and "error" not in reg and reg.get("bcLuminosity"):
             spec["luminosity_lsun"] = reg["bcLuminosity"]
             # allow_flame=False (plan-review F4): FLAME already missed above; the retry only adds the
             # L-inversion, so re-issuing the Gaia TAP call would be redundant network I/O.
-            mass, prov, note = _resolve_component_mass(spec, catalog, allow_flame=False)
+            mass, prov, note = _resolve_component_mass(spec, catalog, allow_flame=False, detail_out=_md)
         if mass is None:
             # CR-27.3 (Q8): a BOUNDED FLAME fetch says so and carries flame_status — never "no Gaia FLAME"
             fs = (status_out or {}).get("flame_status")
             err = {"error": (f"could not resolve a mass for '{star}' (SIMBAD: {name}) — no catalogued "
                              "mass, " + (stellar_mass.flame_fetch_phrase(fs) if fs else "no Gaia FLAME")
-                             + ", and no usable luminosity for the MS inversion; pass "
+                             + ", and no usable luminosity for the MS inversion"
+                             + (f" ({reg_reason})" if reg_reason else "") + "; pass "
                              "--star-mass-catalog or use --component with mass=<M☉>")}
             if fs:
                 err["flame_status"] = fs
+            err.update(tw)                               # CR-30.3: a 2MASS degrade marks the error
             return err
+    elif prov == stellar_mass.MS_MKS and domain == "main_sequence":
+        # MSG 366 F-9: the M_Ks tier now wins ahead of the inversion, which carried the region L into the standoff's
+        # β term — an M_Ks-route body keeps that region L (exclusion-boundary --star's), as the inversion did
+        from core import regions
+        reg = regions.compute_star_system_regions_from_simbad(sl)
+        if isinstance(reg, dict) and "error" not in reg and reg.get("bcLuminosity"):
+            spec["luminosity_lsun"] = reg["bcLuminosity"]
     comp = {"id": name, "name": sl.get("main_id"), "sp_type": sp, "class": class_tag,
             # CR-25 (contract 3(b)): the primary otype rides on the component (compose's classify
             # previously saw otype=None — its WR/AGB-by-otype now agrees with the domain above)
@@ -1190,7 +1259,10 @@ def _single_body_component(sl, catalog, star, status_out=None, a_lookup=None):
             "_cr26_identity": _cr26_identity(sl, a_prefetch=a_prefetch(sl.get("main_id"), a_lookup)),
             # CR-24: its own record's velocity (a letterless head takes its A record); no fallback (Q3).
             # CR-27.4: the identity step's candidate answer is reused (one SIMBAD identity lookup per call).
-            "_cr24_vel": {"role": "head", "target": sl.get("main_id"), "reuse": a_lookup}}
+            "_cr24_vel": {"role": "head", "target": sl.get("main_id"), "reuse": a_lookup},
+            # CR-30.6: the placement inputs (popped before compose)
+            "_cr30": {"catalog_row": _md.get("catalog_row"), "otype": sl.get("otype"), "otype_source": "simbad",
+                      "lum": spec.get("luminosity_lsun") or _override_lum(sl)}}
     # CR-25.2: the FULL otype list — fetched only for an MS K/M body, and only now the mass resolved
     sw = resolve_star_wind(sp, sl.get("otype"), sl.get("main_id"), class_tag=class_tag)
     if sw["otypes"] is not None:
@@ -1206,6 +1278,22 @@ def _single_body_component(sl, catalog, star, status_out=None, a_lookup=None):
         if note:
             comp["mass_note"] = note    # CR-23.2 §2c (review F4): carry the resolver caution
     return comp, mass, domain, class_note
+
+
+def _a_otype(sl):
+    """CR-30.6 (Q22): component A's primary SIMBAD otype on the binary path — a letterless head's A record through
+    CR-27.4's one identity step (``resolve_star_identity``), else the head's own. Returns ``(otype, a_prefetch,
+    note_or_None)``: the candidate answer is handed on to CR-26's A lookup (CP5 #7 — one SIMBAD identity lookup per
+    call); a failed lookup falls back to the head's otype, disclosed (E's signal is never invented)."""
+    sl_a, sysent, a_lookup, aerr = resolve_star_identity(sl)
+    if aerr:
+        return sl.get("otype"), None, ("component A's own record did not resolve ("
+                                       f"{aerr.get('component_a_status')}) — the pre-MS signal reads the system "
+                                       "head's SIMBAD type")
+    cand = xray_catalog.a_candidate(sl.get("main_id"))
+    if sysent:                                            # a distinct A record (a system entry)
+        return sl_a.get("otype"), ({"candidate": cand, "answer": (sl_a, None)} if cand else None), None
+    return sl.get("otype"), a_prefetch(sl.get("main_id"), a_lookup), None
 
 
 def a_prefetch(main_id, a_lookup):
@@ -1227,6 +1315,12 @@ def _note_system_entry(notes, meta, sysent):
     if sysent:
         meta["system_entry"] = dict(sysent)
         notes.append(sysent["note"])
+
+
+NOTE_SIMBAD_FAILED_B = ("companion '{comp}': its SIMBAD lookup failed (a service error, not \"no results\") — its record "
+                        "(type, otype, designations, 2MASS) is unavailable, so its WD / BD class is unread (treated as "
+                        "main-sequence) and its M_Ks tier could not run (a catalogued mass still applies); not "
+                        "authoritative (simbad_status_b) — pass --component with class=wd/brown-dwarf to override")
 
 
 def _resolve_system_from_star(star, catalog):
@@ -1310,9 +1404,10 @@ def _resolve_system_from_star(star, catalog):
 
     prim_spec = {"name": main_id, "sp_type": sl.get("sp_type"),
                  "designations": _augment_designations(sl.get("designations"),
-                                                       _component_candidate_ids(main_id, "A"))}
-    _sa = {}
-    prim_mass, prim_prov, prim_note = _resolve_component_mass(prim_spec, catalog, status_out=_sa)
+                                                       _component_candidate_ids(main_id, "A")),
+                 "mks": (lambda: _mks_for(sl))}                      # CR-30.4 (Q11): ahead of the orbit fallback
+    _sa, _da = {}, {}
+    prim_mass, prim_prov, prim_note = _resolve_component_mass(prim_spec, catalog, status_out=_sa, detail_out=_da)
     if prim_mass is None:
         prim_mass, prim_prov, used_orbit = sel["m1_solar"], sel["mass_prov_a"], True
         prim_note = None    # CR-23.2 §2c (review F4): orbit fallback → no resolver caution
@@ -1324,15 +1419,22 @@ def _resolve_system_from_star(star, catalog):
     comp_otype = comp_sl.get("otype") if comp_ok else None
     comp_desig = comp_sl.get("designations") if comp_ok else None
     comp_class = _classify_off_ms(comp_otype, comp_sp)
-    if comp_class is None:
+    comp_failed = stellar_mass.simbad_service_failed(comp_sl)       # a service error, not "no results"
+    if comp_failed:
+        # MSG 368 O-1: B's record is unavailable — its class (WD / BD) and its M_Ks tier both rest on it, so the result
+        # fails loud whatever tier gave B its mass (never the "nature not confirmed" note, which reads as no record)
+        notes.append(NOTE_SIMBAD_FAILED_B.format(comp=comp_id))
+    elif comp_class is None and not _routes_off_ms(comp_otype, comp_sp):
         notes.append(f"companion nature not confirmed (no '{comp_id}' WD/BD classification) — treated "
                      "as main-sequence; pass --component with class=wd/brown-dwarf to override")
     comp_spec = {"name": comp_id, "sp_type": comp_sp, "class": comp_class,
-                 "designations": _augment_designations(comp_desig, {comp_id})}
-    _sb = {}
-    comp_mass, comp_prov, comp_note = _resolve_component_mass(comp_spec, catalog, status_out=_sb)
+                 "designations": _augment_designations(comp_desig, {comp_id}),
+                 "mks": (lambda: _mks_for(comp_sl)) if comp_ok else None}
+    _sb, _db = {}, {}
+    comp_mass, comp_prov, comp_note = _resolve_component_mass(comp_spec, catalog, status_out=_sb, detail_out=_db)
     if comp_mass is None:
-        comp_mass, comp_prov, used_orbit = sel["m2_solar"], sel["mass_prov_b"], True
+        # CR-30.7 B (MSG 366 F-1 (b)): an SB1 minimum re-solved at the settled M₁ (binary-stability-auto's rule)
+        comp_mass, comp_prov, used_orbit = binary.sb1_m2_at(sel, prim_mass), sel["mass_prov_b"], True
         comp_note = None    # CR-23.2 §2c (review F4): orbit fallback → no resolver caution
 
     if used_orbit and sel.get("notes"):
@@ -1363,9 +1465,10 @@ def _resolve_system_from_star(star, catalog):
                              "fallback_to_head": False, "candidate": None})
     # CR-26: A is identified through its A candidate (independent of the CR-25 K/M gate; G12 falls back to the
     # head); B through the comp_sl already fetched above (a network failure → the H1 string fallback).
-    comp_failed = (not comp_ok and isinstance(comp_sl, dict) and not str(comp_sl.get("error", "")).startswith(
-        databases.SIMBAD_NO_RESULTS_PREFIX))
-    ident_a = _cr26_identity(sl, candidate=xray_catalog.a_candidate(main_id), component_a=True)
+    a_ot, a_pre, a_note = _a_otype(sl)                   # CR-30.6 (Q22) — A's own record, reused by CR-26 below
+    if a_note:
+        notes.append(a_note)
+    ident_a = _cr26_identity(sl, candidate=xray_catalog.a_candidate(main_id), component_a=True, a_prefetch=a_pre)
     ident_b = _cr26_identity(comp_sl if comp_ok else {"sp_type": comp_sp},
                              candidate=(comp_id if comp_failed else ""), sl_failed=comp_failed,
                              borrow_plx=sl.get("plx_value"))
@@ -1375,7 +1478,11 @@ def _resolve_system_from_star(star, catalog):
          "wind_otype_source": sw_a["cls_kw"]["wind_otype_source"],
          "designations": sl.get("designations"), "pair": "AB",
          "sma_au": sma, "ecc": sel["ecc"], "_cr26_identity": ident_a,
-         "_cr24_vel": {"role": "head", "target": main_id}},
+         "_cr24_vel": {"role": "head", "target": main_id},
+         # CR-30.6 (Q22): A's pre-MS signal reads component A's own record (as exclusion-boundary --star and the
+         # single-body path do); the head's only where no distinct A record resolves (CP4 #5)
+         "_cr30": {"catalog_row": _da.get("catalog_row"), "otype": a_ot, "otype_source": "simbad",
+                   "lum": _override_lum(sl)}},
         {"id": comp_id, "name": comp_id, "mass_solar": comp_mass, "mass_provenance": comp_prov,
          "mass_note": comp_note, "sp_type": comp_sp, "class": comp_class,
          "otype": comp_otype, "wind_otype_source": sw_b["cls_kw"]["wind_otype_source"],
@@ -1383,7 +1490,9 @@ def _resolve_system_from_star(star, catalog):
          # CR-24: B's own record (raw SIMBAD main_id); the flag-1 fallback borrows the A record's own RV only
          "_cr24_vel": {"role": "companion", "target": (comp_sl.get("main_id") if comp_ok else None),
                        "failed": comp_failed, "name": comp_id,
-                       "status": (_failure_class(comp_sl.get("error")) if comp_failed else None)}},
+                       "status": (_failure_class(comp_sl.get("error")) if comp_failed else None)},
+         "_cr30": {"catalog_row": _db.get("catalog_row"), "otype": comp_otype, "otype_source": "simbad",
+                   "lum": _override_lum(comp_sl) if comp_ok else None}},
     ]
     for c, sw in zip(comps, (sw_a, sw_b)):
         if sw["otypes"] is not None:
@@ -1392,10 +1501,17 @@ def _resolve_system_from_star(star, catalog):
     # bounded per-component FLAME call). Surfaced on the result by compute_exclusion_system; compose
     # builds fixed per-component dicts, so these ride at the system level (matching binary-stability-auto).
     meta = {"gaia_status": bo_status}
+    # CR-30.3 (CP3): a 2MASS degrade on A or B (its mass then fell to the orbit) marks the result
+    for _tag, _d in (("a", _da), ("b", _db)):
+        if _d.get("twomass_status"):
+            meta["not_authoritative"] = True
+            meta[f"twomass_status_{_tag}"] = _d["twomass_status"]
     if _sa.get("flame_status"):
         meta["flame_status_a"] = _sa["flame_status"]
     if _sb.get("flame_status"):
         meta["flame_status_b"] = _sb["flame_status"]
+    if comp_failed:                                       # MSG 368 O-1 (the note was added above)
+        stellar_mass.mark_simbad_failure(meta, "b")
     if sw_a["status"]:                                    # CR-25: per-component otype-list degrade
         meta["otype_status_a"] = sw_a["status"]
     if sw_b["status"]:
@@ -1406,7 +1522,7 @@ def _resolve_system_from_star(star, catalog):
 def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=None,
                              phase="both", alpha=_DEFAULT_ALPHA,
                              calibration_au=eb._KUIPER_EDGE_AU, dial=None, beta=0.0, gamma=0.0,
-                             system_wind=None, wind_state=None, prot_days=None):
+                             system_wind=None, wind_state=None, prot_days=None, age=None):
     """Entry point for ``exclusion-system``. Resolve the components (from ``--star`` live, or explicit
     ``--component`` specs) — each mass via the CR-11.2 chain — then compose. Returns the result dict
     (with a ``resolution`` note block) or a curated ``{"error": str}``.
@@ -1415,13 +1531,76 @@ def compute_exclusion_system(star=None, component_specs=None, star_mass_catalog=
     cr27 = {}
     try:
         res = _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, alpha, calibration_au,
-                                        dial, beta, gamma, system_wind, wind_state, prot_days, cr27)
+                                        dial, beta, gamma, system_wind, wind_state, prot_days, cr27, age=age)
     except stellar_wind_tables.Cr26DataError as e:       # a corrupt / missing WB data file (CR-26 §1)
         res = {"error": str(e)}
     # CR-27.4 (one rule, both subcommands): once a system entry resolved, every error of the call carries it
     if cr27.get("system_entry") and isinstance(res, dict) and "error" in res:
         res.setdefault("system_entry", cr27["system_entry"])
     return res
+
+
+def _component_placement(c, call_age):
+    """CR-30.6 — one component's placement (pops the private ``_cr30`` inputs). The component's own ``age_lo=`` /
+    ``age_hi=`` / ``age_basis=`` replace the call age (Q39); its ``otype=`` first code is a pre-MS signal (Q21).
+    A white dwarf / rogue body is not placed (null). → the placement object, None, or ``{"error"}``."""
+    from core import placement, shared
+    inp = c.pop("_cr30", None) or {}
+    cid = c.get("id") or c.get("name") or "?"
+    own = [c.get(k) for k in ("age_lo", "age_hi", "age_basis")]
+    if any(v is not None for v in own):
+        age, err = placement.age_input(*own)
+        if err:
+            return {"error": f"component '{cid}': {err}"}
+    else:
+        age = call_age
+    tag = str(c.get("class") or "").strip().lower()
+    sp = c.get("sp_type") or (c.get("class") if tag not in _TAG_WORDS else None)
+    parse = shared.parse_spectral_type(sp) if sp else None
+    if tag in ("wd", "white-dwarf", "white_dwarf", "rogue", "rogue-planet", "rogue_planet") or (
+            parse is not None and parse.letter == "D"):
+        return None
+    pl = placement.place_resolved(c.get("mass_solar"), c.get("mass_provenance"),
+                                  catalog_row=inp.get("catalog_row"), parse=parse,
+                                  lum_lsun=(c.get("luminosity_lsun") or inp.get("lum")), call_age=age,
+                                  otype=inp.get("otype", c.get("otype")),
+                                  otype_source=inp.get("otype_source", "component"))
+    if age:
+        pl["age_input"] = age
+    return pl
+
+
+_NO_PLACEMENT = object()      # a component that never went through the entry point (a direct compose call)
+_NO_WALL_ROUTE = {ew.WINDLESS: "none_windless", ew.UNMODELED: "none_unmodeled",
+                  ew.UNDETERMINED_NO_MASS: "none_undetermined"}
+
+
+def _domain_by_placement(cw, pl):
+    """CR-30.7 A: a main-sequence-classified component's domain by its placement — substellar → the windless free
+    harbor (ruling 78 (i) / (iii)); ``undetermined_no_mass`` (an L0–L5 with no mass) → the 5th domain value.
+    Stellar / boundary keep main_sequence (boundary: the operative standoff + the windless alternative)."""
+    kw = ew.placed_domain_kw(pl) if cw["domain"] == ew.MAIN_SEQUENCE else None
+    if kw is None:
+        return cw
+    return dict(cw, **{k: v for k, v in kw.items() if k in cw})
+
+
+def _placed_domain(c):
+    """The domain a resolved component composes in (its classification, then its placement)."""
+    cw = ew.classify_wind(sp_type=c.get("sp_type"), otype=c.get("otype"), class_tag=c.get("class"))
+    return _domain_by_placement(cw, c.get("_placement"))["domain"]
+
+
+def _placement_field(m, alpha):
+    """CR-30.6: a composed member's ``placement`` (+ the boundary extras on its own standoff) — absent when the
+    component never went through the entry point, so a direct ``compose_exclusion_system`` call is unchanged."""
+    from core import placement
+    pl = m.get("_placement", _NO_PLACEMENT)
+    if pl is _NO_PLACEMENT:
+        return {}
+    if pl is None:
+        return {"placement": None}
+    return {"placement": placement.boundary_extras(dict(pl), m.get("r_ex_au"), alpha, ew.WINDLESS)}
 
 
 def _h4_inject(spec):
@@ -1449,7 +1628,7 @@ def _h4_inject(spec):
 
 
 def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, alpha, calibration_au, dial, beta,
-                              gamma, system_wind, wind_state, prot_days, cr27=None):
+                              gamma, system_wind, wind_state, prot_days, cr27=None, age=None):
     catalog = stellar_mass_tables.load_mass_catalog(star_mass_catalog)
     if isinstance(catalog, dict) and "error" in catalog:
         return {"error": catalog["error"]}
@@ -1481,8 +1660,16 @@ def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, a
             # stays FLAME-free / deterministic) flags a per-component `flame_status_<a+i>` ∈
             # {timeout|unreachable}, degrade-branch-only, matching the --star C3 convention. The
             # `mass_provenance` stays the actual tier used; the universal gaia_tap `_warn` stderr fires.
-            _st = {}
-            m, prov, mnote = _resolve_component_mass(spec, catalog, status_out=_st)
+            _st, _md = {}, {}
+            from core import placement as _pl, shared as _sh
+            l_type = _pl.is_l0_l5(_sh.parse_spectral_type(spec.get("sp_type") or spec.get("class")))
+            # CR-30.7 A (Q28; CP5 #5): an L0–L5 takes catalog → FLAME → a supplied mass= only — its lum= never feeds
+            # the luminosity route (the luminosity itself still reaches the standoff / wall where a mass is placed)
+            m, prov, mnote = _resolve_component_mass(
+                {k: v for k, v in spec.items() if not (l_type and k == "luminosity_lsun")}, catalog,
+                status_out=_st, detail_out=_md)
+            spec["_cr30"] = {"catalog_row": _md.get("catalog_row"), "otype": spec.get("otype"),
+                             "otype_source": "component"}                     # CR-30.6 (Q21)
             if _st.get("flame_status"):
                 comp_flame[f"flame_status_{chr(ord('a') + i)}"] = _st["flame_status"]
             if m is None:
@@ -1491,7 +1678,9 @@ def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, a
                 # Any mass-requiring component (MS, or one of several) still errors here.
                 domain, _cn = _component_domain(spec.get("sp_type"), spec.get("class"),
                                                 otype=spec.get("otype"))
-                if not (len(component_specs) == 1 and domain != ew.MAIN_SEQUENCE):
+                from core import placement, shared
+                l0_l5 = placement.is_l0_l5(shared.parse_spectral_type(spec.get("sp_type") or spec.get("class")))
+                if not (len(component_specs) == 1 and domain != ew.MAIN_SEQUENCE) and not l0_l5:
                     return {"error": mnote, **comp_flame}   # CR-19: a bounded FLAME → flag it on the error too
             else:
                 spec["mass_solar"] = m
@@ -1502,12 +1691,18 @@ def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, a
     else:
         return {"error": "exclusion-system requires --star or at least one --component."}
 
+    for c in components:                                  # CR-30.6: placed per component (before the CR-26 inputs: the
+        # domain follows the placement — CR-30.7 A), carried through compose
+        pl = _component_placement(c, age)
+        if isinstance(pl, dict) and "error" in pl:
+            return pl
+        c["_placement"] = pl
     if star:
         # CR-26: the per-star network inputs, after the CR-23 mass + CR-25 otype resolution. The frozen
         # generator's checks run first on the standoff-bearing components (M-6: no CR-26 lookup is spent on a
         # bad --dial/--beta/…; an all-windless system keeps today's exit 0).
         for c in components:
-            dom, _ = _component_domain(c.get("sp_type"), c.get("class"), otype=c.get("otype"))
+            dom = _placed_domain(c)                       # CR-30.7 A (CP5 #6): the domain after placement
             if dom in (ew.MAIN_SEQUENCE, ew.EVOLVED) and c.get("mass_solar") is not None:
                 ws_c = (ew._norm_wind_state(wind_state) or wind_state) if dom == ew.MAIN_SEQUENCE else None
                 err = eb.standoff_arg_error(c.get("luminosity_lsun") or 1.0, c.get("mass_loss_msun_yr"),
@@ -1518,7 +1713,7 @@ def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, a
             ident = c.pop("_cr26_identity", None)
             if ident is None:
                 continue
-            dom, _ = _component_domain(c.get("sp_type"), c.get("class"), otype=c.get("otype"))
+            dom = _placed_domain(c)
             if dom not in (ew.MAIN_SEQUENCE, ew.EVOLVED):
                 continue
             ident = dict(ident, domain=dom, mass=c.get("mass_solar"), catalog=catalog)
@@ -1528,6 +1723,8 @@ def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, a
     result = compose_exclusion_system(components, phase=phase, alpha=alpha,
                                       calibration_au=calibration_au, dial=dial, beta=beta, gamma=gamma,
                                       system_wind=system_wind, system_wind_state=wind_state, prot_days=prot_days)
+    if "error" not in result and age:
+        result["age_input"] = age
     if "error" not in result and notes:
         result["resolution_notes"] = notes
     if star and "error" not in result:
@@ -1536,7 +1733,8 @@ def _compute_exclusion_system(star, component_specs, star_mass_catalog, phase, a
         # single-body/no-companion verdict is degraded) + per-component flame_status_a/_b (binary mass
         # path). CR-23.2: + flame_status (a bounded FLAME on the SINGLE-body --star mass path).
         # CR-25: + otype_status (single body) / otype_status_a/_b (binary) — a bounded otype-list fetch.
-        for _k in ("gaia_status", "flame_status", "flame_status_a", "flame_status_b",
+        for _k in ("gaia_status", "flame_status", "flame_status_a", "flame_status_b", "not_authoritative",
+                   "twomass_status_a", "twomass_status_b", "simbad_status_b",
                    "otype_status", "otype_status_a", "otype_status_b"):
             if star_meta.get(_k):
                 result[_k] = star_meta[_k]

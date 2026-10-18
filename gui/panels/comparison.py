@@ -484,8 +484,10 @@ class StellarEvolutionPanel(DiagramToggleMixin, ResultPanel):
 
         # Summary line.
         low = result.get("low_mass")
-        total_txt = "> 13.8 Gyr" if low else f"{result['total_gyr']:.3f} Gyr"
-        ms_txt    = "> 13.8 Gyr" if low else f"{result['ms_end_gyr']:.3f} Gyr"
+        # CR-30.5 (Q16): the "> 13.8 Gyr" text keys off the MIST value itself, not the < 0.8 M☉ flag (CR-34's)
+        past = result.get("ms_end_gyr") is not None and result["ms_end_gyr"] > 13.8
+        total_txt = "> 13.8 Gyr" if (low or past) else f"{result['total_gyr']:.3f} Gyr"
+        ms_txt    = "> 13.8 Gyr" if past else f"{result['ms_end_gyr']:.3f} Gyr"
         summary = f"<b>Total lifetime:</b> {total_txt} &nbsp;·&nbsp; <b>MS lifetime:</b> {ms_txt}"
         if result.get("current_stage"):
             summary += f" &nbsp;·&nbsp; <b>Current stage:</b> {result['current_stage']}"

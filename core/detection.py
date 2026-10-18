@@ -28,7 +28,6 @@ Network only on the optional ``--star`` resolve path.
 """
 
 import math
-import re
 
 import core.calculators as calculators
 import core.detection_tables as dt
@@ -38,9 +37,9 @@ import core.shared as shared
 _ALL_METHODS = ("rv", "transit", "astrometry", "imaging")
 _DEFAULT_SMA_GRID = (0.05, 0.1, 0.3, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0)
 
-# Luminosity class (Roman numeral) after the temperature subtype: III/II/I → giant, IV → subgiant,
-# V → dwarf (MS), VI → subdwarf, VII → white dwarf. Longest Roman alternatives first.
-_LUM_CLASS_RE = re.compile(r"[^A-Za-z](VII|VI|IV|V|III|II|I)(?:ab|a|b|0)?")
+# Luminosity class (Roman numeral): III/II/I → giant, IV → subgiant, V → dwarf (MS), VI → subdwarf,
+# VII → white dwarf — read through CR-30.2's one parse (``shared.parse_spectral_type``: gravity designations
+# stripped first, so ``M8 INT-G`` is not class I; a flagged late-M / L III–IV is low gravity, not a giant).
 
 
 def _bin_row(by_mag, app_mag):
@@ -52,9 +51,22 @@ def _bin_row(by_mag, app_mag):
 
 
 def _sp_letter(sp_type):
-    """Leading OBAFGKM class letter of a spectral type (same scan as _resolve_star_mr), else None."""
+    """OBAFGKM colour letter of a spectral type, else None — CR-30.2: the one parse's letter (an Am string's
+    ``h`` type; gravity designations stripped). An L / T / Y type has **no** colour letter (so ``L3beta`` /
+    ``L5gamma`` never pick up a B / G wind row or RV jitter — Q31); a degenerate lead (``DA2``, ``DA+M6``), a
+    composite read by the legacy fallback (``Am+F7/8V``) or an unparseable string keeps the legacy
+    first-OBAFGKM-character scan (no CR-30 rule speaks there)."""
     if not sp_type:
         return None
+    p = shared.parse_spectral_type(sp_type)
+    if p.letter in ("L", "T", "Y"):
+        return None
+    if p.letter in ("O", "B", "A", "F", "G", "K", "M") and not p.degenerate_lead:
+        if not p.legacy_fallback:
+            return p.letter
+        if p.lead_letter in ("O", "B", "A", "F", "G", "K", "M"):
+            return p.lead_letter                     # a letter-only lead (Am+F7/8V → A), as the old scan read it
+        return p.letter                              # no lead letter (gK0 → K; CP1 — the old scan misread 'g')
     for ch in sp_type:
         if ch.upper() in "OBAFGKM":
             return ch.upper()
@@ -72,14 +84,18 @@ def _host_class(sp_type):
     s = sp_type.strip()
     lead = shared.spectral_leading_class(s, letters=shared._SP_DISPLAY_LETTERS)
     if lead in ("L", "T", "Y"):
+        # CR-30.7 A / C (ruling 78 (iii)): only T, Y and an L later than L5 are substellar by type; an L0–L5 (or a
+        # letter-only L) is placed by its mass — not a non-main-sequence class here
+        p = shared.parse_spectral_type(s)
+        if lead == "L" and (p.subtype is None or p.subtype <= 5):
+            return None
         return "brown_dwarf"
     if lead == "D":
         return "white_dwarf"                        # DA/DB/DO/DQ/DZ/DC… (uppercase D = degenerate)
     if s[:2] == "sd" and s[2:3] in ("B", "O"):      # hot subdwarf (sdB/sdO); cool sdM/esdM stay ~MS
         return "subdwarf"
-    m = _LUM_CLASS_RE.search(s)                      # giants/subgiants via the luminosity class
-    if m:
-        lc = m.group(1)
+    lc = shared.parse_spectral_type(s).lum_class_core  # giants/subgiants via the luminosity class (CR-30.2)
+    if lc:
         if lc == "IV":
             return "subgiant"
         if lc == "VI":
@@ -168,18 +184,22 @@ def _astrom_floor(astro_defaults, app_mag):
 
 
 def _resolve_star_mr(sp_type, star_mass_solar, star_radius_solar):
-    """(mass, radius) in solar units from explicit values or a spectral type. → (m, r) or None."""
-    m, r = star_mass_solar, star_radius_solar
-    if (m is None or r is None) and sp_type:
-        for ch in sp_type:
-            if ch.upper() in dt._MS_MASS_RADIUS:
-                dm, dr = dt._MS_MASS_RADIUS[ch.upper()]
-                m = m if m is not None else dm
-                r = r if r is not None else dr
-                break
-    if m is None or r is None:
-        return None
-    return m, r
+    """CR-30.7 C: ``(mass, radius, radius_null_reason)`` in solar units. With no mass: S1's mass and radius at the
+    star's subtype (CR-30.2's lookup — the letter table retired); with a mass and no radius: R(M) by CR-30.4 (null
+    outside S1's 0.078–59 M☉ span, with its reason). A null value carries no fallback."""
+    from core import ms_sequence, regions
+    m, r, why = star_mass_solar, star_radius_solar, None
+    if m is None and sp_type:
+        s1, _p = regions._lookup_s1(sp_type)
+        m = s1.get("Msun")
+        if r is None:
+            r = s1.get("R_Rsun")
+            if r is None:
+                why = s1.get("s1_null_reason") or "S1 gives no radius at this type"
+    elif m is not None and r is None:
+        rr = ms_sequence.radius_from_mass(m)
+        r, why = rr["radius"], rr["reason"]
+    return m, r, why
 
 
 def _interp_delta_mag(curve, sep_arcsec):
@@ -258,7 +278,8 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
                                    transit_precision_ppm=None, transit_target=False,
                                    astrom_precision_uas=None, astrom_baseline_yr=None,
                                    star=None, activity=None, star_mass_provenance=None,
-                                   rv_precision_provenance=None, rv_precision_meta=None):
+                                   rv_precision_provenance=None, rv_precision_meta=None,
+                                   catalog_row=None, call_age=None, otype=None, extra_notes=None):
     """Per-method minimum-detectable-planet vs SMA map. See module docstring.
 
     Returns ``{star, app_mag, distance_pc, sp_type, star_mass_solar, star_radius_solar,
@@ -278,6 +299,9 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
     if activity is not None and activity not in ("active", "young", "quiet"):
         return {"error": "activity must be one of active / young / quiet."}
     host_class = _host_class(sp_type)
+    star_pl = None
+    branch = None                       # CR-30.7 C: the explicit mass / radius branch (its note), else None
+    r_null_reason = None
     if host_class is not None:
         # Non-MS host (CR-6-AMEND, WB MSG 053): the MS mass/radius relation + the sp_type→jitter map
         # do NOT transfer, so never fake MS params by scanning to the first OBAFGKM letter. Compute
@@ -292,12 +316,45 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
         else:
             m_star = r_star = None
     else:
-        mr = _resolve_star_mr(sp_type, star_mass_solar, star_radius_solar)
-        if mr is None:
+        if not sp_type and star_mass_solar is None:
             return {"error": "Provide --sp-type, or --star-mass-solar and --star-radius-solar."}
-        m_star, r_star = mr
-        if m_star <= 0 or r_star <= 0:
+        if star_mass_solar is None and shared.parse_spectral_type(sp_type).letter is None:
+            # an unreadable type with no mass is the caller's error, as before (CP5 #9) — never a placement branch
+            return {"error": f"Could not read the spectral type '{sp_type}' — provide --sp-type (e.g. M4V), or "
+                             "--star-mass-solar and --star-radius-solar."}
+        if (star_mass_solar is not None and star_mass_solar <= 0) or (
+                star_radius_solar is not None and star_radius_solar <= 0):
             return {"error": "star mass and radius must be positive."}
+        m_star, r_star, r_null_reason = _resolve_star_mr(sp_type, star_mass_solar, star_radius_solar)
+        # CR-30.6 / 30.7 C: the host's placement — a tier mass (manual / catalog / archive) or S1's inference
+        from core import placement
+        parse = shared.parse_spectral_type(sp_type) if sp_type else None
+        prov_in = (star_mass_provenance or "manual") if star_mass_solar is not None else "spectral_type_table"
+        star_pl = placement.place_resolved(m_star, prov_in if m_star is not None else None,
+                                           catalog_row=catalog_row, parse=parse, call_age=call_age, otype=otype)
+        if call_age:
+            star_pl["age_input"] = call_age
+        no_tier = star_mass_solar is None
+        if no_tier and placement.is_l0_l5(parse):
+            m_star = None                                      # no inference route for an L0–L5 (ruling 97)
+            star_pl = placement.place_resolved(None, None, parse=parse, call_age=call_age, otype=otype)
+            if call_age:
+                star_pl["age_input"] = call_age
+        placed_out = no_tier and (m_star is None or star_pl["status"] in ("boundary", "undetermined_no_mass"))
+        if placed_out or r_star is None:
+            # CP5 #9: the note names the actual cause — the placement (ruling 97) or the null radius (R-1)
+            if placed_out:
+                branch = (f"host placement: {star_pl['status_text']}"
+                          + (f" ({r_null_reason})" if m_star is None and r_null_reason else ""))
+                if r_null_reason is None or m_star is None:
+                    r_null_reason = ("a placed-boundary / undetermined host takes no main-sequence radius "
+                                     "(ruling 97)" if m_star is not None else r_null_reason)
+            else:
+                r_null_reason = r_null_reason or "no radius tier and R(M) is null at this mass"
+                branch = f"host radius null — {r_null_reason}"
+                if star_pl and star_pl.get("status") in ("boundary", "undetermined_no_mass"):
+                    branch = f"host placement: {star_pl['status_text']}; {branch}"   # a tier mass placed boundary
+            r_star = None
     # CR-10.4: which tier supplied M★ — an explicit value (manual or archive) vs the sp_type→mass
     # estimate. The query.py --star wrapper passes "manual"/"archive"; a direct explicit mass with no
     # provenance defaults to "manual"; a mass filled from the MS table is "sp_type_estimate".
@@ -317,6 +374,10 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
 
     defaults = dt._DETECTION_DEFAULTS
     dom = defaults["domain"]["mag_range"]
+    if branch is not None:
+        return _explicit_branch(star, app_mag, distance_pc, sp_type, m_star, mass_provenance, r_null_reason,
+                                star_pl, branch, want, extra_notes, grid=grid, albedo=albedo,
+                                rv_baseline_yr=rv_baseline_yr, astrom_baseline_yr=astrom_baseline_yr)
     mag_out = not (dom[0] <= app_mag <= dom[1])
     out_of_domain = mag_out or (host_class is not None)
     # sp_type feeds the MS-only jitter map only for a main-sequence host; a non-MS host with explicit
@@ -412,7 +473,11 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
                                 "contrast_band": band,
                                 "mechanism_caveat": im.get("mechanism_caveat")})
 
-    return {
+    if star_pl is not None and star_pl.get("reading") == "le_x":
+        # CR-30 §13.5 C4: a host mass read "≤ X" bounds every limit computed from it; its radius carries no bound
+        for e in out_methods:
+            e["limit_direction"] = "upper_bound"
+    out = {
         "star": star,
         "app_mag": app_mag,
         "distance_pc": distance_pc,
@@ -436,8 +501,64 @@ def compute_detection_completeness(app_mag, distance_pc, sp_type=None,
             "domain_note": _domain_note(mag_out, app_mag, dom, host_class),
             "sma_grid_au": list(grid),
             "albedo": albedo,
-            "monotonicity": "RV min-mass increases with SMA; transit min-radius is SMA-independent "
-                            "(depth-driven — transit_prob falls with SMA instead); astrometry/imaging "
-                            "min-planet decreases with SMA (astrometry until P>baseline; imaging until IWA)",
+            "monotonicity": _MONOTONICITY,
         },
     }
+    if star_pl is not None:
+        out["star_placement"] = star_pl
+        if star_pl.get("reading") == "le_x":
+            out["star_radius_bound_note"] = NOTE_RADIUS_NO_BOUND
+    if extra_notes:
+        out["notes"] = list(extra_notes)
+    return out
+
+
+_MONOTONICITY = ("RV min-mass increases with SMA; transit min-radius is SMA-independent (depth-driven — transit_prob "
+                 "falls with SMA instead); astrometry/imaging min-planet decreases with SMA (astrometry until "
+                 "P>baseline; imaging until IWA)")
+
+NOTE_RADIUS_NO_BOUND = ("a flagged host's radius carries no bound — the host mass reads \"≤ X\" (CR-30.6 D), so each "
+                        "mass limit is an upper bound; a radius-based limit is not bounded by it")
+
+
+def _explicit_branch(star, app_mag, distance_pc, sp_type, m_star, mass_provenance, r_null_reason, star_pl, status,
+                     want, extra_notes, grid, albedo, rv_baseline_yr=None, astrom_baseline_yr=None):
+    """CR-30.7 C (ruling 97; pre-fire rulings 19 R-1, 21 D1 / D6): a host with no mass from a tier above inference
+    whose type is L0–L5 or whose inference is placed boundary (band and margin, the youth cut, the pre-MS split), or
+    a host whose radius resolves null → exit 0, every method not computed, ``host_class`` null, the reading kept.
+    Only kit R8's fields move (MSG 366 F-7, Greg's ruling): the methods' inputs (``baseline_yr``, the imaging
+    ``contrast_band`` / ``mechanism_caveat``) and HEAD's ``assumptions`` (``mag_domain``, ``sma_grid_au``,
+    ``albedo``, ``monotonicity``, …) are kept."""
+    note = (f"{status} — not computed. Supply --star-mass-solar and --star-radius-solar to run the four detection "
+            "calculators on the real host M/R.")
+    defaults = dt._DETECTION_DEFAULTS
+    meth = defaults["methods"]
+    methods_out = []
+    for m in want:
+        e = {"method": m, "applicable": False, "detectable_vs_sma": [], "floor_source": None,
+             "floor_provenance": None, "value_kind": "min_radius_earth" if m in ("transit", "imaging") else "min_mass_earth",
+             "note": note}
+        if m == "rv":
+            e["baseline_yr"] = (rv_baseline_yr if rv_baseline_yr is not None
+                                else _bin_row(meth["rv"]["by_mag"], app_mag)["baseline_yr"])
+        elif m == "astrometry":
+            e["baseline_yr"] = astrom_baseline_yr if astrom_baseline_yr is not None else meth["astrometry"]["baseline_yr"]
+        elif m == "imaging":
+            e["contrast_band"] = meth["imaging"].get("contrast_band")
+            e["mechanism_caveat"] = meth["imaging"].get("mechanism_caveat")
+        methods_out.append(e)
+    out = {
+        "star": star, "app_mag": app_mag, "distance_pc": distance_pc, "sp_type": sp_type, "host_class": None,
+        "star_mass_solar": m_star, "star_mass_provenance": mass_provenance, "star_radius_solar": None,
+        "star_radius_null_reason": r_null_reason,
+        "methods": methods_out,
+        "assumptions": {"reference_version": defaults["reference_version"],
+                        "confidence": defaults["confidence"], "out_of_domain": True,
+                        "mag_domain": defaults["domain"]["mag_range"],
+                        "host_class": None, "host_class_note": None, "domain_note": note,
+                        "sma_grid_au": list(grid), "albedo": albedo, "monotonicity": _MONOTONICITY},
+        "star_placement": star_pl,
+    }
+    if extra_notes:
+        out["notes"] = list(extra_notes)
+    return out

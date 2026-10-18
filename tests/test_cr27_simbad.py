@@ -241,8 +241,12 @@ class BinaryNssZeroFluxTest(unittest.TestCase):
     def test_normal_record_unchanged(self):
         res = self._orbit(False)
         comp = [s for s in res["solutions"] if s["source"] == "gaia-nss:two_body_orbit"][0]["companion"]
-        self.assertEqual(comp["m1_solar"], 1.0)                           # today's sp-less default, unchanged
-        self.assertIsNotNone(comp["m2_solar"])
+        # CR-30.7 B (rulings 96, 168): a record with no spectral type → a null M₁ (never the 1.0 M☉ default), the
+        # caveat CR-27's text (that is the reason here)
+        from core import binary
+        self.assertIsNone(comp["m1_solar"])
+        self.assertEqual(comp["caveat"], binary._NOTE_M1_UNKNOWN)
+        self.assertEqual(comp["m1_null_reason"], "no_spectral_type")
 
 
 class DossierZeroFluxTest(unittest.TestCase):

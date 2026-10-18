@@ -9,27 +9,14 @@ _HOURS_PER_JULIAN_YEAR = 8765.8128   # 365.2422 × 24 (tropical year) — legacy
 
 
 def compute_main_sequence_table() -> list:
-    """Return all rows from main_sequence_stars as a list of dicts.
-
-    Dict keys match the original CSV column names so all callers work unchanged.
+    """CR-30.1 — S1's 87 rows (Mamajek 2022.04.16, O3V first, M9.5V last) from the md5-verified table, with
+    the computed columns labelled as computed (M_bol = M_V + BC_V, density from M and R, the MIST v2.5
+    lifetime). Keys: S1's header names verbatim (``SpT, Teff, B-V, Mv, BCv, logL, R_Rsun, Msun, s1_line``) plus
+    ``Mbol_computed``, ``density_computed_gcc``, ``density_computed_rho_sun``, ``ms_lifetime_gyr_computed``,
+    ``ms_lifetime_end_point``. Raises ``core.ms_reference_tables.Cr30DataError`` on an unverified file.
     """
-    conn = get_conn()
-    rows = conn.execute("""
-        SELECT
-            spectral_class  AS "Spectral Class",
-            b_v             AS "B-V",
-            teff_k          AS "Teeff(K)",
-            abs_mag_vis     AS "AbsMag Vis.",
-            abs_mag_bol     AS "AbsMag Bol.",
-            bc              AS "Bolo. Corr. (BC)",
-            lum             AS "Lum",
-            radius          AS "R",
-            mass            AS "M",
-            density         AS "p (g/cm3)",
-            lifetime        AS "Lifetime (years)"
-        FROM main_sequence_stars
-    """).fetchall()
-    return [dict(r) for r in rows]
+    from core import ms_sequence
+    return ms_sequence.s1_display_rows()
 
 
 def compute_solar_system_tables() -> dict:
@@ -142,7 +129,7 @@ def compute_hyper_limit_for_spectral_type(sp_type: str):
     """Resolve a star's Honorverse hyper limit from its spectral type (Phase O · O10b).
 
     Ceiling-rule lookup over the honorverse_hyper table (mirrors
-    regions._lookup_spectral_type): O/B/A are single-entry letters (any subtype →
+    the pre-CR-30 main-sequence ceiling lookup): O/B/A are single-entry letters (any subtype →
     that row); F/G/K/M are subtyped F0–M9 (smallest subtype ≥ the requested one,
     falling through to the next cooler letter's hottest entry if it exceeds the
     class; clamped to M9 past the coolest). Returns {lm, au, matched_class} or

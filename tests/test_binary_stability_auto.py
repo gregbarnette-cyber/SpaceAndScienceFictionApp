@@ -264,11 +264,13 @@ class Cr16TriggerTest(unittest.TestCase):
             self.assertFalse(binary._secondary_needs_primary_sp({"main_id": mid, "sp_type": sp}),
                              f"{mid}/{sp} must NOT fire")
 
-    def test_parse_spectral_class_tuple_truthiness_guard(self):
-        # _parse_spectral_class returns an ALWAYS-truthy 2-tuple; the trigger must test [0], never the tuple.
-        self.assertIsNone(binary._parse_spectral_class("DA1.9")[0])
-        self.assertIsNone(binary._parse_spectral_class("")[0])
-        self.assertIsNotNone(binary._parse_spectral_class("K1V")[0])
+    def test_trigger_reads_the_s1_gate(self):
+        # CR-30 §13.4 M5: the CR-16 trigger is "the S1 read yields no M₁" (was the OBAFGKM letter of
+        # _parse_spectral_class) — a WD / blank / letter-only secondary borrows the primary's type
+        self.assertFalse(binary._m1_decodes("DA1.9"))
+        self.assertFalse(binary._m1_decodes(""))
+        self.assertFalse(binary._m1_decodes("M"))
+        self.assertTrue(binary._m1_decodes("K1V"))
 
     def test_is_secondary_component_and_strip_whitespace_safe(self):
         self.assertTrue(binary._is_secondary_component("* alf CMa B"))
@@ -304,7 +306,7 @@ class Cr16BinaryOrbitRedirectTest(unittest.TestCase):
                "designations": {"MAIN_ID": "* alf CMa", "HD": "HD 48915A"}, "plx_value": 374.0}
         with patch("core.databases.compute_simbad_lookup", side_effect=self._lookup(sec, pri)), \
              patch("core.binary._sb9_solutions",
-                   side_effect=lambda ra, dec, sp: (cap.__setitem__("sb9_sp", sp) or ([], None))), \
+                   side_effect=lambda ra, dec, sp, **k: (cap.__setitem__("sb9_sp", sp) or ([], None))), \
              patch("core.binary._nss_two_body_solutions", return_value=([], None, None)), \
              patch("core.binary._wds_orb6_solutions", return_value=[]):
             res = binary.binary_orbit(star="Sirius B")
@@ -321,7 +323,7 @@ class Cr16BinaryOrbitRedirectTest(unittest.TestCase):
         with patch("core.databases.compute_simbad_lookup",
                    return_value=sec) as m, \
              patch("core.binary._sb9_solutions",
-                   side_effect=lambda ra, dec, sp: (cap.__setitem__("sb9_sp", sp) or ([], None))), \
+                   side_effect=lambda ra, dec, sp, **k: (cap.__setitem__("sb9_sp", sp) or ([], None))), \
              patch("core.binary._nss_two_body_solutions", return_value=([], None, None)), \
              patch("core.binary._wds_orb6_solutions", return_value=[]):
             res = binary.binary_orbit(star="alpha Cen B")

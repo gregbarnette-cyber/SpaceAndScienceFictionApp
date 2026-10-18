@@ -268,10 +268,12 @@ class ImportMissionExocatPanel(ResultPanel):
 
 
 class ImportMainSequencePanel(ResultPanel):
-    """Import Main Sequence Star Properties panel (option 54)."""
+    """Import CR-30 Reference Tables panel (option 54) — CR-30.1 (ruling 82): re-verifies the three WB-owned
+    tables in data/cr30/ (S1 dwarf sequence, MIST v2.5 lifetimes, BHAC15 over-read factors) and re-seeds their
+    DB display mirrors. Replaces the retired main-sequence CSV import."""
 
     def build_inputs(self):
-        self._run_btn = QPushButton("Import propertiesOfMainSequenceStars.csv into Database")
+        self._run_btn = QPushButton("Import CR-30 Reference Tables (S1, MIST v2.5, BHAC15 factors) into Database")
         self._run_btn.setFixedHeight(36)
         self._run_btn.clicked.connect(self._run)
         self._layout.addWidget(self._run_btn)
@@ -283,13 +285,8 @@ class ImportMainSequencePanel(ResultPanel):
     def _run(self):
         self._run_btn.setEnabled(False)
         self.clear_results()
-        self.set_status("Importing main sequence star data…")
-        csv_path = os.path.join(_PROJECT_ROOT, "propertiesOfMainSequenceStars.csv")
-        self.run_in_background(
-            core.databases.import_main_sequence_csv,
-            csv_path,
-            on_result=self._on_done,
-        )
+        self.set_status("Verifying and importing the CR-30 reference tables…")
+        self.run_in_background(core.databases.import_cr30_reference_tables, on_result=self._on_done)
 
     def _on_done(self, result: dict):
         try:
@@ -300,14 +297,12 @@ class ImportMainSequencePanel(ResultPanel):
             self.show_error(result["error"])
             self.set_status(f"Error: {result['error']}")
             return
-        lbl = QLabel(
-            f"<b>Import complete.</b><br>"
-            f"Rows imported: {result['count']}<br>"
-            f"Source: {result['path']}"
-        )
+        lines = "".join(f"{t['file']}: {t['rows']} rows, md5 {t['md5']} → {t['table']}<br>"
+                        for t in result["tables"])
+        lbl = QLabel(f"<b>Import complete — all three files verified.</b><br>{lines}Source: {result['path']}")
         lbl.setWordWrap(True)
         self.add_result_widget(lbl)
-        self.set_status("Main sequence import complete.")
+        self.set_status("CR-30 reference tables import complete.")
 
 
 class ImportSolarSystemPanel(ResultPanel):
