@@ -18,7 +18,8 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Space & Science Fiction App")
+        from core import cds_mirror                   # TEMPORARY (CDS outage): "" unless mirror mode is on
+        self.setWindowTitle("Space & Science Fiction App" + cds_mirror.window_title_suffix())
         self.setMinimumSize(1100, 700)
 
         self._panels: dict = {}   # panel_class → widget instance

@@ -440,6 +440,20 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
       reads S1.
     - `tests/_queryharness.py`'s cache helpers became `save_cr30_cache` / `restore_cr30_cache` (the old names kept as
       aliases).
+- **TEMPORARY — `test_cds_mirror.py`** (CDS-outage mirror mode, `CDS_OUTAGE_FALLBACK_PLAN.md` Part A; removed with
+  mirror mode). All offline, with astroquery's `Vizier`, the SIMBAD TAP seams and `catalog.vizier_query` stubbed:
+  - the switch: off = HEAD, on via env / flag, `=0` wins, the latch, `apply_simbad()`
+  - exactly one `[cds-mirror]` mode line under threads, including the flag-age form, and none on a cache-only run
+  - the otype three-query split against a fake SIMBAD's single join (no ident row, head / candidate, both ids on one
+    oid, one id with several oids, the candidate as the head, an oid missing from `basic`)
+  - the VizieR mirror producer: a fresh client per attempt; `None` / ≥ 60 s empty as a fatal cut-off; a genuine
+    empty after a retry; the timeout-only breaker; no cache write
+  - TIC's `None` → `unreachable` (marked `cr26_network`)
+  - the 2MASS decode (truncation, `-00`, the `J` prefix) and the decoded-position cone (marked `cr30_twomass`)
+  - the wording rule against WB's two scorer regexes, copied verbatim
+  - two subprocess checks: the harness keeps a planted flag off, and an argparse error's stderr is identical
+  - Support: `tests/_queryharness.make_env` sets `SPACE_APP_CDS_MIRROR=0`, and the autouse `_cds_mirror_off`
+    conftest fixture forces it off in-process.
 
 ## Suite-count history (moved from CLAUDE.md, 2026-09-24)
 
@@ -466,3 +480,5 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 **CR-30 re-gate fixes (WB MSG 366):** **4171 passed, 126 skipped, 701 subtests, 0 failures** (+12 offline, +3 subtests) (2026-10-17; `test_cr30_consumers.py::RegateFixesTest` — F-1 … F-9 and the `/code-review` fold).
 
 **CR-30 re-gate fix 2 (WB MSG 368 O-1):** **4180 passed, 126 skipped, 703 subtests, 0 failures** (+9 offline, +2 subtests) (2026-10-17; `test_cr30_consumers.py::SimbadFailLoudTest`).
+
+**TEMPORARY — CDS-outage mirror mode, Part A (2026-11-11, `CDS_OUTAGE_FALLBACK_PLAN.md`):** **4228 passed, 126 skipped, 703 subtests, 0 failures** (+48 offline: `test_cds_mirror.py` — the switch / latch / mode line, the otype split vs the single join, the VizieR mirror producer, TIC, the 2MASS decoded cone, the wording rule against WB's two scorer regexes). Run with a mirror flag file present under the test `HOME` to prove the harness off-switch (`SPACE_APP_CDS_MIRROR=0` in `_queryharness.make_env` + the `_cds_mirror_off` conftest fixture). Removed with mirror mode (`CDS_RESTORE_PLAN.md`): the count returns to 4180 plus Part B's tests.

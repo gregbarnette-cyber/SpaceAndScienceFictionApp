@@ -144,9 +144,12 @@ def _tic_query(ra, dec):
     import astropy.units as u
     from astropy.coordinates import SkyCoord
     from astroquery.vizier import Vizier
-    v = Vizier(columns=["TIC", "GAIA", "Rad", "_r"], row_limit=50)
+    from core import cds_mirror
+    v = Vizier(columns=["TIC", "GAIA", "Rad", "_r"], row_limit=50, **cds_mirror.vizier_server_kwargs())
     res = v.query_region(SkyCoord(ra, dec, unit="deg", frame="icrs"), radius=_TIC_RADIUS_ARCSEC * u.arcsec,
                          catalog="IV/39/tic82", cache=False)
+    if res is None and cds_mirror.enabled():         # TEMPORARY (CDS outage): a mirror cut-off is never "no TIC row"
+        raise RuntimeError("VizieR mirror unreachable: empty answer (server cut-off)")
     rows = []
     if res is not None and len(res):
         t = res[0]

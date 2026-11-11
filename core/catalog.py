@@ -116,6 +116,69 @@ def _parse_vizier_filters(filters):
     return out
 
 
+# ── TEMPORARY (CDS outage, mirror mode only): the VizieR mirror producer ───────────────────────────────────────
+# IDIA's VizieR mirror ends a non-position query on a huge catalog at ~68.8 s with an EMPTY HTTP 200; astroquery then
+# returns None (a genuine empty answer is an empty TableList). In mirror mode a VizieR call runs as CR-19's pattern —
+# a FRESH client per attempt, ONE query per attempt, under `_bounded_call` (no `_timeout_ctx`, no `_with_retries`,
+# so an abandoned attempt holds only its own client/socket and never retries) — and the cut-off is a loud failure,
+# never "no rows". A breaker trips on a timeout only (never on a cut-off). Remove with mirror mode.
+_VIZIER_MIRROR_COOLDOWN_S = 60.0
+_VIZIER_MIRROR_BACKOFF = 2.0
+_vizier_mirror_down = {}             # catalog → tripped_monotonic (per catalog: one slow catalog never blocks others)
+
+
+class _VizierCutOff(Exception):
+    """TEMPORARY: the mirror returned an empty / unparseable body (its server cut-off) — fatal, never retried.
+    The message contains "unreachable", so `_network_error_msg` reports "Could not connect to CDS VizieR…"."""
+
+
+def _vizier_mirror_breaker_open(catalog):
+    at = _vizier_mirror_down.get(catalog)
+    if at is None:
+        return False
+    if (time.monotonic() - at) >= _VIZIER_MIRROR_COOLDOWN_S:
+        _vizier_mirror_down.pop(catalog, None)
+        return False
+    return True
+
+
+def _vizier_mirror_result(catalog, columns, col_filters, cone, row_limit, timeout):
+    """One bounded mirror VizieR call → the raw astroquery TableList (raises on failure)."""
+    from core import cds_mirror
+    import requests
+    parsed_cone = _parse_cone(cone) if cone else None      # a malformed cone fails at once, never retried
+
+    def _attempt():
+        from astroquery.vizier import Vizier
+        import astropy.units as u
+        from astropy.coordinates import SkyCoord
+        v = Vizier(columns=columns or ["*"], column_filters=col_filters, row_limit=row_limit, timeout=timeout,
+                   **cds_mirror.vizier_server_kwargs())
+        t0 = time.monotonic()
+        if parsed_cone:
+            ra, dec, rad = parsed_cone
+            res = v.query_region(SkyCoord(ra, dec, unit="deg"), radius=rad * u.deg, catalog=catalog, cache=False)
+        else:
+            res = v.query_constraints(catalog=catalog, cache=False)
+        if res is None:
+            raise _VizierCutOff("VizieR mirror unreachable: empty answer (server cut-off)")
+        if len(res) == 0 and (time.monotonic() - t0) >= cds_mirror.CUTOFF_ELAPSED_S:
+            raise _VizierCutOff("VizieR mirror unreachable: no rows after a long wait (server cut-off)")
+        return res
+
+    if _vizier_mirror_breaker_open(catalog):
+        raise requests.exceptions.Timeout("VizieR mirror breaker open")
+    try:
+        return _bounded_call(_attempt, timeout=timeout + 10, retries=2, backoff=_VIZIER_MIRROR_BACKOFF,
+                             fatal=(_VizierCutOff,))
+    except _WatchdogTimeout as e:
+        _vizier_mirror_down[catalog] = time.monotonic()
+        raise requests.exceptions.Timeout(str(e)) from e
+    except requests.exceptions.Timeout:
+        _vizier_mirror_down[catalog] = time.monotonic()
+        raise
+
+
 # ── Tier-1 gateway: VizieR ────────────────────────────────────────────────────
 
 def vizier_query(catalog, columns=None, filters=None, cone=None, row_limit=2000, timeout=60):
@@ -124,8 +187,15 @@ def vizier_query(catalog, columns=None, filters=None, cone=None, row_limit=2000,
     `cone` is 'ra dec radius' (deg); `row_limit=-1` lifts the finite default."""
     if not catalog:
         return _route_error("vizier-query requires --catalog", ["vizier-query"])
+    from core import cds_mirror
+    mirror = cds_mirror.enabled()                    # TEMPORARY (CDS outage); off → HEAD's path, byte-identical
+    if mirror:
+        timeout = cds_mirror.vizier_timeout(timeout)
 
     def _run():
+        if mirror:
+            res = _vizier_mirror_result(catalog, columns, _parse_vizier_filters(filters), cone, row_limit, timeout)
+            return _shape_vizier(res)
         from astroquery.vizier import Vizier
         import astropy.units as u
         from astropy.coordinates import SkyCoord
@@ -142,6 +212,9 @@ def vizier_query(catalog, columns=None, filters=None, cone=None, row_limit=2000,
                                     radius=rad * u.deg, catalog=catalog, cache=False)
             else:
                 res = _with_retries(v.query_constraints, catalog=catalog, cache=False)
+        return _shape_vizier(res)
+
+    def _shape_vizier(res):
         if not res or len(res) == 0:
             return {"service": "vizier", "catalog": catalog, "count": 0,
                     "truncated": False, "rows": []}
@@ -514,6 +587,9 @@ def xmatch_query(coords_rows, cat2="vizier:I/311/hip2", max_arcsec=5.0,
     ids. Returns the matched rows (X-Match appends the cat2 columns + an `angDist` arcsec column)."""
     if not coords_rows:
         return {"service": "xmatch", "cat2": cat2, "count": 0, "rows": []}
+    from core import cds_mirror
+    if cds_mirror.enabled():                         # TEMPORARY (CDS outage): X-Match has no mirror — fail at once
+        return _route_error("Could not connect to CDS X-Match: it has no mirror (CDS outage)", ["xmatch"])
 
     def _run():
         import astropy.units as u

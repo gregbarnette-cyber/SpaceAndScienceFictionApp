@@ -62,10 +62,33 @@ def twomass_ids_from_rows(ids):
 def _ii246_seam(designation):
     """VizieR II/246 by 2MASS designation (``J…`` → the catalogue's ``2MASS`` column) → the raw rows or a
     ``{"error"}`` dict (``core.catalog.vizier_query``'s shape)."""
-    from core import catalog
+    from core import catalog, cds_mirror
     key = designation.split("J", 1)[1] if "J" in designation else designation
-    return catalog.vizier_query("II/246/out", columns=["2MASS", "Jmag", "e_Jmag", "Kmag", "e_Kmag", "Qflg", "Rflg"],
-                                filters=[f"2MASS={key}"], row_limit=5)
+    cols = ["2MASS", "Jmag", "e_Jmag", "Kmag", "e_Kmag", "Qflg", "Rflg"]
+    if cds_mirror.enabled():
+        return _ii246_mirror_cone(key, cols)
+    return catalog.vizier_query("II/246/out", columns=cols, filters=[f"2MASS={key}"], row_limit=5)
+
+
+_MIRROR_CONE_ARCSEC = 3.0
+
+
+def _ii246_mirror_cone(key, cols):
+    """TEMPORARY (CDS outage, mirror mode only): the mirror silently cuts a by-designation query on II/246 (~69 s,
+    empty 200), so the designation's own (truncated) J2000 position is decoded and a 3″ cone kept to the rows whose
+    ``2MASS`` equals the key exactly — the same rows, then HEAD's ``row_limit=5``. A key that does not decode is an
+    error (→ ``unreachable``), never a fallback to the designation query. Remove with mirror mode."""
+    from core import catalog, cds_mirror
+    pos = cds_mirror.decode_2mass_key(key)
+    if pos is None:
+        return {"error": f"2MASS key {key!r} does not decode to a position (mirror mode)"}
+    raw = catalog.vizier_query("II/246/out", columns=cols,
+                               cone=f"{pos[0]:.7f} {pos[1]:.7f} {_MIRROR_CONE_ARCSEC / 3600.0:.9f}", row_limit=50)
+    if not isinstance(raw, dict) or "error" in raw:
+        return raw
+    want = "".join(str(key).split())
+    rows = [r for r in raw.get("rows") or [] if "".join(str(r.get("2MASS") or "").split()) == want]
+    return {**raw, "count": min(len(rows), 5), "row_limit": 5, "truncated": len(rows) >= 5, "rows": rows[:5]}
 
 
 def _num(v):

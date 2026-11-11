@@ -154,3 +154,32 @@ def _cr30_twomass_isolation(request, monkeypatch):
     tm.clear_memo()
     if leaks:
         pytest.fail(f"CR-30 2MASS seam reached in an offline test: {leaks}")
+
+
+# ── TEMPORARY (CDS outage): mirror mode is OFF in every test unless the test turns it on itself ─────────────────────
+# The real flag file (~/.config/space_app/cds_mirror) may exist on the dev box: SPACE_APP_CDS_MIRROR=0 (inherited by
+# dict(os.environ, …) subprocess spawners) + a nonexistent flag path keep every test on HEAD's path; the latch and
+# astroquery's SIMBAD server are restored after each test. Remove with mirror mode (CDS_RESTORE_PLAN.md).
+@pytest.fixture(autouse=True)
+def _cds_mirror_off(monkeypatch, tmp_path_factory):
+    import importlib
+    import pathlib
+    cm = importlib.import_module("core.cds_mirror")
+    monkeypatch.setenv("SPACE_APP_CDS_MIRROR", "0")
+    monkeypatch.setattr(cm, "_flag_path", lambda: pathlib.Path("/nonexistent/space_app/cds_mirror"))
+    cm._reset_for_tests()
+    try:
+        from astroquery.simbad import conf
+        import astroquery.simbad as _sm
+        saved = (conf.server, _sm.Simbad.server)
+    except Exception:
+        saved = None
+    yield
+    cm._reset_for_tests()
+    if saved is not None:
+        from astroquery.simbad import conf
+        import astroquery.simbad as _sm
+        if conf.server != saved[0]:
+            conf.server = saved[0]
+        if _sm.Simbad.server != saved[1]:
+            _sm.Simbad.server = saved[1]

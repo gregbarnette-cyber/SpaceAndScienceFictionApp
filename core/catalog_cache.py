@@ -106,7 +106,9 @@ def cached(service: str, params, producer, ttl_s: float = DEFAULT_TTL_S):
     if hit is not None:
         return hit
     result = producer()
-    cache_put(key, result)
+    from core import cds_mirror                      # TEMPORARY (CDS outage): never cache a mirror answer as CDS's
+    if not cds_mirror.skip_cache_write(service):
+        cache_put(key, result)
     return result
 
 

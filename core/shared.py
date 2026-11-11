@@ -1431,6 +1431,8 @@ def _stderr_warn(tag, msg):
 
 def _make_simbad(*fields, timeout=30):
     """Return a Simbad instance with a short timeout and the requested votable fields."""
+    from core import cds_mirror
+    cds_mirror.apply_simbad()                        # TEMPORARY (CDS outage): no-op unless mirror mode is on
     from astroquery.simbad import Simbad
     s = Simbad()
     s.TIMEOUT = timeout

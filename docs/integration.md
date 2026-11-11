@@ -4264,6 +4264,44 @@ is never passed. Output: the full phase/burn-profile dict (`travel_time_str, t_t
 eff_burn_s, v_coast_ms, fallback, iterations_done, …`). Ambiguous Horizons names return the disambiguation error from
 the core function.
 
+## TEMPORARY — CDS mirror mode (CDS outage, 2026-11; remove with `CDS_RESTORE_PLAN.md`)
+
+CDS Strasbourg (SIMBAD / VizieR / X-Match) has been down since about 2026-10-28 after a cybersecurity incident.
+**Mirror mode** routes the app to CDS's own recommended mirrors. Plan: `CDS_OUTAGE_FALLBACK_PLAN.md` (Part A); WB
+rulings in MSGs 375–380.
+
+- **Switch:** the flag file `~/.config/space_app/cds_mirror` (any content), or `SPACE_APP_CDS_MIRROR=1`.
+  `SPACE_APP_CDS_MIRROR=0` forces it off. Latched per process (restart an open GUI after changing it).
+  **Flag off = byte-identical to pre-outage behaviour.**
+- **Routing:**
+  - **All SIMBAD → `simbad.harvard.edu`** (CfA; data to 2026-10-14). In mirror mode the otype lookup runs as three
+    flat queries, because CfA 504s the single join.
+  - **VizieR → `vizier.idia.ac.za`** (IDIA). The 2MASS lookup becomes a 3″ cone at the designation's decoded
+    position, because IDIA cuts a by-designation query on II/246 at about 69 s with an empty answer.
+- **X-Match has no mirror.** `close-binary-census` output is **not valid** in mirror mode (SB9 rows whose parallax
+  comes from X-Match are dropped).
+- **Failures stay loud:**
+  - A VizieR mirror cut-off (an empty or unparseable body, or 0 rows after ≥ 60 s in one attempt) is an error,
+    never "no rows": `"Could not connect to CDS VizieR…"`.
+  - A mirror timeout gives `"CDS VizieR request timed out. Try again."`. A mirror breaker (timeouts only) then
+    short-circuits for 60 s.
+  - A TIC cut-off gives the TIC family's `unreachable`.
+- **Limits:**
+  - VizieR is 60 s per request, 2 attempts, wall-bounded (`SPACE_APP_VIZIER_TIMEOUT` is honoured in mirror mode
+    only).
+  - Every other limit is unchanged (measured slowest SIMBAD query 1.4 s; slowest VizieR answer 5.8 s).
+- **Cache:** mirror answers are never written to `data/catalog_cache` for the CDS-backed services. Reads still
+  serve rows cached from CDS.
+- **Stderr** (stdout JSON gains no keys):
+  - One mode line per process, at the first mirror-routed client:
+    `[cds-mirror] SIMBAD→simbad.harvard.edu VizieR→vizier.idia.ac.za — temporary, on since <date> (<n>d)`, or
+    `… on via SPACE_APP_CDS_MIRROR`.
+  - On census: `[cds-mirror] X-Match has no mirror — census SB9 rows dropped; this census output is not valid`.
+  - Neither matches WB's scorer patterns.
+- **GUI:** the window title ends "— CDS MIRROR MODE".
+- **Backout:** `rm ~/.config/space_app/cds_mirror` (and restart the GUI). The code is removed by
+  `CDS_RESTORE_PLAN.md`, built from this part's commit diff.
+
 ## Catalog-access tier (Phase AM — LIVE VizieR / Gaia TAP / HEASARC)
 
 Seven subcommands that make **live network** queries to CDS VizieR, the ESA Gaia TAP archive, HEASARC,

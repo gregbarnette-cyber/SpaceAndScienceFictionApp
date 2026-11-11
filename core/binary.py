@@ -1554,6 +1554,8 @@ def _census_sb9(period_max_d, dist_max_ly, parallax_source):
     for cat2, plx_col in cats:
         xm = catalog.xmatch_query(coord_rows, cat2=cat2, max_arcsec=5.0)
         if "error" in xm:
+            from core import cds_mirror
+            cds_mirror.xmatch_unavailable_note()     # TEMPORARY (CDS outage): no-op unless mirror mode is on
             continue
         for mrow in xm.get("rows", []):
             seq = coord_rows[int(mrow["_idx"])]["_seq"]

@@ -575,6 +575,8 @@ def _simbad_otypes_tap(adql):
     ``TAPService`` per call (its own requests session, so an abandoned watchdog attempt shares no state
     — mirrors CR-19's fresh ``GaiaClass``); ``run_sync`` directly, so no capabilities round-trip and no
     astroquery ``lru_cache`` pinning."""
+    from core import cds_mirror
+    cds_mirror.apply_simbad()                        # TEMPORARY (CDS outage): no-op unless mirror mode is on
     from astroquery.simbad import conf
     from pyvo.dal import TAPService, DALQueryError
     try:
@@ -600,11 +602,59 @@ def _otypes_query(main_id, component_rule):
     if component_rule and not _COMPONENT_LETTER_RE.search(main_id):
         from core import stellar_mass
         cand = next(iter(stellar_mass.component_candidate_ids(main_id, "A")), None)
-    ids = [main_id] + ([cand] if cand else [])
-    where = " OR ".join("i.id = '%s'" % str(x).replace("'", "''") for x in ids)
     adql = ("SELECT b.main_id, i.id AS qid, o.otype FROM ident AS i JOIN basic AS b "
-            "ON b.oid = i.oidref JOIN otypes AS o ON o.oidref = b.oid WHERE " + where)
+            "ON b.oid = i.oidref JOIN otypes AS o ON o.oidref = b.oid WHERE " + _otypes_where(main_id, cand))
     return adql, cand
+
+
+def _otypes_where(main_id, cand):
+    """The otype lookup's WHERE over its ids (``main_id`` + the A-candidate) — shared by the single join and the
+    (TEMPORARY, mirror-mode) split so both always query the same ids."""
+    ids = [main_id] + ([cand] if cand else [])
+    return " OR ".join("i.id = '%s'" % str(x).replace("'", "''") for x in ids)
+
+
+# ── TEMPORARY (CDS outage, mirror mode only): the otype lookup as three flat queries ────────────────────────────
+# CfA's SIMBAD mirror 504s the single ident ⋈ basic ⋈ otypes join (and any otypes⋈basic IN-list join) at its 60 s
+# gateway, but answers flat queries in ~0.3 s. The split reproduces the join's exact row multiset
+# (main_id, matched ident.id, otype) — duplicates, several oids per id, both ids on one oid — so
+# _interpret_otype_rows sees what the join would have returned. Remove with mirror mode.
+def _simbad_tap_rows(adql):
+    """TEMPORARY mirror-mode seam: one flat SIMBAD TAP query → plain row dicts (``_simbad_cr26_tap``'s body: a fresh
+    pyvo service, cells normalised by ``_plain`` — a masked cell is ``None``), its answered error as
+    ``_OtypeResultError``."""
+    try:
+        return _simbad_cr26_tap(adql)
+    except _Cr26SimbadAnswered as e:
+        raise _OtypeResultError(str(e)) from e
+
+
+def _simbad_otypes_split(main_id, cand):
+    """TEMPORARY mirror-mode equivalent of ``_simbad_otypes_tap(_otypes_query(...)[0])`` →
+    ``[(main_id, matched_ident, otype), …]`` — the inner join's exact rows, over ``_otypes_where``'s ids."""
+    where = _otypes_where(main_id, cand)
+    try:
+        idrows = _simbad_tap_rows("SELECT i.oidref, i.id FROM ident AS i WHERE " + where)
+        if not idrows:
+            return []
+        oids = sorted({int(r["oidref"]) for r in idrows})
+        inlist = ", ".join(str(o) for o in oids)
+        otrows = _simbad_tap_rows(f"SELECT oidref, otype FROM otypes WHERE oidref IN ({inlist})")
+        brows = _simbad_tap_rows(f"SELECT oid, main_id FROM basic WHERE oid IN ({inlist})")
+        main_by_oid = {int(r["oid"]): str(r["main_id"]) for r in brows}
+        ot_by_oid = {}
+        for r in otrows:
+            ot_by_oid.setdefault(int(r["oidref"]), []).append(str(r["otype"]))
+    except (KeyError, ValueError, TypeError) as e:              # a renamed/absent result column
+        raise _OtypeResultError(f"unexpected SIMBAD TAP result columns: {e}") from e
+    out = []
+    for r in idrows:
+        oid = int(r["oidref"])
+        if oid not in main_by_oid:                              # the inner join drops an oid with no basic row
+            continue
+        for ot in ot_by_oid.get(oid, ()):
+            out.append((main_by_oid[oid], str(r["id"]), ot))
+    return out
 
 
 def _wskey(s):
@@ -662,6 +712,15 @@ def _interpret_otype_rows(rows, main_id, cand):
     raise _OtypeResultError(f"no attributable SIMBAD otype list for {main_id!r} ({len(groups)} objects)")
 
 
+def _otypes_fetcher(adql, main_id, cand):
+    """The otype network call: HEAD's single join, or (TEMPORARY, mirror mode only) the three-query split over
+    the same ``_otypes_where`` ids."""
+    from core import cds_mirror
+    if cds_mirror.enabled():
+        return lambda: _simbad_otypes_split(main_id, cand)
+    return lambda: _simbad_otypes_tap(adql)
+
+
 def _otypes_degrade(status, main_id, primary_otype, short_circuit=False):
     how = "short-circuited (SIMBAD timed out earlier this run)" if short_circuit else f"bounded ({status})"
     _simbad_warn(f"otype list {how} — degrading to the primary otype: {main_id}")
@@ -713,7 +772,7 @@ def fetch_star_otypes(main_id, primary_otype=None, component_rule=True):
         try:
             rows = catalog_cache.cached(
                 "simbad_otypes", params,
-                lambda: _bounded_call(lambda: _simbad_otypes_tap(adql), timeout=_simbad_otype_timeout(),
+                lambda: _bounded_call(_otypes_fetcher(adql, main_id, cand), timeout=_simbad_otype_timeout(),
                                       retries=2, backoff=_SIMBAD_RETRY_BACKOFF, fatal=(_OtypeResultError,)))
         except _WatchdogTimeout:
             _simbad_otypes_down = ("timeout", time.monotonic())
@@ -747,6 +806,8 @@ def reset_simbad_cr26_circuit():
 
 def _simbad_cr26_tap(adql):
     """The CR-26 SIMBAD network seam: one TAP query → a list of plain row dicts (fresh pyvo service)."""
+    from core import cds_mirror
+    cds_mirror.apply_simbad()                        # TEMPORARY (CDS outage): no-op unless mirror mode is on
     from astroquery.simbad import conf
     from pyvo.dal import TAPService, DALQueryError
     try:
@@ -1924,6 +1985,10 @@ def compute_star_systems_csv(progress_callback=None) -> dict:
     Returns {total_rows, queries_run, backup_table, total_new, total_discarded}
     or {"error": str}.
     """
+    from core import cds_mirror
+    if cds_mirror.enabled():                         # TEMPORARY (CDS outage): never persist mirror rows in star_systems
+        return {"error": "Option 50 (Star Systems DB Query) is disabled in CDS mirror mode — it would rewrite the "
+                         "star_systems table from the SIMBAD mirror. Re-run it after CDS returns."}
     from astroquery.simbad import Simbad
     from datetime import datetime
     from core.db import get_conn

@@ -62,3 +62,16 @@ Read-on-demand reference (deliberately NOT auto-loaded from CLAUDE.md — large)
     - `db`: the three `ms_reference_*` display mirrors + `seed_cr30_mirrors`. `main_sequence_stars` is left untouched and unseeded.
     - `report` (the dossier): `regions.mass.placement`, the lifetime by status, the failed-region-step block, the multiplicity `placement_a`, the top-level 2MASS marker.
     - `science.compute_main_sequence_table` → S1's rows; `viz` (HR from S1, null-safe region diagram); `generate` (S1 rows, its own letter-only rule kept; the anchor on R(M)); `par_flux` (S1 Teff); `formation` (L(M)); `equations.compute_stellar_evolution` (MIST T_ms); `oec_derived` (MIST label).
+
+### TEMPORARY — `core/cds_mirror.py` (CDS outage mirror mode, 2026-11)
+
+The only module that names a CDS mirror host. `enabled()` (the flag file `~/.config/space_app/cds_mirror` /
+`SPACE_APP_CDS_MIRROR`, latched per process), `apply_simbad()` (astroquery `conf.server` + the module `Simbad` →
+`simbad.harvard.edu`), `vizier_server_kwargs()` / `vizier_timeout()` (→ `vizier.idia.ac.za`, 60 s), the one-line
+`announce()`, the cache-write skip list, `decode_2mass_key()` (truncated J2000 from a 2MASS key) and the X-Match note.
+Its hooks: `shared._make_simbad`, the two raw SIMBAD TAP seams and the option-50 importer (`databases`), the
+mirror-only otype split (`databases._simbad_otypes_split` / `_simbad_tap_rows`), the VizieR mirror producer
+(`catalog._vizier_mirror_result`, `_VizierCutOff`, a timeout-only breaker), `xray_catalog._tic_query`, the 2MASS cone
+(`twomass._ii246_mirror_cone`), `catalog_cache.cached`, the census X-Match line (`binary`) and the GUI title. Every hook
+is a no-op with the flag off. Plan: `CDS_OUTAGE_FALLBACK_PLAN.md`; removal: `CDS_RESTORE_PLAN.md` (from the commit diff).
+
