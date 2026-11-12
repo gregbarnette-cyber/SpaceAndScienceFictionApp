@@ -36,6 +36,11 @@ than relying on a prior `cd`.
 - Exits **0** on success, **1** on a handled error, **2** on an argparse usage error (missing/unknown flag, bad `choices` value, non-numeric) — usage text on **stderr**, nothing on stdout.
 - Output is pretty-printed: `json.dumps(result, indent=2, default=str)`. `default=str` ensures numpy/astropy masked values from archive queries are serialized as strings rather than crashing.
 - astroquery warnings (e.g. `NoResultsWarning`) go to **stderr** and do not affect stdout JSON.
+- **New stderr lines (2026-11; stdout JSON gains no keys).** All of them are tested to match neither of WB's
+  `score_cr30.py` scorer patterns.
+  - **TEMPORARY:** in CDS mirror mode, one `[cds-mirror] …` mode line per process, plus a `[cds-mirror] X-Match …`
+    line on census (see **TEMPORARY — CDS mirror mode** below).
+  - A consumer that strips the new lines should strip only `^\[cds-mirror\] `.
 
 ### Luminosity-flag aliases (P4.2)
 
@@ -333,7 +338,11 @@ sections below; `docs/query-commands-index.md` lists all 182.
 
 § A **local read of the fetched dust map cache** (`data/dust/`, populated by CLI **option 59** / the GUI Fetch Dust Map Data panel). Needs the optional `dustmaps` extra (WSL/Linux only) — see the **Dust / ISM** section below. No network for the map query itself.
 
-¶ The **Phase AM catalog-access tier** (`vizier-query`, `gaia-tap`, `heasarc-query`, `binary-orbit`, `close-binary-census`, `gaia-astrophysical`, `besancon-query`) makes live queries to CDS / ESA Gaia / HEASARC / Besançon. Failures return `{"error": …}` (often with `route_tried[]`); an **empty but valid** result is `count: 0` / an empty list, **not** an error. Successful non-empty results are **cached** (`data/catalog_cache/`, gitignored; `SPACE_APP_CATALOG_CACHE=0` disables); **errors/empties are never cached**, and **astroquery's own HTTP cache is disabled** (`cache=False` on the Vizier/Heasarc/XMatch calls) so a throttle-induced empty can't be served stale for ~7 days — `catalog_cache` is the single cache authority. **`catalog-cache-clear`** wipes both layers (the app cache + any residual astroquery cache dir). `besancon-query` additionally requires a BGM account via `BESANCON_USER`/`BESANCON_PASS`. See the **Catalog-access tier (Phase AM)** section below for the full per-subcommand contract.
+¶ The **Phase AM catalog-access tier** (`vizier-query`, `gaia-tap`, `heasarc-query`, `binary-orbit`, `close-binary-census`, `gaia-astrophysical`, `besancon-query`) makes live queries to CDS / ESA Gaia / HEASARC / Besançon. Failures return `{"error": …}` (often with `route_tried[]`); an **empty but valid** result is `count: 0` / an empty list, **not** an error. Successful non-empty results are **cached** (`data/catalog_cache/`, gitignored; `SPACE_APP_CATALOG_CACHE=0` disables); **errors/empties are never cached**, and **astroquery's own HTTP cache is disabled** (`cache=False` on the Vizier/Heasarc/XMatch calls) so a throttle-induced empty can't be served stale for ~7 days — `catalog_cache` is the single cache authority. **`catalog-cache-clear`** wipes both layers (the app cache + any residual astroquery cache dir). `besancon-query` additionally requires a BGM account via `BESANCON_USER`/`BESANCON_PASS`.
+- **While CDS is down**, the CDS-backed calls can run on CDS's mirrors (see **TEMPORARY — CDS mirror mode**).
+  X-Match has no mirror.
+
+See the **Catalog-access tier (Phase AM)** section below for the full per-subcommand contract.
 
 Shared shapes:
 - The `simbad` sub-dict embedded in `star-regions`, `exoplanets`, `planetary-systems`, `hwo-exep`, `mission-exocat`, and `hwc` has the **same shape as `simbad-lookup`'s output** (top-level keys above).
@@ -2077,6 +2086,9 @@ active K/M star changes (quiet 0.424 → active **13.42 AU**, `wall_route wind_t
   star — honored), a "does not set the wind bin" note on a non-MS host or when an explicit/preset wind_class supersedes
   the wind_state, + a `; at γ>0 the regulated standoff's Ẇ term still uses it` caveat when the FROZEN standoff did take
   it (unchanged pre-CR-25 behavior).
+- **TEMPORARY — CDS mirror mode:** with the mirror flag on, this lookup runs as three flat SIMBAD queries on
+  `simbad.harvard.edu` (CfA 504s the single join). It returns the same rows, the same `otype_status` mapping and the
+  same cache key (see **TEMPORARY — CDS mirror mode**). Flag off = the single join below, unchanged.
 - **Degrade (CR-19 discipline):** the otype fetch is bounded (`SPACE_APP_SIMBAD_TIMEOUT`, default 30 s/attempt, `<=0`
   unbounded, retry once, a per-process breaker after a timeout) and cached 7 days on success only; on failure it
   degrades to the **primary** otype and surfaces top-level **`otype_status`** ∈ `{timeout, unreachable, error}` (absent
@@ -4308,6 +4320,9 @@ Seven subcommands that make **live network** queries to CDS VizieR, the ESA Gaia
 and the Besançon Galaxy Model (via `astroquery` / direct REST, already in the venv). They are in the
 same class as the `dust-*` / GCNS network paths, **not** the pure-math calculators. Cross-cutting behavior:
 
+- **2026-11 additions:**
+  - **TEMPORARY CDS mirror mode** (the section just above) routes `vizier-query`, the SIMBAD lookups and the VizieR
+    catalogs to CDS's mirrors. `xmatch_query` fails at once in mirror mode, because X-Match has no mirror.
 - **Error shape:** any failure (network, HTTP 4xx/5xx, bad id) returns `{"error": "…"}` — often with
   an additive `"route_tried": [...]` list — and exit 1. An **empty but valid** result is **not** an
   error: it returns the normal shape with `count: 0` / an empty list (a blocked route enumerates the

@@ -342,6 +342,9 @@ Report is a static PNG export, so it keeps Rings. See `docs/gui-architecture.md`
 ## Star Systems DB Query Feature (opt 50) / Export to CSV (opt 51) / Import Utilities (opts 52–56)
 
 - Menu option 50: `query_star_systems_csv()` — runs 17 SIMBAD criteria queries in sequence and writes results to the `star_systems` DB table.
+  - **TEMPORARY (CDS outage, 2026-11):** in CDS mirror mode option 50 is **refused** with an `{"error"}`, so mirror
+    rows are never written into `star_systems`. Re-run it after CDS returns (`docs/integration.md`, TEMPORARY — CDS
+    mirror mode).
 - Uses `query_criteria()` (deprecated but still functional) with `add_votable_fields("sp_type", "plx_value", "V", "ids")`. The deprecation warning is suppressed via `warnings.catch_warnings()`. `query_tap` ADQL was investigated but rejected: SIMBAD TAP does not support table-qualified column names (`basic.col`), `maintype` does not exist in the TAP schema, and the `mes_fe_h` JOIN causes syntax errors.
 - **Query 1**: `"plx > 25.99 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"` — stars closer than ~38.5 ly.
 - **Query 2**: `"plx > 20.99 & plx < 26 & otype = 'Star' & maintype != 'Planet' & maintype != 'Planet?'"` — stars ~38.5–47.6 ly range.

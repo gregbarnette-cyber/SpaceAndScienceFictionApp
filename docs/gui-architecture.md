@@ -179,6 +179,10 @@ This makes core functions testable in isolation and callable from both the CLI a
 
 ### MainWindow (`gui/app.py`)
 
+> **TEMPORARY (CDS outage, 2026-11):** in CDS mirror mode the window title gains " — CDS MIRROR MODE"
+> (`core.cds_mirror.window_title_suffix()`; latched at launch, so restart the GUI after changing the flag), and the
+> option-50 panel reports the mirror-mode refusal. Removed with mirror mode.
+
 - Left pane: `QTreeWidget` navigation (280–480 px inside a resizable `QSplitter`, initial width 300 px)
 - Right pane: `QStackedWidget` holding panel instances
 - Panels are created **lazily** on first click and cached — `show_panel(panel_class)` handles creation and display

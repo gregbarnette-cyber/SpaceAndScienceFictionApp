@@ -154,6 +154,12 @@ The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** trav
 >
 > Each does `DELETE` + bulk `INSERT` in one transaction, so it picks up appended rows *and* corrected cells. (`gouldDesignations.csv` has no import option — it is frozen 1879 data; drop the `gould_designations` table to re-seed it.)
 
+## TEMPORARY — CDS mirror mode (CDS outage, 2026-11)
+
+While CDS Strasbourg is down, `touch ~/.config/space_app/cds_mirror` routes SIMBAD to `simbad.harvard.edu` and
+VizieR to `vizier.idia.ac.za`. `rm` it (and restart an open GUI) to go back to CDS. X-Match has no mirror. Details:
+`docs/integration.md`, **TEMPORARY — CDS mirror mode**. This section is removed by `CDS_RESTORE_PLAN.md`.
+
 ## Notes
 
 - An internet connection is required for SIMBAD, NASA Exoplanet Archive, JPL Horizons, and Hypatia Catalog queries.
