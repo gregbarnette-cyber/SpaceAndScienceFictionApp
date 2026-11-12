@@ -454,6 +454,28 @@ written; Phase AN0 retired it to a thin wrapper over `core.shared`**) — and di
   - two subprocess checks: the harness keeps a planted flag off, and an argparse error's stderr is identical
   - Support: `tests/_queryharness.make_env` sets `SPACE_APP_CDS_MIRROR=0`, and the autouse `_cds_mirror_off`
     conftest fixture forces it off in-process.
+- **`test_gaia_login.py`** (Part B, permanent — the ESA login). `astroquery.gaia` is replaced by a fake (importing the
+  real one is a network call), and `TapPlus.login` is stubbed with astroquery's real behaviour: a wrong password
+  prints the 401 page to stdout and raises.
+  - no credentials → anonymous plus the state line
+  - one login per fresh client
+  - wrong password → anonymous, latched, a 401 back-off marker, the 401 page never on stdout
+  - a connection error shows no class name (except under `SPACE_APP_GAIA_DEBUG=1`)
+  - a sentinel password never appears
+  - a named async job deleted after reading, and every created job deleted on failure
+  - a failed delete line
+  - the anonymous async path unchanged
+  - mode bits, the legacy-path line, the `auth` cache key
+  - HEAD's `[gaia]` degrade line unchanged
+  - every `[gaia-login]` literal against WB's two regexes
+- **`test_gaia_jobs.py`** (Part B, D2 — `query.py gaia-jobs`):
+  - list-only deletes nothing
+  - `--cleanup` deletes only `space_app-*` jobs that are finished or older than 2 h, keeps a live run, and never
+    touches a job without the prefix
+  - a failed delete is reported and the rest continue
+  - no credentials → `{"error"}`, exit 1
+  - Support: `make_env` sets `SPACE_APP_GAIA_CREDENTIALS=` and the autouse `_gaia_login_off` fixture keeps every
+    test anonymous.
 
 ## Suite-count history (moved from CLAUDE.md, 2026-09-24)
 
@@ -482,3 +504,8 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 **CR-30 re-gate fix 2 (WB MSG 368 O-1):** **4180 passed, 126 skipped, 703 subtests, 0 failures** (+9 offline, +2 subtests) (2026-10-17; `test_cr30_consumers.py::SimbadFailLoudTest`).
 
 **TEMPORARY — CDS-outage mirror mode, Part A (2026-11-11, `CDS_OUTAGE_FALLBACK_PLAN.md`):** **4228 passed, 126 skipped, 703 subtests, 0 failures** (+48 offline: `test_cds_mirror.py` — the switch / latch / mode line, the otype split vs the single join, the VizieR mirror producer, TIC, the 2MASS decoded cone, the wording rule against WB's two scorer regexes). Run with a mirror flag file present under the test `HOME` to prove the harness off-switch (`SPACE_APP_CDS_MIRROR=0` in `_queryharness.make_env` + the `_cds_mirror_off` conftest fixture). Removed with mirror mode (`CDS_RESTORE_PLAN.md`): the count returns to 4180 plus Part B's tests.
+
+**Part A CP1 fixes (2026-11-11):** **4235 passed, 126 skipped, 703 subtests, 0 failures** (+7 in `test_cds_mirror.py`).
+
+**Part B — the ESA Gaia login (permanent, 2026-11-11, `CDS_OUTAGE_FALLBACK_PLAN.md`):** **4269 passed, 126 skipped, 703 subtests, 0 failures** (+34 offline, after CP2: `test_gaia_login.py`, `test_gaia_jobs.py`). Run with the real credentials file present at `~/.config/space_app/gaia_credentials` to prove the harness keeps every test anonymous (`SPACE_APP_GAIA_CREDENTIALS=` in `make_env` + the `_gaia_login_off` fixture).
+

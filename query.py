@@ -2051,6 +2051,13 @@ def cmd_gaia_tap(args):
     _out(res)
 
 
+def cmd_gaia_jobs(args):
+    """D2 (CDS_OUTAGE_FALLBACK_PLAN.md Part B): list — or with --cleanup delete — the ESA account's own leftover
+    async jobs named `space_app-*` (finished, or older than 2 h). Never automatic; never a job without the prefix."""
+    from core import gaia_auth
+    _out(gaia_auth.list_app_jobs(cleanup=args.cleanup))
+
+
 def cmd_heasarc_query(args):
     import core.catalog as catalog
     _out(catalog.heasarc_query(
@@ -4543,6 +4550,13 @@ def main(argv=None):
     p.add_argument("--async", dest="use_async", action="store_true",
                    help="Use async job (no 2000-row cap) for population pulls")
     p.set_defaults(func=cmd_gaia_tap)
+
+    # gaia-jobs (Part B / D2)
+    p = sub.add_parser("gaia-jobs",
+                       help="List (or --cleanup) the ESA Gaia account's own space_app-* async jobs (LIVE; needs login)")
+    p.add_argument("--cleanup", action="store_true",
+                   help="Delete space_app-* jobs that are finished or older than 2 h (never any other job)")
+    p.set_defaults(func=cmd_gaia_jobs)
 
     # heasarc-query
     p = sub.add_parser("heasarc-query",

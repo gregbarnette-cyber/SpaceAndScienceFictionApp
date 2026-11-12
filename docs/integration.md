@@ -4354,6 +4354,60 @@ query.py gaia-tap --table gaiadr3.nss_two_body_orbit --where "parallax > 50 AND 
 Core: `catalog.gaia_tap(adql=None, table=None, columns=None, where=None, cone=None, row_limit=2000,
 use_async=False, timeout=300)`. Output: `{service:"gaia", query, count, async, truncated, column_units, rows:[…]}`.
 
+#### `gaia-jobs`
+
+**Part B (permanent), `CDS_OUTAGE_FALLBACK_PLAN.md` D2.** Lists, and with `--cleanup` deletes, the ESA Gaia
+account's **own leftover async jobs**: those named `space_app-<uuid>`, which the app gives every async launch. It
+needs the Gaia login (below). It is never automatic.
+
+```bash
+venv/bin/python query.py gaia-jobs            # list the space_app-* jobs (deletes nothing)
+venv/bin/python query.py gaia-jobs --cleanup  # delete those finished ≥ 10 min ago (COMPLETED / ERROR / ABORTED) or older than 2 h
+```
+
+- **Output:** `{"cleanup", "listed": [{"id", "name", "phase", "created"}], "deleted": [ids], "kept": [{"id",
+  "reason"}], "errors": [{"id", "error"}]}`.
+- **What it never touches:** a job **without** the `space_app-` prefix (e.g. one you made in the archive web UI),
+  whatever its phase or age.
+- **What it keeps:** a running `space_app-*` job younger than 2 h, and one that finished less than 10 min ago. A live
+  run may still read either.
+- **Errors:**
+  - no credentials, or the login not used → `{"error"}`, exit 1
+  - an unreadable listing (an HTTP error page) → `{"error"}`, never "no jobs"
+  - one failed delete is reported in `errors`, and the rest continue
+
+**Gaia login (Part B, permanent).** `gaia-tap` and every Gaia caller log in to the ESA archive when a credentials
+file exists. A logged-in account gets:
+- its own queue of 50 (anonymous users share one 50-job pool worldwide)
+- a 120-min async limit (anonymous: 1 min)
+- no 50,000-row cap
+- 5 active jobs
+
+How it works:
+- **Credentials:** `SPACE_APP_GAIA_CREDENTIALS=<path>` (empty = anonymous), else
+  `~/.config/space_app/gaia_credentials` (two lines: user, password; mode 0600), else anonymous. The app never
+  reads the password.
+- **Login:** TAP-only, about 0.7 s, under its own 15 s bound, so a slow login never uses up a query's bound.
+  **Once per process:** its session cookie is reused on every fresh CR-19 client for 30 min, then refreshed.
+- **Login problems:** any problem falls back to anonymous and **never errors a query**. One failure keeps the
+  process anonymous. A 401/403 writes `~/.config/space_app/gaia_login_failed` and pauses login for 6 h; delete the
+  file to clear it.
+- **Async jobs:** each async job is named `space_app-<uuid>`. It is launched in the background so its id is known
+  before the wait, and it is deleted right after its results are read, or on failure (ruling A). If the logged-in
+  async path fails, HEAD's anonymous path runs. The bound-disabled legacy sync path (`SPACE_APP_GAIA_TIMEOUT<=0`) stays anonymous.
+- **Stderr, one line per process on the first Gaia call:** `[gaia-login] logged in` /
+  `[gaia-login] anonymous (no credentials)` / `… (login not used — continuing anonymous)` /
+  `… (login paused by back-off marker)` / `… (legacy unbounded path)`.
+  - No line means no Gaia call.
+  - The other lines are `[gaia-login] job cleanup skipped — job <id> left on the account` and
+    `[gaia-login] credentials file is readable by group or others (mode 0644)`.
+  - No `[gaia-login]` line carries an exception class or HTTP status (except under `SPACE_APP_GAIA_DEBUG=1`).
+    HEAD's `[gaia] sync TAP bounded …` degrade lines are unchanged.
+- **Cache:** a logged-in Gaia result's cache key gains `"auth": true`, so anonymous keys are unchanged. It is
+  written only if the login actually succeeded.
+- **Concurrency (D1, a documented rule):** run Gaia-heavy batch work at `--workers ≤ 4` with the GUI closed (ESA's
+  5-active-job limit per account). A 429 stays the existing marked degrade.
+
 #### `heasarc-query`
 A HEASARC X-ray catalog by cone (`--catalog` + `--cone 'ra dec radius'`) or raw TAP (`--adql`).
 ```bash

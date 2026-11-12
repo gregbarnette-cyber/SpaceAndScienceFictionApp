@@ -75,3 +75,12 @@ mirror-only otype split (`databases._simbad_otypes_split` / `_simbad_tap_rows`),
 (`twomass._ii246_mirror_cone`), `catalog_cache.cached`, the census X-Match line (`binary`) and the GUI title. Every hook
 is a no-op with the flag off. Plan: `CDS_OUTAGE_FALLBACK_PLAN.md`; removal: `CDS_RESTORE_PLAN.md` (from the commit diff).
 
+### `core/gaia_auth.py` — the ESA Gaia archive login (Part B, permanent)
+
+Credentials lookup (`SPACE_APP_GAIA_CREDENTIALS` / `~/.config/space_app/gaia_credentials`; the password is never read
+by app code), a TAP-only `TapPlus.login` (its own 15 s bound; once per process, the session cookie reused for 30 min) on each fresh CR-19 client (`catalog.gaia_tap`'s bounded sync attempt and
+`catalog._gaia_async_logged_in`), with this thread's stdout discarded (`catalog._discard_thread_stdout`, CR-32's
+thread-scoped router). A per-process failure latch, a 6 h back-off marker on 401/403, and one `[gaia-login]` state
+line per process. Own-job cleanup (`remove_own_jobs`, names `space_app-<uuid>`) and the D2 listing / cleanup
+(`list_app_jobs`, `query.py gaia-jobs`). With no credentials the app is anonymous, as before.
+

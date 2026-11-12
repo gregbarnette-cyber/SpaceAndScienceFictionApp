@@ -34,6 +34,7 @@ def make_env(db_name=None, db_path=None, **extra):
     """
     env = {"PATH": os.environ.get("PATH", "")}
     env["SPACE_APP_CDS_MIRROR"] = "0"   # TEMPORARY (CDS outage): never mirror mode, even with the real flag file
+    env["SPACE_APP_GAIA_CREDENTIALS"] = ""   # Part B: tests are always anonymous, even with the real credentials file
     if db_path is None:
         if db_name is None:
             db_name = f"query_throwaway_{os.getpid()}.db"

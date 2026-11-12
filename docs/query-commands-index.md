@@ -5,7 +5,7 @@ remains the authoritative contract** — exact arguments, JSON output keys, `sou
 offline), exit-code behaviour, and worked anchors. This file is a navigation aid, not the contract;
 descriptions are condensed from integration.md's prose.
 
-**Total: 182 subcommands** (distinct `query.py` `sub.add_parser` names — 182 calls, no aliases; all 182 are
+**Total: 183 subcommands** (distinct `query.py` `sub.add_parser` names — 183 calls, no aliases; all 183 are
 documented in `docs/integration.md`).
 
 ## Star databases & catalog lookup
@@ -272,6 +272,7 @@ documented in `docs/integration.md`).
 | `vizier-query` | Any VizieR catalog by id → JSON rows (live network). |
 | `catalog-cache-clear` | Wipe the catalog caches (app `data/catalog_cache/` + any residual astroquery HTTP cache). Offline maintenance. |
 | `gaia-tap` | Any Gaia DR3 table by raw ADQL or a structured filter (live network). |
+| `gaia-jobs` | List — or `--cleanup` — the ESA Gaia account's own leftover `space_app-*` async jobs (live; needs the Gaia login). |
 | `heasarc-query` | A HEASARC X-ray catalog by cone or raw TAP/ADQL (live network). |
 | `binary-orbit` | Every orbital solution for a star (Gaia NSS + SB9 + WDS/orb6) with companion-mass star/BD/planet classification (live). CR-16: a degenerate/WD-secondary query resolves the primary's sp-type for the companion masses (additive `identity.primary`/`mass_resolved_via_primary`; `binary-orbit "Sirius B"` → 2.18/0.4577 = `"Sirius"`), staying a raw reporter (no catalog). CR-30: M₁ = S1 at the type (null M₁ + `m1_null_reason` instead of 1.0); classifier ≥ 0.075 stellar, [0.067, 0.075) boundary, SB1 minimum < 0.075 undetermined; directions under a flagged primary. |
 | `close-binary-census` | A systematic close-binary population sweep (Gaia NSS + SB9, X-Match dedup, planet filter) (live). CR-30: S1 M₁ on SB9 rows (null → `unknown`); bulk NSS rows carry `m1_assumed_note` (1.0 M☉). |

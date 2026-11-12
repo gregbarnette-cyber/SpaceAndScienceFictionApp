@@ -183,3 +183,21 @@ def _cds_mirror_off(monkeypatch, tmp_path_factory):
             conf.server = saved[0]
         if _sm.Simbad.server != saved[1]:
             _sm.Simbad.server = saved[1]
+
+
+# ── Part B (ESA Gaia login): every test is anonymous unless it opts in with its own tmp credentials file ────────────
+# The real ~/.config/space_app/gaia_credentials exists on the dev box: SPACE_APP_GAIA_CREDENTIALS="" (empty =
+# anonymous; inherited by dict(os.environ, …) spawners) + nonexistent default / back-off-marker paths, and the
+# per-process latch reset around each test. The real file is never read and no test ever logs in.
+@pytest.fixture(autouse=True)
+def _gaia_login_off(monkeypatch):
+    import importlib
+    import pathlib
+    ga = importlib.import_module("core.gaia_auth")
+    monkeypatch.setenv("SPACE_APP_GAIA_CREDENTIALS", "")
+    monkeypatch.setattr(ga, "_default_path", lambda: pathlib.Path("/nonexistent/space_app/gaia_credentials"))
+    monkeypatch.setattr(ga, "_marker_path", lambda: pathlib.Path("/nonexistent/space_app/gaia_login_failed"))
+    ga._reset_for_tests()
+    yield
+    ga._reset_for_tests()
+
