@@ -144,3 +144,40 @@ Ross 248, GJ 1061, SCR J1845-6357, GJ 866 A/B/C, BD+59 1915, …).
   so that proves only the shape. **No seam needed a split.**
 - **VA7 (a cut-off is loud):** `vizier-query --catalog II/246/out --filters 2MASS=…` in mirror mode → exit 1,
   `"CDS VizieR request timed out. Try again."` after 125 s, never `count: 0`.
+
+## Part B — B0 / B1 / validation / CP2 (2026-11-11)
+
+- **B0** (ESA release 3.15 against astroquery 0.4.11, live on Greg's account):
+  - `TapPlus.login`: 0.71 s.
+  - A wrong password raises `HTTPError` (401). astroquery prints the 401 page to **stdout**, which the app discards
+    thread-scoped.
+  - `launch_job_async(name=…)`, `remove_jobs` and the job listing all work.
+  - The job name is only in the job's detail page (`<uws:parameter id="jobname">`).
+- **B1 concurrency** (10 Gaia anchors × 4 processes, mirror on): **0 × HTTP 429 anonymous, 0 logged in**. The
+  slowest run took 57–64 s.
+  - Whether ESA's "active" count includes sync jobs was not determinable: no 429s were observed either way, and the
+    docs are silent.
+- **VB1:** the full suite with the real credentials file present: 4265 passed plus 1 CR-32 guardrail failure
+  (`core/gaia_auth.py` imported `astroquery.gaia`). The client build moved into `catalog._new_gaia_client`, so the
+  count is **4266**.
+- **VB2:** the 10 Gaia anchors, mirror on and logged in: **10/10 byte-identical** to `base1`, to the anonymous run
+  and to VA3.
+- **VB3:** `close-binary-census --include nss` logged in: identical to anonymous (0 NSS rows at 15 ly / 30 d, so the
+  row-cap difference isn't exercised), and **0 jobs** left on the account. Rechecked after CP2.
+- **VB4:** a wrong password gives output identical to anonymous, valid JSON and the "login not used" line, with no
+  password anywhere. The 401 back-off marker was written, then removed so the real login isn't paused.
+- **VB5:** `gaia-jobs` lists a left `space_app-*` job and list-only deletes nothing. `--cleanup` removes it; after
+  CP2 it keeps a job finished < 10 min ago, as designed. The test job was then removed by id.
+- **CP2 `/code-review high`:** 10 findings. **Fixed (9):**
+  - background launch, so the id is recorded before the wait
+  - the auth cache key is written only after a real login
+  - the login has its own 15 s bound
+  - a failed logged-in async path falls back to anonymous
+  - `Retry-After` and jitter on the async retries
+  - `gaia-jobs` checks the HTTP status and parses the XML with ElementTree
+  - a 10-min minimum age for finished jobs
+  - no mode check on native Windows
+  - **one login per process** with the session cookie reused (30 min)
+
+  **Rejected (1):** `search_async_jobs`, because astroquery's `Job` objects don't expose the job name.
+  - Also fixed: the anonymous async path now prints its login-state line.
