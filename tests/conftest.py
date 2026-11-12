@@ -161,7 +161,7 @@ def _cr30_twomass_isolation(request, monkeypatch):
 # dict(os.environ, …) subprocess spawners) + a nonexistent flag path keep every test on HEAD's path; the latch and
 # astroquery's SIMBAD server are restored after each test. Remove with mirror mode (CDS_RESTORE_PLAN.md).
 @pytest.fixture(autouse=True)
-def _cds_mirror_off(monkeypatch, tmp_path_factory):
+def _cds_mirror_off(monkeypatch):
     import importlib
     import pathlib
     cm = importlib.import_module("core.cds_mirror")

@@ -181,3 +181,27 @@ Ross 248, GJ 1061, SCR J1845-6357, GJ 866 A/B/C, BD+59 1915, …).
 
   **Rejected (1):** `search_async_jobs`, because astroquery's `Job` objects don't expose the job name.
   - Also fixed: the anonymous async path now prints its login-state line.
+
+## CP3 — `/code-review high 8452e8e..HEAD` (the whole delta, 2026-11-11)
+
+10 findings. **Fixed (8):**
+1. The logged-in cache write is gated **per call**: an anonymous fallback after a good login is never cached under
+   `auth`.
+2. **The session is established before and outside every query bound** (`gaia_auth.ensure_session`, one real login
+   per process). Attempts only attach the cookie, so a slow login can no longer trip the CR-19 breaker.
+3. The "paused" line is now written on the async path too.
+4. The anonymous fallback happens **only on an account refusal** (401 / 403 / 429 / full queue or quota), with a
+   line. Other failures are raised as HEAD would raise them, and the retries use `_with_retries`.
+5. 401 / 403 come from the HTTP status or astroquery's `Error 401` form, never from stray digits.
+6. A finished job with no creation time is cleaned, and the kept reasons are per phase.
+7. `--cleanup` is one batched delete, falling back to per-id deletes to report a failure.
+8. A dead fixture parameter was removed, and one `_new_gaia_client` builder is used throughout.
+
+**Rejected (2):**
+- #5 route TIC through the VizieR mirror producer: TIC keeps its own 30 s bounds by design, and its watchdog makes
+  the 60 s rule unreachable (ruled in round 3 and at CP1).
+- #9 a shared breaker helper: it would refactor four existing breakers, which is out of scope for a temporary fix.
+
+**S6 (removal rehearsal, under VA2's `unshare -rn` conditions):** flag present → 1 mode line; flag removed → 0
+lines, and stdout is byte-identical to VA2's flag-off output.
+
