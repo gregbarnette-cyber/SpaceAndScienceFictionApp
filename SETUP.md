@@ -154,6 +154,26 @@ The static reference CSVs (planets, moons, HWC, main-sequence, etc.) **do** trav
 >
 > Each does `DELETE` + bulk `INSERT` in one transaction, so it picks up appended rows *and* corrected cells. (`gouldDesignations.csv` has no import option — it is frozen 1879 data; drop the `gould_designations` table to re-seed it.)
 
+## Optional — ESA Gaia archive login (permanent, 2026-11)
+
+A free ESA Gaia archive account (https://www.cosmos.esa.int/web/gaia-users/register1) gives every Gaia query:
+- its own 50-job queue (anonymous users share one pool worldwide, which causes HTTP 429s at busy times)
+- a 120-minute async limit
+- no 50,000-row cap
+
+To use it, create the credentials file, readable only by you:
+
+```bash
+mkdir -p ~/.config/space_app && chmod 700 ~/.config/space_app
+printf '%s\n%s\n' 'YOUR_ESA_USERNAME' 'YOUR_ESA_PASSWORD' > ~/.config/space_app/gaia_credentials   # line 1 user, line 2 password
+chmod 600 ~/.config/space_app/gaia_credentials
+```
+
+- `SPACE_APP_GAIA_CREDENTIALS=<path>` points elsewhere; an empty value forces anonymous.
+- Without the file the app runs anonymously, exactly as before, and a login problem never breaks a query.
+- `query.py gaia-jobs [--cleanup]` lists or cleans the app's own leftover `space_app-*` jobs.
+- Details: `docs/integration.md`, **Gaia login**.
+
 ## TEMPORARY — CDS mirror mode (CDS outage, 2026-11)
 
 While CDS Strasbourg is down, `touch ~/.config/space_app/cds_mirror` routes SIMBAD to `simbad.harvard.edu` and

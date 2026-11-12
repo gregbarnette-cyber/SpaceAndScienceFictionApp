@@ -40,7 +40,10 @@ than relying on a prior `cd`.
   `score_cr30.py` scorer patterns.
   - **TEMPORARY:** in CDS mirror mode, one `[cds-mirror] …` mode line per process, plus a `[cds-mirror] X-Match …`
     line on census (see **TEMPORARY — CDS mirror mode** below).
-  - A consumer that strips the new lines should strip only `^\[cds-mirror\] `.
+  - **Permanent:** one `[gaia-login] …` login-state line per process that makes a Gaia call. Its absence means no
+    Gaia call. See **Gaia login** under `gaia-jobs`.
+  - The `[gaia-login]` prefix is distinct from HEAD's CR-19 `[gaia] sync TAP bounded …` degrade lines, which are
+    unchanged. A consumer that strips the new lines should strip only `^\[(cds-mirror|gaia-login)\] `.
 
 ### Luminosity-flag aliases (P4.2)
 
@@ -323,6 +326,7 @@ sections below; `docs/query-commands-index.md` lists all 182.
 | `vizier-query` | `--catalog` [`--columns --filters --cone --row-limit`] | **CDS VizieR (live)**¶ | `service, catalog, count, row_limit, truncated, column_units, rows[]` |
 | `catalog-cache-clear` | (none) | local FS (offline) | `app_cache_files_removed, astroquery_cache_dir, astroquery_cache_removed` — wipes `data/catalog_cache/` + any residual astroquery HTTP cache |
 | `gaia-tap` | (`--adql` \| `--table`) [`--columns --where --cone --row-limit --async`] | **ESA Gaia TAP (live)**¶ | `service, query, count, async, truncated, column_units, rows[]` |
+| `gaia-jobs` | [`--cleanup`] | **ESA Gaia archive (live; needs the Gaia login)** | `cleanup, listed[], deleted[], kept[], errors[]` |
 | `heasarc-query` | (`--catalog --cone` \| `--adql`) [`--radius --row-limit`] | **HEASARC (live)**¶ | `service, catalog, count, column_units, rows[]` |
 | `binary-orbit` | (`--star` \| `--source-id` \| `--ra --dec`) | **CDS + ESA Gaia (live)**¶ | `query, identity, solutions[], route_tried[], units` (`note`/`route_errors` when relevant) |
 | `close-binary-census` | `--dist-max-ly --period-max-d` [`--sep-max-au --include --parallax-source --keep-planets --separate-wide --exclude-known`] | **ESA Gaia + CDS (live)**¶ | `query, count, counts_by_class, dedup, census[], excluded_planets[], wide[], coverage, units` |
@@ -339,6 +343,8 @@ sections below; `docs/query-commands-index.md` lists all 182.
 § A **local read of the fetched dust map cache** (`data/dust/`, populated by CLI **option 59** / the GUI Fetch Dust Map Data panel). Needs the optional `dustmaps` extra (WSL/Linux only) — see the **Dust / ISM** section below. No network for the map query itself.
 
 ¶ The **Phase AM catalog-access tier** (`vizier-query`, `gaia-tap`, `heasarc-query`, `binary-orbit`, `close-binary-census`, `gaia-astrophysical`, `besancon-query`) makes live queries to CDS / ESA Gaia / HEASARC / Besançon. Failures return `{"error": …}` (often with `route_tried[]`); an **empty but valid** result is `count: 0` / an empty list, **not** an error. Successful non-empty results are **cached** (`data/catalog_cache/`, gitignored; `SPACE_APP_CATALOG_CACHE=0` disables); **errors/empties are never cached**, and **astroquery's own HTTP cache is disabled** (`cache=False` on the Vizier/Heasarc/XMatch calls) so a throttle-induced empty can't be served stale for ~7 days — `catalog_cache` is the single cache authority. **`catalog-cache-clear`** wipes both layers (the app cache + any residual astroquery cache dir). `besancon-query` additionally requires a BGM account via `BESANCON_USER`/`BESANCON_PASS`.
+- **Gaia calls log in to ESA** when `~/.config/space_app/gaia_credentials` exists (permanent; see **Gaia login**
+  under `gaia-jobs`).
 - **While CDS is down**, the CDS-backed calls can run on CDS's mirrors (see **TEMPORARY — CDS mirror mode**).
   X-Match has no mirror.
 
@@ -4323,6 +4329,8 @@ same class as the `dust-*` / GCNS network paths, **not** the pure-math calculato
 - **2026-11 additions:**
   - **TEMPORARY CDS mirror mode** (the section just above) routes `vizier-query`, the SIMBAD lookups and the VizieR
     catalogs to CDS's mirrors. `xmatch_query` fails at once in mirror mode, because X-Match has no mirror.
+  - **Permanent Gaia login** (under `gaia-jobs`) puts every Gaia call on the ESA account when a credentials file
+    exists.
 - **Error shape:** any failure (network, HTTP 4xx/5xx, bad id) returns `{"error": "…"}` — often with
   an additive `"route_tried": [...]` list — and exit 1. An **empty but valid** result is **not** an
   error: it returns the normal shape with `count: 0` / an empty list (a blocked route enumerates the
@@ -5692,7 +5700,9 @@ bounds **every per-source SYNC `gaia_tap` call** at that one gateway, degrades t
   - A genuine no-rows result (the query succeeded) carries **no** marker. Every bounded sync call is also **loud** — a
     stderr warning fires (`[gaia] sync TAP bounded (<reason>) …`).
 - **Knobs.** `--gaia-timeout <seconds>` on `dossier` / `compare-stars` / `exclusion-system` / `binary-stability-auto`
-  (env **`SPACE_APP_GAIA_TIMEOUT`**); default **60 s**; **`0` disables** (restore the legacy unbounded path). A
+  (env **`SPACE_APP_GAIA_TIMEOUT`**); default **60 s**; **`0` disables** (restore the legacy unbounded path). With the
+  Gaia login (Part B, 2026-11), the one ESA login per process runs **before and outside** this bound. Each bounded
+  attempt only attaches the session cookie, so a slow login never uses up the bound or trips the breaker. A
   per-process **circuit-breaker** (trips on a `timeout` only, auto-re-arms after a 60 s cooldown, checks the cache first)
   caps a fully-stalled subcommand at ~one timeout window. The raw `gaia-astrophysical` reader strips the internal
   `gaia_bound_reason`.
