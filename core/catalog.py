@@ -470,18 +470,18 @@ def _hook_stall_forever():
     threading.Event().wait()
 
 
-def _gaia_cached(params, producer):
-    """``catalog_cache.cached("gaia", …)``; a logged-in-keyed result (``params["auth"]``) is written only if a login
-    actually succeeded — an anonymous fallback (capped at 50,000 rows) never lands under the logged-in key."""
+def _gaia_cached(params, producer, authed):
+    """``catalog_cache.cached("gaia", …)``; a logged-in-keyed result (``params["auth"]``) is written only if THIS
+    call's result came from a logged-in client (``authed[0]``, set by the producer) — an anonymous fallback (capped at
+    50,000 rows) never lands under the logged-in key."""
     if not params.get("auth"):
         return catalog_cache.cached("gaia", params, producer)
-    from core import gaia_auth
     key = catalog_cache.cache_key("gaia", params)
     hit = catalog_cache.cache_get(key)
     if hit is not None:
         return hit
     result = producer()
-    if gaia_auth.logged_in_ok():
+    if authed[0]:
         catalog_cache.cache_put(key, result)
     return result
 
@@ -493,33 +493,34 @@ def _new_gaia_client():
         return GaiaClass(show_server_messages=False)
 
 
+_ACCOUNT_REFUSAL_RE = re.compile(r"(?:^|\n)\s*(?:Error|HTTP Status)\s+(401|403|429)\b|maximum number of jobs|quota",
+                                 re.I)
+
+
 def _gaia_async_logged_in(q, row_limit, attempts=3, base_delay=3.0):
-    """Part B: the async job on a FRESH logged-in client. Every launch is named ``space_app-<uuid>``; every job this
-    call created is deleted in a ``finally`` (after its results are read, or on any failure). Returns the astropy
-    Table, or ``None`` when the login was not used (the caller then runs HEAD's anonymous path)."""
+    """Part B: the async job on a FRESH client carrying this process's session (``gaia_auth.ensure_session`` ran
+    before). Every launch is named ``space_app-<uuid>`` and launched in the background (its id known before the wait);
+    every job this call created is deleted in a ``finally``. Returns the astropy Table; ``None`` when no session is
+    available OR the ACCOUNT refused the job (401 / 403 / 429 / a full queue or quota) — the caller then runs HEAD's
+    anonymous path. Any other failure (a bad query, the archive down) is raised, exactly as HEAD's path would."""
     from core import gaia_auth
-    from core.shared import _retry_after_seconds
-    import random
-    if not gaia_auth.auth_expected():
-        return None
-    from astroquery.gaia import GaiaClass
-    g = GaiaClass(show_server_messages=False)
-    if not gaia_auth.login(g):
+    g = _new_gaia_client()
+    if not gaia_auth.attach_session(g):
         return None
     g.ROW_LIMIT = row_limit if (row_limit and row_limit > 0) else -1
     created = []
+
+    def _once():
+        job = g.launch_job_async(q, name=gaia_auth.new_job_name(), background=True)
+        created.append(getattr(job, "jobid", None))
+        return job.get_results()
     try:
-        for i in range(attempts):
-            try:
-                # background=True: the job id is known BEFORE waiting, so a failed wait never orphans the job
-                job = g.launch_job_async(q, name=gaia_auth.new_job_name(), background=True)
-                created.append(getattr(job, "jobid", None))
-                return job.get_results()
-            except Exception as e:                      # noqa: BLE001 — retried like HEAD's _with_retries
-                if i < attempts - 1:
-                    delay = _retry_after_seconds(e)
-                    time.sleep(delay if delay is not None else base_delay * (2 ** i) + random.uniform(0, 0.5))
-        return None                                     # the logged-in path failed → HEAD's anonymous path runs
+        return _with_retries(_once, retries=attempts, base_delay=base_delay)
+    except Exception as e:                              # noqa: BLE001
+        if _ACCOUNT_REFUSAL_RE.search(str(e)):
+            gaia_auth.note_account_refusal()
+            return None
+        raise
     finally:
         gaia_auth.remove_own_jobs(g, created)
 
@@ -546,19 +547,19 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
     from core import gaia_auth                          # Part B: the ESA login (anonymous when no credentials)
     if (use_async or bound is not None) and gaia_auth.auth_expected():
         params["auth"] = True                           # a logged-in result (no 50,000-row cap) never shares a key
+    authed = [False]                                    # set by the producer iff THIS result came from a session
 
     # ── Legacy path (async census, or the bound disabled): byte-identical to before CR-19 ──
     if bound is None:
         def _run():
             # CR-32: the diversion now covers the job too (the async job's "INFO: Query finished." log line)
             with _timeout_ctx(timeout), _gaia_stdout_to_stderr():
-                if use_async and gaia_auth.credentials_path() is not None:
+                if use_async and gaia_auth.ensure_session():   # one login per process, outside any bound
                     t = _gaia_async_logged_in(q, row_limit)
                     if t is not None:
+                        authed[0] = True
                         return _shape_gaia(q, t, use_async)
-                if use_async:
-                    gaia_auth.note_no_credentials()          # the anonymous async path states its login state too
-                else:
+                if not use_async:
                     gaia_auth.note_legacy_path()
                 from astroquery.gaia import Gaia
                 if use_async:
@@ -573,7 +574,7 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
                 t = job.get_results()
             return _shape_gaia(q, t, use_async)
         try:
-            return _gaia_cached(params, _run)
+            return _gaia_cached(params, _run, authed)
         except Exception as e:
             return _route_error(_network_error_msg(e, "ESA Gaia TAP"), ["gaia-tap"])
 
@@ -590,6 +591,7 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
 
     first_hook = bool(os.environ.get("SPACE_APP_GAIA_FORCE_FIRST_ATTEMPT_TIMEOUT"))
     n_attempt = [0]
+    have_session = gaia_auth.ensure_session()           # Part B: the one real login, OUTSIDE the CR-19 bound
 
     def _attempt():
         # Deterministic test hook: force the unreachable-degrade path with NO network (CR-19 §③).
@@ -602,9 +604,9 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
         with _gaia_stdout_to_stderr():
             if first_hook and n_attempt[0] == 1:
                 _hook_stall_forever()                   # CR-32 acc 2: abandoned inside the diversion; retry succeeds
-            from astroquery.gaia import GaiaClass
-            g = GaiaClass(show_server_messages=False)
-            gaia_auth.login(g)                          # Part B: this fresh client logs in (anonymous on any problem)
+            g = _new_gaia_client()
+            if have_session and gaia_auth.attach_session(g):   # Part B: the session cookie only — no network login
+                authed[0] = True
             job = g.launch_job(q)
             t = job.get_results()
         return _shape_gaia(q, t, use_async)
@@ -613,7 +615,7 @@ def gaia_tap(adql=None, table=None, columns=None, where=None, cone=None,
         return _gaia_cached(
             params,
             lambda: _bounded_gaia_call(_attempt, timeout=bound, retries=2,
-                                       first_timeout=(_HOOK_FIRST_BOUND_S if first_hook else None)))
+                                       first_timeout=(_HOOK_FIRST_BOUND_S if first_hook else None)), authed)
     except _WatchdogTimeout:
         _trip_gaia_circuit("timeout")
         return _bounded_error("timeout", q)

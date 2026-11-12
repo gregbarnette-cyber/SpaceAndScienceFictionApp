@@ -128,10 +128,10 @@ def note_legacy_path():
         _state_line("anonymous (legacy unbounded path)")
 
 
-def note_no_credentials():
-    """The anonymous path that never reaches ``login()`` (the async job with no credentials) — say so once."""
-    if credentials_path() is None:
-        _state_line("anonymous (no credentials)")
+def note_account_refusal():
+    """The logged-in async job was refused by the ACCOUNT (401 / 403 / 429 / a full queue or quota) — the call falls
+    back to the anonymous path; say so once."""
+    _warn("logged-in job not accepted by the account — continuing anonymous")
 
 
 def login(client):
@@ -166,10 +166,7 @@ def login(client):
             _remember_session(client)
     except Exception as e:                          # noqa: BLE001 — a login problem must never break a query
         ok, err = False, e
-        status = getattr(getattr(e, "response", None), "status_code", None)
-        if status is None:
-            s = str(e)
-            status = 401 if "401" in s else (403 if "403" in s else None)
+        status = _auth_status(e)
     if ok:
         with _LOCK:
             _STATE["ok"] = True
@@ -188,6 +185,50 @@ def login(client):
     detail = f" [{type(err).__name__}]" if (err is not None and os.environ.get(DEBUG_ENV) == "1") else ""
     _state_line(f"anonymous (login not used — continuing anonymous){detail}")
     return False
+
+
+_AUTH_ERR_RE = __import__("re").compile(r"(?:^|\n)\s*(?:Error|HTTP Status)\s+(401|403)\b")
+
+
+def _auth_status(e):
+    """401 / 403 from the exception's HTTP status, or astroquery's own ``Error 401:`` / ``HTTP Status 401`` form —
+    never a stray ``401`` elsewhere in an error page."""
+    code = getattr(getattr(e, "response", None), "status_code", None)
+    if code in (401, 403):
+        return code
+    m = _AUTH_ERR_RE.search(str(e))
+    return int(m.group(1)) if m else None
+
+
+def ensure_session():
+    """Establish this process's ESA session OUTSIDE any query bound (one real login per process; refreshed after
+    ``SESSION_REUSE_S``). Returns True iff a session is available for ``attach_session``. Writes the login-state line
+    (logged in / no credentials / paused / not used). Never raises."""
+    p = credentials_path()
+    if p is None:
+        _state_line("anonymous (no credentials)")
+        return False
+    with _LOCK:
+        failed = _STATE["failed"]
+        fresh = _STATE["cookie"] and (time.monotonic() - _STATE["cookie_at"]) < SESSION_REUSE_S
+    if failed:
+        return False
+    if fresh:
+        return True
+    if _paused():
+        _state_line("anonymous (login paused by back-off marker)")
+        return False
+    from core.catalog import _new_gaia_client           # core.catalog is the one Gaia gateway (CR-32's guard)
+    try:
+        client = _new_gaia_client()
+    except Exception:                                    # noqa: BLE001
+        return False
+    return login(client)
+
+
+def attach_session(client):
+    """Put the established session on a fresh client — no network. True iff the client is now logged in."""
+    return _reuse_session(client)
 
 
 def _connhandler(client):
@@ -303,7 +344,7 @@ def list_app_jobs(cleanup=False, client=None, now=None):
         refs = _parse_listing(_job_seam(client, "async"))
     except Exception:                               # noqa: BLE001 — an unreadable listing is an error, never "no jobs"
         return {"error": "Could not connect to the ESA Gaia archive to list jobs"}
-    listed, deleted, kept, errors = [], [], [], []
+    listed, deleted, kept, errors, eligible = [], [], [], [], []
     for jid, phase in refs:
         try:
             name, created = _parse_detail(_job_seam(client, f"async/{jid}"))
@@ -318,17 +359,29 @@ def list_app_jobs(cleanup=False, client=None, now=None):
         listed.append(row)
         if not cleanup:
             continue
-        old = age is not None and age > CLEANUP_AGE_S
-        settled = age is not None and age > FINISHED_MIN_AGE_S
-        if (row["phase"] in _FINISHED and settled) or old:
-            try:
-                with _quiet():
-                    client.remove_jobs([jid])
-                deleted.append(jid)
-            except Exception:                       # noqa: BLE001
-                errors.append({"id": jid, "error": "delete failed"})
-        elif row["phase"] in _FINISHED:
+        finished = row["phase"] in _FINISHED
+        if age is None:                             # no / unparseable creation time
+            if finished:
+                eligible.append(jid)
+            else:
+                kept.append({"id": jid, "reason": f"phase {row['phase'] or 'unknown'} with no creation time"})
+        elif age > CLEANUP_AGE_S or (finished and age > FINISHED_MIN_AGE_S):
+            eligible.append(jid)
+        elif finished:
             kept.append({"id": jid, "reason": "finished less than 10 min ago (a live run may still read it)"})
         else:
-            kept.append({"id": jid, "reason": "running and younger than 2 h (a live run)"})
+            kept.append({"id": jid, "reason": f"phase {row['phase'] or 'unknown'}, younger than 2 h (a live run)"})
+    if eligible:
+        try:
+            with _quiet():
+                client.remove_jobs(list(eligible))  # one request
+            deleted.extend(eligible)
+        except Exception:                           # noqa: BLE001 — retry one by one to say which failed
+            for jid in eligible:
+                try:
+                    with _quiet():
+                        client.remove_jobs([jid])
+                    deleted.append(jid)
+                except Exception:                   # noqa: BLE001
+                    errors.append({"id": jid, "error": "delete failed"})
     return {"cleanup": bool(cleanup), "listed": listed, "deleted": deleted, "kept": kept, "errors": errors}

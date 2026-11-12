@@ -4387,14 +4387,19 @@ How it works:
 - **Credentials:** `SPACE_APP_GAIA_CREDENTIALS=<path>` (empty = anonymous), else
   `~/.config/space_app/gaia_credentials` (two lines: user, password; mode 0600), else anonymous. The app never
   reads the password.
-- **Login:** TAP-only, about 0.7 s, under its own 15 s bound, so a slow login never uses up a query's bound.
-  **Once per process:** its session cookie is reused on every fresh CR-19 client for 30 min, then refreshed.
+- **Login:** TAP-only, about 0.7 s, under its own 15 s bound.
+  - It runs **once per process, before and outside every query's CR-19 bound**, so a slow login never uses up a
+    query's time.
+  - Each fresh client carries only the session cookie, for 30 min, then the session is refreshed.
 - **Login problems:** any problem falls back to anonymous and **never errors a query**. One failure keeps the
   process anonymous. A 401/403 writes `~/.config/space_app/gaia_login_failed` and pauses login for 6 h; delete the
   file to clear it.
 - **Async jobs:** each async job is named `space_app-<uuid>`. It is launched in the background so its id is known
-  before the wait, and it is deleted right after its results are read, or on failure (ruling A). If the logged-in
-  async path fails, HEAD's anonymous path runs. The bound-disabled legacy sync path (`SPACE_APP_GAIA_TIMEOUT<=0`) stays anonymous.
+  before the wait, and it is deleted right after its results are read, or on failure (ruling A).
+  - If the **account** refuses the job (401 / 403 / 429 / a full queue or quota), HEAD's anonymous path runs and
+    `[gaia-login] logged-in job not accepted by the account — continuing anonymous` is written.
+  - Any other failure (a bad query, the archive down) is reported as HEAD would report it. It is not re-run
+    anonymously. The bound-disabled legacy sync path (`SPACE_APP_GAIA_TIMEOUT<=0`) stays anonymous.
 - **Stderr, one line per process on the first Gaia call:** `[gaia-login] logged in` /
   `[gaia-login] anonymous (no credentials)` / `… (login not used — continuing anonymous)` /
   `… (login paused by back-off marker)` / `… (legacy unbounded path)`.
@@ -4404,7 +4409,7 @@ How it works:
   - No `[gaia-login]` line carries an exception class or HTTP status (except under `SPACE_APP_GAIA_DEBUG=1`).
     HEAD's `[gaia] sync TAP bounded …` degrade lines are unchanged.
 - **Cache:** a logged-in Gaia result's cache key gains `"auth": true`, so anonymous keys are unchanged. It is
-  written only if the login actually succeeded.
+  written only if that call's result came from the logged-in session, so an anonymous fallback never lands under it.
 - **Concurrency (D1, a documented rule):** run Gaia-heavy batch work at `--workers ≤ 4` with the GUI closed (ESA's
   5-active-job limit per account). A 429 stays the existing marked degrade.
 

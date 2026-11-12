@@ -509,3 +509,5 @@ The running per-CR record of how the offline suite count grew, kept verbatim fro
 
 **Part B — the ESA Gaia login (permanent, 2026-11-11, `CDS_OUTAGE_FALLBACK_PLAN.md`):** **4269 passed, 126 skipped, 703 subtests, 0 failures** (+34 offline, after CP2: `test_gaia_login.py`, `test_gaia_jobs.py`). Run with the real credentials file present at `~/.config/space_app/gaia_credentials` to prove the harness keeps every test anonymous (`SPACE_APP_GAIA_CREDENTIALS=` in `make_env` + the `_gaia_login_off` fixture).
 
+
+**CP3 fixes (the whole-delta review, 2026-11-11):** **4276 passed, 126 skipped, 703 subtests, 0 failures** (+7 in `test_gaia_login.py` / `test_gaia_jobs.py`: the session outside the query bound, the per-call logged-in cache gate, the account-refusal-only fallback, the async paused line, 401 detection, unknown-age and batched cleanup).

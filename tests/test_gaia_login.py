@@ -124,7 +124,7 @@ def test_one_login_per_process_session_reused_on_fresh_clients(fake, monkeypatch
     p = _creds(monkeypatch, tmp_path)
     catalog.gaia_tap(adql="SELECT 1"); catalog.gaia_tap(adql="SELECT 2")
     assert fake.calls == [str(p)]                            # one real login; the 2nd fresh client reuses the session
-    assert len(_FakeGaia.made) == 2                          # two fresh clients, one login
+    assert len(_FakeGaia.made) == 3                          # the session's client + two query clients
     assert _FakeGaia.made[-1]._conn._TapConn__cookie == "JSESSIONID=abc"
     assert all(logged for _, _, logged in _FakeGaia.launched)
     monkeypatch.setattr(gaia_auth, "SESSION_REUSE_S", 0.0)  # past the reuse window → a fresh login
@@ -184,16 +184,72 @@ def test_async_logged_in_named_job_deleted_after_reading(fake, monkeypatch, tmp_
     assert _FakeGaia.removed == [["job0-O"]]
 
 
-def test_async_failure_deletes_every_job_it_created_then_falls_back(fake, monkeypatch, tmp_path):
+def _fast_retries(monkeypatch):
+    import core.shared as sh
+    real = sh._with_retries
+    monkeypatch.setattr(catalog, "_with_retries", lambda fn, *a, retries=3, base_delay=0, **k: real(fn, *a,
+                        retries=retries, base_delay=0.0, **k))
+
+
+def test_async_query_failure_deletes_every_job_and_is_not_hidden(fake, monkeypatch, tmp_path):
     _creds(monkeypatch, tmp_path)
-    monkeypatch.setattr(catalog, "_gaia_async_logged_in",
-                        lambda q, rl, attempts=3, base_delay=0.0, _f=catalog._gaia_async_logged_in: _f(q, rl, attempts, 0.0))
-    monkeypatch.setattr(catalog, "_with_retries", lambda fn, *a, retries=3, base_delay=0, **k: fn(*a, **k))
-    _FakeGaia.async_fail = True
+    _fast_retries(monkeypatch)
+    _FakeGaia.async_fail = True                                    # "results lost" — not an account refusal
     out = catalog.gaia_tap(adql="SELECT 1", use_async=True)
     assert _FakeGaia.removed == [["job0-O", "job1-O", "job2-O"]]
-    assert _FakeGaia.launched[-1] == ("async", None, False)       # then HEAD's anonymous path ran
-    assert "error" in out                                          # (it fails here too: the fake always fails)
+    assert "error" in out
+    assert all(logged for _, _, logged in _FakeGaia.launched)      # no anonymous re-run of a failing query
+
+
+def test_account_refusal_falls_back_anonymous_and_is_not_cached_as_logged_in(fake, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SPACE_APP_CATALOG_CACHE", "1")
+    _creds(monkeypatch, tmp_path)
+    _fast_retries(monkeypatch)
+    import requests
+
+    class _Refused(_Job):
+        def get_results(self):
+            raise requests.exceptions.HTTPError("Error 429:\nUser has reached the maximum number of jobs")
+    real_launch = _FakeGaia.launch_job_async
+
+    def launch(self, q, name=None, background=False):
+        j = real_launch(self, q, name=name, background=background)
+        return _Refused(j.jobid) if getattr(self, "_TapPlus__isLoggedIn", False) else j
+    monkeypatch.setattr(_FakeGaia, "launch_job_async", launch)
+    out = catalog.gaia_tap(adql="SELECT 7", use_async=True)
+    assert out["count"] == 2 and _FakeGaia.launched[-1] == ("async", None, False)   # anonymous fallback answered
+    assert "logged-in job not accepted by the account — continuing anonymous" in capsys.readouterr().err
+    params = {"adql": "SELECT 7", "table": None, "columns": None, "where": None, "cone": None,
+              "row_limit": 2000, "async": True, "auth": True}
+    assert catalog.catalog_cache.cache_get(catalog.catalog_cache.cache_key("gaia", params)) is None
+
+
+def test_paused_line_on_the_async_path(fake, monkeypatch, tmp_path, capsys):
+    _creds(monkeypatch, tmp_path)
+    (tmp_path / "gaia_login_failed").write_text("1\n")
+    catalog.gaia_tap(adql="SELECT 1", use_async=True)
+    assert fake.calls == [] and "login paused by back-off marker" in capsys.readouterr().err
+
+
+def test_login_runs_outside_the_query_bound(fake, monkeypatch, tmp_path):
+    _creds(monkeypatch, tmp_path)
+    monkeypatch.setenv("SPACE_APP_GAIA_TIMEOUT", "0.5")
+    import time as _t
+    from astroquery.utils.tap.core import TapPlus
+    def slow(client, credentials_file=None, verbose=False):
+        _t.sleep(1.0)                                              # longer than the query bound, inside its own 15 s
+        client._TapPlus__isLoggedIn = True
+        client._conn.set_cookie("JSESSIONID=slow")
+    monkeypatch.setattr(TapPlus, "login", staticmethod(slow))
+    out = catalog.gaia_tap(adql="SELECT 1")
+    assert out.get("count") == 2 and _FakeGaia.launched[-1][2] is True    # no timeout degrade, logged in
+
+
+def test_auth_status_ignores_stray_digits():
+    import requests
+    assert gaia_auth._auth_status(requests.exceptions.HTTPError("Error 401:\n<html>Unauthorized")) == 401
+    assert gaia_auth._auth_status(requests.exceptions.HTTPError("Error 403:\nForbidden")) == 403
+    assert gaia_auth._auth_status(RuntimeError("HTTP 502 proxy ref 4013 at host:4030")) is None
 
 
 def test_slow_login_has_its_own_bound(fake, monkeypatch, tmp_path, capsys):
@@ -272,6 +328,7 @@ def test_heads_gaia_degrade_line_is_unchanged(capsys):
     "[gaia-login] credentials file is readable by group or others (mode 0644)",
     "[gaia-login] credentials file is readable by group or others (mode 0504)",
     "[gaia-login] job cleanup skipped — job 1731338474562O left on the account",
+    "[gaia-login] logged-in job not accepted by the account — continuing anonymous",
     "[gaia-login] job cleanup skipped — job 8b29f800-de29-11f1-a3a4-bc97e148b76b-O left on the account",
 ])
 def test_part_b_stderr_lines_match_neither_wb_regex(line):

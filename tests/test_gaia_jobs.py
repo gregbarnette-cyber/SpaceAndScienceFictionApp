@@ -35,10 +35,10 @@ class _Client:
         self.removed, self.fail = [], set(fail)
 
     def remove_jobs(self, ids):
-        (jid,) = ids
-        if jid in self.fail:
+        if any(j in self.fail for j in ids):
             raise RuntimeError("delete failed")
-        self.removed.append(jid)
+        self.removed.extend(ids)
+        self.calls = getattr(self, "calls", 0) + 1
 
 
 def _seam(client, path):
@@ -81,6 +81,30 @@ def test_one_failed_delete_is_reported_and_the_rest_continue(creds):
     out = gaia_auth.list_app_jobs(cleanup=True, client=c, now=NOW)
     assert out["errors"] == [{"id": "a-O", "error": "delete failed"}]
     assert sorted(c.removed) == ["c-O"]
+
+
+def test_cleanup_is_one_batched_delete(creds):
+    c = _Client()
+    gaia_auth.list_app_jobs(cleanup=True, client=c, now=NOW)
+    assert c.calls == 1
+
+
+def test_finished_job_with_no_creation_time_is_cleaned(creds, monkeypatch):
+    JOBS["g-O"] = ("COMPLETED", "space_app-77777777-7777-7777-7777-777777777777", None)
+    try:
+        real = _seam
+
+        def seam(client, path):
+            out = real(client, path) if not path.endswith("g-O") else (
+                f'<uws:job {NS}><uws:parameters><uws:parameter id="jobname">'
+                f'<![CDATA[{JOBS["g-O"][1]}]]></uws:parameter></uws:parameters></uws:job>')
+            return out
+        monkeypatch.setattr(gaia_auth, "_job_seam", seam)
+        c = _Client()
+        gaia_auth.list_app_jobs(cleanup=True, client=c, now=NOW)
+        assert "g-O" in c.removed
+    finally:
+        JOBS.pop("g-O")
 
 
 def test_an_error_page_is_an_error_not_no_jobs(creds, monkeypatch):
